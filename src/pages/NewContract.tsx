@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Loader2 } from "lucide-react";
+import { RentEscalations, Escalation } from "@/components/contracts/RentEscalations";
 
 const NewContract = () => {
   const navigate = useNavigate();
@@ -37,6 +38,7 @@ const NewContract = () => {
   const [duration, setDuration] = useState("");
   const [noticeType, setNoticeType] = useState<"fecha" | "meses">("meses");
   const [noticeValue, setNoticeValue] = useState("");
+  const [escalations, setEscalations] = useState<Escalation[]>([]);
   
   // Document
   const [documentUrl, setDocumentUrl] = useState("");
@@ -102,6 +104,21 @@ const NewContract = () => {
         .single();
 
       if (versionError) throw versionError;
+
+      // Create escalations if any
+      if (hasEscalation && escalations.length > 0) {
+        const { error: escalationError } = await supabase
+          .from("rent_escalations")
+          .insert(
+            escalations.map((e) => ({
+              version_id: version.id,
+              month_number: e.month_number,
+              amount: e.amount,
+            }))
+          );
+
+        if (escalationError) throw escalationError;
+      }
 
       // Create document if URL provided
       if (documentUrl) {
@@ -347,6 +364,16 @@ const NewContract = () => {
               </div>
             </CardContent>
           </Card>
+
+          {hasEscalation && duration && (
+            <RentEscalations
+              escalations={escalations}
+              onChange={setEscalations}
+              initialRent={parseFloat(initialRent) || 0}
+              regimeRent={parseFloat(regimeRent) || 0}
+              durationMonths={parseInt(duration) || 12}
+            />
+          )}
 
           <Card>
             <CardHeader>
