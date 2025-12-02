@@ -4,9 +4,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { ArrowLeft, FileText, MapPin, User, Calendar, DollarSign } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { RentEscalations, Escalation } from "@/components/contracts/RentEscalations";
 
 interface Contract {
   id: string;
@@ -37,6 +37,11 @@ interface Contract {
     notice_type: string;
     notice_value: string;
     created_at: string;
+    rent_escalations: Array<{
+      id: string;
+      month_number: number;
+      amount: number;
+    }>;
   }>;
   contract_documents: Array<{
     id: string;
@@ -67,14 +72,14 @@ const ContractDetail = () => {
           *,
           contract_addresses (*),
           contract_contacts (*),
-          contract_versions (*),
+          contract_versions (*, rent_escalations (*)),
           contract_documents (*)
         `)
         .eq("id", id)
         .single();
 
       if (error) throw error;
-      setContract(data);
+      setContract(data as Contract);
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -258,6 +263,21 @@ const ContractDetail = () => {
             )}
           </CardContent>
         </Card>
+
+        {currentVersion && currentVersion.initial_rent && (
+          <RentEscalations
+            escalations={currentVersion.rent_escalations?.map(e => ({
+              id: e.id,
+              month_number: e.month_number,
+              amount: e.amount
+            })) || []}
+            onChange={() => {}}
+            initialRent={currentVersion.initial_rent || currentVersion.regime_rent}
+            regimeRent={currentVersion.regime_rent}
+            durationMonths={currentVersion.duration_months}
+            readOnly={true}
+          />
+        )}
 
         <Card>
           <CardHeader>
