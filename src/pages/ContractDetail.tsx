@@ -4,9 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, FileText, MapPin, User, Calendar, DollarSign } from "lucide-react";
+import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Check, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { RentEscalations, Escalation } from "@/components/contracts/RentEscalations";
+import { DocumentVersions, DocumentVersion } from "@/components/contracts/DocumentVersions";
+import { EscalationDialog, Escalation } from "@/components/contracts/EscalationDialog";
 
 interface Contract {
   id: string;
@@ -48,6 +49,7 @@ interface Contract {
     document_type: string;
     url: string;
     uploaded_at: string;
+    version_id: string | null;
   }>;
 }
 
@@ -57,6 +59,7 @@ const ContractDetail = () => {
   const { toast } = useToast();
   const [contract, setContract] = useState<Contract | null>(null);
   const [loading, setLoading] = useState(true);
+  const [signingContract, setSigningContract] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -89,6 +92,169 @@ const ContractDetail = () => {
       navigate("/");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAddDocument = async (url: string, name: string) => {
+    if (!contract) return;
+    
+    const currentVersion = contract.contract_versions?.find((v) => v.is_current);
+    
+    try {
+      const { error } = await supabase
+        .from("contract_documents")
+        .insert({
+          contract_id: contract.id,
+          version_id: currentVersion?.id || null,
+          document_type: "borrador",
+          url,
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: "Documento agregado",
+        description: "La nueva versión ha sido registrada",
+      });
+
+      loadContract();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo agregar el documento",
+      });
+    }
+  };
+
+  const handleMarkAsFinal = async (docId: string) => {
+    try {
+      const { error } = await supabase
+        .from("contract_documents")
+        .update({ document_type: "borrador_final" })
+        .eq("id", docId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Versión final",
+        description: "El documento ha sido marcado como versión final",
+      });
+
+      loadContract();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo marcar como final",
+      });
+    }
+  };
+
+  const handleSaveEscalations = async (escalations: Escalation[]) => {
+    if (!contract) return;
+    
+    const currentVersion = contract.contract_versions?.find((v) => v.is_current);
+    if (!currentVersion) return;
+
+    try {
+      // Delete existing escalations
+      const { error: deleteError } = await supabase
+        .from("rent_escalations")
+        .delete()
+        .eq("version_id", currentVersion.id);
+
+      if (deleteError) throw deleteError;
+
+      // Insert new escalations
+      if (escalations.length > 0) {
+        const { error: insertError } = await supabase
+          .from("rent_escalations")
+          .insert(
+            escalations.map((e) => ({
+              version_id: currentVersion.id,
+              month_number: e.month_number,
+              amount: e.amount,
+            }))
+          );
+
+        if (insertError) throw insertError;
+      }
+
+      toast({
+        title: "Escalonamiento guardado",
+        description: "Los cambios han sido aplicados",
+      });
+
+      loadContract();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo guardar el escalonamiento",
+      });
+    }
+  };
+
+  const handleMarkAsSigned = async () => {
+    if (!contract) return;
+
+    // Check if there's a final version
+    const hasFinalVersion = contract.contract_documents?.some(
+      (d) => d.document_type === "borrador_final"
+    );
+
+    if (!hasFinalVersion) {
+      toast({
+        variant: "destructive",
+        title: "Acción requerida",
+        description: "Debes marcar una versión del documento como Final antes de firmar",
+      });
+      return;
+    }
+
+    setSigningContract(true);
+
+    try {
+      // Update contract status
+      const { error: contractError } = await supabase
+        .from("contracts")
+        .update({
+          status: "firmado",
+          signed_date: new Date().toISOString().split("T")[0],
+        })
+        .eq("id", contract.id);
+
+      if (contractError) throw contractError;
+
+      // Update the final document to "firmado"
+      const finalDoc = contract.contract_documents?.find(
+        (d) => d.document_type === "borrador_final"
+      );
+      
+      if (finalDoc) {
+        const { error: docError } = await supabase
+          .from("contract_documents")
+          .update({ document_type: "firmado" })
+          .eq("id", finalDoc.id);
+
+        if (docError) throw docError;
+      }
+
+      toast({
+        title: "Contrato firmado",
+        description: "El contrato ha sido marcado como firmado",
+      });
+
+      loadContract();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo firmar el contrato",
+      });
+    } finally {
+      setSigningContract(false);
     }
   };
 
@@ -134,6 +300,10 @@ const ContractDetail = () => {
   const contact = contract.contract_contacts?.[0];
   const currentVersion = contract.contract_versions?.find((v) => v.is_current);
   const documents = contract.contract_documents || [];
+  const isNegotiating = contract.status === "en_negociacion";
+  const hasFinalVersion = documents.some(
+    (d) => d.document_type === "borrador_final" || d.document_type === "firmado"
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -147,9 +317,21 @@ const ContractDetail = () => {
             <ArrowLeft className="h-4 w-4" />
             Volver al Dashboard
           </Button>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-semibold text-foreground">{contract.name}</h1>
-            {getStatusBadge(contract.status)}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-semibold text-foreground">{contract.name}</h1>
+              {getStatusBadge(contract.status)}
+            </div>
+            {isNegotiating && (
+              <Button
+                variant="outline"
+                onClick={() => navigate(`/contracts/${contract.id}/edit`)}
+                className="gap-2"
+              >
+                <Edit className="h-4 w-4" />
+                Editar
+              </Button>
+            )}
           </div>
         </div>
       </header>
@@ -214,11 +396,28 @@ const ContractDetail = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5" />
-              Condiciones Comerciales Actuales
-            </CardTitle>
-            <CardDescription>Versión {currentVersion?.version_number || "N/A"}</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5" />
+                  Condiciones Comerciales
+                </CardTitle>
+                <CardDescription>Versión {currentVersion?.version_number || "N/A"}</CardDescription>
+              </div>
+              {isNegotiating && currentVersion && (
+                <EscalationDialog
+                  escalations={currentVersion.rent_escalations?.map(e => ({
+                    id: e.id,
+                    month_number: e.month_number,
+                    amount: e.amount
+                  })) || []}
+                  initialRent={currentVersion.initial_rent || currentVersion.regime_rent}
+                  regimeRent={currentVersion.regime_rent}
+                  durationMonths={currentVersion.duration_months}
+                  onSave={handleSaveEscalations}
+                />
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {currentVersion ? (
@@ -255,6 +454,24 @@ const ContractDetail = () => {
                     </p>
                   </div>
                 </div>
+
+                {/* Escalations summary */}
+                {currentVersion.rent_escalations && currentVersion.rent_escalations.length > 0 && (
+                  <div className="pt-4 border-t border-border">
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Escalonamiento ({currentVersion.rent_escalations.length} escalones)
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {currentVersion.rent_escalations
+                        .sort((a, b) => a.month_number - b.month_number)
+                        .map((e) => (
+                          <Badge key={e.id} variant="secondary">
+                            Mes {e.month_number}: {formatCurrency(e.amount)}
+                          </Badge>
+                        ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <p className="text-muted-foreground">
@@ -264,61 +481,19 @@ const ContractDetail = () => {
           </CardContent>
         </Card>
 
-        {currentVersion && currentVersion.initial_rent && (
-          <RentEscalations
-            escalations={currentVersion.rent_escalations?.map(e => ({
-              id: e.id,
-              month_number: e.month_number,
-              amount: e.amount
-            })) || []}
-            onChange={() => {}}
-            initialRent={currentVersion.initial_rent || currentVersion.regime_rent}
-            regimeRent={currentVersion.regime_rent}
-            durationMonths={currentVersion.duration_months}
-            readOnly={true}
-          />
-        )}
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Documentos
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {documents.length > 0 ? (
-              <div className="space-y-3">
-                {documents.map((doc) => (
-                  <div
-                    key={doc.id}
-                    className="flex items-center justify-between p-3 border border-border rounded-lg"
-                  >
-                    <div>
-                      <p className="font-medium">
-                        {doc.document_type === "borrador" && "Borrador"}
-                        {doc.document_type === "borrador_final" && "Borrador Final"}
-                        {doc.document_type === "firmado" && "Contrato Firmado"}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Subido el {formatDate(doc.uploaded_at)}
-                      </p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => window.open(doc.url, "_blank")}
-                    >
-                      Ver Documento
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-muted-foreground">No hay documentos subidos</p>
-            )}
-          </CardContent>
-        </Card>
+        <DocumentVersions
+          documents={documents.map(d => ({
+            id: d.id,
+            document_type: d.document_type,
+            url: d.url,
+            uploaded_at: d.uploaded_at,
+            version_id: d.version_id,
+          }))}
+          contractName={contract.name}
+          onAddDocument={handleAddDocument}
+          onMarkAsFinal={handleMarkAsFinal}
+          readOnly={!isNegotiating}
+        />
 
         <Card>
           <CardHeader>
@@ -343,16 +518,29 @@ const ContractDetail = () => {
           </CardContent>
         </Card>
 
-        {contract.status === "en_negociacion" && (
+        {isNegotiating && (
           <Card className="border-primary/20">
             <CardHeader>
               <CardTitle>Acciones</CardTitle>
               <CardDescription>
-                Cuando el contrato esté listo, puedes marcarlo como firmado
+                {hasFinalVersion
+                  ? "El contrato está listo para ser firmado"
+                  : "Marca una versión del documento como Final antes de firmar"}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Button>Marcar como Firmado</Button>
+              <Button
+                onClick={handleMarkAsSigned}
+                disabled={!hasFinalVersion || signingContract}
+                className="gap-2"
+              >
+                {signingContract ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Check className="h-4 w-4" />
+                )}
+                Marcar como Firmado
+              </Button>
             </CardContent>
           </Card>
         )}
