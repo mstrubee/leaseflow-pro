@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, FileText, Check, Star, Upload, ChevronDown, ChevronRight, Cloud, Link, Send, FileCheck, Signature } from "lucide-react";
+import { Plus, FileText, Check, Star, Upload, ChevronDown, ChevronRight, Cloud, Link, Send, FileCheck, Signature, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { supabase } from "@/integrations/supabase/client";
@@ -34,6 +34,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { RenegotiationDialog } from "./RenegotiationDialog";
 
 export interface DocumentVersion {
   id: string;
@@ -50,10 +51,22 @@ interface CloudConnection {
   folder_url: string | null;
 }
 
+interface CurrentVersionInfo {
+  id: string;
+  version_number: number;
+  initial_rent: number | null;
+  regime_rent: number;
+  variable_rent_percentage: number | null;
+  duration_months: number;
+  notice_type: string;
+  notice_value: string;
+}
+
 interface DocumentVersionsProps {
   documents: DocumentVersion[];
   contractId: string;
   contractName: string;
+  currentVersion?: CurrentVersionInfo;
   onAddDocument: (url: string, name: string) => Promise<void>;
   onMarkAsFinal: (docId: string) => Promise<void>;
   onSendForSignature?: (email: string, docId: string) => Promise<void>;
@@ -61,6 +74,9 @@ interface DocumentVersionsProps {
   onChangeDocumentType?: (docId: string, newType: string) => Promise<void>;
   readOnly?: boolean;
   isRenegotiation?: boolean;
+  isSigned?: boolean;
+  hasActiveRenegotiation?: boolean;
+  onRenegotiationSuccess?: () => void;
 }
 
 const CLOUD_PROVIDERS = [
@@ -73,6 +89,7 @@ export const DocumentVersions = ({
   documents,
   contractId,
   contractName,
+  currentVersion,
   onAddDocument,
   onMarkAsFinal,
   onSendForSignature,
@@ -80,6 +97,9 @@ export const DocumentVersions = ({
   onChangeDocumentType,
   readOnly = false,
   isRenegotiation = false,
+  isSigned = false,
+  hasActiveRenegotiation = false,
+  onRenegotiationSuccess,
 }: DocumentVersionsProps) => {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -378,7 +398,15 @@ export const DocumentVersions = ({
                     {documents.length} versiones registradas
                   </CardDescription>
                 </div>
-                {!readOnly && (
+                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  {isSigned && currentVersion && !hasActiveRenegotiation && onRenegotiationSuccess && (
+                    <RenegotiationDialog
+                      contractId={contractId}
+                      currentVersion={currentVersion}
+                      hasActiveRenegotiation={false}
+                      onSuccess={onRenegotiationSuccess}
+                    />
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
@@ -391,7 +419,7 @@ export const DocumentVersions = ({
                     <Plus className="h-4 w-4" />
                     Agregar
                   </Button>
-                )}
+                </div>
               </div>
             </CardHeader>
           </CollapsibleTrigger>
