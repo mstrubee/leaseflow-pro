@@ -10,16 +10,6 @@ import { DocumentVersions, DocumentVersion } from "@/components/contracts/Docume
 import { EscalationDialog, Escalation } from "@/components/contracts/EscalationDialog";
 import { RepositorySection } from "@/components/contracts/RepositorySection";
 import { RenegotiationDialog } from "@/components/contracts/RenegotiationDialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 
 interface Contract {
   id: string;
@@ -74,7 +64,6 @@ const ContractDetail = () => {
   const [contract, setContract] = useState<Contract | null>(null);
   const [loading, setLoading] = useState(true);
   const [signingContract, setSigningContract] = useState(false);
-  const [signDialogOpen, setSignDialogOpen] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -152,8 +141,8 @@ const ContractDetail = () => {
       if (error) throw error;
 
       toast({
-        title: "Versión final",
-        description: "El documento ha sido marcado como versión final",
+        title: "Borrador final",
+        description: "El documento ha sido marcado como borrador final",
       });
 
       loadContract();
@@ -166,6 +155,120 @@ const ContractDetail = () => {
     }
   };
 
+  const handleChangeDocumentType = async (docId: string, newType: string) => {
+    try {
+      const { error } = await supabase
+        .from("contract_documents")
+        .update({ document_type: newType as "borrador" | "borrador_final" | "firmado" })
+        .eq("id", docId);
+
+      if (error) throw error;
+
+      loadContract();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo cambiar el estado",
+      });
+    }
+  };
+
+  const handleSendForSignature = async (email: string, docId: string) => {
+    if (!contract) return;
+
+    const doc = contract.contract_documents?.find(d => d.id === docId);
+    if (!doc) return;
+
+    try {
+      const { data, error } = await supabase.functions.invoke("send-contract-email", {
+        body: {
+          recipientEmail: email,
+          contractName: contract.name,
+          documentUrl: doc.url,
+        },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Email enviado",
+        description: `El contrato ha sido enviado a ${email}`,
+      });
+    } catch (error: any) {
+      throw error;
+    }
+  };
+
+  const handleMarkAsSigned = async (docId: string) => {
+    if (!contract) return;
+
+    setSigningContract(true);
+
+    try {
+      // Get the "Borradores de Contrato" folder for this contract
+      const { data: borradorFolder } = await supabase
+        .from("repository_folders")
+        .select("id")
+        .eq("contract_id", contract.id)
+        .eq("folder_type", "borradores")
+        .single();
+
+      // Move all draft documents to the repository folder
+      const draftDocs = contract.contract_documents?.filter(
+        (d) => d.document_type === "borrador"
+      ) || [];
+
+      if (borradorFolder && draftDocs.length > 0) {
+        for (const doc of draftDocs) {
+          await supabase
+            .from("repository_files")
+            .insert({
+              folder_id: borradorFolder.id,
+              name: `Borrador_${new Date(doc.uploaded_at).toISOString().split('T')[0]}`,
+              url: doc.url,
+              file_type: "pdf",
+              status: "En negociación",
+            });
+        }
+      }
+
+      // Update contract status
+      const { error: contractError } = await supabase
+        .from("contracts")
+        .update({
+          status: "firmado",
+          signed_date: new Date().toISOString().split("T")[0],
+        })
+        .eq("id", contract.id);
+
+      if (contractError) throw contractError;
+
+      // Update the document to "firmado"
+      const { error: docError } = await supabase
+        .from("contract_documents")
+        .update({ document_type: "firmado" })
+        .eq("id", docId);
+
+      if (docError) throw docError;
+
+      toast({
+        title: "Contrato firmado",
+        description: "El contrato ha sido marcado como firmado y los borradores han sido archivados",
+      });
+
+      loadContract();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo firmar el contrato",
+      });
+    } finally {
+      setSigningContract(false);
+    }
+  };
+
   const handleSaveEscalations = async (escalations: Escalation[]) => {
     if (!contract) return;
     
@@ -173,7 +276,6 @@ const ContractDetail = () => {
     if (!currentVersion) return;
 
     try {
-      // Delete existing escalations
       const { error: deleteError } = await supabase
         .from("rent_escalations")
         .delete()
@@ -181,7 +283,6 @@ const ContractDetail = () => {
 
       if (deleteError) throw deleteError;
 
-      // Insert new escalations
       if (escalations.length > 0) {
         const { error: insertError } = await supabase
           .from("rent_escalations")
@@ -208,103 +309,6 @@ const ContractDetail = () => {
         title: "Error",
         description: "No se pudo guardar el escalonamiento",
       });
-    }
-  };
-
-  const handleRequestSign = () => {
-    if (!contract) return;
-
-    // Check if there's a final version
-    const hasFinalVersion = contract.contract_documents?.some(
-      (d) => d.document_type === "borrador_final"
-    );
-
-    if (!hasFinalVersion) {
-      toast({
-        variant: "destructive",
-        title: "Acción requerida",
-        description: "Debes marcar una versión del documento como Final antes de firmar",
-      });
-      return;
-    }
-
-    setSignDialogOpen(true);
-  };
-
-  const handleMarkAsSigned = async () => {
-    if (!contract) return;
-
-    setSignDialogOpen(false);
-    setSigningContract(true);
-
-    try {
-      // Get the "Borradores de Contrato" folder for this contract
-      const { data: borradorFolder } = await supabase
-        .from("repository_folders")
-        .select("id")
-        .eq("contract_id", contract.id)
-        .eq("folder_type", "borradores")
-        .single();
-
-      // Move all draft documents to the repository folder
-      const draftDocs = contract.contract_documents?.filter(
-        (d) => d.document_type === "borrador"
-      ) || [];
-
-      if (borradorFolder && draftDocs.length > 0) {
-        for (const doc of draftDocs) {
-          // Create a file entry in the repository
-          await supabase
-            .from("repository_files")
-            .insert({
-              folder_id: borradorFolder.id,
-              name: `Borrador_${new Date(doc.uploaded_at).toISOString().split('T')[0]}`,
-              url: doc.url,
-              file_type: "pdf",
-              status: "En negociación",
-            });
-        }
-      }
-
-      // Update contract status
-      const { error: contractError } = await supabase
-        .from("contracts")
-        .update({
-          status: "firmado",
-          signed_date: new Date().toISOString().split("T")[0],
-        })
-        .eq("id", contract.id);
-
-      if (contractError) throw contractError;
-
-      // Update the final document to "firmado"
-      const finalDoc = contract.contract_documents?.find(
-        (d) => d.document_type === "borrador_final"
-      );
-      
-      if (finalDoc) {
-        const { error: docError } = await supabase
-          .from("contract_documents")
-          .update({ document_type: "firmado" })
-          .eq("id", finalDoc.id);
-
-        if (docError) throw docError;
-      }
-
-      toast({
-        title: "Contrato firmado",
-        description: "El contrato ha sido marcado como firmado y los borradores han sido archivados",
-      });
-
-      loadContract();
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "No se pudo firmar el contrato",
-      });
-    } finally {
-      setSigningContract(false);
     }
   };
 
@@ -353,9 +357,6 @@ const ContractDetail = () => {
   const documents = contract.contract_documents || [];
   const isNegotiating = contract.status === "en_negociacion";
   const isSigned = contract.status === "firmado";
-  const hasFinalVersion = documents.some(
-    (d) => d.document_type === "borrador_final" || d.document_type === "firmado"
-  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -522,7 +523,6 @@ const ContractDetail = () => {
                   </div>
                 </div>
 
-                {/* Escalations summary */}
                 {currentVersion.rent_escalations && currentVersion.rent_escalations.length > 0 && (
                   <div className="pt-4 border-t border-border">
                     <p className="text-sm text-muted-foreground mb-2">
@@ -614,6 +614,9 @@ const ContractDetail = () => {
           contractName={contract.name}
           onAddDocument={handleAddDocument}
           onMarkAsFinal={handleMarkAsFinal}
+          onSendForSignature={handleSendForSignature}
+          onMarkAsSigned={handleMarkAsSigned}
+          onChangeDocumentType={handleChangeDocumentType}
           readOnly={!isNegotiating}
         />
 
@@ -644,53 +647,7 @@ const ContractDetail = () => {
             </div>
           </CardContent>
         </Card>
-
-        {isNegotiating && (
-          <Card className="border-primary/20">
-            <CardHeader>
-              <CardTitle>Acciones</CardTitle>
-              <CardDescription>
-                {hasFinalVersion
-                  ? "El contrato está listo para ser firmado"
-                  : "Marca una versión del documento como Final antes de firmar"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button
-                onClick={handleRequestSign}
-                disabled={!hasFinalVersion || signingContract}
-                className="gap-2"
-              >
-                {signingContract ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Check className="h-4 w-4" />
-                )}
-                Marcar como Firmado
-              </Button>
-            </CardContent>
-          </Card>
-        )}
       </main>
-
-      {/* Confirmation Dialog for Signing */}
-      <AlertDialog open={signDialogOpen} onOpenChange={setSignDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Desea marcar como firmado?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta acción marcará el contrato como firmado y archivará todos los borradores 
-              en la carpeta "Borradores de Contrato".
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleMarkAsSigned}>
-              Confirmar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 };
