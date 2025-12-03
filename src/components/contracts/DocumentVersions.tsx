@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, FileText, Check, Star, Upload, ChevronDown, ChevronRight, Cloud, Link } from "lucide-react";
+import { Plus, FileText, Check, Star, Upload, ChevronDown, ChevronRight, Cloud, Link, Send, FileCheck, Signature } from "lucide-react";
 import { format } from "date-fns";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { supabase } from "@/integrations/supabase/client";
@@ -24,6 +24,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export interface DocumentVersion {
   id: string;
@@ -46,6 +56,9 @@ interface DocumentVersionsProps {
   contractName: string;
   onAddDocument: (url: string, name: string) => Promise<void>;
   onMarkAsFinal: (docId: string) => Promise<void>;
+  onSendForSignature?: (email: string, docId: string) => Promise<void>;
+  onMarkAsSigned?: (docId: string) => Promise<void>;
+  onChangeDocumentType?: (docId: string, newType: string) => Promise<void>;
   readOnly?: boolean;
 }
 
@@ -61,6 +74,9 @@ export const DocumentVersions = ({
   contractName,
   onAddDocument,
   onMarkAsFinal,
+  onSendForSignature,
+  onMarkAsSigned,
+  onChangeDocumentType,
   readOnly = false,
 }: DocumentVersionsProps) => {
   const { toast } = useToast();
@@ -83,6 +99,22 @@ export const DocumentVersions = ({
   // Cloud connections
   const [cloudConnections, setCloudConnections] = useState<CloudConnection[]>([]);
   const [selectedCloud, setSelectedCloud] = useState<string>("");
+
+  // Action dialog for "Marcar Final" button
+  const [actionDialogOpen, setActionDialogOpen] = useState(false);
+  const [selectedDocForAction, setSelectedDocForAction] = useState<string | null>(null);
+
+  // Signature confirmation dialog
+  const [signConfirmOpen, setSignConfirmOpen] = useState(false);
+
+  // Send for signature dialog
+  const [sendSignatureDialogOpen, setSendSignatureDialogOpen] = useState(false);
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
+
+  // Status change dialog
+  const [statusChangeDialogOpen, setStatusChangeDialogOpen] = useState(false);
+  const [selectedDocForStatus, setSelectedDocForStatus] = useState<DocumentVersion | null>(null);
 
   useEffect(() => {
     loadCloudConnections();
@@ -128,7 +160,6 @@ export const DocumentVersions = ({
     const file = e.target.files?.[0];
     if (file) {
       setSelectedFile(file);
-      const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
       setSuggestedFileName(generateSuggestedName());
       setFileDialogOpen(true);
     }
@@ -189,6 +220,87 @@ export const DocumentVersions = ({
     }
   };
 
+  const handleOpenActionDialog = (docId: string) => {
+    setSelectedDocForAction(docId);
+    setActionDialogOpen(true);
+  };
+
+  const handleSelectAction = (action: "final" | "send" | "sign") => {
+    setActionDialogOpen(false);
+    
+    if (action === "final") {
+      if (selectedDocForAction) {
+        onMarkAsFinal(selectedDocForAction);
+      }
+    } else if (action === "send") {
+      setSendSignatureDialogOpen(true);
+    } else if (action === "sign") {
+      setSignConfirmOpen(true);
+    }
+  };
+
+  const handleConfirmSign = async () => {
+    setSignConfirmOpen(false);
+    if (selectedDocForAction && onMarkAsSigned) {
+      await onMarkAsSigned(selectedDocForAction);
+    }
+    setSelectedDocForAction(null);
+  };
+
+  const handleSendForSignature = async () => {
+    if (!recipientEmail || !selectedDocForAction) return;
+    
+    setSendingEmail(true);
+    try {
+      if (onSendForSignature) {
+        await onSendForSignature(recipientEmail, selectedDocForAction);
+      }
+      
+      toast({
+        title: "Email enviado",
+        description: `El contrato ha sido enviado a ${recipientEmail} para firma`,
+      });
+      
+      setSendSignatureDialogOpen(false);
+      setRecipientEmail("");
+      setSelectedDocForAction(null);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo enviar el email: " + error.message,
+      });
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
+  const handleOpenStatusChange = (doc: DocumentVersion) => {
+    setSelectedDocForStatus(doc);
+    setStatusChangeDialogOpen(true);
+  };
+
+  const handleChangeStatus = async (newType: string) => {
+    if (!selectedDocForStatus || !onChangeDocumentType) return;
+    
+    try {
+      await onChangeDocumentType(selectedDocForStatus.id, newType);
+      toast({
+        title: "Estado actualizado",
+        description: "El estado del documento ha sido cambiado",
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo cambiar el estado",
+      });
+    } finally {
+      setStatusChangeDialogOpen(false);
+      setSelectedDocForStatus(null);
+    }
+  };
+
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString("es-CL", {
       year: "numeric",
@@ -199,14 +311,43 @@ export const DocumentVersions = ({
     });
   };
 
-  const getDocumentTypeBadge = (type: string) => {
-    if (type === "borrador_final") {
-      return <Badge className="bg-status-signed text-white"><Star className="h-3 w-3 mr-1" />Final</Badge>;
+  const getDocumentTypeBadge = (doc: DocumentVersion) => {
+    const type = doc.document_type;
+    const isClickable = !readOnly && (type === "borrador" || type === "borrador_final");
+    
+    const badgeContent = () => {
+      if (type === "borrador_final") {
+        return <><Star className="h-3 w-3 mr-1" />Borrador Final</>;
+      }
+      if (type === "firmado") {
+        return <><Check className="h-3 w-3 mr-1" />Firmado</>;
+      }
+      return "Borrador";
+    };
+    
+    const badgeClass = type === "borrador_final" 
+      ? "bg-status-signed text-white" 
+      : type === "firmado" 
+        ? "bg-primary text-primary-foreground"
+        : "";
+    
+    if (isClickable) {
+      return (
+        <Badge 
+          className={`${badgeClass} cursor-pointer hover:opacity-80`}
+          variant={type === "borrador" ? "secondary" : undefined}
+          onClick={() => handleOpenStatusChange(doc)}
+        >
+          {badgeContent()}
+        </Badge>
+      );
     }
-    if (type === "firmado") {
-      return <Badge className="bg-primary text-primary-foreground"><Check className="h-3 w-3 mr-1" />Firmado</Badge>;
-    }
-    return <Badge variant="secondary">Borrador</Badge>;
+    
+    return (
+      <Badge className={badgeClass} variant={type === "borrador" ? "secondary" : undefined}>
+        {badgeContent()}
+      </Badge>
+    );
   };
 
   const sortedDocuments = [...documents].sort(
@@ -266,7 +407,7 @@ export const DocumentVersions = ({
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          {getDocumentTypeBadge(doc.document_type)}
+                          {getDocumentTypeBadge(doc)}
                           <span className="text-xs text-muted-foreground">
                             #{sortedDocuments.length - index}
                           </span>
@@ -280,7 +421,7 @@ export const DocumentVersions = ({
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => onMarkAsFinal(doc.id)}
+                            onClick={() => handleOpenActionDialog(doc.id)}
                             className="gap-1"
                           >
                             <Star className="h-3 w-3" />
@@ -479,8 +620,8 @@ export const DocumentVersions = ({
               />
             </div>
             {selectedFile && (
-              <p className="text-xs text-muted-foreground">
-                Archivo original: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+              <p className="text-sm text-muted-foreground">
+                Archivo seleccionado: {selectedFile.name}
               </p>
             )}
           </div>
@@ -489,9 +630,149 @@ export const DocumentVersions = ({
               Cancelar
             </Button>
             <Button onClick={handleUploadFile} disabled={uploading || !suggestedFileName.trim()}>
-              {uploading ? "Subiendo..." : "Subir documento"}
+              {uploading ? "Subiendo..." : "Subir"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Action selection dialog */}
+      <Dialog open={actionDialogOpen} onOpenChange={setActionDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Qué desea hacer con este borrador?</DialogTitle>
+            <DialogDescription>
+              Seleccione una acción para el documento
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-3 h-auto py-4"
+              onClick={() => handleSelectAction("final")}
+            >
+              <FileCheck className="h-5 w-5 text-amber-500" />
+              <div className="text-left">
+                <p className="font-medium">Marcar como Borrador Final</p>
+                <p className="text-sm text-muted-foreground">
+                  Indica que esta versión está lista para revisión
+                </p>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-3 h-auto py-4"
+              onClick={() => handleSelectAction("send")}
+            >
+              <Send className="h-5 w-5 text-blue-500" />
+              <div className="text-left">
+                <p className="font-medium">Enviar para Firma</p>
+                <p className="text-sm text-muted-foreground">
+                  Enviar el documento por email para firma
+                </p>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-3 h-auto py-4"
+              onClick={() => handleSelectAction("sign")}
+            >
+              <Signature className="h-5 w-5 text-green-500" />
+              <div className="text-left">
+                <p className="font-medium">Marcar como Firmado</p>
+                <p className="text-sm text-muted-foreground">
+                  El contrato ya ha sido firmado
+                </p>
+              </div>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sign confirmation dialog */}
+      <AlertDialog open={signConfirmOpen} onOpenChange={setSignConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Desea marcar como firmado?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción marcará el contrato como firmado y archivará todos los borradores 
+              en la carpeta "Borradores de Contrato". Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmSign}>
+              Confirmar Firma
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Send for signature dialog */}
+      <Dialog open={sendSignatureDialogOpen} onOpenChange={setSendSignatureDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Enviar para Firma</DialogTitle>
+            <DialogDescription>
+              Ingresa el email del destinatario para enviar el contrato
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Email del destinatario</Label>
+              <Input
+                type="email"
+                value={recipientEmail}
+                onChange={(e) => setRecipientEmail(e.target.value)}
+                placeholder="ejemplo@correo.com"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSendSignatureDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleSendForSignature} 
+              disabled={sendingEmail || !recipientEmail}
+              className="gap-2"
+            >
+              <Send className="h-4 w-4" />
+              {sendingEmail ? "Enviando..." : "Enviar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Status change dialog */}
+      <Dialog open={statusChangeDialogOpen} onOpenChange={setStatusChangeDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cambiar estado del documento</DialogTitle>
+            <DialogDescription>
+              Seleccione el nuevo estado para este documento
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            <Button
+              variant={selectedDocForStatus?.document_type === "borrador" ? "default" : "outline"}
+              className="w-full justify-start gap-3"
+              onClick={() => handleChangeStatus("borrador")}
+              disabled={selectedDocForStatus?.document_type === "borrador"}
+            >
+              <FileText className="h-4 w-4" />
+              Borrador
+            </Button>
+            <Button
+              variant={selectedDocForStatus?.document_type === "borrador_final" ? "default" : "outline"}
+              className="w-full justify-start gap-3"
+              onClick={() => handleChangeStatus("borrador_final")}
+              disabled={selectedDocForStatus?.document_type === "borrador_final"}
+            >
+              <Star className="h-4 w-4 text-amber-500" />
+              Borrador Final
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </>
