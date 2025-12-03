@@ -1,9 +1,8 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Plus, LogOut, Shield } from "lucide-react";
+import { Plus, LogOut, Shield, Trash2 } from "lucide-react";
 import { DashboardStats } from "@/components/dashboard/DashboardStats";
-import { ContractsList } from "@/components/dashboard/ContractsList";
 import { useAuth } from "@/hooks/useAuth";
 
 const Dashboard = () => {
@@ -42,10 +41,16 @@ const Dashboard = () => {
             </div>
             <div className="flex items-center gap-3">
               {isAdmin && (
-                <Button variant="outline" onClick={() => navigate("/admin")} className="gap-2">
-                  <Shield className="h-4 w-4" />
-                  Admin
-                </Button>
+                <>
+                  <Button variant="outline" onClick={() => navigate("/deleted")} className="gap-2">
+                    <Trash2 className="h-4 w-4" />
+                    Eliminados
+                  </Button>
+                  <Button variant="outline" onClick={() => navigate("/admin")} className="gap-2">
+                    <Shield className="h-4 w-4" />
+                    Admin
+                  </Button>
+                </>
               )}
               <Button onClick={() => navigate("/contracts/new")} className="gap-2">
                 <Plus className="h-4 w-4" />
@@ -60,9 +65,8 @@ const Dashboard = () => {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <DashboardStats />
-        <ContractsList />
       </main>
     </div>
   );
