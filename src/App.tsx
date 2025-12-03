@@ -8,6 +8,7 @@ import Auth from "./pages/Auth";
 import NewContract from "./pages/NewContract";
 import ContractDetail from "./pages/ContractDetail";
 import EditContract from "./pages/EditContract";
+import AdminPanel from "./pages/AdminPanel";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -21,6 +22,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/admin" element={<AdminPanel />} />
           <Route path="/contracts/new" element={<NewContract />} />
           <Route path="/contracts/:id" element={<ContractDetail />} />
           <Route path="/contracts/:id/edit" element={<EditContract />} />
