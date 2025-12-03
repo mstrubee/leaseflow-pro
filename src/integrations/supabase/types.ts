@@ -233,6 +233,9 @@ export type Database = {
           deleted_at: string | null
           id: string
           name: string
+          obra_status: string | null
+          operation_status: string | null
+          patente_status: string | null
           signed_date: string | null
           status: Database["public"]["Enums"]["contract_status"]
           updated_at: string
@@ -242,6 +245,9 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           name: string
+          obra_status?: string | null
+          operation_status?: string | null
+          patente_status?: string | null
           signed_date?: string | null
           status?: Database["public"]["Enums"]["contract_status"]
           updated_at?: string
@@ -251,6 +257,9 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           name?: string
+          obra_status?: string | null
+          operation_status?: string | null
+          patente_status?: string | null
           signed_date?: string | null
           status?: Database["public"]["Enums"]["contract_status"]
           updated_at?: string

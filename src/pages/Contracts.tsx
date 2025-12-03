@@ -6,6 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -15,22 +22,36 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, ArrowLeft, Trash2 } from "lucide-react";
+import { Search, ArrowLeft, Trash2, ArrowUpDown, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { addMonths, format, subMonths, parseISO } from "date-fns";
+import { es } from "date-fns/locale";
+
+interface ContractVersion {
+  regime_rent: number;
+  duration_months: number;
+  is_current: boolean;
+  effective_date: string | null;
+  notice_type: string;
+  notice_value: string;
+}
 
 interface Contract {
   id: string;
   name: string;
   status: string;
   created_at: string;
+  signed_date: string | null;
+  operation_status: string | null;
+  obra_status: string | null;
+  patente_status: string | null;
   contract_addresses: Array<{ region: string; commune: string }>;
-  contract_versions: Array<{
-    regime_rent: number;
-    duration_months: number;
-    is_current: boolean;
-  }>;
+  contract_versions: ContractVersion[];
 }
+
+type SortField = "end_date" | "notice_deadline" | "name" | null;
+type SortDirection = "asc" | "desc";
 
 const Contracts = () => {
   const navigate = useNavigate();
@@ -45,6 +66,15 @@ const Contracts = () => {
   const [confirmDeleteDialogOpen, setConfirmDeleteDialogOpen] = useState(false);
   const [contractToDelete, setContractToDelete] = useState<Contract | null>(null);
 
+  // Filters
+  const [operationFilter, setOperationFilter] = useState<string>("todos");
+  const [obraFilter, setObraFilter] = useState<string>("todos");
+  const [patenteFilter, setPatenteFilter] = useState<string>("todos");
+
+  // Sorting
+  const [sortField, setSortField] = useState<SortField>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+
   useEffect(() => {
     if (!authLoading && !user) {
       navigate("/auth");
@@ -58,8 +88,8 @@ const Contracts = () => {
   }, [user]);
 
   useEffect(() => {
-    filterContracts();
-  }, [searchTerm, statusFilter, contracts]);
+    filterAndSortContracts();
+  }, [searchTerm, statusFilter, contracts, operationFilter, obraFilter, patenteFilter, sortField, sortDirection]);
 
   const loadContracts = async () => {
     const { data } = await supabase
@@ -67,7 +97,7 @@ const Contracts = () => {
       .select(`
         *,
         contract_addresses (region, commune),
-        contract_versions (regime_rent, duration_months, is_current)
+        contract_versions (regime_rent, duration_months, is_current, effective_date, notice_type, notice_value)
       `)
       .is("deleted_at", null)
       .order("created_at", { ascending: false });
@@ -75,21 +105,115 @@ const Contracts = () => {
     setContracts(data || []);
   };
 
-  const filterContracts = () => {
+  const calculateEndDate = (contract: Contract): Date | null => {
+    const currentVersion = contract.contract_versions?.find((v) => v.is_current);
+    if (!currentVersion) return null;
+
+    const startDate = currentVersion.effective_date 
+      ? parseISO(currentVersion.effective_date)
+      : contract.signed_date 
+        ? parseISO(contract.signed_date)
+        : null;
+
+    if (!startDate) return null;
+    return addMonths(startDate, currentVersion.duration_months);
+  };
+
+  const calculateNoticeDeadline = (contract: Contract): Date | null => {
+    const currentVersion = contract.contract_versions?.find((v) => v.is_current);
+    if (!currentVersion) return null;
+
+    if (currentVersion.notice_type === "fecha") {
+      return parseISO(currentVersion.notice_value);
+    }
+
+    const endDate = calculateEndDate(contract);
+    if (!endDate) return null;
+
+    const noticeMonths = parseInt(currentVersion.notice_value) || 0;
+    return subMonths(endDate, noticeMonths);
+  };
+
+  const filterAndSortContracts = () => {
     let filtered = contracts;
 
+    // Text search
     if (searchTerm) {
       filtered = filtered.filter((contract) =>
         contract.name.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
+    // Status filter
     if (statusFilter !== "todos") {
       filtered = filtered.filter((contract) => contract.status === statusFilter);
     }
 
+    // Operation status filter
+    if (operationFilter !== "todos") {
+      filtered = filtered.filter((contract) => contract.operation_status === operationFilter);
+    }
+
+    // Obra filter
+    if (obraFilter !== "todos") {
+      filtered = filtered.filter((contract) => contract.obra_status === obraFilter);
+    }
+
+    // Patente filter
+    if (patenteFilter !== "todos") {
+      filtered = filtered.filter((contract) => contract.patente_status === patenteFilter);
+    }
+
+    // Sorting
+    if (sortField) {
+      filtered = [...filtered].sort((a, b) => {
+        let valueA: Date | null = null;
+        let valueB: Date | null = null;
+
+        if (sortField === "end_date") {
+          valueA = calculateEndDate(a);
+          valueB = calculateEndDate(b);
+        } else if (sortField === "notice_deadline") {
+          valueA = calculateNoticeDeadline(a);
+          valueB = calculateNoticeDeadline(b);
+        }
+
+        if (!valueA && !valueB) return 0;
+        if (!valueA) return sortDirection === "asc" ? 1 : -1;
+        if (!valueB) return sortDirection === "asc" ? -1 : 1;
+
+        const comparison = valueA.getTime() - valueB.getTime();
+        return sortDirection === "asc" ? comparison : -comparison;
+      });
+    }
+
     setFilteredContracts(filtered);
   };
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      if (sortDirection === "asc") {
+        setSortDirection("desc");
+      } else {
+        setSortField(null);
+        setSortDirection("asc");
+      }
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  const clearFilters = () => {
+    setOperationFilter("todos");
+    setObraFilter("todos");
+    setPatenteFilter("todos");
+    setSortField(null);
+    setSortDirection("asc");
+    setSearchTerm("");
+  };
+
+  const hasActiveFilters = operationFilter !== "todos" || obraFilter !== "todos" || patenteFilter !== "todos" || sortField !== null;
 
   const handleDeleteClick = (e: React.MouseEvent, contract: Contract) => {
     e.stopPropagation();
@@ -121,6 +245,25 @@ const Contracts = () => {
     setContractToDelete(null);
   };
 
+  const updateContractField = async (
+    e: React.MouseEvent,
+    contractId: string,
+    field: string,
+    value: string
+  ) => {
+    e.stopPropagation();
+    const { error } = await supabase
+      .from("contracts")
+      .update({ [field]: value })
+      .eq("id", contractId);
+
+    if (error) {
+      toast.error("Error al actualizar");
+    } else {
+      loadContracts();
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const statusMap: { [key: string]: { label: string; className: string } } = {
       en_negociacion: { label: "En Negociación", className: "bg-yellow-500 text-white" },
@@ -132,11 +275,8 @@ const Contracts = () => {
     return <Badge className={statusInfo.className}>{statusInfo.label}</Badge>;
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("es-CL", {
-      style: "currency",
-      currency: "CLP",
-    }).format(amount);
+  const formatUF = (amount: number) => {
+    return `${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
   };
 
   const getPageTitle = () => {
@@ -152,6 +292,24 @@ const Contracts = () => {
     }
   };
 
+  const operationLabels: Record<string, string> = {
+    operando: "Operando",
+    cerrado: "Cerrado",
+  };
+
+  const obraLabels: Record<string, string> = {
+    terminada: "Terminada",
+    construccion: "Construcción",
+    remodelacion: "Remodelación",
+    ampliacion: "Ampliación",
+  };
+
+  const patenteLabels: Record<string, string> = {
+    sin_patente: "Sin Patente",
+    provisoria: "Provisoria",
+    definitiva: "Definitiva",
+  };
+
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -159,6 +317,8 @@ const Contracts = () => {
       </div>
     );
   }
+
+  const isFirmadoView = statusFilter === "firmado";
 
   return (
     <div className="min-h-screen bg-background">
@@ -179,7 +339,8 @@ const Contracts = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-4">
-        <Card className="p-4">
+        {/* Search and Filters */}
+        <Card className="p-4 space-y-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -189,12 +350,86 @@ const Contracts = () => {
               className="pl-10"
             />
           </div>
+
+          {isFirmadoView && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                {/* Operation Filter */}
+                <Select value={operationFilter} onValueChange={setOperationFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Estado Operación" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos los Estados</SelectItem>
+                    <SelectItem value="operando">Operando</SelectItem>
+                    <SelectItem value="cerrado">Cerrado</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Obra Filter */}
+                <Select value={obraFilter} onValueChange={setObraFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Obra" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todas las Obras</SelectItem>
+                    <SelectItem value="terminada">Terminada</SelectItem>
+                    <SelectItem value="construccion">Construcción</SelectItem>
+                    <SelectItem value="remodelacion">Remodelación</SelectItem>
+                    <SelectItem value="ampliacion">Ampliación</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Patente Filter */}
+                <Select value={patenteFilter} onValueChange={setPatenteFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Patente" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todas las Patentes</SelectItem>
+                    <SelectItem value="sin_patente">Sin Patente</SelectItem>
+                    <SelectItem value="provisoria">Provisoria</SelectItem>
+                    <SelectItem value="definitiva">Definitiva</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Sort by End Date */}
+                <Button
+                  variant={sortField === "end_date" ? "default" : "outline"}
+                  className="justify-start"
+                  onClick={() => handleSort("end_date")}
+                >
+                  <ArrowUpDown className="h-4 w-4 mr-2" />
+                  Vencimiento {sortField === "end_date" && (sortDirection === "asc" ? "↑" : "↓")}
+                </Button>
+
+                {/* Sort by Notice Deadline */}
+                <Button
+                  variant={sortField === "notice_deadline" ? "default" : "outline"}
+                  className="justify-start"
+                  onClick={() => handleSort("notice_deadline")}
+                >
+                  <ArrowUpDown className="h-4 w-4 mr-2" />
+                  Aviso {sortField === "notice_deadline" && (sortDirection === "asc" ? "↑" : "↓")}
+                </Button>
+              </div>
+
+              {hasActiveFilters && (
+                <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
+                  <X className="h-4 w-4 mr-1" />
+                  Limpiar filtros
+                </Button>
+              )}
+            </>
+          )}
         </Card>
 
         <div className="grid gap-4">
           {filteredContracts.map((contract) => {
             const currentVersion = contract.contract_versions?.find((v) => v.is_current);
             const address = contract.contract_addresses?.[0];
+            const endDate = calculateEndDate(contract);
+            const noticeDeadline = calculateNoticeDeadline(contract);
 
             return (
               <Card
@@ -202,7 +437,7 @@ const Contracts = () => {
                 className="p-6 hover:shadow-md transition-shadow cursor-pointer"
                 onClick={() => navigate(`/contracts/${contract.id}`)}
               >
-                <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between gap-4">
                   <div className="space-y-3 flex-1">
                     <div className="flex items-center gap-3">
                       <h3 className="text-lg font-semibold">{contract.name}</h3>
@@ -220,7 +455,7 @@ const Contracts = () => {
                           <div>
                             <p className="text-muted-foreground">Canon de Arriendo</p>
                             <p className="font-medium">
-                              {formatCurrency(currentVersion.regime_rent)}
+                              {formatUF(currentVersion.regime_rent)}
                             </p>
                           </div>
                           <div>
@@ -229,14 +464,76 @@ const Contracts = () => {
                           </div>
                         </>
                       )}
-                      <div>
-                        <p className="text-muted-foreground">Fecha Creación</p>
-                        <p className="font-medium">
-                          {new Date(contract.created_at).toLocaleDateString("es-CL")}
-                        </p>
-                      </div>
+                      {isFirmadoView && (
+                        <>
+                          <div>
+                            <p className="text-muted-foreground">Fecha Término</p>
+                            <p className="font-medium">
+                              {endDate 
+                                ? format(endDate, "dd MMM yyyy", { locale: es })
+                                : "Sin definir"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Fecha Tope Aviso</p>
+                            <p className={`font-medium ${noticeDeadline && noticeDeadline < new Date() ? "text-destructive" : ""}`}>
+                              {noticeDeadline 
+                                ? format(noticeDeadline, "dd MMM yyyy", { locale: es })
+                                : "Sin definir"}
+                            </p>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
+
+                  {/* Right side - Status selectors for firmado contracts */}
+                  {isFirmadoView && (
+                    <div className="flex flex-col gap-2 min-w-[160px]" onClick={(e) => e.stopPropagation()}>
+                      <Select
+                        value={contract.operation_status || "operando"}
+                        onValueChange={(value) => updateContractField({ stopPropagation: () => {} } as React.MouseEvent, contract.id, "operation_status", value)}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="operando">Operando</SelectItem>
+                          <SelectItem value="cerrado">Cerrado</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      <Select
+                        value={contract.obra_status || "terminada"}
+                        onValueChange={(value) => updateContractField({ stopPropagation: () => {} } as React.MouseEvent, contract.id, "obra_status", value)}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="terminada">Obra: Terminada</SelectItem>
+                          <SelectItem value="construccion">Obra: Construcción</SelectItem>
+                          <SelectItem value="remodelacion">Obra: Remodelación</SelectItem>
+                          <SelectItem value="ampliacion">Obra: Ampliación</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      <Select
+                        value={contract.patente_status || "sin_patente"}
+                        onValueChange={(value) => updateContractField({ stopPropagation: () => {} } as React.MouseEvent, contract.id, "patente_status", value)}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="sin_patente">Sin Patente</SelectItem>
+                          <SelectItem value="provisoria">Patente: Provisoria</SelectItem>
+                          <SelectItem value="definitiva">Patente: Definitiva</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
                   <Button
                     variant="ghost"
                     size="icon"
