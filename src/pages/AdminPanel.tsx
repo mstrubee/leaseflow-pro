@@ -102,41 +102,31 @@ const AdminPanel = () => {
 
     setCreating(true);
     try {
-      // Create user via Supabase Auth Admin (using service role in edge function would be ideal)
-      // For now, we'll use the signup method
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: newUserEmail,
-        password: newUserPassword,
-        options: {
-          emailRedirectTo: `${window.location.origin}/`,
-          data: { full_name: newUserName }
+      // Create user via edge function with admin privileges
+      const { data: sessionData } = await supabase.auth.getSession();
+      
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${sessionData.session?.access_token}`,
+          },
+          body: JSON.stringify({
+            email: newUserEmail,
+            password: newUserPassword,
+            fullName: newUserName,
+            role: newUserRole,
+            permissions: newUserPermissions
+          })
         }
-      });
+      );
 
-      if (authError) throw authError;
-      if (!authData.user) throw new Error("No se pudo crear el usuario");
-
-      // Add role
-      const { error: roleError } = await supabase
-        .from("user_roles")
-        .insert({ user_id: authData.user.id, role: newUserRole });
-
-      if (roleError) throw roleError;
-
-      // Add permissions
-      const permissionsToInsert = Object.entries(newUserPermissions)
-        .filter(([_, perm]) => perm !== "none")
-        .map(([resource, permission]) => ({
-          user_id: authData.user!.id,
-          resource,
-          permission: permission as "view" | "edit" | "all"
-        }));
-
-      if (permissionsToInsert.length > 0) {
-        const { error: permError } = await supabase
-          .from("user_permissions")
-          .insert(permissionsToInsert);
-        if (permError) throw permError;
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Error al crear usuario');
       }
 
       toast({ title: "Usuario creado", description: `${newUserEmail} ha sido creado exitosamente` });
