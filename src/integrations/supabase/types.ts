@@ -191,6 +191,7 @@ export type Database = {
       contracts: {
         Row: {
           created_at: string
+          deleted_at: string | null
           id: string
           name: string
           signed_date: string | null
@@ -199,6 +200,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          deleted_at?: string | null
           id?: string
           name: string
           signed_date?: string | null
@@ -207,6 +209,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          deleted_at?: string | null
           id?: string
           name?: string
           signed_date?: string | null
