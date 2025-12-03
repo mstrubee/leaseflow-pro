@@ -338,7 +338,7 @@ export const DocumentVersions = ({
     });
   };
 
-  const getDocumentTypeBadge = (doc: DocumentVersion) => {
+  const getDocumentTypeBadge = (doc: DocumentVersion, renegotiationNumber?: number) => {
     const type = doc.document_type;
     
     const badgeContent = () => {
@@ -349,7 +349,7 @@ export const DocumentVersions = ({
         return <><Star className="h-3 w-3 mr-1" />Borrador Final</>;
       }
       if (type === "firmado_r") {
-        return <><Check className="h-3 w-3 mr-1" />Firmado R</>;
+        return <><Check className="h-3 w-3 mr-1" />Renegociación #{renegotiationNumber || 1}</>;
       }
       if (type === "firmado") {
         return <><Check className="h-3 w-3 mr-1" />Firmado</>;
@@ -429,7 +429,13 @@ export const DocumentVersions = ({
               {/* Document list */}
               {sortedDocuments.length > 0 ? (
                 <div className="space-y-3">
-                  {sortedDocuments.map((doc, index) => (
+                  {sortedDocuments.map((doc, index) => {
+                    // Calculate renegotiation number for firmado_r docs
+                    const renegoNumber = doc.document_type === "firmado_r" 
+                      ? sortedDocuments.filter(d => d.document_type === "firmado_r" && new Date(d.uploaded_at) <= new Date(doc.uploaded_at)).length
+                      : undefined;
+                    
+                    return (
                     <div
                       key={doc.id}
                       className={`flex items-center justify-between p-4 rounded-lg border ${
@@ -440,7 +446,7 @@ export const DocumentVersions = ({
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          {getDocumentTypeBadge(doc)}
+                          {getDocumentTypeBadge(doc, renegoNumber)}
                           <span className="text-xs text-muted-foreground">
                             #{sortedDocuments.length - index}
                           </span>
@@ -481,7 +487,7 @@ export const DocumentVersions = ({
                         </Button>
                       </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground text-center py-4">

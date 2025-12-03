@@ -157,8 +157,9 @@ export const EconomicIndicators = () => {
                     />
                     <YAxis 
                       tick={{ fontSize: 10 }} 
-                      domain={['auto', 'auto']}
-                      tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`}
+                      domain={['dataMin - 10', 'dataMax + 10']}
+                      tickFormatter={(v) => `$${Math.round(v)}`}
+                      width={50}
                     />
                     <Tooltip 
                       formatter={(value: number) => [formatCurrency(value), "Dólar"]}
