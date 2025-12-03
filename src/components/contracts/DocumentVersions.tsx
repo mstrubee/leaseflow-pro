@@ -1,11 +1,29 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, FileText, Check, Star } from "lucide-react";
+import { Plus, FileText, Check, Star, Upload, ChevronDown, ChevronRight, Cloud, Link } from "lucide-react";
 import { format } from "date-fns";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export interface DocumentVersion {
   id: string;
@@ -15,24 +33,74 @@ export interface DocumentVersion {
   version_id: string | null;
 }
 
+interface CloudConnection {
+  id: string;
+  provider: string;
+  name: string;
+  folder_url: string | null;
+}
+
 interface DocumentVersionsProps {
   documents: DocumentVersion[];
+  contractId: string;
   contractName: string;
   onAddDocument: (url: string, name: string) => Promise<void>;
   onMarkAsFinal: (docId: string) => Promise<void>;
   readOnly?: boolean;
 }
 
+const CLOUD_PROVIDERS = [
+  { id: "google_drive", name: "Google Drive", icon: "🔵" },
+  { id: "onedrive", name: "OneDrive", icon: "🔷" },
+  { id: "dropbox", name: "Dropbox", icon: "📦" },
+];
+
 export const DocumentVersions = ({
   documents,
+  contractId,
   contractName,
   onAddDocument,
   onMarkAsFinal,
   readOnly = false,
 }: DocumentVersionsProps) => {
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const [isOpen, setIsOpen] = useState(false);
   const [newUrl, setNewUrl] = useState("");
   const [newName, setNewName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  
+  // File upload dialog
+  const [fileDialogOpen, setFileDialogOpen] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [suggestedFileName, setSuggestedFileName] = useState("");
+  
+  // Upload method selection
+  const [uploadMethod, setUploadMethod] = useState<"file" | "url" | "cloud">("file");
+  
+  // Cloud connections
+  const [cloudConnections, setCloudConnections] = useState<CloudConnection[]>([]);
+  const [selectedCloud, setSelectedCloud] = useState<string>("");
+
+  useEffect(() => {
+    loadCloudConnections();
+  }, []);
+
+  const loadCloudConnections = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("cloud_storage_connections")
+        .select("id, provider, name, folder_url")
+        .eq("is_active", true);
+      
+      if (error) throw error;
+      setCloudConnections(data || []);
+    } catch (error) {
+      console.error("Error loading cloud connections:", error);
+    }
+  };
 
   const generateSuggestedName = () => {
     const today = format(new Date(), "yyyy.MM.dd");
@@ -56,6 +124,71 @@ export const DocumentVersions = ({
     }
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+      setSuggestedFileName(generateSuggestedName());
+      setFileDialogOpen(true);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleUploadFile = async () => {
+    if (!selectedFile || !suggestedFileName.trim()) return;
+
+    setUploading(true);
+    try {
+      const ext = selectedFile.name.split('.').pop() || '';
+      const filePath = `contracts/${contractId}/${Date.now()}_${suggestedFileName.trim()}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("repository-files")
+        .upload(filePath, selectedFile);
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from("repository-files")
+        .getPublicUrl(filePath);
+
+      await onAddDocument(urlData.publicUrl, `${suggestedFileName.trim()}.${ext}`);
+
+      toast({
+        title: "Archivo subido",
+        description: `El archivo ha sido subido exitosamente`,
+      });
+
+      setSelectedFile(null);
+      setSuggestedFileName("");
+      setFileDialogOpen(false);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo subir el archivo: " + error.message,
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleOpenCloudFolder = () => {
+    const connection = cloudConnections.find(c => c.id === selectedCloud);
+    if (connection?.folder_url) {
+      window.open(connection.folder_url, "_blank");
+    } else {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No hay URL configurada para esta conexión",
+      });
+    }
+  };
+
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString("es-CL", {
       year: "numeric",
@@ -64,15 +197,6 @@ export const DocumentVersions = ({
       hour: "2-digit",
       minute: "2-digit",
     });
-  };
-
-  const getDocumentTypeLabel = (type: string) => {
-    const labels: Record<string, string> = {
-      borrador: "Borrador",
-      borrador_final: "Versión Final",
-      firmado: "Firmado",
-    };
-    return labels[type] || type;
   };
 
   const getDocumentTypeBadge = (type: string) => {
@@ -92,115 +216,284 @@ export const DocumentVersions = ({
   const hasFinalVersion = documents.some(d => d.document_type === "borrador_final" || d.document_type === "firmado");
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <FileText className="h-5 w-5" />
-          Historial de Versiones
-        </CardTitle>
-        <CardDescription>
-          Registro de todas las versiones del documento
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {/* Document list */}
-        {sortedDocuments.length > 0 ? (
-          <div className="space-y-3">
-            {sortedDocuments.map((doc, index) => (
-              <div
-                key={doc.id}
-                className={`flex items-center justify-between p-4 rounded-lg border ${
-                  doc.document_type === "borrador_final" 
-                    ? "bg-status-signed/10 border-status-signed/30" 
-                    : "bg-muted/30 border-border"
-                }`}
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    {getDocumentTypeBadge(doc.document_type)}
-                    <span className="text-xs text-muted-foreground">
-                      #{sortedDocuments.length - index}
-                    </span>
-                  </div>
-                  <p className="text-sm text-muted-foreground truncate">
-                    {formatDate(doc.uploaded_at)}
-                  </p>
+    <>
+      <Card>
+        <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    {isOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                    <FileText className="h-5 w-5" />
+                    Contrato de Arriendo
+                  </CardTitle>
+                  <CardDescription className="ml-12">
+                    {documents.length} versiones registradas
+                  </CardDescription>
                 </div>
-                <div className="flex items-center gap-2">
-                  {!readOnly && doc.document_type === "borrador" && !hasFinalVersion && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onMarkAsFinal(doc.id)}
-                      className="gap-1"
-                    >
-                      <Star className="h-3 w-3" />
-                      Marcar Final
-                    </Button>
-                  )}
+                {!readOnly && (
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
-                    onClick={() => window.open(doc.url, "_blank")}
+                    className="gap-2"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsOpen(true);
+                    }}
                   >
-                    Ver
+                    <Plus className="h-4 w-4" />
+                    Agregar
                   </Button>
+                )}
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          
+          <CollapsibleContent>
+            <CardContent className="space-y-6">
+              {/* Document list */}
+              {sortedDocuments.length > 0 ? (
+                <div className="space-y-3">
+                  {sortedDocuments.map((doc, index) => (
+                    <div
+                      key={doc.id}
+                      className={`flex items-center justify-between p-4 rounded-lg border ${
+                        doc.document_type === "borrador_final" 
+                          ? "bg-status-signed/10 border-status-signed/30" 
+                          : "bg-muted/30 border-border"
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          {getDocumentTypeBadge(doc.document_type)}
+                          <span className="text-xs text-muted-foreground">
+                            #{sortedDocuments.length - index}
+                          </span>
+                        </div>
+                        <p className="text-sm text-muted-foreground truncate">
+                          {formatDate(doc.uploaded_at)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {!readOnly && doc.document_type === "borrador" && !hasFinalVersion && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => onMarkAsFinal(doc.id)}
+                            className="gap-1"
+                          >
+                            <Star className="h-3 w-3" />
+                            Marcar Final
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => window.open(doc.url, "_blank")}
+                        >
+                          Ver
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground text-center py-4">
-            No hay versiones registradas
-          </p>
-        )}
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No hay versiones registradas
+                </p>
+              )}
 
-        {/* Add new version */}
-        {!readOnly && (
-          <div className="space-y-4 pt-4 border-t border-border">
-            <Label>Agregar nueva versión</Label>
-            <div className="space-y-3">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Nombre del documento (opcional)"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  className="flex-1"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleUseSuggested}
-                >
-                  Sugerir
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Formato sugerido: {generateSuggestedName()}
-              </p>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="URL del documento (Google Drive, OneDrive, etc.)"
-                  value={newUrl}
-                  onChange={(e) => setNewUrl(e.target.value)}
-                  type="url"
-                  className="flex-1"
-                />
-                <Button
-                  type="button"
-                  onClick={handleAdd}
-                  disabled={!newUrl || loading}
-                  className="gap-2"
-                >
-                  <Plus className="h-4 w-4" />
-                  Agregar
-                </Button>
-              </div>
+              {/* Add new version */}
+              {!readOnly && (
+                <div className="space-y-4 pt-4 border-t border-border">
+                  <Label>Agregar nueva versión</Label>
+                  
+                  {/* Upload method selection */}
+                  <div className="flex gap-2">
+                    <Button
+                      variant={uploadMethod === "file" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setUploadMethod("file")}
+                      className="gap-2"
+                    >
+                      <Upload className="h-4 w-4" />
+                      Desde PC
+                    </Button>
+                    <Button
+                      variant={uploadMethod === "url" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setUploadMethod("url")}
+                      className="gap-2"
+                    >
+                      <Link className="h-4 w-4" />
+                      URL
+                    </Button>
+                    <Button
+                      variant={uploadMethod === "cloud" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setUploadMethod("cloud")}
+                      className="gap-2"
+                    >
+                      <Cloud className="h-4 w-4" />
+                      Nube
+                    </Button>
+                  </div>
+
+                  {uploadMethod === "file" && (
+                    <div className="space-y-3">
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileSelect}
+                        className="hidden"
+                        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+                      />
+                      <Button
+                        variant="outline"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full gap-2"
+                      >
+                        <Upload className="h-4 w-4" />
+                        Seleccionar archivo desde tu computadora
+                      </Button>
+                      <p className="text-xs text-muted-foreground">
+                        Formatos aceptados: PDF, Word, Excel, PowerPoint
+                      </p>
+                    </div>
+                  )}
+
+                  {uploadMethod === "url" && (
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="Nombre del documento (opcional)"
+                          value={newName}
+                          onChange={(e) => setNewName(e.target.value)}
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleUseSuggested}
+                        >
+                          Sugerir
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Formato sugerido: {generateSuggestedName()}
+                      </p>
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="URL del documento (Google Drive, OneDrive, etc.)"
+                          value={newUrl}
+                          onChange={(e) => setNewUrl(e.target.value)}
+                          type="url"
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          onClick={handleAdd}
+                          disabled={!newUrl || loading}
+                          className="gap-2"
+                        >
+                          <Plus className="h-4 w-4" />
+                          Agregar
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {uploadMethod === "cloud" && (
+                    <div className="space-y-3">
+                      {cloudConnections.length > 0 ? (
+                        <>
+                          <Select value={selectedCloud} onValueChange={setSelectedCloud}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecciona una conexión" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {cloudConnections.map((conn) => {
+                                const provider = CLOUD_PROVIDERS.find(p => p.id === conn.provider);
+                                return (
+                                  <SelectItem key={conn.id} value={conn.id}>
+                                    {provider?.icon} {conn.name}
+                                  </SelectItem>
+                                );
+                              })}
+                            </SelectContent>
+                          </Select>
+                          {selectedCloud && (
+                            <div className="space-y-2">
+                              <Button
+                                variant="outline"
+                                onClick={handleOpenCloudFolder}
+                                className="w-full gap-2"
+                              >
+                                <Cloud className="h-4 w-4" />
+                                Abrir carpeta en la nube
+                              </Button>
+                              <p className="text-xs text-muted-foreground">
+                                Copia el enlace del archivo y pégalo usando la opción "URL"
+                              </p>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="text-center py-4 space-y-2">
+                          <Cloud className="h-8 w-8 mx-auto text-muted-foreground" />
+                          <p className="text-sm text-muted-foreground">
+                            No hay conexiones de almacenamiento configuradas
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Un administrador debe configurar las conexiones en el panel de administración
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
+      </Card>
+
+      {/* File upload dialog */}
+      <Dialog open={fileDialogOpen} onOpenChange={setFileDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Subir documento</DialogTitle>
+            <DialogDescription>
+              Confirma el nombre del archivo antes de subirlo
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Nombre del documento</Label>
+              <Input
+                value={suggestedFileName}
+                onChange={(e) => setSuggestedFileName(e.target.value)}
+                placeholder="Nombre del documento"
+              />
             </div>
+            {selectedFile && (
+              <p className="text-xs text-muted-foreground">
+                Archivo original: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+              </p>
+            )}
           </div>
-        )}
-      </CardContent>
-    </Card>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFileDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleUploadFile} disabled={uploading || !suggestedFileName.trim()}>
+              {uploading ? "Subiendo..." : "Subir documento"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };

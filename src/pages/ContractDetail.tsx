@@ -564,6 +564,7 @@ const ContractDetail = () => {
             uploaded_at: d.uploaded_at,
             version_id: d.version_id,
           }))}
+          contractId={contract.id}
           contractName={contract.name}
           onAddDocument={handleAddDocument}
           onMarkAsFinal={handleMarkAsFinal}

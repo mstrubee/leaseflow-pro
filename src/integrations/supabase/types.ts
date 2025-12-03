@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      cloud_storage_connections: {
+        Row: {
+          access_token: string | null
+          created_at: string
+          folder_url: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          provider: string
+          refresh_token: string | null
+          updated_at: string
+        }
+        Insert: {
+          access_token?: string | null
+          created_at?: string
+          folder_url?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          provider: string
+          refresh_token?: string | null
+          updated_at?: string
+        }
+        Update: {
+          access_token?: string | null
+          created_at?: string
+          folder_url?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          provider?: string
+          refresh_token?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       contract_addresses: {
         Row: {
           commune: string
