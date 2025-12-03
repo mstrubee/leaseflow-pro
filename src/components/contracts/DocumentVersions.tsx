@@ -225,12 +225,16 @@ export const DocumentVersions = ({
     setActionDialogOpen(true);
   };
 
-  const handleSelectAction = (action: "final" | "send" | "sign") => {
+  const handleSelectAction = (action: "draft" | "send" | "sign") => {
     setActionDialogOpen(false);
     
-    if (action === "final") {
-      if (selectedDocForAction) {
-        onMarkAsFinal(selectedDocForAction);
+    if (action === "draft") {
+      if (selectedDocForAction && onChangeDocumentType) {
+        onChangeDocumentType(selectedDocForAction, "borrador");
+        toast({
+          title: "Estado actualizado",
+          description: "El documento ha sido cambiado a Borrador",
+        });
       }
     } else if (action === "send") {
       setSendSignatureDialogOpen(true);
@@ -313,7 +317,6 @@ export const DocumentVersions = ({
 
   const getDocumentTypeBadge = (doc: DocumentVersion) => {
     const type = doc.document_type;
-    const isClickable = !readOnly && (type === "borrador" || type === "borrador_final");
     
     const badgeContent = () => {
       if (type === "borrador_final") {
@@ -331,18 +334,6 @@ export const DocumentVersions = ({
         ? "bg-primary text-primary-foreground"
         : "";
     
-    if (isClickable) {
-      return (
-        <Badge 
-          className={`${badgeClass} cursor-pointer hover:opacity-80`}
-          variant={type === "borrador" ? "secondary" : undefined}
-          onClick={() => handleOpenStatusChange(doc)}
-        >
-          {badgeContent()}
-        </Badge>
-      );
-    }
-    
     return (
       <Badge className={badgeClass} variant={type === "borrador" ? "secondary" : undefined}>
         {badgeContent()}
@@ -353,8 +344,6 @@ export const DocumentVersions = ({
   const sortedDocuments = [...documents].sort(
     (a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime()
   );
-
-  const hasFinalVersion = documents.some(d => d.document_type === "borrador_final" || d.document_type === "firmado");
 
   return (
     <>
@@ -417,15 +406,26 @@ export const DocumentVersions = ({
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
-                        {!readOnly && doc.document_type === "borrador" && !hasFinalVersion && (
+                        {!readOnly && doc.document_type === "borrador" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleOpenStatusChange(doc)}
+                            className="gap-1"
+                          >
+                            <Star className="h-3 w-3" />
+                            Marcar Final
+                          </Button>
+                        )}
+                        {!readOnly && doc.document_type === "borrador_final" && (
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handleOpenActionDialog(doc.id)}
                             className="gap-1"
                           >
-                            <Star className="h-3 w-3" />
-                            Marcar Final
+                            <FileCheck className="h-3 w-3" />
+                            Acciones
                           </Button>
                         )}
                         <Button
@@ -636,11 +636,11 @@ export const DocumentVersions = ({
         </DialogContent>
       </Dialog>
 
-      {/* Action selection dialog */}
+      {/* Action selection dialog for Borrador Final */}
       <Dialog open={actionDialogOpen} onOpenChange={setActionDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>¿Qué desea hacer con este borrador?</DialogTitle>
+            <DialogTitle>Acciones para Borrador Final</DialogTitle>
             <DialogDescription>
               Seleccione una acción para el documento
             </DialogDescription>
@@ -649,13 +649,13 @@ export const DocumentVersions = ({
             <Button
               variant="outline"
               className="w-full justify-start gap-3 h-auto py-4"
-              onClick={() => handleSelectAction("final")}
+              onClick={() => handleSelectAction("draft")}
             >
-              <FileCheck className="h-5 w-5 text-amber-500" />
+              <FileText className="h-5 w-5 text-muted-foreground" />
               <div className="text-left">
-                <p className="font-medium">Marcar como Borrador Final</p>
+                <p className="font-medium">Cambiar a Borrador</p>
                 <p className="text-sm text-muted-foreground">
-                  Indica que esta versión está lista para revisión
+                  Volver al estado de borrador para edición
                 </p>
               </div>
             </Button>
@@ -744,37 +744,23 @@ export const DocumentVersions = ({
         </DialogContent>
       </Dialog>
 
-      {/* Status change dialog */}
-      <Dialog open={statusChangeDialogOpen} onOpenChange={setStatusChangeDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cambiar estado del documento</DialogTitle>
-            <DialogDescription>
-              Seleccione el nuevo estado para este documento
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-4">
-            <Button
-              variant={selectedDocForStatus?.document_type === "borrador" ? "default" : "outline"}
-              className="w-full justify-start gap-3"
-              onClick={() => handleChangeStatus("borrador")}
-              disabled={selectedDocForStatus?.document_type === "borrador"}
-            >
-              <FileText className="h-4 w-4" />
-              Borrador
-            </Button>
-            <Button
-              variant={selectedDocForStatus?.document_type === "borrador_final" ? "default" : "outline"}
-              className="w-full justify-start gap-3"
-              onClick={() => handleChangeStatus("borrador_final")}
-              disabled={selectedDocForStatus?.document_type === "borrador_final"}
-            >
-              <Star className="h-4 w-4 text-amber-500" />
-              Borrador Final
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Status change dialog - For Borrador documents */}
+      <AlertDialog open={statusChangeDialogOpen} onOpenChange={setStatusChangeDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Desea marcar como Borrador Final?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción marcará el documento como borrador final, indicando que está listo para revisión y firma.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => handleChangeStatus("borrador_final")}>
+              Confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 };
