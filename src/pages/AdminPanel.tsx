@@ -40,7 +40,7 @@ const RESOURCES = [
 
 const AdminPanel = () => {
   const navigate = useNavigate();
-  const { user, isAdmin, loading: authLoading } = useAuth();
+  const { user, isAdmin, loading: authLoading, roleLoaded } = useAuth();
   const { toast } = useToast();
   
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -62,14 +62,14 @@ const AdminPanel = () => {
   const [editPermissions, setEditPermissions] = useState<Record<string, "view" | "edit" | "all" | "none">>({});
 
   useEffect(() => {
-    if (!authLoading && !isAdmin) {
+    if (!authLoading && roleLoaded && !isAdmin) {
       navigate("/");
       return;
     }
-    if (isAdmin) {
+    if (roleLoaded && isAdmin) {
       loadData();
     }
-  }, [authLoading, isAdmin, navigate]);
+  }, [authLoading, isAdmin, roleLoaded, navigate]);
 
   const loadData = async () => {
     setLoading(true);
@@ -200,7 +200,7 @@ const AdminPanel = () => {
     setEditingUserId(userId);
   };
 
-  if (authLoading || loading) {
+  if (authLoading || !roleLoaded || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin" />
