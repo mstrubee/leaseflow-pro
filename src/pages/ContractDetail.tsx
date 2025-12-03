@@ -8,6 +8,7 @@ import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Check, Loader2 } f
 import { useToast } from "@/hooks/use-toast";
 import { DocumentVersions, DocumentVersion } from "@/components/contracts/DocumentVersions";
 import { EscalationDialog, Escalation } from "@/components/contracts/EscalationDialog";
+import { RepositorySection } from "@/components/contracts/RepositorySection";
 
 interface Contract {
   id: string;
@@ -493,6 +494,11 @@ const ContractDetail = () => {
           onAddDocument={handleAddDocument}
           onMarkAsFinal={handleMarkAsFinal}
           readOnly={!isNegotiating}
+        />
+
+        <RepositorySection 
+          contractId={contract.id} 
+          contractName={contract.name} 
         />
 
         <Card>

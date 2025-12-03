@@ -276,6 +276,86 @@ export type Database = {
           },
         ]
       }
+      repository_files: {
+        Row: {
+          file_type: string | null
+          folder_id: string
+          id: string
+          name: string
+          uploaded_at: string
+          url: string
+        }
+        Insert: {
+          file_type?: string | null
+          folder_id: string
+          id?: string
+          name: string
+          uploaded_at?: string
+          url: string
+        }
+        Update: {
+          file_type?: string | null
+          folder_id?: string
+          id?: string
+          name?: string
+          uploaded_at?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "repository_files_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "repository_folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      repository_folders: {
+        Row: {
+          contract_id: string | null
+          created_at: string
+          folder_type: string | null
+          id: string
+          is_base_folder: boolean
+          name: string
+          parent_id: string | null
+        }
+        Insert: {
+          contract_id?: string | null
+          created_at?: string
+          folder_type?: string | null
+          id?: string
+          is_base_folder?: boolean
+          name: string
+          parent_id?: string | null
+        }
+        Update: {
+          contract_id?: string | null
+          created_at?: string
+          folder_type?: string | null
+          id?: string
+          is_base_folder?: boolean
+          name?: string
+          parent_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "repository_folders_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "repository_folders_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "repository_folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
