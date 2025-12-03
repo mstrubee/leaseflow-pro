@@ -29,9 +29,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { RefreshCw, Loader2, Trash2, ArrowRight } from "lucide-react";
+import { RefreshCw, Loader2, Trash2, ArrowRight, Plus, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+
+interface Escalation {
+  month_number: number;
+  amount: number;
+}
 
 interface CurrentVersion {
   id: string;
@@ -89,6 +94,31 @@ export const RenegotiationDialog = ({
   const [extendMonths, setExtendMonths] = useState("");
   const [extendNoticeMonths, setExtendNoticeMonths] = useState(currentVersion.notice_value);
 
+  // Escalation state
+  const [escalations, setEscalations] = useState<Escalation[]>([]);
+  const [newEscalationMonth, setNewEscalationMonth] = useState("");
+  const [newEscalationAmount, setNewEscalationAmount] = useState("");
+
+  const addEscalation = () => {
+    if (!newEscalationMonth || !newEscalationAmount) return;
+    const month = parseInt(newEscalationMonth);
+    const amount = parseFloat(newEscalationAmount);
+    if (isNaN(month) || isNaN(amount)) return;
+    
+    if (escalations.some(e => e.month_number === month)) {
+      toast.error("Ya existe un escalonamiento para ese mes");
+      return;
+    }
+    
+    setEscalations([...escalations, { month_number: month, amount }].sort((a, b) => a.month_number - b.month_number));
+    setNewEscalationMonth("");
+    setNewEscalationAmount("");
+  };
+
+  const removeEscalation = (month: number) => {
+    setEscalations(escalations.filter(e => e.month_number !== month));
+  };
+
   const handleSave = async () => {
     if (!regimeRent || !durationMonths || !noticeValue) {
       toast.error("Por favor completa todos los campos requeridos");
@@ -112,7 +142,7 @@ export const RenegotiationDialog = ({
       if (updateError) throw updateError;
 
       // Create new version
-      const { error: insertError } = await supabase
+      const { data: newVersion, error: insertError } = await supabase
         .from("contract_versions")
         .insert({
           contract_id: contractId,
@@ -126,12 +156,29 @@ export const RenegotiationDialog = ({
           notice_type: noticeType,
           notice_value: noticeValue,
           effective_date: effectiveFromSignature ? null : effectiveDate,
-        });
+        })
+        .select()
+        .single();
 
       if (insertError) throw insertError;
 
+      // Save escalations if any
+      if (escalations.length > 0 && newVersion) {
+        const { error: escalationError } = await supabase
+          .from("rent_escalations")
+          .insert(
+            escalations.map(e => ({
+              version_id: newVersion.id,
+              month_number: e.month_number,
+              amount: e.amount,
+            }))
+          );
+        if (escalationError) throw escalationError;
+      }
+
       toast.success("Renegociación creada exitosamente");
       setOpen(false);
+      setEscalations([]);
       onSuccess();
     } catch (error: any) {
       console.error("Error creating renegotiation:", error);
@@ -474,6 +521,59 @@ export const RenegotiationDialog = ({
                   onChange={(e) => setNoticeValue(e.target.value)}
                 />
               )}
+            </div>
+
+            {/* Escalation section */}
+            <div className="space-y-3 pt-4 border-t border-border">
+              <Label>Escalonamiento de Arriendo (opcional)</Label>
+              
+              {escalations.length > 0 && (
+                <div className="space-y-2">
+                  {escalations.map((escalation) => (
+                    <div key={escalation.month_number} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
+                      <span className="text-sm flex-1">
+                        Mes {escalation.month_number}: {formatCurrency(escalation.amount)}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeEscalation(escalation.month_number)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <Input
+                    type="number"
+                    placeholder="Mes"
+                    value={newEscalationMonth}
+                    onChange={(e) => setNewEscalationMonth(e.target.value)}
+                    min={1}
+                    max={parseInt(durationMonths) || 999}
+                  />
+                </div>
+                <div className="flex-1">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="Monto UF"
+                    value={newEscalationAmount}
+                    onChange={(e) => setNewEscalationAmount(e.target.value)}
+                  />
+                </div>
+                <Button type="button" variant="outline" onClick={addEscalation}>
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Define los montos de arriendo para meses específicos
+              </p>
             </div>
           </div>
 

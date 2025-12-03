@@ -327,6 +327,30 @@ export type Database = {
           },
         ]
       }
+      folder_templates: {
+        Row: {
+          created_at: string
+          display_order: number | null
+          folder_type: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          display_order?: number | null
+          folder_type?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          display_order?: number | null
+          folder_type?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string

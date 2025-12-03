@@ -59,24 +59,17 @@ interface FolderStatus {
   color: string;
 }
 
+interface FolderTemplate {
+  id: string;
+  name: string;
+  folder_type: string | null;
+  display_order: number;
+}
+
 interface RepositorySectionProps {
   contractId: string;
   contractName: string;
 }
-
-const BASE_FOLDERS = [
-  { name: "Caso de Negocio", type: "caso_negocio", subfolders: [] },
-  { name: "Due Diligence Técnico-Inmobiliario", type: "due_diligence", subfolders: [] },
-  { name: "Municipales", type: "municipales", subfolders: [] },
-  { name: "Títulos", type: "titulos", subfolders: [] },
-  { name: "Planos", type: "planos", subfolders: ["Originales", "Proyectos"] },
-  { name: "Información Patentes", type: "patentes", subfolders: [] },
-  { name: "Borradores de Contrato", type: "borradores", subfolders: [] },
-  { name: "Anexos de Contrato", type: "anexos", subfolders: [] },
-  { name: "Contratos Anteriores", type: "anteriores", subfolders: [] },
-];
-
-// No predefined statuses for borradores folder
 
 export const RepositorySection = ({ contractId, contractName }: RepositorySectionProps) => {
   const { toast } = useToast();
@@ -89,6 +82,7 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
   const [folderPath, setFolderPath] = useState<RepositoryFolder[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [folderTemplates, setFolderTemplates] = useState<FolderTemplate[]>([]);
   
   // Dialog states
   const [newFolderName, setNewFolderName] = useState("");
@@ -107,14 +101,36 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
   const [newStatusColor, setNewStatusColor] = useState("#6b7280");
 
   useEffect(() => {
-    initializeRepository();
-  }, [contractId]);
+    loadFolderTemplates();
+  }, []);
+
+  useEffect(() => {
+    if (folderTemplates.length > 0) {
+      initializeRepository();
+    }
+  }, [contractId, folderTemplates]);
 
   useEffect(() => {
     if (currentFolder) {
       loadFolderStatuses(currentFolder.id);
     }
   }, [currentFolder]);
+
+  const loadFolderTemplates = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("folder_templates")
+        .select("*")
+        .order("display_order", { ascending: true });
+      
+      if (error) throw error;
+      setFolderTemplates(data || []);
+    } catch (error) {
+      console.error("Error loading folder templates:", error);
+      // Fallback to empty - will use default initialization
+      setFolderTemplates([]);
+    }
+  };
 
   const initializeRepository = async () => {
     setLoading(true);
@@ -128,34 +144,20 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
 
       if (fetchError) throw fetchError;
 
-      if (!existingFolders || existingFolders.length === 0) {
-        for (const baseFolder of BASE_FOLDERS) {
-          const { data: newFolder, error: createError } = await supabase
+      // Create missing folders based on templates
+      const existingTypes = new Set(existingFolders?.map(f => f.folder_type) || []);
+      
+      for (const template of folderTemplates) {
+        if (!existingTypes.has(template.folder_type)) {
+          await supabase
             .from("repository_folders")
             .insert({
               contract_id: contractId,
-              name: baseFolder.name,
+              name: template.name,
               is_base_folder: true,
-              folder_type: baseFolder.type,
+              folder_type: template.folder_type,
               parent_id: null,
-            })
-            .select()
-            .single();
-
-          if (createError) throw createError;
-
-          if (baseFolder.subfolders.length > 0 && newFolder) {
-            for (const subfolder of baseFolder.subfolders) {
-              await supabase
-                .from("repository_folders")
-                .insert({
-                  contract_id: contractId,
-                  name: subfolder,
-                  is_base_folder: false,
-                  parent_id: newFolder.id,
-                });
-            }
-          }
+            });
         }
       }
 

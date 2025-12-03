@@ -11,8 +11,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Shield, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder } from "lucide-react";
 import { CloudStorageSettings } from "@/components/contracts/CloudStorageSettings";
+
+interface Profile {
+  id: string;
+  email: string;
+  full_name: string | null;
+  created_at: string;
+}
+
+interface UserRole {
+  user_id: string;
+  role: "admin" | "user";
+}
+
+interface UserPermission {
+  id: string;
+  user_id: string;
+  resource: string;
+  permission: "view" | "edit" | "all";
+}
+
+interface FolderTemplate {
+  id: string;
+  name: string;
+  folder_type: string | null;
+  display_order: number;
+}
 
 interface Profile {
   id: string;
@@ -62,6 +88,13 @@ const AdminPanel = () => {
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editPermissions, setEditPermissions] = useState<Record<string, "view" | "edit" | "all" | "none">>({});
 
+  // Folder templates
+  const [folderTemplates, setFolderTemplates] = useState<FolderTemplate[]>([]);
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [newTemplateType, setNewTemplateType] = useState("");
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [creatingTemplate, setCreatingTemplate] = useState(false);
+
   useEffect(() => {
     if (!authLoading && roleLoaded && !isAdmin) {
       navigate("/");
@@ -75,15 +108,17 @@ const AdminPanel = () => {
   const loadData = async () => {
     setLoading(true);
     
-    const [profilesRes, rolesRes, permissionsRes] = await Promise.all([
+    const [profilesRes, rolesRes, permissionsRes, templatesRes] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("user_roles").select("*"),
       supabase.from("user_permissions").select("*"),
+      supabase.from("folder_templates").select("*").order("display_order", { ascending: true }),
     ]);
 
     setProfiles(profilesRes.data || []);
     setUserRoles(rolesRes.data || []);
     setUserPermissions(permissionsRes.data || []);
+    setFolderTemplates(templatesRes.data || []);
     setLoading(false);
   };
 
@@ -199,6 +234,60 @@ const AdminPanel = () => {
     });
     setEditPermissions(permsMap);
     setEditingUserId(userId);
+  };
+
+  const handleCreateTemplate = async () => {
+    if (!newTemplateName.trim()) {
+      toast({ variant: "destructive", title: "Error", description: "El nombre es requerido" });
+      return;
+    }
+
+    setCreatingTemplate(true);
+    try {
+      const maxOrder = folderTemplates.length > 0 
+        ? Math.max(...folderTemplates.map(t => t.display_order)) + 1 
+        : 1;
+      
+      const folderType = newTemplateType.trim() || newTemplateName.toLowerCase().replace(/\s+/g, '_');
+      
+      const { error } = await supabase
+        .from("folder_templates")
+        .insert({
+          name: newTemplateName.trim(),
+          folder_type: folderType,
+          display_order: maxOrder,
+        });
+
+      if (error) throw error;
+
+      toast({ title: "Carpeta creada", description: `La carpeta "${newTemplateName}" se aplicará a todos los contratos` });
+      setNewTemplateName("");
+      setNewTemplateType("");
+      setTemplateDialogOpen(false);
+      loadData();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setCreatingTemplate(false);
+    }
+  };
+
+  const handleDeleteTemplate = async (templateId: string, templateName: string) => {
+    if (!confirm(`¿Eliminar la carpeta "${templateName}" del template? Esto no eliminará las carpetas existentes en los contratos.`)) return;
+
+    try {
+      const { error } = await supabase
+        .from("folder_templates")
+        .delete()
+        .eq("id", templateId);
+
+      if (error) throw error;
+
+      toast({ title: "Carpeta eliminada del template" });
+      loadData();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
   };
 
   if (authLoading || !roleLoaded || loading) {
@@ -395,6 +484,80 @@ const AdminPanel = () => {
 
         {/* Cloud Storage Settings */}
         <CloudStorageSettings />
+
+        {/* Folder Templates */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Folder className="h-5 w-5" />
+                  Carpetas del Repositorio
+                </CardTitle>
+                <CardDescription>
+                  Define las carpetas base que se crearán automáticamente en todos los contratos
+                </CardDescription>
+              </div>
+              <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm">
+                    <FolderPlus className="mr-2 h-4 w-4" />
+                    Nueva Carpeta
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Agregar Carpeta al Template</DialogTitle>
+                    <DialogDescription>
+                      Esta carpeta se creará automáticamente en todos los contratos existentes y futuros.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label>Nombre de la Carpeta *</Label>
+                      <Input
+                        value={newTemplateName}
+                        onChange={(e) => setNewTemplateName(e.target.value)}
+                        placeholder="Ej: Documentos Legales"
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setTemplateDialogOpen(false)}>Cancelar</Button>
+                    <Button onClick={handleCreateTemplate} disabled={creatingTemplate}>
+                      {creatingTemplate && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Crear Carpeta
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {folderTemplates.map((template) => (
+                <div key={template.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Folder className="h-4 w-4 text-muted-foreground" />
+                    <span>{template.name}</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeleteTemplate(template.id, template.name)}
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </div>
+              ))}
+              {folderTemplates.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No hay carpetas definidas
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Edit Permissions Dialog */}
         <Dialog open={!!editingUserId} onOpenChange={(open) => !open && setEditingUserId(null)}>

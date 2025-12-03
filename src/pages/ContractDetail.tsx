@@ -494,6 +494,10 @@ const ContractDetail = () => {
   // Count signed renegotiations for correlative numbering
   const signedRenegotiationDocs = allDocuments.filter(d => d.document_type === "firmado_r");
   
+  // Version to display in commercial conditions: last signed version if there's active renegotiation
+  const lastSignedVersion = allVersions.find(v => !v.is_renegotiation);
+  const displayVersion = hasActiveRenegotiation ? lastSignedVersion : currentVersion;
+  
   // Filter documents: show signed docs always, drafts for renegotiation, and regular drafts for signed contracts
   const documents = isSigned 
     ? allDocuments.filter(d => 
@@ -602,7 +606,12 @@ const ContractDetail = () => {
                   <DollarSign className="h-5 w-5" />
                   Condiciones Comerciales
                 </CardTitle>
-                <CardDescription>Versión {currentVersion?.version_number || "N/A"}</CardDescription>
+                <CardDescription>
+                  {hasActiveRenegotiation 
+                    ? `Versión vigente: ${displayVersion?.version_number || "N/A"} (renegociación en curso)`
+                    : `Versión ${displayVersion?.version_number || "N/A"}`
+                  }
+                </CardDescription>
               </div>
               <div className="flex items-center gap-2">
                 {isNegotiating && currentVersion && (
@@ -618,18 +627,18 @@ const ContractDetail = () => {
                     onSave={handleSaveEscalations}
                   />
                 )}
-                {isSigned && currentVersion && !hasActiveRenegotiation && (
+                {isSigned && displayVersion && !hasActiveRenegotiation && (
                   <RenegotiationDialog
                     contractId={contract.id}
                     currentVersion={{
-                      id: currentVersion.id,
-                      version_number: currentVersion.version_number,
-                      initial_rent: currentVersion.initial_rent,
-                      regime_rent: currentVersion.regime_rent,
-                      variable_rent_percentage: currentVersion.variable_rent_percentage,
-                      duration_months: currentVersion.duration_months,
-                      notice_type: currentVersion.notice_type,
-                      notice_value: currentVersion.notice_value,
+                      id: displayVersion.id,
+                      version_number: displayVersion.version_number,
+                      initial_rent: displayVersion.initial_rent,
+                      regime_rent: displayVersion.regime_rent,
+                      variable_rent_percentage: displayVersion.variable_rent_percentage,
+                      duration_months: displayVersion.duration_months,
+                      notice_type: displayVersion.notice_type,
+                      notice_value: displayVersion.notice_value,
                     }}
                     hasActiveRenegotiation={false}
                     onSuccess={loadContract}
@@ -639,45 +648,54 @@ const ContractDetail = () => {
             </div>
           </CardHeader>
           <CardContent>
-            {currentVersion ? (
+            {displayVersion ? (
               <div className="space-y-4">
+                {/* Renegotiation in progress notice */}
+                {hasActiveRenegotiation && (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                    <p className="text-sm text-amber-700 dark:text-amber-400">
+                      ⚠️ Hay una renegociación en curso. Las condiciones mostradas son las vigentes hasta que se firme la renegociación.
+                    </p>
+                  </div>
+                )}
+                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {currentVersion.initial_rent && (
+                  {displayVersion.initial_rent && (
                     <div>
                       <p className="text-sm text-muted-foreground">Canon Inicial</p>
                       <p className="text-lg font-semibold">
-                        {formatCurrency(currentVersion.initial_rent)}
+                        {formatCurrency(displayVersion.initial_rent)}
                       </p>
                     </div>
                   )}
                   <div>
                     <p className="text-sm text-muted-foreground">Canon en Régimen</p>
                     <p className="text-lg font-semibold">
-                      {formatCurrency(currentVersion.regime_rent)}
+                      {formatCurrency(displayVersion.regime_rent)}
                     </p>
                   </div>
-                  {currentVersion.variable_rent_percentage && (
+                  {displayVersion.variable_rent_percentage && (
                     <div>
                       <p className="text-sm text-muted-foreground">Arriendo Variable</p>
                       <p className="text-lg font-semibold">
-                        {currentVersion.variable_rent_percentage}%
+                        {displayVersion.variable_rent_percentage}%
                       </p>
                     </div>
                   )}
                   <div>
                     <p className="text-sm text-muted-foreground">Duración</p>
                     <p className="text-lg font-semibold">
-                      {currentVersion.duration_months} meses (
-                      {Math.floor(currentVersion.duration_months / 12)} años{" "}
-                      {currentVersion.duration_months % 12} meses)
+                      {displayVersion.duration_months} meses (
+                      {Math.floor(displayVersion.duration_months / 12)} años{" "}
+                      {displayVersion.duration_months % 12} meses)
                     </p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Aviso de Término</p>
                     <p className="text-lg font-semibold">
-                      {currentVersion.notice_type === "meses"
-                        ? `${currentVersion.notice_value} meses`
-                        : formatDate(currentVersion.notice_value)}
+                      {displayVersion.notice_type === "meses"
+                        ? `${displayVersion.notice_value} meses`
+                        : formatDate(displayVersion.notice_value)}
                     </p>
                   </div>
                 </div>
@@ -787,11 +805,11 @@ const ContractDetail = () => {
                 })()}
 
                 {/* Escalation display */}
-                {currentVersion.rent_escalations && currentVersion.rent_escalations.length > 0 && (
+                {displayVersion.rent_escalations && displayVersion.rent_escalations.length > 0 && (
                   <div className="pt-4 border-t border-border">
                     <p className="text-sm text-muted-foreground mb-3">Escalonamiento de Arriendo</p>
                     <div className="space-y-2">
-                      {currentVersion.rent_escalations
+                      {displayVersion.rent_escalations
                         .sort((a, b) => a.month_number - b.month_number)
                         .map((escalation, idx) => (
                           <div
