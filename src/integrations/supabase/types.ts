@@ -247,6 +247,38 @@ export type Database = {
           },
         ]
       }
+      folder_statuses: {
+        Row: {
+          color: string | null
+          created_at: string
+          folder_id: string
+          id: string
+          name: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          folder_id: string
+          id?: string
+          name: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          folder_id?: string
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "folder_statuses_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "repository_folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -309,6 +341,7 @@ export type Database = {
           folder_id: string
           id: string
           name: string
+          status: string | null
           uploaded_at: string
           url: string
         }
@@ -317,6 +350,7 @@ export type Database = {
           folder_id: string
           id?: string
           name: string
+          status?: string | null
           uploaded_at?: string
           url: string
         }
@@ -325,6 +359,7 @@ export type Database = {
           folder_id?: string
           id?: string
           name?: string
+          status?: string | null
           uploaded_at?: string
           url?: string
         }
