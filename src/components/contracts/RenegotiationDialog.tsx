@@ -27,6 +27,7 @@ interface CurrentVersion {
   version_number: number;
   initial_rent: number | null;
   regime_rent: number;
+  variable_rent_percentage: number | null;
   duration_months: number;
   notice_type: string;
   notice_value: string;
@@ -50,6 +51,9 @@ export const RenegotiationDialog = ({
     currentVersion.initial_rent?.toString() || ""
   );
   const [regimeRent, setRegimeRent] = useState(currentVersion.regime_rent.toString());
+  const [variableRentPercentage, setVariableRentPercentage] = useState(
+    currentVersion.variable_rent_percentage?.toString() || ""
+  );
   const [durationMonths, setDurationMonths] = useState(
     currentVersion.duration_months.toString()
   );
@@ -86,6 +90,7 @@ export const RenegotiationDialog = ({
           is_renegotiation: true,
           initial_rent: initialRent ? parseFloat(initialRent) : null,
           regime_rent: parseFloat(regimeRent),
+          variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
           duration_months: parseInt(durationMonths),
           notice_type: noticeType,
           notice_value: noticeValue,
@@ -174,6 +179,18 @@ export const RenegotiationDialog = ({
                 placeholder="Ej: 6000000"
                 value={regimeRent}
                 onChange={(e) => setRegimeRent(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="variableRentPercentage">Arriendo Variable (%)</Label>
+              <Input
+                id="variableRentPercentage"
+                type="number"
+                step="0.01"
+                placeholder="Ej: 5.5"
+                value={variableRentPercentage}
+                onChange={(e) => setVariableRentPercentage(e.target.value)}
               />
             </div>
 

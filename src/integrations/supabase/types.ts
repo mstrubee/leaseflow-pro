@@ -184,6 +184,7 @@ export type Database = {
           notice_type: Database["public"]["Enums"]["notice_type"]
           notice_value: string
           regime_rent: number
+          variable_rent_percentage: number | null
           version_number: number
         }
         Insert: {
@@ -198,6 +199,7 @@ export type Database = {
           notice_type: Database["public"]["Enums"]["notice_type"]
           notice_value: string
           regime_rent: number
+          variable_rent_percentage?: number | null
           version_number: number
         }
         Update: {
@@ -212,6 +214,7 @@ export type Database = {
           notice_type?: Database["public"]["Enums"]["notice_type"]
           notice_value?: string
           regime_rent?: number
+          variable_rent_percentage?: number | null
           version_number?: number
         }
         Relationships: [

@@ -60,6 +60,7 @@ interface DocumentVersionsProps {
   onMarkAsSigned?: (docId: string) => Promise<void>;
   onChangeDocumentType?: (docId: string, newType: string) => Promise<void>;
   readOnly?: boolean;
+  isRenegotiation?: boolean;
 }
 
 const CLOUD_PROVIDERS = [
@@ -78,6 +79,7 @@ export const DocumentVersions = ({
   onMarkAsSigned,
   onChangeDocumentType,
   readOnly = false,
+  isRenegotiation = false,
 }: DocumentVersionsProps) => {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -136,8 +138,9 @@ export const DocumentVersions = ({
 
   const generateSuggestedName = () => {
     const today = format(new Date(), "yyyy.MM.dd");
-    const versionNumber = documents.filter(d => d.document_type === "borrador").length + 1;
-    return `${today} ${contractName} V_${versionNumber}`;
+    const draftType = isRenegotiation ? "borrador_r" : "borrador";
+    const versionNumber = documents.filter(d => d.document_type === draftType || d.document_type === "borrador").length + 1;
+    return `${today} ${contractName} V_${versionNumber}${isRenegotiation ? " R" : ""}`;
   };
 
   const handleUseSuggested = () => {
@@ -319,27 +322,40 @@ export const DocumentVersions = ({
     const type = doc.document_type;
     
     const badgeContent = () => {
+      if (type === "borrador_final_r") {
+        return <><Star className="h-3 w-3 mr-1" />Borrador Final R</>;
+      }
       if (type === "borrador_final") {
         return <><Star className="h-3 w-3 mr-1" />Borrador Final</>;
+      }
+      if (type === "firmado_r") {
+        return <><Check className="h-3 w-3 mr-1" />Firmado R</>;
       }
       if (type === "firmado") {
         return <><Check className="h-3 w-3 mr-1" />Firmado</>;
       }
+      if (type === "borrador_r") {
+        return "Borrador R";
+      }
       return "Borrador";
     };
     
-    const badgeClass = type === "borrador_final" 
+    const badgeClass = (type === "borrador_final" || type === "borrador_final_r")
       ? "bg-status-signed text-white" 
-      : type === "firmado" 
+      : (type === "firmado" || type === "firmado_r")
         ? "bg-primary text-primary-foreground"
         : "";
     
     return (
-      <Badge className={badgeClass} variant={type === "borrador" ? "secondary" : undefined}>
+      <Badge className={badgeClass} variant={(type === "borrador" || type === "borrador_r") ? "secondary" : undefined}>
         {badgeContent()}
       </Badge>
     );
   };
+
+  // Check if document is a draft type (including renegotiation drafts)
+  const isDraftType = (type: string) => type === "borrador" || type === "borrador_r";
+  const isFinalDraftType = (type: string) => type === "borrador_final" || type === "borrador_final_r";
 
   const sortedDocuments = [...documents].sort(
     (a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime()
@@ -389,7 +405,7 @@ export const DocumentVersions = ({
                     <div
                       key={doc.id}
                       className={`flex items-center justify-between p-4 rounded-lg border ${
-                        doc.document_type === "borrador_final" 
+                        isFinalDraftType(doc.document_type)
                           ? "bg-status-signed/10 border-status-signed/30" 
                           : "bg-muted/30 border-border"
                       }`}
@@ -406,7 +422,7 @@ export const DocumentVersions = ({
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
-                        {!readOnly && doc.document_type === "borrador" && (
+                        {!readOnly && isDraftType(doc.document_type) && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -417,7 +433,7 @@ export const DocumentVersions = ({
                             Marcar Final
                           </Button>
                         )}
-                        {!readOnly && doc.document_type === "borrador_final" && (
+                        {!readOnly && isFinalDraftType(doc.document_type) && (
                           <Button
                             variant="outline"
                             size="sm"
