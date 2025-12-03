@@ -214,11 +214,12 @@ const ContractDetail = () => {
         .eq("folder_type", "borradores")
         .single();
 
-      // Move all draft documents to the repository folder
+      // Get all draft documents (borrador and borrador_final except the one being signed)
       const draftDocs = contract.contract_documents?.filter(
-        (d) => d.document_type === "borrador"
+        (d) => d.id !== docId && (d.document_type === "borrador" || d.document_type === "borrador_final")
       ) || [];
 
+      // Move all draft documents to the repository folder
       if (borradorFolder && draftDocs.length > 0) {
         for (const doc of draftDocs) {
           await supabase
@@ -228,9 +229,15 @@ const ContractDetail = () => {
               name: `Borrador_${new Date(doc.uploaded_at).toISOString().split('T')[0]}`,
               url: doc.url,
               file_type: "pdf",
-              status: "En negociación",
             });
         }
+
+        // Delete the draft documents from contract_documents
+        const draftIds = draftDocs.map(d => d.id);
+        await supabase
+          .from("contract_documents")
+          .delete()
+          .in("id", draftIds);
       }
 
       // Update contract status

@@ -76,12 +76,7 @@ const BASE_FOLDERS = [
   { name: "Contratos Anteriores", type: "anteriores", subfolders: [] },
 ];
 
-// Contract document statuses (for "borradores" folder type)
-const CONTRACT_STATUSES = [
-  { name: "En negociación", color: "#f59e0b" },
-  { name: "Final", color: "#22c55e" },
-  { name: "Vencido", color: "#ef4444" },
-];
+// No predefined statuses for borradores folder
 
 export const RepositorySection = ({ contractId, contractName }: RepositorySectionProps) => {
   const { toast } = useToast();
@@ -229,21 +224,13 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
   };
 
   const getAvailableStatuses = (): { name: string; color: string }[] => {
-    // Check if current folder is "borradores" type (contract documents)
-    const isContractFolder = currentFolder?.folder_type === "borradores" || 
-      folderPath.some(f => f.folder_type === "borradores");
-
-    if (isContractFolder) {
-      return CONTRACT_STATUSES;
-    }
-
-    // Return custom statuses for this folder
+    // Return custom statuses for this folder if any
     if (folderStatuses.length > 0) {
       return folderStatuses;
     }
 
-    // Default status
-    return [{ name: "pendiente", color: "#6b7280" }];
+    // Default - no statuses
+    return [];
   };
 
   const navigateToFolder = async (folder: RepositoryFolder) => {
@@ -495,8 +482,7 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
 
   const getStatusColor = (status: string | null) => {
     if (!status) return "#6b7280";
-    const allStatuses = [...CONTRACT_STATUSES, ...folderStatuses];
-    const found = allStatuses.find(s => s.name === status);
+    const found = folderStatuses.find(s => s.name === status);
     return found?.color || "#6b7280";
   };
 
