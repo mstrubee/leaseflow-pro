@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { FileText, CheckCircle, Clock, AlertTriangle } from "lucide-react";
+import { EconomicIndicators } from "./EconomicIndicators";
 
 interface RegionStats {
   region: string;
@@ -111,6 +112,9 @@ export const DashboardStats = () => {
 
   return (
     <div className="space-y-6">
+      {/* Economic Indicators */}
+      <EconomicIndicators />
+
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card 

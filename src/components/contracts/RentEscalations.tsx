@@ -4,6 +4,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Plus, Trash2, TrendingUp } from "lucide-react";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+} from "recharts";
 
 export interface Escalation {
   id?: string;
@@ -18,6 +28,7 @@ interface RentEscalationsProps {
   regimeRent: number;
   durationMonths: number;
   readOnly?: boolean;
+  currency?: "UF" | "CLP";
 }
 
 export const RentEscalations = ({
@@ -27,11 +38,15 @@ export const RentEscalations = ({
   regimeRent,
   durationMonths,
   readOnly = false,
+  currency = "UF",
 }: RentEscalationsProps) => {
   const [newMonth, setNewMonth] = useState("");
   const [newAmount, setNewAmount] = useState("");
 
   const formatCurrency = (amount: number) => {
+    if (currency === "UF") {
+      return `UF ${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
     return new Intl.NumberFormat("es-CL", {
       style: "currency",
       currency: "CLP",
@@ -63,163 +78,181 @@ export const RentEscalations = ({
     onChange(escalations.filter((e) => e.month_number !== monthNumber));
   };
 
-  // Calculate rent timeline
-  const getRentTimeline = () => {
-    const timeline: { month: number; rent: number }[] = [];
+  // Generate chart data for entire contract period
+  const getChartData = () => {
+    const data: { month: number; rent: number; label: string }[] = [];
+    
+    // Start with initial rent at month 1
     let currentRent = initialRent || regimeRent;
-
-    for (let month = 1; month <= Math.min(durationMonths, 36); month++) {
-      const escalation = escalations.find((e) => e.month_number === month);
-      if (escalation) {
-        currentRent = escalation.amount;
+    
+    // Sort escalations
+    const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
+    
+    // Month 1 is always the first escalation (initial rent)
+    data.push({ month: 1, rent: currentRent, label: `Mes 1` });
+    
+    // Add escalation points
+    sortedEscalations.forEach((esc) => {
+      if (esc.month_number > 1) {
+        data.push({ month: esc.month_number, rent: esc.amount, label: `Mes ${esc.month_number}` });
+        currentRent = esc.amount;
       }
-      timeline.push({ month, rent: currentRent });
+    });
+    
+    // Add final month with regime rent if different
+    if (durationMonths > 1) {
+      const lastEscMonth = sortedEscalations.length > 0 
+        ? Math.max(...sortedEscalations.map(e => e.month_number))
+        : 1;
+      
+      if (lastEscMonth < durationMonths) {
+        data.push({ month: durationMonths, rent: regimeRent, label: `Mes ${durationMonths}` });
+      }
     }
 
-    return timeline;
+    return data;
   };
 
-  const timeline = getRentTimeline();
+  const chartData = getChartData();
   const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
 
+  // Only show chart if there are escalations or different initial/regime rents
+  const showChart = sortedEscalations.length > 0 || initialRent !== regimeRent;
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <TrendingUp className="h-5 w-5" />
-          Escalonamiento de Arriendo
-        </CardTitle>
-        <CardDescription>
-          Define los cambios de canon mes a mes durante el período escalonado
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {/* Current escalations */}
-        {sortedEscalations.length > 0 ? (
+    <div className="space-y-4">
+      {/* Current escalations */}
+      {sortedEscalations.length > 0 && (
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Escalones definidos</Label>
           <div className="space-y-2">
-            <Label>Escalones definidos</Label>
-            <div className="space-y-2">
-              {sortedEscalations.map((escalation) => (
-                <div
-                  key={escalation.month_number}
-                  className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="text-sm">
-                      <span className="text-muted-foreground">Mes </span>
-                      <span className="font-semibold">{escalation.month_number}</span>
-                    </div>
-                    <div className="text-sm">
-                      <span className="text-muted-foreground">Canon: </span>
-                      <span className="font-semibold text-primary">
-                        {formatCurrency(escalation.amount)}
-                      </span>
-                    </div>
-                  </div>
-                  {!readOnly && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleRemove(escalation.month_number)}
-                      className="h-8 w-8 text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground text-center py-4">
-            No hay escalones definidos. El canon se mantendrá constante.
-          </p>
-        )}
-
-        {/* Add new escalation */}
-        {!readOnly && (
-          <div className="space-y-3 pt-4 border-t border-border">
-            <Label>Agregar nuevo escalón</Label>
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <Input
-                  type="number"
-                  placeholder="Mes"
-                  value={newMonth}
-                  onChange={(e) => setNewMonth(e.target.value)}
-                  min={1}
-                  max={durationMonths}
-                />
-              </div>
-              <div className="flex-1">
-                <Input
-                  type="number"
-                  placeholder="Monto (CLP)"
-                  value={newAmount}
-                  onChange={(e) => setNewAmount(e.target.value)}
-                  min={0}
-                />
-              </div>
-              <Button
-                type="button"
-                onClick={handleAdd}
-                disabled={!newMonth || !newAmount}
-                className="gap-2"
+            {sortedEscalations.map((escalation, idx) => (
+              <div
+                key={escalation.month_number}
+                className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border"
               >
-                <Plus className="h-4 w-4" />
-                Agregar
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Indica el mes (1-{durationMonths}) en que cambia el canon y el nuevo monto
-            </p>
-          </div>
-        )}
-
-        {/* Timeline preview */}
-        {(sortedEscalations.length > 0 || initialRent) && (
-          <div className="space-y-3 pt-4 border-t border-border">
-            <Label>Vista previa del escalonamiento</Label>
-            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-              {timeline.slice(0, 24).map(({ month, rent }) => {
-                const isEscalationMonth = escalations.some((e) => e.month_number === month);
-                return (
-                  <div
-                    key={month}
-                    className={`p-2 rounded text-center text-xs border ${
-                      isEscalationMonth
-                        ? "bg-primary/10 border-primary text-primary"
-                        : "bg-muted/30 border-border"
-                    }`}
-                  >
-                    <div className="font-medium">M{month}</div>
-                    <div className="text-[10px] truncate">
-                      {(rent / 1000000).toFixed(1)}M
-                    </div>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold">
+                    {idx + 1}
                   </div>
-                );
-              })}
-            </div>
-            {durationMonths > 24 && (
-              <p className="text-xs text-muted-foreground text-center">
-                Mostrando primeros 24 meses de {durationMonths}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Summary */}
-        <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
-          <div>
-            <p className="text-sm text-muted-foreground">Canon Inicial</p>
-            <p className="text-lg font-semibold">{formatCurrency(initialRent || regimeRent)}</p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Canon en Régimen</p>
-            <p className="text-lg font-semibold">{formatCurrency(regimeRent)}</p>
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">Mes </span>
+                    <span className="font-semibold">{escalation.month_number}</span>
+                  </div>
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">Canon: </span>
+                    <span className="font-semibold text-primary">
+                      {formatCurrency(escalation.amount)}
+                    </span>
+                  </div>
+                </div>
+                {!readOnly && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleRemove(escalation.month_number)}
+                    className="h-8 w-8 text-destructive hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            ))}
           </div>
         </div>
-      </CardContent>
-    </Card>
+      )}
+
+      {/* Add new escalation */}
+      {!readOnly && (
+        <div className="space-y-3 pt-2">
+          <Label className="text-sm font-medium">Agregar escalón</Label>
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <Input
+                type="number"
+                placeholder="Mes"
+                value={newMonth}
+                onChange={(e) => setNewMonth(e.target.value)}
+                min={1}
+                max={durationMonths}
+              />
+            </div>
+            <div className="flex-1">
+              <Input
+                type="number"
+                placeholder={currency === "UF" ? "Monto (UF)" : "Monto (CLP)"}
+                value={newAmount}
+                onChange={(e) => setNewAmount(e.target.value)}
+                min={0}
+                step={currency === "UF" ? "0.01" : "1"}
+              />
+            </div>
+            <Button
+              type="button"
+              onClick={handleAdd}
+              disabled={!newMonth || !newAmount}
+              size="icon"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Mes 1 corresponde al canon inicial. Indica desde qué mes cambia el canon.
+          </p>
+        </div>
+      )}
+
+      {/* Rent trend chart */}
+      {showChart && (
+        <div className="pt-4 border-t border-border">
+          <Label className="text-sm font-medium mb-2 block">Tendencia de arriendo</Label>
+          <div className="h-48 mt-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis 
+                  dataKey="month" 
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v) => `M${v}`}
+                />
+                <YAxis 
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v) => currency === "UF" ? `${v}` : `${(v/1000000).toFixed(1)}M`}
+                />
+                <Tooltip 
+                  formatter={(value: number) => [formatCurrency(value), "Canon"]}
+                  labelFormatter={(label) => `Mes ${label}`}
+                />
+                <Line 
+                  type="stepAfter" 
+                  dataKey="rent" 
+                  stroke="hsl(var(--primary))" 
+                  strokeWidth={2}
+                  dot={{ fill: "hsl(var(--primary))", strokeWidth: 2, r: 4 }}
+                />
+                <ReferenceLine 
+                  y={regimeRent} 
+                  stroke="hsl(var(--muted-foreground))" 
+                  strokeDasharray="5 5"
+                  label={{ value: "Régimen", fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* Summary */}
+      <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
+        <div>
+          <p className="text-sm text-muted-foreground">Canon Inicial</p>
+          <p className="text-lg font-semibold">{formatCurrency(initialRent || regimeRent)}</p>
+        </div>
+        <div>
+          <p className="text-sm text-muted-foreground">Canon en Régimen</p>
+          <p className="text-lg font-semibold">{formatCurrency(regimeRent)}</p>
+        </div>
+      </div>
+    </div>
   );
 };

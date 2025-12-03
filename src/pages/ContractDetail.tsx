@@ -342,10 +342,7 @@ const ContractDetail = () => {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("es-CL", {
-      style: "currency",
-      currency: "CLP",
-    }).format(amount);
+    return `UF ${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const formatDate = (date: string) => {
@@ -558,6 +555,31 @@ const ContractDetail = () => {
                     </p>
                   </div>
                 </div>
+
+                {/* Escalation display */}
+                {currentVersion.rent_escalations && currentVersion.rent_escalations.length > 0 && (
+                  <div className="pt-4 border-t border-border">
+                    <p className="text-sm text-muted-foreground mb-3">Escalonamiento de Arriendo</p>
+                    <div className="space-y-2">
+                      {currentVersion.rent_escalations
+                        .sort((a, b) => a.month_number - b.month_number)
+                        .map((escalation, idx) => (
+                          <div
+                            key={escalation.id}
+                            className="flex items-center gap-4 p-2 bg-muted/50 rounded-lg"
+                          >
+                            <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold">
+                              {idx + 1}
+                            </div>
+                            <span className="text-sm">
+                              <span className="text-muted-foreground">Mes {escalation.month_number}:</span>{" "}
+                              <span className="font-semibold text-primary">{formatCurrency(escalation.amount)}</span>
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <p className="text-muted-foreground">
