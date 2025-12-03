@@ -4,11 +4,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Check, Loader2 } from "lucide-react";
+import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Check, Loader2, History } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { DocumentVersions, DocumentVersion } from "@/components/contracts/DocumentVersions";
 import { EscalationDialog, Escalation } from "@/components/contracts/EscalationDialog";
 import { RepositorySection } from "@/components/contracts/RepositorySection";
+import { RenegotiationDialog } from "@/components/contracts/RenegotiationDialog";
 
 interface Contract {
   id: string;
@@ -33,11 +34,13 @@ interface Contract {
     id: string;
     version_number: number;
     is_current: boolean;
+    is_renegotiation: boolean;
     initial_rent: number | null;
     regime_rent: number;
     duration_months: number;
     notice_type: string;
     notice_value: string;
+    effective_date: string | null;
     created_at: string;
     rent_escalations: Array<{
       id: string;
@@ -261,9 +264,9 @@ const ContractDetail = () => {
 
   const getStatusBadge = (status: string) => {
     const statusMap: { [key: string]: { label: string; className: string } } = {
-      en_negociacion: { label: "En Negociación", className: "bg-status-negotiation text-white" },
-      firmado: { label: "Firmado", className: "bg-status-signed text-white" },
-      vencido: { label: "Vencido", className: "bg-status-expired text-white" },
+      en_negociacion: { label: "En Negociación", className: "bg-yellow-500 text-white" },
+      firmado: { label: "Vigente", className: "bg-green-500 text-white" },
+      vencido: { label: "Vencido", className: "bg-red-500 text-white" },
     };
 
     const statusInfo = statusMap[status] || { label: status, className: "" };
@@ -300,8 +303,10 @@ const ContractDetail = () => {
   const address = contract.contract_addresses?.[0];
   const contact = contract.contract_contacts?.[0];
   const currentVersion = contract.contract_versions?.find((v) => v.is_current);
+  const allVersions = contract.contract_versions?.sort((a, b) => b.version_number - a.version_number) || [];
   const documents = contract.contract_documents || [];
   const isNegotiating = contract.status === "en_negociacion";
+  const isSigned = contract.status === "firmado";
   const hasFinalVersion = documents.some(
     (d) => d.document_type === "borrador_final" || d.document_type === "firmado"
   );
@@ -332,6 +337,21 @@ const ContractDetail = () => {
                 <Edit className="h-4 w-4" />
                 Editar
               </Button>
+            )}
+            {isSigned && currentVersion && (
+              <RenegotiationDialog
+                contractId={contract.id}
+                currentVersion={{
+                  id: currentVersion.id,
+                  version_number: currentVersion.version_number,
+                  initial_rent: currentVersion.initial_rent,
+                  regime_rent: currentVersion.regime_rent,
+                  duration_months: currentVersion.duration_months,
+                  notice_type: currentVersion.notice_type,
+                  notice_value: currentVersion.notice_value,
+                }}
+                onSuccess={loadContract}
+              />
             )}
           </div>
         </div>
@@ -481,6 +501,60 @@ const ContractDetail = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Version History */}
+        {allVersions.length > 1 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                Historial de Versiones
+              </CardTitle>
+              <CardDescription>
+                Este contrato tiene {allVersions.length} versiones
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {allVersions.map((version) => (
+                  <div
+                    key={version.id}
+                    className={`p-4 rounded-lg border ${
+                      version.is_current
+                        ? "border-primary bg-primary/5"
+                        : "border-border bg-muted/30"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold">Versión {version.version_number}</span>
+                          {version.is_current && (
+                            <Badge variant="default">Actual</Badge>
+                          )}
+                          {version.is_renegotiation && (
+                            <Badge variant="secondary">Renegociación</Badge>
+                          )}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          Canon: {formatCurrency(version.regime_rent)} · {version.duration_months} meses
+                        </div>
+                        {version.effective_date && (
+                          <div className="text-sm text-muted-foreground">
+                            Vigente desde: {formatDate(version.effective_date)}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {formatDate(version.created_at)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <DocumentVersions
           documents={documents.map(d => ({
