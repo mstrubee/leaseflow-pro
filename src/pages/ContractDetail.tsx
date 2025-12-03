@@ -18,6 +18,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { DocumentVersions, DocumentVersion } from "@/components/contracts/DocumentVersions";
 import { EscalationDialog, Escalation } from "@/components/contracts/EscalationDialog";
+import { RenegotiationDialog } from "@/components/contracts/RenegotiationDialog";
 import { RepositorySection } from "@/components/contracts/RepositorySection";
 
 interface Contract {
@@ -603,19 +604,38 @@ const ContractDetail = () => {
                 </CardTitle>
                 <CardDescription>Versión {currentVersion?.version_number || "N/A"}</CardDescription>
               </div>
-              {isNegotiating && currentVersion && (
-                <EscalationDialog
-                  escalations={currentVersion.rent_escalations?.map(e => ({
-                    id: e.id,
-                    month_number: e.month_number,
-                    amount: e.amount
-                  })) || []}
-                  initialRent={currentVersion.initial_rent || currentVersion.regime_rent}
-                  regimeRent={currentVersion.regime_rent}
-                  durationMonths={currentVersion.duration_months}
-                  onSave={handleSaveEscalations}
-                />
-              )}
+              <div className="flex items-center gap-2">
+                {isNegotiating && currentVersion && (
+                  <EscalationDialog
+                    escalations={currentVersion.rent_escalations?.map(e => ({
+                      id: e.id,
+                      month_number: e.month_number,
+                      amount: e.amount
+                    })) || []}
+                    initialRent={currentVersion.initial_rent || currentVersion.regime_rent}
+                    regimeRent={currentVersion.regime_rent}
+                    durationMonths={currentVersion.duration_months}
+                    onSave={handleSaveEscalations}
+                  />
+                )}
+                {isSigned && currentVersion && !hasActiveRenegotiation && (
+                  <RenegotiationDialog
+                    contractId={contract.id}
+                    currentVersion={{
+                      id: currentVersion.id,
+                      version_number: currentVersion.version_number,
+                      initial_rent: currentVersion.initial_rent,
+                      regime_rent: currentVersion.regime_rent,
+                      variable_rent_percentage: currentVersion.variable_rent_percentage,
+                      duration_months: currentVersion.duration_months,
+                      notice_type: currentVersion.notice_type,
+                      notice_value: currentVersion.notice_value,
+                    }}
+                    hasActiveRenegotiation={false}
+                    onSuccess={loadContract}
+                  />
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -661,6 +681,110 @@ const ContractDetail = () => {
                     </p>
                   </div>
                 </div>
+
+                {/* Original Contract Dates */}
+                {contract.signed_date && (
+                  <div className="pt-4 border-t border-border">
+                    <p className="text-sm font-medium text-muted-foreground mb-3">Contrato Original</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Fecha de Firma</p>
+                        <p className="font-medium">{formatDate(contract.signed_date)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Fecha de Término</p>
+                        <p className="font-medium">
+                          {(() => {
+                            const originalVersion = allVersions.find(v => v.version_number === 1);
+                            if (originalVersion && contract.signed_date) {
+                              const endDate = new Date(contract.signed_date);
+                              endDate.setMonth(endDate.getMonth() + originalVersion.duration_months);
+                              return formatDate(endDate.toISOString());
+                            }
+                            return "N/A";
+                          })()}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Aviso Término Anticipado</p>
+                        <p className="font-medium">
+                          {(() => {
+                            const originalVersion = allVersions.find(v => v.version_number === 1);
+                            if (originalVersion && contract.signed_date) {
+                              if (originalVersion.notice_type === "fecha") {
+                                return formatDate(originalVersion.notice_value);
+                              } else {
+                                const endDate = new Date(contract.signed_date);
+                                endDate.setMonth(endDate.getMonth() + originalVersion.duration_months);
+                                const noticeDate = new Date(endDate);
+                                noticeDate.setMonth(noticeDate.getMonth() - parseInt(originalVersion.notice_value));
+                                return formatDate(noticeDate.toISOString());
+                              }
+                            }
+                            return "N/A";
+                          })()}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Extension/Prorroga Dates */}
+                {(() => {
+                  const signedExtensions = allVersions
+                    .filter(v => v.version_number > 1 && !v.is_renegotiation && v.effective_date)
+                    .sort((a, b) => a.version_number - b.version_number);
+                  
+                  if (signedExtensions.length === 0) return null;
+                  
+                  return signedExtensions.map((extension, idx) => (
+                    <div key={extension.id} className="pt-4 border-t border-border">
+                      <p className="text-sm font-medium text-muted-foreground mb-3">
+                        Prórroga #{idx + 1}
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Fecha de Firma</p>
+                          <p className="font-medium">
+                            {extension.effective_date ? formatDate(extension.effective_date) : "N/A"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Fecha de Término</p>
+                          <p className="font-medium">
+                            {(() => {
+                              if (extension.effective_date) {
+                                const endDate = new Date(extension.effective_date);
+                                endDate.setMonth(endDate.getMonth() + extension.duration_months);
+                                return formatDate(endDate.toISOString());
+                              }
+                              return "N/A";
+                            })()}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Aviso Término Anticipado</p>
+                          <p className="font-medium">
+                            {(() => {
+                              if (extension.effective_date) {
+                                if (extension.notice_type === "fecha") {
+                                  return formatDate(extension.notice_value);
+                                } else {
+                                  const endDate = new Date(extension.effective_date);
+                                  endDate.setMonth(endDate.getMonth() + extension.duration_months);
+                                  const noticeDate = new Date(endDate);
+                                  noticeDate.setMonth(noticeDate.getMonth() - parseInt(extension.notice_value));
+                                  return formatDate(noticeDate.toISOString());
+                                }
+                              }
+                              return "N/A";
+                            })()}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ));
+                })()}
 
                 {/* Escalation display */}
                 {currentVersion.rent_escalations && currentVersion.rent_escalations.length > 0 && (
