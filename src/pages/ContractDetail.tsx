@@ -10,6 +10,16 @@ import { DocumentVersions, DocumentVersion } from "@/components/contracts/Docume
 import { EscalationDialog, Escalation } from "@/components/contracts/EscalationDialog";
 import { RepositorySection } from "@/components/contracts/RepositorySection";
 import { RenegotiationDialog } from "@/components/contracts/RenegotiationDialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Contract {
   id: string;
@@ -64,6 +74,7 @@ const ContractDetail = () => {
   const [contract, setContract] = useState<Contract | null>(null);
   const [loading, setLoading] = useState(true);
   const [signingContract, setSigningContract] = useState(false);
+  const [signDialogOpen, setSignDialogOpen] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -200,7 +211,7 @@ const ContractDetail = () => {
     }
   };
 
-  const handleMarkAsSigned = async () => {
+  const handleRequestSign = () => {
     if (!contract) return;
 
     // Check if there's a final version
@@ -217,9 +228,44 @@ const ContractDetail = () => {
       return;
     }
 
+    setSignDialogOpen(true);
+  };
+
+  const handleMarkAsSigned = async () => {
+    if (!contract) return;
+
+    setSignDialogOpen(false);
     setSigningContract(true);
 
     try {
+      // Get the "Borradores de Contrato" folder for this contract
+      const { data: borradorFolder } = await supabase
+        .from("repository_folders")
+        .select("id")
+        .eq("contract_id", contract.id)
+        .eq("folder_type", "borradores")
+        .single();
+
+      // Move all draft documents to the repository folder
+      const draftDocs = contract.contract_documents?.filter(
+        (d) => d.document_type === "borrador"
+      ) || [];
+
+      if (borradorFolder && draftDocs.length > 0) {
+        for (const doc of draftDocs) {
+          // Create a file entry in the repository
+          await supabase
+            .from("repository_files")
+            .insert({
+              folder_id: borradorFolder.id,
+              name: `Borrador_${new Date(doc.uploaded_at).toISOString().split('T')[0]}`,
+              url: doc.url,
+              file_type: "pdf",
+              status: "En negociación",
+            });
+        }
+      }
+
       // Update contract status
       const { error: contractError } = await supabase
         .from("contracts")
@@ -247,7 +293,7 @@ const ContractDetail = () => {
 
       toast({
         title: "Contrato firmado",
-        description: "El contrato ha sido marcado como firmado",
+        description: "El contrato ha sido marcado como firmado y los borradores han sido archivados",
       });
 
       loadContract();
@@ -611,7 +657,7 @@ const ContractDetail = () => {
             </CardHeader>
             <CardContent>
               <Button
-                onClick={handleMarkAsSigned}
+                onClick={handleRequestSign}
                 disabled={!hasFinalVersion || signingContract}
                 className="gap-2"
               >
@@ -626,6 +672,25 @@ const ContractDetail = () => {
           </Card>
         )}
       </main>
+
+      {/* Confirmation Dialog for Signing */}
+      <AlertDialog open={signDialogOpen} onOpenChange={setSignDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Desea marcar como firmado?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción marcará el contrato como firmado y archivará todos los borradores 
+              en la carpeta "Borradores de Contrato".
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleMarkAsSigned}>
+              Confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
