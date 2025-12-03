@@ -2,8 +2,14 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Trash2, TrendingUp } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Plus, Trash2 } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -31,6 +37,34 @@ interface RentEscalationsProps {
   currency?: "UF" | "CLP";
 }
 
+interface CustomDotProps {
+  cx?: number;
+  cy?: number;
+  payload?: { month: number; rent: number; isEditable: boolean };
+  onDotClick: (month: number, amount: number) => void;
+}
+
+const CustomDot = ({ cx, cy, payload, onDotClick }: CustomDotProps) => {
+  if (!cx || !cy || !payload) return null;
+  
+  return (
+    <circle
+      cx={cx}
+      cy={cy}
+      r={payload.isEditable ? 8 : 4}
+      fill={payload.isEditable ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))"}
+      stroke="hsl(var(--background))"
+      strokeWidth={2}
+      style={{ cursor: payload.isEditable ? "pointer" : "default" }}
+      onClick={() => {
+        if (payload.isEditable) {
+          onDotClick(payload.month, payload.rent);
+        }
+      }}
+    />
+  );
+};
+
 export const RentEscalations = ({
   escalations,
   onChange,
@@ -42,6 +76,11 @@ export const RentEscalations = ({
 }: RentEscalationsProps) => {
   const [newMonth, setNewMonth] = useState("");
   const [newAmount, setNewAmount] = useState("");
+  
+  // Edit dialog state
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editMonth, setEditMonth] = useState<number | null>(null);
+  const [editAmount, setEditAmount] = useState("");
 
   const formatCurrency = (amount: number) => {
     if (currency === "UF") {
@@ -78,36 +117,53 @@ export const RentEscalations = ({
     onChange(escalations.filter((e) => e.month_number !== monthNumber));
   };
 
-  // Generate chart data for entire contract period
+  const handleDotClick = (month: number, amount: number) => {
+    if (readOnly) return;
+    setEditMonth(month);
+    setEditAmount(amount.toString());
+    setEditDialogOpen(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (editMonth === null) return;
+    
+    const amount = parseFloat(editAmount);
+    if (isNaN(amount)) return;
+
+    const newEscalations = escalations.map(e => 
+      e.month_number === editMonth ? { ...e, amount } : e
+    );
+    
+    onChange(newEscalations);
+    setEditDialogOpen(false);
+    setEditMonth(null);
+    setEditAmount("");
+  };
+
+  // Generate chart data with real duration spacing
   const getChartData = () => {
-    const data: { month: number; rent: number; label: string }[] = [];
-    
-    // Start with initial rent at month 1
-    let currentRent = initialRent || regimeRent;
-    
-    // Sort escalations
+    const data: { month: number; rent: number; isEditable: boolean }[] = [];
     const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
     
-    // Month 1 is always the first escalation (initial rent)
-    data.push({ month: 1, rent: currentRent, label: `Mes 1` });
+    // Start with initial rent at month 1 (always the first escalation)
+    const month1Escalation = sortedEscalations.find(e => e.month_number === 1);
+    const startRent = month1Escalation?.amount || initialRent || regimeRent;
+    data.push({ month: 1, rent: startRent, isEditable: !!month1Escalation });
     
-    // Add escalation points
+    // Add all defined escalation points (except month 1 which is already added)
     sortedEscalations.forEach((esc) => {
       if (esc.month_number > 1) {
-        data.push({ month: esc.month_number, rent: esc.amount, label: `Mes ${esc.month_number}` });
-        currentRent = esc.amount;
+        data.push({ month: esc.month_number, rent: esc.amount, isEditable: true });
       }
     });
     
-    // Add final month with regime rent if different
-    if (durationMonths > 1) {
-      const lastEscMonth = sortedEscalations.length > 0 
-        ? Math.max(...sortedEscalations.map(e => e.month_number))
-        : 1;
-      
-      if (lastEscMonth < durationMonths) {
-        data.push({ month: durationMonths, rent: regimeRent, label: `Mes ${durationMonths}` });
-      }
+    // Add final month with regime rent if not already defined
+    const lastEscMonth = sortedEscalations.length > 0 
+      ? Math.max(...sortedEscalations.map(e => e.month_number))
+      : 1;
+    
+    if (lastEscMonth < durationMonths) {
+      data.push({ month: durationMonths, rent: regimeRent, isEditable: false });
     }
 
     return data;
@@ -118,6 +174,9 @@ export const RentEscalations = ({
 
   // Only show chart if there are escalations or different initial/regime rents
   const showChart = sortedEscalations.length > 0 || initialRent !== regimeRent;
+
+  // Calculate domain for X axis to show real proportions
+  const xDomain = [1, durationMonths];
 
   return (
     <div className="space-y-4">
@@ -202,18 +261,24 @@ export const RentEscalations = ({
         </div>
       )}
 
-      {/* Rent trend chart */}
+      {/* Rent trend chart with real duration spacing */}
       {showChart && (
         <div className="pt-4 border-t border-border">
-          <Label className="text-sm font-medium mb-2 block">Tendencia de arriendo</Label>
+          <Label className="text-sm font-medium mb-2 block">
+            Tendencia de arriendo
+            {!readOnly && <span className="text-xs text-muted-foreground ml-2">(clic en los puntos para editar)</span>}
+          </Label>
           <div className="h-48 mt-2">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                 <XAxis 
                   dataKey="month" 
+                  type="number"
+                  domain={xDomain}
                   tick={{ fontSize: 11 }}
                   tickFormatter={(v) => `M${v}`}
+                  scale="linear"
                 />
                 <YAxis 
                   tick={{ fontSize: 11 }}
@@ -228,7 +293,13 @@ export const RentEscalations = ({
                   dataKey="rent" 
                   stroke="hsl(var(--primary))" 
                   strokeWidth={2}
-                  dot={{ fill: "hsl(var(--primary))", strokeWidth: 2, r: 4 }}
+                  dot={(props) => (
+                    <CustomDot 
+                      {...props} 
+                      onDotClick={handleDotClick}
+                    />
+                  )}
+                  activeDot={{ r: 6, fill: "hsl(var(--primary))" }}
                 />
                 <ReferenceLine 
                   y={regimeRent} 
@@ -253,6 +324,35 @@ export const RentEscalations = ({
           <p className="text-lg font-semibold">{formatCurrency(regimeRent)}</p>
         </div>
       </div>
+
+      {/* Edit dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Escalón - Mes {editMonth}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="editAmount">Nuevo Monto ({currency})</Label>
+              <Input
+                id="editAmount"
+                type="number"
+                value={editAmount}
+                onChange={(e) => setEditAmount(e.target.value)}
+                step={currency === "UF" ? "0.01" : "1"}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveEdit}>
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

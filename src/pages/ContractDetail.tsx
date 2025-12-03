@@ -372,13 +372,15 @@ const ContractDetail = () => {
   const allDocuments = contract.contract_documents || [];
   const isNegotiating = contract.status === "en_negociacion";
   const isSigned = contract.status === "firmado";
-  const hasRenegotiation = allVersions.some(v => v.is_renegotiation);
+  const currentRenegotiation = allVersions.find(v => v.is_renegotiation && v.is_current);
+  const hasActiveRenegotiation = !!currentRenegotiation;
   
-  // Filter documents: show signed docs always, show drafts only when negotiating or when signed with renegotiation
+  // Filter documents: show signed docs always, show renegotiation drafts when there's an active renegotiation
   const documents = isSigned 
     ? allDocuments.filter(d => 
         d.document_type === "firmado" || 
-        (hasRenegotiation && (d.document_type.includes("borrador_r") || d.document_type.includes("firmado_r")))
+        d.document_type === "firmado_r" ||
+        (hasActiveRenegotiation && (d.document_type === "borrador_r" || d.document_type === "borrador_final_r"))
       )
     : allDocuments;
 
@@ -422,6 +424,8 @@ const ContractDetail = () => {
                   notice_type: currentVersion.notice_type,
                   notice_value: currentVersion.notice_value,
                 }}
+                hasActiveRenegotiation={hasActiveRenegotiation}
+                renegotiationVersionId={currentRenegotiation?.id}
                 onSuccess={loadContract}
               />
             )}
@@ -664,8 +668,8 @@ const ContractDetail = () => {
           onSendForSignature={handleSendForSignature}
           onMarkAsSigned={handleMarkAsSigned}
           onChangeDocumentType={handleChangeDocumentType}
-          readOnly={!isNegotiating && !(isSigned && hasRenegotiation)}
-          isRenegotiation={isSigned && hasRenegotiation}
+          readOnly={!isNegotiating && !(isSigned && hasActiveRenegotiation)}
+          isRenegotiation={isSigned && hasActiveRenegotiation}
         />
 
         <RepositorySection 
