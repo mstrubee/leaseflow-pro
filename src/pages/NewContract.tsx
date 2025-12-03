@@ -10,6 +10,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { RentEscalations, Escalation } from "@/components/contracts/RentEscalations";
+import { CurrencyInput } from "@/components/contracts/CurrencyInput";
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 
 const NewContract = () => {
   const navigate = useNavigate();
@@ -32,6 +34,7 @@ const NewContract = () => {
   const [email, setEmail] = useState("");
   
   // Commercial conditions
+  const [currency, setCurrency] = useState<"UF" | "CLP">("UF");
   const [hasEscalation, setHasEscalation] = useState(false);
   const [initialRent, setInitialRent] = useState("");
   const [regimeRent, setRegimeRent] = useState("");
@@ -40,6 +43,8 @@ const NewContract = () => {
   const [noticeType, setNoticeType] = useState<"fecha" | "meses">("meses");
   const [noticeValue, setNoticeValue] = useState("");
   const [escalations, setEscalations] = useState<Escalation[]>([]);
+  
+  const { ufValue, convertPesosToUF } = useEconomicIndicators();
   
   // Document
   const [documentUrl, setDocumentUrl] = useState("");
@@ -88,6 +93,15 @@ const NewContract = () => {
 
       if (contactError) throw contactError;
 
+      // Convert values to UF if needed
+      const getUFValue = (value: string) => {
+        const num = parseFloat(value);
+        if (currency === "CLP" && ufValue > 0) {
+          return convertPesosToUF(num);
+        }
+        return num;
+      };
+
       // Create version
       const { data: version, error: versionError } = await supabase
         .from("contract_versions")
@@ -95,8 +109,8 @@ const NewContract = () => {
           contract_id: contract.id,
           version_number: 1,
           is_current: true,
-          initial_rent: hasEscalation ? parseFloat(initialRent) : null,
-          regime_rent: parseFloat(regimeRent),
+          initial_rent: hasEscalation ? getUFValue(initialRent) : null,
+          regime_rent: getUFValue(regimeRent),
           variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
           duration_months: parseInt(duration),
           notice_type: noticeType,
@@ -115,7 +129,7 @@ const NewContract = () => {
             escalations.map((e) => ({
               version_id: version.id,
               month_number: e.month_number,
-              amount: e.amount,
+              amount: currency === "CLP" && ufValue > 0 ? convertPesosToUF(e.amount) : e.amount,
             }))
           );
 
@@ -288,6 +302,22 @@ const NewContract = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
+                <Label>Moneda</Label>
+                <Select value={currency} onValueChange={(v) => setCurrency(v as "UF" | "CLP")}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UF">UF</SelectItem>
+                    <SelectItem value="CLP">Pesos (CLP)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Los valores se almacenan en UF. Si ingresa en Pesos, se convertirán automáticamente.
+                </p>
+              </div>
+
+              <div className="space-y-2">
                 <Label>¿Tiene arriendo escalonado?</Label>
                 <RadioGroup
                   value={hasEscalation ? "yes" : "no"}
@@ -306,16 +336,16 @@ const NewContract = () => {
 
               {hasEscalation && (
                 <>
-                  <div className="space-y-2">
-                    <Label htmlFor="initialRent">Canon Inicial (CLP) *</Label>
-                    <Input
-                      id="initialRent"
-                      type="number"
-                      value={initialRent}
-                      onChange={(e) => setInitialRent(e.target.value)}
-                      required={hasEscalation}
-                    />
-                  </div>
+                  <CurrencyInput
+                    id="initialRent"
+                    label="Canon Inicial"
+                    value={initialRent}
+                    onChange={setInitialRent}
+                    currency={currency}
+                    onCurrencyChange={setCurrency}
+                    required
+                    showCurrencySelector={false}
+                  />
                   
                   {duration && (
                     <div className="border border-border rounded-lg p-4 mt-4">
@@ -325,22 +355,23 @@ const NewContract = () => {
                         initialRent={parseFloat(initialRent) || 0}
                         regimeRent={parseFloat(regimeRent) || 0}
                         durationMonths={parseInt(duration) || 12}
+                        currency={currency}
                       />
                     </div>
                   )}
                 </>
               )}
 
-              <div className="space-y-2">
-                <Label htmlFor="regimeRent">Canon en Régimen (CLP) *</Label>
-                <Input
-                  id="regimeRent"
-                  type="number"
-                  value={regimeRent}
-                  onChange={(e) => setRegimeRent(e.target.value)}
-                  required
-                />
-              </div>
+              <CurrencyInput
+                id="regimeRent"
+                label="Canon en Régimen"
+                value={regimeRent}
+                onChange={setRegimeRent}
+                currency={currency}
+                onCurrencyChange={setCurrency}
+                required
+                showCurrencySelector={false}
+              />
 
               <div className="space-y-2">
                 <Label htmlFor="variableRentPercentage">Arriendo Variable (%)</Label>

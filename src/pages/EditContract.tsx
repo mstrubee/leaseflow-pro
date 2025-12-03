@@ -10,6 +10,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { RentEscalations, Escalation } from "@/components/contracts/RentEscalations";
+import { CurrencyInput } from "@/components/contracts/CurrencyInput";
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 
 const EditContract = () => {
   const { id } = useParams();
@@ -37,6 +39,7 @@ const EditContract = () => {
   
   // Commercial conditions
   const [versionId, setVersionId] = useState("");
+  const [currency, setCurrency] = useState<"UF" | "CLP">("UF");
   const [hasEscalation, setHasEscalation] = useState(false);
   const [initialRent, setInitialRent] = useState("");
   const [regimeRent, setRegimeRent] = useState("");
@@ -45,6 +48,8 @@ const EditContract = () => {
   const [noticeType, setNoticeType] = useState<"fecha" | "meses">("meses");
   const [noticeValue, setNoticeValue] = useState("");
   const [escalations, setEscalations] = useState<Array<{ id?: string; month_number: number; amount: number }>>([]);
+  
+  const { ufValue, convertPesosToUF } = useEconomicIndicators();
 
   useEffect(() => {
     if (id) {
@@ -353,10 +358,26 @@ const EditContract = () => {
             <CardHeader>
               <CardTitle>Condiciones Comerciales</CardTitle>
               <CardDescription>
-                Modifica las condiciones de la versión actual
+                Modifica las condiciones de la versión actual (valores en UF)
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Moneda para edición</Label>
+                <Select value={currency} onValueChange={(v) => setCurrency(v as "UF" | "CLP")}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UF">UF</SelectItem>
+                    <SelectItem value="CLP">Pesos (CLP)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Los valores se almacenan en UF.
+                </p>
+              </div>
+
               <div className="space-y-2">
                 <Label>¿Tiene arriendo escalonado?</Label>
                 <RadioGroup
@@ -376,16 +397,16 @@ const EditContract = () => {
 
               {hasEscalation && (
                 <>
-                  <div className="space-y-2">
-                    <Label htmlFor="initialRent">Canon Inicial (CLP) *</Label>
-                    <Input
-                      id="initialRent"
-                      type="number"
-                      value={initialRent}
-                      onChange={(e) => setInitialRent(e.target.value)}
-                      required={hasEscalation}
-                    />
-                  </div>
+                  <CurrencyInput
+                    id="initialRent"
+                    label="Canon Inicial"
+                    value={initialRent}
+                    onChange={setInitialRent}
+                    currency={currency}
+                    onCurrencyChange={setCurrency}
+                    required
+                    showCurrencySelector={false}
+                  />
                   
                   {duration && (
                     <div className="border border-border rounded-lg p-4 mt-4">
@@ -395,22 +416,23 @@ const EditContract = () => {
                         initialRent={parseFloat(initialRent) || 0}
                         regimeRent={parseFloat(regimeRent) || 0}
                         durationMonths={parseInt(duration) || 12}
+                        currency={currency}
                       />
                     </div>
                   )}
                 </>
               )}
 
-              <div className="space-y-2">
-                <Label htmlFor="regimeRent">Canon en Régimen (CLP) *</Label>
-                <Input
-                  id="regimeRent"
-                  type="number"
-                  value={regimeRent}
-                  onChange={(e) => setRegimeRent(e.target.value)}
-                  required
-                />
-              </div>
+              <CurrencyInput
+                id="regimeRent"
+                label="Canon en Régimen"
+                value={regimeRent}
+                onChange={setRegimeRent}
+                currency={currency}
+                onCurrencyChange={setCurrency}
+                required
+                showCurrencySelector={false}
+              />
 
               <div className="space-y-2">
                 <Label htmlFor="variableRentPercentage">Arriendo Variable (%)</Label>
