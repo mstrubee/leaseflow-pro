@@ -230,6 +230,9 @@ const ContractDetail = () => {
     setSigningContract(true);
 
     try {
+      const doc = contract.contract_documents?.find(d => d.id === docId);
+      const isRenegotiationDoc = doc?.document_type === "borrador_final_r" || doc?.document_type === "borrador_r";
+      
       // Get the "Borradores de Contrato" folder for this contract
       const { data: borradorFolder } = await supabase
         .from("repository_folders")
@@ -238,20 +241,25 @@ const ContractDetail = () => {
         .eq("folder_type", "borradores")
         .single();
 
-      // Get all draft documents (borrador and borrador_final except the one being signed)
+      // Get ALL draft documents (borrador, borrador_final, borrador_r, borrador_final_r except the one being signed)
       const draftDocs = contract.contract_documents?.filter(
-        (d) => d.id !== docId && (d.document_type === "borrador" || d.document_type === "borrador_final")
+        (d) => d.id !== docId && 
+          (d.document_type === "borrador" || 
+           d.document_type === "borrador_final" ||
+           d.document_type === "borrador_r" ||
+           d.document_type === "borrador_final_r")
       ) || [];
 
       // Move all draft documents to the repository folder
       if (borradorFolder && draftDocs.length > 0) {
-        for (const doc of draftDocs) {
+        for (const draftDoc of draftDocs) {
+          const typeLabel = draftDoc.document_type.includes("_r") ? "Borrador_Renego" : "Borrador";
           await supabase
             .from("repository_files")
             .insert({
               folder_id: borradorFolder.id,
-              name: `Borrador_${new Date(doc.uploaded_at).toISOString().split('T')[0]}`,
-              url: doc.url,
+              name: `${typeLabel}_${new Date(draftDoc.uploaded_at).toISOString().split('T')[0]}`,
+              url: draftDoc.url,
               file_type: "pdf",
             });
         }
@@ -264,29 +272,61 @@ const ContractDetail = () => {
           .in("id", draftIds);
       }
 
-      // Update contract status
-      const { error: contractError } = await supabase
-        .from("contracts")
-        .update({
-          status: "firmado",
-          signed_date: new Date().toISOString().split("T")[0],
-        })
-        .eq("id", contract.id);
+      if (isRenegotiationDoc) {
+        // For renegotiation: mark document as firmado_r with correlative number
+        // Count existing renegotiation signed documents + 1
+        const renegoSignedCount = contract.contract_documents?.filter(
+          d => d.document_type === "firmado_r"
+        ).length || 0;
+        
+        const { error: docError } = await supabase
+          .from("contract_documents")
+          .update({ document_type: "firmado_r" as any })
+          .eq("id", docId);
 
-      if (contractError) throw contractError;
+        if (docError) throw docError;
 
-      // Update the document to "firmado"
-      const { error: docError } = await supabase
-        .from("contract_documents")
-        .update({ document_type: "firmado" })
-        .eq("id", docId);
+        // Mark renegotiation version as no longer current and set effective_date if null
+        const renegoVersion = contract.contract_versions?.find(v => v.is_renegotiation && v.is_current);
+        if (renegoVersion) {
+          const updateData: any = { is_renegotiation: false };
+          if (!renegoVersion.effective_date) {
+            updateData.effective_date = new Date().toISOString().split("T")[0];
+          }
+          await supabase
+            .from("contract_versions")
+            .update(updateData)
+            .eq("id", renegoVersion.id);
+        }
 
-      if (docError) throw docError;
+        toast({
+          title: "Renegociación firmada",
+          description: `La renegociación #${renegoSignedCount + 1} ha sido marcada como firmada`,
+        });
+      } else {
+        // For initial contract
+        const { error: contractError } = await supabase
+          .from("contracts")
+          .update({
+            status: "firmado",
+            signed_date: new Date().toISOString().split("T")[0],
+          })
+          .eq("id", contract.id);
 
-      toast({
-        title: "Contrato firmado",
-        description: "El contrato ha sido marcado como firmado y los borradores han sido archivados",
-      });
+        if (contractError) throw contractError;
+
+        const { error: docError } = await supabase
+          .from("contract_documents")
+          .update({ document_type: "firmado" })
+          .eq("id", docId);
+
+        if (docError) throw docError;
+
+        toast({
+          title: "Contrato firmado",
+          description: "El contrato ha sido marcado como firmado y los borradores han sido archivados",
+        });
+      }
 
       loadContract();
     } catch (error: any) {
@@ -449,6 +489,9 @@ const ContractDetail = () => {
   const isSigned = contract.status === "firmado";
   const currentRenegotiation = allVersions.find(v => v.is_renegotiation && v.is_current);
   const hasActiveRenegotiation = !!currentRenegotiation;
+  
+  // Count signed renegotiations for correlative numbering
+  const signedRenegotiationDocs = allDocuments.filter(d => d.document_type === "firmado_r");
   
   // Filter documents: show signed docs always, drafts for renegotiation, and regular drafts for signed contracts
   const documents = isSigned 
