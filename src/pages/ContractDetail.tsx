@@ -37,6 +37,7 @@ interface Contract {
     is_renegotiation: boolean;
     initial_rent: number | null;
     regime_rent: number;
+    variable_rent_percentage: number | null;
     duration_months: number;
     notice_type: string;
     notice_value: string;
@@ -103,6 +104,11 @@ const ContractDetail = () => {
     if (!contract) return;
     
     const currentVersion = contract.contract_versions?.find((v) => v.is_current);
+    const isSigned = contract.status === "firmado";
+    const hasRenegotiation = contract.contract_versions?.some(v => v.is_renegotiation);
+    
+    // Use renegotiation document type if contract is signed and has renegotiation
+    const documentType = (isSigned && hasRenegotiation) ? "borrador_r" : "borrador";
     
     try {
       const { error } = await supabase
@@ -110,7 +116,7 @@ const ContractDetail = () => {
         .insert({
           contract_id: contract.id,
           version_id: currentVersion?.id || null,
-          document_type: "borrador",
+          document_type: documentType as any,
           url,
         });
 
@@ -132,10 +138,15 @@ const ContractDetail = () => {
   };
 
   const handleMarkAsFinal = async (docId: string) => {
+    if (!contract) return;
+    
+    const doc = contract.contract_documents?.find(d => d.id === docId);
+    const newType = doc?.document_type === "borrador_r" ? "borrador_final_r" : "borrador_final";
+    
     try {
       const { error } = await supabase
         .from("contract_documents")
-        .update({ document_type: "borrador_final" })
+        .update({ document_type: newType as any })
         .eq("id", docId);
 
       if (error) throw error;
@@ -159,7 +170,7 @@ const ContractDetail = () => {
     try {
       const { error } = await supabase
         .from("contract_documents")
-        .update({ document_type: newType as "borrador" | "borrador_final" | "firmado" })
+        .update({ document_type: newType as any })
         .eq("id", docId);
 
       if (error) throw error;
@@ -361,9 +372,18 @@ const ContractDetail = () => {
   const contact = contract.contract_contacts?.[0];
   const currentVersion = contract.contract_versions?.find((v) => v.is_current);
   const allVersions = contract.contract_versions?.sort((a, b) => b.version_number - a.version_number) || [];
-  const documents = contract.contract_documents || [];
+  const allDocuments = contract.contract_documents || [];
   const isNegotiating = contract.status === "en_negociacion";
   const isSigned = contract.status === "firmado";
+  const hasRenegotiation = allVersions.some(v => v.is_renegotiation);
+  
+  // Filter documents: show signed docs always, show drafts only when negotiating or when signed with renegotiation
+  const documents = isSigned 
+    ? allDocuments.filter(d => 
+        d.document_type === "firmado" || 
+        (hasRenegotiation && (d.document_type.includes("borrador_r") || d.document_type.includes("firmado_r")))
+      )
+    : allDocuments;
 
   return (
     <div className="min-h-screen bg-background">
@@ -400,6 +420,7 @@ const ContractDetail = () => {
                   version_number: currentVersion.version_number,
                   initial_rent: currentVersion.initial_rent,
                   regime_rent: currentVersion.regime_rent,
+                  variable_rent_percentage: currentVersion.variable_rent_percentage,
                   duration_months: currentVersion.duration_months,
                   notice_type: currentVersion.notice_type,
                   notice_value: currentVersion.notice_value,
@@ -512,6 +533,14 @@ const ContractDetail = () => {
                       {formatCurrency(currentVersion.regime_rent)}
                     </p>
                   </div>
+                  {currentVersion.variable_rent_percentage && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Arriendo Variable</p>
+                      <p className="text-lg font-semibold">
+                        {currentVersion.variable_rent_percentage}%
+                      </p>
+                    </div>
+                  )}
                   <div>
                     <p className="text-sm text-muted-foreground">Duración</p>
                     <p className="text-lg font-semibold">
@@ -529,23 +558,6 @@ const ContractDetail = () => {
                     </p>
                   </div>
                 </div>
-
-                {currentVersion.rent_escalations && currentVersion.rent_escalations.length > 0 && (
-                  <div className="pt-4 border-t border-border">
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Escalonamiento ({currentVersion.rent_escalations.length} escalones)
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {currentVersion.rent_escalations
-                        .sort((a, b) => a.month_number - b.month_number)
-                        .map((e) => (
-                          <Badge key={e.id} variant="secondary">
-                            Mes {e.month_number}: {formatCurrency(e.amount)}
-                          </Badge>
-                        ))}
-                    </div>
-                  </div>
-                )}
               </div>
             ) : (
               <p className="text-muted-foreground">
@@ -564,7 +576,7 @@ const ContractDetail = () => {
                 Historial de Versiones
               </CardTitle>
               <CardDescription>
-                Este contrato tiene {allVersions.length} versiones
+                Este contrato tiene {allVersions.length} versiones. Haz clic en una renegociación para editarla.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -572,11 +584,16 @@ const ContractDetail = () => {
                 {allVersions.map((version) => (
                   <div
                     key={version.id}
-                    className={`p-4 rounded-lg border ${
+                    className={`p-4 rounded-lg border transition-colors ${
                       version.is_current
                         ? "border-primary bg-primary/5"
                         : "border-border bg-muted/30"
-                    }`}
+                    } ${version.is_renegotiation && version.is_current ? "cursor-pointer hover:bg-primary/10" : ""}`}
+                    onClick={() => {
+                      if (version.is_renegotiation && version.is_current) {
+                        navigate(`/contracts/${contract.id}/edit`);
+                      }
+                    }}
                   >
                     <div className="flex items-start justify-between">
                       <div className="space-y-1">
@@ -591,6 +608,7 @@ const ContractDetail = () => {
                         </div>
                         <div className="text-sm text-muted-foreground">
                           Canon: {formatCurrency(version.regime_rent)} · {version.duration_months} meses
+                          {version.variable_rent_percentage && ` · Variable: ${version.variable_rent_percentage}%`}
                         </div>
                         {version.effective_date && (
                           <div className="text-sm text-muted-foreground">
@@ -624,7 +642,8 @@ const ContractDetail = () => {
           onSendForSignature={handleSendForSignature}
           onMarkAsSigned={handleMarkAsSigned}
           onChangeDocumentType={handleChangeDocumentType}
-          readOnly={!isNegotiating}
+          readOnly={!isNegotiating && !(isSigned && hasRenegotiation)}
+          isRenegotiation={isSigned && hasRenegotiation}
         />
 
         <RepositorySection 

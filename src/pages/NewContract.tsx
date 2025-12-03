@@ -35,6 +35,7 @@ const NewContract = () => {
   const [hasEscalation, setHasEscalation] = useState(false);
   const [initialRent, setInitialRent] = useState("");
   const [regimeRent, setRegimeRent] = useState("");
+  const [variableRentPercentage, setVariableRentPercentage] = useState("");
   const [duration, setDuration] = useState("");
   const [noticeType, setNoticeType] = useState<"fecha" | "meses">("meses");
   const [noticeValue, setNoticeValue] = useState("");
@@ -96,6 +97,7 @@ const NewContract = () => {
           is_current: true,
           initial_rent: hasEscalation ? parseFloat(initialRent) : null,
           regime_rent: parseFloat(regimeRent),
+          variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
           duration_months: parseInt(duration),
           notice_type: noticeType,
           notice_value: noticeValue,
@@ -286,7 +288,7 @@ const NewContract = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label>¿Tiene canon escalonado?</Label>
+                <Label>¿Tiene arriendo escalonado?</Label>
                 <RadioGroup
                   value={hasEscalation ? "yes" : "no"}
                   onValueChange={(value) => setHasEscalation(value === "yes")}
@@ -303,16 +305,30 @@ const NewContract = () => {
               </div>
 
               {hasEscalation && (
-                <div className="space-y-2">
-                  <Label htmlFor="initialRent">Canon Inicial (CLP) *</Label>
-                  <Input
-                    id="initialRent"
-                    type="number"
-                    value={initialRent}
-                    onChange={(e) => setInitialRent(e.target.value)}
-                    required={hasEscalation}
-                  />
-                </div>
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="initialRent">Canon Inicial (CLP) *</Label>
+                    <Input
+                      id="initialRent"
+                      type="number"
+                      value={initialRent}
+                      onChange={(e) => setInitialRent(e.target.value)}
+                      required={hasEscalation}
+                    />
+                  </div>
+                  
+                  {duration && (
+                    <div className="border border-border rounded-lg p-4 mt-4">
+                      <RentEscalations
+                        escalations={escalations}
+                        onChange={setEscalations}
+                        initialRent={parseFloat(initialRent) || 0}
+                        regimeRent={parseFloat(regimeRent) || 0}
+                        durationMonths={parseInt(duration) || 12}
+                      />
+                    </div>
+                  )}
+                </>
               )}
 
               <div className="space-y-2">
@@ -323,6 +339,18 @@ const NewContract = () => {
                   value={regimeRent}
                   onChange={(e) => setRegimeRent(e.target.value)}
                   required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="variableRentPercentage">Arriendo Variable (%)</Label>
+                <Input
+                  id="variableRentPercentage"
+                  type="number"
+                  step="0.01"
+                  placeholder="Ej: 5.5"
+                  value={variableRentPercentage}
+                  onChange={(e) => setVariableRentPercentage(e.target.value)}
                 />
               </div>
 
@@ -364,16 +392,6 @@ const NewContract = () => {
               </div>
             </CardContent>
           </Card>
-
-          {hasEscalation && duration && (
-            <RentEscalations
-              escalations={escalations}
-              onChange={setEscalations}
-              initialRent={parseFloat(initialRent) || 0}
-              regimeRent={parseFloat(regimeRent) || 0}
-              durationMonths={parseInt(duration) || 12}
-            />
-          )}
 
           <Card>
             <CardHeader>

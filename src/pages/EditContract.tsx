@@ -6,8 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Loader2 } from "lucide-react";
+import { RentEscalations, Escalation } from "@/components/contracts/RentEscalations";
 
 const EditContract = () => {
   const { id } = useParams();
@@ -35,11 +37,14 @@ const EditContract = () => {
   
   // Commercial conditions
   const [versionId, setVersionId] = useState("");
+  const [hasEscalation, setHasEscalation] = useState(false);
   const [initialRent, setInitialRent] = useState("");
   const [regimeRent, setRegimeRent] = useState("");
+  const [variableRentPercentage, setVariableRentPercentage] = useState("");
   const [duration, setDuration] = useState("");
   const [noticeType, setNoticeType] = useState<"fecha" | "meses">("meses");
   const [noticeValue, setNoticeValue] = useState("");
+  const [escalations, setEscalations] = useState<Array<{ id?: string; month_number: number; amount: number }>>([]);
 
   useEffect(() => {
     if (id) {
@@ -55,7 +60,7 @@ const EditContract = () => {
           *,
           contract_addresses (*),
           contract_contacts (*),
-          contract_versions (*)
+          contract_versions (*, rent_escalations (*))
         `)
         .eq("id", id)
         .single();
@@ -85,11 +90,14 @@ const EditContract = () => {
       const version = data.contract_versions?.find((v: any) => v.is_current);
       if (version) {
         setVersionId(version.id);
+        setHasEscalation(!!version.initial_rent);
         setInitialRent(version.initial_rent?.toString() || "");
         setRegimeRent(version.regime_rent.toString());
+        setVariableRentPercentage(version.variable_rent_percentage?.toString() || "");
         setDuration(version.duration_months.toString());
         setNoticeType(version.notice_type);
         setNoticeValue(version.notice_value);
+        setEscalations(version.rent_escalations || []);
       }
     } catch (error: any) {
       toast({
@@ -146,8 +154,9 @@ const EditContract = () => {
         const { error: versionError } = await supabase
           .from("contract_versions")
           .update({
-            initial_rent: initialRent ? parseFloat(initialRent) : null,
+            initial_rent: hasEscalation && initialRent ? parseFloat(initialRent) : null,
             regime_rent: parseFloat(regimeRent),
+            variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
             duration_months: parseInt(duration),
             notice_type: noticeType,
             notice_value: noticeValue,
@@ -155,6 +164,36 @@ const EditContract = () => {
           .eq("id", versionId);
 
         if (versionError) throw versionError;
+
+        // Update escalations
+        if (hasEscalation) {
+          // Delete existing escalations
+          await supabase
+            .from("rent_escalations")
+            .delete()
+            .eq("version_id", versionId);
+
+          // Insert new escalations
+          if (escalations.length > 0) {
+            const { error: escalationError } = await supabase
+              .from("rent_escalations")
+              .insert(
+                escalations.map((e) => ({
+                  version_id: versionId,
+                  month_number: e.month_number,
+                  amount: e.amount,
+                }))
+              );
+
+            if (escalationError) throw escalationError;
+          }
+        } else {
+          // Remove escalations if hasEscalation is false
+          await supabase
+            .from("rent_escalations")
+            .delete()
+            .eq("version_id", versionId);
+        }
       }
 
       toast({
@@ -319,15 +358,48 @@ const EditContract = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="initialRent">Canon Inicial (CLP)</Label>
-                <Input
-                  id="initialRent"
-                  type="number"
-                  value={initialRent}
-                  onChange={(e) => setInitialRent(e.target.value)}
-                  placeholder="Opcional si no hay escalonamiento"
-                />
+                <Label>¿Tiene arriendo escalonado?</Label>
+                <RadioGroup
+                  value={hasEscalation ? "yes" : "no"}
+                  onValueChange={(value) => setHasEscalation(value === "yes")}
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="no" id="no" />
+                    <Label htmlFor="no">No</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="yes" id="yes" />
+                    <Label htmlFor="yes">Sí</Label>
+                  </div>
+                </RadioGroup>
               </div>
+
+              {hasEscalation && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="initialRent">Canon Inicial (CLP) *</Label>
+                    <Input
+                      id="initialRent"
+                      type="number"
+                      value={initialRent}
+                      onChange={(e) => setInitialRent(e.target.value)}
+                      required={hasEscalation}
+                    />
+                  </div>
+                  
+                  {duration && (
+                    <div className="border border-border rounded-lg p-4 mt-4">
+                      <RentEscalations
+                        escalations={escalations}
+                        onChange={setEscalations}
+                        initialRent={parseFloat(initialRent) || 0}
+                        regimeRent={parseFloat(regimeRent) || 0}
+                        durationMonths={parseInt(duration) || 12}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="regimeRent">Canon en Régimen (CLP) *</Label>
@@ -337,6 +409,18 @@ const EditContract = () => {
                   value={regimeRent}
                   onChange={(e) => setRegimeRent(e.target.value)}
                   required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="variableRentPercentage">Arriendo Variable (%)</Label>
+                <Input
+                  id="variableRentPercentage"
+                  type="number"
+                  step="0.01"
+                  placeholder="Ej: 5.5"
+                  value={variableRentPercentage}
+                  onChange={(e) => setVariableRentPercentage(e.target.value)}
                 />
               </div>
 
