@@ -1,32 +1,23 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Plus, LogOut } from "lucide-react";
+import { Plus, LogOut, Shield } from "lucide-react";
 import { DashboardStats } from "@/components/dashboard/DashboardStats";
 import { ContractsList } from "@/components/dashboard/ContractsList";
-import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { toast } = useToast();
-  const [loading, setLoading] = useState(true);
+  const { user, loading, isAdmin, signOut } = useAuth();
 
   useEffect(() => {
-    checkAuth();
-  }, []);
-
-  const checkAuth = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
+    if (!loading && !user) {
       navigate("/auth");
-    } else {
-      setLoading(false);
     }
-  };
+  }, [loading, user, navigate]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await signOut();
     navigate("/auth");
   };
 
@@ -50,6 +41,12 @@ const Dashboard = () => {
               </p>
             </div>
             <div className="flex items-center gap-3">
+              {isAdmin && (
+                <Button variant="outline" onClick={() => navigate("/admin")} className="gap-2">
+                  <Shield className="h-4 w-4" />
+                  Admin
+                </Button>
+              )}
               <Button onClick={() => navigate("/contracts/new")} className="gap-2">
                 <Plus className="h-4 w-4" />
                 Nuevo Contrato
