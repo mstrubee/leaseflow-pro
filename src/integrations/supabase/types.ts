@@ -523,7 +523,13 @@ export type Database = {
     Enums: {
       app_role: "admin" | "user"
       contract_status: "en_negociacion" | "firmado" | "vencido"
-      document_type: "borrador" | "borrador_final" | "firmado"
+      document_type:
+        | "borrador"
+        | "borrador_final"
+        | "firmado"
+        | "borrador_r"
+        | "borrador_final_r"
+        | "firmado_r"
       notice_type: "fecha" | "meses"
       permission_type: "view" | "edit" | "all"
     }
@@ -655,7 +661,14 @@ export const Constants = {
     Enums: {
       app_role: ["admin", "user"],
       contract_status: ["en_negociacion", "firmado", "vencido"],
-      document_type: ["borrador", "borrador_final", "firmado"],
+      document_type: [
+        "borrador",
+        "borrador_final",
+        "firmado",
+        "borrador_r",
+        "borrador_final_r",
+        "firmado_r",
+      ],
       notice_type: ["fecha", "meses"],
       permission_type: ["view", "edit", "all"],
     },
