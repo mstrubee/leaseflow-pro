@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Trash2, Shield, Loader2 } from "lucide-react";
+import { CloudStorageSettings } from "@/components/contracts/CloudStorageSettings";
 
 interface Profile {
   id: string;
@@ -391,6 +392,9 @@ const AdminPanel = () => {
             </Table>
           </CardContent>
         </Card>
+
+        {/* Cloud Storage Settings */}
+        <CloudStorageSettings />
 
         {/* Edit Permissions Dialog */}
         <Dialog open={!!editingUserId} onOpenChange={(open) => !open && setEditingUserId(null)}>
