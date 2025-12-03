@@ -2,10 +2,6 @@ import { useState, useEffect } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
-interface UserRole {
-  role: "admin" | "user";
-}
-
 interface UserPermission {
   resource: string;
   permission: "view" | "edit" | "all";
@@ -17,6 +13,7 @@ export const useAuth = () => {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [permissions, setPermissions] = useState<UserPermission[]>([]);
+  const [roleLoaded, setRoleLoaded] = useState(false);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -26,14 +23,14 @@ export const useAuth = () => {
         
         if (session?.user) {
           setTimeout(() => {
-            fetchUserRole(session.user.id);
-            fetchUserPermissions(session.user.id);
+            loadUserData(session.user.id);
           }, 0);
         } else {
           setIsAdmin(false);
           setPermissions([]);
+          setRoleLoaded(true);
+          setLoading(false);
         }
-        setLoading(false);
       }
     );
 
@@ -41,32 +38,31 @@ export const useAuth = () => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchUserRole(session.user.id);
-        fetchUserPermissions(session.user.id);
+        loadUserData(session.user.id);
+      } else {
+        setRoleLoaded(true);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchUserRole = async (userId: string) => {
-    const { data } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId)
-      .single();
-    
-    setIsAdmin(data?.role === "admin");
-  };
+  const loadUserData = async (userId: string) => {
+    try {
+      const [roleRes, permRes] = await Promise.all([
+        supabase.from("user_roles").select("role").eq("user_id", userId).single(),
+        supabase.from("user_permissions").select("resource, permission").eq("user_id", userId)
+      ]);
 
-  const fetchUserPermissions = async (userId: string) => {
-    const { data } = await supabase
-      .from("user_permissions")
-      .select("resource, permission")
-      .eq("user_id", userId);
-    
-    setPermissions(data || []);
+      setIsAdmin(roleRes.data?.role === "admin");
+      setPermissions(permRes.data || []);
+    } catch (error) {
+      console.error("Error loading user data:", error);
+    } finally {
+      setRoleLoaded(true);
+      setLoading(false);
+    }
   };
 
   const hasPermission = (resource: string, requiredPermission: "view" | "edit" | "all"): boolean => {
@@ -91,6 +87,7 @@ export const useAuth = () => {
     session,
     loading,
     isAdmin,
+    roleLoaded,
     permissions,
     hasPermission,
     signOut,
