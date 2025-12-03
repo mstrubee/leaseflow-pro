@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,9 @@ import {
   ArrowLeft,
   Upload,
   Trash2,
-  ExternalLink
+  ExternalLink,
+  Settings,
+  Plus
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -24,6 +26,15 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/hooks/useAuth";
 
 interface RepositoryFolder {
   id: string;
@@ -39,6 +50,13 @@ interface RepositoryFile {
   url: string;
   file_type: string | null;
   uploaded_at: string;
+  status: string | null;
+}
+
+interface FolderStatus {
+  id: string;
+  name: string;
+  color: string;
 }
 
 interface RepositorySectionProps {
@@ -58,27 +76,54 @@ const BASE_FOLDERS = [
   { name: "Contratos Anteriores", type: "anteriores", subfolders: [] },
 ];
 
+// Contract document statuses (for "borradores" folder type)
+const CONTRACT_STATUSES = [
+  { name: "En negociación", color: "#f59e0b" },
+  { name: "Final", color: "#22c55e" },
+  { name: "Vencido", color: "#ef4444" },
+];
+
 export const RepositorySection = ({ contractId, contractName }: RepositorySectionProps) => {
   const { toast } = useToast();
+  const { isAdmin } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
   const [folders, setFolders] = useState<RepositoryFolder[]>([]);
   const [files, setFiles] = useState<RepositoryFile[]>([]);
   const [currentFolder, setCurrentFolder] = useState<RepositoryFolder | null>(null);
   const [folderPath, setFolderPath] = useState<RepositoryFolder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  
+  // Dialog states
   const [newFolderName, setNewFolderName] = useState("");
-  const [newFileUrl, setNewFileUrl] = useState("");
-  const [newFileName, setNewFileName] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [fileDialogOpen, setFileDialogOpen] = useState(false);
+  const [statusDialogOpen, setStatusDialogOpen] = useState(false);
+  
+  // File upload states
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [suggestedFileName, setSuggestedFileName] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState("pendiente");
+  
+  // Custom status states
+  const [folderStatuses, setFolderStatuses] = useState<FolderStatus[]>([]);
+  const [newStatusName, setNewStatusName] = useState("");
+  const [newStatusColor, setNewStatusColor] = useState("#6b7280");
 
   useEffect(() => {
     initializeRepository();
   }, [contractId]);
 
+  useEffect(() => {
+    if (currentFolder) {
+      loadFolderStatuses(currentFolder.id);
+    }
+  }, [currentFolder]);
+
   const initializeRepository = async () => {
     setLoading(true);
     try {
-      // Check if base folders exist
       const { data: existingFolders, error: fetchError } = await supabase
         .from("repository_folders")
         .select("*")
@@ -88,7 +133,6 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
 
       if (fetchError) throw fetchError;
 
-      // Create base folders if they don't exist
       if (!existingFolders || existingFolders.length === 0) {
         for (const baseFolder of BASE_FOLDERS) {
           const { data: newFolder, error: createError } = await supabase
@@ -105,7 +149,6 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
 
           if (createError) throw createError;
 
-          // Create default subfolders
           if (baseFolder.subfolders.length > 0 && newFolder) {
             for (const subfolder of baseFolder.subfolders) {
               await supabase
@@ -135,7 +178,6 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
 
   const loadFolderContents = async (folderId: string | null) => {
     try {
-      // Load folders
       let query = supabase
         .from("repository_folders")
         .select("*")
@@ -151,7 +193,6 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
       if (folderError) throw folderError;
       setFolders(folderData || []);
 
-      // Load files in current folder
       if (folderId) {
         const { data: fileData, error: fileError } = await supabase
           .from("repository_files")
@@ -171,6 +212,38 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
         description: "No se pudieron cargar los contenidos",
       });
     }
+  };
+
+  const loadFolderStatuses = async (folderId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("folder_statuses")
+        .select("*")
+        .eq("folder_id", folderId);
+
+      if (error) throw error;
+      setFolderStatuses(data || []);
+    } catch (error) {
+      console.error("Error loading folder statuses:", error);
+    }
+  };
+
+  const getAvailableStatuses = (): { name: string; color: string }[] => {
+    // Check if current folder is "borradores" type (contract documents)
+    const isContractFolder = currentFolder?.folder_type === "borradores" || 
+      folderPath.some(f => f.folder_type === "borradores");
+
+    if (isContractFolder) {
+      return CONTRACT_STATUSES;
+    }
+
+    // Return custom statuses for this folder
+    if (folderStatuses.length > 0) {
+      return folderStatuses;
+    }
+
+    // Default status
+    return [{ name: "pendiente", color: "#6b7280" }];
   };
 
   const navigateToFolder = async (folder: RepositoryFolder) => {
@@ -226,44 +299,114 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
     }
   };
 
-  const handleAddFile = async () => {
-    if (!newFileUrl.trim() || !currentFolder) return;
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      // Suggest filename without extension
+      const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+      setSuggestedFileName(nameWithoutExt);
+      setSelectedStatus("pendiente");
+      setFileDialogOpen(true);
+    }
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
 
-    const fileName = newFileName.trim() || `Documento_${new Date().toISOString().split("T")[0]}`;
+  const handleUploadFile = async () => {
+    if (!selectedFile || !currentFolder || !suggestedFileName.trim()) return;
 
+    setUploading(true);
     try {
-      const { error } = await supabase
+      // Get file extension
+      const ext = selectedFile.name.split('.').pop() || '';
+      const filePath = `${contractId}/${currentFolder.id}/${Date.now()}_${suggestedFileName.trim()}.${ext}`;
+
+      // Upload to Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from("repository-files")
+        .upload(filePath, selectedFile);
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from("repository-files")
+        .getPublicUrl(filePath);
+
+      // Save file record to database
+      const { error: dbError } = await supabase
         .from("repository_files")
         .insert({
           folder_id: currentFolder.id,
-          name: fileName,
-          url: newFileUrl.trim(),
+          name: `${suggestedFileName.trim()}.${ext}`,
+          url: urlData.publicUrl,
+          file_type: ext,
+          status: selectedStatus,
         });
 
-      if (error) throw error;
+      if (dbError) throw dbError;
 
       toast({
-        title: "Archivo agregado",
-        description: `El archivo "${fileName}" ha sido agregado`,
+        title: "Archivo subido",
+        description: `El archivo "${suggestedFileName}" ha sido subido exitosamente`,
       });
 
-      setNewFileUrl("");
-      setNewFileName("");
+      setSelectedFile(null);
+      setSuggestedFileName("");
+      setSelectedStatus("pendiente");
       setFileDialogOpen(false);
       loadFolderContents(currentFolder.id);
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "No se pudo agregar el archivo",
+        description: "No se pudo subir el archivo: " + error.message,
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleUpdateFileStatus = async (fileId: string, newStatus: string) => {
+    try {
+      const { error } = await supabase
+        .from("repository_files")
+        .update({ status: newStatus })
+        .eq("id", fileId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Estado actualizado",
+        description: "El estado del archivo ha sido actualizado",
+      });
+
+      loadFolderContents(currentFolder?.id || null);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo actualizar el estado",
       });
     }
   };
 
-  const handleDeleteFile = async (fileId: string, fileName: string) => {
+  const handleDeleteFile = async (fileId: string, fileName: string, fileUrl: string) => {
     if (!confirm(`¿Estás seguro de eliminar "${fileName}"?`)) return;
+    if (!confirm(`Esta acción no se puede deshacer. ¿Confirmar eliminación de "${fileName}"?`)) return;
 
     try {
+      // Extract path from URL to delete from storage
+      const urlParts = fileUrl.split('/repository-files/');
+      if (urlParts.length > 1) {
+        const storagePath = decodeURIComponent(urlParts[1]);
+        await supabase.storage.from("repository-files").remove([storagePath]);
+      }
+
+      // Delete from database
       const { error } = await supabase
         .from("repository_files")
         .delete()
@@ -286,6 +429,62 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
     }
   };
 
+  const handleCreateStatus = async () => {
+    if (!newStatusName.trim() || !currentFolder) return;
+
+    try {
+      const { error } = await supabase
+        .from("folder_statuses")
+        .insert({
+          folder_id: currentFolder.id,
+          name: newStatusName.trim(),
+          color: newStatusColor,
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: "Estado creado",
+        description: `El estado "${newStatusName}" ha sido creado`,
+      });
+
+      setNewStatusName("");
+      setNewStatusColor("#6b7280");
+      loadFolderStatuses(currentFolder.id);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo crear el estado",
+      });
+    }
+  };
+
+  const handleDeleteStatus = async (statusId: string, statusName: string) => {
+    if (!confirm(`¿Eliminar el estado "${statusName}"?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from("folder_statuses")
+        .delete()
+        .eq("id", statusId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Estado eliminado",
+      });
+
+      loadFolderStatuses(currentFolder?.id || "");
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo eliminar el estado",
+      });
+    }
+  };
+
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString("es-CL", {
       year: "numeric",
@@ -293,6 +492,16 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
       day: "numeric",
     });
   };
+
+  const getStatusColor = (status: string | null) => {
+    if (!status) return "#6b7280";
+    const allStatuses = [...CONTRACT_STATUSES, ...folderStatuses];
+    const found = allStatuses.find(s => s.name === status);
+    return found?.color || "#6b7280";
+  };
+
+  const isContractFolder = currentFolder?.folder_type === "borradores" || 
+    folderPath.some(f => f.folder_type === "borradores");
 
   if (loading) {
     return (
@@ -318,6 +527,14 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          onChange={handleFileSelect}
+        />
+
         {/* Breadcrumb Navigation */}
         <div className="flex items-center gap-2 text-sm">
           <Button
@@ -349,7 +566,7 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {currentFolder && (
             <Button variant="outline" size="sm" onClick={navigateBack} className="gap-1">
               <ArrowLeft className="h-4 w-4" />
@@ -394,52 +611,158 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
                 </DialogContent>
               </Dialog>
 
-              <Dialog open={fileDialogOpen} onOpenChange={setFileDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm" className="gap-1">
-                    <Upload className="h-4 w-4" />
-                    Agregar Archivo
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Agregar Archivo</DialogTitle>
-                    <DialogDescription>
-                      Ingresa la URL del archivo (Google Drive, OneDrive, etc.)
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label>URL del archivo</Label>
-                      <Input
-                        value={newFileUrl}
-                        onChange={(e) => setNewFileUrl(e.target.value)}
-                        placeholder="https://..."
-                        type="url"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Nombre del archivo (opcional)</Label>
-                      <Input
-                        value={newFileName}
-                        onChange={(e) => setNewFileName(e.target.value)}
-                        placeholder="Se generará automáticamente si está vacío"
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setFileDialogOpen(false)}>
-                      Cancelar
+              <Button 
+                size="sm" 
+                className="gap-1"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="h-4 w-4" />
+                Subir Archivo
+              </Button>
+
+              {/* Status Management for Admin (only for non-contract folders) */}
+              {isAdmin && !isContractFolder && (
+                <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-1">
+                      <Settings className="h-4 w-4" />
+                      Gestionar Estados
                     </Button>
-                    <Button onClick={handleAddFile} disabled={!newFileUrl.trim()}>
-                      Agregar
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Gestionar Estados de Archivos</DialogTitle>
+                      <DialogDescription>
+                        Crea estados personalizados para los archivos de esta carpeta
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      {/* Existing statuses */}
+                      {folderStatuses.length > 0 && (
+                        <div className="space-y-2">
+                          <Label>Estados existentes</Label>
+                          <div className="space-y-2">
+                            {folderStatuses.map((status) => (
+                              <div key={status.id} className="flex items-center justify-between p-2 rounded border border-border">
+                                <div className="flex items-center gap-2">
+                                  <div 
+                                    className="w-4 h-4 rounded-full" 
+                                    style={{ backgroundColor: status.color }}
+                                  />
+                                  <span className="text-sm">{status.name}</span>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleDeleteStatus(status.id, status.name)}
+                                  className="h-8 w-8 text-destructive hover:text-destructive"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* New status form */}
+                      <div className="space-y-2">
+                        <Label>Nuevo estado</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            value={newStatusName}
+                            onChange={(e) => setNewStatusName(e.target.value)}
+                            placeholder="Nombre del estado"
+                            className="flex-1"
+                          />
+                          <input
+                            type="color"
+                            value={newStatusColor}
+                            onChange={(e) => setNewStatusColor(e.target.value)}
+                            className="w-10 h-10 rounded border border-border cursor-pointer"
+                          />
+                          <Button 
+                            onClick={handleCreateStatus} 
+                            disabled={!newStatusName.trim()}
+                            size="icon"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setStatusDialogOpen(false)}>
+                        Cerrar
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              )}
             </>
           )}
         </div>
+
+        {/* File Upload Dialog */}
+        <Dialog open={fileDialogOpen} onOpenChange={(open) => {
+          if (!open) {
+            setSelectedFile(null);
+            setSuggestedFileName("");
+          }
+          setFileDialogOpen(open);
+        }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Subir Archivo</DialogTitle>
+              <DialogDescription>
+                Confirma el nombre y estado del archivo
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Archivo seleccionado</Label>
+                <p className="text-sm text-muted-foreground">{selectedFile?.name}</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Nombre del archivo</Label>
+                <Input
+                  value={suggestedFileName}
+                  onChange={(e) => setSuggestedFileName(e.target.value)}
+                  placeholder="Nombre del archivo"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Estado</Label>
+                <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {getAvailableStatuses().map((status) => (
+                      <SelectItem key={status.name} value={status.name}>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-3 h-3 rounded-full" 
+                            style={{ backgroundColor: status.color }}
+                          />
+                          {status.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setFileDialogOpen(false)} disabled={uploading}>
+                Cancelar
+              </Button>
+              <Button onClick={handleUploadFile} disabled={!suggestedFileName.trim() || uploading}>
+                {uploading ? "Subiendo..." : "Subir"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Folders */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
@@ -466,16 +789,47 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
                   key={file.id}
                   className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
                     <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="font-medium text-sm truncate">{file.name}</p>
                       <p className="text-xs text-muted-foreground">
                         {formatDate(file.uploaded_at)}
                       </p>
                     </div>
+                    {/* Status badge */}
+                    <Select
+                      value={file.status || "pendiente"}
+                      onValueChange={(value) => handleUpdateFileStatus(file.id, value)}
+                    >
+                      <SelectTrigger className="w-auto h-7 px-2">
+                        <Badge 
+                          variant="outline" 
+                          style={{ 
+                            backgroundColor: `${getStatusColor(file.status)}20`,
+                            borderColor: getStatusColor(file.status),
+                            color: getStatusColor(file.status)
+                          }}
+                        >
+                          {file.status || "pendiente"}
+                        </Badge>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getAvailableStatuses().map((status) => (
+                          <SelectItem key={status.name} value={status.name}>
+                            <div className="flex items-center gap-2">
+                              <div 
+                                className="w-3 h-3 rounded-full" 
+                                style={{ backgroundColor: status.color }}
+                              />
+                              {status.name}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 ml-2">
                     <Button
                       variant="ghost"
                       size="icon"
@@ -486,7 +840,7 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleDeleteFile(file.id, file.name)}
+                      onClick={() => handleDeleteFile(file.id, file.name, file.url)}
                       className="text-destructive hover:text-destructive"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -498,11 +852,19 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
           </div>
         )}
 
-        {/* Empty state for files */}
-        {currentFolder && files.length === 0 && folders.length === 0 && (
+        {/* Empty states */}
+        {currentFolder && folders.length === 0 && files.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
-            <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
-            <p className="text-sm">Esta carpeta está vacía</p>
+            <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
+            <p>Esta carpeta está vacía</p>
+            <p className="text-sm">Sube archivos o crea subcarpetas</p>
+          </div>
+        )}
+
+        {!currentFolder && folders.length === 0 && (
+          <div className="text-center py-8 text-muted-foreground">
+            <Folder className="h-12 w-12 mx-auto mb-2 opacity-50" />
+            <p>Inicializando repositorio...</p>
           </div>
         )}
       </CardContent>
