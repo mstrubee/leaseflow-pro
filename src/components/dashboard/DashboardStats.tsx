@@ -1,19 +1,39 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileText, DollarSign, MapPin } from "lucide-react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { FileText, CheckCircle, Clock, AlertTriangle } from "lucide-react";
+
+interface RegionStats {
+  region: string;
+  total: number;
+  firmados: number;
+  negociacion: number;
+  vencidos: number;
+}
 
 interface Stats {
   totalContracts: number;
-  totalByRegion: { [key: string]: number };
-  totalRentByRegion: { [key: string]: number };
+  totalFirmados: number;
+  totalNegociacion: number;
+  totalVencidos: number;
+  byRegion: RegionStats[];
 }
 
 export const DashboardStats = () => {
   const [stats, setStats] = useState<Stats>({
     totalContracts: 0,
-    totalByRegion: {},
-    totalRentByRegion: {},
+    totalFirmados: 0,
+    totalNegociacion: 0,
+    totalVencidos: 0,
+    byRegion: [],
   });
 
   useEffect(() => {
@@ -21,96 +41,156 @@ export const DashboardStats = () => {
   }, []);
 
   const loadStats = async () => {
-    // Get total contracts
-    const { count: totalContracts } = await supabase
-      .from("contracts")
-      .select("*", { count: "exact", head: true });
-
-    // Get contracts with addresses and versions
     const { data: contracts } = await supabase
       .from("contracts")
       .select(`
         id,
-        contract_addresses (region),
-        contract_versions (regime_rent, is_current)
+        status,
+        contract_addresses (region)
       `);
 
-    const byRegion: { [key: string]: number } = {};
-    const rentByRegion: { [key: string]: number } = {};
+    const regionMap: Record<string, RegionStats> = {};
+    let totalFirmados = 0;
+    let totalNegociacion = 0;
+    let totalVencidos = 0;
 
     contracts?.forEach((contract: any) => {
       const region = contract.contract_addresses?.[0]?.region || "Sin región";
-      byRegion[region] = (byRegion[region] || 0) + 1;
+      
+      if (!regionMap[region]) {
+        regionMap[region] = {
+          region,
+          total: 0,
+          firmados: 0,
+          negociacion: 0,
+          vencidos: 0,
+        };
+      }
 
-      const currentVersion = contract.contract_versions?.find(
-        (v: any) => v.is_current
-      );
-      if (currentVersion) {
-        rentByRegion[region] =
-          (rentByRegion[region] || 0) + parseFloat(currentVersion.regime_rent || 0);
+      regionMap[region].total++;
+
+      switch (contract.status) {
+        case "firmado":
+          regionMap[region].firmados++;
+          totalFirmados++;
+          break;
+        case "en_negociacion":
+          regionMap[region].negociacion++;
+          totalNegociacion++;
+          break;
+        case "vencido":
+          regionMap[region].vencidos++;
+          totalVencidos++;
+          break;
       }
     });
 
+    const byRegion = Object.values(regionMap).sort((a, b) => 
+      a.region.localeCompare(b.region)
+    );
+
     setStats({
-      totalContracts: totalContracts || 0,
-      totalByRegion: byRegion,
-      totalRentByRegion: rentByRegion,
+      totalContracts: contracts?.length || 0,
+      totalFirmados,
+      totalNegociacion,
+      totalVencidos,
+      byRegion,
     });
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("es-CL", {
-      style: "currency",
-      currency: "CLP",
-    }).format(amount);
-  };
-
   return (
-    <div className="grid gap-4 md:grid-cols-3">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Total Contratos</CardTitle>
-          <FileText className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">{stats.totalContracts}</div>
-          <p className="text-xs text-muted-foreground mt-1">
-            Contratos activos y en negociación
-          </p>
-        </CardContent>
-      </Card>
+    <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total General</CardTitle>
+            <FileText className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.totalContracts}</div>
+            <p className="text-xs text-muted-foreground">Contratos totales</p>
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Por Región</CardTitle>
-          <MapPin className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-1">
-            {Object.entries(stats.totalByRegion).map(([region, count]) => (
-              <div key={region} className="flex justify-between text-sm">
-                <span className="text-muted-foreground">{region}</span>
-                <span className="font-medium">{count}</span>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+        <Card className="border-green-500/20 bg-green-500/5">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-green-600">Firmados</CardTitle>
+            <CheckCircle className="h-4 w-4 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{stats.totalFirmados}</div>
+            <p className="text-xs text-muted-foreground">Contratos activos</p>
+          </CardContent>
+        </Card>
 
+        <Card className="border-yellow-500/20 bg-yellow-500/5">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-yellow-600">En Negociación</CardTitle>
+            <Clock className="h-4 w-4 text-yellow-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-yellow-600">{stats.totalNegociacion}</div>
+            <p className="text-xs text-muted-foreground">Pendientes de firma</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-red-500/20 bg-red-500/5">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-red-600">Vencidos</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-red-600">{stats.totalVencidos}</div>
+            <p className="text-xs text-muted-foreground">Requieren atención</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Regional Breakdown Table */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Monto Total Arriendo</CardTitle>
-          <DollarSign className="h-4 w-4 text-muted-foreground" />
+        <CardHeader>
+          <CardTitle className="text-lg">Contratos por Región</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-1">
-            {Object.entries(stats.totalRentByRegion).map(([region, amount]) => (
-              <div key={region} className="flex justify-between text-sm">
-                <span className="text-muted-foreground">{region}</span>
-                <span className="font-medium">{formatCurrency(amount)}</span>
-              </div>
-            ))}
-          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Región</TableHead>
+                <TableHead className="text-center">General</TableHead>
+                <TableHead className="text-center text-green-600">Firmados</TableHead>
+                <TableHead className="text-center text-yellow-600">Negociación</TableHead>
+                <TableHead className="text-center text-red-600">Vencidos</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {stats.byRegion.map((row) => (
+                <TableRow key={row.region}>
+                  <TableCell className="font-medium">{row.region}</TableCell>
+                  <TableCell className="text-center">{row.total}</TableCell>
+                  <TableCell className="text-center text-green-600">{row.firmados}</TableCell>
+                  <TableCell className="text-center text-yellow-600">{row.negociacion}</TableCell>
+                  <TableCell className="text-center text-red-600">{row.vencidos}</TableCell>
+                </TableRow>
+              ))}
+              {stats.byRegion.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                    No hay contratos registrados
+                  </TableCell>
+                </TableRow>
+              )}
+              {stats.byRegion.length > 0 && (
+                <TableRow className="bg-muted/50 font-semibold">
+                  <TableCell>Total</TableCell>
+                  <TableCell className="text-center">{stats.totalContracts}</TableCell>
+                  <TableCell className="text-center text-green-600">{stats.totalFirmados}</TableCell>
+                  <TableCell className="text-center text-yellow-600">{stats.totalNegociacion}</TableCell>
+                  <TableCell className="text-center text-red-600">{stats.totalVencidos}</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     </div>
