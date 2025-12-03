@@ -349,10 +349,10 @@ export const DocumentVersions = ({
         return <><Star className="h-3 w-3 mr-1" />Borrador Final</>;
       }
       if (type === "firmado_r") {
-        return <><Check className="h-3 w-3 mr-1" />Renegociación #{renegotiationNumber || 1}</>;
+        return <><Check className="h-3 w-3 mr-1" />R#{renegotiationNumber || 1}</>;
       }
       if (type === "firmado") {
-        return <><Check className="h-3 w-3 mr-1" />Firmado</>;
+        return <><Check className="h-3 w-3 mr-1" />Original</>;
       }
       if (type === "borrador_r") {
         return "Borrador R";
@@ -407,18 +407,6 @@ export const DocumentVersions = ({
                       onSuccess={onRenegotiationSuccess}
                     />
                   )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsOpen(true);
-                    }}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Agregar
-                  </Button>
                 </div>
               </div>
             </CardHeader>

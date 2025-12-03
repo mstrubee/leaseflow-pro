@@ -144,38 +144,36 @@ export const EconomicIndicators = () => {
               <TabsTrigger value="6m" className="text-xs">6 meses</TabsTrigger>
               <TabsTrigger value="1y" className="text-xs">1 año</TabsTrigger>
             </TabsList>
-            <TabsContent value={dollarPeriod} className="mt-0">
-              <div className="h-32">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={sampleData(dollarChartData, 30)}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis 
-                      dataKey="date" 
-                      tick={{ fontSize: 10 }} 
-                      tickFormatter={formatDate}
-                      interval="preserveStartEnd"
-                    />
-                    <YAxis 
-                      tick={{ fontSize: 10 }} 
-                      domain={['dataMin - 10', 'dataMax + 10']}
-                      tickFormatter={(v) => `$${Math.round(v)}`}
-                      width={50}
-                    />
-                    <Tooltip 
-                      formatter={(value: number) => [formatCurrency(value), "Dólar"]}
-                      labelFormatter={formatDate}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="value" 
-                      stroke="hsl(var(--primary))" 
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </TabsContent>
+            <div className="h-32 mt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={sampleData(dollarChartData, 30)} key={dollarPeriod}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis 
+                    dataKey="date" 
+                    tick={{ fontSize: 10 }} 
+                    tickFormatter={formatDate}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis 
+                    tick={{ fontSize: 10 }} 
+                    domain={['dataMin - 10', 'dataMax + 10']}
+                    tickFormatter={(v) => `$${Math.round(v)}`}
+                    width={50}
+                  />
+                  <Tooltip 
+                    formatter={(value: number) => [formatCurrency(value), "Dólar"]}
+                    labelFormatter={formatDate}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="value" 
+                    stroke="hsl(var(--primary))" 
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           </Tabs>
         </CardContent>
       </Card>
