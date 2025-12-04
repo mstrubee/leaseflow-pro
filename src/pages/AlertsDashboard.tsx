@@ -4,12 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Bell, BellRing, Clock, CheckCircle, AlertTriangle, Plus, RefreshCw, Trash2, Archive } from "lucide-react";
+import { ArrowLeft, Bell, BellRing, Clock, CheckCircle, AlertTriangle, Plus, RefreshCw, Archive } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { AlertForm } from "@/components/alerts/AlertForm";
 import { AlertsList } from "@/components/alerts/AlertsList";
 import { FinalizedAlertsList } from "@/components/alerts/FinalizedAlertsList";
+import { UpcomingAlertsPanel } from "@/components/alerts/UpcomingAlertsPanel";
 import { useToast } from "@/hooks/use-toast";
 import { format, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
@@ -193,6 +194,9 @@ export default function AlertsDashboard() {
       </header>
 
       <main className="container mx-auto px-6 py-8 space-y-8">
+        {/* Upcoming Alerts Panel */}
+        <UpcomingAlertsPanel />
+
         {/* Stats Cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
           <Card>
