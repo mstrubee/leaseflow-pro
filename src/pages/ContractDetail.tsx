@@ -20,6 +20,7 @@ import { DocumentVersions, DocumentVersion } from "@/components/contracts/Docume
 import { EscalationDialog, Escalation } from "@/components/contracts/EscalationDialog";
 import { RenegotiationDialog } from "@/components/contracts/RenegotiationDialog";
 import { RepositorySection } from "@/components/contracts/RepositorySection";
+import { ContractAlerts } from "@/components/alerts/ContractAlerts";
 
 interface Contract {
   id: string;
@@ -1004,6 +1005,15 @@ const ContractDetail = () => {
           contractId={contract.id} 
           contractName={contract.name}
           contractStatus={contract.status}
+        />
+
+        <ContractAlerts
+          contractId={contract.id}
+          contractName={contract.name}
+          expirationDate={currentVersion?.effective_date 
+            ? new Date(new Date(currentVersion.effective_date).getTime() + (currentVersion.duration_months * 30 * 24 * 60 * 60 * 1000))
+            : undefined
+          }
         />
 
         <Card>

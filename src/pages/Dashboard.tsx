@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Plus, LogOut, Shield, Trash2 } from "lucide-react";
+import { Plus, LogOut, Shield, Trash2, Bell } from "lucide-react";
 import { DashboardStats } from "@/components/dashboard/DashboardStats";
 import { useAuth } from "@/hooks/useAuth";
 const Dashboard = () => {
@@ -38,6 +38,10 @@ const Dashboard = () => {
             </div>
             <div className="flex items-center gap-3">
               {isAdmin && <>
+                  <Button variant="outline" onClick={() => navigate("/alerts")} className="gap-2">
+                    <Bell className="h-4 w-4" />
+                    Alertas
+                  </Button>
                   <Button variant="outline" onClick={() => navigate("/deleted")} className="gap-2">
                     <Trash2 className="h-4 w-4" />
                     Eliminados
