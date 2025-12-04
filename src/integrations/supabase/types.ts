@@ -14,6 +14,153 @@ export type Database = {
   }
   public: {
     Tables: {
+      alert_history: {
+        Row: {
+          alert_id: string
+          channel: Database["public"]["Enums"]["notification_channel"]
+          days_before_due: number | null
+          error_message: string | null
+          id: string
+          recipient_email: string | null
+          recipient_phone: string | null
+          sent_at: string
+          status: string
+        }
+        Insert: {
+          alert_id: string
+          channel: Database["public"]["Enums"]["notification_channel"]
+          days_before_due?: number | null
+          error_message?: string | null
+          id?: string
+          recipient_email?: string | null
+          recipient_phone?: string | null
+          sent_at?: string
+          status?: string
+        }
+        Update: {
+          alert_id?: string
+          channel?: Database["public"]["Enums"]["notification_channel"]
+          days_before_due?: number | null
+          error_message?: string | null
+          id?: string
+          recipient_email?: string | null
+          recipient_phone?: string | null
+          sent_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alert_history_alert_id_fkey"
+            columns: ["alert_id"]
+            isOneToOne: false
+            referencedRelation: "alerts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      alert_recipients: {
+        Row: {
+          alert_id: string
+          created_at: string
+          email: string | null
+          id: string
+          phone: string | null
+          user_id: string | null
+        }
+        Insert: {
+          alert_id: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          phone?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          alert_id?: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          phone?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alert_recipients_alert_id_fkey"
+            columns: ["alert_id"]
+            isOneToOne: false
+            referencedRelation: "alerts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      alerts: {
+        Row: {
+          alert_type: Database["public"]["Enums"]["alert_type"]
+          channels: Database["public"]["Enums"]["notification_channel"][]
+          contract_id: string | null
+          created_at: string
+          created_by: string | null
+          days_before: number[]
+          due_date: string
+          id: string
+          is_active: boolean
+          item_id: string | null
+          item_type: string | null
+          last_sent_at: string | null
+          message: string | null
+          next_send_at: string | null
+          repeat_every_days: number | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          alert_type?: Database["public"]["Enums"]["alert_type"]
+          channels?: Database["public"]["Enums"]["notification_channel"][]
+          contract_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          days_before?: number[]
+          due_date: string
+          id?: string
+          is_active?: boolean
+          item_id?: string | null
+          item_type?: string | null
+          last_sent_at?: string | null
+          message?: string | null
+          next_send_at?: string | null
+          repeat_every_days?: number | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          alert_type?: Database["public"]["Enums"]["alert_type"]
+          channels?: Database["public"]["Enums"]["notification_channel"][]
+          contract_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          days_before?: number[]
+          due_date?: string
+          id?: string
+          is_active?: boolean
+          item_id?: string | null
+          item_type?: string | null
+          last_sent_at?: string | null
+          message?: string | null
+          next_send_at?: string | null
+          repeat_every_days?: number | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alerts_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cloud_storage_connections: {
         Row: {
           access_token: string | null
@@ -546,6 +693,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      calculate_next_send_at: {
+        Args: {
+          p_days_before: number[]
+          p_due_date: string
+          p_last_sent_at: string
+          p_repeat_every_days: number
+        }
+        Returns: string
+      }
       has_permission: {
         Args: {
           _permission: Database["public"]["Enums"]["permission_type"]
@@ -563,6 +719,16 @@ export type Database = {
       }
     }
     Enums: {
+      alert_type:
+        | "contract_expiration"
+        | "contract_renewal"
+        | "early_termination_notice"
+        | "inspection"
+        | "maintenance"
+        | "license"
+        | "permit"
+        | "certificate"
+        | "other"
       app_role: "admin" | "user"
       contract_status: "en_negociacion" | "firmado" | "vencido"
       document_type:
@@ -573,6 +739,7 @@ export type Database = {
         | "borrador_final_r"
         | "firmado_r"
       notice_type: "fecha" | "meses"
+      notification_channel: "email" | "whatsapp"
       permission_type: "view" | "edit" | "all"
     }
     CompositeTypes: {
@@ -701,6 +868,17 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      alert_type: [
+        "contract_expiration",
+        "contract_renewal",
+        "early_termination_notice",
+        "inspection",
+        "maintenance",
+        "license",
+        "permit",
+        "certificate",
+        "other",
+      ],
       app_role: ["admin", "user"],
       contract_status: ["en_negociacion", "firmado", "vencido"],
       document_type: [
@@ -712,6 +890,7 @@ export const Constants = {
         "firmado_r",
       ],
       notice_type: ["fecha", "meses"],
+      notification_channel: ["email", "whatsapp"],
       permission_type: ["view", "edit", "all"],
     },
   },
