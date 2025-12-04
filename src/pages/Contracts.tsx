@@ -22,7 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, ArrowLeft, Trash2, ArrowUpDown, X } from "lucide-react";
+import { Search, ArrowLeft, Trash2, ArrowUpDown, X, Cloud, Loader2, ExternalLink } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
@@ -65,6 +65,7 @@ const Contracts = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [confirmDeleteDialogOpen, setConfirmDeleteDialogOpen] = useState(false);
   const [contractToDelete, setContractToDelete] = useState<Contract | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Filters
   const [operationFilter, setOperationFilter] = useState<string>("todos");
@@ -264,6 +265,31 @@ const Contracts = () => {
     }
   };
 
+  const handleSyncAllToDrive = async () => {
+    setIsSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('google-drive', {
+        body: { action: 'syncAllContracts' }
+      });
+
+      if (error) throw error;
+
+      if (data.success) {
+        toast.success(`Sincronización completada`, {
+          description: `${data.syncedCount} contratos sincronizados con Google Drive`
+        });
+        loadContracts();
+      }
+    } catch (error: any) {
+      console.error('Error syncing to Drive:', error);
+      toast.error('Error al sincronizar con Google Drive', {
+        description: error.message || 'Verifica la configuración de la cuenta de servicio'
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const statusMap: { [key: string]: { label: string; className: string } } = {
       en_negociacion: { label: "En Negociación", className: "bg-yellow-500 text-white" },
@@ -324,16 +350,36 @@ const Contracts = () => {
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <div>
-              <h1 className="text-2xl font-semibold text-foreground">{getPageTitle()}</h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                {filteredContracts.length} contratos encontrados
-              </p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <div>
+                <h1 className="text-2xl font-semibold text-foreground">{getPageTitle()}</h1>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {filteredContracts.length} contratos encontrados
+                </p>
+              </div>
             </div>
+            <Button
+              variant="outline"
+              onClick={handleSyncAllToDrive}
+              disabled={isSyncing}
+              className="gap-2"
+            >
+              {isSyncing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Sincronizando...
+                </>
+              ) : (
+                <>
+                  <Cloud className="h-4 w-4" />
+                  Sincronizar con Drive
+                </>
+              )}
+            </Button>
           </div>
         </div>
       </header>

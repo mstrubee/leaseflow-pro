@@ -247,6 +247,58 @@ async function deleteFile(accessToken: string, fileId: string): Promise<void> {
   }
 }
 
+// Move a file/folder to a new parent
+async function moveToFolder(accessToken: string, fileId: string, newParentId: string, oldParentId?: string): Promise<void> {
+  let url = `https://www.googleapis.com/drive/v3/files/${fileId}?addParents=${newParentId}`;
+  if (oldParentId) {
+    url += `&removeParents=${oldParentId}`;
+  }
+  
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+  });
+  
+  if (!response.ok) {
+    const error = await response.text();
+    console.error("Error moving file:", error);
+    throw new Error(`Failed to move file: ${error}`);
+  }
+}
+
+// Map contract status to folder name
+function getStatusFolderName(status: string): string {
+  switch (status) {
+    case 'firmado':
+      return 'Contratos Vigentes';
+    case 'en_negociacion':
+      return 'Contratos En Negociación';
+    case 'vencido':
+      return 'Contratos Vencidos';
+    default:
+      return 'Otros Contratos';
+  }
+}
+
+// Ensure status folders exist and return their IDs
+async function ensureStatusFolders(accessToken: string, rootFolderId: string): Promise<Record<string, { id: string; webViewLink: string }>> {
+  const statusFolders: Record<string, { id: string; webViewLink: string }> = {};
+  const folderNames = ['Contratos Vigentes', 'Contratos En Negociación', 'Contratos Vencidos'];
+  
+  for (const name of folderNames) {
+    let folder = await getFolderByName(accessToken, name, rootFolderId);
+    if (!folder) {
+      folder = await createDriveFolder(accessToken, name, rootFolderId);
+    }
+    statusFolders[name] = folder;
+  }
+  
+  return statusFolders;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -273,14 +325,223 @@ serve(async (req) => {
     let result: any;
     
     switch (action) {
+      case "ensureStatusFolders": {
+        // Create/ensure all status folders exist
+        const statusFolders = await ensureStatusFolders(accessToken, rootFolderId);
+        result = { statusFolders };
+        break;
+      }
+      
+      case "syncAllContracts": {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const supabase = createClient(supabaseUrl, supabaseKey);
+        
+        // Ensure status folders exist
+        const statusFolders = await ensureStatusFolders(accessToken, rootFolderId);
+        console.log("Status folders ready:", Object.keys(statusFolders));
+        
+        // Get all non-deleted contracts
+        const { data: contracts, error: contractsError } = await supabase
+          .from('contracts')
+          .select('id, name, status, drive_folder_id')
+          .is('deleted_at', null);
+        
+        if (contractsError) throw contractsError;
+        
+        const syncResults: any[] = [];
+        
+        for (const contract of contracts || []) {
+          const statusFolderName = getStatusFolderName(contract.status);
+          const statusFolder = statusFolders[statusFolderName];
+          
+          if (!statusFolder) {
+            console.log(`No status folder found for ${contract.status}`);
+            continue;
+          }
+          
+          // Check if contract folder exists
+          let contractFolder = contract.drive_folder_id 
+            ? await getFolderByName(accessToken, contract.name, statusFolder.id)
+            : null;
+          
+          if (!contractFolder) {
+            // Check if folder exists in root (old location) or any status folder
+            let existingFolder = await getFolderByName(accessToken, contract.name, rootFolderId);
+            
+            if (existingFolder) {
+              // Move to correct status folder
+              await moveToFolder(accessToken, existingFolder.id, statusFolder.id, rootFolderId);
+              contractFolder = existingFolder;
+              console.log(`Moved ${contract.name} to ${statusFolderName}`);
+            } else {
+              // Check in other status folders
+              for (const [folderName, folder] of Object.entries(statusFolders)) {
+                if (folderName !== statusFolderName) {
+                  existingFolder = await getFolderByName(accessToken, contract.name, folder.id);
+                  if (existingFolder) {
+                    // Move to correct status folder
+                    await moveToFolder(accessToken, existingFolder.id, statusFolder.id, folder.id);
+                    contractFolder = existingFolder;
+                    console.log(`Moved ${contract.name} from ${folderName} to ${statusFolderName}`);
+                    break;
+                  }
+                }
+              }
+            }
+            
+            if (!contractFolder) {
+              // Create new folder in correct status folder
+              contractFolder = await createDriveFolder(accessToken, contract.name, statusFolder.id);
+              console.log(`Created folder for ${contract.name} in ${statusFolderName}`);
+            }
+          }
+          
+          // Update contract with drive_folder_id
+          if (contractFolder && contractFolder.id !== contract.drive_folder_id) {
+            await supabase
+              .from('contracts')
+              .update({ drive_folder_id: contractFolder.id })
+              .eq('id', contract.id);
+          }
+          
+          // Get folder templates and create subfolders
+          const { data: templates } = await supabase
+            .from('folder_templates')
+            .select('*')
+            .order('display_order', { ascending: true });
+          
+          if (templates && templates.length > 0) {
+            for (const template of templates) {
+              const existingSubfolder = await getFolderByName(accessToken, template.name, contractFolder.id);
+              if (!existingSubfolder) {
+                await createDriveFolder(accessToken, template.name, contractFolder.id);
+                console.log(`Created subfolder ${template.name} for ${contract.name}`);
+              }
+            }
+          }
+          
+          syncResults.push({
+            contractId: contract.id,
+            contractName: contract.name,
+            status: contract.status,
+            driveFolderId: contractFolder.id,
+            statusFolder: statusFolderName
+          });
+        }
+        
+        result = { 
+          success: true, 
+          syncedCount: syncResults.length,
+          contracts: syncResults,
+          statusFolders: Object.entries(statusFolders).map(([name, f]) => ({ name, id: f.id, webViewLink: f.webViewLink }))
+        };
+        break;
+      }
+      
+      case "syncSingleContract": {
+        const { contractId } = params;
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const supabase = createClient(supabaseUrl, supabaseKey);
+        
+        // Get contract
+        const { data: contract, error: contractError } = await supabase
+          .from('contracts')
+          .select('id, name, status, drive_folder_id')
+          .eq('id', contractId)
+          .single();
+        
+        if (contractError || !contract) {
+          throw new Error(`Contract not found: ${contractId}`);
+        }
+        
+        // Ensure status folders exist
+        const statusFolders = await ensureStatusFolders(accessToken, rootFolderId);
+        const statusFolderName = getStatusFolderName(contract.status);
+        const statusFolder = statusFolders[statusFolderName];
+        
+        // Check current folder location
+        let contractFolder = contract.drive_folder_id 
+          ? await getFolderByName(accessToken, contract.name, statusFolder.id)
+          : null;
+        
+        if (!contractFolder && contract.drive_folder_id) {
+          // Folder exists but might be in wrong location, find it
+          for (const [folderName, folder] of Object.entries(statusFolders)) {
+            const existingFolder = await getFolderByName(accessToken, contract.name, folder.id);
+            if (existingFolder) {
+              if (folderName !== statusFolderName) {
+                // Move to correct folder
+                await moveToFolder(accessToken, existingFolder.id, statusFolder.id, folder.id);
+                console.log(`Moved ${contract.name} from ${folderName} to ${statusFolderName}`);
+              }
+              contractFolder = existingFolder;
+              break;
+            }
+          }
+          
+          // Check root folder
+          if (!contractFolder) {
+            const rootFolder = await getFolderByName(accessToken, contract.name, rootFolderId);
+            if (rootFolder) {
+              await moveToFolder(accessToken, rootFolder.id, statusFolder.id, rootFolderId);
+              contractFolder = rootFolder;
+              console.log(`Moved ${contract.name} from root to ${statusFolderName}`);
+            }
+          }
+        }
+        
+        if (!contractFolder) {
+          // Create new folder
+          contractFolder = await createDriveFolder(accessToken, contract.name, statusFolder.id);
+          console.log(`Created folder for ${contract.name} in ${statusFolderName}`);
+        }
+        
+        // Update contract
+        await supabase
+          .from('contracts')
+          .update({ drive_folder_id: contractFolder.id })
+          .eq('id', contract.id);
+        
+        // Create subfolders from templates
+        const { data: templates } = await supabase
+          .from('folder_templates')
+          .select('*')
+          .order('display_order', { ascending: true });
+        
+        if (templates) {
+          for (const template of templates) {
+            const existingSubfolder = await getFolderByName(accessToken, template.name, contractFolder.id);
+            if (!existingSubfolder) {
+              await createDriveFolder(accessToken, template.name, contractFolder.id);
+            }
+          }
+        }
+        
+        result = {
+          success: true,
+          contractId: contract.id,
+          contractName: contract.name,
+          driveFolderId: contractFolder.id,
+          statusFolder: statusFolderName,
+          webViewLink: contractFolder.webViewLink
+        };
+        break;
+      }
+      
       case "ensureProjectStructure": {
-        const { contractId, contractName, subfolders } = params;
+        const { contractId, contractName, subfolders, status } = params;
+        
+        // Ensure status folders exist
+        const statusFolders = await ensureStatusFolders(accessToken, rootFolderId);
+        const statusFolderName = getStatusFolderName(status || 'en_negociacion');
+        const statusFolder = statusFolders[statusFolderName];
         
         // Check if project folder already exists
-        const existingFolder = await getFolderByName(accessToken, contractName, rootFolderId);
+        const existingFolder = await getFolderByName(accessToken, contractName, statusFolder.id);
         
         if (existingFolder) {
-          // Return warning that folder exists
           result = { 
             exists: true,
             projectFolderId: existingFolder.id,
@@ -288,8 +549,8 @@ serve(async (req) => {
             message: `La carpeta "${contractName}" ya existe en Google Drive`
           };
         } else {
-          // Create project folder
-          const projectFolder = await createDriveFolder(accessToken, contractName, rootFolderId);
+          // Create project folder in status folder
+          const projectFolder = await createDriveFolder(accessToken, contractName, statusFolder.id);
           
           // Create subfolders
           const createdSubfolders: any[] = [];
@@ -307,7 +568,8 @@ serve(async (req) => {
             exists: false,
             projectFolderId: projectFolder.id,
             webViewLink: projectFolder.webViewLink,
-            subfolders: createdSubfolders
+            subfolders: createdSubfolders,
+            statusFolder: statusFolderName
           };
         }
         break;

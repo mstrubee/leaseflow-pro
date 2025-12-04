@@ -89,9 +89,10 @@ interface FolderTemplate {
 interface RepositorySectionProps {
   contractId: string;
   contractName: string;
+  contractStatus?: string;
 }
 
-export const RepositorySection = ({ contractId, contractName }: RepositorySectionProps) => {
+export const RepositorySection = ({ contractId, contractName, contractStatus = 'en_negociacion' }: RepositorySectionProps) => {
   const { toast } = useToast();
   const { isAdmin } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -317,7 +318,8 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
           action: 'ensureProjectStructure',
           contractId,
           contractName,
-          subfolders
+          subfolders,
+          status: contractStatus
         }
       });
 
@@ -345,7 +347,7 @@ export const RepositorySection = ({ contractId, contractName }: RepositorySectio
         
         toast({
           title: "Sincronizado con Google Drive",
-          description: "La estructura de carpetas ha sido creada en Google Drive",
+          description: `Carpetas creadas en: ${data.statusFolder || 'Google Drive'}`,
         });
 
         // Reload folders to get updated drive IDs
