@@ -231,6 +231,7 @@ export type Database = {
         Row: {
           created_at: string
           deleted_at: string | null
+          drive_folder_id: string | null
           id: string
           name: string
           obra_status: string | null
@@ -243,6 +244,7 @@ export type Database = {
         Insert: {
           created_at?: string
           deleted_at?: string | null
+          drive_folder_id?: string | null
           id?: string
           name: string
           obra_status?: string | null
@@ -255,6 +257,7 @@ export type Database = {
         Update: {
           created_at?: string
           deleted_at?: string | null
+          drive_folder_id?: string | null
           id?: string
           name?: string
           obra_status?: string | null
@@ -409,6 +412,7 @@ export type Database = {
       }
       repository_files: {
         Row: {
+          drive_file_id: string | null
           file_type: string | null
           folder_id: string
           id: string
@@ -418,6 +422,7 @@ export type Database = {
           url: string
         }
         Insert: {
+          drive_file_id?: string | null
           file_type?: string | null
           folder_id: string
           id?: string
@@ -427,6 +432,7 @@ export type Database = {
           url: string
         }
         Update: {
+          drive_file_id?: string | null
           file_type?: string | null
           folder_id?: string
           id?: string
@@ -449,6 +455,7 @@ export type Database = {
         Row: {
           contract_id: string | null
           created_at: string
+          drive_folder_id: string | null
           folder_type: string | null
           id: string
           is_base_folder: boolean
@@ -458,6 +465,7 @@ export type Database = {
         Insert: {
           contract_id?: string | null
           created_at?: string
+          drive_folder_id?: string | null
           folder_type?: string | null
           id?: string
           is_base_folder?: boolean
@@ -467,6 +475,7 @@ export type Database = {
         Update: {
           contract_id?: string | null
           created_at?: string
+          drive_folder_id?: string | null
           folder_type?: string | null
           id?: string
           is_base_folder?: boolean

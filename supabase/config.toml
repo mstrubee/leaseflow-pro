@@ -1,1 +1,13 @@
 project_id = "tgxiqvfpirwvhktgqqfa"
+
+[functions.google-drive]
+verify_jwt = false
+
+[functions.create-user]
+verify_jwt = false
+
+[functions.economic-indicators]
+verify_jwt = false
+
+[functions.send-contract-email]
+verify_jwt = false
