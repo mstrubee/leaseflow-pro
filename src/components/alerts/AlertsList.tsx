@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Trash2, Bell, Mail, MessageSquare, Calendar, RefreshCw, Send, Clock } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Trash2, Bell, Mail, MessageSquare, Calendar, RefreshCw, Send, Clock, CheckCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { format, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 import {
@@ -32,6 +34,10 @@ interface Alert {
   last_sent_at: string | null;
   alert_type: string;
   contract_id: string | null;
+  completed_at: string | null;
+  completed_by: string | null;
+  deleted_at: string | null;
+  deleted_by: string | null;
   contracts?: {
     name: string;
   } | null;
@@ -41,14 +47,18 @@ interface AlertsListProps {
   contractId?: string;
   showAll?: boolean;
   onRefresh?: () => void;
+  showOnlyActive?: boolean;
 }
 
-export function AlertsList({ contractId, showAll = false, onRefresh }: AlertsListProps) {
+export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyActive = true }: AlertsListProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteAlertId, setDeleteAlertId] = useState<string | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [sendingTest, setSendingTest] = useState<string | null>(null);
+  const [completingAlert, setCompletingAlert] = useState<string | null>(null);
 
   const loadAlerts = async () => {
     setLoading(true);
@@ -63,6 +73,10 @@ export function AlertsList({ contractId, showAll = false, onRefresh }: AlertsLis
 
       if (contractId) {
         query = query.eq("contract_id", contractId);
+      }
+
+      if (showOnlyActive) {
+        query = query.is("completed_at", null).is("deleted_at", null);
       }
 
       const { data, error } = await query;
@@ -83,7 +97,7 @@ export function AlertsList({ contractId, showAll = false, onRefresh }: AlertsLis
 
   useEffect(() => {
     loadAlerts();
-  }, [contractId]);
+  }, [contractId, showOnlyActive]);
 
   const handleToggleActive = async (alertId: string, isActive: boolean) => {
     try {
@@ -112,13 +126,45 @@ export function AlertsList({ contractId, showAll = false, onRefresh }: AlertsLis
     }
   };
 
+  const handleComplete = async (alertId: string) => {
+    setCompletingAlert(alertId);
+    try {
+      const { error } = await supabase
+        .from("alerts")
+        .update({
+          completed_at: new Date().toISOString(),
+          completed_by: user?.id,
+          is_active: false,
+        })
+        .eq("id", alertId);
+
+      if (error) throw error;
+
+      setAlerts(prev => prev.filter(alert => alert.id !== alertId));
+      toast({ title: "Alerta marcada como cumplida" });
+      onRefresh?.();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setCompletingAlert(null);
+    }
+  };
+
   const handleDelete = async () => {
-    if (!deleteAlertId) return;
+    if (!deleteAlertId || deleteConfirmation !== "ELIMINAR") return;
 
     try {
       const { error } = await supabase
         .from("alerts")
-        .delete()
+        .update({
+          deleted_at: new Date().toISOString(),
+          deleted_by: user?.id,
+          is_active: false,
+        })
         .eq("id", deleteAlertId);
 
       if (error) throw error;
@@ -134,6 +180,7 @@ export function AlertsList({ contractId, showAll = false, onRefresh }: AlertsLis
       });
     } finally {
       setDeleteAlertId(null);
+      setDeleteConfirmation("");
     }
   };
 
@@ -211,7 +258,7 @@ export function AlertsList({ contractId, showAll = false, onRefresh }: AlertsLis
       <Card>
         <CardContent className="py-8 text-center text-muted-foreground">
           <Bell className="h-12 w-12 mx-auto mb-4 opacity-50" />
-          <p>No hay alertas configuradas</p>
+          <p>No hay alertas {showOnlyActive ? "activas" : ""}</p>
         </CardContent>
       </Card>
     );
@@ -287,6 +334,17 @@ export function AlertsList({ contractId, showAll = false, onRefresh }: AlertsLis
                     <Send className={`h-4 w-4 ${sendingTest === alert.id ? "animate-pulse" : ""}`} />
                   </Button>
 
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleComplete(alert.id)}
+                    disabled={completingAlert === alert.id}
+                    className="text-green-600 border-green-600 hover:bg-green-50"
+                  >
+                    <CheckCircle className="h-4 w-4 mr-1" />
+                    Cumplida
+                  </Button>
+
                   <Switch
                     checked={alert.is_active}
                     onCheckedChange={(checked) => handleToggleActive(alert.id, checked)}
@@ -306,17 +364,26 @@ export function AlertsList({ contractId, showAll = false, onRefresh }: AlertsLis
         ))}
       </div>
 
-      <AlertDialog open={!!deleteAlertId} onOpenChange={() => setDeleteAlertId(null)}>
+      <AlertDialog open={!!deleteAlertId} onOpenChange={() => { setDeleteAlertId(null); setDeleteConfirmation(""); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar alerta?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta acción no se puede deshacer. Se eliminará permanentemente la alerta y su historial.
+            <AlertDialogDescription className="space-y-4">
+              <p>Esta acción marcará la alerta como eliminada. Para confirmar, escribe <strong>ELIMINAR</strong> en el campo de abajo.</p>
+              <Input
+                value={deleteConfirmation}
+                onChange={(e) => setDeleteConfirmation(e.target.value)}
+                placeholder="Escribe ELIMINAR para confirmar"
+              />
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">
+            <AlertDialogAction 
+              onClick={handleDelete} 
+              className="bg-destructive text-destructive-foreground"
+              disabled={deleteConfirmation !== "ELIMINAR"}
+            >
               Eliminar
             </AlertDialogAction>
           </AlertDialogFooter>

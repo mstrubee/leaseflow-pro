@@ -4,11 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Bell, BellRing, Clock, CheckCircle, AlertTriangle, Plus, RefreshCw } from "lucide-react";
+import { ArrowLeft, Bell, BellRing, Clock, CheckCircle, AlertTriangle, Plus, RefreshCw, Trash2, Archive } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { AlertForm } from "@/components/alerts/AlertForm";
 import { AlertsList } from "@/components/alerts/AlertsList";
+import { FinalizedAlertsList } from "@/components/alerts/FinalizedAlertsList";
 import { useToast } from "@/hooks/use-toast";
 import { format, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
@@ -259,7 +260,8 @@ export default function AlertsDashboard() {
         {/* Tabs */}
         <Tabs defaultValue="all" className="space-y-4">
           <TabsList>
-            <TabsTrigger value="all">Todas las alertas</TabsTrigger>
+            <TabsTrigger value="all">Alertas activas</TabsTrigger>
+            <TabsTrigger value="finalized">Alertas finalizadas</TabsTrigger>
             <TabsTrigger value="history">Historial de envíos</TabsTrigger>
           </TabsList>
 
@@ -267,8 +269,23 @@ export default function AlertsDashboard() {
             <AlertsList
               key={refreshKey}
               showAll
+              showOnlyActive={true}
               onRefresh={() => setRefreshKey((k) => k + 1)}
             />
+          </TabsContent>
+
+          <TabsContent value="finalized">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Archive className="h-5 w-5" />
+                  Alertas cumplidas y eliminadas
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <FinalizedAlertsList key={`finalized-${refreshKey}`} showAll defaultOpen={true} />
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="history">

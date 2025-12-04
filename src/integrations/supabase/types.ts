@@ -97,10 +97,14 @@ export type Database = {
         Row: {
           alert_type: Database["public"]["Enums"]["alert_type"]
           channels: Database["public"]["Enums"]["notification_channel"][]
+          completed_at: string | null
+          completed_by: string | null
           contract_id: string | null
           created_at: string
           created_by: string | null
           days_before: number[]
+          deleted_at: string | null
+          deleted_by: string | null
           due_date: string
           id: string
           is_active: boolean
@@ -116,10 +120,14 @@ export type Database = {
         Insert: {
           alert_type?: Database["public"]["Enums"]["alert_type"]
           channels?: Database["public"]["Enums"]["notification_channel"][]
+          completed_at?: string | null
+          completed_by?: string | null
           contract_id?: string | null
           created_at?: string
           created_by?: string | null
           days_before?: number[]
+          deleted_at?: string | null
+          deleted_by?: string | null
           due_date: string
           id?: string
           is_active?: boolean
@@ -135,10 +143,14 @@ export type Database = {
         Update: {
           alert_type?: Database["public"]["Enums"]["alert_type"]
           channels?: Database["public"]["Enums"]["notification_channel"][]
+          completed_at?: string | null
+          completed_by?: string | null
           contract_id?: string | null
           created_at?: string
           created_by?: string | null
           days_before?: number[]
+          deleted_at?: string | null
+          deleted_by?: string | null
           due_date?: string
           id?: string
           is_active?: boolean

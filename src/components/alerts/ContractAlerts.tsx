@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Bell, Plus } from "lucide-react";
 import { AlertForm } from "@/components/alerts/AlertForm";
 import { AlertsList } from "@/components/alerts/AlertsList";
+import { FinalizedAlertsList } from "@/components/alerts/FinalizedAlertsList";
 
 interface ContractAlertsProps {
   contractId: string;
@@ -45,6 +46,12 @@ export function ContractAlerts({ contractId, contractName, expirationDate }: Con
           key={refreshKey}
           contractId={contractId} 
           onRefresh={() => setRefreshKey(k => k + 1)}
+          showOnlyActive={true}
+        />
+
+        <FinalizedAlertsList 
+          key={`finalized-${refreshKey}`}
+          contractId={contractId}
         />
       </CardContent>
     </Card>
