@@ -1002,7 +1002,8 @@ const ContractDetail = () => {
 
         <RepositorySection 
           contractId={contract.id} 
-          contractName={contract.name} 
+          contractName={contract.name}
+          contractStatus={contract.status}
         />
 
         <Card>
