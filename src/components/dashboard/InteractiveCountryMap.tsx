@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { ComposableMap, Geographies, Geography, ZoomableGroup } from "react-simple-maps";
+import { ComposableMap, Geographies, Geography, ZoomableGroup, Annotation } from "react-simple-maps";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -12,9 +12,9 @@ import { MapPin, ChevronDown, ChevronRight, Building2, Globe } from "lucide-reac
 import { COUNTRY_REGIONS, Country, getRegionColor } from "@/lib/countryRegions";
 import { useContractsByRegion, RegionData } from "@/hooks/useContractsByRegion";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
-// GeoJSON URLs for each country (Natural Earth data via GitHub)
+// GeoJSON URLs for each country
 const GEOJSON_URLS: Record<Country, string> = {
   Chile: "https://raw.githubusercontent.com/fcortes/Chile-GeoJSON/master/Regional.geojson",
   Peru: "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_departamental_simple.geojson",
@@ -22,15 +22,15 @@ const GEOJSON_URLS: Record<Country, string> = {
   Ecuador: "https://raw.githubusercontent.com/jpmarindiaz/geo-collection/master/countries/ecuador/ecuador-provinces.geojson"
 };
 
-// Map projection settings for each country
-const MAP_CONFIG: Record<Country, { center: [number, number]; scale: number; rotate?: [number, number, number] }> = {
-  Chile: { center: [-70.6, -35], scale: 800, rotate: [70, 35, -90] }, // Rotated horizontal
-  Peru: { center: [-76, -9.5], scale: 1200 },
-  Colombia: { center: [-74, 4.5], scale: 1400 },
-  Ecuador: { center: [-78.5, -1.5], scale: 4000 }
+// Map projection settings - Chile vertical (like the reference image)
+const MAP_CONFIG: Record<Country, { center: [number, number]; scale: number; width: number; height: number }> = {
+  Chile: { center: [-70.5, -35], scale: 650, width: 200, height: 600 },
+  Peru: { center: [-76, -9.5], scale: 1000, width: 400, height: 450 },
+  Colombia: { center: [-74, 4.5], scale: 1200, width: 400, height: 450 },
+  Ecuador: { center: [-78.5, -1.5], scale: 3500, width: 400, height: 400 }
 };
 
-// Region name mappings (GeoJSON property names may differ)
+// Region name mappings
 const REGION_MAPPINGS: Record<Country, Record<string, string>> = {
   Chile: {
     "Región de Arica y Parinacota": "Arica y Parinacota",
@@ -97,7 +97,7 @@ export function InteractiveCountryMap() {
     const regionData = contractsData[normalizedName];
     const hasContracts = regionData && regionData.count > 0;
     
-    if (!hasContracts) return "hsl(220, 10%, 90%)"; // Neutral gray
+    if (!hasContracts) return "hsl(220, 10%, 88%)";
     
     const countryOrder = COUNTRY_REGIONS[selectedCountry].order as readonly string[];
     const index = countryOrder.indexOf(normalizedName);
@@ -143,14 +143,14 @@ export function InteractiveCountryMap() {
               </div>
 
               {loading ? (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <Skeleton className="h-[400px]" />
-                  <Skeleton className="h-[400px]" />
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <Skeleton className="h-[500px] lg:col-span-2" />
+                  <Skeleton className="h-[500px]" />
                 </div>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className={`grid gap-6 ${isChile ? 'grid-cols-1 lg:grid-cols-3' : 'grid-cols-1 lg:grid-cols-2'}`}>
                   {/* Political Map */}
-                  <Card className="border-border/30">
+                  <Card className={`border-border/30 ${isChile ? 'lg:col-span-2' : ''}`}>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-base flex items-center gap-2">
                         <MapPin className="h-4 w-4" />
@@ -159,16 +159,18 @@ export function InteractiveCountryMap() {
                     </CardHeader>
                     <CardContent className="p-2">
                       <div 
-                        className={`relative bg-gradient-to-br from-sky-50 to-blue-100 dark:from-slate-800 dark:to-slate-900 rounded-lg overflow-hidden ${isChile ? 'h-[250px]' : 'h-[400px]'}`}
+                        className="relative bg-gradient-to-br from-sky-50 to-blue-100 dark:from-slate-800 dark:to-slate-900 rounded-lg overflow-hidden flex justify-center"
+                        style={{ minHeight: isChile ? '600px' : '450px' }}
                       >
                         <ComposableMap
                           projection="geoMercator"
                           projectionConfig={{
                             center: mapConfig.center,
-                            scale: mapConfig.scale,
-                            rotate: mapConfig.rotate || [0, 0, 0]
+                            scale: mapConfig.scale
                           }}
-                          style={{ width: "100%", height: "100%" }}
+                          width={mapConfig.width}
+                          height={mapConfig.height}
+                          style={{ width: "auto", height: "100%", maxWidth: "100%" }}
                         >
                           <ZoomableGroup>
                             <Geographies geography={GEOJSON_URLS[selectedCountry]}>
@@ -189,15 +191,16 @@ export function InteractiveCountryMap() {
                                       onClick={() => handleRegionClick(normalizedName)}
                                       style={{
                                         default: {
-                                          fill: getRegionFillColor(geoName),
-                                          stroke: "hsl(220, 20%, 70%)",
+                                          fill: isHovered ? "hsl(var(--primary))" : getRegionFillColor(geoName),
+                                          stroke: "hsl(220, 20%, 60%)",
                                           strokeWidth: 0.5,
                                           outline: "none",
-                                          cursor: hasContracts ? "pointer" : "default"
+                                          cursor: hasContracts ? "pointer" : "default",
+                                          transition: "fill 0.2s ease"
                                         },
                                         hover: {
                                           fill: hasContracts ? "hsl(var(--primary))" : getRegionFillColor(geoName),
-                                          stroke: "hsl(220, 20%, 50%)",
+                                          stroke: "hsl(220, 20%, 40%)",
                                           strokeWidth: hasContracts ? 1.5 : 0.5,
                                           outline: "none",
                                           cursor: hasContracts ? "pointer" : "default"
@@ -217,8 +220,8 @@ export function InteractiveCountryMap() {
 
                         {/* Hover tooltip */}
                         {hoveredRegion && (
-                          <div className="absolute top-2 left-2 bg-background/95 backdrop-blur-sm border border-border rounded-md px-3 py-2 shadow-lg z-10">
-                            <p className="font-medium text-sm">{hoveredRegion}</p>
+                          <div className="absolute top-3 left-3 bg-background/95 backdrop-blur-sm border border-border rounded-lg px-4 py-2 shadow-lg z-10">
+                            <p className="font-semibold text-sm">{hoveredRegion}</p>
                             <p className="text-xs text-muted-foreground">
                               {contractsData[hoveredRegion]?.count || 0} locales
                             </p>
@@ -226,13 +229,13 @@ export function InteractiveCountryMap() {
                         )}
 
                         {/* Legend */}
-                        <div className="absolute bottom-2 right-2 bg-background/80 backdrop-blur-sm border border-border rounded-md px-2 py-1 text-xs">
+                        <div className="absolute bottom-3 right-3 bg-background/90 backdrop-blur-sm border border-border rounded-lg px-3 py-2 text-xs space-y-1">
                           <div className="flex items-center gap-2">
                             <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: getRegionColor(0, true) }}></div>
                             <span>Con locales</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded-sm bg-slate-200"></div>
+                            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "hsl(220, 10%, 88%)" }}></div>
                             <span>Sin locales</span>
                           </div>
                         </div>
@@ -249,7 +252,7 @@ export function InteractiveCountryMap() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <ScrollArea className="h-[350px] pr-4">
+                      <ScrollArea className={`pr-4 ${isChile ? 'h-[520px]' : 'h-[370px]'}`}>
                         {orderedRegions.length === 0 ? (
                           <p className="text-muted-foreground text-sm text-center py-8">
                             No hay contratos en {selectedCountry}
@@ -265,12 +268,12 @@ export function InteractiveCountryMap() {
                               >
                                 <div className="flex items-center gap-3">
                                   <div
-                                    className="w-3 h-3 rounded-full"
+                                    className="w-3 h-3 rounded-full flex-shrink-0"
                                     style={{ backgroundColor: getRegionColor(index, true) }}
                                   />
-                                  <span className="font-medium">{regionData.region}</span>
+                                  <span className="font-medium text-left">{regionData.region}</span>
                                 </div>
-                                <Badge variant="outline">{regionData.count} locales</Badge>
+                                <Badge variant="outline" className="flex-shrink-0">{regionData.count}</Badge>
                               </Button>
                             ))}
                           </div>
