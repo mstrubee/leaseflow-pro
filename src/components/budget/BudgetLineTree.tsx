@@ -1,0 +1,193 @@
+import { useState } from "react";
+import { ChevronRight, ChevronDown, Plus, Trash2, Check, X, Edit2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import { useBudgetContext } from "./BudgetContext";
+
+export interface BudgetLine {
+  id: string;
+  budget_id: string;
+  parent_id: string | null;
+  name: string;
+  description: string | null;
+  amount_uf: number;
+  status: "aprobado" | "pendiente";
+  display_order: number;
+  children?: BudgetLine[];
+}
+
+interface BudgetLineTreeProps {
+  lines: BudgetLine[];
+  onAddLine: (parentId: string | null) => void;
+  onUpdateLine: (id: string, data: Partial<BudgetLine>) => void;
+  onDeleteLine: (id: string) => void;
+  level?: number;
+}
+
+export const BudgetLineTree = ({ 
+  lines, 
+  onAddLine, 
+  onUpdateLine, 
+  onDeleteLine,
+  level = 0 
+}: BudgetLineTreeProps) => {
+  return (
+    <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
+      {lines.map((line) => (
+        <BudgetLineItem
+          key={line.id}
+          line={line}
+          level={level}
+          onAddLine={onAddLine}
+          onUpdateLine={onUpdateLine}
+          onDeleteLine={onDeleteLine}
+        />
+      ))}
+      {level === 0 && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onAddLine(null)}
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <Plus className="h-4 w-4 mr-1" />
+          Agregar línea madre
+        </Button>
+      )}
+    </div>
+  );
+};
+
+interface BudgetLineItemProps {
+  line: BudgetLine;
+  level: number;
+  onAddLine: (parentId: string | null) => void;
+  onUpdateLine: (id: string, data: Partial<BudgetLine>) => void;
+  onDeleteLine: (id: string) => void;
+}
+
+const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine }: BudgetLineItemProps) => {
+  const [isExpanded, setIsExpanded] = useState(true);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(line.name);
+  const [editAmount, setEditAmount] = useState(line.amount_uf.toString());
+  const { formatUF, formatCLP, convertUFToPesos } = useBudgetContext();
+
+  const hasChildren = line.children && line.children.length > 0;
+  const isParent = hasChildren;
+  
+  // Calcular el total de hijos si es padre
+  const calculatedAmount = isParent 
+    ? line.children!.reduce((sum, child) => sum + (child.amount_uf || 0), 0)
+    : line.amount_uf;
+
+  const handleSave = () => {
+    onUpdateLine(line.id, {
+      name: editName,
+      amount_uf: parseFloat(editAmount) || 0,
+    });
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditName(line.name);
+    setEditAmount(line.amount_uf.toString());
+    setIsEditing(false);
+  };
+
+  const toggleStatus = () => {
+    onUpdateLine(line.id, {
+      status: line.status === "aprobado" ? "pendiente" : "aprobado",
+    });
+  };
+
+  return (
+    <div>
+      <div className={cn(
+        "flex items-center gap-2 py-2 px-2 rounded-md hover:bg-accent/50 group",
+        level === 0 && "bg-muted/30"
+      )}>
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="p-1 hover:bg-accent rounded"
+          disabled={!hasChildren}
+        >
+          {hasChildren ? (
+            isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />
+          ) : (
+            <div className="h-4 w-4" />
+          )}
+        </button>
+
+        {isEditing ? (
+          <>
+            <Input
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              className="h-7 w-48"
+              autoFocus
+            />
+            <Input
+              type="number"
+              value={editAmount}
+              onChange={(e) => setEditAmount(e.target.value)}
+              className="h-7 w-24"
+              disabled={isParent}
+            />
+            <Button size="sm" variant="ghost" onClick={handleSave} className="h-7 w-7 p-0">
+              <Check className="h-4 w-4 text-green-600" />
+            </Button>
+            <Button size="sm" variant="ghost" onClick={handleCancel} className="h-7 w-7 p-0">
+              <X className="h-4 w-4 text-red-600" />
+            </Button>
+          </>
+        ) : (
+          <>
+            <span className={cn("flex-1 font-medium", level === 0 && "font-semibold")}>
+              {line.name}
+            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-mono">{formatUF(calculatedAmount)}</span>
+              <span className="text-xs text-muted-foreground font-mono">
+                {formatCLP(convertUFToPesos(calculatedAmount))}
+              </span>
+              <Badge
+                variant={line.status === "aprobado" ? "default" : "secondary"}
+                className={cn(
+                  "cursor-pointer text-xs",
+                  line.status === "aprobado" && "bg-green-500 hover:bg-green-600"
+                )}
+                onClick={toggleStatus}
+              >
+                {line.status === "aprobado" ? "Aprobado" : "Pendiente"}
+              </Badge>
+              <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
+                <Button size="sm" variant="ghost" onClick={() => setIsEditing(true)} className="h-7 w-7 p-0">
+                  <Edit2 className="h-3 w-3" />
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => onAddLine(line.id)} className="h-7 w-7 p-0">
+                  <Plus className="h-3 w-3" />
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => onDeleteLine(line.id)} className="h-7 w-7 p-0 text-destructive">
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {hasChildren && isExpanded && (
+        <BudgetLineTree
+          lines={line.children!}
+          level={level + 1}
+          onAddLine={onAddLine}
+          onUpdateLine={onUpdateLine}
+          onDeleteLine={onDeleteLine}
+        />
+      )}
+    </div>
+  );
+};
