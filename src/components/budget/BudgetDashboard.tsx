@@ -93,13 +93,26 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
     const capexBudget = budgets?.find((b) => b.budget_type === "capex");
 
     // Get budget lines totals
-    const { data: invLines } = invBudget
-      ? await supabase.from("budget_lines").select("amount_uf").eq("budget_id", invBudget.id).is("parent_id", null)
-      : { data: [] };
+    let invConsumed = 0;
+    let capConsumed = 0;
 
-    const { data: capexLines } = capexBudget
-      ? await supabase.from("budget_lines").select("amount_uf").eq("budget_id", capexBudget.id).is("parent_id", null)
-      : { data: [] };
+    if (invBudget) {
+      const { data: invLines } = await supabase
+        .from("budget_lines")
+        .select("amount_uf")
+        .eq("budget_id", invBudget.id)
+        .is("parent_id", null);
+      invConsumed = (invLines || []).reduce((acc, l) => acc + (l.amount_uf || 0), 0);
+    }
+
+    if (capexBudget) {
+      const { data: capexLines } = await supabase
+        .from("budget_lines")
+        .select("amount_uf")
+        .eq("budget_id", capexBudget.id)
+        .is("parent_id", null);
+      capConsumed = (capexLines || []).reduce((acc, l) => acc + (l.amount_uf || 0), 0);
+    }
 
     // Get OC totals
     const { data: orders } = await supabase
@@ -115,13 +128,16 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
       .eq("contract_id", contractId)
       .eq("year", currentYear);
 
+    const ocTotal = (orders || []).reduce((acc, o) => acc + (o.amount_uf || 0), 0);
+    const purchasesTotal = (items || []).reduce((acc, i) => acc + (i.amount_uf || 0), 0);
+
     setSummary({
       inversionBudget: invBudget?.amount_uf || 0,
-      inversionConsumed: invLines?.reduce((sum: number, l) => sum + (l.amount_uf || 0), 0) || 0,
+      inversionConsumed: invConsumed,
       capexBudget: capexBudget?.amount_uf || 0,
-      capexConsumed: capexLines?.reduce((sum: number, l) => sum + (l.amount_uf || 0), 0) || 0,
-      totalOC: orders?.reduce((sum: number, o) => sum + (o.amount_uf || 0), 0) || 0,
-      totalPurchases: items?.reduce((sum, i) => sum + (i.amount_uf || 0), 0) || 0,
+      capexConsumed: capConsumed,
+      totalOC: ocTotal,
+      totalPurchases: purchasesTotal,
     });
   };
 

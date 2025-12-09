@@ -21,6 +21,7 @@ import { EscalationDialog, Escalation } from "@/components/contracts/EscalationD
 import { RenegotiationDialog } from "@/components/contracts/RenegotiationDialog";
 import { RepositorySection } from "@/components/contracts/RepositorySection";
 import { ContractAlerts } from "@/components/alerts/ContractAlerts";
+import { BudgetDashboard } from "@/components/budget/BudgetDashboard";
 
 interface Contract {
   id: string;
@@ -1006,6 +1007,18 @@ const ContractDetail = () => {
           contractName={contract.name}
           contractStatus={contract.status}
         />
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5" />
+              Control Presupuestario
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <BudgetDashboard contractId={contract.id} />
+          </CardContent>
+        </Card>
 
         <ContractAlerts
           contractId={contract.id}
