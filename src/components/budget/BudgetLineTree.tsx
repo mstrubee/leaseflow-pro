@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { ChevronRight, ChevronDown, Plus, Trash2, Check, X, Edit2 } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, Check, X, Edit2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useBudgetContext } from "./BudgetContext";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export interface BudgetLine {
   id: string;
@@ -13,7 +14,7 @@ export interface BudgetLine {
   name: string;
   description: string | null;
   amount_uf: number;
-  status: "aprobado" | "pendiente";
+  status: "autorizado" | "no_autorizado";
   display_order: number;
   children?: BudgetLine[];
 }
@@ -24,6 +25,7 @@ interface BudgetLineTreeProps {
   onUpdateLine: (id: string, data: Partial<BudgetLine>) => void;
   onDeleteLine: (id: string) => void;
   level?: number;
+  readOnly?: boolean;
 }
 
 export const BudgetLineTree = ({ 
@@ -31,7 +33,8 @@ export const BudgetLineTree = ({
   onAddLine, 
   onUpdateLine, 
   onDeleteLine,
-  level = 0 
+  level = 0,
+  readOnly = false
 }: BudgetLineTreeProps) => {
   return (
     <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
@@ -43,9 +46,10 @@ export const BudgetLineTree = ({
           onAddLine={onAddLine}
           onUpdateLine={onUpdateLine}
           onDeleteLine={onDeleteLine}
+          readOnly={readOnly}
         />
       ))}
-      {level === 0 && (
+      {level === 0 && !readOnly && (
         <Button
           variant="ghost"
           size="sm"
@@ -66,9 +70,10 @@ interface BudgetLineItemProps {
   onAddLine: (parentId: string | null) => void;
   onUpdateLine: (id: string, data: Partial<BudgetLine>) => void;
   onDeleteLine: (id: string) => void;
+  readOnly?: boolean;
 }
 
-const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine }: BudgetLineItemProps) => {
+const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, readOnly = false }: BudgetLineItemProps) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(line.name);
@@ -78,9 +83,18 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine }: 
   const hasChildren = line.children && line.children.length > 0;
   const isParent = hasChildren;
   
-  // Calcular el total de hijos si es padre
+  // Calcular el total de hijos si es padre (solo autorizados)
+  const calculateChildrenTotal = (children: BudgetLine[]): number => {
+    return children.reduce((sum, child) => {
+      if (child.children && child.children.length > 0) {
+        return sum + calculateChildrenTotal(child.children);
+      }
+      return sum + (child.amount_uf || 0);
+    }, 0);
+  };
+
   const calculatedAmount = isParent 
-    ? line.children!.reduce((sum, child) => sum + (child.amount_uf || 0), 0)
+    ? calculateChildrenTotal(line.children!)
     : line.amount_uf;
 
   const handleSave = () => {
@@ -98,16 +112,20 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine }: 
   };
 
   const toggleStatus = () => {
+    if (readOnly) return;
     onUpdateLine(line.id, {
-      status: line.status === "aprobado" ? "pendiente" : "aprobado",
+      status: line.status === "autorizado" ? "no_autorizado" : "autorizado",
     });
   };
+
+  const isNotAuthorized = line.status === "no_autorizado";
 
   return (
     <div>
       <div className={cn(
         "flex items-center gap-2 py-2 px-2 rounded-md hover:bg-accent/50 group",
-        level === 0 && "bg-muted/30"
+        level === 0 && "bg-muted/30",
+        isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20"
       )}>
         <button
           onClick={() => setIsExpanded(!isExpanded)}
@@ -121,7 +139,7 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine }: 
           )}
         </button>
 
-        {isEditing ? (
+        {isEditing && !readOnly ? (
           <>
             <Input
               value={editName}
@@ -153,27 +171,52 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine }: 
               <span className="text-xs text-muted-foreground font-mono">
                 {formatCLP(convertUFToPesos(calculatedAmount))}
               </span>
-              <Badge
-                variant={line.status === "aprobado" ? "default" : "secondary"}
-                className={cn(
-                  "cursor-pointer text-xs",
-                  line.status === "aprobado" && "bg-green-500 hover:bg-green-600"
-                )}
-                onClick={toggleStatus}
-              >
-                {line.status === "aprobado" ? "Aprobado" : "Pendiente"}
-              </Badge>
-              <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
-                <Button size="sm" variant="ghost" onClick={() => setIsEditing(true)} className="h-7 w-7 p-0">
-                  <Edit2 className="h-3 w-3" />
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => onAddLine(line.id)} className="h-7 w-7 p-0">
-                  <Plus className="h-3 w-3" />
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => onDeleteLine(line.id)} className="h-7 w-7 p-0 text-destructive">
-                  <Trash2 className="h-3 w-3" />
-                </Button>
-              </div>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge
+                      variant={line.status === "autorizado" ? "default" : "secondary"}
+                      className={cn(
+                        "cursor-pointer text-xs",
+                        line.status === "autorizado" && "bg-green-500 hover:bg-green-600",
+                        line.status === "no_autorizado" && "bg-yellow-500 hover:bg-yellow-600 text-white"
+                      )}
+                      onClick={toggleStatus}
+                    >
+                      {line.status === "autorizado" ? "Autorizado" : "No Autorizado"}
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {line.status === "no_autorizado" 
+                      ? "Este ítem se arrastrará al año siguiente hasta que sea autorizado o eliminado"
+                      : "Click para cambiar estado"
+                    }
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              {isNotAuthorized && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <ArrowRight className="h-4 w-4 text-yellow-600" />
+                    </TooltipTrigger>
+                    <TooltipContent>Se arrastrará al próximo año</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              {!readOnly && (
+                <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => setIsEditing(true)} className="h-7 w-7 p-0">
+                    <Edit2 className="h-3 w-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => onAddLine(line.id)} className="h-7 w-7 p-0">
+                    <Plus className="h-3 w-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => onDeleteLine(line.id)} className="h-7 w-7 p-0 text-destructive">
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -186,8 +229,43 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine }: 
           onAddLine={onAddLine}
           onUpdateLine={onUpdateLine}
           onDeleteLine={onDeleteLine}
+          readOnly={readOnly}
         />
       )}
     </div>
   );
+};
+
+// Helpers para cálculos
+export const calculateAuthorizedTotal = (items: BudgetLine[]): number => {
+  return items.reduce((sum, item) => {
+    if (item.children && item.children.length > 0) {
+      return sum + calculateAuthorizedTotal(item.children);
+    }
+    // Solo contar si está autorizado
+    return item.status === "autorizado" ? sum + (item.amount_uf || 0) : sum;
+  }, 0);
+};
+
+export const calculateUnauthorizedTotal = (items: BudgetLine[]): number => {
+  return items.reduce((sum, item) => {
+    if (item.children && item.children.length > 0) {
+      return sum + calculateUnauthorizedTotal(item.children);
+    }
+    // Solo contar si NO está autorizado
+    return item.status === "no_autorizado" ? sum + (item.amount_uf || 0) : sum;
+  }, 0);
+};
+
+export const getUnauthorizedLines = (items: BudgetLine[]): BudgetLine[] => {
+  const result: BudgetLine[] = [];
+  items.forEach((item) => {
+    if (item.status === "no_autorizado") {
+      result.push(item);
+    }
+    if (item.children && item.children.length > 0) {
+      result.push(...getUnauthorizedLines(item.children));
+    }
+  });
+  return result;
 };
