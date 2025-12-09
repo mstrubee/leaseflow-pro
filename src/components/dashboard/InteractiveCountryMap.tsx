@@ -1,5 +1,4 @@
 import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
 import { ComposableMap, Geographies, Geography } from "react-simple-maps";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -7,24 +6,23 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MapPin, ChevronDown, ChevronRight, Building2, Globe } from "lucide-react";
 import { COUNTRY_REGIONS, Country, getRegionColor } from "@/lib/countryRegions";
 import { useContractsByRegion, RegionData } from "@/hooks/useContractsByRegion";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ChileRegionsMap, CHILE_REGIONS } from "@/components/dashboard/ChileRegionsMap";
+import { RegionDetailModal } from "@/components/dashboard/RegionDetailModal";
 
-// GeoJSON URLs for each country - caracena repo has all 16 Chilean regions
-const GEOJSON_URLS: Record<Country, string> = {
-  Chile: "https://raw.githubusercontent.com/caracena/chile-geojson/master/regiones.geojson",
+// GeoJSON URLs for other countries (Chile uses custom SVG)
+const GEOJSON_URLS: Record<Exclude<Country, "Chile">, string> = {
   Peru: "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_departamental_simple.geojson",
   Colombia: "https://gist.githubusercontent.com/john-guerra/43c7656821069d00dcbc/raw/be6a6e239cd5b5b803c6e7c2ec405b793a9f5fd0/colombia.geo.json",
   Ecuador: "https://raw.githubusercontent.com/jpmarindiaz/geo-collection/master/countries/ecuador/ecuador-provinces.geojson"
 };
 
-// Map projection settings - Chile vertical, tight framing from Arica (-18°) to Magallanes (-56°)
-const MAP_CONFIG: Record<Country, { center: [number, number]; scale: number; width: number; height: number }> = {
-  Chile: { center: [-70.5, -38], scale: 550, width: 150, height: 550 },
+// Map projection settings for other countries
+const MAP_CONFIG: Record<Exclude<Country, "Chile">, { center: [number, number]; scale: number; width: number; height: number }> = {
   Peru: { center: [-76, -9.5], scale: 1000, width: 400, height: 450 },
   Colombia: { center: [-74, 4.5], scale: 1200, width: 400, height: 450 },
   Ecuador: { center: [-78.5, -1.5], scale: 3500, width: 400, height: 400 }
@@ -50,48 +48,8 @@ const CHILE_REGIONS_FULL: Record<string, { fullName: string; numeral: string }> 
   "Magallanes y Antártica Chilena": { fullName: "Región de Magallanes y de la Antártica Chilena", numeral: "XII" }
 };
 
-// Region name mappings from GeoJSON to our internal names (supporting multiple GeoJSON formats)
-const REGION_MAPPINGS: Record<Country, Record<string, string>> = {
-  Chile: {
-    // Full names from fcortes GeoJSON
-    "Región de Arica y Parinacota": "Arica y Parinacota",
-    "Región de Tarapacá": "Tarapacá",
-    "Región de Antofagasta": "Antofagasta",
-    "Región de Atacama": "Atacama",
-    "Región de Coquimbo": "Coquimbo",
-    "Región de Valparaíso": "Valparaíso",
-    "Región Metropolitana de Santiago": "Metropolitana de Santiago",
-    "Región del Libertador General Bernardo O'Higgins": "O'Higgins",
-    "Región del Maule": "Maule",
-    "Región de Ñuble": "Ñuble",
-    "Región del Biobío": "Biobío",
-    "Región de La Araucanía": "La Araucanía",
-    "Región de Los Ríos": "Los Ríos",
-    "Región de Los Lagos": "Los Lagos",
-    "Región de Aysén del General Carlos Ibáñez del Campo": "Aysén",
-    "Región de Magallanes y de la Antártica Chilena": "Magallanes y Antártica Chilena",
-    // Short names from pachamaltese GeoJSON
-    "Arica y Parinacota": "Arica y Parinacota",
-    "Tarapacá": "Tarapacá",
-    "Antofagasta": "Antofagasta",
-    "Atacama": "Atacama",
-    "Coquimbo": "Coquimbo",
-    "Valparaíso": "Valparaíso",
-    "Metropolitana": "Metropolitana de Santiago",
-    "Región Metropolitana": "Metropolitana de Santiago",
-    "O'Higgins": "O'Higgins",
-    "Maule": "Maule",
-    "Ñuble": "Ñuble",
-    "Biobío": "Biobío",
-    "La Araucanía": "La Araucanía",
-    "Los Ríos": "Los Ríos",
-    "Los Lagos": "Los Lagos",
-    "Aysén": "Aysén",
-    "Aysén del General Carlos Ibáñez del Campo": "Aysén",
-    "Magallanes": "Magallanes y Antártica Chilena",
-    "Magallanes y la Antártica Chilena": "Magallanes y Antártica Chilena",
-    "Magallanes y Antártica Chilena": "Magallanes y Antártica Chilena"
-  },
+// Region name mappings from GeoJSON (for non-Chile countries)
+const REGION_MAPPINGS: Record<Exclude<Country, "Chile">, Record<string, string>> = {
   Peru: {},
   Colombia: {},
   Ecuador: {}
@@ -100,13 +58,19 @@ const REGION_MAPPINGS: Record<Country, Record<string, string>> = {
 export function InteractiveCountryMap() {
   const [selectedCountry, setSelectedCountry] = useState<Country>("Chile");
   const [selectedRegion, setSelectedRegion] = useState<RegionData | null>(null);
+  const [selectedRegionName, setSelectedRegionName] = useState<string | null>(null);
   const [hoveredRegion, setHoveredRegion] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(true);
-  const navigate = useNavigate();
 
   const { data: contractsData, loading } = useContractsByRegion(selectedCountry);
 
+  // For Chile, use CHILE_REGIONS order; for others use COUNTRY_REGIONS
   const orderedRegions = useMemo(() => {
+    if (selectedCountry === "Chile") {
+      return CHILE_REGIONS
+        .filter(region => contractsData[region.name]?.count > 0)
+        .map(region => contractsData[region.name]);
+    }
     const countryData = COUNTRY_REGIONS[selectedCountry];
     return countryData.order
       .filter(region => contractsData[region]?.count > 0)
@@ -117,20 +81,29 @@ export function InteractiveCountryMap() {
     return Object.values(contractsData).reduce((sum, r) => sum + r.count, 0);
   }, [contractsData]);
 
+  // Create contractsByRegion format for ChileRegionsMap
+  const chileContractsByRegion = useMemo(() => {
+    const result: Record<string, { count: number }> = {};
+    Object.entries(contractsData).forEach(([region, data]) => {
+      result[region] = { count: data.count };
+    });
+    return result;
+  }, [contractsData]);
+
   const handleRegionClick = (region: string) => {
     const regionData = contractsData[region];
-    if (regionData && regionData.count > 0) {
-      setSelectedRegion(regionData);
-    }
+    setSelectedRegionName(region);
+    setSelectedRegion(regionData || null);
   };
 
-  const handleContractClick = (contractId: string) => {
-    navigate(`/contracts/${contractId}`);
+  const handleCloseModal = () => {
     setSelectedRegion(null);
+    setSelectedRegionName(null);
   };
 
   const normalizeRegionName = (geoName: string): string => {
-    const mappings = REGION_MAPPINGS[selectedCountry];
+    if (selectedCountry === "Chile") return geoName;
+    const mappings = REGION_MAPPINGS[selectedCountry as Exclude<Country, "Chile">];
     return mappings[geoName] || geoName;
   };
 
@@ -202,88 +175,93 @@ export function InteractiveCountryMap() {
                     <CardContent className="p-2">
                       <div 
                         className="relative bg-gradient-to-br from-sky-50 to-blue-100 dark:from-slate-800 dark:to-slate-900 rounded-lg overflow-hidden flex justify-center items-center"
-                        style={{ height: isChile ? '550px' : '450px' }}
+                        style={{ height: isChile ? '520px' : '450px' }}
                       >
-                        <ComposableMap
-                          projection="geoMercator"
-                          projectionConfig={{
-                            center: mapConfig.center,
-                            scale: mapConfig.scale
-                          }}
-                          width={mapConfig.width}
-                          height={mapConfig.height}
-                          style={{ width: "auto", height: "100%", maxHeight: "100%" }}
-                        >
-                          <Geographies geography={GEOJSON_URLS[selectedCountry]}>
-                            {({ geographies }) =>
-                              geographies.map((geo) => {
-                                const geoName = geo.properties.Region || geo.properties.region_name || geo.properties.NOM_REG || geo.properties.NOMBDEP || geo.properties.NOMBRE_DPT || geo.properties.DPA_DESPRO || geo.properties.name || geo.properties.NAME || "";
-                                const normalizedName = normalizeRegionName(geoName);
-                                const regionData = contractsData[normalizedName];
-                                const hasContracts = regionData && regionData.count > 0;
-                                const isHovered = hoveredRegion === normalizedName;
+                        {isChile ? (
+                          <ChileRegionsMap
+                            contractsByRegion={chileContractsByRegion}
+                            onRegionClick={handleRegionClick}
+                            selectedRegion={selectedRegionName}
+                          />
+                        ) : (
+                          <>
+                            <ComposableMap
+                              projection="geoMercator"
+                              projectionConfig={{
+                                center: MAP_CONFIG[selectedCountry as Exclude<Country, "Chile">].center,
+                                scale: MAP_CONFIG[selectedCountry as Exclude<Country, "Chile">].scale
+                              }}
+                              width={MAP_CONFIG[selectedCountry as Exclude<Country, "Chile">].width}
+                              height={MAP_CONFIG[selectedCountry as Exclude<Country, "Chile">].height}
+                              style={{ width: "auto", height: "100%", maxHeight: "100%" }}
+                            >
+                              <Geographies geography={GEOJSON_URLS[selectedCountry as Exclude<Country, "Chile">]}>
+                                {({ geographies }) =>
+                                  geographies.map((geo) => {
+                                    const geoName = geo.properties.Region || geo.properties.region_name || geo.properties.NOM_REG || geo.properties.NOMBDEP || geo.properties.NOMBRE_DPT || geo.properties.DPA_DESPRO || geo.properties.name || geo.properties.NAME || "";
+                                    const normalizedName = normalizeRegionName(geoName);
+                                    const regionData = contractsData[normalizedName];
+                                    const hasContracts = regionData && regionData.count > 0;
+                                    const isHovered = hoveredRegion === normalizedName;
 
-                                return (
-                                  <Geography
-                                    key={geo.rsmKey}
-                                    geography={geo}
-                                    onMouseEnter={() => setHoveredRegion(normalizedName)}
-                                    onMouseLeave={() => setHoveredRegion(null)}
-                                    onClick={() => handleRegionClick(normalizedName)}
-                                    style={{
-                                      default: {
-                                        fill: isHovered ? "hsl(var(--primary))" : getRegionFillColor(geoName),
-                                        stroke: "hsl(220, 20%, 60%)",
-                                        strokeWidth: 0.5,
-                                        outline: "none",
-                                        cursor: hasContracts ? "pointer" : "default",
-                                        transition: "fill 0.2s ease"
-                                      },
-                                      hover: {
-                                        fill: hasContracts ? "hsl(var(--primary))" : getRegionFillColor(geoName),
-                                        stroke: "hsl(220, 20%, 40%)",
-                                        strokeWidth: hasContracts ? 1.5 : 0.5,
-                                        outline: "none",
-                                        cursor: hasContracts ? "pointer" : "default"
-                                      },
-                                      pressed: {
-                                        fill: "hsl(var(--primary))",
-                                        outline: "none"
-                                      }
-                                    }}
-                                  />
-                                );
-                              })
-                            }
-                          </Geographies>
-                        </ComposableMap>
+                                    return (
+                                      <Geography
+                                        key={geo.rsmKey}
+                                        geography={geo}
+                                        onMouseEnter={() => setHoveredRegion(normalizedName)}
+                                        onMouseLeave={() => setHoveredRegion(null)}
+                                        onClick={() => handleRegionClick(normalizedName)}
+                                        style={{
+                                          default: {
+                                            fill: isHovered ? "hsl(var(--primary))" : getRegionFillColor(geoName),
+                                            stroke: "hsl(220, 20%, 60%)",
+                                            strokeWidth: 0.5,
+                                            outline: "none",
+                                            cursor: hasContracts ? "pointer" : "default",
+                                            transition: "fill 0.2s ease"
+                                          },
+                                          hover: {
+                                            fill: hasContracts ? "hsl(var(--primary))" : getRegionFillColor(geoName),
+                                            stroke: "hsl(220, 20%, 40%)",
+                                            strokeWidth: hasContracts ? 1.5 : 0.5,
+                                            outline: "none",
+                                            cursor: hasContracts ? "pointer" : "default"
+                                          },
+                                          pressed: {
+                                            fill: "hsl(var(--primary))",
+                                            outline: "none"
+                                          }
+                                        }}
+                                      />
+                                    );
+                                  })
+                                }
+                              </Geographies>
+                            </ComposableMap>
 
-                        {/* Hover tooltip */}
-                        {hoveredRegion && (
-                          <div className="absolute top-3 left-3 bg-background/95 backdrop-blur-sm border border-border rounded-lg px-4 py-2 shadow-lg z-10">
-                            <p className="font-semibold text-sm">
-                              {isChile && CHILE_REGIONS_FULL[hoveredRegion] 
-                                ? `${CHILE_REGIONS_FULL[hoveredRegion].fullName} (${CHILE_REGIONS_FULL[hoveredRegion].numeral})`
-                                : hoveredRegion
-                              }
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {contractsData[hoveredRegion]?.count || 0} locales
-                            </p>
-                          </div>
+                            {/* Hover tooltip for non-Chile */}
+                            {hoveredRegion && (
+                              <div className="absolute top-3 left-3 bg-background/95 backdrop-blur-sm border border-border rounded-lg px-4 py-2 shadow-lg z-10">
+                                <p className="font-semibold text-sm">{hoveredRegion}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {contractsData[hoveredRegion]?.count || 0} locales
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Legend for non-Chile */}
+                            <div className="absolute bottom-3 right-3 bg-background/90 backdrop-blur-sm border border-border rounded-lg px-3 py-2 text-xs space-y-1">
+                              <div className="flex items-center gap-2">
+                                <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: getRegionColor(0, true) }}></div>
+                                <span>Con locales</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "hsl(220, 10%, 88%)" }}></div>
+                                <span>Sin locales</span>
+                              </div>
+                            </div>
+                          </>
                         )}
-
-                        {/* Legend */}
-                        <div className="absolute bottom-3 right-3 bg-background/90 backdrop-blur-sm border border-border rounded-lg px-3 py-2 text-xs space-y-1">
-                          <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: getRegionColor(0, true) }}></div>
-                            <span>Con locales</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "hsl(220, 10%, 88%)" }}></div>
-                            <span>Sin locales</span>
-                          </div>
-                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -337,57 +315,12 @@ export function InteractiveCountryMap() {
           </CollapsibleContent>
         </Card>
 
-        {/* Region Drill-down Modal */}
-        <Dialog open={!!selectedRegion} onOpenChange={(open) => !open && setSelectedRegion(null)}>
-          <DialogContent className="max-w-2xl max-h-[80vh]">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <MapPin className="h-5 w-5 text-primary" />
-                {selectedRegion?.region}
-                <Badge variant="secondary">{selectedRegion?.count} locales</Badge>
-              </DialogTitle>
-            </DialogHeader>
-            
-            {selectedRegion && (
-              <ScrollArea className="h-[500px] pr-4">
-                <div className="space-y-4">
-                  {Object.entries(selectedRegion.communes).map(([commune, contracts]) => (
-                    <Card key={commune} className="border-border/30">
-                      <CardHeader className="py-3">
-                        <CardTitle className="text-sm flex items-center justify-between">
-                          <span>{commune}</span>
-                          <Badge variant="outline" className="text-xs">{contracts.length} locales</Badge>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="py-2">
-                        <div className="space-y-2">
-                          {contracts.map((contract) => (
-                            <Button
-                              key={contract.contractId}
-                              variant="ghost"
-                              className="w-full justify-start h-auto py-2 px-3 text-left hover:bg-primary/10"
-                              onClick={() => handleContractClick(contract.contractId)}
-                            >
-                              <div className="flex items-start gap-3">
-                                <MapPin className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                                <div>
-                                  <p className="font-medium text-sm">{contract.contractName}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {contract.street} {contract.number}
-                                  </p>
-                                </div>
-                              </div>
-                            </Button>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </ScrollArea>
-            )}
-          </DialogContent>
-        </Dialog>
+        {/* Region Detail Modal with Demographics */}
+        <RegionDetailModal
+          region={selectedRegion}
+          regionName={selectedRegionName}
+          onClose={handleCloseModal}
+        />
       </Collapsible>
     </TooltipProvider>
   );
