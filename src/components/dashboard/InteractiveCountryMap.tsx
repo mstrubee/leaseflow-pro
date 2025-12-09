@@ -14,17 +14,17 @@ import { useContractsByRegion, RegionData } from "@/hooks/useContractsByRegion";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-// GeoJSON URLs for each country
+// GeoJSON URLs for each country - caracena repo has all 16 Chilean regions
 const GEOJSON_URLS: Record<Country, string> = {
-  Chile: "https://raw.githubusercontent.com/fcortes/Chile-GeoJSON/master/Regional.geojson",
+  Chile: "https://raw.githubusercontent.com/caracena/chile-geojson/master/regiones.geojson",
   Peru: "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_departamental_simple.geojson",
   Colombia: "https://gist.githubusercontent.com/john-guerra/43c7656821069d00dcbc/raw/be6a6e239cd5b5b803c6e7c2ec405b793a9f5fd0/colombia.geo.json",
   Ecuador: "https://raw.githubusercontent.com/jpmarindiaz/geo-collection/master/countries/ecuador/ecuador-provinces.geojson"
 };
 
-// Map projection settings - Chile vertical showing ALL regions from Arica (-18°) to Magallanes (-55°)
+// Map projection settings - Chile vertical, tight framing from Arica (-18°) to Magallanes (-56°)
 const MAP_CONFIG: Record<Country, { center: [number, number]; scale: number; width: number; height: number }> = {
-  Chile: { center: [-70.5, -33], scale: 380, width: 200, height: 700 },
+  Chile: { center: [-70.5, -38], scale: 550, width: 150, height: 550 },
   Peru: { center: [-76, -9.5], scale: 1000, width: 400, height: 450 },
   Colombia: { center: [-74, 4.5], scale: 1200, width: 400, height: 450 },
   Ecuador: { center: [-78.5, -1.5], scale: 3500, width: 400, height: 400 }
@@ -201,8 +201,8 @@ export function InteractiveCountryMap() {
                     </CardHeader>
                     <CardContent className="p-2">
                       <div 
-                        className="relative bg-gradient-to-br from-sky-50 to-blue-100 dark:from-slate-800 dark:to-slate-900 rounded-lg overflow-hidden flex justify-center"
-                        style={{ minHeight: isChile ? '700px' : '450px' }}
+                        className="relative bg-gradient-to-br from-sky-50 to-blue-100 dark:from-slate-800 dark:to-slate-900 rounded-lg overflow-hidden flex justify-center items-center"
+                        style={{ height: isChile ? '550px' : '450px' }}
                       >
                         <ComposableMap
                           projection="geoMercator"
@@ -212,7 +212,7 @@ export function InteractiveCountryMap() {
                           }}
                           width={mapConfig.width}
                           height={mapConfig.height}
-                          style={{ width: "auto", height: "100%", maxWidth: "100%" }}
+                          style={{ width: "auto", height: "100%", maxHeight: "100%" }}
                         >
                           <Geographies geography={GEOJSON_URLS[selectedCountry]}>
                             {({ geographies }) =>
@@ -297,7 +297,7 @@ export function InteractiveCountryMap() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <ScrollArea className={`pr-4 ${isChile ? 'h-[620px]' : 'h-[370px]'}`}>
+                      <ScrollArea className={`pr-4 ${isChile ? 'h-[470px]' : 'h-[370px]'}`}>
                         {orderedRegions.length === 0 ? (
                           <p className="text-muted-foreground text-sm text-center py-8">
                             No hay contratos en {selectedCountry}
