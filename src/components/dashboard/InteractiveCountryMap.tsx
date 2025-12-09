@@ -14,17 +14,17 @@ import { useContractsByRegion, RegionData } from "@/hooks/useContractsByRegion";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-// GeoJSON URLs for each country
+// GeoJSON URLs for each country - Using updated Chile GeoJSON with all 16 regions
 const GEOJSON_URLS: Record<Country, string> = {
-  Chile: "https://raw.githubusercontent.com/fcortes/Chile-GeoJSON/master/Regional.geojson",
+  Chile: "https://raw.githubusercontent.com/pachamaltese/chilemapas/master/data-raw/regiones.geojson",
   Peru: "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_departamental_simple.geojson",
   Colombia: "https://gist.githubusercontent.com/john-guerra/43c7656821069d00dcbc/raw/be6a6e239cd5b5b803c6e7c2ec405b793a9f5fd0/colombia.geo.json",
   Ecuador: "https://raw.githubusercontent.com/jpmarindiaz/geo-collection/master/countries/ecuador/ecuador-provinces.geojson"
 };
 
-// Map projection settings - Chile vertical (like the reference image)
+// Map projection settings - Chile vertical showing all regions from Arica to Magallanes
 const MAP_CONFIG: Record<Country, { center: [number, number]; scale: number; width: number; height: number }> = {
-  Chile: { center: [-70.5, -35], scale: 650, width: 200, height: 600 },
+  Chile: { center: [-70.5, -37], scale: 450, width: 200, height: 700 },
   Peru: { center: [-76, -9.5], scale: 1000, width: 400, height: 450 },
   Colombia: { center: [-74, 4.5], scale: 1200, width: 400, height: 450 },
   Ecuador: { center: [-78.5, -1.5], scale: 3500, width: 400, height: 400 }
@@ -50,9 +50,10 @@ const CHILE_REGIONS_FULL: Record<string, { fullName: string; numeral: string }> 
   "Magallanes y Antártica Chilena": { fullName: "Región de Magallanes y de la Antártica Chilena", numeral: "XII" }
 };
 
-// Region name mappings from GeoJSON to our internal names
+// Region name mappings from GeoJSON to our internal names (supporting multiple GeoJSON formats)
 const REGION_MAPPINGS: Record<Country, Record<string, string>> = {
   Chile: {
+    // Full names from fcortes GeoJSON
     "Región de Arica y Parinacota": "Arica y Parinacota",
     "Región de Tarapacá": "Tarapacá",
     "Región de Antofagasta": "Antofagasta",
@@ -68,7 +69,28 @@ const REGION_MAPPINGS: Record<Country, Record<string, string>> = {
     "Región de Los Ríos": "Los Ríos",
     "Región de Los Lagos": "Los Lagos",
     "Región de Aysén del General Carlos Ibáñez del Campo": "Aysén",
-    "Región de Magallanes y de la Antártica Chilena": "Magallanes y Antártica Chilena"
+    "Región de Magallanes y de la Antártica Chilena": "Magallanes y Antártica Chilena",
+    // Short names from pachamaltese GeoJSON
+    "Arica y Parinacota": "Arica y Parinacota",
+    "Tarapacá": "Tarapacá",
+    "Antofagasta": "Antofagasta",
+    "Atacama": "Atacama",
+    "Coquimbo": "Coquimbo",
+    "Valparaíso": "Valparaíso",
+    "Metropolitana": "Metropolitana de Santiago",
+    "Región Metropolitana": "Metropolitana de Santiago",
+    "O'Higgins": "O'Higgins",
+    "Maule": "Maule",
+    "Ñuble": "Ñuble",
+    "Biobío": "Biobío",
+    "La Araucanía": "La Araucanía",
+    "Los Ríos": "Los Ríos",
+    "Los Lagos": "Los Lagos",
+    "Aysén": "Aysén",
+    "Aysén del General Carlos Ibáñez del Campo": "Aysén",
+    "Magallanes": "Magallanes y Antártica Chilena",
+    "Magallanes y la Antártica Chilena": "Magallanes y Antártica Chilena",
+    "Magallanes y Antártica Chilena": "Magallanes y Antártica Chilena"
   },
   Peru: {},
   Colombia: {},
@@ -180,7 +202,7 @@ export function InteractiveCountryMap() {
                     <CardContent className="p-2">
                       <div 
                         className="relative bg-gradient-to-br from-sky-50 to-blue-100 dark:from-slate-800 dark:to-slate-900 rounded-lg overflow-hidden flex justify-center"
-                        style={{ minHeight: isChile ? '600px' : '450px' }}
+                        style={{ minHeight: isChile ? '700px' : '450px' }}
                       >
                         <ComposableMap
                           projection="geoMercator"
@@ -195,7 +217,7 @@ export function InteractiveCountryMap() {
                           <Geographies geography={GEOJSON_URLS[selectedCountry]}>
                             {({ geographies }) =>
                               geographies.map((geo) => {
-                                const geoName = geo.properties.Region || geo.properties.NOMBDEP || geo.properties.NOMBRE_DPT || geo.properties.DPA_DESPRO || geo.properties.name || "";
+                                const geoName = geo.properties.Region || geo.properties.region_name || geo.properties.NOM_REG || geo.properties.NOMBDEP || geo.properties.NOMBRE_DPT || geo.properties.DPA_DESPRO || geo.properties.name || geo.properties.NAME || "";
                                 const normalizedName = normalizeRegionName(geoName);
                                 const regionData = contractsData[normalizedName];
                                 const hasContracts = regionData && regionData.count > 0;
@@ -275,7 +297,7 @@ export function InteractiveCountryMap() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <ScrollArea className={`pr-4 ${isChile ? 'h-[520px]' : 'h-[370px]'}`}>
+                      <ScrollArea className={`pr-4 ${isChile ? 'h-[620px]' : 'h-[370px]'}`}>
                         {orderedRegions.length === 0 ? (
                           <p className="text-muted-foreground text-sm text-center py-8">
                             No hay contratos en {selectedCountry}
