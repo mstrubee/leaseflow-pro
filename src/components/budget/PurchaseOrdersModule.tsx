@@ -1,0 +1,244 @@
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Loader2, Plus, FileText, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { useBudgetContext } from "./BudgetContext";
+import { InvoiceList } from "./InvoiceList";
+import { cn } from "@/lib/utils";
+
+interface PurchaseOrder {
+  id: string;
+  order_number: string;
+  supplier_name: string | null;
+  order_date: string;
+  amount_uf: number;
+  description: string | null;
+  attachment_url: string | null;
+  year: number;
+  status: string;
+}
+
+interface PurchaseOrdersModuleProps {
+  contractId: string;
+}
+
+export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) => {
+  const [orders, setOrders] = useState<PurchaseOrder[]>([]);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [loading, setLoading] = useState(true);
+  const [showNewDialog, setShowNewDialog] = useState(false);
+  const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+  const [newOrder, setNewOrder] = useState({
+    order_number: "",
+    supplier_name: "",
+    order_date: new Date().toISOString().split("T")[0],
+    amount_uf: "",
+    description: "",
+  });
+  const { toast } = useToast();
+  const { formatUF, formatCLP, convertUFToPesos } = useBudgetContext();
+
+  useEffect(() => {
+    loadOrders();
+  }, [contractId, selectedYear]);
+
+  const loadOrders = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("purchase_orders")
+        .select("*")
+        .eq("contract_id", contractId)
+        .eq("year", selectedYear)
+        .order("order_date", { ascending: false });
+
+      if (error) throw error;
+      setOrders(data || []);
+    } catch (error) {
+      console.error("Error loading orders:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateOrder = async () => {
+    try {
+      const { error } = await supabase.from("purchase_orders").insert({
+        contract_id: contractId,
+        order_number: newOrder.order_number,
+        supplier_name: newOrder.supplier_name || null,
+        order_date: newOrder.order_date,
+        amount_uf: parseFloat(newOrder.amount_uf) || 0,
+        description: newOrder.description || null,
+        year: selectedYear,
+      });
+
+      if (error) throw error;
+
+      toast({ title: "OC creada", description: `Orden de compra ${newOrder.order_number} creada` });
+      setShowNewDialog(false);
+      setNewOrder({ order_number: "", supplier_name: "", order_date: new Date().toISOString().split("T")[0], amount_uf: "", description: "" });
+      loadOrders();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
+  const toggleExpanded = (orderId: string) => {
+    const newExpanded = new Set(expandedOrders);
+    if (newExpanded.has(orderId)) {
+      newExpanded.delete(orderId);
+    } else {
+      newExpanded.add(orderId);
+    }
+    setExpandedOrders(newExpanded);
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "cerrada":
+        return <Badge className="bg-green-500">Cerrada</Badge>;
+      case "descuadrada":
+        return <Badge variant="destructive" className="flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Descuadrada</Badge>;
+      default:
+        return <Badge variant="secondary">Abierta</Badge>;
+    }
+  };
+
+  const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
+  const totalOC = orders.reduce((sum, o) => sum + o.amount_uf, 0);
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="flex items-center justify-center py-8">
+          <Loader2 className="h-6 w-6 animate-spin" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+        <CardTitle className="text-lg flex items-center gap-2">
+          <FileText className="h-5 w-5" />
+          Órdenes de Compra
+        </CardTitle>
+        <div className="flex items-center gap-3">
+          <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(parseInt(v))}>
+            <SelectTrigger className="w-24">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {years.map((year) => (
+                <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button size="sm" onClick={() => setShowNewDialog(true)}>
+            <Plus className="h-4 w-4 mr-1" />
+            Nueva OC
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="mb-4 p-3 bg-muted/30 rounded-lg flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">Total OC {selectedYear}</span>
+          <div className="text-right">
+            <p className="font-bold">{formatUF(totalOC)}</p>
+            <p className="text-xs text-muted-foreground">{formatCLP(convertUFToPesos(totalOC))}</p>
+          </div>
+        </div>
+
+        {orders.length === 0 ? (
+          <p className="text-center text-muted-foreground py-8">No hay órdenes de compra para {selectedYear}</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-8"></TableHead>
+                <TableHead>Nº OC</TableHead>
+                <TableHead>Fecha</TableHead>
+                <TableHead>Proveedor</TableHead>
+                <TableHead className="text-right">Monto</TableHead>
+                <TableHead>Estado</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {orders.map((order) => (
+                <>
+                  <TableRow 
+                    key={order.id} 
+                    className={cn("cursor-pointer hover:bg-accent/50", expandedOrders.has(order.id) && "bg-accent/30")}
+                    onClick={() => toggleExpanded(order.id)}
+                  >
+                    <TableCell>
+                      {expandedOrders.has(order.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </TableCell>
+                    <TableCell className="font-medium">{order.order_number}</TableCell>
+                    <TableCell>{new Date(order.order_date).toLocaleDateString("es-CL")}</TableCell>
+                    <TableCell>{order.supplier_name || "-"}</TableCell>
+                    <TableCell className="text-right font-mono">{formatUF(order.amount_uf)}</TableCell>
+                    <TableCell>{getStatusBadge(order.status)}</TableCell>
+                  </TableRow>
+                  {expandedOrders.has(order.id) && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="bg-muted/20 p-4">
+                        <InvoiceList purchaseOrder={order} onUpdate={loadOrders} />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+
+      <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nueva Orden de Compra</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Nº OC</Label>
+                <Input value={newOrder.order_number} onChange={(e) => setNewOrder({ ...newOrder, order_number: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label>Fecha</Label>
+                <Input type="date" value={newOrder.order_date} onChange={(e) => setNewOrder({ ...newOrder, order_date: e.target.value })} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Proveedor</Label>
+              <Input value={newOrder.supplier_name} onChange={(e) => setNewOrder({ ...newOrder, supplier_name: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Monto (UF)</Label>
+              <Input type="number" step="0.01" value={newOrder.amount_uf} onChange={(e) => setNewOrder({ ...newOrder, amount_uf: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Descripción</Label>
+              <Input value={newOrder.description} onChange={(e) => setNewOrder({ ...newOrder, description: e.target.value })} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNewDialog(false)}>Cancelar</Button>
+            <Button onClick={handleCreateOrder}>Crear</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+};

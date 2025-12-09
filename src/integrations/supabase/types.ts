@@ -173,6 +173,135 @@ export type Database = {
           },
         ]
       }
+      budget_lines: {
+        Row: {
+          amount_uf: number
+          budget_id: string
+          created_at: string
+          description: string | null
+          display_order: number | null
+          id: string
+          name: string
+          parent_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount_uf?: number
+          budget_id: string
+          created_at?: string
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          name: string
+          parent_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount_uf?: number
+          budget_id?: string
+          created_at?: string
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          name?: string
+          parent_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_lines_budget_id_fkey"
+            columns: ["budget_id"]
+            isOneToOne: false
+            referencedRelation: "contract_budgets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_lines_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "budget_lines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      budget_reassignments: {
+        Row: {
+          amount_uf: number
+          budget_line_id: string | null
+          id: string
+          notes: string | null
+          purchase_item_id: string | null
+          purchase_order_id: string | null
+          reassigned_at: string
+          reassigned_by: string | null
+          source_budget_id: string
+          target_budget_id: string
+        }
+        Insert: {
+          amount_uf: number
+          budget_line_id?: string | null
+          id?: string
+          notes?: string | null
+          purchase_item_id?: string | null
+          purchase_order_id?: string | null
+          reassigned_at?: string
+          reassigned_by?: string | null
+          source_budget_id: string
+          target_budget_id: string
+        }
+        Update: {
+          amount_uf?: number
+          budget_line_id?: string | null
+          id?: string
+          notes?: string | null
+          purchase_item_id?: string | null
+          purchase_order_id?: string | null
+          reassigned_at?: string
+          reassigned_by?: string | null
+          source_budget_id?: string
+          target_budget_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_reassignments_budget_line_id_fkey"
+            columns: ["budget_line_id"]
+            isOneToOne: false
+            referencedRelation: "budget_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_reassignments_purchase_item_id_fkey"
+            columns: ["purchase_item_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_reassignments_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_reassignments_source_budget_id_fkey"
+            columns: ["source_budget_id"]
+            isOneToOne: false
+            referencedRelation: "contract_budgets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_reassignments_target_budget_id_fkey"
+            columns: ["target_budget_id"]
+            isOneToOne: false
+            referencedRelation: "contract_budgets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cloud_storage_connections: {
         Row: {
           access_token: string | null
@@ -243,6 +372,53 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "contract_addresses_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contract_budgets: {
+        Row: {
+          amount_uf: number
+          budget_type: string
+          closed_at: string | null
+          closed_by: string | null
+          contract_id: string
+          created_at: string
+          id: string
+          is_closed: boolean | null
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          amount_uf?: number
+          budget_type: string
+          closed_at?: string | null
+          closed_by?: string | null
+          contract_id: string
+          created_at?: string
+          id?: string
+          is_closed?: boolean | null
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          amount_uf?: number
+          budget_type?: string
+          closed_at?: string | null
+          closed_by?: string | null
+          contract_id?: string
+          created_at?: string
+          id?: string
+          is_closed?: boolean | null
+          updated_at?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_budgets_contract_id_fkey"
             columns: ["contract_id"]
             isOneToOne: false
             referencedRelation: "contracts"
@@ -393,11 +569,18 @@ export type Database = {
           drive_folder_id: string | null
           id: string
           name: string
+          num_estacionamientos: number | null
           obra_status: string | null
           operation_status: string | null
           patente_status: string | null
           signed_date: string | null
           status: Database["public"]["Enums"]["contract_status"]
+          superficie_bodega_backoffice: number | null
+          superficie_edificada_local: number | null
+          superficie_exterior_cubierto: number | null
+          superficie_exterior_descubierto: number | null
+          superficie_showroom: number | null
+          superficie_terreno: number | null
           updated_at: string
         }
         Insert: {
@@ -406,11 +589,18 @@ export type Database = {
           drive_folder_id?: string | null
           id?: string
           name: string
+          num_estacionamientos?: number | null
           obra_status?: string | null
           operation_status?: string | null
           patente_status?: string | null
           signed_date?: string | null
           status?: Database["public"]["Enums"]["contract_status"]
+          superficie_bodega_backoffice?: number | null
+          superficie_edificada_local?: number | null
+          superficie_exterior_cubierto?: number | null
+          superficie_exterior_descubierto?: number | null
+          superficie_showroom?: number | null
+          superficie_terreno?: number | null
           updated_at?: string
         }
         Update: {
@@ -419,11 +609,18 @@ export type Database = {
           drive_folder_id?: string | null
           id?: string
           name?: string
+          num_estacionamientos?: number | null
           obra_status?: string | null
           operation_status?: string | null
           patente_status?: string | null
           signed_date?: string | null
           status?: Database["public"]["Enums"]["contract_status"]
+          superficie_bodega_backoffice?: number | null
+          superficie_edificada_local?: number | null
+          superficie_exterior_cubierto?: number | null
+          superficie_exterior_descubierto?: number | null
+          superficie_showroom?: number | null
+          superficie_terreno?: number | null
           updated_at?: string
         }
         Relationships: []
@@ -524,6 +721,65 @@ export type Database = {
           },
         ]
       }
+      invoices: {
+        Row: {
+          amount_uf: number
+          attachment_url: string | null
+          created_at: string
+          drive_file_id: string | null
+          email_sent_at: string | null
+          email_sent_to: string | null
+          id: string
+          invoice_date: string
+          invoice_number: string
+          purchase_order_id: string
+          received_at: string | null
+          received_by: string | null
+          reception_status: string
+          updated_at: string
+        }
+        Insert: {
+          amount_uf?: number
+          attachment_url?: string | null
+          created_at?: string
+          drive_file_id?: string | null
+          email_sent_at?: string | null
+          email_sent_to?: string | null
+          id?: string
+          invoice_date?: string
+          invoice_number: string
+          purchase_order_id: string
+          received_at?: string | null
+          received_by?: string | null
+          reception_status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount_uf?: number
+          attachment_url?: string | null
+          created_at?: string
+          drive_file_id?: string | null
+          email_sent_at?: string | null
+          email_sent_to?: string | null
+          id?: string
+          invoice_date?: string
+          invoice_number?: string
+          purchase_order_id?: string
+          received_at?: string | null
+          received_by?: string | null
+          reception_status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoices_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -547,6 +803,181 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      purchase_items: {
+        Row: {
+          amount_uf: number
+          attachment_url: string | null
+          budget_id: string | null
+          contract_id: string
+          created_at: string
+          delivery_date: string | null
+          description: string | null
+          drive_file_id: string | null
+          id: string
+          item_name: string
+          purchase_order_id: string | null
+          quantity: number | null
+          request_date: string | null
+          supplier_id: string | null
+          supplier_name: string | null
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          amount_uf?: number
+          attachment_url?: string | null
+          budget_id?: string | null
+          contract_id: string
+          created_at?: string
+          delivery_date?: string | null
+          description?: string | null
+          drive_file_id?: string | null
+          id?: string
+          item_name: string
+          purchase_order_id?: string | null
+          quantity?: number | null
+          request_date?: string | null
+          supplier_id?: string | null
+          supplier_name?: string | null
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          amount_uf?: number
+          attachment_url?: string | null
+          budget_id?: string | null
+          contract_id?: string
+          created_at?: string
+          delivery_date?: string | null
+          description?: string | null
+          drive_file_id?: string | null
+          id?: string
+          item_name?: string
+          purchase_order_id?: string | null
+          quantity?: number | null
+          request_date?: string | null
+          supplier_id?: string | null
+          supplier_name?: string | null
+          updated_at?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_items_budget_id_fkey"
+            columns: ["budget_id"]
+            isOneToOne: false
+            referencedRelation: "contract_budgets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_items_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_items_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_items_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      purchase_orders: {
+        Row: {
+          amount_uf: number
+          attachment_url: string | null
+          budget_id: string | null
+          budget_line_id: string | null
+          contract_id: string
+          created_at: string
+          description: string | null
+          drive_file_id: string | null
+          id: string
+          order_date: string
+          order_number: string
+          status: string
+          supplier_id: string | null
+          supplier_name: string | null
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          amount_uf?: number
+          attachment_url?: string | null
+          budget_id?: string | null
+          budget_line_id?: string | null
+          contract_id: string
+          created_at?: string
+          description?: string | null
+          drive_file_id?: string | null
+          id?: string
+          order_date?: string
+          order_number: string
+          status?: string
+          supplier_id?: string | null
+          supplier_name?: string | null
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          amount_uf?: number
+          attachment_url?: string | null
+          budget_id?: string | null
+          budget_line_id?: string | null
+          contract_id?: string
+          created_at?: string
+          description?: string | null
+          drive_file_id?: string | null
+          id?: string
+          order_date?: string
+          order_number?: string
+          status?: string
+          supplier_id?: string | null
+          supplier_name?: string | null
+          updated_at?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_orders_budget_id_fkey"
+            columns: ["budget_id"]
+            isOneToOne: false
+            referencedRelation: "contract_budgets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_budget_line_id_fkey"
+            columns: ["budget_line_id"]
+            isOneToOne: false
+            referencedRelation: "budget_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       rent_escalations: {
         Row: {
@@ -669,6 +1100,39 @@ export type Database = {
           },
         ]
       }
+      suppliers: {
+        Row: {
+          address: string | null
+          created_at: string
+          email: string | null
+          id: string
+          name: string
+          phone: string | null
+          rut: string | null
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          name: string
+          phone?: string | null
+          rut?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          name?: string
+          phone?: string | null
+          rut?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_permissions: {
         Row: {
           created_at: string
@@ -707,6 +1171,30 @@ export type Database = {
         Update: {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_settings: {
+        Row: {
+          created_at: string
+          id: string
+          last_invoice_email: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_invoice_email?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_invoice_email?: string | null
+          updated_at?: string
           user_id?: string
         }
         Relationships: []
