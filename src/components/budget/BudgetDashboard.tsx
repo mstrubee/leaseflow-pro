@@ -21,6 +21,12 @@ interface SurfaceData {
   num_estacionamientos: number;
 }
 
+interface BudgetSummary {
+  budget: number;
+  authorized: number;
+  unauthorized: number;
+}
+
 interface BudgetDashboardProps {
   contractId: string;
 }
@@ -36,20 +42,16 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
     num_estacionamientos: 0,
   });
   const [loading, setLoading] = useState(true);
-  const [summary, setSummary] = useState({
-    inversionBudget: 0,
-    inversionConsumed: 0,
-    capexBudget: 0,
-    capexConsumed: 0,
-    totalOC: 0,
-    totalPurchases: 0,
-  });
+  const [inversionSummary, setInversionSummary] = useState<BudgetSummary>({ budget: 0, authorized: 0, unauthorized: 0 });
+  const [capexSummary, setCapexSummary] = useState<BudgetSummary>({ budget: 0, authorized: 0, unauthorized: 0 });
+  const [totalOC, setTotalOC] = useState(0);
+  const [totalPurchases, setTotalPurchases] = useState(0);
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos } = useBudgetContext();
 
   useEffect(() => {
     loadContractData();
-    loadSummary();
+    loadSummaries();
   }, [contractId]);
 
   const loadContractData = async () => {
@@ -79,40 +81,16 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
     }
   };
 
-  const loadSummary = async () => {
+  const loadSummaries = async () => {
     const currentYear = new Date().getFullYear();
 
-    // Get budgets for current year
-    const { data: budgets } = await supabase
-      .from("contract_budgets")
-      .select("*")
-      .eq("contract_id", contractId)
-      .eq("year", currentYear);
+    // Cargar resumen de Inversión Inicial (INDEPENDIENTE)
+    const invSummary = await loadBudgetTypeSummary(contractId, "inversion_inicial", currentYear);
+    setInversionSummary(invSummary);
 
-    const invBudget = budgets?.find((b) => b.budget_type === "inversion_inicial");
-    const capexBudget = budgets?.find((b) => b.budget_type === "capex");
-
-    // Get budget lines totals
-    let invConsumed = 0;
-    let capConsumed = 0;
-
-    if (invBudget) {
-      const { data: invLines } = await supabase
-        .from("budget_lines")
-        .select("amount_uf")
-        .eq("budget_id", invBudget.id)
-        .is("parent_id", null);
-      invConsumed = (invLines || []).reduce((acc, l) => acc + (l.amount_uf || 0), 0);
-    }
-
-    if (capexBudget) {
-      const { data: capexLines } = await supabase
-        .from("budget_lines")
-        .select("amount_uf")
-        .eq("budget_id", capexBudget.id)
-        .is("parent_id", null);
-      capConsumed = (capexLines || []).reduce((acc, l) => acc + (l.amount_uf || 0), 0);
-    }
+    // Cargar resumen de CAPEX (INDEPENDIENTE)
+    const capSummary = await loadBudgetTypeSummary(contractId, "capex", currentYear);
+    setCapexSummary(capSummary);
 
     // Get OC totals
     const { data: orders } = await supabase
@@ -128,17 +106,49 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
       .eq("contract_id", contractId)
       .eq("year", currentYear);
 
-    const ocTotal = (orders || []).reduce((acc, o) => acc + (o.amount_uf || 0), 0);
-    const purchasesTotal = (items || []).reduce((acc, i) => acc + (i.amount_uf || 0), 0);
+    setTotalOC((orders || []).reduce((acc, o) => acc + (o.amount_uf || 0), 0));
+    setTotalPurchases((items || []).reduce((acc, i) => acc + (i.amount_uf || 0), 0));
+  };
 
-    setSummary({
-      inversionBudget: invBudget?.amount_uf || 0,
-      inversionConsumed: invConsumed,
-      capexBudget: capexBudget?.amount_uf || 0,
-      capexConsumed: capConsumed,
-      totalOC: ocTotal,
-      totalPurchases: purchasesTotal,
+  const loadBudgetTypeSummary = async (contractId: string, budgetType: string, year: number): Promise<BudgetSummary> => {
+    // Obtener presupuesto del tipo específico
+    const { data: budget } = await supabase
+      .from("contract_budgets")
+      .select("id, amount_uf")
+      .eq("contract_id", contractId)
+      .eq("budget_type", budgetType)
+      .eq("year", year)
+      .maybeSingle();
+
+    if (!budget) {
+      return { budget: 0, authorized: 0, unauthorized: 0 };
+    }
+
+    // Obtener líneas del presupuesto específico
+    const { data: lines } = await supabase
+      .from("budget_lines")
+      .select("amount_uf, status, parent_id")
+      .eq("budget_id", budget.id);
+
+    // Solo contar líneas hoja (sin hijos) para evitar doble conteo
+    const leafLines = (lines || []).filter(line => {
+      const hasChildren = (lines || []).some(l => l.parent_id === line.parent_id);
+      return !hasChildren || line.parent_id !== null;
     });
+
+    const authorized = (lines || [])
+      .filter(l => l.status === "autorizado" && l.parent_id === null)
+      .reduce((acc, l) => acc + (l.amount_uf || 0), 0);
+
+    const unauthorized = (lines || [])
+      .filter(l => l.status === "no_autorizado" && l.parent_id === null)
+      .reduce((acc, l) => acc + (l.amount_uf || 0), 0);
+
+    return {
+      budget: budget.amount_uf || 0,
+      authorized,
+      unauthorized,
+    };
   };
 
   const handleSurfaceChange = async (newSurfaces: SurfaceData) => {
@@ -162,40 +172,48 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
 
   return (
     <div className="space-y-6">
-      {/* Summary Cards */}
+      {/* Summary Cards - CADA UNO INDEPENDIENTE */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
+        {/* Inversión Inicial - INDEPENDIENTE */}
+        <Card className="border-l-4 border-l-blue-500">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <TrendingUp className="h-4 w-4" />
+              <TrendingUp className="h-4 w-4 text-blue-500" />
               Inversión Inicial {currentYear}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold">{formatUF(summary.inversionConsumed)}</p>
-                <p className="text-xs text-muted-foreground">de {formatUF(summary.inversionBudget)}</p>
+                <p className="text-2xl font-bold">{formatUF(inversionSummary.authorized)}</p>
+                <p className="text-xs text-muted-foreground">de {formatUF(inversionSummary.budget)}</p>
+                {inversionSummary.unauthorized > 0 && (
+                  <p className="text-xs text-yellow-600">+{formatUF(inversionSummary.unauthorized)} pendiente</p>
+                )}
               </div>
-              <BudgetSemaphore budget={summary.inversionBudget} consumed={summary.inversionConsumed} showLabel={false} size="lg" />
+              <BudgetSemaphore budget={inversionSummary.budget} consumed={inversionSummary.authorized} showLabel={false} size="lg" />
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        {/* CAPEX - INDEPENDIENTE */}
+        <Card className="border-l-4 border-l-green-500">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <DollarSign className="h-4 w-4" />
+              <DollarSign className="h-4 w-4 text-green-500" />
               CAPEX {currentYear}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold">{formatUF(summary.capexConsumed)}</p>
-                <p className="text-xs text-muted-foreground">de {formatUF(summary.capexBudget)}</p>
+                <p className="text-2xl font-bold">{formatUF(capexSummary.authorized)}</p>
+                <p className="text-xs text-muted-foreground">de {formatUF(capexSummary.budget)}</p>
+                {capexSummary.unauthorized > 0 && (
+                  <p className="text-xs text-yellow-600">+{formatUF(capexSummary.unauthorized)} pendiente</p>
+                )}
               </div>
-              <BudgetSemaphore budget={summary.capexBudget} consumed={summary.capexConsumed} showLabel={false} size="lg" />
+              <BudgetSemaphore budget={capexSummary.budget} consumed={capexSummary.authorized} showLabel={false} size="lg" />
             </div>
           </CardContent>
         </Card>
@@ -208,8 +226,8 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{formatUF(summary.totalOC)}</p>
-            <p className="text-xs text-muted-foreground">{formatCLP(convertUFToPesos(summary.totalOC))}</p>
+            <p className="text-2xl font-bold">{formatUF(totalOC)}</p>
+            <p className="text-xs text-muted-foreground">{formatCLP(convertUFToPesos(totalOC))}</p>
           </CardContent>
         </Card>
 
@@ -221,8 +239,8 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{formatUF(summary.totalPurchases)}</p>
-            <p className="text-xs text-muted-foreground">{formatCLP(convertUFToPesos(summary.totalPurchases))}</p>
+            <p className="text-2xl font-bold">{formatUF(totalPurchases)}</p>
+            <p className="text-xs text-muted-foreground">{formatCLP(convertUFToPesos(totalPurchases))}</p>
           </CardContent>
         </Card>
       </div>
@@ -230,11 +248,15 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
       {/* Surfaces */}
       <ContractSurfaces data={surfaces} onChange={handleSurfaceChange} />
 
-      {/* Budget Tabs */}
+      {/* Budget Tabs - CADA TAB COMPLETAMENTE INDEPENDIENTE */}
       <Tabs defaultValue="inversion" className="w-full">
         <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="inversion">Inversión Inicial</TabsTrigger>
-          <TabsTrigger value="capex">CAPEX</TabsTrigger>
+          <TabsTrigger value="inversion" className="data-[state=active]:bg-blue-100 data-[state=active]:text-blue-700">
+            Inversión Inicial
+          </TabsTrigger>
+          <TabsTrigger value="capex" className="data-[state=active]:bg-green-100 data-[state=active]:text-green-700">
+            CAPEX
+          </TabsTrigger>
           <TabsTrigger value="oc">Órdenes de Compra</TabsTrigger>
           <TabsTrigger value="compras">Listado Compras</TabsTrigger>
         </TabsList>
