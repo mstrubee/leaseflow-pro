@@ -14,17 +14,17 @@ import { useContractsByRegion, RegionData } from "@/hooks/useContractsByRegion";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-// GeoJSON URLs for each country - Using updated Chile GeoJSON with all 16 regions
+// GeoJSON URLs for each country
 const GEOJSON_URLS: Record<Country, string> = {
-  Chile: "https://raw.githubusercontent.com/pachamaltese/chilemapas/master/data-raw/regiones.geojson",
+  Chile: "https://raw.githubusercontent.com/fcortes/Chile-GeoJSON/master/Regional.geojson",
   Peru: "https://raw.githubusercontent.com/juaneladio/peru-geojson/master/peru_departamental_simple.geojson",
   Colombia: "https://gist.githubusercontent.com/john-guerra/43c7656821069d00dcbc/raw/be6a6e239cd5b5b803c6e7c2ec405b793a9f5fd0/colombia.geo.json",
   Ecuador: "https://raw.githubusercontent.com/jpmarindiaz/geo-collection/master/countries/ecuador/ecuador-provinces.geojson"
 };
 
-// Map projection settings - Chile vertical showing all regions from Arica to Magallanes
+// Map projection settings - Chile vertical showing ALL regions from Arica (-18°) to Magallanes (-55°)
 const MAP_CONFIG: Record<Country, { center: [number, number]; scale: number; width: number; height: number }> = {
-  Chile: { center: [-70.5, -37], scale: 450, width: 200, height: 700 },
+  Chile: { center: [-70.5, -33], scale: 380, width: 200, height: 700 },
   Peru: { center: [-76, -9.5], scale: 1000, width: 400, height: 450 },
   Colombia: { center: [-74, 4.5], scale: 1200, width: 400, height: 450 },
   Ecuador: { center: [-78.5, -1.5], scale: 3500, width: 400, height: 400 }
