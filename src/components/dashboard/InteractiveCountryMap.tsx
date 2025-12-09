@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { ComposableMap, Geographies, Geography, ZoomableGroup, Annotation } from "react-simple-maps";
+import { ComposableMap, Geographies, Geography } from "react-simple-maps";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -30,7 +30,27 @@ const MAP_CONFIG: Record<Country, { center: [number, number]; scale: number; wid
   Ecuador: { center: [-78.5, -1.5], scale: 3500, width: 400, height: 400 }
 };
 
-// Region name mappings
+// Chilean regions with official names and Roman numerals (North to South)
+const CHILE_REGIONS_FULL: Record<string, { fullName: string; numeral: string }> = {
+  "Arica y Parinacota": { fullName: "Región de Arica y Parinacota", numeral: "XV" },
+  "Tarapacá": { fullName: "Región de Tarapacá", numeral: "I" },
+  "Antofagasta": { fullName: "Región de Antofagasta", numeral: "II" },
+  "Atacama": { fullName: "Región de Atacama", numeral: "III" },
+  "Coquimbo": { fullName: "Región de Coquimbo", numeral: "IV" },
+  "Valparaíso": { fullName: "Región de Valparaíso", numeral: "V" },
+  "Metropolitana de Santiago": { fullName: "Región Metropolitana de Santiago", numeral: "RM" },
+  "O'Higgins": { fullName: "Región del Libertador General Bernardo O'Higgins", numeral: "VI" },
+  "Maule": { fullName: "Región del Maule", numeral: "VII" },
+  "Ñuble": { fullName: "Región de Ñuble", numeral: "XVI" },
+  "Biobío": { fullName: "Región del Biobío", numeral: "VIII" },
+  "La Araucanía": { fullName: "Región de La Araucanía", numeral: "IX" },
+  "Los Ríos": { fullName: "Región de Los Ríos", numeral: "XIV" },
+  "Los Lagos": { fullName: "Región de Los Lagos", numeral: "X" },
+  "Aysén": { fullName: "Región de Aysén del General Carlos Ibáñez del Campo", numeral: "XI" },
+  "Magallanes y Antártica Chilena": { fullName: "Región de Magallanes y de la Antártica Chilena", numeral: "XII" }
+};
+
+// Region name mappings from GeoJSON to our internal names
 const REGION_MAPPINGS: Record<Country, Record<string, string>> = {
   Chile: {
     "Región de Arica y Parinacota": "Arica y Parinacota",
@@ -172,56 +192,59 @@ export function InteractiveCountryMap() {
                           height={mapConfig.height}
                           style={{ width: "auto", height: "100%", maxWidth: "100%" }}
                         >
-                          <ZoomableGroup>
-                            <Geographies geography={GEOJSON_URLS[selectedCountry]}>
-                              {({ geographies }) =>
-                                geographies.map((geo) => {
-                                  const geoName = geo.properties.Region || geo.properties.NOMBDEP || geo.properties.NOMBRE_DPT || geo.properties.DPA_DESPRO || geo.properties.name || "";
-                                  const normalizedName = normalizeRegionName(geoName);
-                                  const regionData = contractsData[normalizedName];
-                                  const hasContracts = regionData && regionData.count > 0;
-                                  const isHovered = hoveredRegion === normalizedName;
+                          <Geographies geography={GEOJSON_URLS[selectedCountry]}>
+                            {({ geographies }) =>
+                              geographies.map((geo) => {
+                                const geoName = geo.properties.Region || geo.properties.NOMBDEP || geo.properties.NOMBRE_DPT || geo.properties.DPA_DESPRO || geo.properties.name || "";
+                                const normalizedName = normalizeRegionName(geoName);
+                                const regionData = contractsData[normalizedName];
+                                const hasContracts = regionData && regionData.count > 0;
+                                const isHovered = hoveredRegion === normalizedName;
 
-                                  return (
-                                    <Geography
-                                      key={geo.rsmKey}
-                                      geography={geo}
-                                      onMouseEnter={() => setHoveredRegion(normalizedName)}
-                                      onMouseLeave={() => setHoveredRegion(null)}
-                                      onClick={() => handleRegionClick(normalizedName)}
-                                      style={{
-                                        default: {
-                                          fill: isHovered ? "hsl(var(--primary))" : getRegionFillColor(geoName),
-                                          stroke: "hsl(220, 20%, 60%)",
-                                          strokeWidth: 0.5,
-                                          outline: "none",
-                                          cursor: hasContracts ? "pointer" : "default",
-                                          transition: "fill 0.2s ease"
-                                        },
-                                        hover: {
-                                          fill: hasContracts ? "hsl(var(--primary))" : getRegionFillColor(geoName),
-                                          stroke: "hsl(220, 20%, 40%)",
-                                          strokeWidth: hasContracts ? 1.5 : 0.5,
-                                          outline: "none",
-                                          cursor: hasContracts ? "pointer" : "default"
-                                        },
-                                        pressed: {
-                                          fill: "hsl(var(--primary))",
-                                          outline: "none"
-                                        }
-                                      }}
-                                    />
-                                  );
-                                })
-                              }
-                            </Geographies>
-                          </ZoomableGroup>
+                                return (
+                                  <Geography
+                                    key={geo.rsmKey}
+                                    geography={geo}
+                                    onMouseEnter={() => setHoveredRegion(normalizedName)}
+                                    onMouseLeave={() => setHoveredRegion(null)}
+                                    onClick={() => handleRegionClick(normalizedName)}
+                                    style={{
+                                      default: {
+                                        fill: isHovered ? "hsl(var(--primary))" : getRegionFillColor(geoName),
+                                        stroke: "hsl(220, 20%, 60%)",
+                                        strokeWidth: 0.5,
+                                        outline: "none",
+                                        cursor: hasContracts ? "pointer" : "default",
+                                        transition: "fill 0.2s ease"
+                                      },
+                                      hover: {
+                                        fill: hasContracts ? "hsl(var(--primary))" : getRegionFillColor(geoName),
+                                        stroke: "hsl(220, 20%, 40%)",
+                                        strokeWidth: hasContracts ? 1.5 : 0.5,
+                                        outline: "none",
+                                        cursor: hasContracts ? "pointer" : "default"
+                                      },
+                                      pressed: {
+                                        fill: "hsl(var(--primary))",
+                                        outline: "none"
+                                      }
+                                    }}
+                                  />
+                                );
+                              })
+                            }
+                          </Geographies>
                         </ComposableMap>
 
                         {/* Hover tooltip */}
                         {hoveredRegion && (
                           <div className="absolute top-3 left-3 bg-background/95 backdrop-blur-sm border border-border rounded-lg px-4 py-2 shadow-lg z-10">
-                            <p className="font-semibold text-sm">{hoveredRegion}</p>
+                            <p className="font-semibold text-sm">
+                              {isChile && CHILE_REGIONS_FULL[hoveredRegion] 
+                                ? `${CHILE_REGIONS_FULL[hoveredRegion].fullName} (${CHILE_REGIONS_FULL[hoveredRegion].numeral})`
+                                : hoveredRegion
+                              }
+                            </p>
                             <p className="text-xs text-muted-foreground">
                               {contractsData[hoveredRegion]?.count || 0} locales
                             </p>
@@ -271,7 +294,12 @@ export function InteractiveCountryMap() {
                                     className="w-3 h-3 rounded-full flex-shrink-0"
                                     style={{ backgroundColor: getRegionColor(index, true) }}
                                   />
-                                  <span className="font-medium text-left">{regionData.region}</span>
+                                  <span className="font-medium text-left text-sm">
+                                    {isChile && CHILE_REGIONS_FULL[regionData.region]
+                                      ? `${regionData.region} (${CHILE_REGIONS_FULL[regionData.region].numeral})`
+                                      : regionData.region
+                                    }
+                                  </span>
                                 </div>
                                 <Badge variant="outline" className="flex-shrink-0">{regionData.count}</Badge>
                               </Button>
