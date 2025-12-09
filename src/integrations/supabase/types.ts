@@ -496,6 +496,7 @@ export type Database = {
           folder_type: string | null
           id: string
           name: string
+          parent_id: string | null
         }
         Insert: {
           created_at?: string
@@ -503,6 +504,7 @@ export type Database = {
           folder_type?: string | null
           id?: string
           name: string
+          parent_id?: string | null
         }
         Update: {
           created_at?: string
@@ -510,8 +512,17 @@ export type Database = {
           folder_type?: string | null
           id?: string
           name?: string
+          parent_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "folder_templates_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "folder_templates"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {

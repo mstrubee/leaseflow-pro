@@ -84,6 +84,7 @@ interface FolderTemplate {
   name: string;
   folder_type: string | null;
   display_order: number;
+  parent_id: string | null;
 }
 
 interface RepositorySectionProps {
@@ -181,20 +182,24 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
   const initializeRepository = async () => {
     setLoading(true);
     try {
+      // Get existing base folders
       const { data: existingFolders, error: fetchError } = await supabase
         .from("repository_folders")
         .select("*")
-        .eq("contract_id", contractId)
-        .is("parent_id", null)
-        .eq("is_base_folder", true);
+        .eq("contract_id", contractId);
 
       if (fetchError) throw fetchError;
 
       const existingTypes = new Set(existingFolders?.map(f => f.folder_type) || []);
+      const existingByType = new Map(existingFolders?.map(f => [f.folder_type, f]) || []);
       
-      for (const template of folderTemplates) {
+      // Get root templates (parent_id is null)
+      const rootTemplates = folderTemplates.filter(t => t.parent_id === null);
+      
+      // Create root folders that don't exist
+      for (const template of rootTemplates) {
         if (!existingTypes.has(template.folder_type)) {
-          await supabase
+          const { data: newFolder, error: insertError } = await supabase
             .from("repository_folders")
             .insert({
               contract_id: contractId,
@@ -202,7 +207,46 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
               is_base_folder: true,
               folder_type: template.folder_type,
               parent_id: null,
-            });
+            })
+            .select()
+            .single();
+
+          if (!insertError && newFolder) {
+            existingByType.set(template.folder_type, newFolder);
+          }
+        }
+      }
+
+      // Now create subfolders for each root template
+      for (const template of rootTemplates) {
+        const parentFolder = existingByType.get(template.folder_type);
+        if (!parentFolder) continue;
+
+        // Get subfolders for this template
+        const subfolderTemplates = folderTemplates.filter(t => t.parent_id === template.id);
+        
+        // Get existing subfolders for this parent
+        const { data: existingSubfolders } = await supabase
+          .from("repository_folders")
+          .select("*")
+          .eq("contract_id", contractId)
+          .eq("parent_id", parentFolder.id);
+
+        const existingSubfolderTypes = new Set(existingSubfolders?.map(f => f.folder_type) || []);
+
+        // Create missing subfolders
+        for (const subTemplate of subfolderTemplates) {
+          if (!existingSubfolderTypes.has(subTemplate.folder_type)) {
+            await supabase
+              .from("repository_folders")
+              .insert({
+                contract_id: contractId,
+                name: subTemplate.name,
+                is_base_folder: false,
+                folder_type: subTemplate.folder_type,
+                parent_id: parentFolder.id,
+              });
+          }
         }
       }
 

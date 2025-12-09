@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight } from "lucide-react";
 import { CloudStorageSettings } from "@/components/contracts/CloudStorageSettings";
 
 interface Profile {
@@ -38,6 +38,7 @@ interface FolderTemplate {
   name: string;
   folder_type: string | null;
   display_order: number;
+  parent_id: string | null;
 }
 
 interface Profile {
@@ -94,6 +95,9 @@ const AdminPanel = () => {
   const [newTemplateType, setNewTemplateType] = useState("");
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [creatingTemplate, setCreatingTemplate] = useState(false);
+  const [selectedParentTemplate, setSelectedParentTemplate] = useState<string | null>(null);
+  const [subfolderDialogOpen, setSubfolderDialogOpen] = useState(false);
+  const [newSubfolderName, setNewSubfolderName] = useState("");
 
   useEffect(() => {
     if (!authLoading && roleLoaded && !isAdmin) {
@@ -256,6 +260,7 @@ const AdminPanel = () => {
           name: newTemplateName.trim(),
           folder_type: folderType,
           display_order: maxOrder,
+          parent_id: null,
         });
 
       if (error) throw error;
@@ -270,6 +275,56 @@ const AdminPanel = () => {
     } finally {
       setCreatingTemplate(false);
     }
+  };
+
+  const handleCreateSubfolder = async () => {
+    if (!newSubfolderName.trim() || !selectedParentTemplate) {
+      toast({ variant: "destructive", title: "Error", description: "El nombre es requerido" });
+      return;
+    }
+
+    setCreatingTemplate(true);
+    try {
+      const parentTemplate = folderTemplates.find(t => t.id === selectedParentTemplate);
+      const siblingSubfolders = folderTemplates.filter(t => t.parent_id === selectedParentTemplate);
+      const maxOrder = siblingSubfolders.length > 0 
+        ? Math.max(...siblingSubfolders.map(t => t.display_order)) + 1 
+        : 1;
+      
+      const folderType = newSubfolderName.toLowerCase().replace(/\s+/g, '_');
+      
+      const { error } = await supabase
+        .from("folder_templates")
+        .insert({
+          name: newSubfolderName.trim(),
+          folder_type: folderType,
+          display_order: maxOrder,
+          parent_id: selectedParentTemplate,
+        });
+
+      if (error) throw error;
+
+      toast({ 
+        title: "Subcarpeta creada", 
+        description: `La subcarpeta "${newSubfolderName}" se agregará automáticamente dentro de "${parentTemplate?.name}"` 
+      });
+      setNewSubfolderName("");
+      setSubfolderDialogOpen(false);
+      setSelectedParentTemplate(null);
+      loadData();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setCreatingTemplate(false);
+    }
+  };
+
+  const getSubfolders = (parentId: string): FolderTemplate[] => {
+    return folderTemplates.filter(t => t.parent_id === parentId);
+  };
+
+  const getRootTemplates = (): FolderTemplate[] => {
+    return folderTemplates.filter(t => t.parent_id === null);
   };
 
   const handleDeleteTemplate = async (templateId: string, templateName: string) => {
@@ -535,22 +590,54 @@ const AdminPanel = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {folderTemplates.map((template) => (
-                <div key={template.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <Folder className="h-4 w-4 text-muted-foreground" />
-                    <span>{template.name}</span>
+              {getRootTemplates().map((template) => (
+                <div key={template.id} className="space-y-1">
+                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <Folder className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium">{template.name}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedParentTemplate(template.id);
+                          setSubfolderDialogOpen(true);
+                        }}
+                        title="Agregar subcarpeta"
+                      >
+                        <FolderPlus className="h-4 w-4 text-primary" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteTemplate(template.id, template.name)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDeleteTemplate(template.id, template.name)}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+                  {/* Subfolders */}
+                  {getSubfolders(template.id).map((subfolder) => (
+                    <div key={subfolder.id} className="flex items-center justify-between p-2 pl-8 bg-muted/30 rounded-lg ml-4">
+                      <div className="flex items-center gap-2">
+                        <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                        <Folder className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-sm">{subfolder.name}</span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteTemplate(subfolder.id, subfolder.name)}
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </Button>
+                    </div>
+                  ))}
                 </div>
               ))}
-              {folderTemplates.length === 0 && (
+              {getRootTemplates().length === 0 && (
                 <p className="text-sm text-muted-foreground text-center py-4">
                   No hay carpetas definidas
                 </p>
@@ -593,6 +680,39 @@ const AdminPanel = () => {
               <Button variant="outline" onClick={() => setEditingUserId(null)}>Cancelar</Button>
               <Button onClick={() => editingUserId && handleUpdatePermissions(editingUserId)}>
                 Guardar Permisos
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Subfolder Dialog */}
+        <Dialog open={subfolderDialogOpen} onOpenChange={setSubfolderDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Agregar Subcarpeta</DialogTitle>
+              <DialogDescription>
+                Esta subcarpeta se creará automáticamente dentro de la carpeta "{folderTemplates.find(t => t.id === selectedParentTemplate)?.name}" en todos los contratos.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Nombre de la Subcarpeta *</Label>
+                <Input
+                  value={newSubfolderName}
+                  onChange={(e) => setNewSubfolderName(e.target.value)}
+                  placeholder="Ej: Anexos"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setSubfolderDialogOpen(false);
+                setNewSubfolderName("");
+                setSelectedParentTemplate(null);
+              }}>Cancelar</Button>
+              <Button onClick={handleCreateSubfolder} disabled={creatingTemplate}>
+                {creatingTemplate && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Crear Subcarpeta
               </Button>
             </DialogFooter>
           </DialogContent>
