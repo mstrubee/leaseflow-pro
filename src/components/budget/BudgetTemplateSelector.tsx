@@ -97,6 +97,7 @@ export const BudgetTemplateSelector = ({
 };
 
 // Helper function to apply a template to a budget
+// IMPORTANT: Always creates lines with amount_uf = 0, ignoring any template default values
 export const applyBudgetTemplate = async (
   templateId: string,
   budgetId: string
@@ -119,6 +120,7 @@ export const applyBudgetTemplate = async (
     const idMap = new Map<string, string>();
 
     // First pass: create all lines without parent_id
+    // ALWAYS set amount_uf = 0 regardless of template default values
     for (const line of templateLines) {
       const { data: newLine, error } = await supabase
         .from("budget_lines")
@@ -126,7 +128,7 @@ export const applyBudgetTemplate = async (
           budget_id: budgetId,
           name: line.name,
           description: line.description,
-          amount_uf: line.default_amount_uf || 0,
+          amount_uf: 0, // Always start at 0, template defaults are ignored
           display_order: line.display_order,
           status: "no_autorizado",
           parent_id: null,
