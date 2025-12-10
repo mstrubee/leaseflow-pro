@@ -2,12 +2,11 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, TrendingUp, DollarSign, Package, FileText } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, FileText } from "lucide-react";
 import { BudgetProvider, useBudgetContext } from "./BudgetContext";
 import { ContractSurfaces } from "./ContractSurfaces";
 import { BudgetModule } from "./BudgetModule";
 import { PurchaseOrdersModule } from "./PurchaseOrdersModule";
-import { PurchaseItemsModule } from "./PurchaseItemsModule";
 import { BudgetSemaphore } from "./BudgetSemaphore";
 import { useToast } from "@/hooks/use-toast";
 
@@ -45,7 +44,6 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
   const [inversionSummary, setInversionSummary] = useState<BudgetSummary>({ budget: 0, authorized: 0, unauthorized: 0 });
   const [capexSummary, setCapexSummary] = useState<BudgetSummary>({ budget: 0, authorized: 0, unauthorized: 0 });
   const [totalOC, setTotalOC] = useState(0);
-  const [totalPurchases, setTotalPurchases] = useState(0);
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos } = useBudgetContext();
 
@@ -99,15 +97,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
       .eq("contract_id", contractId)
       .eq("year", currentYear);
 
-    // Get purchase items totals
-    const { data: items } = await supabase
-      .from("purchase_items")
-      .select("amount_uf")
-      .eq("contract_id", contractId)
-      .eq("year", currentYear);
-
     setTotalOC((orders || []).reduce((acc, o) => acc + (o.amount_uf || 0), 0));
-    setTotalPurchases((items || []).reduce((acc, i) => acc + (i.amount_uf || 0), 0));
   };
 
   const loadBudgetTypeSummary = async (contractId: string, budgetType: string, year: number): Promise<BudgetSummary> => {
@@ -231,18 +221,6 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Package className="h-4 w-4" />
-              Compras
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{formatUF(totalPurchases)}</p>
-            <p className="text-xs text-muted-foreground">{formatCLP(convertUFToPesos(totalPurchases))}</p>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Surfaces */}
@@ -250,7 +228,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
 
       {/* Budget Tabs - CADA TAB COMPLETAMENTE INDEPENDIENTE */}
       <Tabs defaultValue="inversion" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="inversion" className="data-[state=active]:bg-blue-100 data-[state=active]:text-blue-700">
             Inversión Inicial
           </TabsTrigger>
@@ -258,7 +236,6 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
             CAPEX
           </TabsTrigger>
           <TabsTrigger value="oc">Órdenes de Compra</TabsTrigger>
-          <TabsTrigger value="compras">Listado Compras</TabsTrigger>
         </TabsList>
         <TabsContent value="inversion" className="mt-4">
           <BudgetModule contractId={contractId} budgetType="inversion_inicial" title="Inversión Inicial" />
@@ -268,9 +245,6 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
         </TabsContent>
         <TabsContent value="oc" className="mt-4">
           <PurchaseOrdersModule contractId={contractId} />
-        </TabsContent>
-        <TabsContent value="compras" className="mt-4">
-          <PurchaseItemsModule contractId={contractId} />
         </TabsContent>
       </Tabs>
     </div>

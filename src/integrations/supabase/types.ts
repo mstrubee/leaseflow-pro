@@ -804,6 +804,7 @@ export type Database = {
       }
       invoices: {
         Row: {
+          amount_clp: number | null
           amount_uf: number
           attachment_url: string | null
           created_at: string
@@ -811,15 +812,18 @@ export type Database = {
           email_sent_at: string | null
           email_sent_to: string | null
           id: string
+          input_currency: string | null
           invoice_date: string
           invoice_number: string
           purchase_order_id: string
           received_at: string | null
           received_by: string | null
           reception_status: string
+          uf_value_at_entry: number | null
           updated_at: string
         }
         Insert: {
+          amount_clp?: number | null
           amount_uf?: number
           attachment_url?: string | null
           created_at?: string
@@ -827,15 +831,18 @@ export type Database = {
           email_sent_at?: string | null
           email_sent_to?: string | null
           id?: string
+          input_currency?: string | null
           invoice_date?: string
           invoice_number: string
           purchase_order_id: string
           received_at?: string | null
           received_by?: string | null
           reception_status?: string
+          uf_value_at_entry?: number | null
           updated_at?: string
         }
         Update: {
+          amount_clp?: number | null
           amount_uf?: number
           attachment_url?: string | null
           created_at?: string
@@ -843,12 +850,14 @@ export type Database = {
           email_sent_at?: string | null
           email_sent_to?: string | null
           id?: string
+          input_currency?: string | null
           invoice_date?: string
           invoice_number?: string
           purchase_order_id?: string
           received_at?: string | null
           received_by?: string | null
           reception_status?: string
+          uf_value_at_entry?: number | null
           updated_at?: string
         }
         Relationships: [
@@ -976,6 +985,7 @@ export type Database = {
       }
       purchase_orders: {
         Row: {
+          amount_clp: number | null
           amount_uf: number
           attachment_url: string | null
           budget_id: string | null
@@ -985,15 +995,18 @@ export type Database = {
           description: string | null
           drive_file_id: string | null
           id: string
+          input_currency: string | null
           order_date: string
           order_number: string
           status: string
           supplier_id: string | null
           supplier_name: string | null
+          uf_value_at_entry: number | null
           updated_at: string
           year: number
         }
         Insert: {
+          amount_clp?: number | null
           amount_uf?: number
           attachment_url?: string | null
           budget_id?: string | null
@@ -1003,15 +1016,18 @@ export type Database = {
           description?: string | null
           drive_file_id?: string | null
           id?: string
+          input_currency?: string | null
           order_date?: string
           order_number: string
           status?: string
           supplier_id?: string | null
           supplier_name?: string | null
+          uf_value_at_entry?: number | null
           updated_at?: string
           year: number
         }
         Update: {
+          amount_clp?: number | null
           amount_uf?: number
           attachment_url?: string | null
           budget_id?: string | null
@@ -1021,11 +1037,13 @@ export type Database = {
           description?: string | null
           drive_file_id?: string | null
           id?: string
+          input_currency?: string | null
           order_date?: string
           order_number?: string
           status?: string
           supplier_id?: string | null
           supplier_name?: string | null
+          uf_value_at_entry?: number | null
           updated_at?: string
           year?: number
         }

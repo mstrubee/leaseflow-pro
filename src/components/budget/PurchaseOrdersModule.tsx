@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,11 +40,12 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
     order_number: "",
     supplier_name: "",
     order_date: new Date().toISOString().split("T")[0],
-    amount_uf: "",
+    amount: "",
+    currency: "UF" as "UF" | "CLP",
     description: "",
   });
   const { toast } = useToast();
-  const { formatUF, formatCLP, convertUFToPesos } = useBudgetContext();
+  const { formatUF, formatCLP, convertUFToPesos, convertPesosToUF, ufValue } = useBudgetContext();
 
   useEffect(() => {
     loadOrders();
@@ -71,12 +72,27 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
 
   const handleCreateOrder = async () => {
     try {
+      const inputAmount = parseFloat(newOrder.amount) || 0;
+      let amountUF: number;
+      let amountCLP: number;
+
+      if (newOrder.currency === "UF") {
+        amountUF = inputAmount;
+        amountCLP = convertUFToPesos(inputAmount);
+      } else {
+        amountCLP = inputAmount;
+        amountUF = convertPesosToUF(inputAmount);
+      }
+
       const { error } = await supabase.from("purchase_orders").insert({
         contract_id: contractId,
         order_number: newOrder.order_number,
         supplier_name: newOrder.supplier_name || null,
         order_date: newOrder.order_date,
-        amount_uf: parseFloat(newOrder.amount_uf) || 0,
+        amount_uf: amountUF,
+        amount_clp: amountCLP,
+        input_currency: newOrder.currency,
+        uf_value_at_entry: ufValue,
         description: newOrder.description || null,
         year: selectedYear,
       });
@@ -85,7 +101,7 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
 
       toast({ title: "OC creada", description: `Orden de compra ${newOrder.order_number} creada` });
       setShowNewDialog(false);
-      setNewOrder({ order_number: "", supplier_name: "", order_date: new Date().toISOString().split("T")[0], amount_uf: "", description: "" });
+      setNewOrder({ order_number: "", supplier_name: "", order_date: new Date().toISOString().split("T")[0], amount: "", currency: "UF", description: "" });
       loadOrders();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
@@ -175,9 +191,8 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
             </TableHeader>
             <TableBody>
               {orders.map((order) => (
-                <>
+                <React.Fragment key={order.id}>
                   <TableRow 
-                    key={order.id} 
                     className={cn("cursor-pointer hover:bg-accent/50", expandedOrders.has(order.id) && "bg-accent/30")}
                     onClick={() => toggleExpanded(order.id)}
                   >
@@ -197,7 +212,7 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
                       </TableCell>
                     </TableRow>
                   )}
-                </>
+                </React.Fragment>
               ))}
             </TableBody>
           </Table>
@@ -225,8 +240,32 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
               <Input value={newOrder.supplier_name} onChange={(e) => setNewOrder({ ...newOrder, supplier_name: e.target.value })} />
             </div>
             <div className="space-y-2">
-              <Label>Monto (UF)</Label>
-              <Input type="number" step="0.01" value={newOrder.amount_uf} onChange={(e) => setNewOrder({ ...newOrder, amount_uf: e.target.value })} />
+              <Label>Monto</Label>
+              <div className="flex gap-2">
+                <Input 
+                  type="number" 
+                  step={newOrder.currency === "UF" ? "0.01" : "1"} 
+                  value={newOrder.amount} 
+                  onChange={(e) => setNewOrder({ ...newOrder, amount: e.target.value })} 
+                  className="flex-1"
+                />
+                <Select value={newOrder.currency} onValueChange={(v) => setNewOrder({ ...newOrder, currency: v as "UF" | "CLP" })}>
+                  <SelectTrigger className="w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UF">UF</SelectItem>
+                    <SelectItem value="CLP">CLP</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {newOrder.amount && ufValue > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Equivalente: {newOrder.currency === "CLP" 
+                    ? formatUF(convertPesosToUF(parseFloat(newOrder.amount))) 
+                    : formatCLP(convertUFToPesos(parseFloat(newOrder.amount)))}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Descripción</Label>
