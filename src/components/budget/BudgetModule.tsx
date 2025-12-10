@@ -5,13 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Plus, Lock, Calendar, ArrowRightCircle, AlertTriangle } from "lucide-react";
+import { Loader2, Plus, Lock, Calendar, ArrowRightCircle, AlertTriangle, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { BudgetLineTree, BudgetLine, calculateAuthorizedTotal, calculateUnauthorizedTotal, getUnauthorizedLines } from "./BudgetLineTree";
+import { BudgetLineTree, BudgetLine, calculateAuthorizedTotal, calculateUnauthorizedTotal, getUnauthorizedLines, getAllDescendantIds, hasDescendants } from "./BudgetLineTree";
 import { BudgetSemaphore } from "./BudgetSemaphore";
 import { useBudgetContext } from "./BudgetContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { BudgetTemplateSelector, applyBudgetTemplate } from "./BudgetTemplateSelector";
 
 interface Budget {
   id: string;
@@ -39,6 +41,13 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
   const [closingYear, setClosingYear] = useState(false);
   const [newBudgetYear, setNewBudgetYear] = useState(new Date().getFullYear());
   const [newBudgetAmount, setNewBudgetAmount] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("none");
+  const [applyingTemplate, setApplyingTemplate] = useState(false);
+  
+  // State propagation dialog
+  const [showStatePropagation, setShowStatePropagation] = useState(false);
+  const [pendingStatusChange, setPendingStatusChange] = useState<{ id: string; newStatus: "autorizado" | "no_autorizado"; hasChildren: boolean } | null>(null);
+  
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos } = useBudgetContext();
 
@@ -118,23 +127,35 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
   };
 
   const handleCreateBudget = async () => {
+    setApplyingTemplate(true);
     try {
-      const { error } = await supabase.from("contract_budgets").insert({
+      const { data: newBudget, error } = await supabase.from("contract_budgets").insert({
         contract_id: contractId,
         year: newBudgetYear,
         budget_type: budgetType,
         amount_uf: parseFloat(newBudgetAmount) || 0,
-      });
+      }).select().single();
 
       if (error) throw error;
+
+      // Apply template if selected
+      if (selectedTemplateId && selectedTemplateId !== "none") {
+        const success = await applyBudgetTemplate(selectedTemplateId, newBudget.id);
+        if (!success) {
+          toast({ variant: "destructive", title: "Error", description: "Error al aplicar la plantilla" });
+        }
+      }
 
       toast({ title: "Presupuesto creado", description: `Presupuesto ${title} ${newBudgetYear} creado exitosamente` });
       setShowNewBudgetDialog(false);
       setNewBudgetAmount("");
+      setSelectedTemplateId("none");
       loadBudgets();
       setSelectedYear(newBudgetYear);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setApplyingTemplate(false);
     }
   };
 
@@ -235,6 +256,25 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
     const budget = budgets.find((b) => b.year === selectedYear);
     if (budget?.is_closed) return;
 
+    // Check if this is a status change and the line has children
+    if (data.status) {
+      const hasChildren = hasDescendantsCheck(id);
+      if (hasChildren) {
+        setPendingStatusChange({ id, newStatus: data.status, hasChildren: true });
+        setShowStatePropagation(true);
+        return;
+      }
+    }
+
+    await applyLineUpdate(id, data);
+  };
+
+  const hasDescendantsCheck = (lineId: string): boolean => {
+    return hasDescendants(lines, lineId);
+  };
+
+  const applyLineUpdate = async (id: string, data: Partial<BudgetLine>) => {
+    const budget = budgets.find((b) => b.year === selectedYear);
     try {
       const { error } = await supabase.from("budget_lines").update(data).eq("id", id);
       if (error) throw error;
@@ -242,6 +282,42 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
       if (budget) loadLines(budget.id);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
+  const handleConfirmStatusPropagation = async (applyToChildren: boolean) => {
+    if (!pendingStatusChange) return;
+    
+    const budget = budgets.find((b) => b.year === selectedYear);
+    if (!budget) return;
+
+    try {
+      // Update the parent line
+      await supabase.from("budget_lines").update({ status: pendingStatusChange.newStatus }).eq("id", pendingStatusChange.id);
+
+      // If apply to children, update all descendants
+      if (applyToChildren) {
+        const descendantIds = getAllDescendantIds(lines, pendingStatusChange.id);
+        if (descendantIds.length > 0) {
+          await supabase
+            .from("budget_lines")
+            .update({ status: pendingStatusChange.newStatus })
+            .in("id", descendantIds);
+        }
+      }
+
+      loadLines(budget.id);
+      toast({ 
+        title: "Estado actualizado", 
+        description: applyToChildren 
+          ? "Estado aplicado a la línea y todas sus sublíneas" 
+          : "Estado aplicado solo a la línea seleccionada"
+      });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setShowStatePropagation(false);
+      setPendingStatusChange(null);
     }
   };
 
@@ -398,12 +474,21 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
                 placeholder="0.00"
               />
             </div>
+            <BudgetTemplateSelector
+              budgetType={budgetType}
+              value={selectedTemplateId}
+              onChange={setSelectedTemplateId}
+              label="Cargar plantilla tipo"
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowNewBudgetDialog(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleCreateBudget}>Crear</Button>
+            <Button onClick={handleCreateBudget} disabled={applyingTemplate}>
+              {applyingTemplate && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Crear
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -454,11 +539,37 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
             </Button>
             <Button onClick={handleCloseYear} disabled={closingYear}>
               {closingYear ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Cerrar Año
+            Cerrar Año
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* AlertDialog: Propagación de estado */}
+      <AlertDialog open={showStatePropagation} onOpenChange={setShowStatePropagation}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cambiar estado de línea</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta línea tiene sublíneas dependientes. ¿Desea aplicar el estado "{pendingStatusChange?.newStatus === "autorizado" ? "Autorizado" : "No Autorizado"}" a todas las subcategorías?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setShowStatePropagation(false);
+              setPendingStatusChange(null);
+            }}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => handleConfirmStatusPropagation(false)}>
+              Solo esta línea
+            </AlertDialogAction>
+            <AlertDialogAction onClick={() => handleConfirmStatusPropagation(true)}>
+              Aplicar a todas
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 };

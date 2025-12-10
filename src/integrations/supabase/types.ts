@@ -302,6 +302,87 @@ export type Database = {
           },
         ]
       }
+      budget_template_lines: {
+        Row: {
+          created_at: string
+          default_amount_uf: number | null
+          description: string | null
+          display_order: number | null
+          id: string
+          name: string
+          parent_id: string | null
+          template_id: string
+        }
+        Insert: {
+          created_at?: string
+          default_amount_uf?: number | null
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          name: string
+          parent_id?: string | null
+          template_id: string
+        }
+        Update: {
+          created_at?: string
+          default_amount_uf?: number | null
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          name?: string
+          parent_id?: string | null
+          template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_template_lines_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "budget_template_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_template_lines_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "budget_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      budget_templates: {
+        Row: {
+          budget_type: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          budget_type: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          budget_type?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       cloud_storage_connections: {
         Row: {
           access_token: string | null
