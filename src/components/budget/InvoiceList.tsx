@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Plus, FileText, Mail, CheckCircle, Clock, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -39,10 +40,11 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   const [newInvoice, setNewInvoice] = useState({
     invoice_number: "",
     invoice_date: new Date().toISOString().split("T")[0],
-    amount_uf: "",
+    amount: "",
+    currency: "UF" as "UF" | "CLP",
   });
   const { toast } = useToast();
-  const { formatUF, formatCLP, convertUFToPesos } = useBudgetContext();
+  const { formatUF, formatCLP, convertUFToPesos, convertPesosToUF, ufValue } = useBudgetContext();
 
   useEffect(() => {
     loadInvoices();
@@ -74,18 +76,33 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
 
   const handleCreateInvoice = async () => {
     try {
+      const inputAmount = parseFloat(newInvoice.amount) || 0;
+      let amountUF: number;
+      let amountCLP: number;
+
+      if (newInvoice.currency === "UF") {
+        amountUF = inputAmount;
+        amountCLP = convertUFToPesos(inputAmount);
+      } else {
+        amountCLP = inputAmount;
+        amountUF = convertPesosToUF(inputAmount);
+      }
+
       const { error } = await supabase.from("invoices").insert({
         purchase_order_id: purchaseOrder.id,
         invoice_number: newInvoice.invoice_number,
         invoice_date: newInvoice.invoice_date,
-        amount_uf: parseFloat(newInvoice.amount_uf) || 0,
+        amount_uf: amountUF,
+        amount_clp: amountCLP,
+        input_currency: newInvoice.currency,
+        uf_value_at_entry: ufValue,
       });
 
       if (error) throw error;
 
       toast({ title: "Factura agregada" });
       setShowNewDialog(false);
-      setNewInvoice({ invoice_number: "", invoice_date: new Date().toISOString().split("T")[0], amount_uf: "" });
+      setNewInvoice({ invoice_number: "", invoice_date: new Date().toISOString().split("T")[0], amount: "", currency: "UF" });
       loadInvoices();
       onUpdate();
     } catch (error: any) {
@@ -234,8 +251,32 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Monto (UF)</Label>
-              <Input type="number" step="0.01" value={newInvoice.amount_uf} onChange={(e) => setNewInvoice({ ...newInvoice, amount_uf: e.target.value })} />
+              <Label>Monto</Label>
+              <div className="flex gap-2">
+                <Input 
+                  type="number" 
+                  step={newInvoice.currency === "UF" ? "0.01" : "1"} 
+                  value={newInvoice.amount} 
+                  onChange={(e) => setNewInvoice({ ...newInvoice, amount: e.target.value })} 
+                  className="flex-1"
+                />
+                <Select value={newInvoice.currency} onValueChange={(v) => setNewInvoice({ ...newInvoice, currency: v as "UF" | "CLP" })}>
+                  <SelectTrigger className="w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UF">UF</SelectItem>
+                    <SelectItem value="CLP">CLP</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {newInvoice.amount && ufValue > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Equivalente: {newInvoice.currency === "CLP" 
+                    ? formatUF(convertPesosToUF(parseFloat(newInvoice.amount))) 
+                    : formatCLP(convertUFToPesos(parseFloat(newInvoice.amount)))}
+                </p>
+              )}
             </div>
           </div>
           <DialogFooter>
