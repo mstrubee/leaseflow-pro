@@ -80,18 +80,20 @@ const NewContract = () => {
 
       if (addressError) throw addressError;
 
-      // Create contact
-      const { error: contactError } = await supabase
-        .from("contract_contacts")
-        .insert({
-          contract_id: contract.id,
-          company,
-          name: contactName,
-          phone,
-          email,
-        });
+      // Create contact only if at least one field is filled
+      if (company || contactName || phone || email) {
+        const { error: contactError } = await supabase
+          .from("contract_contacts")
+          .insert({
+            contract_id: contract.id,
+            company: company || "",
+            name: contactName || "",
+            phone: phone || "",
+            email: email || "",
+          });
 
-      if (contactError) throw contactError;
+        if (contactError) throw contactError;
+      }
 
       // Convert values to UF if needed
       const getUFValue = (value: string) => {
@@ -252,44 +254,45 @@ const NewContract = () => {
           <Card>
             <CardHeader>
               <CardTitle>Contacto</CardTitle>
+              <CardDescription>Opcional - puede completarse más adelante desde la vista del contrato</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="company">Empresa *</Label>
+                  <Label htmlFor="company">Empresa</Label>
                   <Input
                     id="company"
                     value={company}
                     onChange={(e) => setCompany(e.target.value)}
-                    required
+                    placeholder="Nombre de la empresa"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="contactName">Nombre *</Label>
+                  <Label htmlFor="contactName">Nombre</Label>
                   <Input
                     id="contactName"
                     value={contactName}
                     onChange={(e) => setContactName(e.target.value)}
-                    required
+                    placeholder="Nombre del contacto"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="phone">Teléfono *</Label>
+                  <Label htmlFor="phone">Teléfono</Label>
                   <Input
                     id="phone"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    required
+                    placeholder="+56 9 1234 5678"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email *</Label>
+                  <Label htmlFor="email">Email</Label>
                   <Input
                     id="email"
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    required
+                    placeholder="correo@ejemplo.com"
                   />
                 </div>
               </div>
