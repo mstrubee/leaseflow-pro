@@ -13,7 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight } from "lucide-react";
 import { CloudStorageSettings } from "@/components/contracts/CloudStorageSettings";
-
+import { BudgetTemplateManager } from "@/components/budget/BudgetTemplateManager";
 interface Profile {
   id: string;
   email: string;
@@ -539,6 +539,9 @@ const AdminPanel = () => {
 
         {/* Cloud Storage Settings */}
         <CloudStorageSettings />
+
+        {/* Budget Templates */}
+        <BudgetTemplateManager />
 
         {/* Folder Templates */}
         <Card>

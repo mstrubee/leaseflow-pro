@@ -269,3 +269,55 @@ export const getUnauthorizedLines = (items: BudgetLine[]): BudgetLine[] => {
   });
   return result;
 };
+
+// Obtener todos los IDs de descendientes (hijos, nietos, etc.)
+export const getAllDescendantIds = (items: BudgetLine[], targetId: string): string[] => {
+  const result: string[] = [];
+  
+  const findAndCollectDescendants = (children: BudgetLine[]): boolean => {
+    for (const item of children) {
+      if (item.id === targetId) {
+        // Found the target, collect all its descendants
+        collectAllIds(item.children || [], result);
+        return true;
+      }
+      if (item.children && item.children.length > 0) {
+        if (findAndCollectDescendants(item.children)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const collectAllIds = (children: BudgetLine[], ids: string[]) => {
+    children.forEach((child) => {
+      ids.push(child.id);
+      if (child.children && child.children.length > 0) {
+        collectAllIds(child.children, ids);
+      }
+    });
+  };
+
+  findAndCollectDescendants(items);
+  return result;
+};
+
+// Verificar si una línea tiene hijos
+export const hasDescendants = (items: BudgetLine[], targetId: string): boolean => {
+  const findItem = (children: BudgetLine[]): BudgetLine | null => {
+    for (const item of children) {
+      if (item.id === targetId) {
+        return item;
+      }
+      if (item.children && item.children.length > 0) {
+        const found = findItem(item.children);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const item = findItem(items);
+  return item !== null && item.children !== undefined && item.children.length > 0;
+};
