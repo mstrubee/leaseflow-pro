@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Plus, Lock, Calendar, ArrowRightCircle, AlertTriangle, FileText } from "lucide-react";
+import { Loader2, Plus, Lock, Calendar, ArrowRightCircle, AlertTriangle, FileText, Trash2, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { BudgetLineTree, BudgetLine, calculateAuthorizedTotal, calculateUnauthorizedTotal, getUnauthorizedLines, getAllDescendantIds, hasDescendants } from "./BudgetLineTree";
 import { BudgetSemaphore } from "./BudgetSemaphore";
@@ -43,6 +43,17 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
   const [newBudgetAmount, setNewBudgetAmount] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [applyingTemplate, setApplyingTemplate] = useState(false);
+  
+  // Delete budget state
+  const [showDeleteBudgetDialog1, setShowDeleteBudgetDialog1] = useState(false);
+  const [showDeleteBudgetDialog2, setShowDeleteBudgetDialog2] = useState(false);
+  const [deletingBudget, setDeletingBudget] = useState(false);
+  
+  // Update template state
+  const [showUpdateTemplateDialog, setShowUpdateTemplateDialog] = useState(false);
+  const [showUpdateTemplateConfirm, setShowUpdateTemplateConfirm] = useState(false);
+  const [updateTemplateId, setUpdateTemplateId] = useState("");
+  const [updatingTemplate, setUpdatingTemplate] = useState(false);
   
   // State propagation dialog
   const [showStatePropagation, setShowStatePropagation] = useState(false);
@@ -350,6 +361,84 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
     }
   };
 
+  const handleDeleteBudget = async () => {
+    const budget = budgets.find((b) => b.year === selectedYear);
+    if (!budget) return;
+
+    setDeletingBudget(true);
+    try {
+      // First delete all budget lines
+      const { error: linesError } = await supabase
+        .from("budget_lines")
+        .delete()
+        .eq("budget_id", budget.id);
+      
+      if (linesError) throw linesError;
+
+      // Delete budget reassignments related to this budget
+      await supabase
+        .from("budget_reassignments")
+        .delete()
+        .or(`source_budget_id.eq.${budget.id},target_budget_id.eq.${budget.id}`);
+
+      // Delete the budget itself
+      const { error: budgetError } = await supabase
+        .from("contract_budgets")
+        .delete()
+        .eq("id", budget.id);
+      
+      if (budgetError) throw budgetError;
+
+      toast({
+        title: "Presupuesto eliminado",
+        description: `El presupuesto de ${title} ${selectedYear} ha sido eliminado`,
+      });
+      
+      setShowDeleteBudgetDialog2(false);
+      loadBudgets();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setDeletingBudget(false);
+    }
+  }
+
+  const handleUpdateTemplate = async () => {
+    const budget = budgets.find((b) => b.year === selectedYear);
+    if (!budget || !updateTemplateId) return;
+
+    setUpdatingTemplate(true);
+    try {
+      // Delete all existing budget lines
+      const { error: deleteError } = await supabase
+        .from("budget_lines")
+        .delete()
+        .eq("budget_id", budget.id);
+      
+      if (deleteError) throw deleteError;
+
+      // Apply new template
+      const success = await applyBudgetTemplate(updateTemplateId, budget.id);
+      if (!success) {
+        throw new Error("Error al aplicar la plantilla");
+      }
+
+      toast({
+        title: "Plantilla actualizada",
+        description: "La estructura del presupuesto ha sido reemplazada. Todos los montos se han reiniciado a 0.",
+      });
+      
+      setShowUpdateTemplateConfirm(false);
+      setShowUpdateTemplateDialog(false);
+      setUpdateTemplateId("");
+      loadLines(budget.id);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setUpdatingTemplate(false);
+    }
+  }
+
   const currentBudget = budgets.find((b) => b.year === selectedYear);
   const authorizedTotal = calculateAuthorizedTotal(lines);
   const unauthorizedTotal = calculateUnauthorizedTotal(lines);
@@ -392,10 +481,16 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
             </SelectContent>
           </Select>
           {!isClosed && currentBudget && (
-            <Button variant="outline" size="sm" onClick={() => setShowCloseYearDialog(true)}>
-              <Calendar className="h-4 w-4 mr-1" />
-              Cerrar Año
-            </Button>
+            <>
+              <Button variant="outline" size="sm" onClick={() => setShowDeleteBudgetDialog1(true)}>
+                <Trash2 className="h-4 w-4 mr-1" />
+                Eliminar
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setShowCloseYearDialog(true)}>
+                <Calendar className="h-4 w-4 mr-1" />
+                Cerrar Año
+              </Button>
+            </>
           )}
           <Button variant="outline" size="sm" onClick={() => setShowNewBudgetDialog(true)}>
             <Plus className="h-4 w-4 mr-1" />
@@ -440,6 +535,20 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
                   Al cerrar el año, estos se arrastrarán automáticamente al año siguiente.
                 </AlertDescription>
               </Alert>
+            )}
+
+            {!isClosed && currentBudget && (
+              <div className="flex justify-end">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setShowUpdateTemplateDialog(true)}
+                  className="gap-2"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Actualizar Plantilla
+                </Button>
+              </div>
             )}
 
             <BudgetLineTree
@@ -584,6 +693,129 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
             </AlertDialogAction>
             <AlertDialogAction onClick={() => handleConfirmStatusPropagation(true)}>
               Aplicar a todas
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* AlertDialog: Primera confirmación de eliminación */}
+      <AlertDialog open={showDeleteBudgetDialog1} onOpenChange={setShowDeleteBudgetDialog1}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar presupuesto?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Está a punto de eliminar el presupuesto de {title} para el año {selectedYear}. 
+              Esta acción eliminará todas las líneas y datos asociados.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => {
+                setShowDeleteBudgetDialog1(false);
+                setShowDeleteBudgetDialog2(true);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Continuar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* AlertDialog: Segunda confirmación de eliminación */}
+      <AlertDialog open={showDeleteBudgetDialog2} onOpenChange={setShowDeleteBudgetDialog2}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive">⚠️ Confirmación Final</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p className="font-semibold">Esta acción es IRREVERSIBLE.</p>
+              <p>Se eliminarán permanentemente:</p>
+              <ul className="list-disc list-inside ml-4">
+                <li>El presupuesto de {title} {selectedYear}</li>
+                <li>Todas las líneas presupuestarias ({lines.length} líneas)</li>
+                <li>Todo el historial de reasignaciones</li>
+              </ul>
+              <p className="font-semibold mt-2">¿Está completamente seguro?</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>No, cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteBudget}
+              disabled={deletingBudget}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletingBudget && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Sí, eliminar permanentemente
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Dialog: Actualizar Plantilla */}
+      <Dialog open={showUpdateTemplateDialog} onOpenChange={setShowUpdateTemplateDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Actualizar Plantilla - {title}</DialogTitle>
+            <DialogDescription>
+              Seleccione una nueva plantilla para reemplazar la estructura actual del presupuesto.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <BudgetTemplateSelector
+              budgetType={budgetType}
+              value={updateTemplateId}
+              onChange={setUpdateTemplateId}
+              label="Seleccionar plantilla"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowUpdateTemplateDialog(false);
+              setUpdateTemplateId("");
+            }}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={() => {
+                setShowUpdateTemplateDialog(false);
+                setShowUpdateTemplateConfirm(true);
+              }}
+              disabled={!updateTemplateId}
+            >
+              Continuar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* AlertDialog: Confirmación de actualización de plantilla */}
+      <AlertDialog open={showUpdateTemplateConfirm} onOpenChange={setShowUpdateTemplateConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-amber-600">⚠️ Confirmar Actualización de Plantilla</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>¿Está seguro de reemplazar el presupuesto actual por esta plantilla?</p>
+              <p className="font-semibold">Todos los montos se reiniciarán a 0.</p>
+              <p className="text-sm text-muted-foreground">
+                Las líneas actuales serán eliminadas y reemplazadas por la estructura de la nueva plantilla.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setShowUpdateTemplateConfirm(false);
+              setUpdateTemplateId("");
+            }}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleUpdateTemplate}
+              disabled={updatingTemplate}
+            >
+              {updatingTemplate && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Sí, reemplazar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
