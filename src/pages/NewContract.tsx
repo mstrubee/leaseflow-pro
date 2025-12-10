@@ -104,27 +104,33 @@ const NewContract = () => {
         return num;
       };
 
-      // Create version
-      const { data: version, error: versionError } = await supabase
-        .from("contract_versions")
-        .insert({
-          contract_id: contract.id,
-          version_number: 1,
-          is_current: true,
-          initial_rent: hasEscalation ? getUFValue(initialRent) : null,
-          regime_rent: getUFValue(regimeRent),
-          variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
-          duration_months: parseInt(duration),
-          notice_type: noticeType,
-          notice_value: noticeValue,
-        })
-        .select()
-        .single();
+      // Create version only if commercial conditions are provided
+      const hasCommercialConditions = regimeRent || duration || noticeValue;
+      let version = null;
+      
+      if (hasCommercialConditions) {
+        const { data: versionData, error: versionError } = await supabase
+          .from("contract_versions")
+          .insert({
+            contract_id: contract.id,
+            version_number: 1,
+            is_current: true,
+            initial_rent: hasEscalation && initialRent ? getUFValue(initialRent) : null,
+            regime_rent: regimeRent ? getUFValue(regimeRent) : 0,
+            variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
+            duration_months: duration ? parseInt(duration) : 12,
+            notice_type: noticeType,
+            notice_value: noticeValue || "6",
+          })
+          .select()
+          .single();
 
-      if (versionError) throw versionError;
+        if (versionError) throw versionError;
+        version = versionData;
+      }
 
       // Create escalations if any
-      if (hasEscalation && escalations.length > 0) {
+      if (version && hasEscalation && escalations.length > 0) {
         const { error: escalationError } = await supabase
           .from("rent_escalations")
           .insert(
@@ -144,7 +150,7 @@ const NewContract = () => {
           .from("contract_documents")
           .insert({
             contract_id: contract.id,
-            version_id: version.id,
+            version_id: version?.id || null,
             document_type: "borrador",
             url: documentUrl,
           });
@@ -302,6 +308,7 @@ const NewContract = () => {
           <Card>
             <CardHeader>
               <CardTitle>Condiciones Comerciales</CardTitle>
+              <CardDescription>Opcional - puede completarse más adelante</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -346,7 +353,6 @@ const NewContract = () => {
                     onChange={setInitialRent}
                     currency={currency}
                     onCurrencyChange={setCurrency}
-                    required
                     showCurrencySelector={false}
                   />
                   
@@ -372,7 +378,6 @@ const NewContract = () => {
                 onChange={setRegimeRent}
                 currency={currency}
                 onCurrencyChange={setCurrency}
-                required
                 showCurrencySelector={false}
               />
 
@@ -389,18 +394,17 @@ const NewContract = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="duration">Duración (meses) *</Label>
+                <Label htmlFor="duration">Duración (meses)</Label>
                 <Input
                   id="duration"
                   type="number"
                   value={duration}
                   onChange={(e) => setDuration(e.target.value)}
-                  required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label>Tipo de Aviso de Término *</Label>
+                <Label>Tipo de Aviso de Término</Label>
                 <Select value={noticeType} onValueChange={(value: any) => setNoticeType(value)}>
                   <SelectTrigger>
                     <SelectValue />
@@ -414,14 +418,13 @@ const NewContract = () => {
 
               <div className="space-y-2">
                 <Label htmlFor="noticeValue">
-                  {noticeType === "meses" ? "Número de Meses *" : "Fecha *"}
+                  {noticeType === "meses" ? "Número de Meses" : "Fecha"}
                 </Label>
                 <Input
                   id="noticeValue"
                   type={noticeType === "meses" ? "number" : "date"}
                   value={noticeValue}
                   onChange={(e) => setNoticeValue(e.target.value)}
-                  required
                 />
               </div>
             </CardContent>

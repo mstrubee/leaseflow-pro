@@ -15,6 +15,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { DocumentVersions, DocumentVersion } from "@/components/contracts/DocumentVersions";
 import { EscalationDialog, Escalation } from "@/components/contracts/EscalationDialog";
@@ -80,6 +83,16 @@ const ContractDetail = () => {
   const [showDeleteConfirm1, setShowDeleteConfirm1] = useState(false);
   const [showDeleteConfirm2, setShowDeleteConfirm2] = useState(false);
   const [deletingRenegotiation, setDeletingRenegotiation] = useState(false);
+  
+  // Contact edit state
+  const [showContactEdit, setShowContactEdit] = useState(false);
+  const [editingContact, setEditingContact] = useState(false);
+  const [contactForm, setContactForm] = useState({
+    company: "",
+    name: "",
+    phone: "",
+    email: "",
+  });
 
   useEffect(() => {
     if (id) {
@@ -448,6 +461,71 @@ const ContractDetail = () => {
     }
   };
 
+  const handleSaveContact = async () => {
+    if (!contract) return;
+    
+    setEditingContact(true);
+    try {
+      // Check if contact exists
+      const existingContact = contract.contract_contacts?.[0];
+      
+      if (existingContact) {
+        // Update existing contact
+        const { error } = await supabase
+          .from("contract_contacts")
+          .update({
+            company: contactForm.company,
+            name: contactForm.name,
+            phone: contactForm.phone,
+            email: contactForm.email,
+          })
+          .eq("contract_id", contract.id);
+        
+        if (error) throw error;
+      } else {
+        // Create new contact
+        const { error } = await supabase
+          .from("contract_contacts")
+          .insert({
+            contract_id: contract.id,
+            company: contactForm.company || "",
+            name: contactForm.name || "",
+            phone: contactForm.phone || "",
+            email: contactForm.email || "",
+          });
+        
+        if (error) throw error;
+      }
+      
+      toast({
+        title: "Contacto guardado",
+        description: "La información de contacto ha sido actualizada",
+      });
+      
+      setShowContactEdit(false);
+      loadContract();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo guardar el contacto",
+      });
+    } finally {
+      setEditingContact(false);
+    }
+  };
+
+  const openContactEdit = () => {
+    const existingContact = contract?.contract_contacts?.[0];
+    setContactForm({
+      company: existingContact?.company || "",
+      name: existingContact?.name || "",
+      phone: existingContact?.phone || "",
+      email: existingContact?.email || "",
+    });
+    setShowContactEdit(true);
+  }
+
   const getStatusBadge = (status: string) => {
     const statusMap: { [key: string]: { label: string; className: string } } = {
       en_negociacion: { label: "En Negociación", className: "bg-yellow-500 text-white" },
@@ -569,33 +647,52 @@ const ContractDetail = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <User className="h-5 w-5" />
-              Contacto
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <User className="h-5 w-5" />
+                Contacto
+              </CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={openContactEdit}
+                className="gap-2"
+              >
+                <Edit className="h-4 w-4" />
+                Editar
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
-            {contact ? (
+            {contact && (contact.company || contact.name || contact.phone || contact.email) ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">Empresa</p>
-                  <p className="font-medium">{contact.company}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Nombre</p>
-                  <p className="font-medium">{contact.name}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Teléfono</p>
-                  <p className="font-medium">{contact.phone}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Email</p>
-                  <p className="font-medium">{contact.email}</p>
-                </div>
+                {contact.company && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Empresa</p>
+                    <p className="font-medium">{contact.company}</p>
+                  </div>
+                )}
+                {contact.name && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Nombre</p>
+                    <p className="font-medium">{contact.name}</p>
+                  </div>
+                )}
+                {contact.phone && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Teléfono</p>
+                    <p className="font-medium">{contact.phone}</p>
+                  </div>
+                )}
+                {contact.email && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Email</p>
+                    <p className="font-medium">{contact.email}</p>
+                  </div>
+                )}
               </div>
             ) : (
-              <p className="text-muted-foreground">No hay contacto registrado</p>
+              <p className="text-muted-foreground">No hay contacto registrado. Use el botón Editar para agregar.</p>
             )}
           </CardContent>
         </Card>
@@ -1052,6 +1149,63 @@ const ContractDetail = () => {
           </CardContent>
         </Card>
       </main>
+
+      {/* Dialog: Editar Contacto */}
+      <Dialog open={showContactEdit} onOpenChange={setShowContactEdit}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Contacto</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-company">Empresa</Label>
+              <Input
+                id="edit-company"
+                value={contactForm.company}
+                onChange={(e) => setContactForm({ ...contactForm, company: e.target.value })}
+                placeholder="Nombre de la empresa"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">Nombre</Label>
+              <Input
+                id="edit-name"
+                value={contactForm.name}
+                onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
+                placeholder="Nombre del contacto"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-phone">Teléfono</Label>
+              <Input
+                id="edit-phone"
+                value={contactForm.phone}
+                onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
+                placeholder="+56 9 1234 5678"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-email">Email</Label>
+              <Input
+                id="edit-email"
+                type="email"
+                value={contactForm.email}
+                onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
+                placeholder="correo@ejemplo.com"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowContactEdit(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveContact} disabled={editingContact}>
+              {editingContact && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
