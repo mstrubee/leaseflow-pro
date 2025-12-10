@@ -41,7 +41,7 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
   const [closingYear, setClosingYear] = useState(false);
   const [newBudgetYear, setNewBudgetYear] = useState(new Date().getFullYear());
   const [newBudgetAmount, setNewBudgetAmount] = useState("");
-  const [selectedTemplateId, setSelectedTemplateId] = useState("none");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [applyingTemplate, setApplyingTemplate] = useState(false);
   
   // State propagation dialog
@@ -127,6 +127,12 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
   };
 
   const handleCreateBudget = async () => {
+    // Validate template is selected
+    if (!selectedTemplateId || selectedTemplateId === "none") {
+      toast({ variant: "destructive", title: "Error", description: "Debe seleccionar una plantilla" });
+      return;
+    }
+
     setApplyingTemplate(true);
     try {
       const { data: newBudget, error } = await supabase.from("contract_budgets").insert({
@@ -138,18 +144,16 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
 
       if (error) throw error;
 
-      // Apply template if selected
-      if (selectedTemplateId && selectedTemplateId !== "none") {
-        const success = await applyBudgetTemplate(selectedTemplateId, newBudget.id);
-        if (!success) {
-          toast({ variant: "destructive", title: "Error", description: "Error al aplicar la plantilla" });
-        }
+      // Apply template (mandatory)
+      const success = await applyBudgetTemplate(selectedTemplateId, newBudget.id);
+      if (!success) {
+        toast({ variant: "destructive", title: "Error", description: "Error al aplicar la plantilla" });
       }
 
       toast({ title: "Presupuesto creado", description: `Presupuesto ${title} ${newBudgetYear} creado exitosamente` });
       setShowNewBudgetDialog(false);
       setNewBudgetAmount("");
-      setSelectedTemplateId("none");
+      setSelectedTemplateId("");
       loadBudgets();
       setSelectedYear(newBudgetYear);
     } catch (error: any) {
@@ -485,7 +489,10 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
             <Button variant="outline" onClick={() => setShowNewBudgetDialog(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleCreateBudget} disabled={applyingTemplate}>
+            <Button 
+              onClick={handleCreateBudget} 
+              disabled={applyingTemplate || !selectedTemplateId || selectedTemplateId === "none"}
+            >
               {applyingTemplate && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Crear
             </Button>

@@ -58,15 +58,17 @@ export const BudgetTemplateSelector = ({
     );
   }
 
+  const hasTemplates = templates.length > 0;
+  const isValid = value && value !== "none";
+
   return (
     <div className="space-y-2">
       {label && <Label>{label}</Label>}
       <Select value={value} onValueChange={onChange}>
-        <SelectTrigger>
-          <SelectValue placeholder="Seleccionar plantilla (opcional)" />
+        <SelectTrigger className={!isValid && hasTemplates ? "border-destructive" : ""}>
+          <SelectValue placeholder="Seleccionar plantilla *" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="none">Sin plantilla</SelectItem>
           {templates.map((template) => (
             <SelectItem key={template.id} value={template.id}>
               {template.name}
@@ -79,9 +81,15 @@ export const BudgetTemplateSelector = ({
           ))}
         </SelectContent>
       </Select>
-      {templates.length === 0 && (
-        <p className="text-xs text-muted-foreground">
-          No hay plantillas de {budgetType === "inversion_inicial" ? "Inversión Inicial" : "CAPEX"} disponibles
+      {!hasTemplates && (
+        <p className="text-xs text-destructive">
+          No hay plantillas de {budgetType === "inversion_inicial" ? "Inversión Inicial" : "CAPEX"} disponibles. 
+          Solicite al administrador crear una plantilla.
+        </p>
+      )}
+      {hasTemplates && !isValid && (
+        <p className="text-xs text-destructive">
+          Debe seleccionar una plantilla para crear el presupuesto
         </p>
       )}
     </div>
