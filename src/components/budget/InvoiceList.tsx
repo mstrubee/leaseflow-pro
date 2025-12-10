@@ -1,16 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, FileText, Mail, CheckCircle, Clock, Trash2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Plus, FileText, Mail, CheckCircle, Clock, Trash2, Upload, Folder, ArrowLeft, Paperclip, ExternalLink, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useBudgetContext } from "./BudgetContext";
 import { BudgetSemaphore } from "./BudgetSemaphore";
+import { cn } from "@/lib/utils";
 
 interface Invoice {
   id: string;
@@ -20,6 +23,22 @@ interface Invoice {
   reception_status: string;
   received_at: string | null;
   email_sent_to: string | null;
+  attachment_url: string | null;
+}
+
+interface RepositoryFolder {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  folder_type: string | null;
+}
+
+interface RepositoryFile {
+  id: string;
+  name: string;
+  url: string;
+  file_type: string | null;
+  folder_id: string;
 }
 
 interface InvoiceListProps {
@@ -34,7 +53,8 @@ interface InvoiceListProps {
 export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [showNewDialog, setShowNewDialog] = useState(false);
-  const [showEmailDialog, setShowEmailDialog] = useState(false);
+  const [showStatusDialog, setShowStatusDialog] = useState(false);
+  const [showFilePicker, setShowFilePicker] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [email, setEmail] = useState("");
   const [newInvoice, setNewInvoice] = useState({
@@ -42,14 +62,42 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     invoice_date: new Date().toISOString().split("T")[0],
     amount: "",
     currency: "UF" as "UF" | "CLP",
+    attachment_url: "",
+    attachment_name: "",
   });
+  
+  // File picker states
+  const [folders, setFolders] = useState<RepositoryFolder[]>([]);
+  const [files, setFiles] = useState<RepositoryFile[]>([]);
+  const [currentFolder, setCurrentFolder] = useState<RepositoryFolder | null>(null);
+  const [folderPath, setFolderPath] = useState<RepositoryFolder[]>([]);
+  const [selectedFile, setSelectedFile] = useState<RepositoryFile | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"select" | "upload">("select");
+  const [uploadedFile, setUploadedFile] = useState<RepositoryFile | null>(null);
+  const [askSendEmail, setAskSendEmail] = useState(false);
+  const [contractId, setContractId] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos, convertPesosToUF, ufValue } = useBudgetContext();
 
   useEffect(() => {
     loadInvoices();
     loadLastEmail();
+    loadContractId();
   }, [purchaseOrder.id]);
+
+  const loadContractId = async () => {
+    const { data } = await supabase
+      .from("purchase_orders")
+      .select("contract_id")
+      .eq("id", purchaseOrder.id)
+      .single();
+    if (data) {
+      setContractId(data.contract_id);
+    }
+  };
 
   const loadInvoices = async () => {
     const { data } = await supabase
@@ -74,6 +122,52 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     }
   };
 
+  const loadFolderContents = async (folderId: string | null) => {
+    if (!contractId) return;
+    
+    try {
+      let query = supabase
+        .from("repository_folders")
+        .select("*")
+        .eq("contract_id", contractId);
+
+      if (folderId) {
+        query = query.eq("parent_id", folderId);
+      } else {
+        query = query.is("parent_id", null);
+      }
+
+      const { data: folderData } = await query;
+      setFolders(folderData || []);
+
+      if (folderId) {
+        const { data: fileData } = await supabase
+          .from("repository_files")
+          .select("*")
+          .eq("folder_id", folderId)
+          .order("uploaded_at", { ascending: false });
+        setFiles(fileData || []);
+      } else {
+        setFiles([]);
+      }
+    } catch (error) {
+      console.error("Error loading folder contents:", error);
+    }
+  };
+
+  const findFacturasFolder = async (): Promise<RepositoryFolder | null> => {
+    if (!contractId) return null;
+    
+    const { data } = await supabase
+      .from("repository_folders")
+      .select("*")
+      .eq("contract_id", contractId)
+      .or("folder_type.ilike.%factura%,name.ilike.%factura%")
+      .limit(1);
+    
+    return data?.[0] || null;
+  };
+
   const handleCreateInvoice = async () => {
     try {
       const inputAmount = parseFloat(newInvoice.amount) || 0;
@@ -96,13 +190,21 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         amount_clp: amountCLP,
         input_currency: newInvoice.currency,
         uf_value_at_entry: ufValue,
+        attachment_url: newInvoice.attachment_url || null,
       });
 
       if (error) throw error;
 
       toast({ title: "Factura agregada" });
       setShowNewDialog(false);
-      setNewInvoice({ invoice_number: "", invoice_date: new Date().toISOString().split("T")[0], amount: "", currency: "UF" });
+      setNewInvoice({ 
+        invoice_number: "", 
+        invoice_date: new Date().toISOString().split("T")[0], 
+        amount: "", 
+        currency: "UF",
+        attachment_url: "",
+        attachment_name: "",
+      });
       loadInvoices();
       onUpdate();
     } catch (error: any) {
@@ -110,23 +212,122 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     }
   };
 
-  const handleMarkReceived = (invoice: Invoice) => {
+  const handleStatusClick = async (invoice: Invoice) => {
+    if (invoice.reception_status === "recibido") {
+      // Already received, just show info
+      toast({ title: "Factura ya recibida", description: `Enviada a ${invoice.email_sent_to}` });
+      return;
+    }
+    
     setSelectedInvoice(invoice);
-    setShowEmailDialog(true);
+    setSelectedFile(null);
+    setUploadedFile(null);
+    setAskSendEmail(false);
+    setActiveTab("select");
+    setCurrentFolder(null);
+    setFolderPath([]);
+    setShowStatusDialog(true);
+    
+    // Load folder contents
+    await loadFolderContents(null);
   };
 
-  const handleSendEmail = async () => {
+  const navigateToFolder = async (folder: RepositoryFolder) => {
+    setCurrentFolder(folder);
+    setFolderPath([...folderPath, folder]);
+    setSelectedFile(null);
+    await loadFolderContents(folder.id);
+  };
+
+  const navigateBack = async () => {
+    const newPath = [...folderPath];
+    newPath.pop();
+    const parentFolder = newPath[newPath.length - 1] || null;
+    setFolderPath(newPath);
+    setCurrentFolder(parentFolder);
+    setSelectedFile(null);
+    await loadFolderContents(parentFolder?.id || null);
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      // Find or create Facturas folder
+      let targetFolder = await findFacturasFolder();
+      
+      if (!targetFolder) {
+        // Create a facturas folder if it doesn't exist
+        const { data: newFolder, error: folderError } = await supabase
+          .from("repository_folders")
+          .insert({
+            contract_id: contractId,
+            name: "Facturas",
+            is_base_folder: false,
+            folder_type: "facturas",
+          })
+          .select()
+          .single();
+        
+        if (folderError) throw folderError;
+        targetFolder = newFolder;
+      }
+
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${Date.now()}-${file.name}`;
+      const filePath = `${contractId}/${targetFolder.id}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("repository-files")
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from("repository-files")
+        .getPublicUrl(filePath);
+
+      const { data: newFile, error: dbError } = await supabase
+        .from("repository_files")
+        .insert({
+          folder_id: targetFolder.id,
+          name: file.name,
+          url: urlData.publicUrl,
+          file_type: fileExt || null,
+        })
+        .select()
+        .single();
+
+      if (dbError) throw dbError;
+
+      toast({ title: "Archivo subido", description: `Archivo guardado en carpeta Facturas` });
+      setUploadedFile(newFile);
+      setAskSendEmail(true);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleConfirmReceived = async (fileUrl: string) => {
     if (!selectedInvoice) return;
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
-      // Update invoice status
       await supabase
         .from("invoices")
         .update({
           reception_status: "recibido",
           received_at: new Date().toISOString(),
+          received_by: user?.id,
+          attachment_url: fileUrl,
           email_sent_to: email,
           email_sent_at: new Date().toISOString(),
         })
@@ -141,7 +342,8 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
 
       // TODO: Send actual email via edge function
       toast({ title: "Factura recibida", description: `Email enviado a ${email}` });
-      setShowEmailDialog(false);
+      setShowStatusDialog(false);
+      setAskSendEmail(false);
       loadInvoices();
       onUpdate();
     } catch (error: any) {
@@ -157,6 +359,11 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
+  };
+
+  const openFilePicker = () => {
+    setShowFilePicker(true);
+    loadFolderContents(null);
   };
 
   const totalInvoiced = invoices.reduce((sum, inv) => sum + inv.amount_uf, 0);
@@ -200,33 +407,42 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
           <TableBody>
             {invoices.map((invoice) => (
               <TableRow key={invoice.id}>
-                <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
+                <TableCell className="font-medium">
+                  <div className="flex items-center gap-2">
+                    {invoice.invoice_number}
+                    {invoice.attachment_url && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 w-6 p-0"
+                        onClick={() => window.open(invoice.attachment_url!, "_blank")}
+                      >
+                        <Paperclip className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell>{new Date(invoice.invoice_date).toLocaleDateString("es-CL")}</TableCell>
                 <TableCell className="text-right font-mono">{formatUF(invoice.amount_uf)}</TableCell>
                 <TableCell>
-                  {invoice.reception_status === "recibido" ? (
-                    <Badge className="bg-green-500 flex items-center gap-1 w-fit">
-                      <CheckCircle className="h-3 w-3" />
-                      Recibido
-                    </Badge>
-                  ) : (
-                    <Badge variant="secondary" className="flex items-center gap-1 w-fit">
-                      <Clock className="h-3 w-3" />
-                      Pendiente
-                    </Badge>
-                  )}
+                  <button onClick={() => handleStatusClick(invoice)}>
+                    {invoice.reception_status === "recibido" ? (
+                      <Badge className="bg-green-500 flex items-center gap-1 w-fit cursor-default">
+                        <CheckCircle className="h-3 w-3" />
+                        Recibido
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="flex items-center gap-1 w-fit cursor-pointer hover:bg-accent">
+                        <Clock className="h-3 w-3" />
+                        Pendiente
+                      </Badge>
+                    )}
+                  </button>
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-1">
-                    {invoice.reception_status === "pendiente" && (
-                      <Button size="sm" variant="ghost" onClick={() => handleMarkReceived(invoice)}>
-                        <Mail className="h-4 w-4" />
-                      </Button>
-                    )}
-                    <Button size="sm" variant="ghost" onClick={() => handleDeleteInvoice(invoice.id)} className="text-destructive">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  <Button size="sm" variant="ghost" onClick={() => handleDeleteInvoice(invoice.id)} className="text-destructive">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </TableCell>
               </TableRow>
             ))}
@@ -234,6 +450,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         </Table>
       )}
 
+      {/* New Invoice Dialog */}
       <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
         <DialogContent>
           <DialogHeader>
@@ -278,6 +495,31 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                 </p>
               )}
             </div>
+            <div className="space-y-2">
+              <Label>Archivo Adjunto</Label>
+              <div className="flex items-center gap-2">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm"
+                  onClick={openFilePicker}
+                  className="flex items-center gap-2"
+                >
+                  <Paperclip className="h-4 w-4" />
+                  {newInvoice.attachment_name || "Seleccionar archivo"}
+                </Button>
+                {newInvoice.attachment_url && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => window.open(newInvoice.attachment_url, "_blank")}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowNewDialog(false)}>Cancelar</Button>
@@ -286,23 +528,253 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showEmailDialog} onOpenChange={setShowEmailDialog}>
-        <DialogContent>
+      {/* Status Change Dialog */}
+      <Dialog open={showStatusDialog} onOpenChange={setShowStatusDialog}>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Confirmar Recepción de Trabajo</DialogTitle>
+            <DialogTitle>Marcar Factura como Recibida</DialogTitle>
+            <DialogDescription>
+              Factura {selectedInvoice?.invoice_number} - Seleccione o suba el archivo PDF de la factura
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Ingrese el email para enviar confirmación de recepción de la factura {selectedInvoice?.invoice_number}
-            </p>
-            <div className="space-y-2">
-              <Label>Email</Label>
-              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="correo@ejemplo.com" />
+
+          {askSendEmail ? (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Archivo subido correctamente. ¿Desea enviar el archivo vía Email?
+              </p>
+              <div className="space-y-2">
+                <Label>Email del destinatario</Label>
+                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="correo@ejemplo.com" />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => {
+                  setShowStatusDialog(false);
+                  setAskSendEmail(false);
+                }}>
+                  No enviar
+                </Button>
+                <Button onClick={() => uploadedFile && handleConfirmReceived(uploadedFile.url)} disabled={!email}>
+                  <Mail className="h-4 w-4 mr-2" />
+                  Enviar Email
+                </Button>
+              </DialogFooter>
             </div>
+          ) : (
+            <>
+              <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "select" | "upload")}>
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="select">Seleccionar del Repositorio</TabsTrigger>
+                  <TabsTrigger value="upload">Subir Archivo</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="select" className="space-y-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <button onClick={() => { setCurrentFolder(null); setFolderPath([]); loadFolderContents(null); }} className="hover:underline">
+                      Repositorio
+                    </button>
+                    {folderPath.map((folder, index) => (
+                      <span key={folder.id} className="flex items-center gap-2">
+                        <span>/</span>
+                        <button
+                          onClick={() => {
+                            const newPath = folderPath.slice(0, index + 1);
+                            setFolderPath(newPath);
+                            setCurrentFolder(folder);
+                            loadFolderContents(folder.id);
+                          }}
+                          className="hover:underline"
+                        >
+                          {folder.name}
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+
+                  <ScrollArea className="h-[250px] border rounded-lg p-2">
+                    <div className="space-y-1">
+                      {currentFolder && (
+                        <button
+                          onClick={navigateBack}
+                          className="w-full flex items-center gap-2 p-2 rounded hover:bg-accent text-left"
+                        >
+                          <ArrowLeft className="h-4 w-4" />
+                          <span>Volver</span>
+                        </button>
+                      )}
+
+                      {folders.map((folder) => (
+                        <button
+                          key={folder.id}
+                          onClick={() => navigateToFolder(folder)}
+                          className="w-full flex items-center gap-2 p-2 rounded hover:bg-accent text-left"
+                        >
+                          <Folder className="h-4 w-4 text-amber-500" />
+                          <span>{folder.name}</span>
+                        </button>
+                      ))}
+
+                      {files.map((file) => (
+                        <button
+                          key={file.id}
+                          onClick={() => setSelectedFile(file)}
+                          className={cn(
+                            "w-full flex items-center gap-2 p-2 rounded hover:bg-accent text-left",
+                            selectedFile?.id === file.id && "bg-primary/10 ring-1 ring-primary"
+                          )}
+                        >
+                          <FileText className="h-4 w-4 text-blue-500" />
+                          <span className="flex-1 truncate">{file.name}</span>
+                          {selectedFile?.id === file.id && (
+                            <Check className="h-4 w-4 text-primary" />
+                          )}
+                        </button>
+                      ))}
+
+                      {folders.length === 0 && files.length === 0 && currentFolder && (
+                        <div className="py-8 text-center text-muted-foreground">
+                          Esta carpeta está vacía
+                        </div>
+                      )}
+                    </div>
+                  </ScrollArea>
+
+                  <div className="space-y-2">
+                    <Label>Email del destinatario</Label>
+                    <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="correo@ejemplo.com" />
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="upload" className="space-y-4">
+                  <div className="border-2 border-dashed rounded-lg p-8 text-center">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={handleFileUpload}
+                      accept=".pdf"
+                    />
+                    <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground mb-4">
+                      El archivo se guardará en la carpeta Facturas del repositorio
+                    </p>
+                    <Button
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
+                    >
+                      {uploading ? "Subiendo..." : "Seleccionar Archivo PDF"}
+                    </Button>
+                  </div>
+                </TabsContent>
+              </Tabs>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowStatusDialog(false)}>Cancelar</Button>
+                <Button 
+                  onClick={() => selectedFile && handleConfirmReceived(selectedFile.url)} 
+                  disabled={!selectedFile || !email}
+                >
+                  <Mail className="h-4 w-4 mr-2" />
+                  Confirmar y Enviar Email
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* File Picker for new invoice attachment */}
+      <Dialog open={showFilePicker} onOpenChange={setShowFilePicker}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Seleccionar Archivo de Factura</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+            <button onClick={() => { setCurrentFolder(null); setFolderPath([]); loadFolderContents(null); }} className="hover:underline">
+              Repositorio
+            </button>
+            {folderPath.map((folder, index) => (
+              <span key={folder.id} className="flex items-center gap-2">
+                <span>/</span>
+                <button
+                  onClick={() => {
+                    const newPath = folderPath.slice(0, index + 1);
+                    setFolderPath(newPath);
+                    setCurrentFolder(folder);
+                    loadFolderContents(folder.id);
+                  }}
+                  className="hover:underline"
+                >
+                  {folder.name}
+                </button>
+              </span>
+            ))}
           </div>
+
+          <ScrollArea className="h-[300px] border rounded-lg p-2">
+            <div className="space-y-1">
+              {currentFolder && (
+                <button
+                  onClick={navigateBack}
+                  className="w-full flex items-center gap-2 p-2 rounded hover:bg-accent text-left"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  <span>Volver</span>
+                </button>
+              )}
+
+              {folders.map((folder) => (
+                <button
+                  key={folder.id}
+                  onClick={() => navigateToFolder(folder)}
+                  className="w-full flex items-center gap-2 p-2 rounded hover:bg-accent text-left"
+                >
+                  <Folder className="h-4 w-4 text-amber-500" />
+                  <span>{folder.name}</span>
+                </button>
+              ))}
+
+              {files.map((file) => (
+                <button
+                  key={file.id}
+                  onClick={() => setSelectedFile(file)}
+                  className={cn(
+                    "w-full flex items-center gap-2 p-2 rounded hover:bg-accent text-left",
+                    selectedFile?.id === file.id && "bg-primary/10 ring-1 ring-primary"
+                  )}
+                >
+                  <FileText className="h-4 w-4 text-blue-500" />
+                  <span className="flex-1 truncate">{file.name}</span>
+                  {selectedFile?.id === file.id && (
+                    <Check className="h-4 w-4 text-primary" />
+                  )}
+                </button>
+              ))}
+
+              {folders.length === 0 && files.length === 0 && currentFolder && (
+                <div className="py-8 text-center text-muted-foreground">
+                  Esta carpeta está vacía
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEmailDialog(false)}>Cancelar</Button>
-            <Button onClick={handleSendEmail}>Confirmar y Enviar</Button>
+            <Button variant="outline" onClick={() => setShowFilePicker(false)}>Cancelar</Button>
+            <Button 
+              onClick={() => {
+                if (selectedFile) {
+                  setNewInvoice({ ...newInvoice, attachment_url: selectedFile.url, attachment_name: selectedFile.name });
+                  setShowFilePicker(false);
+                  setSelectedFile(null);
+                }
+              }} 
+              disabled={!selectedFile}
+            >
+              Seleccionar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
