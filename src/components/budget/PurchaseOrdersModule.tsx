@@ -8,10 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, FileText, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
+import { Loader2, Plus, FileText, ChevronDown, ChevronRight, AlertTriangle, Paperclip, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useBudgetContext } from "./BudgetContext";
 import { InvoiceList } from "./InvoiceList";
+import { RepositoryFilePicker } from "./RepositoryFilePicker";
 import { cn } from "@/lib/utils";
 
 interface PurchaseOrder {
@@ -24,17 +25,26 @@ interface PurchaseOrder {
   attachment_url: string | null;
   year: number;
   status: string;
+  budget_id: string | null;
 }
 
 interface PurchaseOrdersModuleProps {
   contractId: string;
 }
 
+interface Budget {
+  id: string;
+  year: number;
+  budget_type: string;
+}
+
 export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) => {
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [loading, setLoading] = useState(true);
   const [showNewDialog, setShowNewDialog] = useState(false);
+  const [showFilePicker, setShowFilePicker] = useState(false);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [newOrder, setNewOrder] = useState({
     order_number: "",
@@ -43,12 +53,16 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
     amount: "",
     currency: "UF" as "UF" | "CLP",
     description: "",
+    budget_type: "inversion_inicial" as "inversion_inicial" | "capex",
+    attachment_url: "",
+    attachment_name: "",
   });
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos, convertPesosToUF, ufValue } = useBudgetContext();
 
   useEffect(() => {
     loadOrders();
+    loadBudgets();
   }, [contractId, selectedYear]);
 
   const loadOrders = async () => {
@@ -70,6 +84,21 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
     }
   };
 
+  const loadBudgets = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("contract_budgets")
+        .select("id, year, budget_type")
+        .eq("contract_id", contractId)
+        .eq("year", selectedYear);
+
+      if (error) throw error;
+      setBudgets(data || []);
+    } catch (error) {
+      console.error("Error loading budgets:", error);
+    }
+  };
+
   const handleCreateOrder = async () => {
     try {
       const inputAmount = parseFloat(newOrder.amount) || 0;
@@ -84,6 +113,9 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
         amountUF = convertPesosToUF(inputAmount);
       }
 
+      // Find budget for selected type and year
+      const budget = budgets.find(b => b.budget_type === newOrder.budget_type);
+
       const { error } = await supabase.from("purchase_orders").insert({
         contract_id: contractId,
         order_number: newOrder.order_number,
@@ -95,17 +127,33 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
         uf_value_at_entry: ufValue,
         description: newOrder.description || null,
         year: selectedYear,
+        budget_id: budget?.id || null,
+        attachment_url: newOrder.attachment_url || null,
       });
 
       if (error) throw error;
 
       toast({ title: "OC creada", description: `Orden de compra ${newOrder.order_number} creada` });
       setShowNewDialog(false);
-      setNewOrder({ order_number: "", supplier_name: "", order_date: new Date().toISOString().split("T")[0], amount: "", currency: "UF", description: "" });
+      setNewOrder({ 
+        order_number: "", 
+        supplier_name: "", 
+        order_date: new Date().toISOString().split("T")[0], 
+        amount: "", 
+        currency: "UF", 
+        description: "",
+        budget_type: "inversion_inicial",
+        attachment_url: "",
+        attachment_name: "",
+      });
       loadOrders();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
+  };
+
+  const getBudgetTypeLabel = (type: string) => {
+    return type === "inversion_inicial" ? "Inversión Inicial" : "Capex";
   };
 
   const toggleExpanded = (orderId: string) => {
@@ -220,7 +268,7 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
       </CardContent>
 
       <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
-        <DialogContent>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Nueva Orden de Compra</DialogTitle>
           </DialogHeader>
@@ -234,6 +282,18 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
                 <Label>Fecha</Label>
                 <Input type="date" value={newOrder.order_date} onChange={(e) => setNewOrder({ ...newOrder, order_date: e.target.value })} />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo de Presupuesto</Label>
+              <Select value={newOrder.budget_type} onValueChange={(v) => setNewOrder({ ...newOrder, budget_type: v as "inversion_inicial" | "capex" })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="inversion_inicial">Inversión Inicial</SelectItem>
+                  <SelectItem value="capex">Capex</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Proveedor</Label>
@@ -271,6 +331,31 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
               <Label>Descripción</Label>
               <Input value={newOrder.description} onChange={(e) => setNewOrder({ ...newOrder, description: e.target.value })} />
             </div>
+            <div className="space-y-2">
+              <Label>Archivo Adjunto</Label>
+              <div className="flex items-center gap-2">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setShowFilePicker(true)}
+                  className="flex items-center gap-2"
+                >
+                  <Paperclip className="h-4 w-4" />
+                  {newOrder.attachment_name || "Seleccionar archivo"}
+                </Button>
+                {newOrder.attachment_url && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => window.open(newOrder.attachment_url, "_blank")}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowNewDialog(false)}>Cancelar</Button>
@@ -278,6 +363,16 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <RepositoryFilePicker
+        open={showFilePicker}
+        onOpenChange={setShowFilePicker}
+        contractId={contractId}
+        title="Seleccionar Archivo de OC"
+        onFileSelect={(file) => {
+          setNewOrder({ ...newOrder, attachment_url: file.url, attachment_name: file.name });
+        }}
+      />
     </Card>
   );
 };
