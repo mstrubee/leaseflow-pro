@@ -6,9 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, FileText, ChevronDown, ChevronRight, AlertTriangle, Paperclip, ExternalLink } from "lucide-react";
+import { Loader2, Plus, FileText, ChevronDown, ChevronRight, AlertTriangle, Paperclip, ExternalLink, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useBudgetContext } from "./BudgetContext";
 import { InvoiceList } from "./InvoiceList";
@@ -46,6 +47,8 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+  const [deleteOrder, setDeleteOrder] = useState<PurchaseOrder | null>(null);
+  const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
   const [newOrder, setNewOrder] = useState({
     order_number: "",
     supplier_name: "",
@@ -156,6 +159,11 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
     return type === "inversion_inicial" ? "Inversión Inicial" : "Capex";
   };
 
+  const getBudgetTypeForOrder = (order: PurchaseOrder) => {
+    const budget = budgets.find(b => b.id === order.budget_id);
+    return budget ? getBudgetTypeLabel(budget.budget_type) : "-";
+  };
+
   const toggleExpanded = (orderId: string) => {
     const newExpanded = new Set(expandedOrders);
     if (newExpanded.has(orderId)) {
@@ -174,6 +182,37 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
         return <Badge variant="destructive" className="flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Descuadrada</Badge>;
       default:
         return <Badge variant="secondary">Abierta</Badge>;
+    }
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, order: PurchaseOrder) => {
+    e.stopPropagation();
+    setDeleteOrder(order);
+    setDeleteStep(1);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (deleteStep === 1) {
+      setDeleteStep(2);
+      return;
+    }
+
+    if (!deleteOrder) return;
+
+    try {
+      // Delete all invoices for this order first
+      await supabase.from("invoices").delete().eq("purchase_order_id", deleteOrder.id);
+      
+      // Delete the order
+      const { error } = await supabase.from("purchase_orders").delete().eq("id", deleteOrder.id);
+      if (error) throw error;
+
+      toast({ title: "OC eliminada", description: `Orden de compra ${deleteOrder.order_number} eliminada` });
+      setDeleteOrder(null);
+      setDeleteStep(1);
+      loadOrders();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
     }
   };
 
@@ -233,8 +272,11 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
                 <TableHead>Nº OC</TableHead>
                 <TableHead>Fecha</TableHead>
                 <TableHead>Proveedor</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead>Descripción</TableHead>
                 <TableHead className="text-right">Monto</TableHead>
                 <TableHead>Estado</TableHead>
+                <TableHead className="w-20"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -247,15 +289,50 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
                     <TableCell>
                       {expandedOrders.has(order.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                     </TableCell>
-                    <TableCell className="font-medium">{order.order_number}</TableCell>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        {order.order_number}
+                        {order.attachment_url && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              window.open(order.attachment_url!, "_blank");
+                            }}
+                          >
+                            <Paperclip className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>{new Date(order.order_date).toLocaleDateString("es-CL")}</TableCell>
                     <TableCell>{order.supplier_name || "-"}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs">
+                        {getBudgetTypeForOrder(order)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="max-w-32 truncate" title={order.description || ""}>
+                      {order.description || "-"}
+                    </TableCell>
                     <TableCell className="text-right font-mono">{formatUF(order.amount_uf)}</TableCell>
                     <TableCell>{getStatusBadge(order.status)}</TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                        onClick={(e) => handleDeleteClick(e, order)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
                   </TableRow>
                   {expandedOrders.has(order.id) && (
                     <TableRow>
-                      <TableCell colSpan={6} className="bg-muted/20 p-4">
+                      <TableCell colSpan={9} className="bg-muted/20 p-4">
                         <InvoiceList purchaseOrder={order} onUpdate={loadOrders} />
                       </TableCell>
                     </TableRow>
@@ -373,6 +450,49 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
           setNewOrder({ ...newOrder, attachment_url: file.url, attachment_name: file.name });
         }}
       />
+
+      {/* Delete confirmation - Step 1 */}
+      <AlertDialog open={deleteOrder !== null && deleteStep === 1} onOpenChange={(open) => !open && setDeleteOrder(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar Orden de Compra?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Está a punto de eliminar la OC <strong>{deleteOrder?.order_number}</strong> del proveedor{" "}
+              <strong>{deleteOrder?.supplier_name || "Sin nombre"}</strong> por un monto de{" "}
+              <strong>{formatUF(deleteOrder?.amount_uf || 0)}</strong>.
+              <br /><br />
+              Esta acción también eliminará todas las facturas asociadas a esta orden.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteOrder(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Continuar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete confirmation - Step 2 */}
+      <AlertDialog open={deleteOrder !== null && deleteStep === 2} onOpenChange={(open) => !open && setDeleteOrder(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive">⚠️ Confirmar Eliminación Definitiva</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>Esta acción es irreversible.</strong>
+              <br /><br />
+              ¿Está completamente seguro de que desea eliminar permanentemente la OC{" "}
+              <strong>{deleteOrder?.order_number}</strong> y todas sus facturas asociadas?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setDeleteOrder(null); setDeleteStep(1); }}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Eliminar Definitivamente
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 };
