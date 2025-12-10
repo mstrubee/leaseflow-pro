@@ -133,6 +133,17 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
       return;
     }
 
+    // Check if budget already exists for this year and type
+    const existingBudget = budgets.find(b => b.year === newBudgetYear);
+    if (existingBudget) {
+      toast({ 
+        variant: "destructive", 
+        title: "Error", 
+        description: `Ya existe un presupuesto de ${title} para el año ${newBudgetYear}. Seleccione otro año.` 
+      });
+      return;
+    }
+
     setApplyingTemplate(true);
     try {
       const { data: newBudget, error } = await supabase.from("contract_budgets").insert({
