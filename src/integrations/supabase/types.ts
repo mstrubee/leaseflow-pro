@@ -95,6 +95,7 @@ export type Database = {
       }
       alerts: {
         Row: {
+          alert_subtype: string | null
           alert_type: Database["public"]["Enums"]["alert_type"]
           channels: Database["public"]["Enums"]["notification_channel"][]
           completed_at: string | null
@@ -113,11 +114,13 @@ export type Database = {
           last_sent_at: string | null
           message: string | null
           next_send_at: string | null
+          priority: number | null
           repeat_every_days: number | null
           title: string
           updated_at: string
         }
         Insert: {
+          alert_subtype?: string | null
           alert_type?: Database["public"]["Enums"]["alert_type"]
           channels?: Database["public"]["Enums"]["notification_channel"][]
           completed_at?: string | null
@@ -136,11 +139,13 @@ export type Database = {
           last_sent_at?: string | null
           message?: string | null
           next_send_at?: string | null
+          priority?: number | null
           repeat_every_days?: number | null
           title: string
           updated_at?: string
         }
         Update: {
+          alert_subtype?: string | null
           alert_type?: Database["public"]["Enums"]["alert_type"]
           channels?: Database["public"]["Enums"]["notification_channel"][]
           completed_at?: string | null
@@ -159,6 +164,7 @@ export type Database = {
           last_sent_at?: string | null
           message?: string | null
           next_send_at?: string | null
+          priority?: number | null
           repeat_every_days?: number | null
           title?: string
           updated_at?: string
@@ -428,6 +434,7 @@ export type Database = {
           id: string
           number: string
           region: string
+          rol_sii: string | null
           street: string
         }
         Insert: {
@@ -438,6 +445,7 @@ export type Database = {
           id?: string
           number: string
           region: string
+          rol_sii?: string | null
           street: string
         }
         Update: {
@@ -448,6 +456,7 @@ export type Database = {
           id?: string
           number?: string
           region?: string
+          rol_sii?: string | null
           street?: string
         }
         Relationships: [
@@ -509,27 +518,33 @@ export type Database = {
       }
       contract_contacts: {
         Row: {
+          cedula_identidad: string | null
           company: string
           contract_id: string
           created_at: string
+          domicilio_comercial: string | null
           email: string
           id: string
           name: string
           phone: string
         }
         Insert: {
+          cedula_identidad?: string | null
           company: string
           contract_id: string
           created_at?: string
+          domicilio_comercial?: string | null
           email: string
           id?: string
           name: string
           phone: string
         }
         Update: {
+          cedula_identidad?: string | null
           company?: string
           contract_id?: string
           created_at?: string
+          domicilio_comercial?: string | null
           email?: string
           id?: string
           name?: string
@@ -706,6 +721,36 @@ export type Database = {
           superficie_showroom?: number | null
           superficie_terreno?: number | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      dashboard_sections: {
+        Row: {
+          created_at: string | null
+          display_order: number
+          id: string
+          is_visible: boolean
+          section_key: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          display_order?: number
+          id?: string
+          is_visible?: boolean
+          section_key: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          display_order?: number
+          id?: string
+          is_visible?: boolean
+          section_key?: string
+          updated_at?: string | null
+          user_id?: string
         }
         Relationships: []
       }

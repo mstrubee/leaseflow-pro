@@ -16,6 +16,8 @@ interface AlertWithDetails {
   last_sent_at: string | null;
   is_active: boolean;
   alert_type: string;
+  priority?: number;
+  alert_subtype?: string;
   contracts: {
     name: string;
     contract_addresses: {
@@ -52,6 +54,8 @@ export function UpcomingAlertsPanel() {
           last_sent_at,
           is_active,
           alert_type,
+          priority,
+          alert_subtype,
           contracts (
             name,
             contract_addresses (region)
@@ -59,6 +63,7 @@ export function UpcomingAlertsPanel() {
         `)
         .is("completed_at", null)
         .is("deleted_at", null)
+        .order("priority", { ascending: false })
         .order("due_date", { ascending: true });
 
       if (error) throw error;
@@ -70,7 +75,12 @@ export function UpcomingAlertsPanel() {
     }
   };
 
-  const getAlertStatus = (alert: AlertWithDetails): "red" | "yellow" | "green" => {
+  const getAlertStatus = (alert: AlertWithDetails): "red" | "yellow" | "green" | "priority" => {
+    // High priority alerts (finiquito pendiente) are always shown first with special styling
+    if (alert.priority && alert.priority >= 100) {
+      return "priority";
+    }
+    
     const daysUntilDue = differenceInDays(new Date(alert.due_date), new Date());
     const hasBeenSent = alert.last_sent_at !== null;
 
@@ -82,8 +92,10 @@ export function UpcomingAlertsPanel() {
     return "green";
   };
 
-  const getStatusColor = (status: "red" | "yellow" | "green") => {
+  const getStatusColor = (status: "red" | "yellow" | "green" | "priority") => {
     switch (status) {
+      case "priority":
+        return "bg-purple-500 animate-pulse";
       case "red":
         return "bg-red-500";
       case "yellow":
@@ -93,8 +105,10 @@ export function UpcomingAlertsPanel() {
     }
   };
 
-  const getStatusLabel = (status: "red" | "yellow" | "green") => {
+  const getStatusLabel = (status: "red" | "yellow" | "green" | "priority") => {
     switch (status) {
+      case "priority":
+        return "Prioritario";
       case "red":
         return "Urgente";
       case "yellow":
