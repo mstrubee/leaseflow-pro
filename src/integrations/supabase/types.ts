@@ -649,6 +649,7 @@ export type Database = {
           deleted_at: string | null
           drive_folder_id: string | null
           id: string
+          is_expired_but_operating: boolean | null
           name: string
           num_estacionamientos: number | null
           obra_status: string | null
@@ -669,6 +670,7 @@ export type Database = {
           deleted_at?: string | null
           drive_folder_id?: string | null
           id?: string
+          is_expired_but_operating?: boolean | null
           name: string
           num_estacionamientos?: number | null
           obra_status?: string | null
@@ -689,6 +691,7 @@ export type Database = {
           deleted_at?: string | null
           drive_folder_id?: string | null
           id?: string
+          is_expired_but_operating?: boolean | null
           name?: string
           num_estacionamientos?: number | null
           obra_status?: string | null
@@ -819,6 +822,7 @@ export type Database = {
           received_at: string | null
           received_by: string | null
           reception_status: string
+          storage_provider: string | null
           uf_value_at_entry: number | null
           updated_at: string
         }
@@ -838,6 +842,7 @@ export type Database = {
           received_at?: string | null
           received_by?: string | null
           reception_status?: string
+          storage_provider?: string | null
           uf_value_at_entry?: number | null
           updated_at?: string
         }
@@ -857,6 +862,7 @@ export type Database = {
           received_at?: string | null
           received_by?: string | null
           reception_status?: string
+          storage_provider?: string | null
           uf_value_at_entry?: number | null
           updated_at?: string
         }
@@ -999,6 +1005,7 @@ export type Database = {
           order_date: string
           order_number: string
           status: string
+          storage_provider: string | null
           supplier_id: string | null
           supplier_name: string | null
           uf_value_at_entry: number | null
@@ -1020,6 +1027,7 @@ export type Database = {
           order_date?: string
           order_number: string
           status?: string
+          storage_provider?: string | null
           supplier_id?: string | null
           supplier_name?: string | null
           uf_value_at_entry?: number | null
@@ -1041,6 +1049,7 @@ export type Database = {
           order_date?: string
           order_number?: string
           status?: string
+          storage_provider?: string | null
           supplier_id?: string | null
           supplier_name?: string | null
           uf_value_at_entry?: number | null
@@ -1118,6 +1127,7 @@ export type Database = {
           id: string
           name: string
           status: string | null
+          storage_provider: string | null
           uploaded_at: string
           url: string
         }
@@ -1128,6 +1138,7 @@ export type Database = {
           id?: string
           name: string
           status?: string | null
+          storage_provider?: string | null
           uploaded_at?: string
           url: string
         }
@@ -1138,6 +1149,7 @@ export type Database = {
           id?: string
           name?: string
           status?: string | null
+          storage_provider?: string | null
           uploaded_at?: string
           url?: string
         }
@@ -1198,6 +1210,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      storage_settings: {
+        Row: {
+          active_provider: string
+          created_at: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          active_provider?: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          active_provider?: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       suppliers: {
         Row: {

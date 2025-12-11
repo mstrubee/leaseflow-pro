@@ -25,6 +25,7 @@ import { RenegotiationDialog } from "@/components/contracts/RenegotiationDialog"
 import { RepositorySection } from "@/components/contracts/RepositorySection";
 import { ContractAlerts } from "@/components/alerts/ContractAlerts";
 import { BudgetDashboard } from "@/components/budget/BudgetDashboard";
+import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 
 interface Contract {
   id: string;
@@ -606,16 +607,27 @@ const ContractDetail = () => {
               <h1 className="text-2xl font-semibold text-foreground">{contract.name}</h1>
               {getStatusBadge(contract.status)}
             </div>
-            {isNegotiating && (
-              <Button
-                variant="outline"
-                onClick={() => navigate(`/contracts/${contract.id}/edit`)}
-                className="gap-2"
-              >
-                <Edit className="h-4 w-4" />
-                Editar
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {(isSigned || contract.status === "vencido") && (
+                <ContractStatusActions
+                  contractId={contract.id}
+                  contractName={contract.name}
+                  currentStatus={contract.status}
+                  isExpiredButOperating={false}
+                  onStatusChange={loadContract}
+                />
+              )}
+              {isNegotiating && (
+                <Button
+                  variant="outline"
+                  onClick={() => navigate(`/contracts/${contract.id}/edit`)}
+                  className="gap-2"
+                >
+                  <Edit className="h-4 w-4" />
+                  Editar
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </header>
