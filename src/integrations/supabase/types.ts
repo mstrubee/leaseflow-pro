@@ -311,33 +311,42 @@ export type Database = {
       budget_template_lines: {
         Row: {
           created_at: string
+          currency: string | null
           default_amount_uf: number | null
           description: string | null
           display_order: number | null
           id: string
           name: string
           parent_id: string | null
+          quantity: number | null
           template_id: string
+          unit_type: string | null
         }
         Insert: {
           created_at?: string
+          currency?: string | null
           default_amount_uf?: number | null
           description?: string | null
           display_order?: number | null
           id?: string
           name: string
           parent_id?: string | null
+          quantity?: number | null
           template_id: string
+          unit_type?: string | null
         }
         Update: {
           created_at?: string
+          currency?: string | null
           default_amount_uf?: number | null
           description?: string | null
           display_order?: number | null
           id?: string
           name?: string
           parent_id?: string | null
+          quantity?: number | null
           template_id?: string
+          unit_type?: string | null
         }
         Relationships: [
           {
@@ -665,6 +674,7 @@ export type Database = {
           drive_folder_id: string | null
           id: string
           is_expired_but_operating: boolean | null
+          metros_lineales_frente: number | null
           name: string
           num_estacionamientos: number | null
           obra_status: string | null
@@ -686,6 +696,7 @@ export type Database = {
           drive_folder_id?: string | null
           id?: string
           is_expired_but_operating?: boolean | null
+          metros_lineales_frente?: number | null
           name: string
           num_estacionamientos?: number | null
           obra_status?: string | null
@@ -707,6 +718,7 @@ export type Database = {
           drive_folder_id?: string | null
           id?: string
           is_expired_but_operating?: boolean | null
+          metros_lineales_frente?: number | null
           name?: string
           num_estacionamientos?: number | null
           obra_status?: string | null
