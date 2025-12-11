@@ -2,6 +2,8 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,9 +22,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Loader2, MoreVertical, AlertTriangle, Clock, XCircle, CheckCircle } from "lucide-react";
+import { Loader2, MoreVertical, AlertTriangle, Clock, XCircle, CheckCircle, Upload, FileText } from "lucide-react";
 
 interface ContractStatusActionsProps {
   contractId: string;
@@ -44,8 +45,25 @@ export function ContractStatusActions({
   const [showCloseDialog, setShowCloseDialog] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [keepInVigentes, setKeepInVigentes] = useState(true);
+  const [finiquitoUrl, setFiniquitoUrl] = useState("");
+  const [showFiniquitoWarning, setShowFiniquitoWarning] = useState(false);
 
   const handleMarkAsExpired = async () => {
+    // Check if finiquito is attached
+    if (!finiquitoUrl.trim()) {
+      setShowExpireDialog(false);
+      setShowFiniquitoWarning(true);
+      return;
+    }
+
+    await processExpiration(false);
+  };
+
+  const handleExpireWithoutFiniquito = async () => {
+    await processExpiration(true);
+  };
+
+  const processExpiration = async (createFiniquitoAlert: boolean) => {
     setLoading(true);
     try {
       const updateData: any = {
@@ -60,6 +78,76 @@ export function ContractStatusActions({
 
       if (error) throw error;
 
+      // If finiquito URL is provided, save it to repository
+      if (finiquitoUrl.trim()) {
+        // Get or create the finiquitos folder
+        const { data: existingFolder } = await supabase
+          .from("repository_folders")
+          .select("id")
+          .eq("contract_id", contractId)
+          .eq("folder_type", "finiquitos")
+          .maybeSingle();
+
+        let folderId = existingFolder?.id;
+
+        if (!folderId) {
+          const { data: parentFolder } = await supabase
+            .from("repository_folders")
+            .select("id")
+            .eq("contract_id", contractId)
+            .eq("is_base_folder", true)
+            .maybeSingle();
+
+          if (parentFolder) {
+            const { data: newFolder } = await supabase
+              .from("repository_folders")
+              .insert({
+                contract_id: contractId,
+                name: "Finiquitos",
+                folder_type: "finiquitos",
+                parent_id: parentFolder.id,
+              })
+              .select()
+              .single();
+
+            folderId = newFolder?.id;
+          }
+        }
+
+        if (folderId) {
+          await supabase
+            .from("repository_files")
+            .insert({
+              folder_id: folderId,
+              name: `Finiquito_${new Date().toISOString().split('T')[0]}`,
+              url: finiquitoUrl,
+              file_type: "pdf",
+            });
+        }
+      }
+
+      // Create finiquito alert if no finiquito was provided
+      if (createFiniquitoAlert) {
+        const { error: alertError } = await supabase
+          .from("alerts")
+          .insert({
+            contract_id: contractId,
+            title: `⚠️ FINIQUITO PENDIENTE: ${contractName}`,
+            message: "Este contrato fue marcado como vencido sin adjuntar finiquito. Por favor, adjunte el documento de finiquito.",
+            alert_type: "other",
+            alert_subtype: "finiquito_pendiente",
+            due_date: new Date().toISOString().split('T')[0],
+            days_before: [0],
+            channels: ["email"],
+            is_active: true,
+            priority: 100, // High priority for finiquito alerts
+          });
+
+        if (alertError) {
+          console.error("Error creating finiquito alert:", alertError);
+        }
+      }
+
       toast.success("Contrato marcado como vencido", {
         description: keepInVigentes 
           ? "El contrato se mantiene en el listado de vigentes con marcador de VENCIDO" 
@@ -72,6 +160,8 @@ export function ContractStatusActions({
     } finally {
       setLoading(false);
       setShowExpireDialog(false);
+      setShowFiniquitoWarning(false);
+      setFiniquitoUrl("");
     }
   };
 
@@ -158,6 +248,23 @@ export function ContractStatusActions({
                   <p>
                     ¿Desea marcar el contrato <strong>"{contractName}"</strong> como vencido?
                   </p>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="finiquitoUrl" className="flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      URL del Finiquito (opcional)
+                    </Label>
+                    <Input
+                      id="finiquitoUrl"
+                      placeholder="https://drive.google.com/..."
+                      value={finiquitoUrl}
+                      onChange={(e) => setFiniquitoUrl(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Adjunte el link al documento de finiquito del contrato
+                    </p>
+                  </div>
+
                   <div className="flex items-center space-x-2 bg-muted p-3 rounded-lg">
                     <Checkbox
                       id="keepInVigentes"
@@ -181,6 +288,44 @@ export function ContractStatusActions({
               <AlertDialogAction onClick={handleMarkAsExpired} disabled={loading}>
                 {loading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                 Confirmar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={showFiniquitoWarning} onOpenChange={setShowFiniquitoWarning}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-amber-600">
+                <AlertTriangle className="h-5 w-5" />
+                Finiquito no adjuntado
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                <p className="mb-4">
+                  No ha adjuntado un documento de finiquito para el contrato <strong>"{contractName}"</strong>.
+                </p>
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
+                  <p>
+                    <strong>Importante:</strong> Se marcará como vencido, pero se creará un aviso prioritario 
+                    para entregar el finiquito del contrato. Este aviso aparecerá en la parte superior del listado.
+                  </p>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => {
+                setShowFiniquitoWarning(false);
+                setShowExpireDialog(true);
+              }}>
+                Volver a adjuntar
+              </AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={handleExpireWithoutFiniquito} 
+                disabled={loading}
+                className="bg-amber-600 hover:bg-amber-700"
+              >
+                {loading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                Continuar sin finiquito
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

@@ -21,17 +21,20 @@ const NewContract = () => {
   // Contract basic info
   const [name, setName] = useState("");
   
-  // Address
+  // Address (Datos de la Propiedad)
   const [street, setStreet] = useState("");
   const [number, setNumber] = useState("");
   const [commune, setCommune] = useState("");
   const [region, setRegion] = useState("");
+  const [rolSii, setRolSii] = useState("");
   
-  // Contact
+  // Contact (Arrendador)
   const [company, setCompany] = useState("");
   const [contactName, setContactName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [cedulaIdentidad, setCedulaIdentidad] = useState("");
+  const [domicilioComercial, setDomicilioComercial] = useState("");
   
   // Commercial conditions
   const [currency, setCurrency] = useState<"UF" | "CLP">("UF");
@@ -43,6 +46,7 @@ const NewContract = () => {
   const [noticeType, setNoticeType] = useState<"fecha" | "meses">("meses");
   const [noticeValue, setNoticeValue] = useState("");
   const [escalations, setEscalations] = useState<Escalation[]>([]);
+  const [fechaInicio, setFechaInicio] = useState("");
   
   const { ufValue, convertPesosToUF } = useEconomicIndicators();
   
@@ -66,7 +70,7 @@ const NewContract = () => {
 
       if (contractError) throw contractError;
 
-      // Create address
+      // Create address (Datos de la Propiedad)
       const { error: addressError } = await supabase
         .from("contract_addresses")
         .insert({
@@ -76,12 +80,13 @@ const NewContract = () => {
           commune,
           region,
           country: "Chile",
+          rol_sii: rolSii || null,
         });
 
       if (addressError) throw addressError;
 
-      // Create contact only if at least one field is filled
-      if (company || contactName || phone || email) {
+      // Create contact (Arrendador) only if at least one field is filled
+      if (company || contactName || phone || email || cedulaIdentidad || domicilioComercial) {
         const { error: contactError } = await supabase
           .from("contract_contacts")
           .insert({
@@ -90,6 +95,8 @@ const NewContract = () => {
             name: contactName || "",
             phone: phone || "",
             email: email || "",
+            cedula_identidad: cedulaIdentidad || null,
+            domicilio_comercial: domicilioComercial || null,
           });
 
         if (contactError) throw contactError;
@@ -121,6 +128,7 @@ const NewContract = () => {
             duration_months: duration ? parseInt(duration) : 12,
             notice_type: noticeType,
             notice_value: noticeValue || "6",
+            effective_date: fechaInicio || null,
           })
           .select()
           .single();
@@ -213,7 +221,7 @@ const NewContract = () => {
 
           <Card>
             <CardHeader>
-              <CardTitle>Dirección</CardTitle>
+              <CardTitle>Datos de la Propiedad</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -253,13 +261,22 @@ const NewContract = () => {
                     required
                   />
                 </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="rolSii">Rol SII</Label>
+                  <Input
+                    id="rolSii"
+                    value={rolSii}
+                    onChange={(e) => setRolSii(e.target.value)}
+                    placeholder="Ej: 1234-5"
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Contacto</CardTitle>
+              <CardTitle>Arrendador</CardTitle>
               <CardDescription>Opcional - puede completarse más adelante desde la vista del contrato</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -280,6 +297,24 @@ const NewContract = () => {
                     value={contactName}
                     onChange={(e) => setContactName(e.target.value)}
                     placeholder="Nombre del contacto"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="cedulaIdentidad">Cédula de Identidad</Label>
+                  <Input
+                    id="cedulaIdentidad"
+                    value={cedulaIdentidad}
+                    onChange={(e) => setCedulaIdentidad(e.target.value)}
+                    placeholder="12.345.678-9"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="domicilioComercial">Domicilio Comercial</Label>
+                  <Input
+                    id="domicilioComercial"
+                    value={domicilioComercial}
+                    onChange={(e) => setDomicilioComercial(e.target.value)}
+                    placeholder="Dirección comercial"
                   />
                 </div>
                 <div className="space-y-2">
@@ -311,6 +346,16 @@ const NewContract = () => {
               <CardDescription>Opcional - puede completarse más adelante</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="fechaInicio">Fecha Inicio</Label>
+                <Input
+                  id="fechaInicio"
+                  type="date"
+                  value={fechaInicio}
+                  onChange={(e) => setFechaInicio(e.target.value)}
+                />
+              </div>
+
               <div className="space-y-2">
                 <Label>Moneda</Label>
                 <Select value={currency} onValueChange={(v) => setCurrency(v as "UF" | "CLP")}>
