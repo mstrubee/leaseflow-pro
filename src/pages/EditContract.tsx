@@ -39,6 +39,7 @@ const EditContract = () => {
   
   // Commercial conditions
   const [versionId, setVersionId] = useState("");
+  const [effectiveDate, setEffectiveDate] = useState("");
   const [currency, setCurrency] = useState<"UF" | "CLP">("UF");
   const [hasEscalation, setHasEscalation] = useState(false);
   const [initialRent, setInitialRent] = useState("");
@@ -95,6 +96,7 @@ const EditContract = () => {
       const version = data.contract_versions?.find((v: any) => v.is_current);
       if (version) {
         setVersionId(version.id);
+        setEffectiveDate(version.effective_date || "");
         setHasEscalation(!!version.initial_rent);
         setInitialRent(version.initial_rent?.toString() || "");
         setRegimeRent(version.regime_rent.toString());
@@ -159,6 +161,7 @@ const EditContract = () => {
         const { error: versionError } = await supabase
           .from("contract_versions")
           .update({
+            effective_date: effectiveDate || null,
             initial_rent: hasEscalation && initialRent ? parseFloat(initialRent) : null,
             regime_rent: parseFloat(regimeRent),
             variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
@@ -362,6 +365,17 @@ const EditContract = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="effectiveDate">Fecha Inicio *</Label>
+                <Input
+                  id="effectiveDate"
+                  type="date"
+                  value={effectiveDate}
+                  onChange={(e) => setEffectiveDate(e.target.value)}
+                  required
+                />
+              </div>
+
               <div className="space-y-2">
                 <Label>Moneda para edición</Label>
                 <Select value={currency} onValueChange={(v) => setCurrency(v as "UF" | "CLP")}>
