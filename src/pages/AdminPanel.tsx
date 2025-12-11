@@ -11,9 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud } from "lucide-react";
 import { CloudStorageSettings } from "@/components/contracts/CloudStorageSettings";
 import { BudgetTemplateManager } from "@/components/budget/BudgetTemplateManager";
+import { StorageProviderSettings } from "@/components/admin/StorageProviderSettings";
 interface Profile {
   id: string;
   email: string;
@@ -648,6 +649,9 @@ const AdminPanel = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* Storage Provider Settings */}
+        <StorageProviderSettings />
 
         {/* Edit Permissions Dialog */}
         <Dialog open={!!editingUserId} onOpenChange={(open) => !open && setEditingUserId(null)}>

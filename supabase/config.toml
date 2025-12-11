@@ -3,6 +3,9 @@ project_id = "tgxiqvfpirwvhktgqqfa"
 [functions.google-drive]
 verify_jwt = false
 
+[functions.onedrive]
+verify_jwt = false
+
 [functions.create-user]
 verify_jwt = false
 

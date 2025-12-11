@@ -22,7 +22,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, ArrowLeft, Trash2, ArrowUpDown, X, Cloud, Loader2, ExternalLink } from "lucide-react";
+import { Search, ArrowLeft, Trash2, ArrowUpDown, X, Cloud, Loader2, ExternalLink, AlertTriangle } from "lucide-react";
+import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
@@ -46,6 +47,7 @@ interface Contract {
   operation_status: string | null;
   obra_status: string | null;
   patente_status: string | null;
+  is_expired_but_operating: boolean | null;
   contract_addresses: Array<{ region: string; commune: string }>;
   contract_versions: ContractVersion[];
 }
@@ -145,9 +147,22 @@ const Contracts = () => {
       );
     }
 
-    // Status filter
+    // Status filter - special handling for "firmado" to include expired but operating
     if (statusFilter !== "todos") {
-      filtered = filtered.filter((contract) => contract.status === statusFilter);
+      if (statusFilter === "firmado") {
+        // Show firmado contracts AND vencido contracts that are still operating
+        filtered = filtered.filter((contract) => 
+          contract.status === "firmado" || 
+          (contract.status === "vencido" && contract.is_expired_but_operating)
+        );
+      } else if (statusFilter === "vencido") {
+        // Only show vencido contracts that are NOT operating (fully expired)
+        filtered = filtered.filter((contract) => 
+          contract.status === "vencido" && !contract.is_expired_but_operating
+        );
+      } else {
+        filtered = filtered.filter((contract) => contract.status === statusFilter);
+      }
     }
 
     // Operation status filter
@@ -487,7 +502,13 @@ const Contracts = () => {
                   <div className="space-y-3 flex-1">
                     <div className="flex items-center gap-3">
                       <h3 className="text-lg font-semibold">{contract.name}</h3>
-                      {getStatusBadge(contract.status)}
+                      {getStatusBadge(contract.status === "vencido" && contract.is_expired_but_operating ? "firmado" : contract.status)}
+                      {contract.status === "vencido" && contract.is_expired_but_operating && (
+                        <Badge variant="destructive" className="gap-1">
+                          <AlertTriangle className="h-3 w-3" />
+                          VENCIDO
+                        </Badge>
+                      )}
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
                       <div>
@@ -577,6 +598,19 @@ const Contracts = () => {
                           <SelectItem value="definitiva">Patente: Definitiva</SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+                  )}
+
+                  {/* Contract Status Actions */}
+                  {isFirmadoView && (
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <ContractStatusActions
+                        contractId={contract.id}
+                        contractName={contract.name}
+                        currentStatus={contract.status}
+                        isExpiredButOperating={contract.is_expired_but_operating || false}
+                        onStatusChange={loadContracts}
+                      />
                     </div>
                   )}
 
