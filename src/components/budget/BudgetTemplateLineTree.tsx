@@ -1,8 +1,26 @@
 import { useState } from "react";
-import { ChevronRight, ChevronDown, Plus, Trash2, Check, X, Edit2 } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, Check, X, Edit2, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 export interface TemplateLine {
   id: string;
@@ -12,6 +30,9 @@ export interface TemplateLine {
   description: string | null;
   default_amount_uf: number;
   display_order: number;
+  quantity?: number;
+  unit_type?: string;
+  currency?: string;
   children?: TemplateLine[];
 }
 
@@ -20,6 +41,7 @@ interface BudgetTemplateLineTreeProps {
   onAddLine: (parentId: string | null) => void;
   onUpdateLine: (id: string, data: Partial<TemplateLine>) => void;
   onDeleteLine: (id: string) => void;
+  onReorder?: (lines: TemplateLine[]) => void;
   level?: number;
 }
 
@@ -28,20 +50,56 @@ export const BudgetTemplateLineTree = ({
   onAddLine,
   onUpdateLine,
   onDeleteLine,
+  onReorder,
   level = 0,
 }: BudgetTemplateLineTreeProps) => {
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = lines.findIndex((item) => item.id === active.id);
+      const newIndex = lines.findIndex((item) => item.id === over.id);
+      const newOrder = arrayMove(lines, oldIndex, newIndex);
+      
+      // Update display_order for each line
+      newOrder.forEach((line, index) => {
+        onUpdateLine(line.id, { display_order: index });
+      });
+      
+      if (onReorder) {
+        onReorder(newOrder);
+      }
+    }
+  };
+
   return (
     <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
-      {lines.map((line) => (
-        <TemplateLineItem
-          key={line.id}
-          line={line}
-          level={level}
-          onAddLine={onAddLine}
-          onUpdateLine={onUpdateLine}
-          onDeleteLine={onDeleteLine}
-        />
-      ))}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext items={lines.map(l => l.id)} strategy={verticalListSortingStrategy}>
+          {lines.map((line) => (
+            <SortableTemplateLineItem
+              key={line.id}
+              line={line}
+              level={level}
+              onAddLine={onAddLine}
+              onUpdateLine={onUpdateLine}
+              onDeleteLine={onDeleteLine}
+              onReorder={onReorder}
+            />
+          ))}
+        </SortableContext>
+      </DndContext>
       {level === 0 && (
         <Button
           variant="ghost"
@@ -57,39 +115,66 @@ export const BudgetTemplateLineTree = ({
   );
 };
 
-interface TemplateLineItemProps {
+interface SortableTemplateLineItemProps {
   line: TemplateLine;
   level: number;
   onAddLine: (parentId: string | null) => void;
   onUpdateLine: (id: string, data: Partial<TemplateLine>) => void;
   onDeleteLine: (id: string) => void;
+  onReorder?: (lines: TemplateLine[]) => void;
 }
 
-const TemplateLineItem = ({
+const SortableTemplateLineItem = ({
   line,
   level,
   onAddLine,
   onUpdateLine,
   onDeleteLine,
-}: TemplateLineItemProps) => {
+  onReorder,
+}: SortableTemplateLineItemProps) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: line.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
   const [isExpanded, setIsExpanded] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(line.name);
+  const [editQuantity, setEditQuantity] = useState((line.quantity || 0).toString());
+  const [editUnit, setEditUnit] = useState(line.unit_type || "m2");
   const [editAmount, setEditAmount] = useState(line.default_amount_uf.toString());
+  const [editCurrency, setEditCurrency] = useState(line.currency || "UF");
 
   const hasChildren = line.children && line.children.length > 0;
+  const calculatedTotal = (parseFloat(editQuantity) || 0) * (parseFloat(editAmount) || 0);
 
   const handleSave = () => {
     onUpdateLine(line.id, {
       name: editName,
+      quantity: parseFloat(editQuantity) || 0,
+      unit_type: editUnit,
       default_amount_uf: parseFloat(editAmount) || 0,
+      currency: editCurrency,
     });
     setIsEditing(false);
   };
 
   const handleCancel = () => {
     setEditName(line.name);
+    setEditQuantity((line.quantity || 0).toString());
+    setEditUnit(line.unit_type || "m2");
     setEditAmount(line.default_amount_uf.toString());
+    setEditCurrency(line.currency || "UF");
     setIsEditing(false);
   };
 
@@ -103,13 +188,22 @@ const TemplateLineItem = ({
   };
 
   return (
-    <div>
+    <div ref={setNodeRef} style={style}>
       <div
         className={cn(
           "flex items-center gap-2 py-2 px-2 rounded-md hover:bg-accent/50 group",
           level === 0 && "bg-muted/30"
         )}
       >
+        {/* Drag handle */}
+        <button
+          {...attributes}
+          {...listeners}
+          className="p-1 hover:bg-accent rounded cursor-grab active:cursor-grabbing"
+        >
+          <GripVertical className="h-4 w-4 text-muted-foreground" />
+        </button>
+
         <button
           onClick={() => setIsExpanded(!isExpanded)}
           className="p-1 hover:bg-accent rounded"
@@ -127,7 +221,7 @@ const TemplateLineItem = ({
         </button>
 
         {isEditing ? (
-          <>
+          <div className="flex items-center gap-2 flex-1">
             <Input
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
@@ -135,30 +229,81 @@ const TemplateLineItem = ({
               autoFocus
               placeholder="Nombre de la línea"
             />
-            <Input
-              type="number"
-              value={editAmount}
-              onChange={(e) => setEditAmount(e.target.value)}
-              className="h-7 w-28"
-              placeholder="Monto UF"
-              disabled={hasChildren}
-            />
+            {/* Quantity and unit */}
+            <div className="flex items-center gap-1">
+              <Input
+                type="number"
+                value={editQuantity}
+                onChange={(e) => setEditQuantity(e.target.value)}
+                className="h-7 w-16"
+                placeholder="Cant."
+                disabled={hasChildren}
+              />
+              <Select value={editUnit} onValueChange={setEditUnit} disabled={hasChildren}>
+                <SelectTrigger className="h-7 w-16">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="m2">m²</SelectItem>
+                  <SelectItem value="mL">mL</SelectItem>
+                  <SelectItem value="Un">Un</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {/* Amount and currency */}
+            <div className="flex items-center gap-1">
+              <Input
+                type="number"
+                value={editAmount}
+                onChange={(e) => setEditAmount(e.target.value)}
+                className="h-7 w-20"
+                placeholder="Monto"
+                disabled={hasChildren}
+              />
+              <Select value={editCurrency} onValueChange={setEditCurrency} disabled={hasChildren}>
+                <SelectTrigger className="h-7 w-16">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="UF">UF</SelectItem>
+                  <SelectItem value="CLP">$</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {/* Calculated total */}
+            {!hasChildren && (
+              <div className="w-28 text-right font-mono text-sm bg-muted/50 px-2 py-1 rounded">
+                = {editCurrency === "UF" ? "UF " : "$ "}
+                {calculatedTotal.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            )}
             <Button size="sm" variant="ghost" onClick={handleSave} className="h-7 w-7 p-0">
               <Check className="h-4 w-4 text-green-600" />
             </Button>
             <Button size="sm" variant="ghost" onClick={handleCancel} className="h-7 w-7 p-0">
               <X className="h-4 w-4 text-red-600" />
             </Button>
-          </>
+          </div>
         ) : (
           <>
             <span className={cn("flex-1 font-medium", level === 0 && "font-semibold")}>
               {line.name}
             </span>
-            {line.default_amount_uf > 0 && (
-              <span className="text-sm text-muted-foreground font-mono">
-                UF {line.default_amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+            {!hasChildren && (line.quantity || 0) > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {line.quantity} {line.unit_type || "m2"}
               </span>
+            )}
+            {!hasChildren && line.default_amount_uf > 0 && (
+              <>
+                <span className="text-sm text-muted-foreground font-mono">
+                  × {line.currency === "CLP" ? "$ " : "UF "}{line.default_amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+                </span>
+                <span className="text-sm font-mono bg-muted/50 px-2 py-0.5 rounded">
+                  = {line.currency === "CLP" ? "$ " : "UF "}
+                  {((line.quantity || 0) * line.default_amount_uf).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+                </span>
+              </>
             )}
             <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
               <Button
@@ -200,6 +345,7 @@ const TemplateLineItem = ({
           onAddLine={onAddLine}
           onUpdateLine={onUpdateLine}
           onDeleteLine={onDeleteLine}
+          onReorder={onReorder}
         />
       )}
     </div>

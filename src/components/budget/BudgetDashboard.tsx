@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, TrendingUp, DollarSign, FileText } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Loader2, TrendingUp, DollarSign, FileText, Receipt } from "lucide-react";
 import { BudgetProvider, useBudgetContext } from "./BudgetContext";
 import { ContractSurfaces } from "./ContractSurfaces";
 import { BudgetModule } from "./BudgetModule";
@@ -18,6 +19,7 @@ interface SurfaceData {
   superficie_exterior_cubierto: number;
   superficie_exterior_descubierto: number;
   num_estacionamientos: number;
+  metros_lineales_frente: number;
 }
 
 interface BudgetSummary {
@@ -39,24 +41,32 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
     superficie_exterior_cubierto: 0,
     superficie_exterior_descubierto: 0,
     num_estacionamientos: 0,
+    metros_lineales_frente: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [availableYears, setAvailableYears] = useState<number[]>([]);
   const [inversionSummary, setInversionSummary] = useState<BudgetSummary>({ budget: 0, authorized: 0, unauthorized: 0 });
   const [capexSummary, setCapexSummary] = useState<BudgetSummary>({ budget: 0, authorized: 0, unauthorized: 0 });
   const [totalOC, setTotalOC] = useState(0);
+  const [totalInvoices, setTotalInvoices] = useState(0);
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos } = useBudgetContext();
 
   useEffect(() => {
     loadContractData();
-    loadSummaries();
+    loadAvailableYears();
   }, [contractId]);
+
+  useEffect(() => {
+    loadSummaries();
+  }, [contractId, selectedYear]);
 
   const loadContractData = async () => {
     try {
       const { data, error } = await supabase
         .from("contracts")
-        .select("superficie_terreno, superficie_edificada_local, superficie_showroom, superficie_bodega_backoffice, superficie_exterior_cubierto, superficie_exterior_descubierto, num_estacionamientos")
+        .select("superficie_terreno, superficie_edificada_local, superficie_showroom, superficie_bodega_backoffice, superficie_exterior_cubierto, superficie_exterior_descubierto, num_estacionamientos, metros_lineales_frente")
         .eq("id", contractId)
         .single();
 
@@ -70,6 +80,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
           superficie_exterior_cubierto: data.superficie_exterior_cubierto || 0,
           superficie_exterior_descubierto: data.superficie_exterior_descubierto || 0,
           num_estacionamientos: data.num_estacionamientos || 0,
+          metros_lineales_frente: data.metros_lineales_frente || 0,
         });
       }
     } catch (error) {
@@ -79,25 +90,69 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
     }
   };
 
-  const loadSummaries = async () => {
-    const currentYear = new Date().getFullYear();
+  const loadAvailableYears = async () => {
+    try {
+      // Get years from budgets
+      const { data: budgets } = await supabase
+        .from("contract_budgets")
+        .select("year")
+        .eq("contract_id", contractId);
 
+      // Get years from purchase orders
+      const { data: orders } = await supabase
+        .from("purchase_orders")
+        .select("year")
+        .eq("contract_id", contractId);
+
+      const yearsSet = new Set<number>();
+      yearsSet.add(new Date().getFullYear()); // Always include current year
+      
+      budgets?.forEach(b => yearsSet.add(b.year));
+      orders?.forEach(o => yearsSet.add(o.year));
+
+      const sortedYears = Array.from(yearsSet).sort((a, b) => b - a);
+      setAvailableYears(sortedYears);
+    } catch (error) {
+      console.error("Error loading available years:", error);
+    }
+  };
+
+  const loadSummaries = async () => {
     // Cargar resumen de Inversión Inicial (INDEPENDIENTE)
-    const invSummary = await loadBudgetTypeSummary(contractId, "inversion_inicial", currentYear);
+    const invSummary = await loadBudgetTypeSummary(contractId, "inversion_inicial", selectedYear);
     setInversionSummary(invSummary);
 
     // Cargar resumen de CAPEX (INDEPENDIENTE)
-    const capSummary = await loadBudgetTypeSummary(contractId, "capex", currentYear);
+    const capSummary = await loadBudgetTypeSummary(contractId, "capex", selectedYear);
     setCapexSummary(capSummary);
 
-    // Get OC totals
+    // Get OC totals for selected year
     const { data: orders } = await supabase
       .from("purchase_orders")
       .select("amount_uf")
       .eq("contract_id", contractId)
-      .eq("year", currentYear);
+      .eq("year", selectedYear);
 
     setTotalOC((orders || []).reduce((acc, o) => acc + (o.amount_uf || 0), 0));
+
+    // Get invoice totals for selected year - sum all invoices from purchase orders in this contract/year
+    const { data: ordersWithInvoices } = await supabase
+      .from("purchase_orders")
+      .select("id")
+      .eq("contract_id", contractId)
+      .eq("year", selectedYear);
+
+    if (ordersWithInvoices && ordersWithInvoices.length > 0) {
+      const orderIds = ordersWithInvoices.map(o => o.id);
+      const { data: invoices } = await supabase
+        .from("invoices")
+        .select("amount_uf")
+        .in("purchase_order_id", orderIds);
+
+      setTotalInvoices((invoices || []).reduce((acc, i) => acc + (i.amount_uf || 0), 0));
+    } else {
+      setTotalInvoices(0);
+    }
   };
 
   const loadBudgetTypeSummary = async (contractId: string, budgetType: string, year: number): Promise<BudgetSummary> => {
@@ -119,12 +174,6 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
       .from("budget_lines")
       .select("amount_uf, status, parent_id")
       .eq("budget_id", budget.id);
-
-    // Solo contar líneas hoja (sin hijos) para evitar doble conteo
-    const leafLines = (lines || []).filter(line => {
-      const hasChildren = (lines || []).some(l => l.parent_id === line.parent_id);
-      return !hasChildren || line.parent_id !== null;
-    });
 
     const authorized = (lines || [])
       .filter(l => l.status === "autorizado" && l.parent_id === null)
@@ -158,10 +207,25 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
     );
   }
 
-  const currentYear = new Date().getFullYear();
-
   return (
     <div className="space-y-6">
+      {/* Year Selector */}
+      <div className="flex items-center gap-4">
+        <span className="text-sm font-medium text-muted-foreground">Año:</span>
+        <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(parseInt(v))}>
+          <SelectTrigger className="w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {availableYears.map((year) => (
+              <SelectItem key={year} value={year.toString()}>
+                {year}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       {/* Summary Cards - CADA UNO INDEPENDIENTE */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {/* Inversión Inicial - INDEPENDIENTE */}
@@ -169,7 +233,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-blue-500" />
-              Inversión Inicial {currentYear}
+              Inversión Inicial {selectedYear}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -191,7 +255,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <DollarSign className="h-4 w-4 text-green-500" />
-              CAPEX {currentYear}
+              CAPEX {selectedYear}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -208,11 +272,12 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
           </CardContent>
         </Card>
 
+        {/* Órdenes de Compra */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <FileText className="h-4 w-4" />
-              Órdenes de Compra
+              Órdenes de Compra {selectedYear}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -221,6 +286,19 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
           </CardContent>
         </Card>
 
+        {/* Facturación */}
+        <Card className="border-l-4 border-l-purple-500">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <Receipt className="h-4 w-4 text-purple-500" />
+              Facturación {selectedYear}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{formatUF(totalInvoices)}</p>
+            <p className="text-xs text-muted-foreground">{formatCLP(convertUFToPesos(totalInvoices))}</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Surfaces */}
