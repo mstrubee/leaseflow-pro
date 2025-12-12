@@ -24,6 +24,7 @@ import { EscalationDialog, Escalation } from "@/components/contracts/EscalationD
 import { RenegotiationDialog } from "@/components/contracts/RenegotiationDialog";
 import { RepositorySection } from "@/components/contracts/RepositorySection";
 import { CommercialConditionsSummary } from "@/components/contracts/CommercialConditionsSummary";
+import { ContractSurfacesSection } from "@/components/contracts/ContractSurfacesSection";
 import { ContractAlerts } from "@/components/alerts/ContractAlerts";
 import { BudgetDashboard } from "@/components/budget/BudgetDashboard";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
@@ -743,6 +744,9 @@ const ContractDetail = () => {
             superficieEdificadaLocal={contract.superficie_edificada_local}
           />
         )}
+
+        {/* Superficies y Datos - Independent Section */}
+        <ContractSurfacesSection contractId={contract.id} />
 
         {/* Actions for editing - only for negotiating contracts */}
         {isNegotiating && currentVersion && (
