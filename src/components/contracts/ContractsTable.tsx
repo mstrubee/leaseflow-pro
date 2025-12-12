@@ -101,7 +101,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
           <TableRow className="bg-muted/50">
             <TableHead className="font-semibold">Contrato</TableHead>
             <TableHead className="font-semibold">Ubicación</TableHead>
-            <TableHead className="font-semibold text-right"><div className="leading-tight">Costo<br/>Arriendo</div></TableHead>
+            <TableHead className="font-semibold text-center"><div className="leading-tight">Costo<br/>Arriendo</div></TableHead>
             <TableHead className="font-semibold text-center">Duración</TableHead>
             {isFirmadoView && (
               <>
@@ -147,19 +147,19 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 <TableCell>
                   <span className="text-sm text-muted-foreground">{address ? `${address.commune}` : "-"}</span>
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-center">
                   {currentVersion ? (() => {
                     const superficie = (contract.superficie_edificada_local || 0) + (contract.superficie_terreno || 0);
                     const gastosComunes = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
                     const fondoPromocion = currentVersion.regime_rent * ((currentVersion.fondo_promocion_percentage || 0) / 100);
                     const total = currentVersion.regime_rent + gastosComunes + fondoPromocion;
                     return (
-                      <div className="flex flex-col">
+                      <div className="flex flex-col items-center">
                         <span className="text-sm font-medium">{formatUF(total)}</span>
                         <div className="text-[9px] text-muted-foreground space-y-0">
                           <div>Canon: {formatUF(currentVersion.regime_rent)}</div>
-                          <div>GC: {formatUF(gastosComunes)}</div>
-                          <div>FP: {formatUF(fondoPromocion)}</div>
+                          <div>Gastos Comunes: {formatUF(gastosComunes)}</div>
+                          <div>Fondo Promoción: {formatUF(fondoPromocion)}</div>
                         </div>
                       </div>
                     );

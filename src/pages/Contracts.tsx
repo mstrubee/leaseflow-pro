@@ -492,7 +492,7 @@ const Contracts = () => {
                   onClick={() => handleSort("end_date")}
                 >
                   <ArrowUpDown className="h-3 w-3 mr-1" />
-                  Vcto {sortField === "end_date" && (sortDirection === "asc" ? "↑" : "↓")}
+                  Vencimiento {sortField === "end_date" && (sortDirection === "asc" ? "↑" : "↓")}
                 </Button>
 
                 {/* Sort by Notice Deadline */}
