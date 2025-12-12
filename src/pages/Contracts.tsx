@@ -432,75 +432,77 @@ const Contracts = () => {
 
           {isFirmadoView && (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="flex flex-wrap items-center gap-2">
                 {/* Operation Filter */}
                 <Select value={operationFilter} onValueChange={setOperationFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Estado Operación" />
+                  <SelectTrigger className="h-8 text-xs w-[110px]">
+                    <SelectValue placeholder="Operación" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="todos">Todos los Estados</SelectItem>
-                    <SelectItem value="operando">Operando</SelectItem>
-                    <SelectItem value="cerrado">Cerrado</SelectItem>
+                    <SelectItem value="todos" className="text-xs">Todos</SelectItem>
+                    <SelectItem value="operando" className="text-xs">Operando</SelectItem>
+                    <SelectItem value="cerrado" className="text-xs">Cerrado</SelectItem>
                   </SelectContent>
                 </Select>
 
                 {/* Obra Filter */}
                 <Select value={obraFilter} onValueChange={setObraFilter}>
-                  <SelectTrigger>
+                  <SelectTrigger className="h-8 text-xs w-[110px]">
                     <SelectValue placeholder="Obra" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="todos">Todas las Obras</SelectItem>
-                    <SelectItem value="terminada">Terminada</SelectItem>
-                    <SelectItem value="construccion">Construcción</SelectItem>
-                    <SelectItem value="remodelacion">Remodelación</SelectItem>
-                    <SelectItem value="ampliacion">Ampliación</SelectItem>
+                    <SelectItem value="todos" className="text-xs">Todos</SelectItem>
+                    <SelectItem value="terminada" className="text-xs">Terminada</SelectItem>
+                    <SelectItem value="construccion" className="text-xs">Construcción</SelectItem>
+                    <SelectItem value="remodelacion" className="text-xs">Remodelación</SelectItem>
+                    <SelectItem value="ampliacion" className="text-xs">Ampliación</SelectItem>
                   </SelectContent>
                 </Select>
 
                 {/* Patente Filter */}
                 <Select value={patenteFilter} onValueChange={setPatenteFilter}>
-                  <SelectTrigger>
+                  <SelectTrigger className="h-8 text-xs w-[110px]">
                     <SelectValue placeholder="Patente" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="todos">Todas las Patentes</SelectItem>
-                    <SelectItem value="sin_patente">Sin Patente</SelectItem>
-                    <SelectItem value="provisoria">Provisoria</SelectItem>
-                    <SelectItem value="definitiva">Definitiva</SelectItem>
+                    <SelectItem value="todos" className="text-xs">Todos</SelectItem>
+                    <SelectItem value="sin_patente" className="text-xs">Sin Patente</SelectItem>
+                    <SelectItem value="provisoria" className="text-xs">Provisoria</SelectItem>
+                    <SelectItem value="definitiva" className="text-xs">Definitiva</SelectItem>
                   </SelectContent>
                 </Select>
 
                 {/* Proyecto Filter */}
                 <Select value={proyectoFilter} onValueChange={setProyectoFilter}>
-                  <SelectTrigger>
+                  <SelectTrigger className="h-8 text-xs w-[110px]">
                     <SelectValue placeholder="Proyecto" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="todos">Todos los Proyectos</SelectItem>
-                    <SelectItem value="sin_proyecto">Sin Proyecto</SelectItem>
-                    <SelectItem value="en_curso">Proyecto en Curso</SelectItem>
+                    <SelectItem value="todos" className="text-xs">Todos</SelectItem>
+                    <SelectItem value="sin_proyecto" className="text-xs">Sin Proyecto</SelectItem>
+                    <SelectItem value="en_curso" className="text-xs">En Curso</SelectItem>
                   </SelectContent>
                 </Select>
 
                 {/* Sort by End Date */}
                 <Button
                   variant={sortField === "end_date" ? "default" : "outline"}
-                  className="justify-start"
+                  size="sm"
+                  className="h-8 text-xs px-2"
                   onClick={() => handleSort("end_date")}
                 >
-                  <ArrowUpDown className="h-4 w-4 mr-2" />
-                  Vencimiento {sortField === "end_date" && (sortDirection === "asc" ? "↑" : "↓")}
+                  <ArrowUpDown className="h-3 w-3 mr-1" />
+                  Vcto {sortField === "end_date" && (sortDirection === "asc" ? "↑" : "↓")}
                 </Button>
 
                 {/* Sort by Notice Deadline */}
                 <Button
                   variant={sortField === "notice_deadline" ? "default" : "outline"}
-                  className="justify-start"
+                  size="sm"
+                  className="h-8 text-xs px-2"
                   onClick={() => handleSort("notice_deadline")}
                 >
-                  <ArrowUpDown className="h-4 w-4 mr-2" />
+                  <ArrowUpDown className="h-3 w-3 mr-1" />
                   Aviso {sortField === "notice_deadline" && (sortDirection === "asc" ? "↑" : "↓")}
                 </Button>
               </div>
