@@ -52,10 +52,12 @@ export const CurrencyInput = ({
           id={id}
           type="number"
           step={currency === "UF" ? "0.01" : "1"}
-          value={value}
+          value={value === "0" ? "" : value}
           onChange={(e) => onChange(e.target.value)}
+          onFocus={(e) => e.target.select()}
           required={required}
           className="flex-1"
+          placeholder="0"
         />
         {showCurrencySelector && (
           <Select value={currency} onValueChange={(v) => onCurrencyChange(v as "UF" | "CLP")}>

@@ -143,10 +143,12 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false }: Contra
                 <Input
                   type="number"
                   step="0.01"
-                  value={surfaces[key] || 0}
+                  value={surfaces[key] === 0 ? "" : surfaces[key]}
                   onChange={(e) => handleChange(key, e.target.value)}
+                  onFocus={(e) => e.target.select()}
                   disabled={readOnly || calculated}
                   className={calculated ? "bg-muted" : ""}
+                  placeholder="0"
                 />
                 <span className="text-xs text-muted-foreground w-8">{unit}</span>
               </div>
