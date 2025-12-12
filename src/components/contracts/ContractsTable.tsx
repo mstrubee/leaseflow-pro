@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Trash2, AlertTriangle, ExternalLink } from "lucide-react";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
-import { addMonths, format, subMonths, parseISO } from "date-fns";
+import { addMonths, format, subMonths, parseISO, differenceInMonths, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 
 interface ContractVersion {
@@ -159,9 +159,23 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                       <span className="text-sm">{endDate ? formatDateShort(endDate) : "-"}</span>
                     </TableCell>
                     <TableCell className="text-center">
-                      <span className={`text-sm ${isPastNotice ? "text-destructive font-medium" : ""}`}>
-                        {noticeDeadline ? formatDateShort(noticeDeadline) : "-"}
-                      </span>
+                      <div className="flex flex-col">
+                        <span className={`text-sm ${isPastNotice ? "text-destructive font-medium" : ""}`}>
+                          {noticeDeadline ? formatDateShort(noticeDeadline) : "-"}
+                        </span>
+                        {noticeDeadline && (() => {
+                          const now = new Date();
+                          const monthsRemaining = differenceInMonths(noticeDeadline, now);
+                          const daysRemaining = differenceInDays(noticeDeadline, now);
+                          if (daysRemaining < 0) {
+                            return <span className="text-[10px] text-destructive font-medium">Vencido</span>;
+                          } else if (monthsRemaining < 1) {
+                            return <span className="text-[10px] text-amber-600 font-medium">Faltan {daysRemaining} días</span>;
+                          } else {
+                            return <span className="text-[10px] text-muted-foreground">Faltan {monthsRemaining} meses</span>;
+                          }
+                        })()}
+                      </div>
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <div className="flex flex-col gap-1.5 items-center">
