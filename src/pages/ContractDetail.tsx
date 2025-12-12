@@ -34,6 +34,7 @@ interface Contract {
   status: string;
   signed_date: string | null;
   created_at: string;
+  superficie_edificada_local: number | null;
   contract_addresses: Array<{
     street: string;
     number: string;
@@ -733,10 +734,13 @@ const ContractDetail = () => {
               has_periodic_adjustments: displayVersion.has_periodic_adjustments,
               first_adjustment_month: displayVersion.first_adjustment_month,
               adjustment_periodicity_months: displayVersion.adjustment_periodicity_months,
+              gastos_comunes_uf_m2: (displayVersion as any).gastos_comunes_uf_m2,
+              fondo_promocion_percentage: (displayVersion as any).fondo_promocion_percentage,
               rent_escalations: displayVersion.rent_escalations || [],
             }}
             signedDate={contract.signed_date}
             allVersions={allVersions}
+            superficieEdificadaLocal={contract.superficie_edificada_local}
           />
         )}
 
