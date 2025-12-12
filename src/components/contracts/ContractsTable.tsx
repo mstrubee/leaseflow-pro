@@ -101,7 +101,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
           <TableRow className="bg-muted/50">
             <TableHead className="font-semibold">Contrato</TableHead>
             <TableHead className="font-semibold">Ubicación</TableHead>
-            <TableHead className="font-semibold text-right">Canon</TableHead>
+            <TableHead className="font-semibold text-right"><div className="leading-tight">Costo<br/>Arriendo</div></TableHead>
             <TableHead className="font-semibold text-center">Duración</TableHead>
             {isFirmadoView && (
               <>
