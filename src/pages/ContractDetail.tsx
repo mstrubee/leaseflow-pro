@@ -92,6 +92,9 @@ const ContractDetail = () => {
   const [showDeleteConfirm2, setShowDeleteConfirm2] = useState(false);
   const [deletingRenegotiation, setDeletingRenegotiation] = useState(false);
   
+  // Dynamic superficie for real-time recalculation
+  const [superficieEdificada, setSuperficieEdificada] = useState<number | null>(null);
+  
   // Contact edit state
   const [showContactEdit, setShowContactEdit] = useState(false);
   const [editingContact, setEditingContact] = useState(false);
@@ -101,6 +104,14 @@ const ContractDetail = () => {
     phone: "",
     email: "",
   });
+  const [originalContactForm, setOriginalContactForm] = useState({
+    company: "",
+    name: "",
+    phone: "",
+    email: "",
+  });
+  const [showUnsavedChangesDialog, setShowUnsavedChangesDialog] = useState(false);
+  const [pendingCloseAction, setPendingCloseAction] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -525,14 +536,81 @@ const ContractDetail = () => {
 
   const openContactEdit = () => {
     const existingContact = contract?.contract_contacts?.[0];
-    setContactForm({
+    const formData = {
       company: existingContact?.company || "",
       name: existingContact?.name || "",
       phone: existingContact?.phone || "",
       email: existingContact?.email || "",
-    });
+    };
+    setContactForm(formData);
+    setOriginalContactForm(formData);
     setShowContactEdit(true);
-  }
+  };
+
+  const hasContactChanges = () => {
+    return (
+      contactForm.company !== originalContactForm.company ||
+      contactForm.name !== originalContactForm.name ||
+      contactForm.phone !== originalContactForm.phone ||
+      contactForm.email !== originalContactForm.email
+    );
+  };
+
+  const handleContactDialogClose = (open: boolean) => {
+    if (!open && hasContactChanges()) {
+      setShowUnsavedChangesDialog(true);
+      setPendingCloseAction(true);
+    } else {
+      setShowContactEdit(open);
+    }
+  };
+
+  const handleConfirmDiscard = () => {
+    setShowUnsavedChangesDialog(false);
+    setPendingCloseAction(false);
+    setShowContactEdit(false);
+  };
+
+  const handleConfirmSave = async () => {
+    setShowUnsavedChangesDialog(false);
+    setPendingCloseAction(false);
+    await handleSaveContact();
+  };
+
+  const formatPhoneNumber = (value: string, countryCode: string) => {
+    // Remove all non-digits
+    const digits = value.replace(/\D/g, "");
+    // Limit to 9 digits
+    const limited = digits.slice(0, 9);
+    return limited ? `${countryCode} ${limited}` : "";
+  };
+
+  const handlePhoneChange = (value: string) => {
+    const countryCode = getCountryCode();
+    // Extract digits from input, remove country code prefix if present
+    let digits = value.replace(/\D/g, "");
+    // If user typed the country code digits, remove them
+    const codeDigits = countryCode.replace(/\D/g, "");
+    if (digits.startsWith(codeDigits)) {
+      digits = digits.slice(codeDigits.length);
+    }
+    // Limit to 9 digits
+    digits = digits.slice(0, 9);
+    setContactForm({ ...contactForm, phone: digits ? `${countryCode} ${digits}` : "" });
+  };
+
+  const getCountryCode = () => {
+    const address = contract?.contract_addresses?.[0];
+    const country = address?.country || "Chile";
+    const countryCodes: Record<string, string> = {
+      "Chile": "+56",
+      "Argentina": "+54",
+      "Perú": "+51",
+      "Colombia": "+57",
+      "México": "+52",
+    };
+    return countryCodes[country] || "+56";
+  };
 
   const getStatusBadge = (status: string) => {
     const statusMap: { [key: string]: { label: string; className: string } } = {
@@ -666,21 +744,10 @@ const ContractDetail = () => {
 
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <User className="h-5 w-5" />
-                Contacto
-              </CardTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={openContactEdit}
-                className="gap-2"
-              >
-                <Edit className="h-4 w-4" />
-                Editar
-              </Button>
-            </div>
+            <CardTitle className="flex items-center gap-2">
+              <User className="h-5 w-5" />
+              Contacto
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {contact && (contact.company || contact.name || contact.phone || contact.email) ? (
@@ -697,12 +764,10 @@ const ContractDetail = () => {
                     <p className="font-medium">{contact.name}</p>
                   </div>
                 )}
-                {contact.phone && (
-                  <div>
-                    <p className="text-sm text-muted-foreground">Teléfono</p>
-                    <p className="font-medium">{contact.phone}</p>
-                  </div>
-                )}
+                <div>
+                  <p className="text-sm text-muted-foreground">Teléfono</p>
+                  <p className="font-medium">{contact.phone || "No se ha entregado"}</p>
+                </div>
                 {contact.email && (
                   <div>
                     <p className="text-sm text-muted-foreground">Email</p>
@@ -711,7 +776,7 @@ const ContractDetail = () => {
                 )}
               </div>
             ) : (
-              <p className="text-muted-foreground">No hay contacto registrado. Use el botón Editar para agregar.</p>
+              <p className="text-muted-foreground">No hay contacto registrado. Use el botón Editar de la parte superior para agregar.</p>
             )}
           </CardContent>
         </Card>
@@ -741,12 +806,15 @@ const ContractDetail = () => {
             }}
             signedDate={contract.signed_date}
             allVersions={allVersions}
-            superficieEdificadaLocal={contract.superficie_edificada_local}
+            superficieEdificadaLocal={superficieEdificada ?? contract.superficie_edificada_local}
           />
         )}
 
         {/* Superficies y Datos - Independent Section */}
-        <ContractSurfacesSection contractId={contract.id} />
+        <ContractSurfacesSection 
+          contractId={contract.id} 
+          onSurfaceChange={(superficie) => setSuperficieEdificada(superficie)}
+        />
 
         {/* Actions for editing - only for negotiating contracts */}
         {isNegotiating && currentVersion && (
@@ -1018,7 +1086,7 @@ const ContractDetail = () => {
       </main>
 
       {/* Dialog: Editar Contacto */}
-      <Dialog open={showContactEdit} onOpenChange={setShowContactEdit}>
+      <Dialog open={showContactEdit} onOpenChange={handleContactDialogClose}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Editar Contacto</DialogTitle>
@@ -1043,13 +1111,18 @@ const ContractDetail = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-phone">Teléfono</Label>
-              <Input
-                id="edit-phone"
-                value={contactForm.phone}
-                onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
-                placeholder="+56 9 1234 5678"
-              />
+              <Label htmlFor="edit-phone">Teléfono (opcional)</Label>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">{getCountryCode()}</span>
+                <Input
+                  id="edit-phone"
+                  value={contactForm.phone.replace(/^\+\d+\s?/, "")}
+                  onChange={(e) => handlePhoneChange(e.target.value)}
+                  placeholder="9 12345678"
+                  maxLength={11}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">9 dígitos máximo</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-email">Email</Label>
@@ -1063,7 +1136,7 @@ const ContractDetail = () => {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowContactEdit(false)}>
+            <Button variant="outline" onClick={() => handleContactDialogClose(false)}>
               Cancelar
             </Button>
             <Button onClick={handleSaveContact} disabled={editingContact}>
@@ -1073,6 +1146,26 @@ const ContractDetail = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog: Unsaved Changes Confirmation */}
+      <AlertDialog open={showUnsavedChangesDialog} onOpenChange={setShowUnsavedChangesDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Desea guardar los cambios?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tiene cambios sin guardar en la información de contacto.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleConfirmDiscard}>
+              Descartar
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmSave}>
+              Guardar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
