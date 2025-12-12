@@ -187,52 +187,79 @@ export function ContractsTable({
                       </span>
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center gap-1">
-                        {/* Operation Status */}
-                        <Select
-                          value={contract.operation_status || "operando"}
-                          onValueChange={(value) => onUpdateField({ stopPropagation: () => {} } as React.MouseEvent, contract.id, "operation_status", value)}
-                        >
-                          <SelectTrigger className="h-6 text-[10px] px-1.5 w-[55px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="operando" className="text-xs">Op.</SelectItem>
-                            <SelectItem value="cerrado" className="text-xs">Cerr.</SelectItem>
-                          </SelectContent>
-                        </Select>
+                      <div className="flex flex-col gap-1.5">
+                        {/* Row 1: Operación & Obra */}
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex flex-col">
+                            <span className="text-[9px] text-muted-foreground font-medium mb-0.5">Operación</span>
+                            <Select
+                              value={contract.operation_status || "operando"}
+                              onValueChange={(value) => onUpdateField({ stopPropagation: () => {} } as React.MouseEvent, contract.id, "operation_status", value)}
+                            >
+                              <SelectTrigger className="h-6 text-[10px] px-1.5 w-[85px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="operando" className="text-xs">Operando</SelectItem>
+                                <SelectItem value="cerrado" className="text-xs">Cerrado</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          
+                          <div className="flex flex-col">
+                            <span className="text-[9px] text-muted-foreground font-medium mb-0.5">Obra</span>
+                            <Select
+                              value={contract.obra_status || "terminada"}
+                              onValueChange={(value) => onUpdateField({ stopPropagation: () => {} } as React.MouseEvent, contract.id, "obra_status", value)}
+                            >
+                              <SelectTrigger className="h-6 text-[10px] px-1.5 w-[100px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="terminada" className="text-xs">Terminada</SelectItem>
+                                <SelectItem value="construccion" className="text-xs">Construcción</SelectItem>
+                                <SelectItem value="remodelacion" className="text-xs">Remodelación</SelectItem>
+                                <SelectItem value="ampliacion" className="text-xs">Ampliación</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
                         
-                        {/* Obra Status */}
-                        <Select
-                          value={contract.obra_status || "terminada"}
-                          onValueChange={(value) => onUpdateField({ stopPropagation: () => {} } as React.MouseEvent, contract.id, "obra_status", value)}
-                        >
-                          <SelectTrigger className="h-6 text-[10px] px-1.5 w-[55px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="terminada" className="text-xs">Term.</SelectItem>
-                            <SelectItem value="construccion" className="text-xs">Constr.</SelectItem>
-                            <SelectItem value="remodelacion" className="text-xs">Remod.</SelectItem>
-                            <SelectItem value="ampliacion" className="text-xs">Ampl.</SelectItem>
-                            <SelectItem value="con_proyecto" className="text-xs">Proy.</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        
-                        {/* Patente Status */}
-                        <Select
-                          value={contract.patente_status || "sin_patente"}
-                          onValueChange={(value) => onUpdateField({ stopPropagation: () => {} } as React.MouseEvent, contract.id, "patente_status", value)}
-                        >
-                          <SelectTrigger className="h-6 text-[10px] px-1.5 w-[55px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="sin_patente" className="text-xs">S/Pat.</SelectItem>
-                            <SelectItem value="provisoria" className="text-xs">Prov.</SelectItem>
-                            <SelectItem value="definitiva" className="text-xs">Def.</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        {/* Row 2: Patente & Proyecto */}
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex flex-col">
+                            <span className="text-[9px] text-muted-foreground font-medium mb-0.5">Patente</span>
+                            <Select
+                              value={contract.patente_status || "sin_patente"}
+                              onValueChange={(value) => onUpdateField({ stopPropagation: () => {} } as React.MouseEvent, contract.id, "patente_status", value)}
+                            >
+                              <SelectTrigger className="h-6 text-[10px] px-1.5 w-[85px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="sin_patente" className="text-xs">Sin Patente</SelectItem>
+                                <SelectItem value="provisoria" className="text-xs">Provisoria</SelectItem>
+                                <SelectItem value="definitiva" className="text-xs">Definitiva</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          
+                          <div className="flex flex-col">
+                            <span className="text-[9px] text-muted-foreground font-medium mb-0.5">Proyecto</span>
+                            <Select
+                              value={(contract as any).proyecto_status || "sin_proyecto"}
+                              onValueChange={(value) => onUpdateField({ stopPropagation: () => {} } as React.MouseEvent, contract.id, "proyecto_status", value)}
+                            >
+                              <SelectTrigger className="h-6 text-[10px] px-1.5 w-[100px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="sin_proyecto" className="text-xs">Sin Proyecto</SelectItem>
+                                <SelectItem value="en_curso" className="text-xs">En Curso</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
                       </div>
                     </TableCell>
                   </>

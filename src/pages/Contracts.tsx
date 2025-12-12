@@ -71,9 +71,11 @@ const Contracts = () => {
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Filters
+  // Filters
   const [operationFilter, setOperationFilter] = useState<string>("todos");
   const [obraFilter, setObraFilter] = useState<string>("todos");
   const [patenteFilter, setPatenteFilter] = useState<string>("todos");
+  const [proyectoFilter, setProyectoFilter] = useState<string>("todos");
 
   // Sorting
   const [sortField, setSortField] = useState<SortField>(null);
@@ -93,7 +95,7 @@ const Contracts = () => {
 
   useEffect(() => {
     filterAndSortContracts();
-  }, [searchTerm, statusFilter, contracts, operationFilter, obraFilter, patenteFilter, sortField, sortDirection]);
+  }, [searchTerm, statusFilter, contracts, operationFilter, obraFilter, patenteFilter, proyectoFilter, sortField, sortDirection]);
 
   const loadContracts = async () => {
     const { data } = await supabase
@@ -181,6 +183,11 @@ const Contracts = () => {
       filtered = filtered.filter((contract) => contract.patente_status === patenteFilter);
     }
 
+    // Proyecto filter
+    if (proyectoFilter !== "todos") {
+      filtered = filtered.filter((contract) => (contract as any).proyecto_status === proyectoFilter);
+    }
+
     // Sorting
     if (sortField) {
       filtered = [...filtered].sort((a, b) => {
@@ -225,12 +232,13 @@ const Contracts = () => {
     setOperationFilter("todos");
     setObraFilter("todos");
     setPatenteFilter("todos");
+    setProyectoFilter("todos");
     setSortField(null);
     setSortDirection("asc");
     setSearchTerm("");
   };
 
-  const hasActiveFilters = operationFilter !== "todos" || obraFilter !== "todos" || patenteFilter !== "todos" || sortField !== null;
+  const hasActiveFilters = operationFilter !== "todos" || obraFilter !== "todos" || patenteFilter !== "todos" || proyectoFilter !== "todos" || sortField !== null;
 
   const handleDeleteClick = (e: React.MouseEvent, contract: Contract) => {
     e.stopPropagation();
@@ -344,13 +352,17 @@ const Contracts = () => {
     construccion: "Construcción",
     remodelacion: "Remodelación",
     ampliacion: "Ampliación",
-    con_proyecto: "Con Proyecto",
   };
 
   const patenteLabels: Record<string, string> = {
     sin_patente: "Sin Patente",
     provisoria: "Provisoria",
     definitiva: "Definitiva",
+  };
+
+  const proyectoLabels: Record<string, string> = {
+    sin_proyecto: "Sin Proyecto",
+    en_curso: "Proyecto en Curso",
   };
 
   if (authLoading) {
@@ -440,7 +452,6 @@ const Contracts = () => {
                     <SelectItem value="construccion">Construcción</SelectItem>
                     <SelectItem value="remodelacion">Remodelación</SelectItem>
                     <SelectItem value="ampliacion">Ampliación</SelectItem>
-                    <SelectItem value="con_proyecto">Con Proyecto</SelectItem>
                   </SelectContent>
                 </Select>
 
@@ -454,6 +465,18 @@ const Contracts = () => {
                     <SelectItem value="sin_patente">Sin Patente</SelectItem>
                     <SelectItem value="provisoria">Provisoria</SelectItem>
                     <SelectItem value="definitiva">Definitiva</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Proyecto Filter */}
+                <Select value={proyectoFilter} onValueChange={setProyectoFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Proyecto" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos los Proyectos</SelectItem>
+                    <SelectItem value="sin_proyecto">Sin Proyecto</SelectItem>
+                    <SelectItem value="en_curso">Proyecto en Curso</SelectItem>
                   </SelectContent>
                 </Select>
 

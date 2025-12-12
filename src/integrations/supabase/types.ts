@@ -698,6 +698,7 @@ export type Database = {
           obra_status: string | null
           operation_status: string | null
           patente_status: string | null
+          proyecto_status: string | null
           signed_date: string | null
           status: Database["public"]["Enums"]["contract_status"]
           superficie_bodega_backoffice: number | null
@@ -722,6 +723,7 @@ export type Database = {
           obra_status?: string | null
           operation_status?: string | null
           patente_status?: string | null
+          proyecto_status?: string | null
           signed_date?: string | null
           status?: Database["public"]["Enums"]["contract_status"]
           superficie_bodega_backoffice?: number | null
@@ -746,6 +748,7 @@ export type Database = {
           obra_status?: string | null
           operation_status?: string | null
           patente_status?: string | null
+          proyecto_status?: string | null
           signed_date?: string | null
           status?: Database["public"]["Enums"]["contract_status"]
           superficie_bodega_backoffice?: number | null
