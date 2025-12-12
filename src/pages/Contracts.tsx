@@ -37,6 +37,8 @@ interface ContractVersion {
   effective_date: string | null;
   notice_type: string;
   notice_value: string;
+  gastos_comunes_uf_m2: number | null;
+  fondo_promocion_percentage: number | null;
 }
 
 interface Contract {
@@ -51,6 +53,8 @@ interface Contract {
   is_expired_but_operating: boolean | null;
   contract_addresses: Array<{ region: string; commune: string }>;
   contract_versions: ContractVersion[];
+  superficie_edificada_local: number | null;
+  superficie_terreno: number | null;
 }
 
 type SortField = "end_date" | "notice_deadline" | "name" | null;
@@ -103,7 +107,7 @@ const Contracts = () => {
       .select(`
         *,
         contract_addresses (region, commune),
-        contract_versions (regime_rent, duration_months, is_current, effective_date, notice_type, notice_value)
+        contract_versions (regime_rent, duration_months, is_current, effective_date, notice_type, notice_value, gastos_comunes_uf_m2, fondo_promocion_percentage)
       `)
       .is("deleted_at", null)
       .order("created_at", { ascending: false });

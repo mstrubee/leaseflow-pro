@@ -15,6 +15,8 @@ interface ContractVersion {
   effective_date: string | null;
   notice_type: string;
   notice_value: string;
+  gastos_comunes_uf_m2: number | null;
+  fondo_promocion_percentage: number | null;
 }
 
 interface Contract {
@@ -29,6 +31,8 @@ interface Contract {
   is_expired_but_operating: boolean | null;
   contract_addresses: Array<{ region: string; commune: string }>;
   contract_versions: ContractVersion[];
+  superficie_edificada_local: number | null;
+  superficie_terreno: number | null;
 }
 
 interface ContractsTableProps {
@@ -144,9 +148,22 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   <span className="text-sm text-muted-foreground">{address ? `${address.commune}` : "-"}</span>
                 </TableCell>
                 <TableCell className="text-right">
-                  <span className="text-sm font-medium">
-                    {currentVersion ? formatUF(currentVersion.regime_rent) : "-"}
-                  </span>
+                  {currentVersion ? (() => {
+                    const superficie = (contract.superficie_edificada_local || 0) + (contract.superficie_terreno || 0);
+                    const gastosComunes = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
+                    const fondoPromocion = currentVersion.regime_rent * ((currentVersion.fondo_promocion_percentage || 0) / 100);
+                    const total = currentVersion.regime_rent + gastosComunes + fondoPromocion;
+                    return (
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium">{formatUF(total)}</span>
+                        <div className="text-[9px] text-muted-foreground space-y-0">
+                          <div>Canon: {formatUF(currentVersion.regime_rent)}</div>
+                          <div>GC: {formatUF(gastosComunes)}</div>
+                          <div>FP: {formatUF(fondoPromocion)}</div>
+                        </div>
+                      </div>
+                    );
+                  })() : "-"}
                 </TableCell>
                 <TableCell className="text-center">
                   <span className="text-sm text-muted-foreground">
