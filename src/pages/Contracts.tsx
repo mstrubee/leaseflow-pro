@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Search, ArrowLeft, Trash2, ArrowUpDown, X, Cloud, Loader2, ExternalLink, AlertTriangle } from "lucide-react";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
+import { ContractsTable } from "@/components/contracts/ContractsTable";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
@@ -485,163 +486,28 @@ const Contracts = () => {
           )}
         </Card>
 
-        <div className="grid gap-4">
-          {filteredContracts.map((contract) => {
-            const currentVersion = contract.contract_versions?.find((v) => v.is_current);
-            const address = contract.contract_addresses?.[0];
-            const endDate = calculateEndDate(contract);
-            const noticeDeadline = calculateNoticeDeadline(contract);
-
-            return (
-              <Card
-                key={contract.id}
-                className="p-6 hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => navigate(`/contracts/${contract.id}`)}
+        {filteredContracts.length > 0 ? (
+          <ContractsTable
+            contracts={filteredContracts}
+            isFirmadoView={isFirmadoView}
+            onDelete={handleDeleteClick}
+            onUpdateField={updateContractField}
+            onRefresh={loadContracts}
+          />
+        ) : (
+          <Card className="p-12">
+            <div className="text-center text-muted-foreground">
+              <p>No se encontraron contratos</p>
+              <Button
+                variant="link"
+                className="mt-2"
+                onClick={() => navigate("/contracts/new")}
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="space-y-3 flex-1">
-                    <div className="flex items-center gap-3">
-                      <h3 className="text-lg font-semibold">{contract.name}</h3>
-                      {getStatusBadge(contract.status === "vencido" && contract.is_expired_but_operating ? "firmado" : contract.status)}
-                      {contract.status === "vencido" && contract.is_expired_but_operating && (
-                        <Badge variant="destructive" className="gap-1">
-                          <AlertTriangle className="h-3 w-3" />
-                          VENCIDO
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <p className="text-muted-foreground">Ubicación</p>
-                        <p className="font-medium">
-                          {address ? `${address.commune}, ${address.region}` : "Sin dirección"}
-                        </p>
-                      </div>
-                      {currentVersion && (
-                        <>
-                          <div>
-                            <p className="text-muted-foreground">Canon de Arriendo</p>
-                            <p className="font-medium">
-                              {formatUF(currentVersion.regime_rent)}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground">Duración</p>
-                            <p className="font-medium">{currentVersion.duration_months} meses</p>
-                          </div>
-                        </>
-                      )}
-                      {isFirmadoView && (
-                        <>
-                          <div>
-                            <p className="text-muted-foreground">Fecha Término</p>
-                            <p className="font-medium">
-                              {endDate 
-                                ? format(endDate, "dd MMM yyyy", { locale: es })
-                                : "Sin definir"}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground">Fecha Tope Aviso</p>
-                            <p className={`font-medium ${noticeDeadline && noticeDeadline < new Date() ? "text-destructive" : ""}`}>
-                              {noticeDeadline 
-                                ? format(noticeDeadline, "dd MMM yyyy", { locale: es })
-                                : "Sin definir"}
-                            </p>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Right side - Status selectors for firmado contracts */}
-                  {isFirmadoView && (
-                    <div className="flex flex-col gap-2 min-w-[160px]" onClick={(e) => e.stopPropagation()}>
-                      <Select
-                        value={contract.operation_status || "operando"}
-                        onValueChange={(value) => updateContractField({ stopPropagation: () => {} } as React.MouseEvent, contract.id, "operation_status", value)}
-                      >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="operando">Operando</SelectItem>
-                          <SelectItem value="cerrado">Cerrado</SelectItem>
-                        </SelectContent>
-                      </Select>
-
-                      <Select
-                        value={contract.obra_status || "terminada"}
-                        onValueChange={(value) => updateContractField({ stopPropagation: () => {} } as React.MouseEvent, contract.id, "obra_status", value)}
-                      >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="terminada">Obra: Terminada</SelectItem>
-                          <SelectItem value="construccion">Obra: Construcción</SelectItem>
-                          <SelectItem value="remodelacion">Obra: Remodelación</SelectItem>
-                          <SelectItem value="ampliacion">Obra: Ampliación</SelectItem>
-                        </SelectContent>
-                      </Select>
-
-                      <Select
-                        value={contract.patente_status || "sin_patente"}
-                        onValueChange={(value) => updateContractField({ stopPropagation: () => {} } as React.MouseEvent, contract.id, "patente_status", value)}
-                      >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="sin_patente">Sin Patente</SelectItem>
-                          <SelectItem value="provisoria">Patente: Provisoria</SelectItem>
-                          <SelectItem value="definitiva">Patente: Definitiva</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  {/* Contract Status Actions */}
-                  {isFirmadoView && (
-                    <div onClick={(e) => e.stopPropagation()}>
-                      <ContractStatusActions
-                        contractId={contract.id}
-                        contractName={contract.name}
-                        currentStatus={contract.status}
-                        isExpiredButOperating={contract.is_expired_but_operating || false}
-                        onStatusChange={loadContracts}
-                      />
-                    </div>
-                  )}
-
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                    onClick={(e) => handleDeleteClick(e, contract)}
-                  >
-                    <Trash2 className="h-5 w-5" />
-                  </Button>
-                </div>
-              </Card>
-            );
-          })}
-
-          {filteredContracts.length === 0 && (
-            <Card className="p-12">
-              <div className="text-center text-muted-foreground">
-                <p>No se encontraron contratos</p>
-                <Button
-                  variant="link"
-                  className="mt-2"
-                  onClick={() => navigate("/contracts/new")}
-                >
-                  Crear primer contrato
-                </Button>
-              </div>
-            </Card>
-          )}
-        </div>
+                Crear primer contrato
+              </Button>
+            </div>
+          </Card>
+        )}
       </main>
 
       {/* First confirmation dialog */}

@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Check, Loader2, History, Trash2 } from "lucide-react";
+import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, History, Trash2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,6 +23,7 @@ import { DocumentVersions, DocumentVersion } from "@/components/contracts/Docume
 import { EscalationDialog, Escalation } from "@/components/contracts/EscalationDialog";
 import { RenegotiationDialog } from "@/components/contracts/RenegotiationDialog";
 import { RepositorySection } from "@/components/contracts/RepositorySection";
+import { CommercialConditionsSummary } from "@/components/contracts/CommercialConditionsSummary";
 import { ContractAlerts } from "@/components/alerts/ContractAlerts";
 import { BudgetDashboard } from "@/components/budget/BudgetDashboard";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
@@ -59,6 +60,10 @@ interface Contract {
     notice_value: string;
     effective_date: string | null;
     created_at: string;
+    guarantee_multiplier: number | null;
+    has_periodic_adjustments: boolean | null;
+    first_adjustment_month: number | null;
+    adjustment_periodicity_months: number | null;
     rent_escalations: Array<{
       id: string;
       month_number: number;
@@ -709,244 +714,86 @@ const ContractDetail = () => {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
+        {/* Condiciones Comerciales - Compact Summary */}
+        {displayVersion && (
+          <CommercialConditionsSummary
+            version={{
+              id: displayVersion.id,
+              version_number: displayVersion.version_number,
+              is_current: displayVersion.is_current,
+              is_renegotiation: displayVersion.is_renegotiation,
+              initial_rent: displayVersion.initial_rent,
+              regime_rent: displayVersion.regime_rent,
+              variable_rent_percentage: displayVersion.variable_rent_percentage,
+              duration_months: displayVersion.duration_months,
+              notice_type: displayVersion.notice_type,
+              notice_value: displayVersion.notice_value,
+              effective_date: displayVersion.effective_date,
+              guarantee_multiplier: displayVersion.guarantee_multiplier,
+              has_periodic_adjustments: displayVersion.has_periodic_adjustments,
+              first_adjustment_month: displayVersion.first_adjustment_month,
+              adjustment_periodicity_months: displayVersion.adjustment_periodicity_months,
+              rent_escalations: displayVersion.rent_escalations || [],
+            }}
+            signedDate={contract.signed_date}
+            allVersions={allVersions}
+          />
+        )}
+
+        {/* Actions for editing - only for negotiating contracts */}
+        {isNegotiating && currentVersion && (
+          <Card className="p-4">
             <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <DollarSign className="h-5 w-5" />
-                  Condiciones Comerciales
-                </CardTitle>
-                <CardDescription>
-                  {hasActiveRenegotiation 
-                    ? `Versión vigente: ${displayVersion?.version_number || "N/A"} (renegociación en curso)`
-                    : `Versión ${displayVersion?.version_number || "N/A"}`
-                  }
-                </CardDescription>
-              </div>
+              <p className="text-sm text-muted-foreground">Gestionar condiciones comerciales</p>
               <div className="flex items-center gap-2">
-                {isNegotiating && currentVersion && (
-                  <EscalationDialog
-                    escalations={currentVersion.rent_escalations?.map(e => ({
-                      id: e.id,
-                      month_number: e.month_number,
-                      amount: e.amount
-                    })) || []}
-                    initialRent={currentVersion.initial_rent || currentVersion.regime_rent}
-                    regimeRent={currentVersion.regime_rent}
-                    durationMonths={currentVersion.duration_months}
-                    onSave={handleSaveEscalations}
-                  />
-                )}
-                {isSigned && displayVersion && !hasActiveRenegotiation && (
-                  <RenegotiationDialog
-                    contractId={contract.id}
-                    currentVersion={{
-                      id: displayVersion.id,
-                      version_number: displayVersion.version_number,
-                      initial_rent: displayVersion.initial_rent,
-                      regime_rent: displayVersion.regime_rent,
-                      variable_rent_percentage: displayVersion.variable_rent_percentage,
-                      duration_months: displayVersion.duration_months,
-                      notice_type: displayVersion.notice_type,
-                      notice_value: displayVersion.notice_value,
-                    }}
-                    hasActiveRenegotiation={false}
-                    onSuccess={loadContract}
-                  />
-                )}
+                <EscalationDialog
+                  escalations={currentVersion.rent_escalations?.map(e => ({
+                    id: e.id,
+                    month_number: e.month_number,
+                    amount: e.amount
+                  })) || []}
+                  initialRent={currentVersion.initial_rent || currentVersion.regime_rent}
+                  regimeRent={currentVersion.regime_rent}
+                  durationMonths={currentVersion.duration_months}
+                  onSave={handleSaveEscalations}
+                />
               </div>
             </div>
-          </CardHeader>
-          <CardContent>
-            {displayVersion ? (
-              <div className="space-y-4">
-                {/* Renegotiation in progress notice */}
-                {hasActiveRenegotiation && (
-                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-                    <p className="text-sm text-amber-700 dark:text-amber-400">
-                      ⚠️ Hay una renegociación en curso. Las condiciones mostradas son las vigentes hasta que se firme la renegociación.
-                    </p>
-                  </div>
-                )}
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {displayVersion.initial_rent && (
-                    <div>
-                      <p className="text-sm text-muted-foreground">Canon Inicial</p>
-                      <p className="text-lg font-semibold">
-                        {formatCurrency(displayVersion.initial_rent)}
-                      </p>
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-sm text-muted-foreground">Canon en Régimen</p>
-                    <p className="text-lg font-semibold">
-                      {formatCurrency(displayVersion.regime_rent)}
-                    </p>
-                  </div>
-                  {displayVersion.variable_rent_percentage && (
-                    <div>
-                      <p className="text-sm text-muted-foreground">Arriendo Variable</p>
-                      <p className="text-lg font-semibold">
-                        {displayVersion.variable_rent_percentage}%
-                      </p>
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-sm text-muted-foreground">Duración</p>
-                    <p className="text-lg font-semibold">
-                      {displayVersion.duration_months} meses (
-                      {Math.floor(displayVersion.duration_months / 12)} años{" "}
-                      {displayVersion.duration_months % 12} meses)
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Aviso de Término</p>
-                    <p className="text-lg font-semibold">
-                      {displayVersion.notice_type === "meses"
-                        ? `${displayVersion.notice_value} meses`
-                        : formatDate(displayVersion.notice_value)}
-                    </p>
-                  </div>
-                </div>
+          </Card>
+        )}
 
-                {/* Original Contract Dates */}
-                {contract.signed_date && (
-                  <div className="pt-4 border-t border-border">
-                    <p className="text-sm font-medium text-muted-foreground mb-3">Contrato Original</p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Fecha de Firma</p>
-                        <p className="font-medium">{formatDate(contract.signed_date)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Fecha de Término</p>
-                        <p className="font-medium">
-                          {(() => {
-                            const originalVersion = allVersions.find(v => v.version_number === 1);
-                            if (originalVersion && contract.signed_date) {
-                              const endDate = new Date(contract.signed_date);
-                              endDate.setMonth(endDate.getMonth() + originalVersion.duration_months);
-                              return formatDate(endDate.toISOString());
-                            }
-                            return "N/A";
-                          })()}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Aviso Término Anticipado</p>
-                        <p className="font-medium">
-                          {(() => {
-                            const originalVersion = allVersions.find(v => v.version_number === 1);
-                            if (originalVersion && contract.signed_date) {
-                              if (originalVersion.notice_type === "fecha") {
-                                return formatDate(originalVersion.notice_value);
-                              } else {
-                                const endDate = new Date(contract.signed_date);
-                                endDate.setMonth(endDate.getMonth() + originalVersion.duration_months);
-                                const noticeDate = new Date(endDate);
-                                noticeDate.setMonth(noticeDate.getMonth() - parseInt(originalVersion.notice_value));
-                                return formatDate(noticeDate.toISOString());
-                              }
-                            }
-                            return "N/A";
-                          })()}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
+        {/* Renegotiation option for signed contracts */}
+        {isSigned && displayVersion && !hasActiveRenegotiation && (
+          <Card className="p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">Iniciar renegociación de condiciones</p>
+              <RenegotiationDialog
+                contractId={contract.id}
+                currentVersion={{
+                  id: displayVersion.id,
+                  version_number: displayVersion.version_number,
+                  initial_rent: displayVersion.initial_rent,
+                  regime_rent: displayVersion.regime_rent,
+                  variable_rent_percentage: displayVersion.variable_rent_percentage,
+                  duration_months: displayVersion.duration_months,
+                  notice_type: displayVersion.notice_type,
+                  notice_value: displayVersion.notice_value,
+                }}
+                hasActiveRenegotiation={false}
+                onSuccess={loadContract}
+              />
+            </div>
+          </Card>
+        )}
 
-                {/* Extension/Prorroga Dates */}
-                {(() => {
-                  const signedExtensions = allVersions
-                    .filter(v => v.version_number > 1 && !v.is_renegotiation && v.effective_date)
-                    .sort((a, b) => a.version_number - b.version_number);
-                  
-                  if (signedExtensions.length === 0) return null;
-                  
-                  return signedExtensions.map((extension, idx) => (
-                    <div key={extension.id} className="pt-4 border-t border-border">
-                      <p className="text-sm font-medium text-muted-foreground mb-3">
-                        Prórroga #{idx + 1}
-                      </p>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
-                          <p className="text-xs text-muted-foreground">Fecha de Firma</p>
-                          <p className="font-medium">
-                            {extension.effective_date ? formatDate(extension.effective_date) : "N/A"}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Fecha de Término</p>
-                          <p className="font-medium">
-                            {(() => {
-                              if (extension.effective_date) {
-                                const endDate = new Date(extension.effective_date);
-                                endDate.setMonth(endDate.getMonth() + extension.duration_months);
-                                return formatDate(endDate.toISOString());
-                              }
-                              return "N/A";
-                            })()}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Aviso Término Anticipado</p>
-                          <p className="font-medium">
-                            {(() => {
-                              if (extension.effective_date) {
-                                if (extension.notice_type === "fecha") {
-                                  return formatDate(extension.notice_value);
-                                } else {
-                                  const endDate = new Date(extension.effective_date);
-                                  endDate.setMonth(endDate.getMonth() + extension.duration_months);
-                                  const noticeDate = new Date(endDate);
-                                  noticeDate.setMonth(noticeDate.getMonth() - parseInt(extension.notice_value));
-                                  return formatDate(noticeDate.toISOString());
-                                }
-                              }
-                              return "N/A";
-                            })()}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ));
-                })()}
-
-                {/* Escalation display */}
-                {displayVersion.rent_escalations && displayVersion.rent_escalations.length > 0 && (
-                  <div className="pt-4 border-t border-border">
-                    <p className="text-sm text-muted-foreground mb-3">Escalonamiento de Arriendo</p>
-                    <div className="space-y-2">
-                      {displayVersion.rent_escalations
-                        .sort((a, b) => a.month_number - b.month_number)
-                        .map((escalation, idx) => (
-                          <div
-                            key={escalation.id}
-                            className="flex items-center gap-4 p-2 bg-muted/50 rounded-lg"
-                          >
-                            <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold">
-                              {idx + 1}
-                            </div>
-                            <span className="text-sm">
-                              <span className="text-muted-foreground">Mes {escalation.month_number}:</span>{" "}
-                              <span className="font-semibold text-primary">{formatCurrency(escalation.amount)}</span>
-                            </span>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p className="text-muted-foreground">
-                No hay condiciones comerciales registradas
-              </p>
-            )}
-          </CardContent>
-        </Card>
+        {/* Renegotiation in progress notice */}
+        {hasActiveRenegotiation && (
+          <Card className="p-4 border-amber-500/30 bg-amber-500/5">
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              ⚠️ Hay una renegociación en curso. Las condiciones mostradas son las vigentes hasta que se firme la renegociación.
+            </p>
+          </Card>
+        )}
 
         {/* Version History */}
         {allVersions.length > 1 && (
