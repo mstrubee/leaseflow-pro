@@ -23,9 +23,10 @@ interface SurfaceData {
 interface ContractSurfacesSectionProps {
   contractId: string;
   readOnly?: boolean;
+  onSurfaceChange?: (superficie: number) => void;
 }
 
-export const ContractSurfacesSection = ({ contractId, readOnly = false }: ContractSurfacesSectionProps) => {
+export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfaceChange }: ContractSurfacesSectionProps) => {
   const [surfaces, setSurfaces] = useState<SurfaceData>({
     superficie_terreno: 0,
     superficie_edificada_local: 0,
@@ -95,6 +96,11 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false }: Contra
     }
     
     setSurfaces(newData);
+    
+    // Notify parent of surface change for real-time recalculation
+    if (onSurfaceChange) {
+      onSurfaceChange(newData.superficie_edificada_local);
+    }
     
     try {
       await supabase.from("contracts").update(newData).eq("id", contractId);
