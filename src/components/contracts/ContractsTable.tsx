@@ -1,21 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Trash2, AlertTriangle, ExternalLink } from "lucide-react";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
@@ -52,22 +39,16 @@ interface ContractsTableProps {
   onRefresh: () => void;
 }
 
-export function ContractsTable({ 
-  contracts, 
-  isFirmadoView, 
-  onDelete, 
-  onUpdateField,
-  onRefresh 
-}: ContractsTableProps) {
+export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateField, onRefresh }: ContractsTableProps) {
   const navigate = useNavigate();
 
   const calculateEndDate = (contract: Contract): Date | null => {
     const currentVersion = contract.contract_versions?.find((v) => v.is_current);
     if (!currentVersion) return null;
 
-    const startDate = currentVersion.effective_date 
+    const startDate = currentVersion.effective_date
       ? parseISO(currentVersion.effective_date)
-      : contract.signed_date 
+      : contract.signed_date
         ? parseISO(contract.signed_date)
         : null;
 
@@ -122,7 +103,7 @@ export function ContractsTable({
               <>
                 <TableHead className="font-semibold text-center">Término</TableHead>
                 <TableHead className="font-semibold text-center">Aviso</TableHead>
-                <TableHead className="font-semibold text-center">Estado</TableHead>
+                <TableHead className="font-semibold text-Left">Estado</TableHead>
               </>
             )}
             <TableHead className="w-[50px]"></TableHead>
@@ -160,9 +141,7 @@ export function ContractsTable({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <span className="text-sm text-muted-foreground">
-                    {address ? `${address.commune}` : "-"}
-                  </span>
+                  <span className="text-sm text-muted-foreground">{address ? `${address.commune}` : "-"}</span>
                 </TableCell>
                 <TableCell className="text-right">
                   <span className="text-sm font-medium">
@@ -177,9 +156,7 @@ export function ContractsTable({
                 {isFirmadoView && (
                   <>
                     <TableCell className="text-center">
-                      <span className="text-sm">
-                        {endDate ? formatDateShort(endDate) : "-"}
-                      </span>
+                      <span className="text-sm">{endDate ? formatDateShort(endDate) : "-"}</span>
                     </TableCell>
                     <TableCell className="text-center">
                       <span className={`text-sm ${isPastNotice ? "text-destructive font-medium" : ""}`}>
@@ -194,68 +171,118 @@ export function ContractsTable({
                             <span className="text-[9px] text-muted-foreground font-medium mb-0.5">Operación</span>
                             <Select
                               value={contract.operation_status || "operando"}
-                              onValueChange={(value) => onUpdateField({ stopPropagation: () => {} } as React.MouseEvent, contract.id, "operation_status", value)}
+                              onValueChange={(value) =>
+                                onUpdateField(
+                                  { stopPropagation: () => {} } as React.MouseEvent,
+                                  contract.id,
+                                  "operation_status",
+                                  value,
+                                )
+                              }
                             >
                               <SelectTrigger className="h-6 text-[10px] px-1.5 w-[85px]">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="operando" className="text-xs">Operando</SelectItem>
-                                <SelectItem value="cerrado" className="text-xs">Cerrado</SelectItem>
+                                <SelectItem value="operando" className="text-xs">
+                                  Operando
+                                </SelectItem>
+                                <SelectItem value="cerrado" className="text-xs">
+                                  Cerrado
+                                </SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
-                          
+
                           <div className="flex flex-col">
                             <span className="text-[9px] text-muted-foreground font-medium mb-0.5">Obra</span>
                             <Select
                               value={contract.obra_status || "terminada"}
-                              onValueChange={(value) => onUpdateField({ stopPropagation: () => {} } as React.MouseEvent, contract.id, "obra_status", value)}
+                              onValueChange={(value) =>
+                                onUpdateField(
+                                  { stopPropagation: () => {} } as React.MouseEvent,
+                                  contract.id,
+                                  "obra_status",
+                                  value,
+                                )
+                              }
                             >
                               <SelectTrigger className="h-6 text-[10px] px-1.5 w-[100px]">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="terminada" className="text-xs">Terminada</SelectItem>
-                                <SelectItem value="construccion" className="text-xs">Construcción</SelectItem>
-                                <SelectItem value="remodelacion" className="text-xs">Remodelación</SelectItem>
-                                <SelectItem value="ampliacion" className="text-xs">Ampliación</SelectItem>
+                                <SelectItem value="terminada" className="text-xs">
+                                  Terminada
+                                </SelectItem>
+                                <SelectItem value="construccion" className="text-xs">
+                                  Construcción
+                                </SelectItem>
+                                <SelectItem value="remodelacion" className="text-xs">
+                                  Remodelación
+                                </SelectItem>
+                                <SelectItem value="ampliacion" className="text-xs">
+                                  Ampliación
+                                </SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
                         </div>
-                        
+
                         {/* Row 2: Patente & Proyecto */}
                         <div className="flex items-center gap-1.5">
                           <div className="flex flex-col">
                             <span className="text-[9px] text-muted-foreground font-medium mb-0.5">Patente</span>
                             <Select
                               value={contract.patente_status || "sin_patente"}
-                              onValueChange={(value) => onUpdateField({ stopPropagation: () => {} } as React.MouseEvent, contract.id, "patente_status", value)}
+                              onValueChange={(value) =>
+                                onUpdateField(
+                                  { stopPropagation: () => {} } as React.MouseEvent,
+                                  contract.id,
+                                  "patente_status",
+                                  value,
+                                )
+                              }
                             >
                               <SelectTrigger className="h-6 text-[10px] px-1.5 w-[85px]">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="sin_patente" className="text-xs">Sin Patente</SelectItem>
-                                <SelectItem value="provisoria" className="text-xs">Provisoria</SelectItem>
-                                <SelectItem value="definitiva" className="text-xs">Definitiva</SelectItem>
+                                <SelectItem value="sin_patente" className="text-xs">
+                                  Sin Patente
+                                </SelectItem>
+                                <SelectItem value="provisoria" className="text-xs">
+                                  Provisoria
+                                </SelectItem>
+                                <SelectItem value="definitiva" className="text-xs">
+                                  Definitiva
+                                </SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
-                          
+
                           <div className="flex flex-col">
                             <span className="text-[9px] text-muted-foreground font-medium mb-0.5">Proyecto</span>
                             <Select
                               value={(contract as any).proyecto_status || "sin_proyecto"}
-                              onValueChange={(value) => onUpdateField({ stopPropagation: () => {} } as React.MouseEvent, contract.id, "proyecto_status", value)}
+                              onValueChange={(value) =>
+                                onUpdateField(
+                                  { stopPropagation: () => {} } as React.MouseEvent,
+                                  contract.id,
+                                  "proyecto_status",
+                                  value,
+                                )
+                              }
                             >
                               <SelectTrigger className="h-6 text-[10px] px-1.5 w-[100px]">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="sin_proyecto" className="text-xs">Sin Proyecto</SelectItem>
-                                <SelectItem value="en_curso" className="text-xs">En Curso</SelectItem>
+                                <SelectItem value="sin_proyecto" className="text-xs">
+                                  Sin Proyecto
+                                </SelectItem>
+                                <SelectItem value="en_curso" className="text-xs">
+                                  En Curso
+                                </SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
