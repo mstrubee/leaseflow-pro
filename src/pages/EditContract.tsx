@@ -50,6 +50,12 @@ const EditContract = () => {
   const [noticeValue, setNoticeValue] = useState("");
   const [escalations, setEscalations] = useState<Array<{ id?: string; month_number: number; amount: number }>>([]);
   
+  // Guarantee and periodic adjustments
+  const [guaranteeMultiplier, setGuaranteeMultiplier] = useState("");
+  const [hasPeriodicAdjustments, setHasPeriodicAdjustments] = useState(false);
+  const [firstAdjustmentMonth, setFirstAdjustmentMonth] = useState("");
+  const [adjustmentPeriodicityMonths, setAdjustmentPeriodicityMonths] = useState("");
+  
   const { ufValue, convertPesosToUF } = useEconomicIndicators();
 
   useEffect(() => {
@@ -105,6 +111,12 @@ const EditContract = () => {
         setNoticeType(version.notice_type);
         setNoticeValue(version.notice_value);
         setEscalations(version.rent_escalations || []);
+        
+        // Load guarantee and periodic adjustments
+        setGuaranteeMultiplier(version.guarantee_multiplier?.toString() || "");
+        setHasPeriodicAdjustments(version.has_periodic_adjustments || false);
+        setFirstAdjustmentMonth(version.first_adjustment_month?.toString() || "");
+        setAdjustmentPeriodicityMonths(version.adjustment_periodicity_months?.toString() || "");
       }
     } catch (error: any) {
       toast({
@@ -168,6 +180,10 @@ const EditContract = () => {
             duration_months: parseInt(duration),
             notice_type: noticeType,
             notice_value: noticeValue,
+            guarantee_multiplier: guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
+            has_periodic_adjustments: hasPeriodicAdjustments,
+            first_adjustment_month: hasPeriodicAdjustments && firstAdjustmentMonth ? parseInt(firstAdjustmentMonth) : null,
+            adjustment_periodicity_months: hasPeriodicAdjustments && adjustmentPeriodicityMonths ? parseInt(adjustmentPeriodicityMonths) : null,
           })
           .eq("id", versionId);
 
@@ -459,6 +475,87 @@ const EditContract = () => {
                   onChange={(e) => setVariableRentPercentage(e.target.value)}
                 />
               </div>
+
+              {/* Garantía */}
+              <div className="space-y-2">
+                <Label htmlFor="guaranteeMultiplier">Garantía (multiplicador del arriendo)</Label>
+                <div className="flex items-center gap-4">
+                  <Input
+                    id="guaranteeMultiplier"
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    placeholder="Ej: 2"
+                    value={guaranteeMultiplier}
+                    onChange={(e) => setGuaranteeMultiplier(e.target.value)}
+                    className="w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">×</span>
+                  <span className="text-sm text-muted-foreground">
+                    {regimeRent || "0"} UF
+                  </span>
+                  <span className="text-sm text-muted-foreground">=</span>
+                  <span className="text-sm font-medium">
+                    {guaranteeMultiplier && regimeRent
+                      ? (parseFloat(guaranteeMultiplier) * parseFloat(regimeRent)).toFixed(2)
+                      : "0"} UF
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Monto de Garantía de Arriendo
+                </p>
+              </div>
+
+              {/* Reajustes Periódicos */}
+              <div className="space-y-2">
+                <Label>¿Tiene reajustes periódicos?</Label>
+                <RadioGroup
+                  value={hasPeriodicAdjustments ? "yes" : "no"}
+                  onValueChange={(value) => setHasPeriodicAdjustments(value === "yes")}
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="no" id="periodicNo" />
+                    <Label htmlFor="periodicNo">No</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="yes" id="periodicYes" />
+                    <Label htmlFor="periodicYes">Sí</Label>
+                  </div>
+                </RadioGroup>
+              </div>
+
+              {hasPeriodicAdjustments && (
+                <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
+                  <div className="space-y-2">
+                    <Label htmlFor="firstAdjustmentMonth">Mes del primer reajuste</Label>
+                    <Input
+                      id="firstAdjustmentMonth"
+                      type="number"
+                      min="1"
+                      placeholder="Ej: 12"
+                      value={firstAdjustmentMonth}
+                      onChange={(e) => setFirstAdjustmentMonth(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      El reajuste será un porcentaje del arriendo en régimen
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="adjustmentPeriodicityMonths">Periodicidad (meses)</Label>
+                    <Input
+                      id="adjustmentPeriodicityMonths"
+                      type="number"
+                      min="1"
+                      placeholder="Ej: 12"
+                      value={adjustmentPeriodicityMonths}
+                      onChange={(e) => setAdjustmentPeriodicityMonths(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Frecuencia de los reajustes después del primero
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="duration">Duración (meses) *</Label>

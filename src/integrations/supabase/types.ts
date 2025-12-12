@@ -613,10 +613,14 @@ export type Database = {
       }
       contract_versions: {
         Row: {
+          adjustment_periodicity_months: number | null
           contract_id: string
           created_at: string
           duration_months: number
           effective_date: string | null
+          first_adjustment_month: number | null
+          guarantee_multiplier: number | null
+          has_periodic_adjustments: boolean | null
           id: string
           initial_rent: number | null
           is_current: boolean
@@ -628,10 +632,14 @@ export type Database = {
           version_number: number
         }
         Insert: {
+          adjustment_periodicity_months?: number | null
           contract_id: string
           created_at?: string
           duration_months: number
           effective_date?: string | null
+          first_adjustment_month?: number | null
+          guarantee_multiplier?: number | null
+          has_periodic_adjustments?: boolean | null
           id?: string
           initial_rent?: number | null
           is_current?: boolean
@@ -643,10 +651,14 @@ export type Database = {
           version_number: number
         }
         Update: {
+          adjustment_periodicity_months?: number | null
           contract_id?: string
           created_at?: string
           duration_months?: number
           effective_date?: string | null
+          first_adjustment_month?: number | null
+          guarantee_multiplier?: number | null
+          has_periodic_adjustments?: boolean | null
           id?: string
           initial_rent?: number | null
           is_current?: boolean

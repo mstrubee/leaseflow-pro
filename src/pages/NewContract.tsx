@@ -48,6 +48,12 @@ const NewContract = () => {
   const [escalations, setEscalations] = useState<Escalation[]>([]);
   const [fechaInicio, setFechaInicio] = useState("");
   
+  // Guarantee and periodic adjustments
+  const [guaranteeMultiplier, setGuaranteeMultiplier] = useState("");
+  const [hasPeriodicAdjustments, setHasPeriodicAdjustments] = useState(false);
+  const [firstAdjustmentMonth, setFirstAdjustmentMonth] = useState("");
+  const [adjustmentPeriodicityMonths, setAdjustmentPeriodicityMonths] = useState("");
+  
   const { ufValue, convertPesosToUF } = useEconomicIndicators();
   
   // Document
@@ -129,6 +135,10 @@ const NewContract = () => {
             notice_type: noticeType,
             notice_value: noticeValue || "6",
             effective_date: fechaInicio || null,
+            guarantee_multiplier: guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
+            has_periodic_adjustments: hasPeriodicAdjustments,
+            first_adjustment_month: hasPeriodicAdjustments && firstAdjustmentMonth ? parseInt(firstAdjustmentMonth) : null,
+            adjustment_periodicity_months: hasPeriodicAdjustments && adjustmentPeriodicityMonths ? parseInt(adjustmentPeriodicityMonths) : null,
           })
           .select()
           .single();
@@ -437,6 +447,87 @@ const NewContract = () => {
                   onChange={(e) => setVariableRentPercentage(e.target.value)}
                 />
               </div>
+
+              {/* Garantía */}
+              <div className="space-y-2">
+                <Label htmlFor="guaranteeMultiplier">Garantía (multiplicador del arriendo)</Label>
+                <div className="flex items-center gap-4">
+                  <Input
+                    id="guaranteeMultiplier"
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    placeholder="Ej: 2"
+                    value={guaranteeMultiplier}
+                    onChange={(e) => setGuaranteeMultiplier(e.target.value)}
+                    className="w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">×</span>
+                  <span className="text-sm text-muted-foreground">
+                    {regimeRent || "0"} UF
+                  </span>
+                  <span className="text-sm text-muted-foreground">=</span>
+                  <span className="text-sm font-medium">
+                    {guaranteeMultiplier && regimeRent
+                      ? (parseFloat(guaranteeMultiplier) * parseFloat(regimeRent)).toFixed(2)
+                      : "0"} UF
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Monto de Garantía de Arriendo
+                </p>
+              </div>
+
+              {/* Reajustes Periódicos */}
+              <div className="space-y-2">
+                <Label>¿Tiene reajustes periódicos?</Label>
+                <RadioGroup
+                  value={hasPeriodicAdjustments ? "yes" : "no"}
+                  onValueChange={(value) => setHasPeriodicAdjustments(value === "yes")}
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="no" id="periodicNoNew" />
+                    <Label htmlFor="periodicNoNew">No</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="yes" id="periodicYesNew" />
+                    <Label htmlFor="periodicYesNew">Sí</Label>
+                  </div>
+                </RadioGroup>
+              </div>
+
+              {hasPeriodicAdjustments && (
+                <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
+                  <div className="space-y-2">
+                    <Label htmlFor="firstAdjustmentMonthNew">Mes del primer reajuste</Label>
+                    <Input
+                      id="firstAdjustmentMonthNew"
+                      type="number"
+                      min="1"
+                      placeholder="Ej: 12"
+                      value={firstAdjustmentMonth}
+                      onChange={(e) => setFirstAdjustmentMonth(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      El reajuste será un porcentaje del arriendo en régimen
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="adjustmentPeriodicityMonthsNew">Periodicidad (meses)</Label>
+                    <Input
+                      id="adjustmentPeriodicityMonthsNew"
+                      type="number"
+                      min="1"
+                      placeholder="Ej: 12"
+                      value={adjustmentPeriodicityMonths}
+                      onChange={(e) => setAdjustmentPeriodicityMonths(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Frecuencia de los reajustes después del primero
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="duration">Duración (meses)</Label>
