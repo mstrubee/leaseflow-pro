@@ -8,10 +8,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, X } from "lucide-react";
 import { RentEscalations, Escalation } from "@/components/contracts/RentEscalations";
 import { CurrencyInput } from "@/components/contracts/CurrencyInput";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const EditContract = () => {
   const { id } = useParams();
@@ -34,8 +44,14 @@ const EditContract = () => {
   const [contactId, setContactId] = useState("");
   const [company, setCompany] = useState("");
   const [contactName, setContactName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
+  const [phoneDigits, setPhoneDigits] = useState("");
+  const [emails, setEmails] = useState<string[]>([""]);
+  const [countryCode, setCountryCode] = useState("+56");
+  
+  // Unsaved changes tracking
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
   
   // Commercial conditions
   const [versionId, setVersionId] = useState("");
@@ -99,8 +115,30 @@ const EditContract = () => {
         setContactId(contact.id);
         setCompany(contact.company);
         setContactName(contact.name);
-        setPhone(contact.phone);
-        setEmail(contact.email);
+        // Parse phone: extract digits after country code
+        const phoneMatch = contact.phone?.match(/^\+(\d+)\s?(.*)$/);
+        if (phoneMatch) {
+          setCountryCode(`+${phoneMatch[1]}`);
+          setPhoneDigits(phoneMatch[2]?.replace(/\D/g, "") || "");
+        } else {
+          setPhoneDigits(contact.phone?.replace(/\D/g, "") || "");
+        }
+        // Parse emails: split by comma or semicolon
+        const emailList = contact.email?.split(/[,;]/).map((e: string) => e.trim()).filter(Boolean) || [""];
+        setEmails(emailList.length > 0 ? emailList : [""]);
+      }
+      
+      // Get country code from address
+      const addressData = data.contract_addresses?.[0];
+      if (addressData) {
+        const countryCodes: Record<string, string> = {
+          "Chile": "+56",
+          "Argentina": "+54",
+          "Perú": "+51",
+          "Colombia": "+57",
+          "México": "+52",
+        };
+        setCountryCode(countryCodes[addressData.country] || "+56");
       }
 
       const version = data.contract_versions?.find((v: any) => v.is_current);
@@ -162,14 +200,17 @@ const EditContract = () => {
       }
 
       // Update contact
+      const fullPhone = phoneDigits ? `${countryCode} ${phoneDigits}` : "";
+      const fullEmail = emails.filter(e => e.trim()).join(", ");
+      
       if (contactId) {
         const { error: contactError } = await supabase
           .from("contract_contacts")
           .update({
             company,
             name: contactName,
-            phone,
-            email,
+            phone: fullPhone,
+            email: fullEmail,
           })
           .eq("id", contactId);
 
@@ -255,13 +296,38 @@ const EditContract = () => {
     );
   }
 
+  const handleBack = () => {
+    if (hasUnsavedChanges) {
+      setPendingNavigation(`/contracts/${id}`);
+      setShowUnsavedDialog(true);
+    } else {
+      navigate(`/contracts/${id}`);
+    }
+  };
+
+  const handleConfirmDiscard = () => {
+    setShowUnsavedDialog(false);
+    if (pendingNavigation) {
+      navigate(pendingNavigation);
+    }
+  };
+
+  const handleConfirmSave = async () => {
+    setShowUnsavedDialog(false);
+    // Trigger form submission
+    const form = document.querySelector('form');
+    if (form) {
+      form.requestSubmit();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <Button
             variant="ghost"
-            onClick={() => navigate(`/contracts/${id}`)}
+            onClick={handleBack}
             className="gap-2 mb-2"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -270,6 +336,26 @@ const EditContract = () => {
           <h1 className="text-2xl font-semibold text-foreground">Editar Contrato</h1>
         </div>
       </header>
+
+      {/* Unsaved Changes Dialog */}
+      <AlertDialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Desea guardar los cambios?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tiene cambios sin guardar. ¿Qué desea hacer?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleConfirmDiscard}>
+              Descartar
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmSave}>
+              Guardar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -301,7 +387,7 @@ const EditContract = () => {
                   <Input
                     id="street"
                     value={street}
-                    onChange={(e) => setStreet(e.target.value)}
+                    onChange={(e) => { setStreet(e.target.value); setHasUnsavedChanges(true); }}
                     required
                   />
                 </div>
@@ -310,7 +396,7 @@ const EditContract = () => {
                   <Input
                     id="number"
                     value={number}
-                    onChange={(e) => setNumber(e.target.value)}
+                    onChange={(e) => { setNumber(e.target.value); setHasUnsavedChanges(true); }}
                     required
                   />
                 </div>
@@ -319,7 +405,7 @@ const EditContract = () => {
                   <Input
                     id="commune"
                     value={commune}
-                    onChange={(e) => setCommune(e.target.value)}
+                    onChange={(e) => { setCommune(e.target.value); setHasUnsavedChanges(true); }}
                     required
                   />
                 </div>
@@ -328,7 +414,7 @@ const EditContract = () => {
                   <Input
                     id="region"
                     value={region}
-                    onChange={(e) => setRegion(e.target.value)}
+                    onChange={(e) => { setRegion(e.target.value); setHasUnsavedChanges(true); }}
                     required
                   />
                 </div>
@@ -347,7 +433,7 @@ const EditContract = () => {
                   <Input
                     id="company"
                     value={company}
-                    onChange={(e) => setCompany(e.target.value)}
+                    onChange={(e) => { setCompany(e.target.value); setHasUnsavedChanges(true); }}
                     required
                   />
                 </div>
@@ -356,29 +442,75 @@ const EditContract = () => {
                   <Input
                     id="contactName"
                     value={contactName}
-                    onChange={(e) => setContactName(e.target.value)}
+                    onChange={(e) => { setContactName(e.target.value); setHasUnsavedChanges(true); }}
                     required
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="phone">Teléfono *</Label>
-                  <Input
-                    id="phone"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    required
-                  />
+                  <Label htmlFor="phone">Teléfono (opcional)</Label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-muted-foreground min-w-[45px]">{countryCode}</span>
+                    <Input
+                      id="phone"
+                      value={phoneDigits}
+                      onChange={(e) => {
+                        const digits = e.target.value.replace(/\D/g, "").slice(0, 9);
+                        setPhoneDigits(digits);
+                        setHasUnsavedChanges(true);
+                      }}
+                      placeholder="912345678"
+                      maxLength={9}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">9 dígitos máximo</p>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email *</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                </div>
+              </div>
+              
+              {/* Multiple Emails */}
+              <div className="space-y-2">
+                <Label>Emails</Label>
+                {emails.map((email, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <Input
+                      type="email"
+                      value={email}
+                      onChange={(e) => {
+                        const newEmails = [...emails];
+                        newEmails[index] = e.target.value;
+                        setEmails(newEmails);
+                        setHasUnsavedChanges(true);
+                      }}
+                      placeholder="correo@ejemplo.com"
+                    />
+                    {emails.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          const newEmails = emails.filter((_, i) => i !== index);
+                          setEmails(newEmails);
+                          setHasUnsavedChanges(true);
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setEmails([...emails, ""]);
+                    setHasUnsavedChanges(true);
+                  }}
+                  className="gap-1"
+                >
+                  <Plus className="h-4 w-4" />
+                  Agregar email
+                </Button>
               </div>
             </CardContent>
           </Card>

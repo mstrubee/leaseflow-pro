@@ -15,9 +15,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { DocumentVersions, DocumentVersion } from "@/components/contracts/DocumentVersions";
 import { EscalationDialog, Escalation } from "@/components/contracts/EscalationDialog";
@@ -95,23 +92,6 @@ const ContractDetail = () => {
   // Dynamic superficie for real-time recalculation
   const [superficieEdificada, setSuperficieEdificada] = useState<number | null>(null);
   
-  // Contact edit state
-  const [showContactEdit, setShowContactEdit] = useState(false);
-  const [editingContact, setEditingContact] = useState(false);
-  const [contactForm, setContactForm] = useState({
-    company: "",
-    name: "",
-    phone: "",
-    email: "",
-  });
-  const [originalContactForm, setOriginalContactForm] = useState({
-    company: "",
-    name: "",
-    phone: "",
-    email: "",
-  });
-  const [showUnsavedChangesDialog, setShowUnsavedChangesDialog] = useState(false);
-  const [pendingCloseAction, setPendingCloseAction] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -480,137 +460,6 @@ const ContractDetail = () => {
     }
   };
 
-  const handleSaveContact = async () => {
-    if (!contract) return;
-    
-    setEditingContact(true);
-    try {
-      // Check if contact exists
-      const existingContact = contract.contract_contacts?.[0];
-      
-      if (existingContact) {
-        // Update existing contact
-        const { error } = await supabase
-          .from("contract_contacts")
-          .update({
-            company: contactForm.company,
-            name: contactForm.name,
-            phone: contactForm.phone,
-            email: contactForm.email,
-          })
-          .eq("contract_id", contract.id);
-        
-        if (error) throw error;
-      } else {
-        // Create new contact
-        const { error } = await supabase
-          .from("contract_contacts")
-          .insert({
-            contract_id: contract.id,
-            company: contactForm.company || "",
-            name: contactForm.name || "",
-            phone: contactForm.phone || "",
-            email: contactForm.email || "",
-          });
-        
-        if (error) throw error;
-      }
-      
-      toast({
-        title: "Contacto guardado",
-        description: "La información de contacto ha sido actualizada",
-      });
-      
-      setShowContactEdit(false);
-      loadContract();
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "No se pudo guardar el contacto",
-      });
-    } finally {
-      setEditingContact(false);
-    }
-  };
-
-  const openContactEdit = () => {
-    const existingContact = contract?.contract_contacts?.[0];
-    const formData = {
-      company: existingContact?.company || "",
-      name: existingContact?.name || "",
-      phone: existingContact?.phone || "",
-      email: existingContact?.email || "",
-    };
-    setContactForm(formData);
-    setOriginalContactForm(formData);
-    setShowContactEdit(true);
-  };
-
-  const hasContactChanges = () => {
-    return (
-      contactForm.company !== originalContactForm.company ||
-      contactForm.name !== originalContactForm.name ||
-      contactForm.phone !== originalContactForm.phone ||
-      contactForm.email !== originalContactForm.email
-    );
-  };
-
-  const handleContactDialogClose = (open: boolean) => {
-    if (!open && hasContactChanges()) {
-      setShowUnsavedChangesDialog(true);
-      setPendingCloseAction(true);
-    } else {
-      setShowContactEdit(open);
-    }
-  };
-
-  const handleConfirmDiscard = () => {
-    setShowUnsavedChangesDialog(false);
-    setPendingCloseAction(false);
-    setShowContactEdit(false);
-  };
-
-  const handleConfirmSave = async () => {
-    setShowUnsavedChangesDialog(false);
-    setPendingCloseAction(false);
-    await handleSaveContact();
-  };
-
-  const formatPhoneNumber = (value: string, countryCode: string) => {
-    // Remove all non-digits
-    const digits = value.replace(/\D/g, "");
-    // Limit to 9 digits
-    const limited = digits.slice(0, 9);
-    return limited ? `${countryCode} ${limited}` : "";
-  };
-
-  const handlePhoneChange = (value: string) => {
-    const countryCode = getCountryCode();
-    // Extract digits from input, remove country code prefix if present
-    let digits = value.replace(/\D/g, "");
-    // If user typed the country code digits, remove them
-    const codeDigits = countryCode.replace(/\D/g, "");
-    if (digits.startsWith(codeDigits)) {
-      digits = digits.slice(codeDigits.length);
-    }
-    // Limit to 9 digits
-    digits = digits.slice(0, 9);
-    setContactForm({ ...contactForm, phone: digits ? `${countryCode} ${digits}` : "" });
-  };
-
-  const getCountryCode = () => {
-    const address = contract?.contract_addresses?.[0];
-    const country = address?.country || "Chile";
-    const countryCodes: Record<string, string> = {
-      "Chile": "+56",
-      "Argentina": "+54",
-      "Perú": "+51",
-      "Colombia": "+57",
-      "México": "+52",
-    };
-    return countryCodes[country] || "+56";
-  };
 
   const getStatusBadge = (status: string) => {
     const statusMap: { [key: string]: { label: string; className: string } } = {
@@ -768,12 +617,18 @@ const ContractDetail = () => {
                   <p className="text-sm text-muted-foreground">Teléfono</p>
                   <p className="font-medium">{contact.phone || "No se ha entregado"}</p>
                 </div>
-                {contact.email && (
-                  <div>
-                    <p className="text-sm text-muted-foreground">Email</p>
-                    <p className="font-medium">{contact.email}</p>
-                  </div>
-                )}
+                <div>
+                  <p className="text-sm text-muted-foreground">Email</p>
+                  {contact.email ? (
+                    <div className="space-y-1">
+                      {contact.email.split(/[,;]/).map((email, idx) => (
+                        <p key={idx} className="font-medium">{email.trim()}</p>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="font-medium text-muted-foreground">No se ha entregado</p>
+                  )}
+                </div>
               </div>
             ) : (
               <p className="text-muted-foreground">No hay contacto registrado. Use el botón Editar de la parte superior para agregar.</p>
@@ -1085,87 +940,6 @@ const ContractDetail = () => {
         </Card>
       </main>
 
-      {/* Dialog: Editar Contacto */}
-      <Dialog open={showContactEdit} onOpenChange={handleContactDialogClose}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Editar Contacto</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-company">Empresa</Label>
-              <Input
-                id="edit-company"
-                value={contactForm.company}
-                onChange={(e) => setContactForm({ ...contactForm, company: e.target.value })}
-                placeholder="Nombre de la empresa"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-name">Nombre</Label>
-              <Input
-                id="edit-name"
-                value={contactForm.name}
-                onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
-                placeholder="Nombre del contacto"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-phone">Teléfono (opcional)</Label>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">{getCountryCode()}</span>
-                <Input
-                  id="edit-phone"
-                  value={contactForm.phone.replace(/^\+\d+\s?/, "")}
-                  onChange={(e) => handlePhoneChange(e.target.value)}
-                  placeholder="9 12345678"
-                  maxLength={11}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">9 dígitos máximo</p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-email">Email</Label>
-              <Input
-                id="edit-email"
-                type="email"
-                value={contactForm.email}
-                onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
-                placeholder="correo@ejemplo.com"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => handleContactDialogClose(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleSaveContact} disabled={editingContact}>
-              {editingContact && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Guardar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog: Unsaved Changes Confirmation */}
-      <AlertDialog open={showUnsavedChangesDialog} onOpenChange={setShowUnsavedChangesDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Desea guardar los cambios?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Tiene cambios sin guardar en la información de contacto.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleConfirmDiscard}>
-              Descartar
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmSave}>
-              Guardar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 };
