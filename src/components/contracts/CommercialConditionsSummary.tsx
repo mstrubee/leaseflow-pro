@@ -1,9 +1,10 @@
 import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DollarSign, Calendar, Bell, TrendingUp, Percent, Shield } from "lucide-react";
+import { DollarSign, Calendar, Bell, TrendingUp, Percent, Shield, Building2, Megaphone } from "lucide-react";
 import { CompactEscalationChart } from "./CompactEscalationChart";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 
 interface Escalation {
   id: string;
@@ -27,6 +28,8 @@ interface ContractVersion {
   has_periodic_adjustments?: boolean | null;
   first_adjustment_month?: number | null;
   adjustment_periodicity_months?: number | null;
+  gastos_comunes_uf_m2?: number | null;
+  fondo_promocion_percentage?: number | null;
   rent_escalations: Escalation[];
 }
 
@@ -34,13 +37,17 @@ interface CommercialConditionsSummaryProps {
   version: ContractVersion;
   signedDate: string | null;
   allVersions: ContractVersion[];
+  superficieEdificadaLocal?: number | null;
 }
 
 export function CommercialConditionsSummary({ 
   version, 
   signedDate,
-  allVersions
+  allVersions,
+  superficieEdificadaLocal
 }: CommercialConditionsSummaryProps) {
+  const { ufValue } = useEconomicIndicators();
+  
   // Calculate dates
   const dates = useMemo(() => {
     // Find the start date: effective_date of current version, or signed_date for original
@@ -72,6 +79,10 @@ export function CommercialConditionsSummary({
     return `${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
   };
 
+  const formatCLP = (amount: number) => {
+    return `$${Math.round(amount).toLocaleString("es-CL")}`;
+  };
+
   const formatDateShort = (date: Date) => {
     return format(date, "dd MMM yyyy", { locale: es });
   };
@@ -79,6 +90,24 @@ export function CommercialConditionsSummary({
   const hasEscalations = version.rent_escalations && version.rent_escalations.length > 0;
   const guaranteeAmount = version.guarantee_multiplier 
     ? version.guarantee_multiplier * version.regime_rent 
+    : null;
+
+  // Canon per m2
+  const canonPerM2 = superficieEdificadaLocal && superficieEdificadaLocal > 0
+    ? version.regime_rent / superficieEdificadaLocal
+    : null;
+
+  // Gastos comunes calculation
+  const gastosComunesTotalUF = version.gastos_comunes_uf_m2 && superficieEdificadaLocal
+    ? version.gastos_comunes_uf_m2 * superficieEdificadaLocal
+    : null;
+  const gastosComunesTotalCLP = gastosComunesTotalUF && ufValue
+    ? gastosComunesTotalUF * ufValue
+    : null;
+
+  // Fondo de promoción calculation
+  const fondoPromocionAmount = version.fondo_promocion_percentage
+    ? (version.fondo_promocion_percentage / 100) * version.regime_rent
     : null;
 
   return (
@@ -139,6 +168,11 @@ export function CommercialConditionsSummary({
             <p className="text-sm font-semibold text-primary">
               {formatCurrency(version.regime_rent)}
             </p>
+            {canonPerM2 !== null && (
+              <p className="text-xs text-muted-foreground">
+                ({canonPerM2.toFixed(4)} UF/m²)
+              </p>
+            )}
           </div>
 
           {/* % Variable */}
@@ -169,6 +203,41 @@ export function CommercialConditionsSummary({
               </p>
             </div>
           )}
+
+          {/* Gastos Comunes */}
+          {gastosComunesTotalUF !== null && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Building2 className="h-3 w-3" />
+                Gastos Comunes
+              </div>
+              <p className="text-sm font-medium">
+                {formatCurrency(gastosComunesTotalUF)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                ({version.gastos_comunes_uf_m2} UF/m²)
+                {gastosComunesTotalCLP && (
+                  <span className="block">{formatCLP(gastosComunesTotalCLP)}</span>
+                )}
+              </p>
+            </div>
+          )}
+
+          {/* Fondo de Promoción */}
+          {fondoPromocionAmount !== null && fondoPromocionAmount > 0 && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Megaphone className="h-3 w-3" />
+                Fondo Promoción
+              </div>
+              <p className="text-sm font-medium">
+                {formatCurrency(fondoPromocionAmount)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                ({version.fondo_promocion_percentage}% del canon)
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Escalonado - Compact Chart */}
@@ -184,14 +253,6 @@ export function CommercialConditionsSummary({
               regimeRent={version.regime_rent}
               durationMonths={version.duration_months}
             />
-            <div className="flex justify-between text-xs text-muted-foreground mt-1">
-              <span>
-                Inicial: {formatCurrency(version.initial_rent || version.regime_rent)}
-              </span>
-              <span>
-                Régimen: {formatCurrency(version.regime_rent)}
-              </span>
-            </div>
           </div>
         )}
       </CardContent>

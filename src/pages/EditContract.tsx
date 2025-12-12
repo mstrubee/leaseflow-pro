@@ -56,6 +56,10 @@ const EditContract = () => {
   const [firstAdjustmentMonth, setFirstAdjustmentMonth] = useState("");
   const [adjustmentPeriodicityMonths, setAdjustmentPeriodicityMonths] = useState("");
   
+  // Gastos comunes and fondo promoción
+  const [gastosComunesUfM2, setGastosComunesUfM2] = useState("");
+  const [fondoPromocionPercentage, setFondoPromocionPercentage] = useState("");
+  
   const { ufValue, convertPesosToUF } = useEconomicIndicators();
 
   useEffect(() => {
@@ -117,6 +121,10 @@ const EditContract = () => {
         setHasPeriodicAdjustments(version.has_periodic_adjustments || false);
         setFirstAdjustmentMonth(version.first_adjustment_month?.toString() || "");
         setAdjustmentPeriodicityMonths(version.adjustment_periodicity_months?.toString() || "");
+        
+        // Load gastos comunes and fondo promoción
+        setGastosComunesUfM2(version.gastos_comunes_uf_m2?.toString() || "");
+        setFondoPromocionPercentage(version.fondo_promocion_percentage?.toString() || "");
       }
     } catch (error: any) {
       toast({
@@ -184,6 +192,8 @@ const EditContract = () => {
             has_periodic_adjustments: hasPeriodicAdjustments,
             first_adjustment_month: hasPeriodicAdjustments && firstAdjustmentMonth ? parseInt(firstAdjustmentMonth) : null,
             adjustment_periodicity_months: hasPeriodicAdjustments && adjustmentPeriodicityMonths ? parseInt(adjustmentPeriodicityMonths) : null,
+            gastos_comunes_uf_m2: gastosComunesUfM2 ? parseFloat(gastosComunesUfM2) : null,
+            fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
           })
           .eq("id", versionId);
 
@@ -503,6 +513,40 @@ const EditContract = () => {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Monto de Garantía de Arriendo
+                </p>
+              </div>
+
+              {/* Gastos Comunes */}
+              <div className="space-y-2">
+                <Label htmlFor="gastosComunesUfM2">Gastos Comunes (UF/m²)</Label>
+                <Input
+                  id="gastosComunesUfM2"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="Ej: 0.05"
+                  value={gastosComunesUfM2}
+                  onChange={(e) => setGastosComunesUfM2(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Se multiplica por la Superficie Edificada Local
+                </p>
+              </div>
+
+              {/* Fondo de Promoción */}
+              <div className="space-y-2">
+                <Label htmlFor="fondoPromocionPercentage">Fondo de Promoción (%)</Label>
+                <Input
+                  id="fondoPromocionPercentage"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="Ej: 2.5"
+                  value={fondoPromocionPercentage}
+                  onChange={(e) => setFondoPromocionPercentage(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Porcentaje sobre el Canon en Régimen (puede ser 0)
                 </p>
               </div>
 

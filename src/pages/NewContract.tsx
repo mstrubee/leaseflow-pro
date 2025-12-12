@@ -54,6 +54,10 @@ const NewContract = () => {
   const [firstAdjustmentMonth, setFirstAdjustmentMonth] = useState("");
   const [adjustmentPeriodicityMonths, setAdjustmentPeriodicityMonths] = useState("");
   
+  // Gastos comunes and fondo promoción
+  const [gastosComunesUfM2, setGastosComunesUfM2] = useState("");
+  const [fondoPromocionPercentage, setFondoPromocionPercentage] = useState("");
+  
   const { ufValue, convertPesosToUF } = useEconomicIndicators();
   
   // Document
@@ -139,6 +143,8 @@ const NewContract = () => {
             has_periodic_adjustments: hasPeriodicAdjustments,
             first_adjustment_month: hasPeriodicAdjustments && firstAdjustmentMonth ? parseInt(firstAdjustmentMonth) : null,
             adjustment_periodicity_months: hasPeriodicAdjustments && adjustmentPeriodicityMonths ? parseInt(adjustmentPeriodicityMonths) : null,
+            gastos_comunes_uf_m2: gastosComunesUfM2 ? parseFloat(gastosComunesUfM2) : null,
+            fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
           })
           .select()
           .single();
@@ -475,6 +481,40 @@ const NewContract = () => {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Monto de Garantía de Arriendo
+                </p>
+              </div>
+
+              {/* Gastos Comunes */}
+              <div className="space-y-2">
+                <Label htmlFor="gastosComunesUfM2New">Gastos Comunes (UF/m²)</Label>
+                <Input
+                  id="gastosComunesUfM2New"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="Ej: 0.05"
+                  value={gastosComunesUfM2}
+                  onChange={(e) => setGastosComunesUfM2(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Se multiplica por la Superficie Edificada Local
+                </p>
+              </div>
+
+              {/* Fondo de Promoción */}
+              <div className="space-y-2">
+                <Label htmlFor="fondoPromocionPercentageNew">Fondo de Promoción (%)</Label>
+                <Input
+                  id="fondoPromocionPercentageNew"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="Ej: 2.5"
+                  value={fondoPromocionPercentage}
+                  onChange={(e) => setFondoPromocionPercentage(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Porcentaje sobre el Canon en Régimen (puede ser 0)
                 </p>
               </div>
 
