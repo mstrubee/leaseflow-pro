@@ -344,6 +344,7 @@ const Contracts = () => {
     construccion: "Construcción",
     remodelacion: "Remodelación",
     ampliacion: "Ampliación",
+    con_proyecto: "Con Proyecto",
   };
 
   const patenteLabels: Record<string, string> = {
@@ -439,6 +440,7 @@ const Contracts = () => {
                     <SelectItem value="construccion">Construcción</SelectItem>
                     <SelectItem value="remodelacion">Remodelación</SelectItem>
                     <SelectItem value="ampliacion">Ampliación</SelectItem>
+                    <SelectItem value="con_proyecto">Con Proyecto</SelectItem>
                   </SelectContent>
                 </Select>
 
