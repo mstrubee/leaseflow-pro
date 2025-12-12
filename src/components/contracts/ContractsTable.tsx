@@ -164,9 +164,9 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                       </span>
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
-                      <div className="flex flex-col gap-1.5">
+                      <div className="flex flex-col gap-1.5 items-center">
                         {/* Row 1: Operación & Obra */}
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 justify-center">
                           <div className="flex flex-col">
                             <span className="text-[9px] text-muted-foreground font-medium mb-0.5">Operación</span>
                             <Select
@@ -229,7 +229,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                         </div>
 
                         {/* Row 2: Patente & Proyecto */}
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 justify-center">
                           <div className="flex flex-col">
                             <span className="text-[9px] text-muted-foreground font-medium mb-0.5">Patente</span>
                             <Select
