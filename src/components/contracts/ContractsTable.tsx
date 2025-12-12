@@ -156,7 +156,21 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 {isFirmadoView && (
                   <>
                     <TableCell className="text-center">
-                      <span className="text-sm">{endDate ? formatDateShort(endDate) : "-"}</span>
+                      <div className="flex flex-col">
+                        <span className="text-sm">{endDate ? formatDateShort(endDate) : "-"}</span>
+                        {endDate && currentVersion && (() => {
+                          const startDate = currentVersion.effective_date
+                            ? parseISO(currentVersion.effective_date)
+                            : contract.signed_date
+                              ? parseISO(contract.signed_date)
+                              : null;
+                          if (!startDate) return null;
+                          const now = new Date();
+                          const monthsElapsed = differenceInMonths(now, startDate);
+                          const totalMonths = currentVersion.duration_months;
+                          return <span className="text-[10px] text-muted-foreground">{monthsElapsed} de {totalMonths} meses</span>;
+                        })()}
+                      </div>
                     </TableCell>
                     <TableCell className="text-center">
                       <div className="flex flex-col">
