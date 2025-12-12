@@ -5,22 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, TrendingUp, DollarSign, FileText, Receipt } from "lucide-react";
 import { BudgetProvider, useBudgetContext } from "./BudgetContext";
-import { ContractSurfaces } from "./ContractSurfaces";
 import { BudgetModule } from "./BudgetModule";
 import { PurchaseOrdersModule } from "./PurchaseOrdersModule";
 import { BudgetSemaphore } from "./BudgetSemaphore";
 import { useToast } from "@/hooks/use-toast";
-
-interface SurfaceData {
-  superficie_terreno: number;
-  superficie_edificada_local: number;
-  superficie_showroom: number;
-  superficie_bodega_backoffice: number;
-  superficie_exterior_cubierto: number;
-  superficie_exterior_descubierto: number;
-  num_estacionamientos: number;
-  metros_lineales_frente: number;
-}
 
 interface BudgetSummary {
   budget: number;
@@ -33,16 +21,6 @@ interface BudgetDashboardProps {
 }
 
 const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
-  const [surfaces, setSurfaces] = useState<SurfaceData>({
-    superficie_terreno: 0,
-    superficie_edificada_local: 0,
-    superficie_showroom: 0,
-    superficie_bodega_backoffice: 0,
-    superficie_exterior_cubierto: 0,
-    superficie_exterior_descubierto: 0,
-    num_estacionamientos: 0,
-    metros_lineales_frente: 0,
-  });
   const [loading, setLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [availableYears, setAvailableYears] = useState<number[]>([]);
@@ -54,41 +32,13 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
   const { formatUF, formatCLP, convertUFToPesos } = useBudgetContext();
 
   useEffect(() => {
-    loadContractData();
     loadAvailableYears();
+    setLoading(false);
   }, [contractId]);
 
   useEffect(() => {
     loadSummaries();
   }, [contractId, selectedYear]);
-
-  const loadContractData = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("contracts")
-        .select("superficie_terreno, superficie_edificada_local, superficie_showroom, superficie_bodega_backoffice, superficie_exterior_cubierto, superficie_exterior_descubierto, num_estacionamientos, metros_lineales_frente")
-        .eq("id", contractId)
-        .single();
-
-      if (error) throw error;
-      if (data) {
-        setSurfaces({
-          superficie_terreno: data.superficie_terreno || 0,
-          superficie_edificada_local: data.superficie_edificada_local || 0,
-          superficie_showroom: data.superficie_showroom || 0,
-          superficie_bodega_backoffice: data.superficie_bodega_backoffice || 0,
-          superficie_exterior_cubierto: data.superficie_exterior_cubierto || 0,
-          superficie_exterior_descubierto: data.superficie_exterior_descubierto || 0,
-          num_estacionamientos: data.num_estacionamientos || 0,
-          metros_lineales_frente: data.metros_lineales_frente || 0,
-        });
-      }
-    } catch (error) {
-      console.error("Error loading surfaces:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const loadAvailableYears = async () => {
     try {
@@ -188,15 +138,6 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
       authorized,
       unauthorized,
     };
-  };
-
-  const handleSurfaceChange = async (newSurfaces: SurfaceData) => {
-    setSurfaces(newSurfaces);
-    try {
-      await supabase.from("contracts").update(newSurfaces).eq("id", contractId);
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
-    }
   };
 
   if (loading) {
@@ -300,9 +241,6 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
           </CardContent>
         </Card>
       </div>
-
-      {/* Surfaces */}
-      <ContractSurfaces data={surfaces} onChange={handleSurfaceChange} />
 
       {/* Budget Tabs - CADA TAB COMPLETAMENTE INDEPENDIENTE */}
       <Tabs defaultValue="inversion" className="w-full">

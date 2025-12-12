@@ -704,6 +704,8 @@ export type Database = {
           superficie_edificada_local: number | null
           superficie_exterior_cubierto: number | null
           superficie_exterior_descubierto: number | null
+          superficie_mezanina_altillo: number | null
+          superficie_segundo_nivel: number | null
           superficie_showroom: number | null
           superficie_terreno: number | null
           updated_at: string
@@ -726,6 +728,8 @@ export type Database = {
           superficie_edificada_local?: number | null
           superficie_exterior_cubierto?: number | null
           superficie_exterior_descubierto?: number | null
+          superficie_mezanina_altillo?: number | null
+          superficie_segundo_nivel?: number | null
           superficie_showroom?: number | null
           superficie_terreno?: number | null
           updated_at?: string
@@ -748,6 +752,8 @@ export type Database = {
           superficie_edificada_local?: number | null
           superficie_exterior_cubierto?: number | null
           superficie_exterior_descubierto?: number | null
+          superficie_mezanina_altillo?: number | null
+          superficie_segundo_nivel?: number | null
           superficie_showroom?: number | null
           superficie_terreno?: number | null
           updated_at?: string
