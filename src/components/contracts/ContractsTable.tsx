@@ -103,7 +103,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
               <>
                 <TableHead className="font-semibold text-center">Término</TableHead>
                 <TableHead className="font-semibold text-center">Aviso</TableHead>
-                <TableHead className="font-semibold text-Left">Estado</TableHead>
+                <TableHead className="font-semibold text-center">Estado</TableHead>
               </>
             )}
             <TableHead className="w-[50px]"></TableHead>
