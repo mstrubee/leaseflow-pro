@@ -75,11 +75,12 @@ const Contracts = () => {
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Filters
-  // Filters
   const [operationFilter, setOperationFilter] = useState<string>("todos");
   const [obraFilter, setObraFilter] = useState<string>("todos");
   const [patenteFilter, setPatenteFilter] = useState<string>("todos");
   const [proyectoFilter, setProyectoFilter] = useState<string>("todos");
+  const [ubicacionFilter, setUbicacionFilter] = useState<string>("todos");
+  const [costoArriendoFilter, setCostoArriendoFilter] = useState<string>("todos");
 
   // Sorting
   const [sortField, setSortField] = useState<SortField>(null);
@@ -99,7 +100,7 @@ const Contracts = () => {
 
   useEffect(() => {
     filterAndSortContracts();
-  }, [searchTerm, statusFilter, contracts, operationFilter, obraFilter, patenteFilter, proyectoFilter, sortField, sortDirection]);
+  }, [searchTerm, statusFilter, contracts, operationFilter, obraFilter, patenteFilter, proyectoFilter, ubicacionFilter, costoArriendoFilter, sortField, sortDirection]);
 
   const loadContracts = async () => {
     const { data } = await supabase
@@ -192,6 +193,34 @@ const Contracts = () => {
       filtered = filtered.filter((contract) => (contract as any).proyecto_status === proyectoFilter);
     }
 
+    // Ubicación filter
+    if (ubicacionFilter !== "todos") {
+      filtered = filtered.filter((contract) => {
+        const address = contract.contract_addresses?.[0];
+        return address?.commune === ubicacionFilter;
+      });
+    }
+
+    // Costo Arriendo filter
+    if (costoArriendoFilter !== "todos") {
+      filtered = filtered.filter((contract) => {
+        const currentVersion = contract.contract_versions?.find((v) => v.is_current);
+        if (!currentVersion) return false;
+        const superficie = (contract.superficie_edificada_local || 0) + (contract.superficie_terreno || 0);
+        const gastosComunes = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
+        const fondoPromocion = currentVersion.regime_rent * ((currentVersion.fondo_promocion_percentage || 0) / 100);
+        const total = currentVersion.regime_rent + gastosComunes + fondoPromocion;
+        
+        switch (costoArriendoFilter) {
+          case "0-500": return total <= 500;
+          case "500-1000": return total > 500 && total <= 1000;
+          case "1000-2000": return total > 1000 && total <= 2000;
+          case "2000+": return total > 2000;
+          default: return true;
+        }
+      });
+    }
+
     // Sorting
     if (sortField) {
       filtered = [...filtered].sort((a, b) => {
@@ -237,12 +266,17 @@ const Contracts = () => {
     setObraFilter("todos");
     setPatenteFilter("todos");
     setProyectoFilter("todos");
+    setUbicacionFilter("todos");
+    setCostoArriendoFilter("todos");
     setSortField(null);
     setSortDirection("asc");
     setSearchTerm("");
   };
 
-  const hasActiveFilters = operationFilter !== "todos" || obraFilter !== "todos" || patenteFilter !== "todos" || proyectoFilter !== "todos" || sortField !== null;
+  const hasActiveFilters = operationFilter !== "todos" || obraFilter !== "todos" || patenteFilter !== "todos" || proyectoFilter !== "todos" || ubicacionFilter !== "todos" || costoArriendoFilter !== "todos" || sortField !== null;
+
+  // Get unique communes for ubicacion filter
+  const uniqueCommunes = [...new Set(contracts.flatMap(c => c.contract_addresses?.map(a => a.commune) || []))].filter(Boolean).sort();
 
   const handleDeleteClick = (e: React.MouseEvent, contract: Contract) => {
     e.stopPropagation();
@@ -481,6 +515,33 @@ const Contracts = () => {
                     <SelectItem value="todos" className="text-xs">Todos</SelectItem>
                     <SelectItem value="sin_proyecto" className="text-xs">Sin Proyecto</SelectItem>
                     <SelectItem value="en_curso" className="text-xs">En Curso</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Ubicación Filter */}
+                <Select value={ubicacionFilter} onValueChange={setUbicacionFilter}>
+                  <SelectTrigger className="h-8 text-xs w-[120px]">
+                    <SelectValue placeholder="Ubicación" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos" className="text-xs">Todas</SelectItem>
+                    {uniqueCommunes.map((commune) => (
+                      <SelectItem key={commune} value={commune} className="text-xs">{commune}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Costo Arriendo Filter */}
+                <Select value={costoArriendoFilter} onValueChange={setCostoArriendoFilter}>
+                  <SelectTrigger className="h-8 text-xs w-[130px]">
+                    <SelectValue placeholder="Costo Arriendo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos" className="text-xs">Todos</SelectItem>
+                    <SelectItem value="0-500" className="text-xs">Hasta 500 UF</SelectItem>
+                    <SelectItem value="500-1000" className="text-xs">500 - 1.000 UF</SelectItem>
+                    <SelectItem value="1000-2000" className="text-xs">1.000 - 2.000 UF</SelectItem>
+                    <SelectItem value="2000+" className="text-xs">Más de 2.000 UF</SelectItem>
                   </SelectContent>
                 </Select>
 
