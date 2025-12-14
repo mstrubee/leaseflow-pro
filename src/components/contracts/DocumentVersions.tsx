@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, FileText, Check, Star, Upload, ChevronDown, ChevronRight, Cloud, Link, Send, FileCheck, Signature, RefreshCw } from "lucide-react";
+import { Plus, FileText, Check, Star, Upload, ChevronDown, ChevronRight, Cloud, Link, Send, FileCheck, Signature, RefreshCw, Sparkles } from "lucide-react";
 import { format } from "date-fns";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { supabase } from "@/integrations/supabase/client";
@@ -34,6 +34,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ContractDataImportModal } from "./ContractDataImportModal";
 
 export interface DocumentVersion {
   id: string;
@@ -76,6 +77,7 @@ interface DocumentVersionsProps {
   isSigned?: boolean;
   hasActiveRenegotiation?: boolean;
   onRenegotiationSuccess?: () => void;
+  onDataImported?: () => void;
 }
 
 const CLOUD_PROVIDERS = [
@@ -99,6 +101,7 @@ export const DocumentVersions = ({
   isSigned = false,
   hasActiveRenegotiation = false,
   onRenegotiationSuccess,
+  onDataImported,
 }: DocumentVersionsProps) => {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -136,6 +139,10 @@ export const DocumentVersions = ({
   // Status change dialog
   const [statusChangeDialogOpen, setStatusChangeDialogOpen] = useState(false);
   const [selectedDocForStatus, setSelectedDocForStatus] = useState<DocumentVersion | null>(null);
+
+  // Import data modal
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [uploadedDocumentUrl, setUploadedDocumentUrl] = useState("");
 
   useEffect(() => {
     loadCloudConnections();
@@ -190,7 +197,7 @@ export const DocumentVersions = ({
     }
   };
 
-  const handleUploadFile = async () => {
+  const handleUploadFile = async (shouldImportData: boolean = false) => {
     if (!selectedFile || !suggestedFileName.trim()) return;
 
     setUploading(true);
@@ -218,6 +225,12 @@ export const DocumentVersions = ({
       setSelectedFile(null);
       setSuggestedFileName("");
       setFileDialogOpen(false);
+
+      // If user wants to import data, open the import modal
+      if (shouldImportData) {
+        setUploadedDocumentUrl(urlData.publicUrl);
+        setImportModalOpen(true);
+      }
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -441,6 +454,21 @@ export const DocumentVersions = ({
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
+                        {/* Import data button for drafts */}
+                        {!readOnly && (isDraftType(doc.document_type) || isFinalDraftType(doc.document_type)) && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setUploadedDocumentUrl(doc.url);
+                              setImportModalOpen(true);
+                            }}
+                            className="gap-1"
+                            title="Importar datos del documento"
+                          >
+                            <Sparkles className="h-3 w-3" />
+                          </Button>
+                        )}
                         {!readOnly && isDraftType(doc.document_type) && (
                           <Button
                             variant="outline"
@@ -660,12 +688,16 @@ export const DocumentVersions = ({
               </p>
             )}
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="outline" onClick={() => setFileDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleUploadFile} disabled={uploading || !suggestedFileName.trim()}>
-              {uploading ? "Subiendo..." : "Subir"}
+            <Button variant="outline" onClick={() => handleUploadFile(false)} disabled={uploading || !suggestedFileName.trim()}>
+              {uploading ? "Subiendo..." : "Subir sin importar"}
+            </Button>
+            <Button onClick={() => handleUploadFile(true)} disabled={uploading || !suggestedFileName.trim()} className="gap-2">
+              <Sparkles className="h-4 w-4" />
+              {uploading ? "Subiendo..." : "Subir e importar datos"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -796,6 +828,18 @@ export const DocumentVersions = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Import data modal */}
+      <ContractDataImportModal
+        open={importModalOpen}
+        onOpenChange={setImportModalOpen}
+        contractId={contractId}
+        contractName={contractName}
+        documentContent={uploadedDocumentUrl}
+        onImportComplete={() => {
+          onDataImported?.();
+        }}
+      />
     </>
   );
 };

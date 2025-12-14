@@ -25,7 +25,7 @@ import { ContractSurfacesSection } from "@/components/contracts/ContractSurfaces
 import { ContractAlerts } from "@/components/alerts/ContractAlerts";
 import { BudgetDashboard } from "@/components/budget/BudgetDashboard";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
-import { ContractDataImportModal } from "@/components/contracts/ContractDataImportModal";
+
 import { ImportAuditSection } from "@/components/contracts/ImportAuditSection";
 
 interface Contract {
@@ -90,11 +90,6 @@ const ContractDetail = () => {
   const [showDeleteConfirm1, setShowDeleteConfirm1] = useState(false);
   const [showDeleteConfirm2, setShowDeleteConfirm2] = useState(false);
   const [deletingRenegotiation, setDeletingRenegotiation] = useState(false);
-  
-  // Contract data import modal state
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [pendingSignDocId, setPendingSignDocId] = useState<string | null>(null);
-  const [documentContentForImport, setDocumentContentForImport] = useState<string | undefined>();
   
   // Dynamic superficie for real-time recalculation
   const [superficieEdificada, setSuperficieEdificada] = useState<number | null>(null);
@@ -248,35 +243,10 @@ const ContractDetail = () => {
 
   const handleMarkAsSigned = async (docId: string) => {
     if (!contract) return;
-
-    const doc = contract.contract_documents?.find(d => d.id === docId);
-    const isRenegotiationDoc = doc?.document_type === "borrador_final_r" || doc?.document_type === "borrador_r";
     
-    // Only show import modal for initial contract signing (not renegotiations)
-    if (!isRenegotiationDoc && contract.status !== "firmado") {
-      // Store the doc id for later processing
-      setPendingSignDocId(docId);
-      
-      // Get document content from the document URL for AI analysis
-      // Pass the document URL to the edge function which will parse it
-      const currentDoc = contract.contract_documents?.find(d => d.id === docId);
-      if (currentDoc) {
-        setDocumentContentForImport(currentDoc.url);
-      }
-      
-      setShowImportModal(true);
-      return;
-    }
-
-    // Continue with regular signing process
+    // Process signing directly without import modal
+    // User can import data when uploading drafts using the "Subir e importar datos" option
     await processContractSigning(docId);
-  };
-
-  const handleImportComplete = async () => {
-    if (pendingSignDocId) {
-      await processContractSigning(pendingSignDocId);
-      setPendingSignDocId(null);
-    }
   };
 
   const processContractSigning = async (docId: string) => {
@@ -928,6 +898,7 @@ const ContractDetail = () => {
           isSigned={isSigned}
           hasActiveRenegotiation={hasActiveRenegotiation}
           onRenegotiationSuccess={loadContract}
+          onDataImported={loadContract}
         />
 
         <RepositorySection 
@@ -981,15 +952,6 @@ const ContractDetail = () => {
         </Card>
       </main>
 
-      {/* Contract Data Import Modal */}
-      <ContractDataImportModal
-        open={showImportModal}
-        onOpenChange={setShowImportModal}
-        contractId={contract.id}
-        contractName={contract.name}
-        documentContent={documentContentForImport}
-        onImportComplete={handleImportComplete}
-      />
     </div>
   );
 };
