@@ -110,6 +110,14 @@ export function ContractDataImportModal({
     setSelectedFields(newSelected);
   };
 
+  // Helper to check if a field is empty/null/default
+  const isFieldEmpty = (value: any): boolean => {
+    if (value === null || value === undefined) return true;
+    if (typeof value === 'string' && value.trim() === '') return true;
+    if (typeof value === 'number' && value === 0) return true;
+    return false;
+  };
+
   const handleConfirmImport = async () => {
     if (selectedFields.size === 0) {
       toast.info('No hay campos seleccionados para importar');
@@ -121,6 +129,8 @@ export function ContractDataImportModal({
     try {
       const fieldsToImport = extractedFields.filter(f => selectedFields.has(f.field));
       
+      console.log('Fields to import:', fieldsToImport);
+      
       // Map fields to database updates
       const contractUpdates: Record<string, any> = {};
       const versionUpdates: Record<string, any> = {};
@@ -128,85 +138,107 @@ export function ContractDataImportModal({
       const contactData: Record<string, any> = {};
 
       for (const field of fieldsToImport) {
+        const cleanValue = field.value.toString().trim();
+        
         switch (field.field) {
           case 'nombre_contrato':
-            contractUpdates.name = field.value;
+            contractUpdates.name = cleanValue;
             break;
           case 'duracion_meses':
-            versionUpdates.duration_months = parseInt(field.value) || null;
+            const duracion = parseInt(cleanValue.replace(/\D/g, ''));
+            if (!isNaN(duracion) && duracion > 0) {
+              versionUpdates.duration_months = duracion;
+            }
             break;
           case 'canon_arriendo':
-            versionUpdates.regime_rent = parseFloat(field.value.replace(/[^\d.,]/g, '').replace(',', '.')) || null;
+            const canon = parseFloat(cleanValue.replace(/[^\d.,]/g, '').replace(',', '.'));
+            if (!isNaN(canon) && canon > 0) {
+              versionUpdates.regime_rent = canon;
+            }
             break;
           case 'arriendo_variable_porcentaje':
-            versionUpdates.variable_rent_percentage = parseFloat(field.value) || null;
+            const varPct = parseFloat(cleanValue.replace(/[^\d.,]/g, '').replace(',', '.'));
+            if (!isNaN(varPct)) {
+              versionUpdates.variable_rent_percentage = varPct;
+            }
             break;
           case 'meses_aviso_termino':
-            versionUpdates.notice_type = 'meses';
-            versionUpdates.notice_value = field.value;
+            const mesesAviso = cleanValue.replace(/\D/g, '');
+            if (mesesAviso) {
+              versionUpdates.notice_type = 'meses';
+              versionUpdates.notice_value = mesesAviso;
+            }
             break;
           case 'garantia':
-            const garantiaMeses = parseInt(field.value);
-            if (!isNaN(garantiaMeses)) {
+            const garantiaMeses = parseInt(cleanValue.replace(/\D/g, ''));
+            if (!isNaN(garantiaMeses) && garantiaMeses > 0) {
               versionUpdates.guarantee_multiplier = garantiaMeses;
             }
             break;
           case 'direccion':
-            addressData.street = field.value;
+            addressData.street = cleanValue;
             break;
           case 'comuna':
-            addressData.commune = field.value;
+            addressData.commune = cleanValue;
             break;
           case 'region':
-            addressData.region = field.value;
+            addressData.region = cleanValue;
             break;
           case 'pais':
-            addressData.country = field.value;
+            addressData.country = cleanValue;
             break;
           case 'empresa':
-            contactData.company = field.value;
+            contactData.company = cleanValue;
             break;
           case 'representante_nombre':
-            contactData.name = field.value;
+            contactData.name = cleanValue;
             break;
           case 'representante_telefono':
-            contactData.phone = field.value;
+            contactData.phone = cleanValue;
             break;
           case 'representante_email':
-            contactData.email = field.value;
+            contactData.email = cleanValue;
             break;
         }
       }
 
+      console.log('Contract updates:', contractUpdates);
+      console.log('Version updates:', versionUpdates);
+      console.log('Address data:', addressData);
+      console.log('Contact data:', contactData);
+
       // Track which fields were actually imported
       const importedFields: ExtractedField[] = [];
 
-      // Apply updates only to empty fields
+      // Apply contract updates only to empty fields
       if (Object.keys(contractUpdates).length > 0) {
-        // Get current contract to check for empty fields
         const { data: currentContract } = await supabase
           .from('contracts')
           .select('name')
           .eq('id', contractId)
           .single();
 
+        console.log('Current contract:', currentContract);
+
         const filteredUpdates: Record<string, any> = {};
         for (const [key, value] of Object.entries(contractUpdates)) {
-          if (!currentContract?.[key as keyof typeof currentContract]) {
+          const currentValue = currentContract?.[key as keyof typeof currentContract];
+          if (isFieldEmpty(currentValue)) {
             filteredUpdates[key] = value;
-            // Track imported field
-            const field = fieldsToImport.find(f => 
-              (f.field === 'nombre_contrato' && key === 'name')
-            );
+            const field = fieldsToImport.find(f => f.field === 'nombre_contrato' && key === 'name');
             if (field) importedFields.push(field);
           }
         }
 
+        console.log('Filtered contract updates:', filteredUpdates);
+
         if (Object.keys(filteredUpdates).length > 0) {
-          await supabase
+          const { error } = await supabase
             .from('contracts')
             .update(filteredUpdates)
             .eq('id', contractId);
+          
+          if (error) console.error('Error updating contract:', error);
         }
       }
 
@@ -219,30 +251,42 @@ export function ContractDataImportModal({
           .eq('is_current', true)
           .single();
 
+        console.log('Current version:', currentVersion);
+
         if (currentVersion) {
           const filteredVersionUpdates: Record<string, any> = {};
+          const fieldMapping: Record<string, string> = {
+            duration_months: 'duracion_meses',
+            regime_rent: 'canon_arriendo',
+            variable_rent_percentage: 'arriendo_variable_porcentaje',
+            notice_value: 'meses_aviso_termino',
+            guarantee_multiplier: 'garantia'
+          };
+
           for (const [key, value] of Object.entries(versionUpdates)) {
             const currentValue = currentVersion[key as keyof typeof currentVersion];
-            if (currentValue === null || currentValue === undefined || currentValue === 0) {
+            // For notice_type, always allow update if we're setting notice_value
+            if (key === 'notice_type') {
               filteredVersionUpdates[key] = value;
-              // Track imported fields
-              const fieldMapping: Record<string, string> = {
-                duration_months: 'duracion_meses',
-                regime_rent: 'canon_arriendo',
-                variable_rent_percentage: 'arriendo_variable_porcentaje',
-                notice_value: 'meses_aviso_termino',
-                guarantee_multiplier: 'garantia'
-              };
+              continue;
+            }
+            
+            if (isFieldEmpty(currentValue)) {
+              filteredVersionUpdates[key] = value;
               const field = fieldsToImport.find(f => f.field === fieldMapping[key]);
               if (field) importedFields.push(field);
             }
           }
 
+          console.log('Filtered version updates:', filteredVersionUpdates);
+
           if (Object.keys(filteredVersionUpdates).length > 0) {
-            await supabase
+            const { error } = await supabase
               .from('contract_versions')
               .update(filteredVersionUpdates)
               .eq('id', currentVersion.id);
+            
+            if (error) console.error('Error updating version:', error);
           }
         }
       }
@@ -255,22 +299,27 @@ export function ContractDataImportModal({
           .eq('contract_id', contractId)
           .maybeSingle();
 
+        console.log('Existing address:', existingAddress);
+
         if (existingAddress) {
           const filteredAddressUpdates: Record<string, any> = {};
+          const addressFieldMapping: Record<string, string> = {
+            street: 'direccion',
+            commune: 'comuna',
+            region: 'region',
+            country: 'pais'
+          };
+
           for (const [key, value] of Object.entries(addressData)) {
             const currentValue = existingAddress[key as keyof typeof existingAddress];
-            if (!currentValue || currentValue === '') {
+            if (isFieldEmpty(currentValue)) {
               filteredAddressUpdates[key] = value;
-              const fieldMapping: Record<string, string> = {
-                street: 'direccion',
-                commune: 'comuna',
-                region: 'region',
-                country: 'pais'
-              };
-              const field = fieldsToImport.find(f => f.field === fieldMapping[key]);
+              const field = fieldsToImport.find(f => f.field === addressFieldMapping[key]);
               if (field) importedFields.push(field);
             }
           }
+
+          console.log('Filtered address updates:', filteredAddressUpdates);
 
           if (Object.keys(filteredAddressUpdates).length > 0) {
             await supabase
@@ -305,22 +354,27 @@ export function ContractDataImportModal({
           .eq('contract_id', contractId)
           .maybeSingle();
 
+        console.log('Existing contact:', existingContact);
+
         if (existingContact) {
           const filteredContactUpdates: Record<string, any> = {};
+          const contactFieldMapping: Record<string, string> = {
+            company: 'empresa',
+            name: 'representante_nombre',
+            phone: 'representante_telefono',
+            email: 'representante_email'
+          };
+
           for (const [key, value] of Object.entries(contactData)) {
             const currentValue = existingContact[key as keyof typeof existingContact];
-            if (!currentValue || currentValue === '') {
+            if (isFieldEmpty(currentValue)) {
               filteredContactUpdates[key] = value;
-              const fieldMapping: Record<string, string> = {
-                company: 'empresa',
-                name: 'representante_nombre',
-                phone: 'representante_telefono',
-                email: 'representante_email'
-              };
-              const field = fieldsToImport.find(f => f.field === fieldMapping[key]);
+              const field = fieldsToImport.find(f => f.field === contactFieldMapping[key]);
               if (field) importedFields.push(field);
             }
           }
+
+          console.log('Filtered contact updates:', filteredContactUpdates);
 
           if (Object.keys(filteredContactUpdates).length > 0) {
             await supabase
