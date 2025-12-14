@@ -25,6 +25,7 @@ import { ContractSurfacesSection } from "@/components/contracts/ContractSurfaces
 import { ContractAlerts } from "@/components/alerts/ContractAlerts";
 import { BudgetDashboard } from "@/components/budget/BudgetDashboard";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
+import { ContractDataImportModal } from "@/components/contracts/ContractDataImportModal";
 
 interface Contract {
   id: string;
@@ -88,6 +89,11 @@ const ContractDetail = () => {
   const [showDeleteConfirm1, setShowDeleteConfirm1] = useState(false);
   const [showDeleteConfirm2, setShowDeleteConfirm2] = useState(false);
   const [deletingRenegotiation, setDeletingRenegotiation] = useState(false);
+  
+  // Contract data import modal state
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [pendingSignDocId, setPendingSignDocId] = useState<string | null>(null);
+  const [documentContentForImport, setDocumentContentForImport] = useState<string | undefined>();
   
   // Dynamic superficie for real-time recalculation
   const [superficieEdificada, setSuperficieEdificada] = useState<number | null>(null);
@@ -240,6 +246,40 @@ const ContractDetail = () => {
   };
 
   const handleMarkAsSigned = async (docId: string) => {
+    if (!contract) return;
+
+    const doc = contract.contract_documents?.find(d => d.id === docId);
+    const isRenegotiationDoc = doc?.document_type === "borrador_final_r" || doc?.document_type === "borrador_r";
+    
+    // Only show import modal for initial contract signing (not renegotiations)
+    if (!isRenegotiationDoc && contract.status !== "firmado") {
+      // Store the doc id for later processing
+      setPendingSignDocId(docId);
+      
+      // Try to get document content for AI analysis
+      // For now, we'll use a placeholder - in production, you'd fetch the actual content
+      setDocumentContentForImport(`Contrato de arriendo comercial: ${contract.name}. 
+        Ubicación: ${contract.contract_addresses?.[0]?.street || ''} ${contract.contract_addresses?.[0]?.number || ''}, 
+        ${contract.contract_addresses?.[0]?.commune || ''}, ${contract.contract_addresses?.[0]?.region || ''}.
+        Empresa: ${contract.contract_contacts?.[0]?.company || ''}.
+        Representante: ${contract.contract_contacts?.[0]?.name || ''}.`);
+      
+      setShowImportModal(true);
+      return;
+    }
+
+    // Continue with regular signing process
+    await processContractSigning(docId);
+  };
+
+  const handleImportComplete = async () => {
+    if (pendingSignDocId) {
+      await processContractSigning(pendingSignDocId);
+      setPendingSignDocId(null);
+    }
+  };
+
+  const processContractSigning = async (docId: string) => {
     if (!contract) return;
 
     setSigningContract(true);
@@ -940,6 +980,15 @@ const ContractDetail = () => {
         </Card>
       </main>
 
+      {/* Contract Data Import Modal */}
+      <ContractDataImportModal
+        open={showImportModal}
+        onOpenChange={setShowImportModal}
+        contractId={contract.id}
+        contractName={contract.name}
+        documentContent={documentContentForImport}
+        onImportComplete={handleImportComplete}
+      />
     </div>
   );
 };
