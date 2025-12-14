@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.process-alerts]
 verify_jwt = false
+
+[functions.extract-contract-data]
+verify_jwt = false
