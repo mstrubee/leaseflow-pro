@@ -577,7 +577,7 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
         fileUrl = driveData.webViewLink || driveData.webContentLink || '';
       } else {
         // Fallback to Supabase Storage
-        const filePath = `${contractId}/${currentFolder.id}/${Date.now()}_${finalFileName}`;
+        const filePath = `contracts/${contractId}/${currentFolder.id}/${Date.now()}_${finalFileName}`;
 
         const { error: uploadError } = await supabase.storage
           .from("repository-files")
