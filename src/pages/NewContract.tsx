@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { RentEscalations, Escalation } from "@/components/contracts/RentEscalations";
 import { CurrencyInput } from "@/components/contracts/CurrencyInput";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
+import { CHILE_DEMOGRAPHICS } from "@/data/chileRegionsData";
 
 const NewContract = () => {
   const navigate = useNavigate();
@@ -63,6 +64,17 @@ const NewContract = () => {
   // Document
   const [documentUrl, setDocumentUrl] = useState("");
 
+  // Get communes for selected region
+  const availableCommunes = useMemo(() => {
+    if (!region || !CHILE_DEMOGRAPHICS[region]) return [];
+    return CHILE_DEMOGRAPHICS[region].communes.map(c => c.name).sort();
+  }, [region]);
+
+  // Get all regions
+  const availableRegions = useMemo(() => {
+    return Object.keys(CHILE_DEMOGRAPHICS).sort();
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -80,20 +92,22 @@ const NewContract = () => {
 
       if (contractError) throw contractError;
 
-      // Create address (Datos de la Propiedad)
-      const { error: addressError } = await supabase
-        .from("contract_addresses")
-        .insert({
-          contract_id: contract.id,
-          street,
-          number,
-          commune,
-          region,
-          country: "Chile",
-          rol_sii: rolSii || null,
-        });
+      // Create address (Datos de la Propiedad) only if at least one field is filled
+      if (street || number || commune || region || rolSii) {
+        const { error: addressError } = await supabase
+          .from("contract_addresses")
+          .insert({
+            contract_id: contract.id,
+            street: street || "",
+            number: number || "",
+            commune: commune || "",
+            region: region || "",
+            country: "Chile",
+            rol_sii: rolSii || null,
+          });
 
-      if (addressError) throw addressError;
+        if (addressError) throw addressError;
+      }
 
       // Create contact (Arrendador) only if at least one field is filled
       if (company || contactName || phone || email || cedulaIdentidad || domicilioComercial) {
@@ -238,44 +252,63 @@ const NewContract = () => {
           <Card>
             <CardHeader>
               <CardTitle>Datos de la Propiedad</CardTitle>
+              <CardDescription>Opcional - puede completarse más adelante</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="street">Calle *</Label>
+                  <Label htmlFor="street">Calle</Label>
                   <Input
                     id="street"
                     value={street}
                     onChange={(e) => setStreet(e.target.value)}
-                    required
+                    placeholder="Ej: Av. Providencia"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="number">Número *</Label>
+                  <Label htmlFor="number">Número</Label>
                   <Input
                     id="number"
                     value={number}
                     onChange={(e) => setNumber(e.target.value)}
-                    required
+                    placeholder="Ej: 1234"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="commune">Comuna *</Label>
-                  <Input
-                    id="commune"
-                    value={commune}
-                    onChange={(e) => setCommune(e.target.value)}
-                    required
-                  />
+                  <Label htmlFor="region">Región</Label>
+                  <Select 
+                    value={region} 
+                    onValueChange={(value) => {
+                      setRegion(value);
+                      setCommune(""); // Reset commune when region changes
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar región" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableRegions.map((r) => (
+                        <SelectItem key={r} value={r}>{r}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="region">Región *</Label>
-                  <Input
-                    id="region"
-                    value={region}
-                    onChange={(e) => setRegion(e.target.value)}
-                    required
-                  />
+                  <Label htmlFor="commune">Comuna</Label>
+                  <Select 
+                    value={commune} 
+                    onValueChange={setCommune}
+                    disabled={!region}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={region ? "Seleccionar comuna" : "Seleccione región primero"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableCommunes.map((c) => (
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="rolSii">Rol SII</Label>
