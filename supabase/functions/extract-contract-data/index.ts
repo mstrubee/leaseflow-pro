@@ -13,6 +13,17 @@ interface ExtractedField {
   category: 'contractual' | 'ubicacion' | 'partes';
 }
 
+// Helper function to convert Uint8Array to base64 without stack overflow
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  const CHUNK_SIZE = 0x8000; // 32KB chunks to avoid call stack issues
+  let result = '';
+  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+    const chunk = bytes.subarray(i, i + CHUNK_SIZE);
+    result += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  return btoa(result);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -52,8 +63,9 @@ serve(async (req) => {
             // Get file as base64 for multimodal processing
             const arrayBuffer = await response.arrayBuffer();
             const uint8Array = new Uint8Array(arrayBuffer);
-            fileBase64 = btoa(String.fromCharCode(...uint8Array));
-            console.log("PDF converted to base64, length:", fileBase64.length);
+            console.log("PDF file size:", uint8Array.length, "bytes");
+            fileBase64 = uint8ArrayToBase64(uint8Array);
+            console.log("PDF converted to base64 successfully, length:", fileBase64.length);
           } else if (contentType.includes('text') || contentType.includes('html')) {
             documentContent = await response.text();
             console.log("Fetched text content, length:", documentContent.length);
@@ -61,8 +73,9 @@ serve(async (req) => {
             mimeType = contentType;
             const arrayBuffer = await response.arrayBuffer();
             const uint8Array = new Uint8Array(arrayBuffer);
-            fileBase64 = btoa(String.fromCharCode(...uint8Array));
-            console.log("Image converted to base64, length:", fileBase64.length);
+            console.log("Image file size:", uint8Array.length, "bytes");
+            fileBase64 = uint8ArrayToBase64(uint8Array);
+            console.log("Image converted to base64 successfully, length:", fileBase64.length);
           } else {
             // Try to read as text anyway
             const text = await response.text();
