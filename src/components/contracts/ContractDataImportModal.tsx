@@ -77,13 +77,15 @@ export function ContractDataImportModal({
 
       setExtractedFields(data.fields);
       
-      // Pre-select high confidence fields
-      const highConfidenceFields = new Set<string>(
+      // Pre-select ALL fields with alta or media confidence (exclude only baja if it existed)
+      const fieldsToSelect = new Set<string>(
         data.fields
-          .filter((f: ExtractedField) => f.confidence === 'alta')
+          .filter((f: ExtractedField) => f.confidence === 'alta' || f.confidence === 'media')
           .map((f: ExtractedField) => f.field)
       );
-      setSelectedFields(highConfidenceFields);
+      setSelectedFields(fieldsToSelect);
+      
+      console.log(`Pre-selected ${fieldsToSelect.size} of ${data.fields.length} fields`);
       
       setStep('preview');
     } catch (error: any) {

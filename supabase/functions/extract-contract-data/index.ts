@@ -80,14 +80,17 @@ serve(async (req) => {
     const systemPrompt = `Eres un experto en extracción de datos de contratos de arriendo comercial en Chile. 
 Tu tarea es analizar el contenido del contrato y extraer información estructurada.
 
-INSTRUCCIONES IMPORTANTES:
-1. Analiza cuidadosamente todo el documento
+INSTRUCCIONES CRÍTICAS:
+1. Analiza cuidadosamente todo el documento PDF o imagen
 2. Extrae TODOS los datos que puedas encontrar
-3. Para cada dato, asigna un nivel de confianza:
-   - "alta": El dato está claramente especificado
-   - "media": El dato se infiere del contexto
+3. SIEMPRE asigna confianza "alta" si el dato está visible en el documento
+4. Solo usa "media" si realmente no puedes leer el dato claramente
 
-CAMPOS A EXTRAER:
+REGLAS DE CONFIANZA:
+- "alta": El dato está visible en el documento (aunque sea parcialmente legible)
+- "media": El dato se deduce del contexto pero no está escrito explícitamente
+
+CAMPOS A EXTRAER (extrae todos los que encuentres):
 - nombre_contrato: Nombre o título del contrato (label: "Nombre del Contrato", category: contractual)
 - duracion_meses: Duración en meses, solo el número (label: "Duración (meses)", category: contractual)
 - canon_arriendo: Canon mensual en UF, solo número decimal (label: "Canon de Arriendo (UF)", category: contractual)
@@ -116,9 +119,11 @@ FORMATO DE RESPUESTA (JSON válido):
   "success": true
 }
 
-Para campos numéricos, devuelve SOLO el número sin texto ni símbolos.
-Si no encuentras un campo, simplemente no lo incluyas en la respuesta.
-SIEMPRE responde con JSON válido, sin texto adicional.`;
+IMPORTANTE:
+- Para campos numéricos, devuelve SOLO el número sin texto ni símbolos
+- Si no encuentras un campo, NO lo incluyas
+- SIEMPRE responde con JSON válido, sin texto adicional
+- Usa confianza "alta" para la mayoría de campos que puedas leer`;
 
     let messages: any[] = [
       { role: "system", content: systemPrompt }
