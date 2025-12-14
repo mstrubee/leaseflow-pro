@@ -628,6 +628,35 @@ serve(async (req) => {
         break;
       }
       
+      case "testConnection": {
+        // Test the connection by verifying the root folder exists
+        const rootFolderResponse = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${rootFolderId}?fields=id,name,webViewLink`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        );
+        
+        if (!rootFolderResponse.ok) {
+          const error = await rootFolderResponse.text();
+          throw new Error(`Cannot access root folder: ${error}`);
+        }
+        
+        const rootFolderData = await rootFolderResponse.json();
+        result = { 
+          success: true, 
+          message: "Conexión exitosa con Google Drive",
+          rootFolder: {
+            id: rootFolderData.id,
+            name: rootFolderData.name,
+            webViewLink: rootFolderData.webViewLink
+          }
+        };
+        break;
+      }
+      
       default:
         throw new Error(`Unknown action: ${action}`);
     }
