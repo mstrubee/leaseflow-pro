@@ -59,8 +59,13 @@ export function ContractDataImportModal({
     setStep('loading');
 
     try {
+      // If documentContent looks like a URL, pass it as documentUrl
+      const isUrl = documentContent?.startsWith('http');
+      
       const { data, error } = await supabase.functions.invoke('extract-contract-data', {
-        body: { documentContent }
+        body: isUrl 
+          ? { documentUrl: documentContent }
+          : { documentContent }
       });
 
       if (error) throw error;

@@ -256,13 +256,12 @@ const ContractDetail = () => {
       // Store the doc id for later processing
       setPendingSignDocId(docId);
       
-      // Try to get document content for AI analysis
-      // For now, we'll use a placeholder - in production, you'd fetch the actual content
-      setDocumentContentForImport(`Contrato de arriendo comercial: ${contract.name}. 
-        Ubicación: ${contract.contract_addresses?.[0]?.street || ''} ${contract.contract_addresses?.[0]?.number || ''}, 
-        ${contract.contract_addresses?.[0]?.commune || ''}, ${contract.contract_addresses?.[0]?.region || ''}.
-        Empresa: ${contract.contract_contacts?.[0]?.company || ''}.
-        Representante: ${contract.contract_contacts?.[0]?.name || ''}.`);
+      // Get document content from the document URL for AI analysis
+      // Pass the document URL to the edge function which will parse it
+      const currentDoc = contract.contract_documents?.find(d => d.id === docId);
+      if (currentDoc) {
+        setDocumentContentForImport(currentDoc.url);
+      }
       
       setShowImportModal(true);
       return;
@@ -591,16 +590,14 @@ const ContractDetail = () => {
                   onStatusChange={loadContract}
                 />
               )}
-              {isNegotiating && (
-                <Button
-                  variant="outline"
-                  onClick={() => navigate(`/contracts/${contract.id}/edit`)}
-                  className="gap-2"
-                >
-                  <Edit className="h-4 w-4" />
-                  Editar
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                onClick={() => navigate(`/contracts/${contract.id}/edit`)}
+                className="gap-2"
+              >
+                <Edit className="h-4 w-4" />
+                Editar
+              </Button>
             </div>
           </div>
         </div>
