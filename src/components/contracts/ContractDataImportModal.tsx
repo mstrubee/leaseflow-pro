@@ -48,19 +48,23 @@ export function ContractDataImportModal({
   const [importing, setImporting] = useState(false);
 
   useEffect(() => {
+    console.log('ContractDataImportModal - open changed:', open, 'documentContent:', documentContent?.substring(0, 100));
     if (open) {
       setStep('initial');
       setExtractedFields([]);
       setSelectedFields(new Set());
     }
-  }, [open]);
+  }, [open, documentContent]);
 
   const handleReviewData = async () => {
+    console.log('handleReviewData called with documentContent:', documentContent?.substring(0, 100));
     setStep('loading');
 
     try {
       // If documentContent looks like a URL, pass it as documentUrl
       const isUrl = documentContent?.startsWith('http');
+      
+      console.log('Calling extract-contract-data with:', isUrl ? 'documentUrl' : 'documentContent');
       
       const { data, error } = await supabase.functions.invoke('extract-contract-data', {
         body: isUrl 
@@ -68,13 +72,17 @@ export function ContractDataImportModal({
           : { documentContent }
       });
 
+      console.log('extract-contract-data response:', { data, error });
+
       if (error) throw error;
 
       if (!data.success || !data.fields || data.fields.length === 0) {
+        console.log('No data or fields returned, setting step to nodata');
         setStep('nodata');
         return;
       }
 
+      console.log('Setting extractedFields with', data.fields.length, 'fields');
       setExtractedFields(data.fields);
       
       // Pre-select ALL fields with alta or media confidence (exclude only baja if it existed)
