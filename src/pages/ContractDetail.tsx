@@ -26,6 +26,7 @@ import { ContractAlerts } from "@/components/alerts/ContractAlerts";
 import { BudgetDashboard } from "@/components/budget/BudgetDashboard";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { ContractDataImportModal } from "@/components/contracts/ContractDataImportModal";
+import { ImportAuditSection } from "@/components/contracts/ImportAuditSection";
 
 interface Contract {
   id: string;
@@ -701,6 +702,9 @@ const ContractDetail = () => {
             superficieEdificadaLocal={superficieEdificada ?? contract.superficie_edificada_local}
           />
         )}
+
+        {/* AI Import Audit Section */}
+        <ImportAuditSection contractId={contract.id} />
 
         {/* Superficies y Datos - Independent Section */}
         <ContractSurfacesSection 
