@@ -611,6 +611,50 @@ export type Database = {
           },
         ]
       }
+      contract_import_audit: {
+        Row: {
+          category: string
+          confidence: string
+          contract_id: string
+          field_label: string
+          field_name: string
+          id: string
+          imported_at: string
+          imported_by: string | null
+          imported_value: string
+        }
+        Insert: {
+          category: string
+          confidence: string
+          contract_id: string
+          field_label: string
+          field_name: string
+          id?: string
+          imported_at?: string
+          imported_by?: string | null
+          imported_value: string
+        }
+        Update: {
+          category?: string
+          confidence?: string
+          contract_id?: string
+          field_label?: string
+          field_name?: string
+          id?: string
+          imported_at?: string
+          imported_by?: string | null
+          imported_value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_import_audit_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contract_versions: {
         Row: {
           adjustment_periodicity_months: number | null

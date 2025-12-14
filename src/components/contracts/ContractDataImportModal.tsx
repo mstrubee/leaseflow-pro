@@ -178,6 +178,9 @@ export function ContractDataImportModal({
         }
       }
 
+      // Track which fields were actually imported
+      const importedFields: ExtractedField[] = [];
+
       // Apply updates only to empty fields
       if (Object.keys(contractUpdates).length > 0) {
         // Get current contract to check for empty fields
@@ -191,6 +194,11 @@ export function ContractDataImportModal({
         for (const [key, value] of Object.entries(contractUpdates)) {
           if (!currentContract?.[key as keyof typeof currentContract]) {
             filteredUpdates[key] = value;
+            // Track imported field
+            const field = fieldsToImport.find(f => 
+              (f.field === 'nombre_contrato' && key === 'name')
+            );
+            if (field) importedFields.push(field);
           }
         }
 
@@ -217,6 +225,16 @@ export function ContractDataImportModal({
             const currentValue = currentVersion[key as keyof typeof currentVersion];
             if (currentValue === null || currentValue === undefined || currentValue === 0) {
               filteredVersionUpdates[key] = value;
+              // Track imported fields
+              const fieldMapping: Record<string, string> = {
+                duration_months: 'duracion_meses',
+                regime_rent: 'canon_arriendo',
+                variable_rent_percentage: 'arriendo_variable_porcentaje',
+                notice_value: 'meses_aviso_termino',
+                guarantee_multiplier: 'garantia'
+              };
+              const field = fieldsToImport.find(f => f.field === fieldMapping[key]);
+              if (field) importedFields.push(field);
             }
           }
 
@@ -243,6 +261,14 @@ export function ContractDataImportModal({
             const currentValue = existingAddress[key as keyof typeof existingAddress];
             if (!currentValue || currentValue === '') {
               filteredAddressUpdates[key] = value;
+              const fieldMapping: Record<string, string> = {
+                street: 'direccion',
+                commune: 'comuna',
+                region: 'region',
+                country: 'pais'
+              };
+              const field = fieldsToImport.find(f => f.field === fieldMapping[key]);
+              if (field) importedFields.push(field);
             }
           }
 
@@ -263,6 +289,11 @@ export function ContractDataImportModal({
               region: addressData.region || '',
               country: addressData.country || 'Chile',
             });
+          // Track all address fields as imported
+          ['direccion', 'comuna', 'region', 'pais'].forEach(fieldName => {
+            const field = fieldsToImport.find(f => f.field === fieldName);
+            if (field) importedFields.push(field);
+          });
         }
       }
 
@@ -280,6 +311,14 @@ export function ContractDataImportModal({
             const currentValue = existingContact[key as keyof typeof existingContact];
             if (!currentValue || currentValue === '') {
               filteredContactUpdates[key] = value;
+              const fieldMapping: Record<string, string> = {
+                company: 'empresa',
+                name: 'representante_nombre',
+                phone: 'representante_telefono',
+                email: 'representante_email'
+              };
+              const field = fieldsToImport.find(f => f.field === fieldMapping[key]);
+              if (field) importedFields.push(field);
             }
           }
 
@@ -299,11 +338,35 @@ export function ContractDataImportModal({
               phone: contactData.phone || '',
               email: contactData.email || '',
             });
+          // Track all contact fields as imported
+          ['empresa', 'representante_nombre', 'representante_telefono', 'representante_email'].forEach(fieldName => {
+            const field = fieldsToImport.find(f => f.field === fieldName);
+            if (field) importedFields.push(field);
+          });
         }
       }
 
+      // Save audit records for imported fields
+      if (importedFields.length > 0) {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        const auditRecords = importedFields.map(field => ({
+          contract_id: contractId,
+          field_name: field.field,
+          field_label: field.label,
+          imported_value: field.value,
+          confidence: field.confidence,
+          category: field.category,
+          imported_by: user?.id || null,
+        }));
+
+        await supabase
+          .from('contract_import_audit')
+          .insert(auditRecords);
+      }
+
       toast.success('Datos importados exitosamente', {
-        description: `Se importaron ${selectedFields.size} campos al contrato`
+        description: `Se importaron ${importedFields.length} campos al contrato`
       });
 
       onOpenChange(false);
