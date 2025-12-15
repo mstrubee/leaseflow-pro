@@ -70,6 +70,8 @@ const EditContract = () => {
   // Guarantee and periodic adjustments
   const [guaranteeMultiplier, setGuaranteeMultiplier] = useState("");
   const [hasPeriodicAdjustments, setHasPeriodicAdjustments] = useState(false);
+  const [adjustmentType, setAdjustmentType] = useState<"percentage" | "fixed">("percentage");
+  const [adjustmentValue, setAdjustmentValue] = useState("");
   const [firstAdjustmentMonth, setFirstAdjustmentMonth] = useState("");
   const [adjustmentPeriodicityMonths, setAdjustmentPeriodicityMonths] = useState("");
   
@@ -168,6 +170,8 @@ const EditContract = () => {
         // Load guarantee and periodic adjustments
         setGuaranteeMultiplier(version.guarantee_multiplier?.toString() || "");
         setHasPeriodicAdjustments(version.has_periodic_adjustments || false);
+        setAdjustmentType((version as any).adjustment_type || "percentage");
+        setAdjustmentValue((version as any).adjustment_value?.toString() || "");
         setFirstAdjustmentMonth(version.first_adjustment_month?.toString() || "");
         setAdjustmentPeriodicityMonths(version.adjustment_periodicity_months?.toString() || "");
         
@@ -275,11 +279,13 @@ const EditContract = () => {
             notice_value: noticeType === "rangos" ? "" : (noticeValue || "3"),
             guarantee_multiplier: guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
             has_periodic_adjustments: hasPeriodicAdjustments,
+            adjustment_type: hasPeriodicAdjustments ? adjustmentType : null,
+            adjustment_value: hasPeriodicAdjustments && adjustmentValue ? parseFloat(adjustmentValue) : null,
             first_adjustment_month: hasPeriodicAdjustments && firstAdjustmentMonth ? parseInt(firstAdjustmentMonth) : null,
             adjustment_periodicity_months: hasPeriodicAdjustments && adjustmentPeriodicityMonths ? parseInt(adjustmentPeriodicityMonths) : null,
             gastos_comunes_uf_m2: gastosComunesUfM2 ? parseFloat(gastosComunesUfM2) : null,
             fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
-          })
+          } as any)
           .eq("id", versionId);
 
         if (versionError) throw versionError;
@@ -300,11 +306,13 @@ const EditContract = () => {
             notice_value: noticeType === "rangos" ? "" : (noticeValue || "3"),
             guarantee_multiplier: guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
             has_periodic_adjustments: hasPeriodicAdjustments,
+            adjustment_type: hasPeriodicAdjustments ? adjustmentType : null,
+            adjustment_value: hasPeriodicAdjustments && adjustmentValue ? parseFloat(adjustmentValue) : null,
             first_adjustment_month: hasPeriodicAdjustments && firstAdjustmentMonth ? parseInt(firstAdjustmentMonth) : null,
             adjustment_periodicity_months: hasPeriodicAdjustments && adjustmentPeriodicityMonths ? parseInt(adjustmentPeriodicityMonths) : null,
             gastos_comunes_uf_m2: gastosComunesUfM2 ? parseFloat(gastosComunesUfM2) : null,
             fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
-          })
+          } as any)
           .select()
           .single();
 
@@ -808,33 +816,115 @@ const EditContract = () => {
               {hasPeriodicAdjustments && (
                 <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
                   <div className="space-y-2">
+                    <Label>Tipo de reajuste</Label>
+                    <RadioGroup
+                      value={adjustmentType}
+                      onValueChange={(value: "percentage" | "fixed") => {
+                        setAdjustmentType(value);
+                        setHasUnsavedChanges(true);
+                      }}
+                      className="flex gap-4"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="percentage" id="adjPercentage" />
+                        <Label htmlFor="adjPercentage">Porcentaje (%)</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="fixed" id="adjFixed" />
+                        <Label htmlFor="adjFixed">Monto fijo (UF)</Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="adjustmentValue">
+                      {adjustmentType === "percentage" ? "Porcentaje de reajuste (%)" : "Monto de reajuste (UF)"}
+                    </Label>
+                    <Input
+                      id="adjustmentValue"
+                      type="number"
+                      step={adjustmentType === "percentage" ? "0.1" : "0.01"}
+                      min="0"
+                      placeholder={adjustmentType === "percentage" ? "Ej: 10" : "Ej: 5.5"}
+                      value={adjustmentValue}
+                      onChange={(e) => {
+                        setAdjustmentValue(e.target.value);
+                        setHasUnsavedChanges(true);
+                      }}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
                     <Label htmlFor="firstAdjustmentMonth">Mes del primer reajuste</Label>
                     <Input
                       id="firstAdjustmentMonth"
                       type="number"
                       min="1"
-                      placeholder="Ej: 12"
+                      placeholder="Ej: 60"
                       value={firstAdjustmentMonth}
-                      onChange={(e) => setFirstAdjustmentMonth(e.target.value)}
+                      onChange={(e) => {
+                        setFirstAdjustmentMonth(e.target.value);
+                        setHasUnsavedChanges(true);
+                      }}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      El reajuste será un porcentaje del arriendo en régimen
-                    </p>
                   </div>
+                  
                   <div className="space-y-2">
                     <Label htmlFor="adjustmentPeriodicityMonths">Periodicidad (meses)</Label>
                     <Input
                       id="adjustmentPeriodicityMonths"
                       type="number"
                       min="1"
-                      placeholder="Ej: 12"
+                      placeholder="Ej: 60"
                       value={adjustmentPeriodicityMonths}
-                      onChange={(e) => setAdjustmentPeriodicityMonths(e.target.value)}
+                      onChange={(e) => {
+                        setAdjustmentPeriodicityMonths(e.target.value);
+                        setHasUnsavedChanges(true);
+                      }}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Frecuencia de los reajustes después del primero
-                    </p>
                   </div>
+
+                  {/* Preview of adjustment calculation */}
+                  {adjustmentValue && regimeRent && firstAdjustmentMonth && adjustmentPeriodicityMonths && (
+                    <div className="bg-background/50 rounded p-3 space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Vista previa de reajustes:</p>
+                      <div className="text-xs space-y-1">
+                        {(() => {
+                          const baseRent = parseFloat(regimeRent);
+                          const adjValue = parseFloat(adjustmentValue);
+                          const firstMonth = parseInt(firstAdjustmentMonth);
+                          const periodicity = parseInt(adjustmentPeriodicityMonths);
+                          const durationMonths = parseInt(duration) || 120;
+                          const adjustments: { month: number; rent: number }[] = [];
+                          
+                          let currentRent = baseRent;
+                          let month = firstMonth;
+                          
+                          while (month <= durationMonths && adjustments.length < 5) {
+                            if (adjustmentType === "percentage") {
+                              currentRent = currentRent * (1 + adjValue / 100);
+                            } else {
+                              currentRent = currentRent + adjValue;
+                            }
+                            adjustments.push({ month, rent: currentRent });
+                            month += periodicity;
+                          }
+                          
+                          return adjustments.map((adj, idx) => (
+                            <div key={idx} className="flex justify-between">
+                              <span>Mes {adj.month}:</span>
+                              <span className="font-medium">{adj.rent.toFixed(2)} UF</span>
+                            </div>
+                          ));
+                        })()}
+                        <p className="text-muted-foreground mt-2 italic">
+                          {adjustmentType === "percentage" 
+                            ? "Los reajustes se aplican sobre la renta ya reajustada (compuesto)"
+                            : "Los reajustes se suman a la renta acumulada"}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

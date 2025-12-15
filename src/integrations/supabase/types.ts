@@ -658,6 +658,8 @@ export type Database = {
       contract_versions: {
         Row: {
           adjustment_periodicity_months: number | null
+          adjustment_type: string | null
+          adjustment_value: number | null
           contract_id: string
           created_at: string
           duration_months: number
@@ -679,6 +681,8 @@ export type Database = {
         }
         Insert: {
           adjustment_periodicity_months?: number | null
+          adjustment_type?: string | null
+          adjustment_value?: number | null
           contract_id: string
           created_at?: string
           duration_months: number
@@ -700,6 +704,8 @@ export type Database = {
         }
         Update: {
           adjustment_periodicity_months?: number | null
+          adjustment_type?: string | null
+          adjustment_value?: number | null
           contract_id?: string
           created_at?: string
           duration_months?: number
