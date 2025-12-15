@@ -189,7 +189,10 @@ const EditContract = () => {
 
       if (contractError) throw contractError;
 
-      // Update address
+      // Update or create address
+      const fullPhone = phoneDigits ? `${countryCode} ${phoneDigits}` : "";
+      const fullEmail = emails.filter(e => e.trim()).join(", ");
+
       if (addressId) {
         const { error: addressError } = await supabase
           .from("contract_addresses")
@@ -197,12 +200,22 @@ const EditContract = () => {
           .eq("id", addressId);
 
         if (addressError) throw addressError;
+      } else if (street && number && commune && region) {
+        // Create new address if doesn't exist
+        const { error: addressError } = await supabase
+          .from("contract_addresses")
+          .insert({
+            contract_id: id,
+            street,
+            number,
+            commune,
+            region,
+          });
+
+        if (addressError) throw addressError;
       }
 
-      // Update contact
-      const fullPhone = phoneDigits ? `${countryCode} ${phoneDigits}` : "";
-      const fullEmail = emails.filter(e => e.trim()).join(", ");
-      
+      // Update or create contact
       if (contactId) {
         const { error: contactError } = await supabase
           .from("contract_contacts")
@@ -215,20 +228,35 @@ const EditContract = () => {
           .eq("id", contactId);
 
         if (contactError) throw contactError;
+      } else if (company && contactName && fullEmail) {
+        // Create new contact if doesn't exist
+        const { error: contactError } = await supabase
+          .from("contract_contacts")
+          .insert({
+            contract_id: id,
+            company,
+            name: contactName,
+            phone: fullPhone,
+            email: fullEmail,
+          });
+
+        if (contactError) throw contactError;
       }
 
-      // Update version
+      // Update or create version
+      let currentVersionId = versionId;
+      
       if (versionId) {
         const { error: versionError } = await supabase
           .from("contract_versions")
           .update({
             effective_date: effectiveDate || null,
             initial_rent: hasEscalation && initialRent ? parseFloat(initialRent) : null,
-            regime_rent: parseFloat(regimeRent),
+            regime_rent: parseFloat(regimeRent) || 0,
             variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
-            duration_months: parseInt(duration),
+            duration_months: parseInt(duration) || 12,
             notice_type: noticeType,
-            notice_value: noticeValue,
+            notice_value: noticeValue || "3",
             guarantee_multiplier: guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
             has_periodic_adjustments: hasPeriodicAdjustments,
             first_adjustment_month: hasPeriodicAdjustments && firstAdjustmentMonth ? parseInt(firstAdjustmentMonth) : null,
@@ -239,14 +267,43 @@ const EditContract = () => {
           .eq("id", versionId);
 
         if (versionError) throw versionError;
+      } else {
+        // Create new version if doesn't exist
+        const { data: newVersion, error: versionError } = await supabase
+          .from("contract_versions")
+          .insert({
+            contract_id: id,
+            version_number: 1,
+            is_current: true,
+            effective_date: effectiveDate || null,
+            initial_rent: hasEscalation && initialRent ? parseFloat(initialRent) : null,
+            regime_rent: parseFloat(regimeRent) || 0,
+            variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
+            duration_months: parseInt(duration) || 12,
+            notice_type: noticeType || "meses",
+            notice_value: noticeValue || "3",
+            guarantee_multiplier: guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
+            has_periodic_adjustments: hasPeriodicAdjustments,
+            first_adjustment_month: hasPeriodicAdjustments && firstAdjustmentMonth ? parseInt(firstAdjustmentMonth) : null,
+            adjustment_periodicity_months: hasPeriodicAdjustments && adjustmentPeriodicityMonths ? parseInt(adjustmentPeriodicityMonths) : null,
+            gastos_comunes_uf_m2: gastosComunesUfM2 ? parseFloat(gastosComunesUfM2) : null,
+            fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
+          })
+          .select()
+          .single();
 
-        // Update escalations
+        if (versionError) throw versionError;
+        currentVersionId = newVersion.id;
+      }
+
+      // Handle escalations
+      if (currentVersionId) {
         if (hasEscalation) {
           // Delete existing escalations
           await supabase
             .from("rent_escalations")
             .delete()
-            .eq("version_id", versionId);
+            .eq("version_id", currentVersionId);
 
           // Insert new escalations
           if (escalations.length > 0) {
@@ -254,7 +311,7 @@ const EditContract = () => {
               .from("rent_escalations")
               .insert(
                 escalations.map((e) => ({
-                  version_id: versionId,
+                  version_id: currentVersionId,
                   month_number: e.month_number,
                   amount: e.amount,
                 }))
@@ -267,9 +324,11 @@ const EditContract = () => {
           await supabase
             .from("rent_escalations")
             .delete()
-            .eq("version_id", versionId);
+            .eq("version_id", currentVersionId);
         }
       }
+
+      setHasUnsavedChanges(false);
 
       toast({
         title: "Contrato actualizado",
@@ -369,7 +428,7 @@ const EditContract = () => {
                 <Input
                   id="name"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => { setName(e.target.value); setHasUnsavedChanges(true); }}
                   required
                 />
               </div>
