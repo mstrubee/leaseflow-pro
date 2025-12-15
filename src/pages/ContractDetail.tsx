@@ -215,6 +215,32 @@ const ContractDetail = () => {
     }
   };
 
+  const handleDeleteDocument = async (docId: string) => {
+    if (!contract) return;
+    
+    try {
+      const { error } = await supabase
+        .from("contract_documents")
+        .delete()
+        .eq("id", docId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Documento eliminado",
+        description: "El borrador ha sido eliminado correctamente",
+      });
+
+      loadContract();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo eliminar el documento",
+      });
+    }
+  };
+
   const handleSendForSignature = async (email: string, docId: string) => {
     if (!contract) return;
 
@@ -893,6 +919,7 @@ const ContractDetail = () => {
           onSendForSignature={handleSendForSignature}
           onMarkAsSigned={handleMarkAsSigned}
           onChangeDocumentType={handleChangeDocumentType}
+          onDeleteDocument={handleDeleteDocument}
           readOnly={false}
           isRenegotiation={isSigned && hasActiveRenegotiation}
           isSigned={isSigned}

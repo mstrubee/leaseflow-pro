@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, FileText, Check, Star, Upload, ChevronDown, ChevronRight, Cloud, Link, Send, FileCheck, Signature, RefreshCw, Sparkles } from "lucide-react";
+import { Plus, FileText, Check, Star, Upload, ChevronDown, ChevronRight, Cloud, Link, Send, FileCheck, Signature, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { supabase } from "@/integrations/supabase/client";
@@ -72,6 +72,7 @@ interface DocumentVersionsProps {
   onSendForSignature?: (email: string, docId: string) => Promise<void>;
   onMarkAsSigned?: (docId: string) => Promise<void>;
   onChangeDocumentType?: (docId: string, newType: string) => Promise<void>;
+  onDeleteDocument?: (docId: string) => Promise<void>;
   readOnly?: boolean;
   isRenegotiation?: boolean;
   isSigned?: boolean;
@@ -96,6 +97,7 @@ export const DocumentVersions = ({
   onSendForSignature,
   onMarkAsSigned,
   onChangeDocumentType,
+  onDeleteDocument,
   readOnly = false,
   isRenegotiation = false,
   isSigned = false,
@@ -143,6 +145,10 @@ export const DocumentVersions = ({
   // Import data modal
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [uploadedDocumentUrl, setUploadedDocumentUrl] = useState("");
+
+  // Delete confirmation dialog
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [docToDelete, setDocToDelete] = useState<string | null>(null);
 
   useEffect(() => {
     loadCloudConnections();
@@ -498,6 +504,21 @@ export const DocumentVersions = ({
                         >
                           Ver
                         </Button>
+                        {/* Delete button for drafts only */}
+                        {!readOnly && onDeleteDocument && isDraftType(doc.document_type) && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setDocToDelete(doc.id);
+                              setDeleteConfirmOpen(true);
+                            }}
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            title="Eliminar borrador"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -829,17 +850,34 @@ export const DocumentVersions = ({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Import data modal */}
-      <ContractDataImportModal
-        open={importModalOpen}
-        onOpenChange={setImportModalOpen}
-        contractId={contractId}
-        contractName={contractName}
-        documentContent={uploadedDocumentUrl}
-        onImportComplete={() => {
-          onDataImported?.();
-        }}
-      />
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar borrador?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. El documento será eliminado permanentemente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDocToDelete(null)}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (docToDelete && onDeleteDocument) {
+                  await onDeleteDocument(docToDelete);
+                }
+                setDocToDelete(null);
+                setDeleteConfirmOpen(false);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 };
