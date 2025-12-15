@@ -1004,6 +1004,38 @@ export type Database = {
           },
         ]
       }
+      notice_ranges: {
+        Row: {
+          created_at: string
+          end_month: number
+          id: string
+          start_month: number
+          version_id: string
+        }
+        Insert: {
+          created_at?: string
+          end_month: number
+          id?: string
+          start_month: number
+          version_id: string
+        }
+        Update: {
+          created_at?: string
+          end_month?: number
+          id?: string
+          start_month?: number
+          version_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notice_ranges_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "contract_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -1509,7 +1541,7 @@ export type Database = {
         | "borrador_r"
         | "borrador_final_r"
         | "firmado_r"
-      notice_type: "fecha" | "meses"
+      notice_type: "fecha" | "meses" | "rangos"
       notification_channel: "email" | "whatsapp"
       permission_type: "view" | "edit" | "all"
     }
@@ -1660,7 +1692,7 @@ export const Constants = {
         "borrador_final_r",
         "firmado_r",
       ],
-      notice_type: ["fecha", "meses"],
+      notice_type: ["fecha", "meses", "rangos"],
       notification_channel: ["email", "whatsapp"],
       permission_type: ["view", "edit", "all"],
     },

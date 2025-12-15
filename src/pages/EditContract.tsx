@@ -62,8 +62,9 @@ const EditContract = () => {
   const [regimeRent, setRegimeRent] = useState("");
   const [variableRentPercentage, setVariableRentPercentage] = useState("");
   const [duration, setDuration] = useState("");
-  const [noticeType, setNoticeType] = useState<"fecha" | "meses">("meses");
+  const [noticeType, setNoticeType] = useState<"fecha" | "meses" | "rangos">("meses");
   const [noticeValue, setNoticeValue] = useState("");
+  const [noticeRanges, setNoticeRanges] = useState<Array<{ id?: string; start_month: number; end_month: number }>>([]);
   const [escalations, setEscalations] = useState<Array<{ id?: string; month_number: number; amount: number }>>([]);
   
   // Guarantee and periodic adjustments
@@ -150,9 +151,19 @@ const EditContract = () => {
         setRegimeRent(version.regime_rent.toString());
         setVariableRentPercentage(version.variable_rent_percentage?.toString() || "");
         setDuration(version.duration_months.toString());
-        setNoticeType(version.notice_type);
+        setNoticeType(version.notice_type as "fecha" | "meses" | "rangos");
         setNoticeValue(version.notice_value);
         setEscalations(version.rent_escalations || []);
+        
+        // Load notice ranges if notice_type is "rangos"
+        if (version.notice_type === "rangos") {
+          const { data: ranges } = await supabase
+            .from("notice_ranges")
+            .select("*")
+            .eq("version_id", version.id)
+            .order("start_month");
+          setNoticeRanges(ranges || []);
+        }
         
         // Load guarantee and periodic adjustments
         setGuaranteeMultiplier(version.guarantee_multiplier?.toString() || "");
@@ -215,32 +226,37 @@ const EditContract = () => {
         if (addressError) throw addressError;
       }
 
-      // Update or create contact
+      // Update or create contact - always save if any contact data exists
+      const hasContactData = company || contactName || fullEmail || fullPhone;
+      
       if (contactId) {
         const { error: contactError } = await supabase
           .from("contract_contacts")
           .update({
-            company,
-            name: contactName,
+            company: company || "",
+            name: contactName || "",
             phone: fullPhone,
             email: fullEmail,
           })
           .eq("id", contactId);
 
         if (contactError) throw contactError;
-      } else if (company && contactName && fullEmail) {
-        // Create new contact if doesn't exist
-        const { error: contactError } = await supabase
+      } else if (hasContactData) {
+        // Create new contact if doesn't exist but has some data
+        const { data: newContact, error: contactError } = await supabase
           .from("contract_contacts")
           .insert({
             contract_id: id,
-            company,
-            name: contactName,
+            company: company || "",
+            name: contactName || "",
             phone: fullPhone,
             email: fullEmail,
-          });
+          })
+          .select()
+          .single();
 
         if (contactError) throw contactError;
+        if (newContact) setContactId(newContact.id);
       }
 
       // Update or create version
@@ -255,8 +271,8 @@ const EditContract = () => {
             regime_rent: parseFloat(regimeRent) || 0,
             variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
             duration_months: parseInt(duration) || 12,
-            notice_type: noticeType,
-            notice_value: noticeValue || "3",
+            notice_type: noticeType === "rangos" ? "rangos" as any : noticeType,
+            notice_value: noticeType === "rangos" ? "" : (noticeValue || "3"),
             guarantee_multiplier: guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
             has_periodic_adjustments: hasPeriodicAdjustments,
             first_adjustment_month: hasPeriodicAdjustments && firstAdjustmentMonth ? parseInt(firstAdjustmentMonth) : null,
@@ -280,8 +296,8 @@ const EditContract = () => {
             regime_rent: parseFloat(regimeRent) || 0,
             variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
             duration_months: parseInt(duration) || 12,
-            notice_type: noticeType || "meses",
-            notice_value: noticeValue || "3",
+            notice_type: (noticeType === "rangos" ? "rangos" : noticeType) as any,
+            notice_value: noticeType === "rangos" ? "" : (noticeValue || "3"),
             guarantee_multiplier: guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
             has_periodic_adjustments: hasPeriodicAdjustments,
             first_adjustment_month: hasPeriodicAdjustments && firstAdjustmentMonth ? parseInt(firstAdjustmentMonth) : null,
@@ -326,6 +342,36 @@ const EditContract = () => {
             .delete()
             .eq("version_id", currentVersionId);
         }
+      }
+
+      // Handle notice ranges
+      if (currentVersionId && noticeType === "rangos") {
+        // Delete existing notice ranges
+        await supabase
+          .from("notice_ranges")
+          .delete()
+          .eq("version_id", currentVersionId);
+
+        // Insert new notice ranges
+        if (noticeRanges.length > 0) {
+          const { error: rangeError } = await supabase
+            .from("notice_ranges")
+            .insert(
+              noticeRanges.map((r) => ({
+                version_id: currentVersionId,
+                start_month: r.start_month,
+                end_month: r.end_month,
+              }))
+            );
+
+          if (rangeError) throw rangeError;
+        }
+      } else if (currentVersionId) {
+        // Remove notice ranges if not using "rangos" type
+        await supabase
+          .from("notice_ranges")
+          .delete()
+          .eq("version_id", currentVersionId);
       }
 
       setHasUnsavedChanges(false);
@@ -805,29 +851,135 @@ const EditContract = () => {
 
               <div className="space-y-2">
                 <Label>Tipo de Aviso de Término *</Label>
-                <Select value={noticeType} onValueChange={(value: any) => setNoticeType(value)}>
+                <Select value={noticeType} onValueChange={(value: any) => {
+                  setNoticeType(value);
+                  setHasUnsavedChanges(true);
+                }}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="meses">Meses</SelectItem>
+                    <SelectItem value="meses">Meses antes del vencimiento</SelectItem>
                     <SelectItem value="fecha">Fecha específica</SelectItem>
+                    <SelectItem value="rangos">Rangos de meses</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="noticeValue">
-                  {noticeType === "meses" ? "Número de Meses *" : "Fecha *"}
-                </Label>
-                <Input
-                  id="noticeValue"
-                  type={noticeType === "meses" ? "number" : "date"}
-                  value={noticeValue}
-                  onChange={(e) => setNoticeValue(e.target.value)}
-                  required
-                />
-              </div>
+              {noticeType === "meses" && (
+                <div className="space-y-2">
+                  <Label htmlFor="noticeValue">Número de Meses *</Label>
+                  <Input
+                    id="noticeValue"
+                    type="number"
+                    min="1"
+                    value={noticeValue}
+                    onChange={(e) => {
+                      setNoticeValue(e.target.value);
+                      setHasUnsavedChanges(true);
+                    }}
+                    required
+                  />
+                </div>
+              )}
+
+              {noticeType === "fecha" && (
+                <div className="space-y-2">
+                  <Label htmlFor="noticeValue">Fecha *</Label>
+                  <Input
+                    id="noticeValue"
+                    type="date"
+                    value={noticeValue}
+                    onChange={(e) => {
+                      setNoticeValue(e.target.value);
+                      setHasUnsavedChanges(true);
+                    }}
+                    required
+                  />
+                </div>
+              )}
+
+              {noticeType === "rangos" && (
+                <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
+                  <div className="flex items-center justify-between">
+                    <Label>Rangos de Aviso (meses dentro de la vigencia)</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const maxMonth = parseInt(duration) || 12;
+                        setNoticeRanges([...noticeRanges, { start_month: 1, end_month: Math.min(3, maxMonth) }]);
+                        setHasUnsavedChanges(true);
+                      }}
+                      className="gap-1"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Agregar rango
+                    </Button>
+                  </div>
+                  
+                  {noticeRanges.length === 0 && (
+                    <p className="text-sm text-muted-foreground">
+                      No hay rangos definidos. Agrega uno o más rangos de meses.
+                    </p>
+                  )}
+
+                  {noticeRanges.map((range, index) => (
+                    <div key={index} className="flex items-center gap-3 p-3 bg-background rounded-md border">
+                      <span className="text-sm font-medium">Rango {index + 1}:</span>
+                      <div className="flex items-center gap-2">
+                        <Label className="text-sm">Del mes</Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          max={parseInt(duration) || 999}
+                          value={range.start_month}
+                          onChange={(e) => {
+                            const newRanges = [...noticeRanges];
+                            newRanges[index].start_month = parseInt(e.target.value) || 1;
+                            setNoticeRanges(newRanges);
+                            setHasUnsavedChanges(true);
+                          }}
+                          className="w-20"
+                        />
+                        <Label className="text-sm">al mes</Label>
+                        <Input
+                          type="number"
+                          min={range.start_month}
+                          max={parseInt(duration) || 999}
+                          value={range.end_month}
+                          onChange={(e) => {
+                            const newRanges = [...noticeRanges];
+                            newRanges[index].end_month = parseInt(e.target.value) || range.start_month;
+                            setNoticeRanges(newRanges);
+                            setHasUnsavedChanges(true);
+                          }}
+                          className="w-20"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          const newRanges = noticeRanges.filter((_, i) => i !== index);
+                          setNoticeRanges(newRanges);
+                          setHasUnsavedChanges(true);
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+
+                  {duration && noticeRanges.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      La duración del contrato es de {duration} meses. Los rangos deben estar dentro de este período.
+                    </p>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
