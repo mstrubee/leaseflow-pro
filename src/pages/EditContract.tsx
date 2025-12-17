@@ -39,6 +39,7 @@ const EditContract = () => {
   const [number, setNumber] = useState("");
   const [commune, setCommune] = useState("");
   const [region, setRegion] = useState("");
+  const [rolSii, setRolSii] = useState("");
   
   // Contact
   const [contactId, setContactId] = useState("");
@@ -66,6 +67,7 @@ const EditContract = () => {
   const [noticeValue, setNoticeValue] = useState("");
   const [noticeRanges, setNoticeRanges] = useState<Array<{ id?: string; start_month: number; end_month: number }>>([]);
   const [escalations, setEscalations] = useState<Array<{ id?: string; month_number: number; amount: number }>>([]);
+  const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">("unilateral_gp");
   
   // Guarantee and periodic adjustments
   const [guaranteeMultiplier, setGuaranteeMultiplier] = useState("");
@@ -111,6 +113,7 @@ const EditContract = () => {
         setNumber(address.number);
         setCommune(address.commune);
         setRegion(address.region);
+        setRolSii(address.rol_sii || "");
       }
 
       const contact = data.contract_contacts?.[0];
@@ -178,6 +181,9 @@ const EditContract = () => {
         // Load gastos comunes and fondo promoción
         setGastosComunesUfM2(version.gastos_comunes_uf_m2?.toString() || "");
         setFondoPromocionPercentage(version.fondo_promocion_percentage?.toString() || "");
+        
+        // Load notice bilaterality
+        setNoticeBilaterality((version as any).notice_bilaterality || "unilateral_gp");
       }
     } catch (error: any) {
       toast({
@@ -211,20 +217,21 @@ const EditContract = () => {
       if (addressId) {
         const { error: addressError } = await supabase
           .from("contract_addresses")
-          .update({ street, number, commune, region })
+          .update({ street, number, commune, region, rol_sii: rolSii || null })
           .eq("id", addressId);
 
         if (addressError) throw addressError;
-      } else if (street && number && commune && region) {
+      } else if (street || number || commune || region || rolSii) {
         // Create new address if doesn't exist
         const { error: addressError } = await supabase
           .from("contract_addresses")
           .insert({
             contract_id: id,
-            street,
-            number,
-            commune,
-            region,
+            street: street || "",
+            number: number || "",
+            commune: commune || "",
+            region: region || "",
+            rol_sii: rolSii || null,
           });
 
         if (addressError) throw addressError;
@@ -285,6 +292,7 @@ const EditContract = () => {
             adjustment_periodicity_months: hasPeriodicAdjustments && adjustmentPeriodicityMonths ? parseInt(adjustmentPeriodicityMonths) : null,
             gastos_comunes_uf_m2: gastosComunesUfM2 ? parseFloat(gastosComunesUfM2) : null,
             fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
+            notice_bilaterality: noticeBilaterality,
           } as any)
           .eq("id", versionId);
 
@@ -312,6 +320,7 @@ const EditContract = () => {
             adjustment_periodicity_months: hasPeriodicAdjustments && adjustmentPeriodicityMonths ? parseInt(adjustmentPeriodicityMonths) : null,
             gastos_comunes_uf_m2: gastosComunesUfM2 ? parseFloat(gastosComunesUfM2) : null,
             fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
+            notice_bilaterality: noticeBilaterality,
           } as any)
           .select()
           .single();
@@ -529,6 +538,15 @@ const EditContract = () => {
                     value={region}
                     onChange={(e) => { setRegion(e.target.value); setHasUnsavedChanges(true); }}
                     required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="rolSii">ROL SII</Label>
+                  <Input
+                    id="rolSii"
+                    value={rolSii}
+                    onChange={(e) => { setRolSii(e.target.value); setHasUnsavedChanges(true); }}
+                    placeholder="Ej: 1234-5"
                   />
                 </div>
               </div>
@@ -954,6 +972,30 @@ const EditContract = () => {
                     <SelectItem value="rangos">Rangos de meses</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Tipo de Aviso</Label>
+                <RadioGroup
+                  value={noticeBilaterality}
+                  onValueChange={(value: "unilateral_gp" | "bilateral") => {
+                    setNoticeBilaterality(value);
+                    setHasUnsavedChanges(true);
+                  }}
+                  className="flex gap-4"
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="unilateral_gp" id="unilateralGp" />
+                    <Label htmlFor="unilateralGp">Unilateral GP</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="bilateral" id="bilateral" />
+                    <Label htmlFor="bilateral">Bilateral</Label>
+                  </div>
+                </RadioGroup>
+                <p className="text-xs text-muted-foreground">
+                  Bilateral: el propietario también puede dar aviso de término
+                </p>
               </div>
 
               {noticeType === "meses" && (

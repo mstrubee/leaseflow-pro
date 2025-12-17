@@ -673,6 +673,7 @@ export type Database = {
           initial_rent: number | null
           is_current: boolean
           is_renegotiation: boolean
+          notice_bilaterality: string | null
           notice_type: Database["public"]["Enums"]["notice_type"]
           notice_value: string
           regime_rent: number
@@ -696,6 +697,7 @@ export type Database = {
           initial_rent?: number | null
           is_current?: boolean
           is_renegotiation?: boolean
+          notice_bilaterality?: string | null
           notice_type: Database["public"]["Enums"]["notice_type"]
           notice_value: string
           regime_rent: number
@@ -719,6 +721,7 @@ export type Database = {
           initial_rent?: number | null
           is_current?: boolean
           is_renegotiation?: boolean
+          notice_bilaterality?: string | null
           notice_type?: Database["public"]["Enums"]["notice_type"]
           notice_value?: string
           regime_rent?: number
@@ -1430,6 +1433,50 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      termination_notices: {
+        Row: {
+          contract_id: string
+          created_at: string
+          created_by: string | null
+          document_url: string | null
+          drive_file_id: string | null
+          id: string
+          notice_date: string
+          notice_type: string
+          storage_provider: string | null
+        }
+        Insert: {
+          contract_id: string
+          created_at?: string
+          created_by?: string | null
+          document_url?: string | null
+          drive_file_id?: string | null
+          id?: string
+          notice_date: string
+          notice_type: string
+          storage_provider?: string | null
+        }
+        Update: {
+          contract_id?: string
+          created_at?: string
+          created_by?: string | null
+          document_url?: string | null
+          drive_file_id?: string | null
+          id?: string
+          notice_date?: string
+          notice_type?: string
+          storage_provider?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "termination_notices_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_permissions: {
         Row: {

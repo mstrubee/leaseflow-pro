@@ -3,10 +3,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Trash2, AlertTriangle, ExternalLink } from "lucide-react";
+import { Trash2, AlertTriangle, FileCheck, FilePlus } from "lucide-react";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { addMonths, format, subMonths, parseISO, differenceInMonths, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
+
+interface TerminationNotice {
+  id: string;
+  notice_type: string;
+  notice_date: string;
+  document_url: string | null;
+}
 
 interface ContractVersion {
   regime_rent: number;
@@ -33,6 +40,7 @@ interface Contract {
   contract_versions: ContractVersion[];
   superficie_edificada_local: number | null;
   superficie_terreno: number | null;
+  termination_notices?: TerminationNotice[];
 }
 
 interface ContractsTableProps {
@@ -190,7 +198,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                       </div>
                     </TableCell>
                     <TableCell className="text-center">
-                      <div className="flex flex-col">
+                      <div className="flex flex-col items-center">
                         <span className={`text-sm ${isPastNotice ? "text-destructive font-medium" : ""}`}>
                           {noticeDeadline ? formatDateShort(noticeDeadline) : "-"}
                         </span>
@@ -206,6 +214,24 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                             return <span className="text-[10px] text-muted-foreground">Faltan {monthsRemaining} meses</span>;
                           }
                         })()}
+                        {/* Show termination notice if exists */}
+                        {contract.termination_notices && contract.termination_notices.length > 0 && (
+                          <div className="mt-1 flex flex-col gap-0.5">
+                            {contract.termination_notices.map((notice) => (
+                              <Badge 
+                                key={notice.id} 
+                                variant={notice.notice_type === 'sent' ? 'default' : 'secondary'}
+                                className="text-[9px] px-1.5 py-0 gap-1"
+                              >
+                                {notice.notice_type === 'sent' ? (
+                                  <><FilePlus className="h-2.5 w-2.5" /> Enviado {format(parseISO(notice.notice_date), "dd/MM/yy")}</>
+                                ) : (
+                                  <><FileCheck className="h-2.5 w-2.5" /> Recibido {format(parseISO(notice.notice_date), "dd/MM/yy")}</>
+                                )}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
