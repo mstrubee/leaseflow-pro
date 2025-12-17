@@ -27,7 +27,7 @@ import { BudgetDashboard } from "@/components/budget/BudgetDashboard";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 
 import { ImportAuditSection } from "@/components/contracts/ImportAuditSection";
-
+import { TerminationNoticesSection } from "@/components/contracts/TerminationNoticesSection";
 interface Contract {
   id: string;
   name: string;
@@ -78,6 +78,14 @@ interface Contract {
     uploaded_at: string;
     version_id: string | null;
   }>;
+  termination_notices?: Array<{
+    id: string;
+    notice_type: string;
+    notice_date: string;
+    document_url: string | null;
+    storage_provider: string | null;
+    created_at: string;
+  }>;
 }
 
 const ContractDetail = () => {
@@ -110,7 +118,8 @@ const ContractDetail = () => {
           contract_addresses (*),
           contract_contacts (*),
           contract_versions (*, rent_escalations (*)),
-          contract_documents (*)
+          contract_documents (*),
+          termination_notices (*)
         `)
         .eq("id", id)
         .single();
@@ -701,6 +710,15 @@ const ContractDetail = () => {
 
         {/* AI Import Audit Section */}
         <ImportAuditSection contractId={contract.id} />
+
+        {/* Termination Notices Section - only for signed contracts */}
+        {isSigned && (
+          <TerminationNoticesSection
+            contractId={contract.id}
+            notices={contract.termination_notices || []}
+            onRefresh={loadContract}
+          />
+        )}
 
         {/* Superficies y Datos - Independent Section */}
         <ContractSurfacesSection 
