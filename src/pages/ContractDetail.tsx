@@ -711,15 +711,6 @@ const ContractDetail = () => {
         {/* AI Import Audit Section */}
         <ImportAuditSection contractId={contract.id} />
 
-        {/* Termination Notices Section - only for signed contracts */}
-        {isSigned && (
-          <TerminationNoticesSection
-            contractId={contract.id}
-            notices={contract.termination_notices || []}
-            onRefresh={loadContract}
-          />
-        )}
-
         {/* Superficies y Datos - Independent Section */}
         <ContractSurfacesSection 
           contractId={contract.id} 
@@ -946,7 +937,16 @@ const ContractDetail = () => {
           onDataImported={loadContract}
         />
 
-        <RepositorySection 
+        {/* Termination Notices Section - only for signed contracts */}
+        {isSigned && (
+          <TerminationNoticesSection
+            contractId={contract.id}
+            notices={contract.termination_notices || []}
+            onRefresh={loadContract}
+          />
+        )}
+
+        <RepositorySection
           contractId={contract.id} 
           contractName={contract.name}
           contractStatus={contract.status}
