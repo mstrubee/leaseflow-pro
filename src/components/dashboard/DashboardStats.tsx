@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/table";
 import { FileText, CheckCircle, Clock, AlertTriangle } from "lucide-react";
 import { EconomicIndicators } from "./EconomicIndicators";
-
+import { PatentsModule } from "@/components/patents/PatentsModule";
 interface RegionStats {
   region: string;
   total: number;
@@ -220,6 +220,9 @@ export const DashboardStats = () => {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Patents Module */}
+      <PatentsModule />
     </div>
   );
 };

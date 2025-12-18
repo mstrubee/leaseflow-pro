@@ -1,0 +1,20 @@
+import { Badge } from "@/components/ui/badge";
+import { PatentDocStatus, STATUS_CONFIG } from "./types";
+
+interface PatentStatusBadgeProps {
+  status: PatentDocStatus;
+  size?: "sm" | "default";
+}
+
+export function PatentStatusBadge({ status, size = "default" }: PatentStatusBadgeProps) {
+  const config = STATUS_CONFIG[status];
+  
+  return (
+    <Badge 
+      className={`${config.bgColor} ${config.textColor} border-0 ${size === "sm" ? "text-xs px-1.5 py-0" : ""}`}
+      variant="outline"
+    >
+      {config.label}
+    </Badge>
+  );
+}
