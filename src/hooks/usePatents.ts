@@ -1,0 +1,227 @@
+import { useState, useEffect, useCallback } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { 
+  ContractWithPatent, 
+  PatentChecklistSection, 
+  PatentChecklistItem, 
+  PatentEmitter,
+  PatentDocument,
+  PatentPriority,
+  PatentDocStatus 
+} from "@/components/patents/types";
+
+export function usePatents() {
+  const [contracts, setContracts] = useState<ContractWithPatent[]>([]);
+  const [sections, setSections] = useState<PatentChecklistSection[]>([]);
+  const [items, setItems] = useState<PatentChecklistItem[]>([]);
+  const [emitters, setEmitters] = useState<PatentEmitter[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      // Load contracts that match criteria: firmado + patente_status in (Vigente, Provisoria, Sin Patente)
+      const { data: contractsData } = await supabase
+        .from("contracts")
+        .select(`
+          id,
+          name,
+          status,
+          patente_status,
+          contract_addresses (region, commune),
+          contract_patents (id, contract_id, priority, priority_changed_at, priority_changed_by),
+          patent_documents (
+            id, contract_id, checklist_item_id, status, status_changed_at,
+            emitter_id, responsible, start_date, deadline_days, end_date,
+            document_url, notes, custom_data
+          )
+        `)
+        .eq("status", "firmado")
+        .is("deleted_at", null)
+        .in("patente_status", ["vigente", "provisoria", "sin_patente"]);
+
+      // Load sections
+      const { data: sectionsData } = await supabase
+        .from("patent_checklist_sections")
+        .select("*")
+        .order("display_order");
+
+      // Load items
+      const { data: itemsData } = await supabase
+        .from("patent_checklist_items")
+        .select("*")
+        .eq("is_active", true)
+        .order("display_order");
+
+      // Load emitters
+      const { data: emittersData } = await supabase
+        .from("patent_emitters")
+        .select("*")
+        .eq("is_active", true)
+        .order("name");
+
+      setContracts((contractsData as any[]) || []);
+      setSections((sectionsData as PatentChecklistSection[]) || []);
+      setItems((itemsData as PatentChecklistItem[]) || []);
+      setEmitters((emittersData as PatentEmitter[]) || []);
+    } catch (error) {
+      console.error("Error loading patents data:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const updatePriority = async (contractId: string, priority: PatentPriority, userId: string) => {
+    const { data: existing } = await supabase
+      .from("contract_patents")
+      .select("id")
+      .eq("contract_id", contractId)
+      .single();
+
+    if (existing) {
+      await supabase
+        .from("contract_patents")
+        .update({
+          priority,
+          priority_changed_at: new Date().toISOString(),
+          priority_changed_by: userId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id);
+    } else {
+      await supabase
+        .from("contract_patents")
+        .insert({
+          contract_id: contractId,
+          priority,
+          priority_changed_at: new Date().toISOString(),
+          priority_changed_by: userId,
+        });
+    }
+
+    await loadData();
+  };
+
+  const updateDocumentStatus = async (
+    contractId: string,
+    checklistItemId: string,
+    status: PatentDocStatus,
+    userId: string
+  ) => {
+    const { data: existing } = await supabase
+      .from("patent_documents")
+      .select("id")
+      .eq("contract_id", contractId)
+      .eq("checklist_item_id", checklistItemId)
+      .single();
+
+    if (existing) {
+      await supabase
+        .from("patent_documents")
+        .update({
+          status,
+          status_changed_at: new Date().toISOString(),
+          status_changed_by: userId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id);
+    } else {
+      await supabase
+        .from("patent_documents")
+        .insert({
+          contract_id: contractId,
+          checklist_item_id: checklistItemId,
+          status,
+          status_changed_at: new Date().toISOString(),
+          status_changed_by: userId,
+        });
+    }
+
+    await loadData();
+  };
+
+  const updateDocument = async (
+    contractId: string,
+    checklistItemId: string,
+    data: Partial<PatentDocument>
+  ) => {
+    const { data: existing } = await supabase
+      .from("patent_documents")
+      .select("id")
+      .eq("contract_id", contractId)
+      .eq("checklist_item_id", checklistItemId)
+      .single();
+
+    if (existing) {
+      await supabase
+        .from("patent_documents")
+        .update({
+          ...data,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id);
+    } else {
+      await supabase
+        .from("patent_documents")
+        .insert({
+          contract_id: contractId,
+          checklist_item_id: checklistItemId,
+          status: 'pendiente',
+          ...data,
+        });
+    }
+
+    await loadData();
+  };
+
+  // Calculate document criticality stats
+  const getCriticalStats = useCallback(() => {
+    let pendingCount = 0;
+    let overdueCount = 0;
+    let upcomingCount = 0;
+    const today = new Date();
+    const thirtyDaysFromNow = new Date(today);
+    thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+
+    contracts.forEach(contract => {
+      (contract.patent_documents || []).forEach(doc => {
+        if (doc.status === 'pendiente') {
+          pendingCount++;
+          if (doc.end_date && new Date(doc.end_date) < today) {
+            overdueCount++;
+          } else if (doc.end_date && new Date(doc.end_date) <= thirtyDaysFromNow) {
+            upcomingCount++;
+          }
+        }
+      });
+    });
+
+    const criticalContracts = contracts.filter(c => 
+      c.contract_patents?.priority === 'priority_1'
+    ).length;
+
+    return {
+      criticalContracts,
+      pendingCount,
+      overdueCount,
+      upcomingCount,
+    };
+  }, [contracts]);
+
+  return {
+    contracts,
+    sections,
+    items,
+    emitters,
+    loading,
+    loadData,
+    updatePriority,
+    updateDocumentStatus,
+    updateDocument,
+    getCriticalStats,
+  };
+}

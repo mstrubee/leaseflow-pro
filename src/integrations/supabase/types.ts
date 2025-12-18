@@ -655,6 +655,44 @@ export type Database = {
           },
         ]
       }
+      contract_patents: {
+        Row: {
+          contract_id: string
+          created_at: string
+          id: string
+          priority: Database["public"]["Enums"]["patent_priority"]
+          priority_changed_at: string | null
+          priority_changed_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          contract_id: string
+          created_at?: string
+          id?: string
+          priority?: Database["public"]["Enums"]["patent_priority"]
+          priority_changed_at?: string | null
+          priority_changed_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          contract_id?: string
+          created_at?: string
+          id?: string
+          priority?: Database["public"]["Enums"]["patent_priority"]
+          priority_changed_at?: string | null
+          priority_changed_by?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_patents_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: true
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contract_versions: {
         Row: {
           adjustment_periodicity_months: number | null
@@ -1044,6 +1082,261 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      patent_checklist_items: {
+        Row: {
+          created_at: string
+          display_order: number
+          id: string
+          is_active: boolean
+          name: string
+          section_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          name: string
+          section_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          name?: string
+          section_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patent_checklist_items_section_id_fkey"
+            columns: ["section_id"]
+            isOneToOne: false
+            referencedRelation: "patent_checklist_sections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patent_checklist_sections: {
+        Row: {
+          code: string
+          created_at: string
+          display_order: number
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          display_order?: number
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          display_order?: number
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      patent_custom_columns: {
+        Row: {
+          column_type: string
+          created_at: string
+          display_order: number
+          id: string
+          is_active: boolean
+          name: string
+        }
+        Insert: {
+          column_type?: string
+          created_at?: string
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          name: string
+        }
+        Update: {
+          column_type?: string
+          created_at?: string
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          name?: string
+        }
+        Relationships: []
+      }
+      patent_document_alerts: {
+        Row: {
+          alert_column: string
+          alert_date: string
+          created_at: string
+          created_by: string | null
+          frequency_days: number | null
+          id: string
+          is_active: boolean
+          last_sent_at: string | null
+          patent_document_id: string
+          recipients: string[] | null
+        }
+        Insert: {
+          alert_column: string
+          alert_date: string
+          created_at?: string
+          created_by?: string | null
+          frequency_days?: number | null
+          id?: string
+          is_active?: boolean
+          last_sent_at?: string | null
+          patent_document_id: string
+          recipients?: string[] | null
+        }
+        Update: {
+          alert_column?: string
+          alert_date?: string
+          created_at?: string
+          created_by?: string | null
+          frequency_days?: number | null
+          id?: string
+          is_active?: boolean
+          last_sent_at?: string | null
+          patent_document_id?: string
+          recipients?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patent_document_alerts_patent_document_id_fkey"
+            columns: ["patent_document_id"]
+            isOneToOne: false
+            referencedRelation: "patent_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patent_documents: {
+        Row: {
+          checklist_item_id: string
+          contract_id: string
+          created_at: string
+          custom_data: Json | null
+          deadline_days: number | null
+          document_url: string | null
+          drive_file_id: string | null
+          emitter_id: string | null
+          end_date: string | null
+          folder_id: string | null
+          id: string
+          notes: string | null
+          responsible: string | null
+          start_date: string | null
+          status: Database["public"]["Enums"]["patent_doc_status"]
+          status_changed_at: string | null
+          status_changed_by: string | null
+          storage_provider: string | null
+          updated_at: string
+        }
+        Insert: {
+          checklist_item_id: string
+          contract_id: string
+          created_at?: string
+          custom_data?: Json | null
+          deadline_days?: number | null
+          document_url?: string | null
+          drive_file_id?: string | null
+          emitter_id?: string | null
+          end_date?: string | null
+          folder_id?: string | null
+          id?: string
+          notes?: string | null
+          responsible?: string | null
+          start_date?: string | null
+          status?: Database["public"]["Enums"]["patent_doc_status"]
+          status_changed_at?: string | null
+          status_changed_by?: string | null
+          storage_provider?: string | null
+          updated_at?: string
+        }
+        Update: {
+          checklist_item_id?: string
+          contract_id?: string
+          created_at?: string
+          custom_data?: Json | null
+          deadline_days?: number | null
+          document_url?: string | null
+          drive_file_id?: string | null
+          emitter_id?: string | null
+          end_date?: string | null
+          folder_id?: string | null
+          id?: string
+          notes?: string | null
+          responsible?: string | null
+          start_date?: string | null
+          status?: Database["public"]["Enums"]["patent_doc_status"]
+          status_changed_at?: string | null
+          status_changed_by?: string | null
+          storage_provider?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patent_documents_checklist_item_id_fkey"
+            columns: ["checklist_item_id"]
+            isOneToOne: false
+            referencedRelation: "patent_checklist_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patent_documents_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patent_documents_emitter_id_fkey"
+            columns: ["emitter_id"]
+            isOneToOne: false
+            referencedRelation: "patent_emitters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patent_documents_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "repository_folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patent_emitters: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -1596,6 +1889,8 @@ export type Database = {
         | "firmado_r"
       notice_type: "fecha" | "meses" | "rangos"
       notification_channel: "email" | "whatsapp"
+      patent_doc_status: "pendiente" | "en_curso" | "ok" | "nuevo_doc"
+      patent_priority: "priority_1" | "priority_2" | "priority_3" | "vigente"
       permission_type: "view" | "edit" | "all"
     }
     CompositeTypes: {
@@ -1747,6 +2042,8 @@ export const Constants = {
       ],
       notice_type: ["fecha", "meses", "rangos"],
       notification_channel: ["email", "whatsapp"],
+      patent_doc_status: ["pendiente", "en_curso", "ok", "nuevo_doc"],
+      patent_priority: ["priority_1", "priority_2", "priority_3", "vigente"],
       permission_type: ["view", "edit", "all"],
     },
   },
