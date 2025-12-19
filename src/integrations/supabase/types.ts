@@ -705,6 +705,7 @@ export type Database = {
           first_adjustment_month: number | null
           fondo_promocion_percentage: number | null
           gastos_comunes_uf_m2: number | null
+          grace_months: number | null
           guarantee_multiplier: number | null
           has_periodic_adjustments: boolean | null
           id: string
@@ -729,6 +730,7 @@ export type Database = {
           first_adjustment_month?: number | null
           fondo_promocion_percentage?: number | null
           gastos_comunes_uf_m2?: number | null
+          grace_months?: number | null
           guarantee_multiplier?: number | null
           has_periodic_adjustments?: boolean | null
           id?: string
@@ -753,6 +755,7 @@ export type Database = {
           first_adjustment_month?: number | null
           fondo_promocion_percentage?: number | null
           gastos_comunes_uf_m2?: number | null
+          grace_months?: number | null
           guarantee_multiplier?: number | null
           has_periodic_adjustments?: boolean | null
           id?: string

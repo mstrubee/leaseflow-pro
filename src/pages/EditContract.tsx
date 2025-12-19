@@ -57,8 +57,11 @@ const EditContract = () => {
   // Commercial conditions
   const [versionId, setVersionId] = useState("");
   const [effectiveDate, setEffectiveDate] = useState("");
+  const [signedDate, setSignedDate] = useState("");
+  const [hasSeparateDates, setHasSeparateDates] = useState(false);
   const [currency, setCurrency] = useState<"UF" | "CLP">("UF");
   const [hasEscalation, setHasEscalation] = useState(false);
+  const [graceMonths, setGraceMonths] = useState(0);
   const [initialRent, setInitialRent] = useState("");
   const [regimeRent, setRegimeRent] = useState("");
   const [variableRentPercentage, setVariableRentPercentage] = useState("");
@@ -152,6 +155,7 @@ const EditContract = () => {
         setVersionId(version.id);
         setEffectiveDate(version.effective_date || "");
         setHasEscalation(!!version.initial_rent);
+        setGraceMonths((version as any).grace_months || 0);
         setInitialRent(version.initial_rent?.toString() || "");
         setRegimeRent(version.regime_rent.toString());
         setVariableRentPercentage(version.variable_rent_percentage?.toString() || "");
@@ -159,6 +163,14 @@ const EditContract = () => {
         setNoticeType(version.notice_type as "fecha" | "meses" | "rangos");
         setNoticeValue(version.notice_value);
         setEscalations(version.rent_escalations || []);
+        
+        // Load signed date - check if different from effective date
+        if (data.signed_date) {
+          setSignedDate(data.signed_date);
+          if (data.signed_date !== version.effective_date) {
+            setHasSeparateDates(true);
+          }
+        }
         
         // Load notice ranges if notice_type is "rangos"
         if (version.notice_type === "rangos") {
@@ -202,10 +214,13 @@ const EditContract = () => {
     setSaving(true);
 
     try {
-      // Update contract
+      // Update contract including signed_date
       const { error: contractError } = await supabase
         .from("contracts")
-        .update({ name })
+        .update({ 
+          name,
+          signed_date: hasSeparateDates ? signedDate || null : effectiveDate || null,
+        })
         .eq("id", id);
 
       if (contractError) throw contractError;
@@ -293,6 +308,7 @@ const EditContract = () => {
             gastos_comunes_uf_m2: gastosComunesUfM2 ? parseFloat(gastosComunesUfM2) : null,
             fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
             notice_bilaterality: noticeBilaterality,
+            grace_months: graceMonths || 0,
           } as any)
           .eq("id", versionId);
 
@@ -389,6 +405,56 @@ const EditContract = () => {
           .from("notice_ranges")
           .delete()
           .eq("version_id", currentVersionId);
+      }
+
+      // Generate termination notice alert
+      if (effectiveDate && duration && (noticeType === 'meses' || noticeType === 'fecha' || noticeType === 'rangos')) {
+        // Delete existing early_termination_notice alerts for this contract
+        await supabase
+          .from("alerts")
+          .delete()
+          .eq("contract_id", id)
+          .eq("alert_type", "early_termination_notice");
+
+        // Calculate expiration date
+        const startDate = new Date(effectiveDate);
+        const expirationDate = new Date(startDate);
+        expirationDate.setMonth(expirationDate.getMonth() + (parseInt(duration) || 12));
+
+        let alertDate: Date | null = null;
+
+        if (noticeType === 'meses' && noticeValue) {
+          // Alert date is X months before expiration
+          alertDate = new Date(expirationDate);
+          alertDate.setMonth(alertDate.getMonth() - parseInt(noticeValue));
+        } else if (noticeType === 'fecha' && noticeValue) {
+          // Alert date is the specific date
+          alertDate = new Date(noticeValue);
+        } else if (noticeType === 'rangos' && noticeRanges.length > 0) {
+          // Alert date is the start of the first range (in months from start)
+          const firstRange = noticeRanges.sort((a, b) => a.start_month - b.start_month)[0];
+          alertDate = new Date(startDate);
+          alertDate.setMonth(alertDate.getMonth() + firstRange.start_month - 1);
+        }
+
+        if (alertDate && alertDate > new Date()) {
+          const { error: alertError } = await supabase
+            .from("alerts")
+            .insert({
+              contract_id: id,
+              title: `Aviso de término anticipado: ${name}`,
+              message: `Fecha límite para dar aviso de término anticipado del contrato ${name}.`,
+              alert_type: "early_termination_notice",
+              due_date: alertDate.toISOString().split('T')[0],
+              days_before: [30, 15, 7, 1],
+              channels: ["email"],
+              is_active: true,
+            });
+
+          if (alertError) {
+            console.error("Error creating alert:", alertError);
+          }
+        }
       }
 
       setHasUnsavedChanges(false);
@@ -654,15 +720,54 @@ const EditContract = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="effectiveDate">Fecha Inicio *</Label>
-                <Input
-                  id="effectiveDate"
-                  type="date"
-                  value={effectiveDate}
-                  onChange={(e) => setEffectiveDate(e.target.value)}
-                  required
-                />
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="hasSeparateDates"
+                    checked={hasSeparateDates}
+                    onChange={(e) => {
+                      setHasSeparateDates(e.target.checked);
+                      setHasUnsavedChanges(true);
+                    }}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  <Label htmlFor="hasSeparateDates" className="text-sm">
+                    Fecha de firma diferente a fecha de inicio
+                  </Label>
+                </div>
+
+                {hasSeparateDates && (
+                  <div className="space-y-2">
+                    <Label htmlFor="signedDate">Fecha de Firma</Label>
+                    <Input
+                      id="signedDate"
+                      type="date"
+                      value={signedDate}
+                      onChange={(e) => {
+                        setSignedDate(e.target.value);
+                        setHasUnsavedChanges(true);
+                      }}
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="effectiveDate">
+                    {hasSeparateDates ? "Fecha de Inicio" : "Fecha Firma e Inicio"}
+                  </Label>
+                  <Input
+                    id="effectiveDate"
+                    type="date"
+                    value={effectiveDate}
+                    onChange={(e) => setEffectiveDate(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {hasSeparateDates 
+                      ? "La fecha de inicio del contrato puede completarse más adelante"
+                      : "Fecha de firma e inicio del contrato"}
+                  </p>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -720,6 +825,8 @@ const EditContract = () => {
                         regimeRent={parseFloat(regimeRent) || 0}
                         durationMonths={parseInt(duration) || 12}
                         currency={currency}
+                        graceMonths={graceMonths}
+                        onGraceMonthsChange={setGraceMonths}
                       />
                     </div>
                   )}

@@ -86,23 +86,37 @@ export function PatentChecklist({
     return (contract.patent_documents || []).find(d => d.checklist_item_id === itemId);
   };
 
-  // Calculate dates based on logic
+  // Calculate dates based on logic - fixed to properly detect which fields to calculate
   const calculateDates = (
     startDate?: string,
     endDate?: string,
-    deadlineDays?: number
+    deadlineDays?: number,
+    changedField?: 'start_date' | 'end_date' | 'deadline_days'
   ): { start_date?: string; end_date?: string; deadline_days?: number } => {
-    if (startDate && deadlineDays && !endDate) {
+    // If we have start + days, calculate end
+    if (changedField === 'start_date' && startDate && deadlineDays && deadlineDays > 0) {
       const end = addDays(new Date(startDate), deadlineDays);
       return { start_date: startDate, end_date: format(end, 'yyyy-MM-dd'), deadline_days: deadlineDays };
     }
-    if (endDate && deadlineDays && !startDate) {
+    // If we have end + days, calculate start
+    if (changedField === 'end_date' && endDate && deadlineDays && deadlineDays > 0) {
       const start = addDays(new Date(endDate), -deadlineDays);
       return { start_date: format(start, 'yyyy-MM-dd'), end_date: endDate, deadline_days: deadlineDays };
     }
+    // If we have days and already have start, calculate end
+    if (changedField === 'deadline_days' && deadlineDays && deadlineDays > 0 && startDate) {
+      const end = addDays(new Date(startDate), deadlineDays);
+      return { start_date: startDate, end_date: format(end, 'yyyy-MM-dd'), deadline_days: deadlineDays };
+    }
+    // If we have days and already have end but no start, calculate start
+    if (changedField === 'deadline_days' && deadlineDays && deadlineDays > 0 && endDate && !startDate) {
+      const start = addDays(new Date(endDate), -deadlineDays);
+      return { start_date: format(start, 'yyyy-MM-dd'), end_date: endDate, deadline_days: deadlineDays };
+    }
+    // If we have start + end, calculate days
     if (startDate && endDate && !deadlineDays) {
       const days = differenceInDays(new Date(endDate), new Date(startDate));
-      return { start_date: startDate, end_date: endDate, deadline_days: days };
+      return { start_date: startDate, end_date: endDate, deadline_days: days > 0 ? days : undefined };
     }
     return { start_date: startDate, end_date: endDate, deadline_days: deadlineDays };
   };
@@ -143,13 +157,13 @@ export function PatentChecklist({
     
     let updates: Partial<PatentDocument> = { ...currentEdits, [field]: value };
 
-    // Auto-calculate dates
+    // Auto-calculate dates when changing date-related fields
     if (field === 'start_date' || field === 'end_date' || field === 'deadline_days') {
       const newStart = field === 'start_date' ? value : (currentEdits.start_date || doc?.start_date);
       const newEnd = field === 'end_date' ? value : (currentEdits.end_date || doc?.end_date);
       const newDays = field === 'deadline_days' ? value : (currentEdits.deadline_days || doc?.deadline_days);
       
-      const calculated = calculateDates(newStart, newEnd, newDays);
+      const calculated = calculateDates(newStart, newEnd, newDays, field as 'start_date' | 'end_date' | 'deadline_days');
       updates = { ...updates, ...calculated };
     }
 
@@ -182,7 +196,7 @@ export function PatentChecklist({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -228,9 +242,9 @@ export function PatentChecklist({
           <CardHeader>
             <CardTitle className="text-lg">{section.name}</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <Table>
+              <Table className="min-w-[1400px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="min-w-[200px]">Documento</TableHead>
