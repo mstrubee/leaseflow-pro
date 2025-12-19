@@ -40,6 +40,7 @@ const NewContract = () => {
   // Commercial conditions
   const [currency, setCurrency] = useState<"UF" | "CLP">("UF");
   const [hasEscalation, setHasEscalation] = useState(false);
+  const [graceMonths, setGraceMonths] = useState(0);
   const [initialRent, setInitialRent] = useState("");
   const [regimeRent, setRegimeRent] = useState("");
   const [variableRentPercentage, setVariableRentPercentage] = useState("");
@@ -48,6 +49,8 @@ const NewContract = () => {
   const [noticeValue, setNoticeValue] = useState("");
   const [escalations, setEscalations] = useState<Escalation[]>([]);
   const [fechaInicio, setFechaInicio] = useState("");
+  const [signedDate, setSignedDate] = useState("");
+  const [hasSeparateDates, setHasSeparateDates] = useState(false);
   
   // Guarantee and periodic adjustments
   const [guaranteeMultiplier, setGuaranteeMultiplier] = useState("");
@@ -88,6 +91,7 @@ const NewContract = () => {
         .insert({
           name,
           status: "en_negociacion",
+          signed_date: hasSeparateDates ? signedDate || null : fechaInicio || null,
         })
         .select()
         .single();
@@ -163,6 +167,7 @@ const NewContract = () => {
             adjustment_periodicity_months: hasPeriodicAdjustments && adjustmentPeriodicityMonths ? parseInt(adjustmentPeriodicityMonths) : null,
             gastos_comunes_uf_m2: gastosComunesUfM2 ? parseFloat(gastosComunesUfM2) : null,
             fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
+            grace_months: graceMonths || 0,
           } as any)
           .select()
           .single();
@@ -399,14 +404,48 @@ const NewContract = () => {
               <CardDescription>Opcional - puede completarse más adelante</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="fechaInicio">Fecha Inicio</Label>
-                <Input
-                  id="fechaInicio"
-                  type="date"
-                  value={fechaInicio}
-                  onChange={(e) => setFechaInicio(e.target.value)}
-                />
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="hasSeparateDatesNew"
+                    checked={hasSeparateDates}
+                    onChange={(e) => setHasSeparateDates(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  <Label htmlFor="hasSeparateDatesNew" className="text-sm">
+                    Fecha de firma diferente a fecha de inicio
+                  </Label>
+                </div>
+
+                {hasSeparateDates && (
+                  <div className="space-y-2">
+                    <Label htmlFor="signedDateNew">Fecha de Firma</Label>
+                    <Input
+                      id="signedDateNew"
+                      type="date"
+                      value={signedDate}
+                      onChange={(e) => setSignedDate(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="fechaInicio">
+                    {hasSeparateDates ? "Fecha de Inicio" : "Fecha Firma e Inicio"}
+                  </Label>
+                  <Input
+                    id="fechaInicio"
+                    type="date"
+                    value={fechaInicio}
+                    onChange={(e) => setFechaInicio(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {hasSeparateDates 
+                      ? "La fecha de inicio puede completarse más adelante"
+                      : "Fecha de firma e inicio del contrato"}
+                  </p>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -463,6 +502,8 @@ const NewContract = () => {
                         regimeRent={parseFloat(regimeRent) || 0}
                         durationMonths={parseInt(duration) || 12}
                         currency={currency}
+                        graceMonths={graceMonths}
+                        onGraceMonthsChange={setGraceMonths}
                       />
                     </div>
                   )}

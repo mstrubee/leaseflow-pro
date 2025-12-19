@@ -15,7 +15,8 @@ interface PatentDocumentUploadProps {
   itemId: string;
   itemName: string;
   currentUrl?: string;
-  onSave: (url: string) => void;
+  onSave: (url: string, folderId?: string) => void;
+  folders?: { id: string; name: string }[];
 }
 
 export function PatentDocumentUpload({
@@ -26,10 +27,12 @@ export function PatentDocumentUpload({
   itemName,
   currentUrl,
   onSave,
+  folders = [],
 }: PatentDocumentUploadProps) {
   const [uploading, setUploading] = useState(false);
   const [manualUrl, setManualUrl] = useState(currentUrl || "");
   const [activeTab, setActiveTab] = useState<'upload' | 'url'>('upload');
+  const [selectedFolder, setSelectedFolder] = useState<string>("");
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -38,7 +41,8 @@ export function PatentDocumentUpload({
     setUploading(true);
     try {
       const fileExt = file.name.split('.').pop();
-      const fileName = `${contractId}/${itemId}/${Date.now()}.${fileExt}`;
+      const folderPath = selectedFolder || `${contractId}/${itemId}`;
+      const fileName = `${folderPath}/${Date.now()}.${fileExt}`;
 
       const { data, error } = await supabase.storage
         .from('repository-files')
@@ -50,7 +54,7 @@ export function PatentDocumentUpload({
         .from('repository-files')
         .getPublicUrl(fileName);
 
-      onSave(urlData.publicUrl);
+      onSave(urlData.publicUrl, selectedFolder || undefined);
       toast.success("Archivo subido correctamente");
       onOpenChange(false);
     } catch (error) {
@@ -109,7 +113,22 @@ export function PatentDocumentUpload({
             <TabsTrigger value="url">URL manual</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="upload" className="mt-4">
+          <TabsContent value="upload" className="mt-4 space-y-4">
+            {folders.length > 0 && (
+              <div className="space-y-2">
+                <Label>Carpeta destino</Label>
+                <select
+                  className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                  value={selectedFolder}
+                  onChange={(e) => setSelectedFolder(e.target.value)}
+                >
+                  <option value="">Carpeta por defecto</option>
+                  {folders.map(folder => (
+                    <option key={folder.id} value={folder.id}>{folder.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="border-2 border-dashed rounded-lg p-8 text-center">
               <Input
                 type="file"

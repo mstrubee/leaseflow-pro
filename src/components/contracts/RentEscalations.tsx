@@ -35,6 +35,8 @@ interface RentEscalationsProps {
   durationMonths: number;
   readOnly?: boolean;
   currency?: "UF" | "CLP";
+  graceMonths?: number;
+  onGraceMonthsChange?: (months: number) => void;
 }
 
 interface CustomDotProps {
@@ -73,6 +75,8 @@ export const RentEscalations = ({
   durationMonths,
   readOnly = false,
   currency = "UF",
+  graceMonths = 0,
+  onGraceMonthsChange,
 }: RentEscalationsProps) => {
   const [newMonth, setNewMonth] = useState("");
   const [newAmount, setNewAmount] = useState("");
@@ -142,17 +146,26 @@ export const RentEscalations = ({
 
   // Generate chart data with real duration spacing
   const getChartData = () => {
-    const data: { month: number; rent: number; isEditable: boolean }[] = [];
+    const data: { month: number; rent: number; isEditable: boolean; isGrace?: boolean }[] = [];
     const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
     
-    // Start with initial rent at month 1 (always the first escalation)
-    const month1Escalation = sortedEscalations.find(e => e.month_number === 1);
-    const startRent = month1Escalation?.amount || initialRent || regimeRent;
-    data.push({ month: 1, rent: startRent, isEditable: !!month1Escalation });
+    // Add grace months at 0 rent
+    if (graceMonths > 0) {
+      data.push({ month: 1, rent: 0, isEditable: false, isGrace: true });
+      if (graceMonths > 1) {
+        data.push({ month: graceMonths, rent: 0, isEditable: false, isGrace: true });
+      }
+    }
     
-    // Add all defined escalation points (except month 1 which is already added)
+    // Start with initial rent at first paying month
+    const firstPayingMonth = graceMonths + 1;
+    const month1Escalation = sortedEscalations.find(e => e.month_number === firstPayingMonth);
+    const startRent = month1Escalation?.amount || initialRent || regimeRent;
+    data.push({ month: firstPayingMonth, rent: startRent, isEditable: !!month1Escalation });
+    
+    // Add all defined escalation points (except first paying month which is already added)
     sortedEscalations.forEach((esc) => {
-      if (esc.month_number > 1) {
+      if (esc.month_number > firstPayingMonth) {
         data.push({ month: esc.month_number, rent: esc.amount, isEditable: true });
       }
     });
@@ -160,7 +173,7 @@ export const RentEscalations = ({
     // Add final month with regime rent if not already defined
     const lastEscMonth = sortedEscalations.length > 0 
       ? Math.max(...sortedEscalations.map(e => e.month_number))
-      : 1;
+      : firstPayingMonth;
     
     if (lastEscMonth < durationMonths) {
       data.push({ month: durationMonths, rent: regimeRent, isEditable: false });
@@ -221,6 +234,25 @@ export const RentEscalations = ({
         </div>
       )}
 
+      {/* Grace months */}
+      {!readOnly && onGraceMonthsChange && (
+        <div className="space-y-2 pb-4 border-b border-border">
+          <Label className="text-sm font-medium">Meses de gracia (sin pago)</Label>
+          <div className="flex items-center gap-3">
+            <Input
+              type="number"
+              min={0}
+              max={durationMonths - 1}
+              value={graceMonths || ''}
+              onChange={(e) => onGraceMonthsChange(parseInt(e.target.value) || 0)}
+              className="w-24"
+              placeholder="0"
+            />
+            <span className="text-sm text-muted-foreground">meses al inicio sin pago de arriendo</span>
+          </div>
+        </div>
+      )}
+
       {/* Add new escalation */}
       {!readOnly && (
         <div className="space-y-3 pt-2">
@@ -232,7 +264,7 @@ export const RentEscalations = ({
                 placeholder="Mes"
                 value={newMonth}
                 onChange={(e) => setNewMonth(e.target.value)}
-                min={1}
+                min={graceMonths + 1}
                 max={durationMonths}
               />
             </div>
@@ -256,7 +288,10 @@ export const RentEscalations = ({
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Mes 1 corresponde al canon inicial. Indica desde qué mes cambia el canon.
+            {graceMonths > 0 
+              ? `Los primeros ${graceMonths} meses son de gracia. El mes ${graceMonths + 1} es el primer mes con pago.`
+              : "Mes 1 corresponde al canon inicial. Indica desde qué mes cambia el canon."
+            }
           </p>
         </div>
       )}
