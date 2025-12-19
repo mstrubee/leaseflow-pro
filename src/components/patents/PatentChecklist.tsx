@@ -4,15 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ArrowLeft, CalendarIcon, Save, Bell } from "lucide-react";
+import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText } from "lucide-react";
 import { format, addDays, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
-import { cn } from "@/lib/utils";
 import { 
   ContractWithPatent, 
   PatentChecklistSection, 
@@ -26,6 +24,8 @@ import {
 } from "./types";
 import { PatentPriorityBadge } from "./PatentPriorityBadge";
 import { PatentStatusBadge } from "./PatentStatusBadge";
+import { PatentDocumentUpload } from "./PatentDocumentUpload";
+import { PatentAlertDialog } from "./PatentAlertDialog";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
@@ -60,6 +60,15 @@ export function PatentChecklist({
   // Local state for document edits
   const [editingDoc, setEditingDoc] = useState<string | null>(null);
   const [docEdits, setDocEdits] = useState<Record<string, Partial<PatentDocument>>>({});
+  
+  // Upload and alert dialogs
+  const [uploadDialog, setUploadDialog] = useState<{ itemId: string; itemName: string } | null>(null);
+  const [alertDialog, setAlertDialog] = useState<{ 
+    docId: string; 
+    itemName: string; 
+    startDate?: string;
+    endDate?: string;
+  } | null>(null);
 
   const currentPriority = contract.contract_patents?.priority || 'priority_3';
 
@@ -231,8 +240,9 @@ export function PatentChecklist({
                     <TableHead className="min-w-[130px]">Fecha Inicio</TableHead>
                     <TableHead className="min-w-[100px]">Plazo (días)</TableHead>
                     <TableHead className="min-w-[130px]">Fecha Término</TableHead>
+                    <TableHead className="min-w-[100px]">Archivo</TableHead>
                     <TableHead className="min-w-[200px]">Notas</TableHead>
-                    <TableHead className="min-w-[100px]">Acciones</TableHead>
+                    <TableHead className="min-w-[120px]">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -345,6 +355,22 @@ export function PatentChecklist({
                           </Popover>
                         </TableCell>
                         <TableCell>
+                          <Button
+                            size="sm"
+                            variant={getDocValue(item.id, 'document_url') ? "secondary" : "outline"}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setUploadDialog({ itemId: item.id, itemName: item.name });
+                            }}
+                          >
+                            {getDocValue(item.id, 'document_url') ? (
+                              <FileText className="h-3 w-3" />
+                            ) : (
+                              <Upload className="h-3 w-3" />
+                            )}
+                          </Button>
+                        </TableCell>
+                        <TableCell>
                           <Input
                             className="h-8"
                             maxLength={150}
@@ -356,11 +382,31 @@ export function PatentChecklist({
                         <TableCell>
                           <div className="flex gap-1">
                             {hasChanges && (
-                              <Button size="sm" variant="default" onClick={() => saveDocumentChanges(item.id)}>
+                              <Button size="sm" variant="default" onClick={(e) => {
+                                e.stopPropagation();
+                                saveDocumentChanges(item.id);
+                              }}>
                                 <Save className="h-3 w-3" />
                               </Button>
                             )}
-                            <Button size="sm" variant="ghost">
+                            <Button 
+                              size="sm" 
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const d = getDocument(item.id);
+                                if (d?.id) {
+                                  setAlertDialog({
+                                    docId: d.id,
+                                    itemName: item.name,
+                                    startDate: getDocValue(item.id, 'start_date'),
+                                    endDate: getDocValue(item.id, 'end_date'),
+                                  });
+                                } else {
+                                  toast.error("Guarda primero los cambios del documento");
+                                }
+                              }}
+                            >
                               <Bell className="h-3 w-3" />
                             </Button>
                           </div>
@@ -397,6 +443,34 @@ export function PatentChecklist({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Document Upload Dialog */}
+      {uploadDialog && (
+        <PatentDocumentUpload
+          open={!!uploadDialog}
+          onOpenChange={() => setUploadDialog(null)}
+          contractId={contract.id}
+          itemId={uploadDialog.itemId}
+          itemName={uploadDialog.itemName}
+          currentUrl={getDocValue(uploadDialog.itemId, 'document_url') as string}
+          onSave={(url) => {
+            handleDocumentFieldChange(uploadDialog.itemId, 'document_url', url);
+            saveDocumentChanges(uploadDialog.itemId);
+          }}
+        />
+      )}
+
+      {/* Alert Dialog */}
+      {alertDialog && (
+        <PatentAlertDialog
+          open={!!alertDialog}
+          onOpenChange={() => setAlertDialog(null)}
+          documentId={alertDialog.docId}
+          documentName={alertDialog.itemName}
+          startDate={alertDialog.startDate}
+          endDate={alertDialog.endDate}
+        />
+      )}
     </div>
   );
 }

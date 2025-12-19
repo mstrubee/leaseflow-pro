@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { PatentsList } from "./PatentsList";
 import { PatentChecklist } from "./PatentChecklist";
 import { CriticalAlertsDashboard } from "./CriticalAlertsDashboard";
+import { PatentAdminPanel } from "./PatentAdminPanel";
 import { PatentDocStatus } from "./types";
 import { toast } from "sonner";
 
@@ -18,6 +19,7 @@ export function PatentsModule() {
     items, 
     emitters, 
     loading,
+    loadData,
     updatePriority,
     updateDocumentStatus,
     updateDocument,
@@ -26,6 +28,7 @@ export function PatentsModule() {
   const { user, isAdmin } = useAuth();
   const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'list' | 'alerts'>('list');
+  const [adminPanelOpen, setAdminPanelOpen] = useState(false);
 
   const stats = getCriticalStats();
   const selectedContract = contracts.find(c => c.id === selectedContractId);
@@ -88,11 +91,20 @@ export function PatentsModule() {
           </p>
         </div>
         {isAdmin && (
-          <Button variant="outline" className="gap-2">
+          <Button variant="outline" className="gap-2" onClick={() => setAdminPanelOpen(true)}>
             <Settings className="h-4 w-4" />
             Administrar
           </Button>
         )}
+        
+        <PatentAdminPanel
+          open={adminPanelOpen}
+          onOpenChange={setAdminPanelOpen}
+          sections={sections}
+          items={items}
+          emitters={emitters}
+          onDataChange={loadData}
+        />
       </div>
 
       {/* Summary Cards */}
