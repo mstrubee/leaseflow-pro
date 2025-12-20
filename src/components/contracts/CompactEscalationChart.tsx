@@ -73,11 +73,16 @@ export function CompactEscalationChart({
     // Add grace months at 0 rent
     if (graceMonths > 0) {
       rentChangePoints.set(1, { rent: 0, isGrace: true });
+      if (graceMonths > 1) {
+        rentChangePoints.set(graceMonths, { rent: 0, isGrace: true });
+      }
     }
     
     // Determine the starting rent after grace period
+    // NOTE: in this app, initialRent can be 0 when there are grace months; in that case,
+    // we must fall back to regimeRent to match the edit visualization.
     const month1Escalation = sortedEscalations.find(e => e.month_number === firstPayingMonth);
-    const startRent = month1Escalation?.amount || (initialRent ?? regimeRent);
+    const startRent = month1Escalation?.amount || initialRent || regimeRent;
     rentChangePoints.set(firstPayingMonth, { rent: startRent });
     
     // Add escalation points
