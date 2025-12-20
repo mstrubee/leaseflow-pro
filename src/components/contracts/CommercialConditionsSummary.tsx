@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DollarSign, Calendar, Bell, TrendingUp, Percent, Shield, Building2, Megaphone } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { DollarSign, Calendar, Bell, TrendingUp, Percent, Shield, Building2, Megaphone, Users } from "lucide-react";
 import { CompactEscalationChart } from "./CompactEscalationChart";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
@@ -33,6 +34,7 @@ interface ContractVersion {
   gastos_comunes_uf_m2?: number | null;
   fondo_promocion_percentage?: number | null;
   grace_months?: number | null;
+  notice_bilaterality?: string | null;
   rent_escalations: Escalation[];
 }
 
@@ -41,13 +43,15 @@ interface CommercialConditionsSummaryProps {
   signedDate: string | null;
   allVersions: ContractVersion[];
   superficieEdificadaLocal?: number | null;
+  noticeRanges?: Array<{ start_month: number; end_month: number }>;
 }
 
 export function CommercialConditionsSummary({ 
   version, 
   signedDate,
   allVersions,
-  superficieEdificadaLocal
+  superficieEdificadaLocal,
+  noticeRanges = []
 }: CommercialConditionsSummaryProps) {
   const { ufValue } = useEconomicIndicators();
   
@@ -66,17 +70,41 @@ export function CommercialConditionsSummary({
     
     const endDate = addMonths(startDate, version.duration_months);
     
-    // Calculate notice date
-    let noticeDate: Date;
-    if (version.notice_type === "fecha") {
+    // Calculate notice date based on type
+    let noticeDate: Date | null = null;
+    let noticeDateLabel = "";
+    
+    if (version.notice_type === "fecha" && version.notice_value) {
       noticeDate = parseISO(version.notice_value);
-    } else {
+      noticeDateLabel = "fecha fija";
+    } else if (version.notice_type === "meses" && version.notice_value) {
       const noticeMonths = parseInt(version.notice_value) || 0;
       noticeDate = subMonths(endDate, noticeMonths);
+      noticeDateLabel = `${version.notice_value} meses antes`;
+    } else if (version.notice_type === "rangos" && noticeRanges.length > 0) {
+      // Get the first non-expired range
+      const today = new Date();
+      const sortedRanges = [...noticeRanges].sort((a, b) => a.start_month - b.start_month);
+      
+      for (const range of sortedRanges) {
+        const rangeStartDate = addMonths(startDate, range.start_month - 1);
+        if (rangeStartDate > today) {
+          noticeDate = rangeStartDate;
+          noticeDateLabel = `rango: meses ${range.start_month}-${range.end_month}`;
+          break;
+        }
+      }
+      
+      // If all ranges are expired, use the last one
+      if (!noticeDate && sortedRanges.length > 0) {
+        const lastRange = sortedRanges[sortedRanges.length - 1];
+        noticeDate = addMonths(startDate, lastRange.start_month - 1);
+        noticeDateLabel = `rango: meses ${lastRange.start_month}-${lastRange.end_month}`;
+      }
     }
     
-    return { startDate, endDate, noticeDate };
-  }, [version, signedDate]);
+    return { startDate, endDate, noticeDate, noticeDateLabel };
+  }, [version, signedDate, noticeRanges]);
 
   const formatCurrency = (amount: number) => {
     return `${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
@@ -158,8 +186,19 @@ export function CommercialConditionsSummary({
               {dates?.noticeDate ? formatDateShort(dates.noticeDate) : "Sin definir"}
             </p>
             <p className="text-xs text-muted-foreground">
-              ({version.notice_type === "meses" ? `${version.notice_value} meses antes` : "fecha fija"})
+              ({dates?.noticeDateLabel || "sin especificar"})
             </p>
+          </div>
+
+          {/* Tipo de Aviso (Bilateralidad) */}
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Users className="h-3 w-3" />
+              Tipo de Aviso
+            </div>
+            <Badge variant={version.notice_bilaterality === "bilateral" ? "default" : "secondary"} className="text-xs">
+              {version.notice_bilaterality === "bilateral" ? "Bilateral" : "Unilateral GP"}
+            </Badge>
           </div>
 
           {/* Canon en Régimen */}
@@ -243,12 +282,12 @@ export function CommercialConditionsSummary({
           )}
         </div>
 
-        {/* Escalonado - Compact Chart */}
-        {hasEscalations && (
+        {/* Escalonado - Compact Chart - Always show when we have dates */}
+        {dates?.startDate && (
           <div className="mt-4 pt-3 border-t border-border">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
               <TrendingUp className="h-3 w-3" />
-              Escalonamiento de Renta
+              {hasEscalations ? "Escalonamiento de Renta" : "Tendencia de Renta"}
             </div>
             <CompactEscalationChart
               escalations={version.rent_escalations}
@@ -262,6 +301,9 @@ export function CommercialConditionsSummary({
               adjustmentValue={version.adjustment_value || 0}
               firstAdjustmentMonth={version.first_adjustment_month || 0}
               adjustmentPeriodicityMonths={version.adjustment_periodicity_months || 0}
+              noticeRanges={noticeRanges}
+              noticeType={version.notice_type}
+              noticeValue={version.notice_value}
             />
           </div>
         )}

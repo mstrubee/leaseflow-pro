@@ -700,6 +700,10 @@ const ContractDetail = () => {
               adjustment_periodicity_months: displayVersion.adjustment_periodicity_months,
               gastos_comunes_uf_m2: (displayVersion as any).gastos_comunes_uf_m2,
               fondo_promocion_percentage: (displayVersion as any).fondo_promocion_percentage,
+              grace_months: (displayVersion as any).grace_months,
+              notice_bilaterality: (displayVersion as any).notice_bilaterality,
+              adjustment_type: (displayVersion as any).adjustment_type,
+              adjustment_value: (displayVersion as any).adjustment_value,
               rent_escalations: displayVersion.rent_escalations || [],
             }}
             signedDate={contract.signed_date}
