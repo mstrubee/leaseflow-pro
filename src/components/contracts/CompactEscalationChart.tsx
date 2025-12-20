@@ -1,9 +1,5 @@
-import { useMemo, useState } from "react";
-import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip, ReferenceLine, ReferenceArea } from "recharts";
-import { Button } from "@/components/ui/button";
-import { Bell, Plus } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
+import { useMemo } from "react";
+import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, ReferenceLine, ReferenceArea, CartesianGrid } from "recharts";
 import { addMonths, format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -32,8 +28,6 @@ interface CompactEscalationChartProps {
   noticeRanges?: NoticeRange[];
   noticeType?: string;
   noticeValue?: string;
-  contractId?: string;
-  contractName?: string;
 }
 
 export function CompactEscalationChart({ 
@@ -51,11 +45,7 @@ export function CompactEscalationChart({
   noticeRanges = [],
   noticeType = "meses",
   noticeValue = "",
-  contractId,
-  contractName,
 }: CompactEscalationChartProps) {
-  const { toast } = useToast();
-  const [creatingAlert, setCreatingAlert] = useState(false);
   
   // Calculate current month based on effective date
   const currentMonth = useMemo(() => {
@@ -72,27 +62,30 @@ export function CompactEscalationChart({
 
   const { chartData, summaryPoints } = useMemo(() => {
     const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
-    const data: { month: number; rent: number }[] = [];
-    const summary: { month: number; rent: number; isRegime: boolean; isAdjustment?: boolean }[] = [];
+    const data: { month: number; rent: number; isGrace?: boolean; isAdjustment?: boolean }[] = [];
+    const summary: { month: number; rent: number; isRegime: boolean }[] = [];
     
     // Build a map of all rent changes
-    const rentChanges = new Map<number, number>();
+    const rentChanges = new Map<number, { rent: number; isGrace?: boolean; isAdjustment?: boolean }>();
     
     // Add grace months at 0 rent
     if (graceMonths > 0) {
-      rentChanges.set(1, 0);
+      rentChanges.set(1, { rent: 0, isGrace: true });
+      if (graceMonths > 1) {
+        rentChanges.set(graceMonths, { rent: 0, isGrace: true });
+      }
     }
     
     // Determine the starting rent
     const firstPayingMonth = graceMonths + 1;
     const month1Escalation = sortedEscalations.find(e => e.month_number === firstPayingMonth);
     const startRent = month1Escalation?.amount || (initialRent ?? regimeRent);
-    rentChanges.set(firstPayingMonth, startRent);
+    rentChanges.set(firstPayingMonth, { rent: startRent });
     
     // Add escalation points
     sortedEscalations.forEach(e => {
       if (e.month_number > firstPayingMonth) {
-        rentChanges.set(e.month_number, e.amount);
+        rentChanges.set(e.month_number, { rent: e.amount });
       }
     });
     
@@ -109,7 +102,7 @@ export function CompactEscalationChart({
         }
         
         if (!rentChanges.has(month)) {
-          rentChanges.set(month, currentRent);
+          rentChanges.set(month, { rent: currentRent, isAdjustment: true });
         }
         
         month += adjustmentPeriodicityMonths;
@@ -119,13 +112,13 @@ export function CompactEscalationChart({
     // Add final month if needed
     if (!rentChanges.has(durationMonths)) {
       const sortedMonths = Array.from(rentChanges.keys()).sort((a, b) => a - b);
-      const lastRent = sortedMonths.length > 0 ? rentChanges.get(sortedMonths[sortedMonths.length - 1]) || regimeRent : regimeRent;
-      rentChanges.set(durationMonths, lastRent);
+      const lastRent = sortedMonths.length > 0 ? rentChanges.get(sortedMonths[sortedMonths.length - 1])?.rent || regimeRent : regimeRent;
+      rentChanges.set(durationMonths, { rent: lastRent });
     }
     
     // Convert to arrays
-    rentChanges.forEach((rent, month) => {
-      data.push({ month, rent });
+    rentChanges.forEach((value, month) => {
+      data.push({ month, ...value });
     });
     data.sort((a, b) => a.month - b.month);
     
@@ -165,93 +158,46 @@ export function CompactEscalationChart({
     return null;
   }, [effectiveDate, noticeType, noticeValue, noticeRanges, durationMonths]);
 
-  // Show chart even with minimal data (just regime rent)
-  if (chartData.length === 0) {
-    // Create minimal chart data
-    const minimalData = [
-      { month: 1, rent: regimeRent },
-      { month: durationMonths, rent: regimeRent }
-    ];
-    return (
-      <div className="space-y-2">
-        <div className="h-20 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={minimalData} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
-              <defs>
-                <linearGradient id="rentGradientMin" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0.05} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="month" tick={{ fontSize: 10 }} tickFormatter={(v) => `M${v}`} />
-              <YAxis hide />
-              <Area 
-                type="stepAfter" 
-                dataKey="rent" 
-                stroke="hsl(var(--primary))" 
-                strokeWidth={1.5}
-                fill="url(#rentGradientMin)" 
-              />
-              {currentMonth && (
-                <ReferenceLine 
-                  x={currentMonth} 
-                  stroke="hsl(var(--destructive))" 
-                  strokeWidth={2}
-                  label={{ value: `M${currentMonth}`, fontSize: 9, fill: "hsl(var(--destructive))", position: "top" }}
-                />
-              )}
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-        {currentMonth && (
-          <div className="text-xs text-muted-foreground">
-            <span className="text-destructive font-medium">Mes actual: {currentMonth}</span>
-          </div>
-        )}
-      </div>
-    );
-  }
-
   const formatUF = (value: number) => {
-    return `${value.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+    return `${value.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} UF`;
   };
 
-  // Calculate the min value for Y axis (avoid 0 flattening issue)
-  const minRent = Math.min(...chartData.map(d => d.rent));
-  const maxRent = Math.max(...chartData.map(d => d.rent));
-  const yMin = Math.max(0, minRent - (maxRent - minRent) * 0.1);
-  const yMax = maxRent + (maxRent - minRent) * 0.1;
+  // If no chart data, show minimal chart with regime rent
+  const displayData = chartData.length > 0 ? chartData : [
+    { month: 1, rent: regimeRent },
+    { month: durationMonths, rent: regimeRent }
+  ];
+
+  // Calculate domain
+  const xDomain: [number, number] = [1, durationMonths];
 
   return (
     <div className="space-y-2">
-      <div className="h-24 w-full">
+      <div className="h-48 w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 4, bottom: 16 }}>
-            <defs>
-              <linearGradient id="rentGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0.05} />
-              </linearGradient>
-            </defs>
+          <LineChart data={displayData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
             <XAxis 
               dataKey="month" 
-              tick={{ fontSize: 9 }} 
-              tickFormatter={(v) => `${v}`}
-              interval="preserveStartEnd"
+              type="number"
+              domain={xDomain}
+              tick={{ fontSize: 11 }}
+              tickFormatter={(v) => `M${v}`}
+              scale="linear"
             />
-            <YAxis hide domain={[yMin, yMax]} />
+            <YAxis 
+              tick={{ fontSize: 11 }}
+              tickFormatter={(v) => `${v}`}
+            />
             <Tooltip 
-              content={({ active, payload }) => {
-                if (active && payload && payload.length) {
-                  return (
-                    <div className="bg-popover border border-border rounded px-2 py-1 text-xs shadow-md">
-                      <span className="text-muted-foreground">Mes {payload[0].payload.month}:</span>{" "}
-                      <span className="font-semibold">{formatUF(payload[0].value as number)} UF</span>
-                    </div>
-                  );
-                }
-                return null;
+              formatter={(value: number, name: string, props: any) => {
+                const point = props.payload;
+                let label = "Canon";
+                if (point?.isGrace) label = "Gracia";
+                if (point?.isAdjustment) label = "Reajuste";
+                return [formatUF(value), label];
               }}
+              labelFormatter={(label) => `Mes ${label}`}
             />
             
             {/* Notice ranges as shaded areas */}
@@ -276,20 +222,30 @@ export function CompactEscalationChart({
                 strokeDasharray="4 4"
                 label={{ 
                   value: `Aviso`, 
-                  fontSize: 9, 
+                  fontSize: 10, 
                   fill: "hsl(var(--warning))",
                   position: "insideTopRight"
                 }}
               />
             )}
             
-            <Area 
+            <Line 
               type="stepAfter" 
               dataKey="rent" 
               stroke="hsl(var(--primary))" 
-              strokeWidth={1.5}
-              fill="url(#rentGradient)" 
+              strokeWidth={2}
+              dot={{ r: 4, fill: "hsl(var(--primary))", stroke: "hsl(var(--background))", strokeWidth: 2 }}
+              activeDot={{ r: 6, fill: "hsl(var(--primary))" }}
             />
+            
+            {/* Regime rent reference line */}
+            <ReferenceLine 
+              y={regimeRent} 
+              stroke="hsl(var(--muted-foreground))" 
+              strokeDasharray="5 5"
+              label={{ value: "Régimen", fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+            />
+            
             {/* Current month red vertical line with month number */}
             {currentMonth && (
               <ReferenceLine 
@@ -298,13 +254,13 @@ export function CompactEscalationChart({
                 strokeWidth={2}
                 label={{ 
                   value: `M${currentMonth}`, 
-                  fontSize: 9, 
+                  fontSize: 10, 
                   fill: "hsl(var(--destructive))",
                   position: "top"
                 }}
               />
             )}
-          </AreaChart>
+          </LineChart>
         </ResponsiveContainer>
       </div>
       
@@ -327,7 +283,7 @@ export function CompactEscalationChart({
         )}
         {summaryPoints.slice(0, 3).map((point, idx) => (
           <span key={idx} className={point.isRegime ? "font-medium text-primary" : ""}>
-            M{point.month}: {formatUF(point.rent)} UF
+            M{point.month}: {formatUF(point.rent)}
             {point.isRegime && " (régimen)"}
           </span>
         ))}
