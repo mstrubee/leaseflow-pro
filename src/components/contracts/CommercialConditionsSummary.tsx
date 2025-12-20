@@ -28,8 +28,11 @@ interface ContractVersion {
   has_periodic_adjustments?: boolean | null;
   first_adjustment_month?: number | null;
   adjustment_periodicity_months?: number | null;
+  adjustment_type?: string | null;
+  adjustment_value?: number | null;
   gastos_comunes_uf_m2?: number | null;
   fondo_promocion_percentage?: number | null;
+  grace_months?: number | null;
   rent_escalations: Escalation[];
 }
 
@@ -252,6 +255,13 @@ export function CommercialConditionsSummary({
               initialRent={version.initial_rent}
               regimeRent={version.regime_rent}
               durationMonths={version.duration_months}
+              effectiveDate={version.effective_date}
+              graceMonths={version.grace_months || 0}
+              hasPeriodicAdjustments={version.has_periodic_adjustments || false}
+              adjustmentType={version.adjustment_type || "percentage"}
+              adjustmentValue={version.adjustment_value || 0}
+              firstAdjustmentMonth={version.first_adjustment_month || 0}
+              adjustmentPeriodicityMonths={version.adjustment_periodicity_months || 0}
             />
           </div>
         )}
