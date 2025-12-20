@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DollarSign, Calendar, Bell, TrendingUp, Percent, Shield, Building2, Megaphone, Users } from "lucide-react";
 import { CompactEscalationChart } from "./CompactEscalationChart";
+import { RenegotiationDialog } from "./RenegotiationDialog";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
@@ -44,6 +45,10 @@ interface CommercialConditionsSummaryProps {
   allVersions: ContractVersion[];
   superficieEdificadaLocal?: number | null;
   noticeRanges?: Array<{ start_month: number; end_month: number }>;
+  contractId?: string;
+  showRenegotiationButton?: boolean;
+  hasActiveRenegotiation?: boolean;
+  onRenegotiationSuccess?: () => void;
 }
 
 export function CommercialConditionsSummary({ 
@@ -51,7 +56,11 @@ export function CommercialConditionsSummary({
   signedDate,
   allVersions,
   superficieEdificadaLocal,
-  noticeRanges = []
+  noticeRanges = [],
+  contractId,
+  showRenegotiationButton = false,
+  hasActiveRenegotiation = false,
+  onRenegotiationSuccess
 }: CommercialConditionsSummaryProps) {
   const { ufValue } = useEconomicIndicators();
   
@@ -144,10 +153,29 @@ export function CommercialConditionsSummary({
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <DollarSign className="h-4 w-4" />
-          Condiciones Comerciales
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <DollarSign className="h-4 w-4" />
+            Condiciones Comerciales
+          </CardTitle>
+          {showRenegotiationButton && contractId && !hasActiveRenegotiation && (
+            <RenegotiationDialog
+              contractId={contractId}
+              currentVersion={{
+                id: version.id,
+                version_number: version.version_number,
+                initial_rent: version.initial_rent,
+                regime_rent: version.regime_rent,
+                variable_rent_percentage: version.variable_rent_percentage,
+                duration_months: version.duration_months,
+                notice_type: version.notice_type,
+                notice_value: version.notice_value,
+              }}
+              hasActiveRenegotiation={false}
+              onSuccess={onRenegotiationSuccess || (() => {})}
+            />
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">

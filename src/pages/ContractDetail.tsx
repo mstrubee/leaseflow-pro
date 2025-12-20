@@ -709,6 +709,10 @@ const ContractDetail = () => {
             signedDate={contract.signed_date}
             allVersions={allVersions}
             superficieEdificadaLocal={superficieEdificada ?? contract.superficie_edificada_local}
+            contractId={contract.id}
+            showRenegotiationButton={isSigned}
+            hasActiveRenegotiation={hasActiveRenegotiation}
+            onRenegotiationSuccess={loadContract}
           />
         )}
 
@@ -739,30 +743,6 @@ const ContractDetail = () => {
                   onSave={handleSaveEscalations}
                 />
               </div>
-            </div>
-          </Card>
-        )}
-
-        {/* Renegotiation option for signed contracts */}
-        {isSigned && displayVersion && !hasActiveRenegotiation && (
-          <Card className="p-4">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">Iniciar renegociación de condiciones</p>
-              <RenegotiationDialog
-                contractId={contract.id}
-                currentVersion={{
-                  id: displayVersion.id,
-                  version_number: displayVersion.version_number,
-                  initial_rent: displayVersion.initial_rent,
-                  regime_rent: displayVersion.regime_rent,
-                  variable_rent_percentage: displayVersion.variable_rent_percentage,
-                  duration_months: displayVersion.duration_months,
-                  notice_type: displayVersion.notice_type,
-                  notice_value: displayVersion.notice_value,
-                }}
-                hasActiveRenegotiation={false}
-                onSuccess={loadContract}
-              />
             </div>
           </Card>
         )}

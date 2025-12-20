@@ -16,6 +16,7 @@ interface TerminationNotice {
 }
 
 interface ContractVersion {
+  id?: string;
   regime_rent: number;
   duration_months: number;
   is_current: boolean;
@@ -24,6 +25,7 @@ interface ContractVersion {
   notice_value: string;
   gastos_comunes_uf_m2: number | null;
   fondo_promocion_percentage: number | null;
+  notice_ranges?: Array<{ start_month: number; end_month: number }>;
 }
 
 interface Contract {
@@ -72,8 +74,34 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     const currentVersion = contract.contract_versions?.find((v) => v.is_current);
     if (!currentVersion) return null;
 
-    if (currentVersion.notice_type === "fecha") {
+    const startDate = currentVersion.effective_date
+      ? parseISO(currentVersion.effective_date)
+      : contract.signed_date
+        ? parseISO(contract.signed_date)
+        : null;
+
+    if (currentVersion.notice_type === "fecha" && currentVersion.notice_value) {
       return parseISO(currentVersion.notice_value);
+    }
+
+    if (currentVersion.notice_type === "rangos" && startDate) {
+      const noticeRanges = currentVersion.notice_ranges || [];
+      if (noticeRanges.length > 0) {
+        const today = new Date();
+        const sortedRanges = [...noticeRanges].sort((a, b) => a.start_month - b.start_month);
+        
+        for (const range of sortedRanges) {
+          const rangeStartDate = addMonths(startDate, range.start_month - 1);
+          if (rangeStartDate > today) {
+            return rangeStartDate;
+          }
+        }
+        
+        if (sortedRanges.length > 0) {
+          const lastRange = sortedRanges[sortedRanges.length - 1];
+          return addMonths(startDate, lastRange.start_month - 1);
+        }
+      }
     }
 
     const endDate = calculateEndDate(contract);
