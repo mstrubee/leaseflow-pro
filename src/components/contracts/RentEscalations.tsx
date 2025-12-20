@@ -24,6 +24,7 @@ import {
 export interface Escalation {
   id?: string;
   month_number: number;
+  end_month?: number;
   amount: number;
 }
 
@@ -90,12 +91,14 @@ export const RentEscalations = ({
   firstAdjustmentMonth = 0,
   adjustmentPeriodicityMonths = 0,
 }: RentEscalationsProps) => {
-  const [newMonth, setNewMonth] = useState("");
+  const [newStartMonth, setNewStartMonth] = useState("");
+  const [newEndMonth, setNewEndMonth] = useState("");
   const [newAmount, setNewAmount] = useState("");
   
   // Edit dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [editMonth, setEditMonth] = useState<number | null>(null);
+  const [editStartMonth, setEditStartMonth] = useState<number | null>(null);
+  const [editEndMonth, setEditEndMonth] = useState<number | null>(null);
   const [editAmount, setEditAmount] = useState("");
 
   const formatCurrency = (amount: number) => {
@@ -109,24 +112,31 @@ export const RentEscalations = ({
   };
 
   const handleAdd = () => {
-    const month = parseInt(newMonth);
+    const startMonth = parseInt(newStartMonth);
+    const endMonth = parseInt(newEndMonth) || startMonth;
     const amount = parseFloat(newAmount);
 
-    // Validate month is greater than grace months
-    if (isNaN(month) || isNaN(amount) || month <= graceMonths || month > durationMonths) {
+    // Validate months are greater than grace months
+    if (isNaN(startMonth) || isNaN(amount) || startMonth <= graceMonths || startMonth > durationMonths) {
       return;
     }
 
-    // Check if month already exists
-    if (escalations.some((e) => e.month_number === month)) {
+    // Validate end month is >= start month
+    if (endMonth < startMonth || endMonth > durationMonths) {
       return;
     }
 
-    const newEscalations = [...escalations, { month_number: month, amount }]
+    // Check if start month already exists
+    if (escalations.some((e) => e.month_number === startMonth)) {
+      return;
+    }
+
+    const newEscalations = [...escalations, { month_number: startMonth, end_month: endMonth, amount }]
       .sort((a, b) => a.month_number - b.month_number);
     
     onChange(newEscalations);
-    setNewMonth("");
+    setNewStartMonth("");
+    setNewEndMonth("");
     setNewAmount("");
   };
   
@@ -151,24 +161,27 @@ export const RentEscalations = ({
 
   const handleDotClick = (month: number, amount: number) => {
     if (readOnly) return;
-    setEditMonth(month);
+    const escalation = escalations.find(e => e.month_number === month);
+    setEditStartMonth(month);
+    setEditEndMonth(escalation?.end_month || month);
     setEditAmount(amount.toString());
     setEditDialogOpen(true);
   };
 
   const handleSaveEdit = () => {
-    if (editMonth === null) return;
+    if (editStartMonth === null) return;
     
     const amount = parseFloat(editAmount);
     if (isNaN(amount)) return;
 
     const newEscalations = escalations.map(e => 
-      e.month_number === editMonth ? { ...e, amount } : e
+      e.month_number === editStartMonth ? { ...e, amount, end_month: editEndMonth || editStartMonth } : e
     );
     
     onChange(newEscalations);
     setEditDialogOpen(false);
-    setEditMonth(null);
+    setEditStartMonth(null);
+    setEditEndMonth(null);
     setEditAmount("");
   };
 
@@ -266,7 +279,12 @@ export const RentEscalations = ({
                   </div>
                   <div className="text-sm">
                     <span className="text-muted-foreground">Mes </span>
-                    <span className="font-semibold">{escalation.month_number}</span>
+                    <span className="font-semibold">
+                      {escalation.month_number}
+                      {escalation.end_month && escalation.end_month !== escalation.month_number && 
+                        ` - ${escalation.end_month}`
+                      }
+                    </span>
                   </div>
                   <div className="text-sm">
                     <span className="text-muted-foreground">Canon: </span>
@@ -314,21 +332,34 @@ export const RentEscalations = ({
       {!readOnly && (
         <div className="space-y-3 pt-2">
           <Label className="text-sm font-medium">Agregar escalón</Label>
-          <div className="flex gap-3">
+          <div className="flex gap-3 items-end">
             <div className="flex-1">
+              <Label className="text-xs text-muted-foreground">Mes Inicio</Label>
               <Input
                 type="number"
-                placeholder="Mes"
-                value={newMonth}
-                onChange={(e) => setNewMonth(e.target.value)}
+                placeholder="Desde"
+                value={newStartMonth}
+                onChange={(e) => setNewStartMonth(e.target.value)}
                 min={graceMonths + 1}
                 max={durationMonths}
               />
             </div>
             <div className="flex-1">
+              <Label className="text-xs text-muted-foreground">Mes Fin</Label>
               <Input
                 type="number"
-                placeholder={currency === "UF" ? "Monto (UF)" : "Monto (CLP)"}
+                placeholder="Hasta"
+                value={newEndMonth}
+                onChange={(e) => setNewEndMonth(e.target.value)}
+                min={parseInt(newStartMonth) || graceMonths + 1}
+                max={durationMonths}
+              />
+            </div>
+            <div className="flex-1">
+              <Label className="text-xs text-muted-foreground">Monto</Label>
+              <Input
+                type="number"
+                placeholder={currency === "UF" ? "UF" : "CLP"}
                 value={newAmount}
                 onChange={(e) => setNewAmount(e.target.value)}
                 min={0}
@@ -338,7 +369,7 @@ export const RentEscalations = ({
             <Button
               type="button"
               onClick={handleAdd}
-              disabled={!newMonth || !newAmount}
+              disabled={!newStartMonth || !newAmount}
               size="icon"
             >
               <Plus className="h-4 w-4" />
@@ -347,7 +378,7 @@ export const RentEscalations = ({
           <p className="text-xs text-muted-foreground">
             {graceMonths > 0 
               ? `Los primeros ${graceMonths} meses son de gracia. El mes ${graceMonths + 1} es el primer mes con pago.`
-              : "Mes 1 corresponde al canon inicial. Indica desde qué mes cambia el canon."
+              : "Indica el mes inicial, mes final y el canon para ese período."
             }
           </p>
         </div>
@@ -441,11 +472,36 @@ export const RentEscalations = ({
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Editar Escalón - Mes {editMonth}</DialogTitle>
+            <DialogTitle>
+              Editar Escalón - Mes {editStartMonth}
+              {editEndMonth && editEndMonth !== editStartMonth && ` - ${editEndMonth}`}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="editStartMonth">Mes Inicio</Label>
+                <Input
+                  id="editStartMonth"
+                  type="number"
+                  value={editStartMonth || ''}
+                  disabled
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editEndMonth">Mes Fin</Label>
+                <Input
+                  id="editEndMonth"
+                  type="number"
+                  value={editEndMonth || ''}
+                  onChange={(e) => setEditEndMonth(parseInt(e.target.value) || editStartMonth)}
+                  min={editStartMonth || 1}
+                  max={durationMonths}
+                />
+              </div>
+            </div>
             <div className="space-y-2">
-              <Label htmlFor="editAmount">Nuevo Monto ({currency})</Label>
+              <Label htmlFor="editAmount">Monto ({currency})</Label>
               <Input
                 id="editAmount"
                 type="number"
