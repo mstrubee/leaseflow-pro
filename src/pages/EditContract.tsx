@@ -816,6 +816,17 @@ const EditContract = () => {
                     showCurrencySelector={false}
                   />
                   
+                  <CurrencyInput
+                    id="regimeRent"
+                    label="Canon en Régimen"
+                    value={regimeRent}
+                    onChange={setRegimeRent}
+                    currency={currency}
+                    onCurrencyChange={setCurrency}
+                    required
+                    showCurrencySelector={false}
+                  />
+                  
                   {duration && (
                     <div className="border border-border rounded-lg p-4 mt-4">
                       <RentEscalations
@@ -827,22 +838,30 @@ const EditContract = () => {
                         currency={currency}
                         graceMonths={graceMonths}
                         onGraceMonthsChange={setGraceMonths}
+                        effectiveDate={effectiveDate}
+                        hasPeriodicAdjustments={hasPeriodicAdjustments}
+                        adjustmentType={adjustmentType}
+                        adjustmentValue={parseFloat(adjustmentValue) || 0}
+                        firstAdjustmentMonth={parseInt(firstAdjustmentMonth) || 0}
+                        adjustmentPeriodicityMonths={parseInt(adjustmentPeriodicityMonths) || 0}
                       />
                     </div>
                   )}
                 </>
               )}
 
-              <CurrencyInput
-                id="regimeRent"
-                label="Canon en Régimen"
-                value={regimeRent}
-                onChange={setRegimeRent}
-                currency={currency}
-                onCurrencyChange={setCurrency}
-                required
-                showCurrencySelector={false}
-              />
+              {!hasEscalation && (
+                <CurrencyInput
+                  id="regimeRent"
+                  label="Canon en Régimen"
+                  value={regimeRent}
+                  onChange={setRegimeRent}
+                  currency={currency}
+                  onCurrencyChange={setCurrency}
+                  required
+                  showCurrencySelector={false}
+                />
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="variableRentPercentage">Arriendo Variable (%)</Label>

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
+import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip, ReferenceLine } from "recharts";
 
 interface Escalation {
   month_number: number;
@@ -11,68 +11,115 @@ interface CompactEscalationChartProps {
   initialRent?: number | null;
   regimeRent: number;
   durationMonths: number;
+  effectiveDate?: string | null;
+  graceMonths?: number;
+  hasPeriodicAdjustments?: boolean;
+  adjustmentType?: string;
+  adjustmentValue?: number;
+  firstAdjustmentMonth?: number;
+  adjustmentPeriodicityMonths?: number;
 }
 
 export function CompactEscalationChart({ 
   escalations, 
   initialRent, 
   regimeRent,
-  durationMonths 
+  durationMonths,
+  effectiveDate,
+  graceMonths = 0,
+  hasPeriodicAdjustments = false,
+  adjustmentType = "percentage",
+  adjustmentValue = 0,
+  firstAdjustmentMonth = 0,
+  adjustmentPeriodicityMonths = 0,
 }: CompactEscalationChartProps) {
+  
+  // Calculate current month based on effective date
+  const currentMonth = useMemo(() => {
+    if (!effectiveDate) return null;
+    const startDate = new Date(effectiveDate);
+    const today = new Date();
+    const diffTime = today.getTime() - startDate.getTime();
+    const diffMonths = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44)) + 1;
+    if (diffMonths >= 1 && diffMonths <= durationMonths) {
+      return diffMonths;
+    }
+    return null;
+  }, [effectiveDate, durationMonths]);
+
   const { chartData, summaryPoints } = useMemo(() => {
-    if (escalations.length === 0) return { chartData: [], summaryPoints: [] };
+    if (escalations.length === 0 && !hasPeriodicAdjustments) return { chartData: [], summaryPoints: [] };
     
     const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
     const data: { month: number; rent: number }[] = [];
-    const summary: { month: number; rent: number; isRegime: boolean }[] = [];
+    const summary: { month: number; rent: number; isRegime: boolean; isAdjustment?: boolean }[] = [];
     
-    // Build a map of escalations by month
-    const escalationMap = new Map<number, number>();
+    // Build a map of all rent changes
+    const rentChanges = new Map<number, number>();
+    
+    // Add grace months at 0 rent
+    if (graceMonths > 0) {
+      rentChanges.set(1, 0);
+    }
+    
+    // Determine the starting rent
+    const firstPayingMonth = graceMonths + 1;
+    const month1Escalation = sortedEscalations.find(e => e.month_number === firstPayingMonth);
+    const startRent = month1Escalation?.amount || (initialRent ?? regimeRent);
+    rentChanges.set(firstPayingMonth, startRent);
+    
+    // Add escalation points
     sortedEscalations.forEach(e => {
-      escalationMap.set(e.month_number, e.amount);
+      if (e.month_number > firstPayingMonth) {
+        rentChanges.set(e.month_number, e.amount);
+      }
     });
     
-    // Determine the starting rent - use first escalation if month 1 exists, otherwise use initialRent
-    let currentRent = escalationMap.has(1) 
-      ? escalationMap.get(1)! 
-      : (initialRent ?? regimeRent);
-    
-    // Track the actual first rent for summary
-    const firstRent = currentRent;
-    
-    for (let month = 1; month <= durationMonths; month++) {
-      // Check if there's an escalation for this month
-      if (escalationMap.has(month) && month !== 1) {
-        currentRent = escalationMap.get(month)!;
-      }
+    // Add periodic adjustments
+    if (hasPeriodicAdjustments && adjustmentValue > 0 && firstAdjustmentMonth > 0 && adjustmentPeriodicityMonths > 0) {
+      let currentRent = regimeRent;
+      let month = firstAdjustmentMonth;
       
-      // Add to chart at key points
-      if (month === 1 || 
-          month === durationMonths || 
-          escalationMap.has(month)) {
-        data.push({ month, rent: currentRent });
+      while (month <= durationMonths) {
+        if (adjustmentType === "percentage") {
+          currentRent = currentRent * (1 + adjustmentValue / 100);
+        } else {
+          currentRent = currentRent + adjustmentValue;
+        }
+        
+        if (!rentChanges.has(month)) {
+          rentChanges.set(month, currentRent);
+        }
+        
+        month += adjustmentPeriodicityMonths;
       }
     }
     
-    // Build summary points - month 1 first
-    summary.push({ month: 1, rent: firstRent, isRegime: firstRent === regimeRent });
+    // Add final month if needed
+    if (!rentChanges.has(durationMonths)) {
+      const sortedMonths = Array.from(rentChanges.keys()).sort((a, b) => a - b);
+      const lastRent = sortedMonths.length > 0 ? rentChanges.get(sortedMonths[sortedMonths.length - 1]) || regimeRent : regimeRent;
+      rentChanges.set(durationMonths, lastRent);
+    }
     
-    // Add escalation months (excluding month 1 if already added)
-    sortedEscalations.forEach(e => {
-      if (e.month_number !== 1) {
-        summary.push({ 
-          month: e.month_number, 
-          rent: e.amount, 
-          isRegime: e.amount === regimeRent 
-        });
-      }
+    // Convert to arrays
+    rentChanges.forEach((rent, month) => {
+      data.push({ month, rent });
+    });
+    data.sort((a, b) => a.month - b.month);
+    
+    // Build summary points - first few key points
+    const sortedData = [...data].slice(0, 4);
+    sortedData.forEach(d => {
+      summary.push({ 
+        month: d.month, 
+        rent: d.rent, 
+        isRegime: Math.abs(d.rent - regimeRent) < 0.01
+      });
     });
     
-    // Sort summary by month
-    summary.sort((a, b) => a.month - b.month);
-    
     return { chartData: data, summaryPoints: summary };
-  }, [escalations, initialRent, regimeRent, durationMonths]);
+  }, [escalations, initialRent, regimeRent, durationMonths, graceMonths, hasPeriodicAdjustments, adjustmentType, adjustmentValue, firstAdjustmentMonth, adjustmentPeriodicityMonths]);
 
   if (chartData.length === 0) return null;
 
@@ -119,6 +166,14 @@ export function CompactEscalationChart({
               strokeWidth={1.5}
               fill="url(#rentGradient)" 
             />
+            {/* Current month red vertical line */}
+            {currentMonth && (
+              <ReferenceLine 
+                x={currentMonth} 
+                stroke="hsl(var(--destructive))" 
+                strokeWidth={2}
+              />
+            )}
           </AreaChart>
         </ResponsiveContainer>
       </div>

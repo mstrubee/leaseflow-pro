@@ -37,6 +37,12 @@ interface RentEscalationsProps {
   currency?: "UF" | "CLP";
   graceMonths?: number;
   onGraceMonthsChange?: (months: number) => void;
+  effectiveDate?: string;
+  hasPeriodicAdjustments?: boolean;
+  adjustmentType?: "percentage" | "fixed";
+  adjustmentValue?: number;
+  firstAdjustmentMonth?: number;
+  adjustmentPeriodicityMonths?: number;
 }
 
 interface CustomDotProps {
@@ -77,6 +83,12 @@ export const RentEscalations = ({
   currency = "UF",
   graceMonths = 0,
   onGraceMonthsChange,
+  effectiveDate,
+  hasPeriodicAdjustments = false,
+  adjustmentType = "percentage",
+  adjustmentValue = 0,
+  firstAdjustmentMonth = 0,
+  adjustmentPeriodicityMonths = 0,
 }: RentEscalationsProps) => {
   const [newMonth, setNewMonth] = useState("");
   const [newAmount, setNewAmount] = useState("");
@@ -100,7 +112,8 @@ export const RentEscalations = ({
     const month = parseInt(newMonth);
     const amount = parseFloat(newAmount);
 
-    if (isNaN(month) || isNaN(amount) || month < 1 || month > durationMonths) {
+    // Validate month is greater than grace months
+    if (isNaN(month) || isNaN(amount) || month <= graceMonths || month > durationMonths) {
       return;
     }
 
@@ -116,6 +129,21 @@ export const RentEscalations = ({
     setNewMonth("");
     setNewAmount("");
   };
+  
+  // Calculate current month based on effective date
+  const getCurrentMonth = (): number | null => {
+    if (!effectiveDate) return null;
+    const startDate = new Date(effectiveDate);
+    const today = new Date();
+    const diffTime = today.getTime() - startDate.getTime();
+    const diffMonths = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44)) + 1;
+    if (diffMonths >= 1 && diffMonths <= durationMonths) {
+      return diffMonths;
+    }
+    return null;
+  };
+  
+  const currentMonth = getCurrentMonth();
 
   const handleRemove = (monthNumber: number) => {
     onChange(escalations.filter((e) => e.month_number !== monthNumber));
@@ -144,16 +172,19 @@ export const RentEscalations = ({
     setEditAmount("");
   };
 
-  // Generate chart data with real duration spacing
+  // Generate chart data with real duration spacing including periodic adjustments
   const getChartData = () => {
-    const data: { month: number; rent: number; isEditable: boolean; isGrace?: boolean }[] = [];
+    const data: { month: number; rent: number; isEditable: boolean; isGrace?: boolean; isAdjustment?: boolean }[] = [];
     const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
+    
+    // Build a map of all rent changes
+    const rentChanges = new Map<number, { rent: number; isEditable: boolean; isGrace?: boolean; isAdjustment?: boolean }>();
     
     // Add grace months at 0 rent
     if (graceMonths > 0) {
-      data.push({ month: 1, rent: 0, isEditable: false, isGrace: true });
+      rentChanges.set(1, { rent: 0, isEditable: false, isGrace: true });
       if (graceMonths > 1) {
-        data.push({ month: graceMonths, rent: 0, isEditable: false, isGrace: true });
+        rentChanges.set(graceMonths, { rent: 0, isEditable: false, isGrace: true });
       }
     }
     
@@ -161,25 +192,51 @@ export const RentEscalations = ({
     const firstPayingMonth = graceMonths + 1;
     const month1Escalation = sortedEscalations.find(e => e.month_number === firstPayingMonth);
     const startRent = month1Escalation?.amount || initialRent || regimeRent;
-    data.push({ month: firstPayingMonth, rent: startRent, isEditable: !!month1Escalation });
+    rentChanges.set(firstPayingMonth, { rent: startRent, isEditable: !!month1Escalation });
     
-    // Add all defined escalation points (except first paying month which is already added)
+    // Add all defined escalation points
     sortedEscalations.forEach((esc) => {
       if (esc.month_number > firstPayingMonth) {
-        data.push({ month: esc.month_number, rent: esc.amount, isEditable: true });
+        rentChanges.set(esc.month_number, { rent: esc.amount, isEditable: true });
       }
     });
     
-    // Add final month with regime rent if not already defined
-    const lastEscMonth = sortedEscalations.length > 0 
-      ? Math.max(...sortedEscalations.map(e => e.month_number))
-      : firstPayingMonth;
-    
-    if (lastEscMonth < durationMonths) {
-      data.push({ month: durationMonths, rent: regimeRent, isEditable: false });
+    // Add periodic adjustments if enabled
+    if (hasPeriodicAdjustments && adjustmentValue > 0 && firstAdjustmentMonth > 0 && adjustmentPeriodicityMonths > 0) {
+      let currentRent = regimeRent;
+      let month = firstAdjustmentMonth;
+      
+      while (month <= durationMonths) {
+        // Calculate adjusted rent
+        if (adjustmentType === "percentage") {
+          currentRent = currentRent * (1 + adjustmentValue / 100);
+        } else {
+          currentRent = currentRent + adjustmentValue;
+        }
+        
+        // Only add if not already defined by an escalation
+        if (!rentChanges.has(month) || !rentChanges.get(month)?.isEditable) {
+          rentChanges.set(month, { rent: currentRent, isEditable: false, isAdjustment: true });
+        }
+        
+        month += adjustmentPeriodicityMonths;
+      }
     }
-
-    return data;
+    
+    // Add final month if not already defined
+    if (!rentChanges.has(durationMonths)) {
+      // Get the last known rent
+      const sortedMonths = Array.from(rentChanges.keys()).sort((a, b) => a - b);
+      const lastRent = sortedMonths.length > 0 ? rentChanges.get(sortedMonths[sortedMonths.length - 1])?.rent || regimeRent : regimeRent;
+      rentChanges.set(durationMonths, { rent: lastRent, isEditable: false });
+    }
+    
+    // Convert to array and sort
+    rentChanges.forEach((value, month) => {
+      data.push({ month, ...value });
+    });
+    
+    return data.sort((a, b) => a.month - b.month);
   };
 
   const chartData = getChartData();
@@ -320,7 +377,13 @@ export const RentEscalations = ({
                   tickFormatter={(v) => currency === "UF" ? `${v}` : `${(v/1000000).toFixed(1)}M`}
                 />
                 <Tooltip 
-                  formatter={(value: number) => [formatCurrency(value), "Canon"]}
+                  formatter={(value: number, name: string, props: any) => {
+                    const point = props.payload;
+                    let label = "Canon";
+                    if (point?.isGrace) label = "Gracia";
+                    if (point?.isAdjustment) label = "Reajuste";
+                    return [formatCurrency(value), label];
+                  }}
                   labelFormatter={(label) => `Mes ${label}`}
                 />
                 <Line 
@@ -342,6 +405,20 @@ export const RentEscalations = ({
                   strokeDasharray="5 5"
                   label={{ value: "Régimen", fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
                 />
+                {/* Current month red vertical line */}
+                {currentMonth && (
+                  <ReferenceLine 
+                    x={currentMonth} 
+                    stroke="hsl(var(--destructive))" 
+                    strokeWidth={2}
+                    label={{ 
+                      value: "Hoy", 
+                      fontSize: 10, 
+                      fill: "hsl(var(--destructive))",
+                      position: "top"
+                    }}
+                  />
+                )}
               </LineChart>
             </ResponsiveContainer>
           </div>
