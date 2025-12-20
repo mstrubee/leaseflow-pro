@@ -154,7 +154,11 @@ const EditContract = () => {
       if (version) {
         setVersionId(version.id);
         setEffectiveDate(version.effective_date || "");
-        setHasEscalation(!!version.initial_rent);
+        // hasEscalation is true if there are escalations, grace months, or initial_rent differs from regime_rent
+        const hasEscalationsData = (version.rent_escalations && version.rent_escalations.length > 0) ||
+          ((version as any).grace_months && (version as any).grace_months > 0) ||
+          (version.initial_rent !== null && version.initial_rent !== version.regime_rent);
+        setHasEscalation(hasEscalationsData);
         setGraceMonths((version as any).grace_months || 0);
         setInitialRent(version.initial_rent?.toString() || "");
         setRegimeRent(version.regime_rent.toString());
@@ -293,7 +297,7 @@ const EditContract = () => {
           .from("contract_versions")
           .update({
             effective_date: effectiveDate || null,
-            initial_rent: hasEscalation && initialRent ? parseFloat(initialRent) : null,
+            initial_rent: hasEscalation ? (initialRent !== "" ? parseFloat(initialRent) : (graceMonths > 0 ? 0 : null)) : null,
             regime_rent: parseFloat(regimeRent) || 0,
             variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
             duration_months: parseInt(duration) || 12,
@@ -322,7 +326,7 @@ const EditContract = () => {
             version_number: 1,
             is_current: true,
             effective_date: effectiveDate || null,
-            initial_rent: hasEscalation && initialRent ? parseFloat(initialRent) : null,
+            initial_rent: hasEscalation ? (initialRent !== "" ? parseFloat(initialRent) : (graceMonths > 0 ? 0 : null)) : null,
             regime_rent: parseFloat(regimeRent) || 0,
             variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
             duration_months: parseInt(duration) || 12,

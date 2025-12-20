@@ -31,6 +31,7 @@ import { addMonths, format, subMonths, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
 interface ContractVersion {
+  id: string;
   regime_rent: number;
   duration_months: number;
   is_current: boolean;
@@ -39,6 +40,7 @@ interface ContractVersion {
   notice_value: string;
   gastos_comunes_uf_m2: number | null;
   fondo_promocion_percentage: number | null;
+  notice_ranges?: Array<{ start_month: number; end_month: number }>;
 }
 
 interface TerminationNotice {
@@ -116,7 +118,7 @@ const Contracts = () => {
       .select(`
         *,
         contract_addresses (region, commune),
-        contract_versions (regime_rent, duration_months, is_current, effective_date, notice_type, notice_value, gastos_comunes_uf_m2, fondo_promocion_percentage),
+        contract_versions (id, regime_rent, duration_months, is_current, effective_date, notice_type, notice_value, gastos_comunes_uf_m2, fondo_promocion_percentage, notice_ranges:notice_ranges(start_month, end_month)),
         termination_notices (id, notice_type, notice_date, document_url)
       `)
       .is("deleted_at", null)
@@ -143,8 +145,35 @@ const Contracts = () => {
     const currentVersion = contract.contract_versions?.find((v) => v.is_current);
     if (!currentVersion) return null;
 
-    if (currentVersion.notice_type === "fecha") {
+    const startDate = currentVersion.effective_date
+      ? parseISO(currentVersion.effective_date)
+      : contract.signed_date
+        ? parseISO(contract.signed_date)
+        : null;
+
+    if (currentVersion.notice_type === "fecha" && currentVersion.notice_value) {
       return parseISO(currentVersion.notice_value);
+    }
+
+    if (currentVersion.notice_type === "rangos" && startDate) {
+      const noticeRanges = currentVersion.notice_ranges || [];
+      if (noticeRanges.length > 0) {
+        const today = new Date();
+        const sortedRanges = [...noticeRanges].sort((a, b) => a.start_month - b.start_month);
+        
+        for (const range of sortedRanges) {
+          const rangeStartDate = addMonths(startDate, range.start_month - 1);
+          if (rangeStartDate > today) {
+            return rangeStartDate;
+          }
+        }
+        
+        // If all ranges are expired, use the last one
+        if (sortedRanges.length > 0) {
+          const lastRange = sortedRanges[sortedRanges.length - 1];
+          return addMonths(startDate, lastRange.start_month - 1);
+        }
+      }
     }
 
     const endDate = calculateEndDate(contract);
@@ -475,106 +504,130 @@ const Contracts = () => {
 
           {isFirmadoView && (
             <>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-end gap-3">
                 {/* Operation Filter */}
-                <Select value={operationFilter} onValueChange={setOperationFilter}>
-                  <SelectTrigger className="h-8 text-xs w-[110px]">
-                    <SelectValue placeholder="Operación" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todos" className="text-xs">Todos</SelectItem>
-                    <SelectItem value="operando" className="text-xs">Operando</SelectItem>
-                    <SelectItem value="cerrado" className="text-xs">Cerrado</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-medium text-muted-foreground">Operación</span>
+                  <Select value={operationFilter} onValueChange={setOperationFilter}>
+                    <SelectTrigger className="h-8 text-xs w-[110px]">
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos" className="text-xs">Todos</SelectItem>
+                      <SelectItem value="operando" className="text-xs">Operando</SelectItem>
+                      <SelectItem value="cerrado" className="text-xs">Cerrado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 {/* Obra Filter */}
-                <Select value={obraFilter} onValueChange={setObraFilter}>
-                  <SelectTrigger className="h-8 text-xs w-[110px]">
-                    <SelectValue placeholder="Obra" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todos" className="text-xs">Todos</SelectItem>
-                    <SelectItem value="terminada" className="text-xs">Terminada</SelectItem>
-                    <SelectItem value="construccion" className="text-xs">Construcción</SelectItem>
-                    <SelectItem value="remodelacion" className="text-xs">Remodelación</SelectItem>
-                    <SelectItem value="ampliacion" className="text-xs">Ampliación</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-medium text-muted-foreground">Obra</span>
+                  <Select value={obraFilter} onValueChange={setObraFilter}>
+                    <SelectTrigger className="h-8 text-xs w-[110px]">
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos" className="text-xs">Todos</SelectItem>
+                      <SelectItem value="terminada" className="text-xs">Terminada</SelectItem>
+                      <SelectItem value="construccion" className="text-xs">Construcción</SelectItem>
+                      <SelectItem value="remodelacion" className="text-xs">Remodelación</SelectItem>
+                      <SelectItem value="ampliacion" className="text-xs">Ampliación</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 {/* Patente Filter */}
-                <Select value={patenteFilter} onValueChange={setPatenteFilter}>
-                  <SelectTrigger className="h-8 text-xs w-[110px]">
-                    <SelectValue placeholder="Patente" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todos" className="text-xs">Todos</SelectItem>
-                    <SelectItem value="sin_patente" className="text-xs">Sin Patente</SelectItem>
-                    <SelectItem value="provisoria" className="text-xs">Provisoria</SelectItem>
-                    <SelectItem value="definitiva" className="text-xs">Definitiva</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-medium text-muted-foreground">Patente</span>
+                  <Select value={patenteFilter} onValueChange={setPatenteFilter}>
+                    <SelectTrigger className="h-8 text-xs w-[110px]">
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos" className="text-xs">Todos</SelectItem>
+                      <SelectItem value="sin_patente" className="text-xs">Sin Patente</SelectItem>
+                      <SelectItem value="provisoria" className="text-xs">Provisoria</SelectItem>
+                      <SelectItem value="definitiva" className="text-xs">Definitiva</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 {/* Proyecto Filter */}
-                <Select value={proyectoFilter} onValueChange={setProyectoFilter}>
-                  <SelectTrigger className="h-8 text-xs w-[110px]">
-                    <SelectValue placeholder="Proyecto" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todos" className="text-xs">Todos</SelectItem>
-                    <SelectItem value="sin_proyecto" className="text-xs">Sin Proyecto</SelectItem>
-                    <SelectItem value="en_curso" className="text-xs">En Curso</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-medium text-muted-foreground">Proyecto</span>
+                  <Select value={proyectoFilter} onValueChange={setProyectoFilter}>
+                    <SelectTrigger className="h-8 text-xs w-[110px]">
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos" className="text-xs">Todos</SelectItem>
+                      <SelectItem value="sin_proyecto" className="text-xs">Sin Proyecto</SelectItem>
+                      <SelectItem value="en_curso" className="text-xs">En Curso</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 {/* Ubicación Filter */}
-                <Select value={ubicacionFilter} onValueChange={setUbicacionFilter}>
-                  <SelectTrigger className="h-8 text-xs w-[120px]">
-                    <SelectValue placeholder="Ubicación" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todos" className="text-xs">Todas</SelectItem>
-                    {uniqueCommunes.map((commune) => (
-                      <SelectItem key={commune} value={commune} className="text-xs">{commune}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-medium text-muted-foreground">Ubicación</span>
+                  <Select value={ubicacionFilter} onValueChange={setUbicacionFilter}>
+                    <SelectTrigger className="h-8 text-xs w-[120px]">
+                      <SelectValue placeholder="Todas" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos" className="text-xs">Todas</SelectItem>
+                      {uniqueCommunes.map((commune) => (
+                        <SelectItem key={commune} value={commune} className="text-xs">{commune}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 {/* Costo Arriendo Filter */}
-                <Select value={costoArriendoFilter} onValueChange={setCostoArriendoFilter}>
-                  <SelectTrigger className="h-8 text-xs w-[130px]">
-                    <SelectValue placeholder="Costo Arriendo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todos" className="text-xs">Todos</SelectItem>
-                    <SelectItem value="0-500" className="text-xs">Hasta 500 UF</SelectItem>
-                    <SelectItem value="500-1000" className="text-xs">500 - 1.000 UF</SelectItem>
-                    <SelectItem value="1000-2000" className="text-xs">1.000 - 2.000 UF</SelectItem>
-                    <SelectItem value="2000+" className="text-xs">Más de 2.000 UF</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-medium text-muted-foreground">Costo Arriendo</span>
+                  <Select value={costoArriendoFilter} onValueChange={setCostoArriendoFilter}>
+                    <SelectTrigger className="h-8 text-xs w-[130px]">
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos" className="text-xs">Todos</SelectItem>
+                      <SelectItem value="0-500" className="text-xs">Hasta 500 UF</SelectItem>
+                      <SelectItem value="500-1000" className="text-xs">500 - 1.000 UF</SelectItem>
+                      <SelectItem value="1000-2000" className="text-xs">1.000 - 2.000 UF</SelectItem>
+                      <SelectItem value="2000+" className="text-xs">Más de 2.000 UF</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 {/* Sort by End Date */}
-                <Button
-                  variant={sortField === "end_date" ? "default" : "outline"}
-                  size="sm"
-                  className="h-8 text-xs px-2"
-                  onClick={() => handleSort("end_date")}
-                >
-                  <ArrowUpDown className="h-3 w-3 mr-1" />
-                  Vencimiento {sortField === "end_date" && (sortDirection === "asc" ? "↑" : "↓")}
-                </Button>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-medium text-muted-foreground">Ordenar</span>
+                  <Button
+                    variant={sortField === "end_date" ? "default" : "outline"}
+                    size="sm"
+                    className="h-8 text-xs px-2"
+                    onClick={() => handleSort("end_date")}
+                  >
+                    <ArrowUpDown className="h-3 w-3 mr-1" />
+                    Vencimiento {sortField === "end_date" && (sortDirection === "asc" ? "↑" : "↓")}
+                  </Button>
+                </div>
 
                 {/* Sort by Notice Deadline */}
-                <Button
-                  variant={sortField === "notice_deadline" ? "default" : "outline"}
-                  size="sm"
-                  className="h-8 text-xs px-2"
-                  onClick={() => handleSort("notice_deadline")}
-                >
-                  <ArrowUpDown className="h-3 w-3 mr-1" />
-                  Aviso {sortField === "notice_deadline" && (sortDirection === "asc" ? "↑" : "↓")}
-                </Button>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-medium text-muted-foreground invisible">Ordenar</span>
+                  <Button
+                    variant={sortField === "notice_deadline" ? "default" : "outline"}
+                    size="sm"
+                    className="h-8 text-xs px-2"
+                    onClick={() => handleSort("notice_deadline")}
+                  >
+                    <ArrowUpDown className="h-3 w-3 mr-1" />
+                    Aviso {sortField === "notice_deadline" && (sortDirection === "asc" ? "↑" : "↓")}
+                  </Button>
+                </div>
               </div>
 
               {hasActiveFilters && (
