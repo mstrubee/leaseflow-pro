@@ -65,27 +65,25 @@ export function CompactEscalationChart({
     const data: { month: number; rent: number; isGrace?: boolean; isAdjustment?: boolean }[] = [];
     const summary: { month: number; rent: number; isRegime: boolean }[] = [];
     
-    // Build a map of all rent changes
-    const rentChanges = new Map<number, { rent: number; isGrace?: boolean; isAdjustment?: boolean }>();
+    // Build a map of all rent change points
+    const rentChangePoints = new Map<number, { rent: number; isGrace?: boolean; isAdjustment?: boolean }>();
+    
+    const firstPayingMonth = graceMonths + 1;
     
     // Add grace months at 0 rent
     if (graceMonths > 0) {
-      rentChanges.set(1, { rent: 0, isGrace: true });
-      if (graceMonths > 1) {
-        rentChanges.set(graceMonths, { rent: 0, isGrace: true });
-      }
+      rentChangePoints.set(1, { rent: 0, isGrace: true });
     }
     
-    // Determine the starting rent
-    const firstPayingMonth = graceMonths + 1;
+    // Determine the starting rent after grace period
     const month1Escalation = sortedEscalations.find(e => e.month_number === firstPayingMonth);
     const startRent = month1Escalation?.amount || (initialRent ?? regimeRent);
-    rentChanges.set(firstPayingMonth, { rent: startRent });
+    rentChangePoints.set(firstPayingMonth, { rent: startRent });
     
     // Add escalation points
     sortedEscalations.forEach(e => {
       if (e.month_number > firstPayingMonth) {
-        rentChanges.set(e.month_number, { rent: e.amount });
+        rentChangePoints.set(e.month_number, { rent: e.amount });
       }
     });
     
@@ -101,25 +99,33 @@ export function CompactEscalationChart({
           currentRent = currentRent + adjustmentValue;
         }
         
-        if (!rentChanges.has(month)) {
-          rentChanges.set(month, { rent: currentRent, isAdjustment: true });
+        if (!rentChangePoints.has(month)) {
+          rentChangePoints.set(month, { rent: currentRent, isAdjustment: true });
         }
         
         month += adjustmentPeriodicityMonths;
       }
     }
     
-    // Add final month if needed
-    if (!rentChanges.has(durationMonths)) {
-      const sortedMonths = Array.from(rentChanges.keys()).sort((a, b) => a - b);
-      const lastRent = sortedMonths.length > 0 ? rentChanges.get(sortedMonths[sortedMonths.length - 1])?.rent || regimeRent : regimeRent;
-      rentChanges.set(durationMonths, { rent: lastRent });
-    }
+    // Convert map to sorted array of change points
+    const changePointsSorted = Array.from(rentChangePoints.entries())
+      .sort((a, b) => a[0] - b[0]);
     
-    // Convert to arrays
-    rentChanges.forEach((value, month) => {
+    // Build data array with proper step visualization
+    // For stepAfter to work correctly, we need the data points at change months
+    changePointsSorted.forEach(([month, value]) => {
       data.push({ month, ...value });
     });
+    
+    // Add final month to extend the line if not already present
+    if (!rentChangePoints.has(durationMonths)) {
+      const lastChange = changePointsSorted[changePointsSorted.length - 1];
+      if (lastChange) {
+        data.push({ month: durationMonths, rent: lastChange[1].rent });
+      }
+    }
+    
+    // Sort final data
     data.sort((a, b) => a.month - b.month);
     
     // Build summary points - first few key points

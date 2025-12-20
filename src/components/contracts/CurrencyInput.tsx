@@ -52,7 +52,7 @@ export const CurrencyInput = ({
           id={id}
           type="number"
           step={currency === "UF" ? "0.01" : "1"}
-          value={value === "0" ? "" : value}
+          value={value}
           onChange={(e) => onChange(e.target.value)}
           onFocus={(e) => e.target.select()}
           required={required}
