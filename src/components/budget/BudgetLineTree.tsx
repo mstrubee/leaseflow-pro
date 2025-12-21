@@ -34,13 +34,13 @@ interface BudgetLineTreeProps {
   readOnly?: boolean;
 }
 
-export const BudgetLineTree = ({ 
-  lines, 
-  onAddLine, 
-  onUpdateLine, 
+export const BudgetLineTree = ({
+  lines,
+  onAddLine,
+  onUpdateLine,
   onDeleteLine,
   level = 0,
-  readOnly = false
+  readOnly = false,
 }: BudgetLineTreeProps) => {
   return (
     <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
@@ -79,7 +79,14 @@ interface BudgetLineItemProps {
   readOnly?: boolean;
 }
 
-const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, readOnly = false }: BudgetLineItemProps) => {
+const BudgetLineItem = ({
+  line,
+  level,
+  onAddLine,
+  onUpdateLine,
+  onDeleteLine,
+  readOnly = false,
+}: BudgetLineItemProps) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isEditingPrice, setIsEditingPrice] = useState(false);
   const [editUnitPrice, setEditUnitPrice] = useState((line.unit_price || 0).toString());
@@ -88,7 +95,7 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
 
   const hasChildren = line.children && line.children.length > 0;
   const isParent = hasChildren;
-  
+
   // Calcular el total de hijos si es padre (solo autorizados)
   const calculateChildrenTotal = (children: BudgetLine[]): number => {
     return children.reduce((sum, child) => {
@@ -99,9 +106,7 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
     }, 0);
   };
 
-  const calculatedAmount = isParent 
-    ? calculateChildrenTotal(line.children!)
-    : line.amount_uf;
+  const calculatedAmount = isParent ? calculateChildrenTotal(line.children!) : line.amount_uf;
 
   // Direct quantity update
   const handleQuantityChange = (newQuantity: string) => {
@@ -110,7 +115,7 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
     const price = line.unit_price || 0;
     const currency = line.currency || "UF";
     let amountUf = qty * price;
-    
+
     if (currency === "CLP" && ufValue > 0) {
       amountUf = amountUf / ufValue;
     }
@@ -131,7 +136,7 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
     const qty = line.quantity || 0;
     const price = parseFloat(editUnitPrice) || 0;
     let amountUf = qty * price;
-    
+
     if (editCurrency === "CLP" && ufValue > 0) {
       amountUf = amountUf / ufValue;
     }
@@ -161,28 +166,31 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
 
   return (
     <div>
-      <div className={cn(
-        "flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-accent/50 group",
-        hasChildren && "bg-muted/30",
-        !hasChildren && isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20"
-      )}>
+      <div
+        className={cn(
+          "flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-accent/50 group",
+          hasChildren && "bg-muted/30",
+          !hasChildren && isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20",
+        )}
+      >
         <button
           onClick={() => setIsExpanded(!isExpanded)}
           className="p-0.5 hover:bg-accent rounded"
           disabled={!hasChildren}
         >
           {hasChildren ? (
-            isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />
+            isExpanded ? (
+              <ChevronDown className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5" />
+            )
           ) : (
             <div className="h-3.5 w-3.5" />
           )}
         </button>
 
         {/* Line name - fixed width for alignment */}
-        <span className={cn(
-          "text-sm flex-shrink-0 min-w-[180px]",
-          level === 0 ? "font-semibold" : "font-medium"
-        )}>
+        <span className={cn("text-sm flex-shrink-0 min-w-[250px]", level === 0 ? "font-semibold" : "font-medium")}>
           {line.name}
         </span>
 
@@ -208,9 +216,9 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
                 <SelectItem value="Un">Un</SelectItem>
               </SelectContent>
             </Select>
-            
+
             <span className="text-xs text-muted-foreground mx-0.5">×</span>
-            
+
             {/* Price - editable only via button */}
             {isEditingPrice && !readOnly ? (
               <div className="flex items-center gap-1">
@@ -240,13 +248,19 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
             ) : (
               <div className="flex items-center gap-1">
                 <span className="text-xs font-mono bg-muted/50 px-1.5 py-0.5 rounded min-w-[80px] text-center">
-                  {line.currency === "CLP" ? "$" : "UF"}/{line.unit_type || "m2"} {(line.unit_price || 0).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+                  {line.currency === "CLP" ? "$" : "UF"}/{line.unit_type || "m2"}{" "}
+                  {(line.unit_price || 0).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
                 </span>
                 {!readOnly && (
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button size="sm" variant="ghost" onClick={() => setIsEditingPrice(true)} className="h-5 w-5 p-0">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setIsEditingPrice(true)}
+                          className="h-5 w-5 p-0"
+                        >
                           <Edit2 className="h-2.5 w-2.5" />
                         </Button>
                       </TooltipTrigger>
@@ -276,7 +290,7 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
                   className={cn(
                     "cursor-pointer text-[10px] px-1.5 py-0",
                     line.status === "autorizado" && "bg-green-500 hover:bg-green-600",
-                    line.status === "no_autorizado" && "bg-yellow-500 hover:bg-yellow-600 text-white"
+                    line.status === "no_autorizado" && "bg-yellow-500 hover:bg-yellow-600 text-white",
                   )}
                   onClick={toggleStatus}
                 >
@@ -284,10 +298,9 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
                 </Badge>
               </TooltipTrigger>
               <TooltipContent>
-                {line.status === "no_autorizado" 
+                {line.status === "no_autorizado"
                   ? "Este ítem se arrastrará al año siguiente hasta que sea autorizado o eliminado"
-                  : "Click para cambiar estado"
-                }
+                  : "Click para cambiar estado"}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -306,7 +319,12 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
               <Button size="sm" variant="ghost" onClick={() => onAddLine(line.id)} className="h-6 w-6 p-0">
                 <Plus className="h-3 w-3" />
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => onDeleteLine(line.id)} className="h-6 w-6 p-0 text-destructive">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => onDeleteLine(line.id)}
+                className="h-6 w-6 p-0 text-destructive"
+              >
                 <Trash2 className="h-3 w-3" />
               </Button>
             </div>
@@ -365,7 +383,7 @@ export const getUnauthorizedLines = (items: BudgetLine[]): BudgetLine[] => {
 // Obtener todos los IDs de descendientes (hijos, nietos, etc.)
 export const getAllDescendantIds = (items: BudgetLine[], targetId: string): string[] => {
   const result: string[] = [];
-  
+
   const findAndCollectDescendants = (children: BudgetLine[]): boolean => {
     for (const item of children) {
       if (item.id === targetId) {
