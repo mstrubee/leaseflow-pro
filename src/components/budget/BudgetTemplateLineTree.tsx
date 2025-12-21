@@ -286,31 +286,49 @@ const SortableTemplateLineItem = ({
           </div>
         ) : (
           <>
-            <span className={cn("flex-1 font-medium", level === 0 && "font-semibold")}>
+            {/* Line name - fixed width for alignment */}
+            <span className={cn(
+              "text-sm font-medium min-w-[180px] flex-shrink-0",
+              level === 0 && "font-semibold"
+            )}>
               {line.name}
             </span>
-            {!hasChildren && (line.quantity || 0) > 0 && (
-              <span className="text-xs text-muted-foreground">
-                {line.quantity} {line.unit_type || "m2"}
-              </span>
-            )}
-            {!hasChildren && line.default_amount_uf > 0 && (
-              <>
-                <span className="text-sm text-muted-foreground font-mono">
-                  × {line.currency === "CLP" ? "$ " : "UF "}{line.default_amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+            
+            {/* Inputs section - always visible, aligned */}
+            {!hasChildren && (
+              <div className="flex items-center gap-1">
+                {/* Quantity display */}
+                <span className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[40px] text-center">
+                  {line.quantity || 0}
                 </span>
-                <span className="text-sm font-mono bg-muted/50 px-2 py-0.5 rounded">
-                  = {line.currency === "CLP" ? "$ " : "UF "}
-                  {((line.quantity || 0) * line.default_amount_uf).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+                {/* Unit type display */}
+                <span className="text-xs text-muted-foreground min-w-[24px]">
+                  {line.unit_type || "m²"}
                 </span>
-              </>
+                
+                <span className="text-xs text-muted-foreground mx-0.5">×</span>
+                
+                {/* Price display with /unit indicator */}
+                <span className="text-xs font-mono bg-muted/50 px-1.5 py-0.5 rounded min-w-[80px] text-center">
+                  {line.currency === "CLP" ? "$" : "UF"}/{line.unit_type || "m2"} {line.default_amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+                </span>
+                
+                {/* Calculated total */}
+                <span className="text-xs font-mono bg-primary/10 px-1.5 py-0.5 rounded min-w-[70px] text-center">
+                  = {line.currency === "CLP" ? "$" : "UF"} {((line.quantity || 0) * line.default_amount_uf).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
             )}
+            
+            {/* Spacer for parent lines */}
+            {hasChildren && <div className="flex-1" />}
+            
             <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
               <Button
                 size="sm"
                 variant="ghost"
                 onClick={() => setIsEditing(true)}
-                className="h-7 w-7 p-0"
+                className="h-6 w-6 p-0"
                 title="Editar"
               >
                 <Edit2 className="h-3 w-3" />
@@ -319,7 +337,7 @@ const SortableTemplateLineItem = ({
                 size="sm"
                 variant="ghost"
                 onClick={() => onAddLine(line.id)}
-                className="h-7 w-7 p-0"
+                className="h-6 w-6 p-0"
                 title="Agregar sublínea"
               >
                 <Plus className="h-3 w-3" />
@@ -328,7 +346,7 @@ const SortableTemplateLineItem = ({
                 size="sm"
                 variant="ghost"
                 onClick={handleDelete}
-                className="h-7 w-7 p-0 text-destructive"
+                className="h-6 w-6 p-0 text-destructive"
                 title="Eliminar"
               >
                 <Trash2 className="h-3 w-3" />
