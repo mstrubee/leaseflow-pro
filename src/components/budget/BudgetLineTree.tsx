@@ -148,7 +148,7 @@ const BudgetLineItem = ({
         </span>
 
         {/* For non-parent lines: show quantity/unit and price inputs - aligned in columns */}
-        {!isParent && <div className="flex items-center gap-1">
+        {!isParent && <div className="shadow-sm gap-[8px] flex items-center justify-start">
             {/* Quantity - directly editable */}
             <Input type="number" value={line.quantity || 0} onChange={e => handleQuantityChange(e.target.value)} className="h-6 w-14 text-xs" disabled={readOnly} />
             {/* Unit type - directly editable */}
@@ -184,7 +184,7 @@ const BudgetLineItem = ({
                   <X className="h-3 w-3 text-red-600" />
                 </Button>
               </div> : <div className="flex items-center gap-1">
-                <span className="text-xs font-mono bg-muted/50 px-1.5 py-0.5 rounded min-w-[80px] text-center">
+                <span className="text-xs bg-muted/50 px-1.5 py-0.5 rounded min-w-[80px] text-center font-serif font-normal">
                   {line.currency === "CLP" ? "$" : "UF"}/{line.unit_type || "m2"}{" "}
                   {(line.unit_price || 0).toLocaleString("es-CL", {
               minimumFractionDigits: 2
