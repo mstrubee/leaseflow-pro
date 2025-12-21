@@ -97,7 +97,8 @@ export const BudgetTemplateSelector = ({
 };
 
 // Helper function to apply a template to a budget
-// IMPORTANT: Always creates lines with amount_uf = 0, ignoring any template default values
+// Copies template structure including quantity, unit_type, currency fields
+// Sets amount_uf = 0 (user must input values)
 export const applyBudgetTemplate = async (
   templateId: string,
   budgetId: string
@@ -120,7 +121,6 @@ export const applyBudgetTemplate = async (
     const idMap = new Map<string, string>();
 
     // First pass: create all lines without parent_id
-    // ALWAYS set amount_uf = 0 regardless of template default values
     for (const line of templateLines) {
       const { data: newLine, error } = await supabase
         .from("budget_lines")
@@ -128,10 +128,16 @@ export const applyBudgetTemplate = async (
           budget_id: budgetId,
           name: line.name,
           description: line.description,
-          amount_uf: 0, // Always start at 0, template defaults are ignored
+          amount_uf: 0, // User must input values
           display_order: line.display_order,
           status: "no_autorizado",
           parent_id: null,
+          // Copy template fields
+          quantity: line.quantity || 0,
+          unit_type: line.unit_type || "m2",
+          currency: line.currency || "UF",
+          unit_price: 0, // User must input values
+          template_line_id: line.id, // Reference to original template line
         })
         .select()
         .single();
@@ -157,6 +163,112 @@ export const applyBudgetTemplate = async (
     return true;
   } catch (error) {
     console.error("Error applying template:", error);
+    return false;
+  }
+};
+
+// Helper function to update template preserving user values
+export const updateBudgetTemplatePreservingValues = async (
+  templateId: string,
+  budgetId: string
+): Promise<boolean> => {
+  try {
+    // 1. Get existing budget lines with their values
+    const { data: existingLines, error: existingError } = await supabase
+      .from("budget_lines")
+      .select("*")
+      .eq("budget_id", budgetId);
+
+    if (existingError) throw existingError;
+
+    // Create a map of template_line_id -> existing values
+    const existingValuesMap = new Map<string, {
+      quantity: number;
+      unit_price: number;
+      amount_uf: number;
+      status: string;
+    }>();
+
+    (existingLines || []).forEach((line: any) => {
+      if (line.template_line_id) {
+        existingValuesMap.set(line.template_line_id, {
+          quantity: line.quantity || 0,
+          unit_price: line.unit_price || 0,
+          amount_uf: line.amount_uf || 0,
+          status: line.status || "no_autorizado",
+        });
+      }
+    });
+
+    // 2. Delete existing lines
+    const { error: deleteError } = await supabase
+      .from("budget_lines")
+      .delete()
+      .eq("budget_id", budgetId);
+
+    if (deleteError) throw deleteError;
+
+    // 3. Get new template lines
+    const { data: templateLines, error: linesError } = await supabase
+      .from("budget_template_lines")
+      .select("*")
+      .eq("template_id", templateId)
+      .order("display_order");
+
+    if (linesError) throw linesError;
+
+    if (!templateLines || templateLines.length === 0) {
+      return true;
+    }
+
+    // 4. Create new lines, preserving existing values where possible
+    const idMap = new Map<string, string>();
+
+    for (const line of templateLines) {
+      const existingValues = existingValuesMap.get(line.id);
+      
+      const { data: newLine, error } = await supabase
+        .from("budget_lines")
+        .insert({
+          budget_id: budgetId,
+          name: line.name,
+          description: line.description,
+          // Preserve user values if they exist, otherwise use template defaults
+          quantity: existingValues?.quantity ?? (line.quantity || 0),
+          unit_price: existingValues?.unit_price ?? 0,
+          amount_uf: existingValues?.amount_uf ?? 0,
+          status: existingValues?.status ?? "no_autorizado",
+          // Always use template values for structure
+          display_order: line.display_order,
+          unit_type: line.unit_type || "m2",
+          currency: line.currency || "UF",
+          template_line_id: line.id,
+          parent_id: null,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      idMap.set(line.id, newLine.id);
+    }
+
+    // 5. Update parent_id references
+    for (const line of templateLines) {
+      if (line.parent_id && idMap.has(line.parent_id)) {
+        const newId = idMap.get(line.id);
+        const newParentId = idMap.get(line.parent_id);
+        if (newId && newParentId) {
+          await supabase
+            .from("budget_lines")
+            .update({ parent_id: newParentId })
+            .eq("id", newId);
+        }
+      }
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Error updating template:", error);
     return false;
   }
 };

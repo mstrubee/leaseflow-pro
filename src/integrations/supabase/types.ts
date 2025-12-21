@@ -184,36 +184,51 @@ export type Database = {
           amount_uf: number
           budget_id: string
           created_at: string
+          currency: string | null
           description: string | null
           display_order: number | null
           id: string
           name: string
           parent_id: string | null
+          quantity: number | null
           status: string
+          template_line_id: string | null
+          unit_price: number | null
+          unit_type: string | null
           updated_at: string
         }
         Insert: {
           amount_uf?: number
           budget_id: string
           created_at?: string
+          currency?: string | null
           description?: string | null
           display_order?: number | null
           id?: string
           name: string
           parent_id?: string | null
+          quantity?: number | null
           status?: string
+          template_line_id?: string | null
+          unit_price?: number | null
+          unit_type?: string | null
           updated_at?: string
         }
         Update: {
           amount_uf?: number
           budget_id?: string
           created_at?: string
+          currency?: string | null
           description?: string | null
           display_order?: number | null
           id?: string
           name?: string
           parent_id?: string | null
+          quantity?: number | null
           status?: string
+          template_line_id?: string | null
+          unit_price?: number | null
+          unit_type?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -229,6 +244,13 @@ export type Database = {
             columns: ["parent_id"]
             isOneToOne: false
             referencedRelation: "budget_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_lines_template_line_id_fkey"
+            columns: ["template_line_id"]
+            isOneToOne: false
+            referencedRelation: "budget_template_lines"
             referencedColumns: ["id"]
           },
         ]
