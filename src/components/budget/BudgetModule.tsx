@@ -13,7 +13,7 @@ import { useBudgetContext } from "./BudgetContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { BudgetTemplateSelector, applyBudgetTemplate, updateBudgetTemplatePreservingValues } from "./BudgetTemplateSelector";
+import { BudgetTemplateSelector, applyBudgetTemplate, updateBudgetTemplatePreservingValues, getCurrentTemplateId } from "./BudgetTemplateSelector";
 
 interface Budget {
   id: string;
@@ -543,7 +543,12 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  onClick={() => setShowUpdateTemplateDialog(true)}
+                  onClick={async () => {
+                    // Pre-load the current template ID
+                    const currentTemplateId = await getCurrentTemplateId(currentBudget.id);
+                    setUpdateTemplateId(currentTemplateId || "");
+                    setShowUpdateTemplateDialog(true);
+                  }}
                   className="gap-2"
                 >
                   <RefreshCw className="h-4 w-4" />
