@@ -12,6 +12,11 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
+  DragOverEvent,
+  DragOverlay,
+  DragStartEvent,
+  pointerWithin,
+  rectIntersection,
 } from "@dnd-kit/core";
 import {
   arrayMove,
@@ -42,8 +47,47 @@ interface BudgetTemplateLineTreeProps {
   onUpdateLine: (id: string, data: Partial<TemplateLine>) => void;
   onDeleteLine: (id: string) => void;
   onReorder?: (lines: TemplateLine[]) => void;
+  onReparent?: (lineId: string, newParentId: string | null) => void;
   level?: number;
+  allLines?: TemplateLine[];
+  isRoot?: boolean;
 }
+
+// Helper to get all descendant IDs of a line
+const getDescendantIds = (line: TemplateLine): string[] => {
+  const ids: string[] = [];
+  if (line.children) {
+    for (const child of line.children) {
+      ids.push(child.id);
+      ids.push(...getDescendantIds(child));
+    }
+  }
+  return ids;
+};
+
+// Helper to find a line by ID in the tree
+const findLineById = (lines: TemplateLine[], id: string): TemplateLine | null => {
+  for (const line of lines) {
+    if (line.id === id) return line;
+    if (line.children) {
+      const found = findLineById(line.children, id);
+      if (found) return found;
+    }
+  }
+  return null;
+};
+
+// Helper to flatten all lines for drag context
+const flattenLines = (lines: TemplateLine[]): TemplateLine[] => {
+  const result: TemplateLine[] = [];
+  for (const line of lines) {
+    result.push(line);
+    if (line.children) {
+      result.push(...flattenLines(line.children));
+    }
+  }
+  return result;
+};
 
 export const BudgetTemplateLineTree = ({
   lines,
@@ -51,66 +95,156 @@ export const BudgetTemplateLineTree = ({
   onUpdateLine,
   onDeleteLine,
   onReorder,
+  onReparent,
   level = 0,
+  allLines,
+  isRoot = true,
 }: BudgetTemplateLineTreeProps) => {
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
 
+  const rootLines = allLines || lines;
+  const flatLines = flattenLines(rootLines);
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const { over } = event;
+    setOverId(over ? (over.id as string) : null);
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    setActiveId(null);
+    setOverId(null);
 
-    if (over && active.id !== over.id) {
+    if (!over || active.id === over.id) return;
+
+    const activeLineId = active.id as string;
+    const overLineId = over.id as string;
+
+    // Find the dragged line and target line
+    const activeLine = findLineById(rootLines, activeLineId);
+    const overLine = findLineById(rootLines, overLineId);
+
+    if (!activeLine || !overLine) return;
+
+    // Prevent dropping a parent onto its own descendant
+    const descendantIds = getDescendantIds(activeLine);
+    if (descendantIds.includes(overLineId)) return;
+
+    // Check if they're siblings (same parent)
+    const areSiblings = activeLine.parent_id === overLine.parent_id;
+
+    if (areSiblings) {
+      // Reorder within the same level
       const oldIndex = lines.findIndex((item) => item.id === active.id);
       const newIndex = lines.findIndex((item) => item.id === over.id);
-      const newOrder = arrayMove(lines, oldIndex, newIndex);
       
-      // Update display_order for each line
-      newOrder.forEach((line, index) => {
-        onUpdateLine(line.id, { display_order: index });
-      });
-      
-      if (onReorder) {
-        onReorder(newOrder);
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newOrder = arrayMove(lines, oldIndex, newIndex);
+        newOrder.forEach((line, index) => {
+          onUpdateLine(line.id, { display_order: index });
+        });
+        if (onReorder) {
+          onReorder(newOrder);
+        }
       }
+    } else if (onReparent) {
+      // Reparent: make the dragged line a child of the target line
+      onReparent(activeLineId, overLineId);
     }
   };
 
+  const handleDragCancel = () => {
+    setActiveId(null);
+    setOverId(null);
+  };
+
+  const activeLine = activeId ? findLineById(rootLines, activeId) : null;
+
+  // Only render the DndContext at the root level
+  if (isRoot) {
+    return (
+      <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
+        >
+          <SortableContext items={flatLines.map(l => l.id)} strategy={verticalListSortingStrategy}>
+            {lines.map((line) => (
+              <SortableTemplateLineItem
+                key={line.id}
+                line={line}
+                level={level}
+                onAddLine={onAddLine}
+                onUpdateLine={onUpdateLine}
+                onDeleteLine={onDeleteLine}
+                onReorder={onReorder}
+                onReparent={onReparent}
+                allLines={rootLines}
+                isDropTarget={overId === line.id && activeId !== line.id}
+              />
+            ))}
+          </SortableContext>
+          <DragOverlay>
+            {activeLine ? (
+              <div className="flex items-center gap-2 py-2 px-2 rounded-md bg-background border shadow-lg opacity-90">
+                <GripVertical className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">{activeLine.name}</span>
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+        {level === 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onAddLine(null)}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            Agregar línea madre
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  // For nested levels, just render the items without a new DndContext
   return (
     <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext items={lines.map(l => l.id)} strategy={verticalListSortingStrategy}>
-          {lines.map((line) => (
-            <SortableTemplateLineItem
-              key={line.id}
-              line={line}
-              level={level}
-              onAddLine={onAddLine}
-              onUpdateLine={onUpdateLine}
-              onDeleteLine={onDeleteLine}
-              onReorder={onReorder}
-            />
-          ))}
-        </SortableContext>
-      </DndContext>
-      {level === 0 && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onAddLine(null)}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <Plus className="h-4 w-4 mr-1" />
-          Agregar línea madre
-        </Button>
-      )}
+      {lines.map((line) => (
+        <SortableTemplateLineItem
+          key={line.id}
+          line={line}
+          level={level}
+          onAddLine={onAddLine}
+          onUpdateLine={onUpdateLine}
+          onDeleteLine={onDeleteLine}
+          onReorder={onReorder}
+          onReparent={onReparent}
+          allLines={rootLines}
+          isDropTarget={overId === line.id && activeId !== line.id}
+        />
+      ))}
     </div>
   );
 };
@@ -122,6 +256,9 @@ interface SortableTemplateLineItemProps {
   onUpdateLine: (id: string, data: Partial<TemplateLine>) => void;
   onDeleteLine: (id: string) => void;
   onReorder?: (lines: TemplateLine[]) => void;
+  onReparent?: (lineId: string, newParentId: string | null) => void;
+  allLines: TemplateLine[];
+  isDropTarget?: boolean;
 }
 
 const SortableTemplateLineItem = ({
@@ -131,6 +268,9 @@ const SortableTemplateLineItem = ({
   onUpdateLine,
   onDeleteLine,
   onReorder,
+  onReparent,
+  allLines,
+  isDropTarget,
 }: SortableTemplateLineItemProps) => {
   const {
     attributes,
@@ -144,7 +284,7 @@ const SortableTemplateLineItem = ({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? 0.3 : 1,
   };
 
   const [isExpanded, setIsExpanded] = useState(true);
@@ -191,8 +331,9 @@ const SortableTemplateLineItem = ({
     <div ref={setNodeRef} style={style}>
       <div
         className={cn(
-          "flex items-center gap-2 py-2 px-2 rounded-md hover:bg-accent/50 group",
-          (level === 0 || hasChildren) && "bg-muted/30"
+          "flex items-center gap-2 py-2 px-2 rounded-md hover:bg-accent/50 group transition-all",
+          (level === 0 || hasChildren) && "bg-muted/30",
+          isDropTarget && "ring-2 ring-primary ring-offset-1 bg-primary/10"
         )}
       >
         {/* Drag handle */}
@@ -364,6 +505,9 @@ const SortableTemplateLineItem = ({
           onUpdateLine={onUpdateLine}
           onDeleteLine={onDeleteLine}
           onReorder={onReorder}
+          onReparent={onReparent}
+          allLines={allLines}
+          isRoot={false}
         />
       )}
     </div>
