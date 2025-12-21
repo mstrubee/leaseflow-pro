@@ -3,6 +3,7 @@ import { ChevronRight, ChevronDown, Plus, Trash2, Check, X, Edit2, ArrowRight } 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useBudgetContext } from "./BudgetContext";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -16,6 +17,11 @@ export interface BudgetLine {
   amount_uf: number;
   status: "autorizado" | "no_autorizado";
   display_order: number;
+  quantity?: number;
+  unit_type?: string;
+  currency?: string;
+  unit_price?: number;
+  template_line_id?: string | null;
   children?: BudgetLine[];
 }
 
@@ -77,8 +83,11 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
   const [isExpanded, setIsExpanded] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(line.name);
-  const [editAmount, setEditAmount] = useState(line.amount_uf.toString());
-  const { formatUF, formatCLP, convertUFToPesos } = useBudgetContext();
+  const [editQuantity, setEditQuantity] = useState((line.quantity || 0).toString());
+  const [editUnit, setEditUnit] = useState(line.unit_type || "m2");
+  const [editUnitPrice, setEditUnitPrice] = useState((line.unit_price || 0).toString());
+  const [editCurrency, setEditCurrency] = useState(line.currency || "UF");
+  const { formatUF, formatCLP, convertUFToPesos, ufValue } = useBudgetContext();
 
   const hasChildren = line.children && line.children.length > 0;
   const isParent = hasChildren;
@@ -97,17 +106,38 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
     ? calculateChildrenTotal(line.children!)
     : line.amount_uf;
 
+  // Calculate edit total based on inputs
+  const editQty = parseFloat(editQuantity) || 0;
+  const editPrice = parseFloat(editUnitPrice) || 0;
+  const editTotal = editQty * editPrice;
+
   const handleSave = () => {
+    const qty = parseFloat(editQuantity) || 0;
+    const price = parseFloat(editUnitPrice) || 0;
+    let amountUf = qty * price;
+    
+    // If currency is CLP, convert to UF
+    if (editCurrency === "CLP" && ufValue > 0) {
+      amountUf = amountUf / ufValue;
+    }
+
     onUpdateLine(line.id, {
       name: editName,
-      amount_uf: parseFloat(editAmount) || 0,
+      quantity: qty,
+      unit_type: editUnit,
+      unit_price: price,
+      currency: editCurrency,
+      amount_uf: amountUf,
     });
     setIsEditing(false);
   };
 
   const handleCancel = () => {
     setEditName(line.name);
-    setEditAmount(line.amount_uf.toString());
+    setEditQuantity((line.quantity || 0).toString());
+    setEditUnit(line.unit_type || "m2");
+    setEditUnitPrice((line.unit_price || 0).toString());
+    setEditCurrency(line.currency || "UF");
     setIsEditing(false);
   };
 
@@ -140,32 +170,80 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
         </button>
 
         {isEditing && !readOnly ? (
-          <>
+          <div className="flex items-center gap-2 flex-1 flex-wrap">
             <Input
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
-              className="h-7 w-48"
+              className="h-7 w-40"
               autoFocus
+              placeholder="Nombre"
             />
-            <Input
-              type="number"
-              value={editAmount}
-              onChange={(e) => setEditAmount(e.target.value)}
-              className="h-7 w-24"
-              disabled={isParent}
-            />
+            {!isParent && (
+              <>
+                {/* Quantity and unit */}
+                <div className="flex items-center gap-1">
+                  <Input
+                    type="number"
+                    value={editQuantity}
+                    onChange={(e) => setEditQuantity(e.target.value)}
+                    className="h-7 w-16"
+                    placeholder="Cant."
+                  />
+                  <Select value={editUnit} onValueChange={setEditUnit}>
+                    <SelectTrigger className="h-7 w-16">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="m2">m²</SelectItem>
+                      <SelectItem value="mL">mL</SelectItem>
+                      <SelectItem value="Un">Un</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* Price and currency */}
+                <span className="text-muted-foreground">×</span>
+                <div className="flex items-center gap-1">
+                  <Input
+                    type="number"
+                    value={editUnitPrice}
+                    onChange={(e) => setEditUnitPrice(e.target.value)}
+                    className="h-7 w-20"
+                    placeholder="Precio"
+                  />
+                  <Select value={editCurrency} onValueChange={setEditCurrency}>
+                    <SelectTrigger className="h-7 w-16">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="UF">UF</SelectItem>
+                      <SelectItem value="CLP">$</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* Calculated total */}
+                <div className="text-sm font-mono bg-muted/50 px-2 py-1 rounded">
+                  = {editCurrency === "CLP" ? "$ " : "UF "}
+                  {editTotal.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </>
+            )}
             <Button size="sm" variant="ghost" onClick={handleSave} className="h-7 w-7 p-0">
               <Check className="h-4 w-4 text-green-600" />
             </Button>
             <Button size="sm" variant="ghost" onClick={handleCancel} className="h-7 w-7 p-0">
               <X className="h-4 w-4 text-red-600" />
             </Button>
-          </>
+          </div>
         ) : (
           <>
             <span className={cn("flex-1 font-medium", level === 0 && "font-semibold")}>
               {line.name}
             </span>
+            {!isParent && (line.quantity || 0) > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {line.quantity} {line.unit_type || "m2"} × {line.currency === "CLP" ? "$" : "UF "}{(line.unit_price || 0).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+              </span>
+            )}
             <div className="flex items-center gap-3">
               <span className="text-sm font-mono">{formatUF(calculatedAmount)}</span>
               <span className="text-xs text-muted-foreground font-mono">

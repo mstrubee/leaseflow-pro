@@ -13,7 +13,7 @@ import { useBudgetContext } from "./BudgetContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { BudgetTemplateSelector, applyBudgetTemplate } from "./BudgetTemplateSelector";
+import { BudgetTemplateSelector, applyBudgetTemplate, updateBudgetTemplatePreservingValues } from "./BudgetTemplateSelector";
 
 interface Budget {
   id: string;
@@ -221,7 +221,7 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
           nextBudget = newBudget;
         }
 
-        // 4. Copiar ítems no autorizados al año siguiente
+        // 4. Copiar ítems no autorizados al año siguiente (including new fields)
         for (const line of unauthorizedLines) {
           await supabase.from("budget_lines").insert({
             budget_id: nextBudget!.id,
@@ -230,6 +230,11 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
             description: line.description,
             amount_uf: line.amount_uf,
             status: "no_autorizado",
+            quantity: line.quantity || 0,
+            unit_type: line.unit_type || "m2",
+            currency: line.currency || "UF",
+            unit_price: line.unit_price || 0,
+            template_line_id: line.template_line_id,
           });
 
           // Registrar la reasignación
@@ -269,6 +274,10 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
         name: "Nueva línea",
         amount_uf: 0,
         status: "no_autorizado",
+        quantity: 0,
+        unit_type: "m2",
+        currency: "UF",
+        unit_price: 0,
       });
 
       if (error) throw error;
@@ -409,23 +418,15 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
 
     setUpdatingTemplate(true);
     try {
-      // Delete all existing budget lines
-      const { error: deleteError } = await supabase
-        .from("budget_lines")
-        .delete()
-        .eq("budget_id", budget.id);
-      
-      if (deleteError) throw deleteError;
-
-      // Apply new template
-      const success = await applyBudgetTemplate(updateTemplateId, budget.id);
+      // Use the new function that preserves user values
+      const success = await updateBudgetTemplatePreservingValues(updateTemplateId, budget.id);
       if (!success) {
         throw new Error("Error al aplicar la plantilla");
       }
 
       toast({
         title: "Plantilla actualizada",
-        description: "La estructura del presupuesto ha sido reemplazada. Todos los montos se han reiniciado a 0.",
+        description: "La estructura del presupuesto ha sido actualizada. Los valores existentes se han conservado.",
       });
       
       setShowUpdateTemplateConfirm(false);
