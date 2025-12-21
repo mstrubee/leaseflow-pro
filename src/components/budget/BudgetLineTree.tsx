@@ -178,18 +178,17 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
           )}
         </button>
 
-        {/* Line name - smaller text */}
+        {/* Line name - fixed width for alignment */}
         <span className={cn(
-          "text-sm flex-shrink-0",
-          level === 0 ? "font-semibold" : "font-medium",
-          isParent && "flex-1"
+          "text-sm flex-shrink-0 min-w-[180px]",
+          level === 0 ? "font-semibold" : "font-medium"
         )}>
           {line.name}
         </span>
 
-        {/* For non-parent lines: show quantity/unit and price inputs */}
+        {/* For non-parent lines: show quantity/unit and price inputs - aligned in columns */}
         {!isParent && (
-          <div className="flex items-center gap-1 flex-1">
+          <div className="flex items-center gap-1">
             {/* Quantity - directly editable */}
             <Input
               type="number"
@@ -223,12 +222,12 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
                   autoFocus
                 />
                 <Select value={editCurrency} onValueChange={setEditCurrency}>
-                  <SelectTrigger className="h-6 w-12 text-xs">
+                  <SelectTrigger className="h-6 w-20 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="UF">UF</SelectItem>
-                    <SelectItem value="CLP">$</SelectItem>
+                    <SelectItem value="UF">UF/{line.unit_type || "m2"}</SelectItem>
+                    <SelectItem value="CLP">$/{line.unit_type || "m2"}</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button size="sm" variant="ghost" onClick={handleSavePrice} className="h-6 w-6 p-0">
@@ -240,8 +239,8 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
               </div>
             ) : (
               <div className="flex items-center gap-1">
-                <span className="text-xs font-mono bg-muted/50 px-1.5 py-0.5 rounded min-w-[60px] text-center">
-                  {line.currency === "CLP" ? "$" : "UF "}{(line.unit_price || 0).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+                <span className="text-xs font-mono bg-muted/50 px-1.5 py-0.5 rounded min-w-[80px] text-center">
+                  {line.currency === "CLP" ? "$" : "UF"}/{line.unit_type || "m2"} {(line.unit_price || 0).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
                 </span>
                 {!readOnly && (
                   <TooltipProvider>
@@ -259,6 +258,9 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
             )}
           </div>
         )}
+
+        {/* Spacer for parent lines to align totals */}
+        {isParent && <div className="flex-1" />}
 
         {/* Totals and status */}
         <div className="flex items-center gap-2">
