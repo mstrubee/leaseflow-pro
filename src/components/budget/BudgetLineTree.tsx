@@ -185,10 +185,10 @@ const BudgetLineItem = ({
                 </Button>
               </div> : <div className="flex items-center gap-1">
                 <span className="text-xs bg-muted/50 px-1.5 py-0.5 rounded min-w-[80px] text-center font-serif font-normal">
-                  {line.currency === "CLP" ? "$" : "UF"}/{line.unit_type || "m2"}{" "}
                   {(line.unit_price || 0).toLocaleString("es-CL", {
-              minimumFractionDigits: 2
-            })}
+                    minimumFractionDigits: 2
+                  })}{" "}
+                  {line.currency === "CLP" ? "$" : "UF"}/{line.unit_type || "m2"}
                 </span>
                 {!readOnly && <TooltipProvider>
                     <Tooltip>
