@@ -98,7 +98,7 @@ export const BudgetTemplateSelector = ({
 
 // Helper function to apply a template to a budget
 // Copies template structure including quantity, unit_type, currency fields
-// Sets amount_uf = 0 (user must input values)
+// Uses default_amount_uf from template as starting values
 export const applyBudgetTemplate = async (
   templateId: string,
   budgetId: string
@@ -122,21 +122,26 @@ export const applyBudgetTemplate = async (
 
     // First pass: create all lines without parent_id
     for (const line of templateLines) {
+      // Calculate unit_price from default_amount_uf and quantity
+      const quantity = line.quantity || 0;
+      const defaultAmount = line.default_amount_uf || 0;
+      const unitPrice = quantity > 0 ? defaultAmount / quantity : defaultAmount;
+      
       const { data: newLine, error } = await supabase
         .from("budget_lines")
         .insert({
           budget_id: budgetId,
           name: line.name,
           description: line.description,
-          amount_uf: 0, // User must input values
+          amount_uf: defaultAmount, // Use template default value
           display_order: line.display_order,
           status: "no_autorizado",
           parent_id: null,
           // Copy template fields
-          quantity: line.quantity || 0,
+          quantity: quantity,
           unit_type: line.unit_type || "m2",
           currency: line.currency || "UF",
-          unit_price: 0, // User must input values
+          unit_price: unitPrice, // Calculate from default amount
           template_line_id: line.id, // Reference to original template line
         })
         .select()
@@ -167,6 +172,32 @@ export const applyBudgetTemplate = async (
   }
 };
 
+// Helper function to get the current template ID from budget lines
+export const getCurrentTemplateId = async (budgetId: string): Promise<string | null> => {
+  try {
+    const { data, error } = await supabase
+      .from("budget_lines")
+      .select("template_line_id")
+      .eq("budget_id", budgetId)
+      .not("template_line_id", "is", null)
+      .limit(1);
+
+    if (error || !data || data.length === 0) return null;
+
+    // Get the template_id from the template_line
+    const { data: templateLine, error: tlError } = await supabase
+      .from("budget_template_lines")
+      .select("template_id")
+      .eq("id", data[0].template_line_id)
+      .single();
+
+    if (tlError || !templateLine) return null;
+    return templateLine.template_id;
+  } catch {
+    return null;
+  }
+};
+
 // Helper function to update template preserving user values
 export const updateBudgetTemplatePreservingValues = async (
   templateId: string,
@@ -181,21 +212,25 @@ export const updateBudgetTemplatePreservingValues = async (
 
     if (existingError) throw existingError;
 
-    // Create a map of template_line_id -> existing values
+    // Create a map of template_line_id -> existing values (only if user has entered values)
     const existingValuesMap = new Map<string, {
       quantity: number;
       unit_price: number;
       amount_uf: number;
       status: string;
+      hasUserValues: boolean;
     }>();
 
     (existingLines || []).forEach((line: any) => {
       if (line.template_line_id) {
+        // Check if user has entered values (any value > 0)
+        const hasUserValues = (line.quantity > 0 || line.unit_price > 0 || line.amount_uf > 0);
         existingValuesMap.set(line.template_line_id, {
           quantity: line.quantity || 0,
           unit_price: line.unit_price || 0,
           amount_uf: line.amount_uf || 0,
           status: line.status || "no_autorizado",
+          hasUserValues,
         });
       }
     });
@@ -221,11 +256,17 @@ export const updateBudgetTemplatePreservingValues = async (
       return true;
     }
 
-    // 4. Create new lines, preserving existing values where possible
+    // 4. Create new lines, preserving existing user values where they exist
     const idMap = new Map<string, string>();
 
     for (const line of templateLines) {
       const existingValues = existingValuesMap.get(line.id);
+      const hasUserValues = existingValues?.hasUserValues || false;
+      
+      // Calculate template defaults
+      const templateQuantity = line.quantity || 0;
+      const templateAmount = line.default_amount_uf || 0;
+      const templateUnitPrice = templateQuantity > 0 ? templateAmount / templateQuantity : templateAmount;
       
       const { data: newLine, error } = await supabase
         .from("budget_lines")
@@ -234,9 +275,9 @@ export const updateBudgetTemplatePreservingValues = async (
           name: line.name,
           description: line.description,
           // Preserve user values if they exist, otherwise use template defaults
-          quantity: existingValues?.quantity ?? (line.quantity || 0),
-          unit_price: existingValues?.unit_price ?? 0,
-          amount_uf: existingValues?.amount_uf ?? 0,
+          quantity: hasUserValues ? existingValues!.quantity : templateQuantity,
+          unit_price: hasUserValues ? existingValues!.unit_price : templateUnitPrice,
+          amount_uf: hasUserValues ? existingValues!.amount_uf : templateAmount,
           status: existingValues?.status ?? "no_autorizado",
           // Always use template values for structure
           display_order: line.display_order,
