@@ -192,7 +192,7 @@ const SortableTemplateLineItem = ({
       <div
         className={cn(
           "flex items-center gap-2 py-2 px-2 rounded-md hover:bg-accent/50 group",
-          level === 0 && "bg-muted/30"
+          (level === 0 || hasChildren) && "bg-muted/30"
         )}
       >
         {/* Drag handle */}

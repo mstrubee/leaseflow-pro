@@ -163,7 +163,7 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
     <div>
       <div className={cn(
         "flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-accent/50 group",
-        level === 0 && "bg-muted/30",
+        (level === 0 || hasChildren) && "bg-muted/30",
         isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20"
       )}>
         <button
