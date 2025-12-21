@@ -303,6 +303,21 @@ export const BudgetTemplateManager = () => {
     }
   };
 
+  const handleReparent = async (lineId: string, newParentId: string | null) => {
+    try {
+      const { error } = await supabase
+        .from("budget_template_lines")
+        .update({ parent_id: newParentId })
+        .eq("id", lineId);
+
+      if (error) throw error;
+      toast({ title: "Línea movida", description: "La estructura se ha actualizado" });
+      if (selectedTemplate) loadLines(selectedTemplate.id);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
   const openEditDialog = (template: BudgetTemplate) => {
     setEditName(template.name);
     setEditDescription(template.description || "");
@@ -439,6 +454,7 @@ export const BudgetTemplateManager = () => {
                         onAddLine={handleAddLine}
                         onUpdateLine={handleUpdateLine}
                         onDeleteLine={handleDeleteLine}
+                        onReparent={handleReparent}
                       />
                     )}
                   </>
