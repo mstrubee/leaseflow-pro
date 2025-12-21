@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ChevronRight, ChevronDown, Plus, Trash2, Check, X, Edit2, GripVertical } from "lucide-react";
+import { useState, createContext, useContext } from "react";
+import { ChevronRight, ChevronDown, Plus, Trash2, Check, X, Edit2, GripVertical, CornerDownRight, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,8 +15,6 @@ import {
   DragOverEvent,
   DragOverlay,
   DragStartEvent,
-  pointerWithin,
-  rectIntersection,
 } from "@dnd-kit/core";
 import {
   arrayMove,
@@ -53,6 +51,21 @@ interface BudgetTemplateLineTreeProps {
   isRoot?: boolean;
 }
 
+// Context for drag state
+interface DragContextType {
+  activeId: string | null;
+  overId: string | null;
+  activeLevel: number | null;
+  overLevel: number | null;
+}
+
+const DragStateContext = createContext<DragContextType>({
+  activeId: null,
+  overId: null,
+  activeLevel: null,
+  overLevel: null,
+});
+
 // Helper to get all descendant IDs of a line
 const getDescendantIds = (line: TemplateLine): string[] => {
   const ids: string[] = [];
@@ -77,6 +90,18 @@ const findLineById = (lines: TemplateLine[], id: string): TemplateLine | null =>
   return null;
 };
 
+// Helper to find level of a line by ID
+const findLevelById = (lines: TemplateLine[], id: string, currentLevel = 0): number | null => {
+  for (const line of lines) {
+    if (line.id === id) return currentLevel;
+    if (line.children) {
+      const found = findLevelById(line.children, id, currentLevel + 1);
+      if (found !== null) return found;
+    }
+  }
+  return null;
+};
+
 // Helper to flatten all lines for drag context
 const flattenLines = (lines: TemplateLine[]): TemplateLine[] => {
   const result: TemplateLine[] = [];
@@ -87,6 +112,15 @@ const flattenLines = (lines: TemplateLine[]): TemplateLine[] => {
     }
   }
   return result;
+};
+
+// Helper to get siblings of a line
+const getSiblings = (lines: TemplateLine[], lineId: string, parentId: string | null): TemplateLine[] => {
+  if (parentId === null) {
+    return lines.filter(l => l.parent_id === null);
+  }
+  const parent = findLineById(lines, parentId);
+  return parent?.children || [];
 };
 
 export const BudgetTemplateLineTree = ({
@@ -106,7 +140,7 @@ export const BudgetTemplateLineTree = ({
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 5,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -116,6 +150,9 @@ export const BudgetTemplateLineTree = ({
 
   const rootLines = allLines || lines;
   const flatLines = flattenLines(rootLines);
+
+  const activeLevel = activeId ? findLevelById(rootLines, activeId) : null;
+  const overLevel = overId ? findLevelById(rootLines, overId) : null;
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
@@ -150,12 +187,13 @@ export const BudgetTemplateLineTree = ({
     const areSiblings = activeLine.parent_id === overLine.parent_id;
 
     if (areSiblings) {
-      // Reorder within the same level
-      const oldIndex = lines.findIndex((item) => item.id === active.id);
-      const newIndex = lines.findIndex((item) => item.id === over.id);
+      // Reorder within the same level - find the correct sibling list
+      const siblings = getSiblings(rootLines, activeLineId, activeLine.parent_id);
+      const oldIndex = siblings.findIndex((item) => item.id === activeLineId);
+      const newIndex = siblings.findIndex((item) => item.id === overLineId);
       
       if (oldIndex !== -1 && newIndex !== -1) {
-        const newOrder = arrayMove(lines, oldIndex, newIndex);
+        const newOrder = arrayMove(siblings, oldIndex, newIndex);
         newOrder.forEach((line, index) => {
           onUpdateLine(line.id, { display_order: index });
         });
@@ -175,56 +213,105 @@ export const BudgetTemplateLineTree = ({
   };
 
   const activeLine = activeId ? findLineById(rootLines, activeId) : null;
+  const overLine = overId ? findLineById(rootLines, overId) : null;
+
+  // Determine action type for overlay
+  const getActionType = (): "reorder" | "reparent" | null => {
+    if (!activeLine || !overLine) return null;
+    if (activeLine.parent_id === overLine.parent_id) return "reorder";
+    return "reparent";
+  };
+
+  const actionType = getActionType();
 
   // Only render the DndContext at the root level
   if (isRoot) {
     return (
-      <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragOver={handleDragOver}
-          onDragEnd={handleDragEnd}
-          onDragCancel={handleDragCancel}
-        >
-          <SortableContext items={flatLines.map(l => l.id)} strategy={verticalListSortingStrategy}>
-            {lines.map((line) => (
-              <SortableTemplateLineItem
-                key={line.id}
-                line={line}
-                level={level}
-                onAddLine={onAddLine}
-                onUpdateLine={onUpdateLine}
-                onDeleteLine={onDeleteLine}
-                onReorder={onReorder}
-                onReparent={onReparent}
-                allLines={rootLines}
-                isDropTarget={overId === line.id && activeId !== line.id}
-              />
-            ))}
-          </SortableContext>
-          <DragOverlay>
-            {activeLine ? (
-              <div className="flex items-center gap-2 py-2 px-2 rounded-md bg-background border shadow-lg opacity-90">
-                <GripVertical className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium">{activeLine.name}</span>
-              </div>
-            ) : null}
-          </DragOverlay>
-        </DndContext>
-        {level === 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onAddLine(null)}
-            className="text-muted-foreground hover:text-foreground"
+      <DragStateContext.Provider value={{ activeId, overId, activeLevel, overLevel }}>
+        <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
           >
-            <Plus className="h-4 w-4 mr-1" />
-            Agregar línea madre
-          </Button>
-        )}
-      </div>
+            <SortableContext items={flatLines.map(l => l.id)} strategy={verticalListSortingStrategy}>
+              {lines.map((line) => (
+                <SortableTemplateLineItem
+                  key={line.id}
+                  line={line}
+                  level={level}
+                  onAddLine={onAddLine}
+                  onUpdateLine={onUpdateLine}
+                  onDeleteLine={onDeleteLine}
+                  onReorder={onReorder}
+                  onReparent={onReparent}
+                  allLines={rootLines}
+                />
+              ))}
+            </SortableContext>
+            <DragOverlay dropAnimation={{
+              duration: 200,
+              easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
+            }}>
+              {activeLine ? (
+                <div className="flex items-center gap-3 py-2.5 px-3 rounded-lg bg-background border-2 border-primary shadow-xl animate-scale-in">
+                  <GripVertical className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium">{activeLine.name}</span>
+                  {activeLine.children && activeLine.children.length > 0 && (
+                    <span className="text-xs bg-muted px-1.5 py-0.5 rounded-full text-muted-foreground">
+                      +{activeLine.children.length}
+                    </span>
+                  )}
+                  {activeLevel !== null && (
+                    <span className="ml-auto text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                      Nivel {activeLevel + 1}
+                    </span>
+                  )}
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+          
+          {/* Drop indicator hint */}
+          {activeId && overId && overLine && (
+            <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 animate-fade-in">
+              <div className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-full shadow-lg text-sm font-medium",
+                actionType === "reparent" 
+                  ? "bg-primary text-primary-foreground" 
+                  : "bg-muted text-foreground"
+              )}>
+                {actionType === "reparent" ? (
+                  <>
+                    <CornerDownRight className="h-4 w-4" />
+                    Mover dentro de "{overLine.name}"
+                  </>
+                ) : (
+                  <>
+                    <ArrowRight className="h-4 w-4" />
+                    Reordenar junto a "{overLine.name}"
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {level === 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onAddLine(null)}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Agregar línea madre
+            </Button>
+          )}
+        </div>
+      </DragStateContext.Provider>
     );
   }
 
@@ -242,7 +329,6 @@ export const BudgetTemplateLineTree = ({
           onReorder={onReorder}
           onReparent={onReparent}
           allLines={rootLines}
-          isDropTarget={overId === line.id && activeId !== line.id}
         />
       ))}
     </div>
@@ -258,7 +344,6 @@ interface SortableTemplateLineItemProps {
   onReorder?: (lines: TemplateLine[]) => void;
   onReparent?: (lineId: string, newParentId: string | null) => void;
   allLines: TemplateLine[];
-  isDropTarget?: boolean;
 }
 
 const SortableTemplateLineItem = ({
@@ -270,8 +355,9 @@ const SortableTemplateLineItem = ({
   onReorder,
   onReparent,
   allLines,
-  isDropTarget,
 }: SortableTemplateLineItemProps) => {
+  const { activeId, overId } = useContext(DragStateContext);
+  
   const {
     attributes,
     listeners,
@@ -279,12 +365,12 @@ const SortableTemplateLineItem = ({
     transform,
     transition,
     isDragging,
+    isOver,
   } = useSortable({ id: line.id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.3 : 1,
   };
 
   const [isExpanded, setIsExpanded] = useState(true);
@@ -297,6 +383,12 @@ const SortableTemplateLineItem = ({
 
   const hasChildren = line.children && line.children.length > 0;
   const calculatedTotal = (parseFloat(editQuantity) || 0) * (parseFloat(editAmount) || 0);
+
+  // Determine if this is a drop target for reparenting
+  const isDropTarget = overId === line.id && activeId !== line.id;
+  const activeLine = activeId ? findLineById(allLines, activeId) : null;
+  const isReparentTarget = isDropTarget && activeLine?.parent_id !== line.parent_id;
+  const isReorderTarget = isDropTarget && activeLine?.parent_id === line.parent_id;
 
   const handleSave = () => {
     onUpdateLine(line.id, {
@@ -328,26 +420,32 @@ const SortableTemplateLineItem = ({
   };
 
   return (
-    <div ref={setNodeRef} style={style}>
+    <div ref={setNodeRef} style={style} className={cn(isDragging && "opacity-30")}>
       <div
         className={cn(
-          "flex items-center gap-2 py-2 px-2 rounded-md hover:bg-accent/50 group transition-all",
+          "flex items-center gap-2 py-2 px-2 rounded-md hover:bg-accent/50 group transition-all duration-200",
           (level === 0 || hasChildren) && "bg-muted/30",
-          isDropTarget && "ring-2 ring-primary ring-offset-1 bg-primary/10"
+          isReparentTarget && "ring-2 ring-primary ring-offset-2 bg-primary/10 scale-[1.02]",
+          isReorderTarget && "border-t-2 border-primary"
         )}
       >
         {/* Drag handle */}
         <button
           {...attributes}
           {...listeners}
-          className="p-1 hover:bg-accent rounded cursor-grab active:cursor-grabbing"
+          className={cn(
+            "p-1.5 rounded cursor-grab active:cursor-grabbing transition-colors",
+            "hover:bg-accent hover:text-accent-foreground",
+            "focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1"
+          )}
+          title="Arrastrar para mover o reorganizar"
         >
           <GripVertical className="h-4 w-4 text-muted-foreground" />
         </button>
 
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="p-1 hover:bg-accent rounded"
+          className="p-1 hover:bg-accent rounded transition-colors"
           disabled={!hasChildren}
         >
           {hasChildren ? (
