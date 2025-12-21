@@ -81,10 +81,7 @@ interface BudgetLineItemProps {
 
 const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, readOnly = false }: BudgetLineItemProps) => {
   const [isExpanded, setIsExpanded] = useState(true);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editName, setEditName] = useState(line.name);
-  const [editQuantity, setEditQuantity] = useState((line.quantity || 0).toString());
-  const [editUnit, setEditUnit] = useState(line.unit_type || "m2");
+  const [isEditingPrice, setIsEditingPrice] = useState(false);
   const [editUnitPrice, setEditUnitPrice] = useState((line.unit_price || 0).toString());
   const [editCurrency, setEditCurrency] = useState(line.currency || "UF");
   const { formatUF, formatCLP, convertUFToPesos, ufValue } = useBudgetContext();
@@ -106,39 +103,51 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
     ? calculateChildrenTotal(line.children!)
     : line.amount_uf;
 
-  // Calculate edit total based on inputs
-  const editQty = parseFloat(editQuantity) || 0;
-  const editPrice = parseFloat(editUnitPrice) || 0;
-  const editTotal = editQty * editPrice;
+  // Direct quantity update
+  const handleQuantityChange = (newQuantity: string) => {
+    if (readOnly) return;
+    const qty = parseFloat(newQuantity) || 0;
+    const price = line.unit_price || 0;
+    const currency = line.currency || "UF";
+    let amountUf = qty * price;
+    
+    if (currency === "CLP" && ufValue > 0) {
+      amountUf = amountUf / ufValue;
+    }
 
-  const handleSave = () => {
-    const qty = parseFloat(editQuantity) || 0;
+    onUpdateLine(line.id, {
+      quantity: qty,
+      amount_uf: amountUf,
+    });
+  };
+
+  // Direct unit type update
+  const handleUnitChange = (newUnit: string) => {
+    if (readOnly) return;
+    onUpdateLine(line.id, { unit_type: newUnit });
+  };
+
+  const handleSavePrice = () => {
+    const qty = line.quantity || 0;
     const price = parseFloat(editUnitPrice) || 0;
     let amountUf = qty * price;
     
-    // If currency is CLP, convert to UF
     if (editCurrency === "CLP" && ufValue > 0) {
       amountUf = amountUf / ufValue;
     }
 
     onUpdateLine(line.id, {
-      name: editName,
-      quantity: qty,
-      unit_type: editUnit,
       unit_price: price,
       currency: editCurrency,
       amount_uf: amountUf,
     });
-    setIsEditing(false);
+    setIsEditingPrice(false);
   };
 
-  const handleCancel = () => {
-    setEditName(line.name);
-    setEditQuantity((line.quantity || 0).toString());
-    setEditUnit(line.unit_type || "m2");
+  const handleCancelPrice = () => {
     setEditUnitPrice((line.unit_price || 0).toString());
     setEditCurrency(line.currency || "UF");
-    setIsEditing(false);
+    setIsEditingPrice(false);
   };
 
   const toggleStatus = () => {
@@ -153,151 +162,154 @@ const BudgetLineItem = ({ line, level, onAddLine, onUpdateLine, onDeleteLine, re
   return (
     <div>
       <div className={cn(
-        "flex items-center gap-2 py-2 px-2 rounded-md hover:bg-accent/50 group",
+        "flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-accent/50 group",
         level === 0 && "bg-muted/30",
         isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20"
       )}>
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="p-1 hover:bg-accent rounded"
+          className="p-0.5 hover:bg-accent rounded"
           disabled={!hasChildren}
         >
           {hasChildren ? (
-            isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />
+            isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />
           ) : (
-            <div className="h-4 w-4" />
+            <div className="h-3.5 w-3.5" />
           )}
         </button>
 
-        {isEditing && !readOnly ? (
-          <div className="flex items-center gap-2 flex-1 flex-wrap">
+        {/* Line name - smaller text */}
+        <span className={cn(
+          "text-sm flex-shrink-0",
+          level === 0 ? "font-semibold" : "font-medium",
+          isParent && "flex-1"
+        )}>
+          {line.name}
+        </span>
+
+        {/* For non-parent lines: show quantity/unit and price inputs */}
+        {!isParent && (
+          <div className="flex items-center gap-1 flex-1">
+            {/* Quantity - directly editable */}
             <Input
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              className="h-7 w-40"
-              autoFocus
-              placeholder="Nombre"
+              type="number"
+              value={line.quantity || 0}
+              onChange={(e) => handleQuantityChange(e.target.value)}
+              className="h-6 w-14 text-xs"
+              disabled={readOnly}
             />
-            {!isParent && (
-              <>
-                {/* Quantity and unit */}
-                <div className="flex items-center gap-1">
-                  <Input
-                    type="number"
-                    value={editQuantity}
-                    onChange={(e) => setEditQuantity(e.target.value)}
-                    className="h-7 w-16"
-                    placeholder="Cant."
-                  />
-                  <Select value={editUnit} onValueChange={setEditUnit}>
-                    <SelectTrigger className="h-7 w-16">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="m2">m²</SelectItem>
-                      <SelectItem value="mL">mL</SelectItem>
-                      <SelectItem value="Un">Un</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {/* Price and currency */}
-                <span className="text-muted-foreground">×</span>
-                <div className="flex items-center gap-1">
-                  <Input
-                    type="number"
-                    value={editUnitPrice}
-                    onChange={(e) => setEditUnitPrice(e.target.value)}
-                    className="h-7 w-20"
-                    placeholder="Precio"
-                  />
-                  <Select value={editCurrency} onValueChange={setEditCurrency}>
-                    <SelectTrigger className="h-7 w-16">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="UF">UF</SelectItem>
-                      <SelectItem value="CLP">$</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {/* Calculated total */}
-                <div className="text-sm font-mono bg-muted/50 px-2 py-1 rounded">
-                  = {editCurrency === "CLP" ? "$ " : "UF "}
-                  {editTotal.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </div>
-              </>
+            {/* Unit type - directly editable */}
+            <Select value={line.unit_type || "m2"} onValueChange={handleUnitChange} disabled={readOnly}>
+              <SelectTrigger className="h-6 w-14 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="m2">m²</SelectItem>
+                <SelectItem value="mL">mL</SelectItem>
+                <SelectItem value="Un">Un</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <span className="text-xs text-muted-foreground mx-0.5">×</span>
+            
+            {/* Price - editable only via button */}
+            {isEditingPrice && !readOnly ? (
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  value={editUnitPrice}
+                  onChange={(e) => setEditUnitPrice(e.target.value)}
+                  className="h-6 w-16 text-xs"
+                  autoFocus
+                />
+                <Select value={editCurrency} onValueChange={setEditCurrency}>
+                  <SelectTrigger className="h-6 w-12 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UF">UF</SelectItem>
+                    <SelectItem value="CLP">$</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button size="sm" variant="ghost" onClick={handleSavePrice} className="h-6 w-6 p-0">
+                  <Check className="h-3 w-3 text-green-600" />
+                </Button>
+                <Button size="sm" variant="ghost" onClick={handleCancelPrice} className="h-6 w-6 p-0">
+                  <X className="h-3 w-3 text-red-600" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-mono bg-muted/50 px-1.5 py-0.5 rounded min-w-[60px] text-center">
+                  {line.currency === "CLP" ? "$" : "UF "}{(line.unit_price || 0).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+                </span>
+                {!readOnly && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button size="sm" variant="ghost" onClick={() => setIsEditingPrice(true)} className="h-5 w-5 p-0">
+                          <Edit2 className="h-2.5 w-2.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Editar valor {line.unit_type || "m2"}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+              </div>
             )}
-            <Button size="sm" variant="ghost" onClick={handleSave} className="h-7 w-7 p-0">
-              <Check className="h-4 w-4 text-green-600" />
-            </Button>
-            <Button size="sm" variant="ghost" onClick={handleCancel} className="h-7 w-7 p-0">
-              <X className="h-4 w-4 text-red-600" />
-            </Button>
           </div>
-        ) : (
-          <>
-            <span className={cn("flex-1 font-medium", level === 0 && "font-semibold")}>
-              {line.name}
-            </span>
-            {!isParent && (line.quantity || 0) > 0 && (
-              <span className="text-xs text-muted-foreground">
-                {line.quantity} {line.unit_type || "m2"} × {line.currency === "CLP" ? "$" : "UF "}{(line.unit_price || 0).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-              </span>
-            )}
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-mono">{formatUF(calculatedAmount)}</span>
-              <span className="text-xs text-muted-foreground font-mono">
-                {formatCLP(convertUFToPesos(calculatedAmount))}
-              </span>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge
-                      variant={line.status === "autorizado" ? "default" : "secondary"}
-                      className={cn(
-                        "cursor-pointer text-xs",
-                        line.status === "autorizado" && "bg-green-500 hover:bg-green-600",
-                        line.status === "no_autorizado" && "bg-yellow-500 hover:bg-yellow-600 text-white"
-                      )}
-                      onClick={toggleStatus}
-                    >
-                      {line.status === "autorizado" ? "Autorizado" : "No Autorizado"}
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {line.status === "no_autorizado" 
-                      ? "Este ítem se arrastrará al año siguiente hasta que sea autorizado o eliminado"
-                      : "Click para cambiar estado"
-                    }
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              {isNotAuthorized && (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger>
-                      <ArrowRight className="h-4 w-4 text-yellow-600" />
-                    </TooltipTrigger>
-                    <TooltipContent>Se arrastrará al próximo año</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-              {!readOnly && (
-                <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
-                  <Button size="sm" variant="ghost" onClick={() => setIsEditing(true)} className="h-7 w-7 p-0">
-                    <Edit2 className="h-3 w-3" />
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => onAddLine(line.id)} className="h-7 w-7 p-0">
-                    <Plus className="h-3 w-3" />
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => onDeleteLine(line.id)} className="h-7 w-7 p-0 text-destructive">
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
-              )}
-            </div>
-          </>
         )}
+
+        {/* Totals and status */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-mono">{formatUF(calculatedAmount)}</span>
+          <span className="text-[10px] text-muted-foreground font-mono">
+            {formatCLP(convertUFToPesos(calculatedAmount))}
+          </span>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge
+                  variant={line.status === "autorizado" ? "default" : "secondary"}
+                  className={cn(
+                    "cursor-pointer text-[10px] px-1.5 py-0",
+                    line.status === "autorizado" && "bg-green-500 hover:bg-green-600",
+                    line.status === "no_autorizado" && "bg-yellow-500 hover:bg-yellow-600 text-white"
+                  )}
+                  onClick={toggleStatus}
+                >
+                  {line.status === "autorizado" ? "OK" : "No Aut."}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                {line.status === "no_autorizado" 
+                  ? "Este ítem se arrastrará al año siguiente hasta que sea autorizado o eliminado"
+                  : "Click para cambiar estado"
+                }
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          {isNotAuthorized && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger>
+                  <ArrowRight className="h-3 w-3 text-yellow-600" />
+                </TooltipTrigger>
+                <TooltipContent>Se arrastrará al próximo año</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          {!readOnly && (
+            <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5">
+              <Button size="sm" variant="ghost" onClick={() => onAddLine(line.id)} className="h-6 w-6 p-0">
+                <Plus className="h-3 w-3" />
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => onDeleteLine(line.id)} className="h-6 w-6 p-0 text-destructive">
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
 
       {hasChildren && isExpanded && (
