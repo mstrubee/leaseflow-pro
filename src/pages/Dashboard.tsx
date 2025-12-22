@@ -34,54 +34,31 @@ const Dashboard = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="items-center justify-between flex flex-row">
             <div>
-              <h1 className="text-2xl font-semibold text-sky-950">
-                Gerencia de Desarrollo
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                Administra tus contratos de arriendo
-              </p>
+              <h1 className="text-2xl font-semibold text-sky-950">Gerencia de Desarrollo</h1>
+              <p className="text-sm text-muted-foreground mt-1">Desarrollo, Administración y Presupuesto</p>
             </div>
             <div className="flex items-center gap-3">
               {isAdmin && (
                 <>
-                  <Button
-                    variant="outline"
-                    onClick={() => navigate("/alerts")}
-                    className="gap-2"
-                  >
+                  <Button variant="outline" onClick={() => navigate("/alerts")} className="gap-2">
                     <Bell className="h-4 w-4" />
                     Alertas
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => navigate("/deleted")}
-                    className="gap-2"
-                  >
+                  <Button variant="outline" onClick={() => navigate("/deleted")} className="gap-2">
                     <Trash2 className="h-4 w-4" />
                     Eliminados
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => navigate("/admin")}
-                    className="gap-2"
-                  >
+                  <Button variant="outline" onClick={() => navigate("/admin")} className="gap-2">
                     <Shield className="h-4 w-4" />
                     Admin
                   </Button>
                 </>
               )}
-              <Button
-                onClick={() => navigate("/contracts/new")}
-                className="gap-2"
-              >
+              <Button onClick={() => navigate("/contracts/new")} className="gap-2">
                 <Plus className="h-4 w-4" />
                 Nuevo Contrato
               </Button>
-              <Button
-                variant="outline"
-                onClick={handleLogout}
-                className="gap-2"
-              >
+              <Button variant="outline" onClick={handleLogout} className="gap-2">
                 <LogOut className="h-4 w-4" />
                 Salir
               </Button>
