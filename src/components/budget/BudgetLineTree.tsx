@@ -152,7 +152,7 @@ const BudgetLineItem = ({
         {/* For non-parent lines: show quantity/unit and price inputs - aligned in columns */}
         {!isParent && <div className="shadow-sm gap-[10px] flex items-center justify-start min-w-[280px]">
             {/* Quantity - local state for fast typing, commit on blur or Enter */}
-            <Input type="number" value={localQuantity} onChange={e => setLocalQuantity(e.target.value)} onBlur={handleQuantityBlur} onKeyDown={e => e.key === "Enter" && (e.target as HTMLInputElement).blur()} disabled={readOnly} className="h-6 w-[80px] text-xs" />
+            <Input type="number" value={localQuantity} onChange={e => setLocalQuantity(e.target.value)} onBlur={handleQuantityBlur} disabled={readOnly} className="h-6 w-[80px] text-xs" />
             {/* Unit type - directly editable */}
             <Select value={line.unit_type || "m2"} onValueChange={handleUnitChange} disabled={readOnly}>
               <SelectTrigger className="h-6 w-14 text-xs">
