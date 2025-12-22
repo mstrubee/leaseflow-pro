@@ -3,15 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { DollarSign, TrendingUp, Calendar } from "lucide-react";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 interface IndicatorData {
   uf: {
@@ -38,11 +30,11 @@ export const EconomicIndicators = () => {
 
   const fetchIndicators = async () => {
     try {
-      const { data: response, error } = await supabase.functions.invoke('economic-indicators');
+      const { data: response, error } = await supabase.functions.invoke("economic-indicators");
       if (error) throw error;
       setData(response);
     } catch (error) {
-      console.error('Error fetching indicators:', error);
+      console.error("Error fetching indicators:", error);
     } finally {
       setLoading(false);
     }
@@ -64,9 +56,7 @@ export const EconomicIndicators = () => {
     return date.toLocaleDateString("es-CL", { day: "2-digit", month: "short" });
   };
 
-  const dollarChartData = dollarPeriod === "6m" 
-    ? data?.dollar.sixMonths || []
-    : data?.dollar.oneYear || [];
+  const dollarChartData = dollarPeriod === "6m" ? data?.dollar.sixMonths || [] : data?.dollar.oneYear || [];
 
   // Sample every nth point for cleaner chart
   const sampleData = (arr: any[], maxPoints: number) => {
@@ -106,7 +96,7 @@ export const EconomicIndicators = () => {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">Valor UF</CardTitle>
-          <Calendar className="h-4 w-4 text-muted-foreground" />
+          <Calendar className="h-2 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold text-primary mb-4">
@@ -116,10 +106,7 @@ export const EconomicIndicators = () => {
             <p className="text-xs text-muted-foreground font-medium">Últimos 10 días</p>
             <div className="grid grid-cols-5 gap-1">
               {data?.uf.next10Days.slice(0, 10).map((item, idx) => (
-                <div
-                  key={idx}
-                  className="text-center p-1 bg-muted/50 rounded text-xs"
-                >
+                <div key={idx} className="text-center p-1 bg-muted/50 rounded text-xs">
                   <div className="text-muted-foreground">{formatDate(item.date)}</div>
                   <div className="font-medium">{item.value.toLocaleString("es-CL", { maximumFractionDigits: 0 })}</div>
                 </div>
@@ -141,36 +128,34 @@ export const EconomicIndicators = () => {
           </div>
           <Tabs value={dollarPeriod} onValueChange={(v) => setDollarPeriod(v as "6m" | "1y")}>
             <TabsList className="h-8 mb-2">
-              <TabsTrigger value="6m" className="text-xs">6 meses</TabsTrigger>
-              <TabsTrigger value="1y" className="text-xs">1 año</TabsTrigger>
+              <TabsTrigger value="6m" className="text-xs">
+                6 meses
+              </TabsTrigger>
+              <TabsTrigger value="1y" className="text-xs">
+                1 año
+              </TabsTrigger>
             </TabsList>
             <div className="h-32 mt-2">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={sampleData(dollarChartData, 30)} key={dollarPeriod}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis 
-                    dataKey="date" 
-                    tick={{ fontSize: 10 }} 
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 10 }}
                     tickFormatter={formatDate}
                     interval="preserveStartEnd"
                   />
-                  <YAxis 
-                    tick={{ fontSize: 10 }} 
-                    domain={['dataMin - 10', 'dataMax + 10']}
+                  <YAxis
+                    tick={{ fontSize: 10 }}
+                    domain={["dataMin - 10", "dataMax + 10"]}
                     tickFormatter={(v) => `$${Math.round(v)}`}
                     width={50}
                   />
-                  <Tooltip 
+                  <Tooltip
                     formatter={(value: number) => [formatCurrency(value), "Dólar"]}
                     labelFormatter={formatDate}
                   />
-                  <Line 
-                    type="monotone" 
-                    dataKey="value" 
-                    stroke="hsl(var(--primary))" 
-                    strokeWidth={2}
-                    dot={false}
-                  />
+                  <Line type="monotone" dataKey="value" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
