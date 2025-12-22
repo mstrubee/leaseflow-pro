@@ -9,6 +9,9 @@ verify_jwt = false
 [functions.create-user]
 verify_jwt = false
 
+[functions.update-user]
+verify_jwt = false
+
 [functions.economic-indicators]
 verify_jwt = false
 
@@ -19,4 +22,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.extract-contract-data]
+verify_jwt = false
+
+[functions.process-patent-alerts]
 verify_jwt = false
