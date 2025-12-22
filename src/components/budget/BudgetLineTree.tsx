@@ -216,7 +216,7 @@ const BudgetLineItem = ({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Badge variant={line.status === "autorizado" ? "default" : "secondary"} className={cn("cursor-pointer text-[10px] px-2.5 py-0 whitespace-nowrap", line.status === "autorizado" && "bg-green-500 hover:bg-green-600", line.status === "no_autorizado" && "bg-yellow-500 hover:bg-yellow-600 text-white")} onClick={toggleStatus}>
-                  {line.status === "autorizado" ? "OK" : "No Aut."}
+                  {line.status === "autorizado" ? "Autorizado" : "No Autorizado"}
                 </Badge>
               </TooltipTrigger>
               <TooltipContent>
