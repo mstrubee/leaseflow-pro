@@ -67,6 +67,7 @@ const BudgetLineItem = ({
   const [isEditingPrice, setIsEditingPrice] = useState(false);
   const [editUnitPrice, setEditUnitPrice] = useState((line.unit_price || 0).toString());
   const [editCurrency, setEditCurrency] = useState(line.currency || "UF");
+  const [localQuantity, setLocalQuantity] = useState((line.quantity || 0).toString());
   const {
     formatUF,
     formatCLP,
@@ -87,10 +88,11 @@ const BudgetLineItem = ({
   };
   const calculatedAmount = isParent ? calculateChildrenTotal(line.children!) : line.amount_uf;
 
-  // Direct quantity update
-  const handleQuantityChange = (newQuantity: string) => {
+  // Commit quantity on blur
+  const handleQuantityBlur = () => {
     if (readOnly) return;
-    const qty = parseFloat(newQuantity) || 0;
+    const qty = parseFloat(localQuantity) || 0;
+    if (qty === (line.quantity || 0)) return;
     const price = line.unit_price || 0;
     const currency = line.currency || "UF";
     let amountUf = qty * price;
@@ -149,8 +151,8 @@ const BudgetLineItem = ({
 
         {/* For non-parent lines: show quantity/unit and price inputs - aligned in columns */}
         {!isParent && <div className="shadow-sm gap-[10px] flex items-center justify-start min-w-[280px]">
-            {/* Quantity - directly editable */}
-            <Input type="number" value={line.quantity || 0} onChange={e => handleQuantityChange(e.target.value)} disabled={readOnly} className="h-6 w-[80px] text-xs" />
+            {/* Quantity - local state for fast typing, commit on blur */}
+            <Input type="number" value={localQuantity} onChange={e => setLocalQuantity(e.target.value)} onBlur={handleQuantityBlur} disabled={readOnly} className="h-6 w-[80px] text-xs" />
             {/* Unit type - directly editable */}
             <Select value={line.unit_type || "m2"} onValueChange={handleUnitChange} disabled={readOnly}>
               <SelectTrigger className="h-6 w-14 text-xs">
