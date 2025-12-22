@@ -207,8 +207,8 @@ const BudgetLineItem = ({
         {isParent && <div className="flex-1" />}
 
         {/* Totals and status */}
-        <div className="flex items-center gap-2 mx-[20px]">
-          <span className="text-xs font-mono">{formatUF(calculatedAmount)}</span>
+        <div className="flex items-center mx-[3px] gap-[8px] text-destructive">
+          <span className="text-xs text-center font-sans font-medium">{formatUF(calculatedAmount)}</span>
           <span className="text-[10px] text-muted-foreground font-mono">
             {formatCLP(convertUFToPesos(calculatedAmount))}
           </span>
