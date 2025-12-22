@@ -148,9 +148,9 @@ const BudgetLineItem = ({
         </span>
 
         {/* For non-parent lines: show quantity/unit and price inputs - aligned in columns */}
-        {!isParent && <div className="shadow-sm gap-[8px] flex items-center justify-start">
+        {!isParent && <div className="shadow-sm gap-[10px] flex items-center justify-start min-w-[280px]">
             {/* Quantity - directly editable */}
-            <Input type="number" value={line.quantity || 0} onChange={e => handleQuantityChange(e.target.value)} className="h-6 w-14 text-xs" disabled={readOnly} />
+            <Input type="number" value={line.quantity || 0} onChange={e => handleQuantityChange(e.target.value)} className="h-6 w-[68px] text-xs" disabled={readOnly} />
             {/* Unit type - directly editable */}
             <Select value={line.unit_type || "m2"} onValueChange={handleUnitChange} disabled={readOnly}>
               <SelectTrigger className="h-6 w-14 text-xs">
