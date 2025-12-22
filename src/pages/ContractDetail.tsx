@@ -503,7 +503,7 @@ const ContractDetail = () => {
         </div>
       </header>
 
-      <main className="max-w-20xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      <main className="max-w-15xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
