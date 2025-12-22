@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil } from "lucide-react";
 import { CloudStorageSettings } from "@/components/contracts/CloudStorageSettings";
 import { BudgetTemplateManager } from "@/components/budget/BudgetTemplateManager";
 import { StorageProviderSettings } from "@/components/admin/StorageProviderSettings";
@@ -99,6 +99,15 @@ const AdminPanel = () => {
   const [selectedParentTemplate, setSelectedParentTemplate] = useState<string | null>(null);
   const [subfolderDialogOpen, setSubfolderDialogOpen] = useState(false);
   const [newSubfolderName, setNewSubfolderName] = useState("");
+
+  // Edit user
+  const [editUserDialogOpen, setEditUserDialogOpen] = useState(false);
+  const [editingUserProfile, setEditingUserProfile] = useState<Profile | null>(null);
+  const [editUserEmail, setEditUserEmail] = useState("");
+  const [editUserName, setEditUserName] = useState("");
+  const [editUserPassword, setEditUserPassword] = useState("");
+  const [editUserRole, setEditUserRole] = useState<"admin" | "user">("user");
+  const [updatingUser, setUpdatingUser] = useState(false);
 
   useEffect(() => {
     if (!authLoading && roleLoaded && !isAdmin) {
@@ -239,6 +248,57 @@ const AdminPanel = () => {
     });
     setEditPermissions(permsMap);
     setEditingUserId(userId);
+  };
+
+  const openEditUser = (profile: Profile) => {
+    setEditingUserProfile(profile);
+    setEditUserEmail(profile.email);
+    setEditUserName(profile.full_name || "");
+    setEditUserPassword("");
+    setEditUserRole(getUserRole(profile.id) as "admin" | "user");
+    setEditUserDialogOpen(true);
+  };
+
+  const handleUpdateUser = async () => {
+    if (!editingUserProfile) return;
+
+    setUpdatingUser(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${sessionData.session?.access_token}`,
+          },
+          body: JSON.stringify({
+            userId: editingUserProfile.id,
+            email: editUserEmail !== editingUserProfile.email ? editUserEmail : undefined,
+            fullName: editUserName !== editingUserProfile.full_name ? editUserName : undefined,
+            password: editUserPassword || undefined,
+            role: editUserRole !== getUserRole(editingUserProfile.id) ? editUserRole : undefined,
+          })
+        }
+      );
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Error al actualizar usuario');
+      }
+
+      toast({ title: "Usuario actualizado", description: "Los cambios se guardaron exitosamente" });
+      setEditUserDialogOpen(false);
+      setEditingUserProfile(null);
+      loadData();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setUpdatingUser(false);
+    }
   };
 
   const handleCreateTemplate = async () => {
@@ -511,11 +571,20 @@ const AdminPanel = () => {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openEditUser(profile)}
+                          title="Editar usuario"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                         {getUserRole(profile.id) !== "admin" && (
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => openEditPermissions(profile.id)}
+                            title="Editar permisos"
                           >
                             <Shield className="h-4 w-4" />
                           </Button>
@@ -525,6 +594,7 @@ const AdminPanel = () => {
                             variant="destructive"
                             size="sm"
                             onClick={() => handleDeleteUser(profile.id)}
+                            title="Eliminar usuario"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -720,6 +790,70 @@ const AdminPanel = () => {
               <Button onClick={handleCreateSubfolder} disabled={creatingTemplate}>
                 {creatingTemplate && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Crear Subcarpeta
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit User Dialog */}
+        <Dialog open={editUserDialogOpen} onOpenChange={setEditUserDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Editar Usuario</DialogTitle>
+              <DialogDescription>
+                Modifica los datos del usuario. Deja la contraseña vacía para no cambiarla.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">Nombre Completo</Label>
+                <Input
+                  id="edit-name"
+                  value={editUserName}
+                  onChange={(e) => setEditUserName(e.target.value)}
+                  placeholder="Juan Pérez"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-email">Email</Label>
+                <Input
+                  id="edit-email"
+                  type="email"
+                  value={editUserEmail}
+                  onChange={(e) => setEditUserEmail(e.target.value)}
+                  placeholder="usuario@email.com"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-password">Nueva Contraseña (opcional)</Label>
+                <Input
+                  id="edit-password"
+                  type="password"
+                  value={editUserPassword}
+                  onChange={(e) => setEditUserPassword(e.target.value)}
+                  placeholder="Dejar vacío para no cambiar"
+                />
+              </div>
+              {editingUserProfile?.id !== user?.id && (
+                <div className="space-y-2">
+                  <Label>Rol</Label>
+                  <Select value={editUserRole} onValueChange={(v) => setEditUserRole(v as "admin" | "user")}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="user">Usuario</SelectItem>
+                      <SelectItem value="admin">Administrador</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditUserDialogOpen(false)}>Cancelar</Button>
+              <Button onClick={handleUpdateUser} disabled={updatingUser}>
+                {updatingUser && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Guardar Cambios
               </Button>
             </DialogFooter>
           </DialogContent>
