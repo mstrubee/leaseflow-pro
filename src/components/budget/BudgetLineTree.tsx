@@ -184,7 +184,7 @@ const BudgetLineItem = ({
                   <X className="h-3 w-3 text-red-600" />
                 </Button>
               </div> : <div className="flex items-center gap-1">
-                <span className="text-xs bg-muted/50 px-1.5 py-0.5 rounded min-w-[80px] text-center font-serif font-normal">
+                <span className="text-xs bg-muted/50 px-1.5 py-0.5 rounded min-w-[100px] text-center font-serif font-normal">
                   {(line.unit_price || 0).toLocaleString("es-CL", {
               minimumFractionDigits: 2
             })}{" "}
