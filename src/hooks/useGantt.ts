@@ -530,6 +530,34 @@ export function useGantt(contractId: string) {
 
   const taskTree = buildTaskTree(tasks);
 
+  const reorderTask = async (taskId: string, newIndex: number, siblingIds: string[]) => {
+    setSaving(true);
+    try {
+      // Update display_order for all affected siblings
+      const updates = siblingIds.map((id, idx) => ({
+        id,
+        display_order: idx,
+      }));
+
+      for (const update of updates) {
+        await supabase
+          .from("gantt_tasks")
+          .update({ display_order: update.display_order })
+          .eq("id", update.id);
+      }
+
+      await loadTimeline();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo reordenar la tarea",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return {
     timeline,
     tasks,
@@ -546,6 +574,7 @@ export function useGantt(contractId: string) {
     removeDependency,
     linkPurchaseOrder,
     unlinkPurchaseOrder,
+    reorderTask,
     reload: loadTimeline,
   };
 }
