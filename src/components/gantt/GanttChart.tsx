@@ -56,17 +56,56 @@ export function GanttChart({
   onUpdateTask,
   onAddTask,
   onDeleteTask,
+  onAddDependency,
 }: GanttChartProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [newTaskRow, setNewTaskRow] = useState<NewTaskRow | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
+  
+  // Drag state for creating dependencies
+  const [dragSource, setDragSource] = useState<string | null>(null);
+  const [dragTarget, setDragTarget] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const { minDate, maxDate } = useMemo(() => getGanttDateRange(tasks), [tasks]);
 
   const days = useMemo(() => {
     return eachDayOfInterval({ start: minDate, end: maxDate });
   }, [minDate, maxDate]);
+
+  // Group days by month for header
+  const monthGroups = useMemo(() => {
+    const groups: Array<{ month: string; year: number; days: number; startIdx: number }> = [];
+    let currentMonth = "";
+    let currentYear = 0;
+    let dayCount = 0;
+    let startIdx = 0;
+
+    days.forEach((day, idx) => {
+      const month = format(day, "MMM", { locale: es });
+      const year = day.getFullYear();
+      const monthKey = `${month}-${year}`;
+
+      if (monthKey !== currentMonth) {
+        if (currentMonth) {
+          groups.push({ month: currentMonth.split("-")[0], year: currentYear, days: dayCount, startIdx });
+        }
+        currentMonth = monthKey;
+        currentYear = year;
+        dayCount = 1;
+        startIdx = idx;
+      } else {
+        dayCount++;
+      }
+    });
+
+    if (currentMonth) {
+      groups.push({ month: currentMonth.split("-")[0], year: currentYear, days: dayCount, startIdx });
+    }
+
+    return groups;
+  }, [days]);
 
   const totalDays = days.length;
 
@@ -197,6 +236,39 @@ export function GanttChart({
     }
   };
 
+  // Drag handlers for creating dependencies
+  const handleDragStart = (taskId: string) => {
+    setDragSource(taskId);
+    setIsDragging(true);
+  };
+
+  const handleDragOver = (e: React.DragEvent, taskId: string) => {
+    e.preventDefault();
+    if (dragSource && dragSource !== taskId) {
+      setDragTarget(taskId);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragTarget(null);
+  };
+
+  const handleDrop = async (targetTaskId: string) => {
+    if (dragSource && dragSource !== targetTaskId) {
+      // Create dependency: targetTask depends on dragSource
+      await onAddDependency(targetTaskId, dragSource);
+    }
+    setDragSource(null);
+    setDragTarget(null);
+    setIsDragging(false);
+  };
+
+  const handleDragEnd = () => {
+    setDragSource(null);
+    setDragTarget(null);
+    setIsDragging(false);
+  };
+
   const handleUpdateTaskField = async (taskId: string, field: string, value: any) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
@@ -310,8 +382,30 @@ export function GanttChart({
     <div className="border rounded-lg overflow-hidden bg-background">
       <ScrollArea className="w-full">
         <div className="min-w-fit">
-          {/* Header */}
-          <div className="flex border-b bg-muted/50 sticky top-0 z-20">
+          {/* Month/Year Header */}
+          <div className="flex border-b bg-muted/70 sticky top-0 z-30">
+            <div className="flex-shrink-0 border-r" style={{ width: TASK_NAME_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH }}>
+              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">
+                Cronograma
+              </div>
+            </div>
+            {/* Month groups */}
+            <div className="flex">
+              {monthGroups.map((group, idx) => (
+                <div
+                  key={idx}
+                  className="flex-shrink-0 border-r text-center text-xs font-semibold py-1 bg-muted/50"
+                  style={{ width: group.days * DAY_WIDTH }}
+                >
+                  <span className="capitalize">{group.month}</span>
+                  <span className="text-muted-foreground ml-1">{group.year}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Column Headers */}
+          <div className="flex border-b bg-muted/50 sticky top-6 z-20">
             <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs" style={{ width: TASK_NAME_WIDTH }}>
               Tarea
             </div>
@@ -452,8 +546,14 @@ export function GanttChart({
 
                   {/* Gantt bar area */}
                   <div
-                    className="relative flex-1"
+                    className={cn(
+                      "relative flex-1",
+                      isDragging && dragTarget === task.id && "bg-primary/20"
+                    )}
                     style={{ width: totalDays * DAY_WIDTH }}
+                    onDragOver={(e) => handleDragOver(e, task.id)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={() => handleDrop(task.id)}
                   >
                     {/* Background grid */}
                     <div className="absolute inset-0 flex">
@@ -475,15 +575,19 @@ export function GanttChart({
                       })}
                     </div>
 
-                    {/* Task bar */}
+                    {/* Task bar - draggable */}
                     {position.visible && (
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <div
+                              draggable
+                              onDragStart={() => handleDragStart(task.id)}
+                              onDragEnd={handleDragEnd}
                               className={cn(
-                                "absolute top-1.5 rounded h-6 cursor-pointer transition-all hover:opacity-80 shadow-sm",
-                                getTaskStatusColor(task.status, task.end_date)
+                                "absolute top-1.5 rounded h-6 cursor-grab active:cursor-grabbing transition-all hover:opacity-80 shadow-sm",
+                                getTaskStatusColor(task.status, task.end_date),
+                                dragSource === task.id && "opacity-50 ring-2 ring-primary"
                               )}
                               style={{
                                 left: position.left,
@@ -511,6 +615,9 @@ export function GanttChart({
                                 Duración: {task.duration_days} días ({task.duration_type === "business" ? "hábiles" : "corridos"})
                               </p>
                               <p className="text-xs">Progreso: {task.progress}%</p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Arrastra a otra tarea para crear dependencia
+                              </p>
                             </div>
                           </TooltipContent>
                         </Tooltip>
