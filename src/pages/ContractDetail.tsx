@@ -738,6 +738,9 @@ const ContractDetail = () => {
           </CardContent>
         </Card>
 
+        {/* Gantt Module - Timeline */}
+        <GanttModule contractId={contract.id} />
+
         <ContractAlerts contractId={contract.id} contractName={contract.name} expirationDate={currentVersion?.effective_date ? new Date(new Date(currentVersion.effective_date).getTime() + currentVersion.duration_months * 30 * 24 * 60 * 60 * 1000) : undefined} />
 
         <Card>
