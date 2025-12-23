@@ -60,6 +60,7 @@ export function GanttChart({
   onAddTask,
   onDeleteTask,
   onAddDependency,
+  onRemoveDependency,
   onReorderTask,
 }: GanttChartProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
@@ -72,12 +73,14 @@ export function GanttChart({
   const [dragTarget, setDragTarget] = useState<string | null>(null);
   const [isDraggingBar, setIsDraggingBar] = useState(false);
   
-  // State for bar manipulation (move/resize)
+  // State for bar manipulation (move/resize) - LOCAL PREVIEW ONLY
   const [barDragMode, setBarDragMode] = useState<BarDragMode>(null);
   const [barDragTaskId, setBarDragTaskId] = useState<string | null>(null);
   const [barDragStartX, setBarDragStartX] = useState<number>(0);
   const [barDragOriginalStart, setBarDragOriginalStart] = useState<string>("");
   const [barDragOriginalEnd, setBarDragOriginalEnd] = useState<string>("");
+  // Preview state for visual feedback during drag (not persisted until mouseup)
+  const [dragPreview, setDragPreview] = useState<{ start: string; end: string; duration: number } | null>(null);
   
   // Drag state for row reordering
   const [rowDragSource, setRowDragSource] = useState<string | null>(null);
@@ -170,13 +173,19 @@ export function GanttChart({
     return map;
   }, [visibleTasks]);
 
-  const getTaskPosition = (task: GanttTask) => {
-    if (!task.start_date || !task.end_date) {
+  // Get task position - uses dragPreview for the task being dragged
+  const getTaskPosition = useCallback((task: GanttTask) => {
+    // Use preview state if this task is being dragged
+    const isBeingDragged = barDragTaskId === task.id && dragPreview;
+    const startDateStr = isBeingDragged ? dragPreview.start : task.start_date;
+    const endDateStr = isBeingDragged ? dragPreview.end : task.end_date;
+    
+    if (!startDateStr || !endDateStr) {
       return { left: 0, width: 0, visible: false };
     }
 
-    const startDate = parseISO(task.start_date);
-    const endDate = parseISO(task.end_date);
+    const startDate = parseISO(startDateStr);
+    const endDate = parseISO(endDateStr);
     
     const startOffset = differenceInDays(startDate, minDate);
     const duration = differenceInDays(endDate, startDate) + 1;
@@ -186,7 +195,7 @@ export function GanttChart({
       width: duration * DAY_WIDTH,
       visible: true,
     };
-  };
+  }, [barDragTaskId, dragPreview, minDate]);
 
   // Calculate dependency arrows data
   const dependencyArrows = useMemo(() => {
@@ -196,6 +205,8 @@ export function GanttChart({
       fromY: number;
       toX: number;
       toY: number;
+      parentTaskId: string;
+      childTaskId: string;
     }> = [];
 
     const HEADER_OFFSET = TASK_NAME_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + 6; // +6 for grip handle
@@ -228,12 +239,14 @@ export function GanttChart({
           fromY,
           toX,
           toY,
+          parentTaskId: dep.depends_on_task_id,
+          childTaskId: task.id,
         });
       });
     });
 
     return arrows;
-  }, [visibleTasks, taskRowIndexMap, tasks, minDate]);
+  }, [visibleTasks, taskRowIndexMap, tasks, getTaskPosition]);
 
   const isHolidayDate = (date: Date) => {
     const dateStr = format(date, "yyyy-MM-dd");
@@ -426,17 +439,12 @@ export function GanttChart({
     const deltaX = e.clientX - barDragStartX;
     const deltaDays = Math.round(deltaX / DAY_WIDTH);
     
-    if (deltaDays === 0) return;
-    
-    const task = tasks.find(t => t.id === barDragTaskId);
-    if (!task) return;
-    
     const originalStart = parseISO(barDragOriginalStart);
     const originalEnd = parseISO(barDragOriginalEnd);
     
     let newStart: Date;
     let newEnd: Date;
-    let newDuration = task.duration_days;
+    let newDuration = differenceInDays(originalEnd, originalStart) + 1;
     
     if (barDragMode === "move") {
       // Move entire bar - keep duration same
@@ -456,21 +464,32 @@ export function GanttChart({
       if (newDuration < 1) return; // Prevent negative duration
     }
     
-    // Update task locally for visual feedback
-    onUpdateTask(barDragTaskId, {
-      start_date: format(newStart, "yyyy-MM-dd"),
-      end_date: format(newEnd, "yyyy-MM-dd"),
-      duration_days: newDuration,
+    // Only update local preview state - NO database calls during drag
+    setDragPreview({
+      start: format(newStart, "yyyy-MM-dd"),
+      end: format(newEnd, "yyyy-MM-dd"),
+      duration: newDuration,
     });
-  }, [barDragMode, barDragTaskId, barDragStartX, barDragOriginalStart, barDragOriginalEnd, tasks, onUpdateTask]);
+  }, [barDragMode, barDragTaskId, barDragStartX, barDragOriginalStart, barDragOriginalEnd]);
 
-  const handleBarMouseUp = useCallback(() => {
+  const handleBarMouseUp = useCallback(async () => {
+    // Persist to database ONLY on mouseup
+    if (barDragTaskId && dragPreview) {
+      await onUpdateTask(barDragTaskId, {
+        start_date: dragPreview.start,
+        end_date: dragPreview.end,
+        duration_days: dragPreview.duration,
+      });
+    }
+    
+    // Reset all drag state
     setBarDragMode(null);
     setBarDragTaskId(null);
     setBarDragStartX(0);
     setBarDragOriginalStart("");
     setBarDragOriginalEnd("");
-  }, []);
+    setDragPreview(null);
+  }, [barDragTaskId, dragPreview, onUpdateTask]);
 
   // Add global mouse listeners for bar drag
   useEffect(() => {
@@ -679,10 +698,10 @@ export function GanttChart({
 
           {/* Task rows with dependency arrows overlay */}
           <div className="relative">
-            {/* SVG overlay for dependency arrows */}
+            {/* SVG overlay for dependency arrows - clickable to delete */}
             {dependencyArrows.length > 0 && (
               <svg
-                className="absolute inset-0 pointer-events-none z-10"
+                className="absolute inset-0 z-10"
                 style={{
                   width: "100%",
                   height: visibleTasks.length * ROW_HEIGHT,
@@ -703,10 +722,22 @@ export function GanttChart({
                       className="fill-primary"
                     />
                   </marker>
+                  <marker
+                    id="arrowhead-hover"
+                    markerWidth="8"
+                    markerHeight="6"
+                    refX="7"
+                    refY="3"
+                    orient="auto"
+                  >
+                    <polygon
+                      points="0 0, 8 3, 0 6"
+                      className="fill-destructive"
+                    />
+                  </marker>
                 </defs>
                 {dependencyArrows.map((arrow) => {
                   // Draw a path from parent end to child start
-                  const midX = (arrow.fromX + arrow.toX) / 2;
                   const controlOffset = Math.min(30, Math.abs(arrow.toX - arrow.fromX) / 3);
                   
                   // If tasks are on the same row or close, use curved path
@@ -725,16 +756,53 @@ export function GanttChart({
                        L ${arrow.toX - 4} ${arrow.toY}`;
                   
                   return (
-                    <path
-                      key={arrow.id}
-                      d={pathD}
-                      fill="none"
-                      className="stroke-primary"
-                      strokeWidth="2"
-                      markerEnd="url(#arrowhead)"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
+                    <g key={arrow.id} className="group/arrow">
+                      {/* Invisible wider path for easier clicking */}
+                      <path
+                        d={pathD}
+                        fill="none"
+                        stroke="transparent"
+                        strokeWidth="12"
+                        className="cursor-pointer pointer-events-auto"
+                        onClick={() => onRemoveDependency(arrow.id)}
+                      />
+                      {/* Visible arrow path */}
+                      <path
+                        d={pathD}
+                        fill="none"
+                        className="stroke-primary group-hover/arrow:stroke-destructive transition-colors pointer-events-none"
+                        strokeWidth="2"
+                        markerEnd="url(#arrowhead)"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      {/* Tooltip on hover - delete icon at midpoint */}
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <circle
+                              cx={(arrow.fromX + arrow.toX) / 2}
+                              cy={(arrow.fromY + arrow.toY) / 2}
+                              r="8"
+                              className="fill-background stroke-muted-foreground opacity-0 group-hover/arrow:opacity-100 cursor-pointer pointer-events-auto transition-opacity"
+                              strokeWidth="1"
+                              onClick={() => onRemoveDependency(arrow.id)}
+                            />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="text-xs">Clic para eliminar dependencia</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                      {/* X icon inside circle */}
+                      <g 
+                        className="opacity-0 group-hover/arrow:opacity-100 pointer-events-none transition-opacity"
+                        transform={`translate(${(arrow.fromX + arrow.toX) / 2}, ${(arrow.fromY + arrow.toY) / 2})`}
+                      >
+                        <line x1="-3" y1="-3" x2="3" y2="3" className="stroke-destructive" strokeWidth="1.5" />
+                        <line x1="3" y1="-3" x2="-3" y2="3" className="stroke-destructive" strokeWidth="1.5" />
+                      </g>
+                    </g>
                   );
                 })}
               </svg>
