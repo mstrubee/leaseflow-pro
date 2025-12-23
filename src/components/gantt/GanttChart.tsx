@@ -1,8 +1,8 @@
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import { GanttTask } from "@/hooks/useGantt";
 import { Holiday, calculateEndDate, calculateStartDate } from "@/lib/ganttDateUtils";
 import { getGanttDateRange, getTaskStatusColor, formatGanttDate } from "@/lib/ganttDateUtils";
-import { format, differenceInDays, parseISO, eachDayOfInterval, isWeekend } from "date-fns";
+import { format, differenceInDays, parseISO, eachDayOfInterval, isWeekend, addDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -13,6 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+
+type BarDragMode = "move" | "resize-left" | "resize-right" | "dependency" | null;
 
 interface GanttChartProps {
   tasks: GanttTask[];
@@ -65,15 +67,24 @@ export function GanttChart({
   const [isSaving, setIsSaving] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   
-  // Drag state for creating dependencies (bar drag)
+  // Drag state for creating dependencies (bar drag to another task)
   const [dragSource, setDragSource] = useState<string | null>(null);
   const [dragTarget, setDragTarget] = useState<string | null>(null);
   const [isDraggingBar, setIsDraggingBar] = useState(false);
+  
+  // State for bar manipulation (move/resize)
+  const [barDragMode, setBarDragMode] = useState<BarDragMode>(null);
+  const [barDragTaskId, setBarDragTaskId] = useState<string | null>(null);
+  const [barDragStartX, setBarDragStartX] = useState<number>(0);
+  const [barDragOriginalStart, setBarDragOriginalStart] = useState<string>("");
+  const [barDragOriginalEnd, setBarDragOriginalEnd] = useState<string>("");
   
   // Drag state for row reordering
   const [rowDragSource, setRowDragSource] = useState<string | null>(null);
   const [rowDragOverId, setRowDragOverId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<"above" | "below" | null>(null);
+  
+  const ganttAreaRef = useRef<HTMLDivElement>(null);
 
   const { minDate, maxDate } = useMemo(() => getGanttDateRange(tasks), [tasks]);
 
@@ -334,6 +345,88 @@ export function GanttChart({
     setRowDragOverId(null);
     setDropPosition(null);
   };
+
+  // Bar manipulation handlers (move/resize)
+  const handleBarMouseDown = (
+    e: React.MouseEvent, 
+    task: GanttTask, 
+    mode: "move" | "resize-left" | "resize-right"
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!task.start_date || !task.end_date) return;
+    
+    setBarDragMode(mode);
+    setBarDragTaskId(task.id);
+    setBarDragStartX(e.clientX);
+    setBarDragOriginalStart(task.start_date);
+    setBarDragOriginalEnd(task.end_date);
+  };
+
+  const handleBarMouseMove = useCallback((e: MouseEvent) => {
+    if (!barDragMode || !barDragTaskId) return;
+    
+    const deltaX = e.clientX - barDragStartX;
+    const deltaDays = Math.round(deltaX / DAY_WIDTH);
+    
+    if (deltaDays === 0) return;
+    
+    const task = tasks.find(t => t.id === barDragTaskId);
+    if (!task) return;
+    
+    const originalStart = parseISO(barDragOriginalStart);
+    const originalEnd = parseISO(barDragOriginalEnd);
+    
+    let newStart: Date;
+    let newEnd: Date;
+    let newDuration = task.duration_days;
+    
+    if (barDragMode === "move") {
+      // Move entire bar - keep duration same
+      newStart = addDays(originalStart, deltaDays);
+      newEnd = addDays(originalEnd, deltaDays);
+    } else if (barDragMode === "resize-left") {
+      // Resize from left - change start, keep end
+      newStart = addDays(originalStart, deltaDays);
+      newEnd = originalEnd;
+      newDuration = differenceInDays(newEnd, newStart) + 1;
+      if (newDuration < 1) return; // Prevent negative duration
+    } else {
+      // Resize from right - keep start, change end
+      newStart = originalStart;
+      newEnd = addDays(originalEnd, deltaDays);
+      newDuration = differenceInDays(newEnd, newStart) + 1;
+      if (newDuration < 1) return; // Prevent negative duration
+    }
+    
+    // Update task locally for visual feedback
+    onUpdateTask(barDragTaskId, {
+      start_date: format(newStart, "yyyy-MM-dd"),
+      end_date: format(newEnd, "yyyy-MM-dd"),
+      duration_days: newDuration,
+    });
+  }, [barDragMode, barDragTaskId, barDragStartX, barDragOriginalStart, barDragOriginalEnd, tasks, onUpdateTask]);
+
+  const handleBarMouseUp = useCallback(() => {
+    setBarDragMode(null);
+    setBarDragTaskId(null);
+    setBarDragStartX(0);
+    setBarDragOriginalStart("");
+    setBarDragOriginalEnd("");
+  }, []);
+
+  // Add global mouse listeners for bar drag
+  useEffect(() => {
+    if (barDragMode) {
+      window.addEventListener("mousemove", handleBarMouseMove);
+      window.addEventListener("mouseup", handleBarMouseUp);
+      return () => {
+        window.removeEventListener("mousemove", handleBarMouseMove);
+        window.removeEventListener("mouseup", handleBarMouseUp);
+      };
+    }
+  }, [barDragMode, handleBarMouseMove, handleBarMouseUp]);
 
   const handleUpdateTaskField = async (taskId: string, field: string, value: any) => {
     const task = tasks.find(t => t.id === taskId);
@@ -675,38 +768,60 @@ export function GanttChart({
                       })}
                     </div>
 
-                    {/* Task bar - draggable for dependencies */}
+                    {/* Task bar with resize handles */}
                     {position.visible && (
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <div
-                              draggable
-                              onDragStart={(e) => {
-                                e.stopPropagation();
-                                handleBarDragStart(task.id);
-                              }}
-                              onDragEnd={(e) => {
-                                e.stopPropagation();
-                                handleBarDragEnd();
-                              }}
                               className={cn(
-                                "absolute top-1.5 rounded h-6 cursor-grab active:cursor-grabbing transition-all hover:opacity-80 shadow-sm",
+                                "absolute top-1.5 rounded h-6 transition-all shadow-sm group/bar",
                                 getTaskStatusColor(task.status, task.end_date),
-                                dragSource === task.id && "opacity-50 ring-2 ring-primary"
+                                dragSource === task.id && "opacity-50 ring-2 ring-primary",
+                                barDragTaskId === task.id && "ring-2 ring-primary"
                               )}
                               style={{
                                 left: position.left,
                                 width: Math.max(position.width - 4, 8),
                               }}
                             >
+                              {/* Left resize handle */}
+                              <div
+                                className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize z-10 hover:bg-white/30 rounded-l"
+                                onMouseDown={(e) => handleBarMouseDown(e, task, "resize-left")}
+                              />
+                              
+                              {/* Center area - for moving or creating dependencies */}
+                              <div
+                                className="absolute left-2 right-2 top-0 bottom-0 cursor-move"
+                                onMouseDown={(e) => handleBarMouseDown(e, task, "move")}
+                                draggable
+                                onDragStart={(e) => {
+                                  e.stopPropagation();
+                                  handleBarDragStart(task.id);
+                                }}
+                                onDragEnd={(e) => {
+                                  e.stopPropagation();
+                                  handleBarDragEnd();
+                                }}
+                              />
+                              
+                              {/* Right resize handle */}
+                              <div
+                                className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize z-10 hover:bg-white/30 rounded-r"
+                                onMouseDown={(e) => handleBarMouseDown(e, task, "resize-right")}
+                              />
+                              
+                              {/* Progress indicator */}
                               {task.progress > 0 && (
                                 <div
-                                  className="absolute inset-y-0 left-0 bg-white/30 rounded-l"
+                                  className="absolute inset-y-0 left-0 bg-white/30 rounded-l pointer-events-none"
                                   style={{ width: `${task.progress}%` }}
                                 />
                               )}
-                              <span className="absolute inset-0 flex items-center justify-center text-[10px] text-white font-medium truncate px-1">
+                              
+                              {/* Task name */}
+                              <span className="absolute inset-0 flex items-center justify-center text-[10px] text-white font-medium truncate px-3 pointer-events-none">
                                 {position.width > 60 ? task.name : ""}
                               </span>
                             </div>
@@ -722,7 +837,7 @@ export function GanttChart({
                               </p>
                               <p className="text-xs">Progreso: {task.progress}%</p>
                               <p className="text-xs text-muted-foreground mt-1">
-                                Arrastra a otra tarea para crear dependencia
+                                Arrastra bordes para cambiar fechas • Centro para mover • A otra tarea para dependencia
                               </p>
                             </div>
                           </TooltipContent>
