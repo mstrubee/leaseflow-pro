@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil } from "lucide-react";
 import { CloudStorageSettings } from "@/components/contracts/CloudStorageSettings";
 import { BudgetTemplateManager } from "@/components/budget/BudgetTemplateManager";
+import { GanttTemplateManager } from "@/components/gantt/GanttTemplateManager";
 import { StorageProviderSettings } from "@/components/admin/StorageProviderSettings";
 interface Profile {
   id: string;
@@ -613,6 +614,9 @@ const AdminPanel = () => {
 
         {/* Budget Templates */}
         <BudgetTemplateManager />
+
+        {/* Gantt Templates */}
+        <GanttTemplateManager />
 
         {/* Folder Templates */}
         <Card>
