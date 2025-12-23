@@ -351,6 +351,51 @@ export function useGantt(contractId: string) {
     }
   };
 
+  // Helper function to propagate date changes to dependent tasks
+  const propagateDateChanges = async (taskId: string, newEndDate: string, processedTasks: Set<string> = new Set()) => {
+    // Prevent infinite loops
+    if (processedTasks.has(taskId)) return;
+    processedTasks.add(taskId);
+
+    // Find all tasks that depend on this task
+    const { data: dependencies } = await supabase
+      .from("gantt_task_dependencies")
+      .select("task_id")
+      .eq("depends_on_task_id", taskId);
+
+    if (!dependencies || dependencies.length === 0) return;
+
+    const parentEndDate = parseISO(newEndDate);
+    const newDependentStart = addDays(parentEndDate, 1);
+
+    for (const dep of dependencies) {
+      // Get the dependent task
+      const { data: dependentTask } = await supabase
+        .from("gantt_tasks")
+        .select("*")
+        .eq("id", dep.task_id)
+        .single();
+
+      if (!dependentTask) continue;
+
+      const duration = dependentTask.duration_days || 1;
+      const newDependentEnd = addDays(newDependentStart, duration - 1);
+      const newEndDateStr = format(newDependentEnd, "yyyy-MM-dd");
+
+      // Update the dependent task
+      await supabase
+        .from("gantt_tasks")
+        .update({
+          start_date: format(newDependentStart, "yyyy-MM-dd"),
+          end_date: newEndDateStr,
+        })
+        .eq("id", dep.task_id);
+
+      // Recursively propagate to tasks that depend on this one
+      await propagateDateChanges(dep.task_id, newEndDateStr, processedTasks);
+    }
+  };
+
   const updateTask = async (taskId: string, updates: Partial<GanttTask>) => {
     setSaving(true);
     try {
@@ -360,6 +405,11 @@ export function useGantt(contractId: string) {
         .eq("id", taskId);
 
       if (error) throw error;
+
+      // If end_date was updated, propagate changes to dependent tasks
+      if (updates.end_date) {
+        await propagateDateChanges(taskId, updates.end_date);
+      }
 
       await loadTimeline();
     } catch (error: any) {

@@ -161,6 +161,15 @@ export function GanttChart({
     return result;
   }, [taskTree, expandedTasks]);
 
+  // Map task IDs to their row index for arrow drawing
+  const taskRowIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    visibleTasks.forEach(({ task }, idx) => {
+      map.set(task.id, idx);
+    });
+    return map;
+  }, [visibleTasks]);
+
   const getTaskPosition = (task: GanttTask) => {
     if (!task.start_date || !task.end_date) {
       return { left: 0, width: 0, visible: false };
@@ -178,6 +187,53 @@ export function GanttChart({
       visible: true,
     };
   };
+
+  // Calculate dependency arrows data
+  const dependencyArrows = useMemo(() => {
+    const arrows: Array<{
+      id: string;
+      fromX: number;
+      fromY: number;
+      toX: number;
+      toY: number;
+    }> = [];
+
+    const HEADER_OFFSET = TASK_NAME_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + 6; // +6 for grip handle
+
+    visibleTasks.forEach(({ task }, rowIdx) => {
+      if (!task.dependencies || task.dependencies.length === 0) return;
+
+      const taskPosition = getTaskPosition(task);
+      if (!taskPosition.visible) return;
+
+      task.dependencies.forEach((dep) => {
+        const parentRowIdx = taskRowIndexMap.get(dep.depends_on_task_id);
+        if (parentRowIdx === undefined) return;
+
+        const parentTask = tasks.find(t => t.id === dep.depends_on_task_id);
+        if (!parentTask) return;
+
+        const parentPosition = getTaskPosition(parentTask);
+        if (!parentPosition.visible) return;
+
+        // Arrow from parent end to child start
+        const fromX = HEADER_OFFSET + parentPosition.left + parentPosition.width - 4;
+        const fromY = parentRowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
+        const toX = HEADER_OFFSET + taskPosition.left;
+        const toY = rowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
+
+        arrows.push({
+          id: dep.id,
+          fromX,
+          fromY,
+          toX,
+          toY,
+        });
+      });
+    });
+
+    return arrows;
+  }, [visibleTasks, taskRowIndexMap, tasks, minDate]);
 
   const isHolidayDate = (date: Date) => {
     const dateStr = format(date, "yyyy-MM-dd");
@@ -621,8 +677,70 @@ export function GanttChart({
             </div>
           </div>
 
-          {/* Task rows */}
-          <div>
+          {/* Task rows with dependency arrows overlay */}
+          <div className="relative">
+            {/* SVG overlay for dependency arrows */}
+            {dependencyArrows.length > 0 && (
+              <svg
+                className="absolute inset-0 pointer-events-none z-10"
+                style={{
+                  width: "100%",
+                  height: visibleTasks.length * ROW_HEIGHT,
+                  overflow: "visible",
+                }}
+              >
+                <defs>
+                  <marker
+                    id="arrowhead"
+                    markerWidth="8"
+                    markerHeight="6"
+                    refX="7"
+                    refY="3"
+                    orient="auto"
+                  >
+                    <polygon
+                      points="0 0, 8 3, 0 6"
+                      className="fill-primary"
+                    />
+                  </marker>
+                </defs>
+                {dependencyArrows.map((arrow) => {
+                  // Draw a path from parent end to child start
+                  const midX = (arrow.fromX + arrow.toX) / 2;
+                  const controlOffset = Math.min(30, Math.abs(arrow.toX - arrow.fromX) / 3);
+                  
+                  // If tasks are on the same row or close, use curved path
+                  const pathD = arrow.fromY === arrow.toY
+                    ? // Same row - simple curve below
+                      `M ${arrow.fromX} ${arrow.fromY} 
+                       C ${arrow.fromX + controlOffset} ${arrow.fromY + 20}, 
+                         ${arrow.toX - controlOffset} ${arrow.toY + 20}, 
+                         ${arrow.toX} ${arrow.toY}`
+                    : // Different rows - step path with rounded corners
+                      `M ${arrow.fromX} ${arrow.fromY}
+                       L ${arrow.fromX + 10} ${arrow.fromY}
+                       Q ${arrow.fromX + 15} ${arrow.fromY}, ${arrow.fromX + 15} ${arrow.fromY + (arrow.toY > arrow.fromY ? 5 : -5)}
+                       L ${arrow.fromX + 15} ${arrow.toY + (arrow.toY > arrow.fromY ? -5 : 5)}
+                       Q ${arrow.fromX + 15} ${arrow.toY}, ${arrow.fromX + 20} ${arrow.toY}
+                       L ${arrow.toX - 4} ${arrow.toY}`;
+                  
+                  return (
+                    <path
+                      key={arrow.id}
+                      d={pathD}
+                      fill="none"
+                      className="stroke-primary"
+                      strokeWidth="2"
+                      markerEnd="url(#arrowhead)"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  );
+                })}
+              </svg>
+            )}
+
+            {/* Task rows */}
             {visibleTasks.map(({ task, level }) => {
               const hasChildren = task.children && task.children.length > 0;
               const isExpanded = expandedTasks.has(task.id);
