@@ -136,16 +136,33 @@ export function GanttChart({
     
     const updated = { ...newTaskRow, [field]: value };
     
-    // Auto-calculate dates
+    // Auto-calculate dates based on which field was set first
     if (field === "start_date" && updated.start_date && updated.duration_days > 0) {
+      // Start date set/changed → calculate end date
       const endDate = calculateEndDate(updated.start_date, updated.duration_days, updated.duration_type, holidays);
       updated.end_date = format(endDate, "yyyy-MM-dd");
     } else if (field === "end_date" && updated.end_date && updated.duration_days > 0) {
+      // End date set/changed → calculate start date (subtract duration)
       const startDate = calculateStartDate(updated.end_date, updated.duration_days, updated.duration_type, holidays);
       updated.start_date = format(startDate, "yyyy-MM-dd");
-    } else if (field === "duration_days" && updated.start_date && value > 0) {
-      const endDate = calculateEndDate(updated.start_date, value, updated.duration_type, holidays);
-      updated.end_date = format(endDate, "yyyy-MM-dd");
+    } else if (field === "duration_days" && value > 0) {
+      // Duration changed → if start date exists, calculate end; otherwise if end exists, calculate start
+      if (updated.start_date) {
+        const endDate = calculateEndDate(updated.start_date, value, updated.duration_type, holidays);
+        updated.end_date = format(endDate, "yyyy-MM-dd");
+      } else if (updated.end_date) {
+        const startDate = calculateStartDate(updated.end_date, value, updated.duration_type, holidays);
+        updated.start_date = format(startDate, "yyyy-MM-dd");
+      }
+    } else if (field === "duration_type") {
+      // Duration type changed → recalculate based on priority (start date takes precedence)
+      if (updated.start_date && updated.duration_days > 0) {
+        const endDate = calculateEndDate(updated.start_date, updated.duration_days, updated.duration_type, holidays);
+        updated.end_date = format(endDate, "yyyy-MM-dd");
+      } else if (updated.end_date && updated.duration_days > 0) {
+        const startDate = calculateStartDate(updated.end_date, updated.duration_days, updated.duration_type, holidays);
+        updated.start_date = format(startDate, "yyyy-MM-dd");
+      }
     }
     
     setNewTaskRow(updated);
@@ -201,14 +218,37 @@ export function GanttChart({
     await onUpdateTask(taskId, updates);
   };
 
+  // Get unique task dates for quick selection
+  const taskDates = useMemo(() => {
+    const dates: Array<{ date: string; taskName: string; type: "start" | "end" }> = [];
+    tasks.forEach((task) => {
+      if (task.start_date) {
+        dates.push({ date: task.start_date, taskName: task.name, type: "start" });
+      }
+      if (task.end_date) {
+        dates.push({ date: task.end_date, taskName: task.name, type: "end" });
+      }
+    });
+    // Sort by date and remove duplicates by date
+    const uniqueDates = dates.reduce((acc, curr) => {
+      if (!acc.find((d) => d.date === curr.date)) {
+        acc.push(curr);
+      }
+      return acc;
+    }, [] as typeof dates);
+    return uniqueDates.sort((a, b) => a.date.localeCompare(b.date));
+  }, [tasks]);
+
   const DatePickerCell = ({ 
     value, 
     onChange, 
-    placeholder = "Seleccionar" 
+    placeholder = "Seleccionar",
+    showTaskDates = false,
   }: { 
     value: string | null; 
     onChange: (date: string) => void;
     placeholder?: string;
+    showTaskDates?: boolean;
   }) => (
     <Popover>
       <PopoverTrigger asChild>
@@ -225,13 +265,43 @@ export function GanttChart({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0 z-50 bg-popover" align="start">
-        <Calendar
-          mode="single"
-          selected={value ? parseISO(value) : undefined}
-          onSelect={(date) => date && onChange(format(date, "yyyy-MM-dd"))}
-          initialFocus
-          className="p-3 pointer-events-auto"
-        />
+        <div className="flex">
+          {/* Task dates quick selection */}
+          {showTaskDates && taskDates.length > 0 && (
+            <div className="border-r max-h-[300px] overflow-y-auto w-48">
+              <div className="p-2 border-b bg-muted/50">
+                <span className="text-xs font-medium text-muted-foreground">Fechas de tareas</span>
+              </div>
+              <div className="p-1">
+                {taskDates.map((td, idx) => (
+                  <Button
+                    key={idx}
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start h-auto py-1.5 px-2 text-left"
+                    onClick={() => onChange(td.date)}
+                  >
+                    <div className="flex flex-col">
+                      <span className="text-xs font-medium">
+                        {format(parseISO(td.date), "dd/MM/yyyy")}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground truncate">
+                        {td.type === "end" ? "Fin:" : "Inicio:"} {td.taskName}
+                      </span>
+                    </div>
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+          <Calendar
+            mode="single"
+            selected={value ? parseISO(value) : undefined}
+            onSelect={(date) => date && onChange(format(date, "yyyy-MM-dd"))}
+            initialFocus
+            className="p-3 pointer-events-auto"
+          />
+        </div>
       </PopoverContent>
     </Popover>
   );
@@ -474,6 +544,7 @@ export function GanttChart({
                     value={newTaskRow.start_date || null}
                     onChange={(date) => handleNewTaskChange("start_date", date)}
                     placeholder="Inicio"
+                    showTaskDates={true}
                   />
                 </div>
 
@@ -504,6 +575,7 @@ export function GanttChart({
                     value={newTaskRow.end_date || null}
                     onChange={(date) => handleNewTaskChange("end_date", date)}
                     placeholder="Término"
+                    showTaskDates={true}
                   />
                 </div>
 
