@@ -102,14 +102,14 @@ export function GanttModule({ contractId }: GanttModuleProps) {
                 <div className="space-y-2">
                   <Label>Plantilla (opcional)</Label>
                   <Select
-                    value={selectedTemplateId}
-                    onValueChange={setSelectedTemplateId}
+                    value={selectedTemplateId || "none"}
+                    onValueChange={(value) => setSelectedTemplateId(value === "none" ? "" : value)}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Sin plantilla - empezar vacío" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Sin plantilla</SelectItem>
+                      <SelectItem value="none">Sin plantilla</SelectItem>
                       {templates.map((template) => (
                         <SelectItem key={template.id} value={template.id}>
                           {template.name}
