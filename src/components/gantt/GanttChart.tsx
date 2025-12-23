@@ -1,19 +1,18 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { GanttTask } from "@/hooks/useGantt";
-import { Holiday, calculateEndDate } from "@/lib/ganttDateUtils";
+import { Holiday, calculateEndDate, calculateStartDate } from "@/lib/ganttDateUtils";
 import { getGanttDateRange, getTaskStatusColor, formatGanttDate } from "@/lib/ganttDateUtils";
-import { format, addDays, differenceInDays, parseISO, eachDayOfInterval, isWeekend } from "date-fns";
+import { format, differenceInDays, parseISO, eachDayOfInterval, isWeekend } from "date-fns";
 import { es } from "date-fns/locale";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, Link, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Link, Plus, Calendar as CalendarIcon, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 
 interface GanttChartProps {
   tasks: GanttTask[];
@@ -21,37 +20,34 @@ interface GanttChartProps {
   holidays: Array<{ date: string; name: string }>;
   onUpdateTask: (taskId: string, updates: Partial<GanttTask>) => Promise<void>;
   onAddTask: (name: string, parentId?: string | null, options?: Partial<GanttTask>) => Promise<any>;
+  onDeleteTask: (taskId: string) => Promise<void>;
   onAddDependency: (taskId: string, dependsOnTaskId: string) => Promise<void>;
   onRemoveDependency: (dependencyId: string) => Promise<void>;
 }
 
 const DAY_WIDTH = 30;
-const ROW_HEIGHT = 36;
-const TASK_NAME_WIDTH = 250;
+const ROW_HEIGHT = 40;
+const TASK_NAME_WIDTH = 200;
+const DATE_COL_WIDTH = 110;
+const DURATION_COL_WIDTH = 80;
 
-type TaskStatus = "pending" | "in_progress" | "completed" | "delayed";
-
-interface TaskFormData {
+interface NewTaskRow {
   name: string;
-  parent_id: string | null;
   start_date: string;
   duration_days: number;
   duration_type: "calendar" | "business";
-  status: TaskStatus;
-  progress: number;
-  notes: string;
+  end_date: string;
+  parent_id: string | null;
 }
 
-const defaultTaskForm: TaskFormData = {
+const createEmptyNewTask = (): NewTaskRow => ({
   name: "",
-  parent_id: null,
-  start_date: format(new Date(), "yyyy-MM-dd"),
+  start_date: "",
   duration_days: 1,
   duration_type: "calendar",
-  status: "pending",
-  progress: 0,
-  notes: "",
-};
+  end_date: "",
+  parent_id: null,
+});
 
 export function GanttChart({
   tasks,
@@ -59,12 +55,12 @@ export function GanttChart({
   holidays,
   onUpdateTask,
   onAddTask,
+  onDeleteTask,
 }: GanttChartProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
-  const [showTaskDialog, setShowTaskDialog] = useState(false);
-  const [editingTask, setEditingTask] = useState<GanttTask | null>(null);
-  const [taskForm, setTaskForm] = useState<TaskFormData>(defaultTaskForm);
+  const [newTaskRow, setNewTaskRow] = useState<NewTaskRow | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   const { minDate, maxDate } = useMemo(() => getGanttDateRange(tasks), [tasks]);
 
@@ -73,6 +69,12 @@ export function GanttChart({
   }, [minDate, maxDate]);
 
   const totalDays = days.length;
+
+  useEffect(() => {
+    if (newTaskRow && nameInputRef.current) {
+      nameInputRef.current.focus();
+    }
+  }, [newTaskRow]);
 
   const toggleExpand = (taskId: string) => {
     setExpandedTasks((prev) => {
@@ -86,7 +88,6 @@ export function GanttChart({
     });
   };
 
-  // Flatten visible tasks based on expansion state
   const visibleTasks = useMemo(() => {
     const result: Array<{ task: GanttTask; level: number }> = [];
     
@@ -102,23 +103,6 @@ export function GanttChart({
     addTasks(taskTree, 0);
     return result;
   }, [taskTree, expandedTasks]);
-
-  // Flatten all tasks for parent selection
-  const allTasksFlat = useMemo(() => {
-    const result: Array<{ task: GanttTask; level: number }> = [];
-    
-    const addTasks = (tasks: GanttTask[], level: number) => {
-      tasks.forEach((task) => {
-        result.push({ task, level });
-        if (task.children && task.children.length > 0) {
-          addTasks(task.children, level + 1);
-        }
-      });
-    };
-    
-    addTasks(taskTree, 0);
-    return result;
-  }, [taskTree]);
 
   const getTaskPosition = (task: GanttTask) => {
     if (!task.start_date || !task.end_date) {
@@ -143,92 +127,132 @@ export function GanttChart({
     return holidays.some((h) => h.date === dateStr);
   };
 
-  const handleOpenNewTask = () => {
-    setEditingTask(null);
-    setTaskForm(defaultTaskForm);
-    setShowTaskDialog(true);
+  const handleAddNewRow = () => {
+    setNewTaskRow(createEmptyNewTask());
   };
 
-  const handleEditTask = (task: GanttTask) => {
-    setEditingTask(task);
-    setTaskForm({
-      name: task.name,
-      parent_id: task.parent_id,
-      start_date: task.start_date || format(new Date(), "yyyy-MM-dd"),
-      duration_days: task.duration_days || 1,
-      duration_type: task.duration_type as "calendar" | "business",
-      status: task.status,
-      progress: task.progress || 0,
-      notes: task.notes || "",
-    });
-    setShowTaskDialog(true);
+  const handleNewTaskChange = (field: keyof NewTaskRow, value: any) => {
+    if (!newTaskRow) return;
+    
+    const updated = { ...newTaskRow, [field]: value };
+    
+    // Auto-calculate dates
+    if (field === "start_date" && updated.start_date && updated.duration_days > 0) {
+      const endDate = calculateEndDate(updated.start_date, updated.duration_days, updated.duration_type, holidays);
+      updated.end_date = format(endDate, "yyyy-MM-dd");
+    } else if (field === "end_date" && updated.end_date && updated.duration_days > 0) {
+      const startDate = calculateStartDate(updated.end_date, updated.duration_days, updated.duration_type, holidays);
+      updated.start_date = format(startDate, "yyyy-MM-dd");
+    } else if (field === "duration_days" && updated.start_date && value > 0) {
+      const endDate = calculateEndDate(updated.start_date, value, updated.duration_type, holidays);
+      updated.end_date = format(endDate, "yyyy-MM-dd");
+    }
+    
+    setNewTaskRow(updated);
   };
 
-  const handleSaveTask = async () => {
-    if (!taskForm.name.trim()) return;
+  const handleSaveNewTask = async () => {
+    if (!newTaskRow || !newTaskRow.name.trim()) return;
     
     setIsSaving(true);
     try {
-      const endDate = calculateEndDate(
-        taskForm.start_date,
-        taskForm.duration_days,
-        taskForm.duration_type,
-        holidays
+      await onAddTask(
+        newTaskRow.name,
+        newTaskRow.parent_id,
+        {
+          start_date: newTaskRow.start_date || null,
+          end_date: newTaskRow.end_date || null,
+          duration_days: newTaskRow.duration_days,
+          duration_type: newTaskRow.duration_type,
+        }
       );
-
-      if (editingTask) {
-        await onUpdateTask(editingTask.id, {
-          name: taskForm.name,
-          parent_id: taskForm.parent_id,
-          start_date: taskForm.start_date,
-          end_date: format(endDate, "yyyy-MM-dd"),
-          duration_days: taskForm.duration_days,
-          duration_type: taskForm.duration_type,
-          status: taskForm.status,
-          progress: taskForm.progress,
-          notes: taskForm.notes,
-        });
-      } else {
-        await onAddTask(
-          taskForm.name,
-          taskForm.parent_id,
-          {
-            start_date: taskForm.start_date,
-            end_date: format(endDate, "yyyy-MM-dd"),
-            duration_days: taskForm.duration_days,
-            duration_type: taskForm.duration_type,
-            status: taskForm.status,
-            progress: taskForm.progress,
-            notes: taskForm.notes,
-          }
-        );
-      }
-      setShowTaskDialog(false);
+      setNewTaskRow(createEmptyNewTask());
     } finally {
       setIsSaving(false);
     }
   };
 
-  return (
-    <div className="border rounded-lg overflow-hidden">
-      {/* Add task button */}
-      <div className="p-2 border-b bg-muted/30 flex justify-end">
-        <Button size="sm" onClick={handleOpenNewTask}>
-          <Plus className="h-4 w-4 mr-1" />
-          Nueva Tarea
-        </Button>
-      </div>
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && newTaskRow?.name.trim()) {
+      handleSaveNewTask();
+    } else if (e.key === "Escape") {
+      setNewTaskRow(null);
+    }
+  };
 
+  const handleUpdateTaskField = async (taskId: string, field: string, value: any) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    const updates: Partial<GanttTask> = { [field]: value };
+
+    // Auto-calculate dates when updating
+    if (field === "start_date" && value && task.duration_days) {
+      const endDate = calculateEndDate(value, task.duration_days, task.duration_type as "calendar" | "business", holidays);
+      updates.end_date = format(endDate, "yyyy-MM-dd");
+    } else if (field === "end_date" && value && task.duration_days) {
+      const startDate = calculateStartDate(value, task.duration_days, task.duration_type as "calendar" | "business", holidays);
+      updates.start_date = format(startDate, "yyyy-MM-dd");
+    } else if (field === "duration_days" && task.start_date && value > 0) {
+      const endDate = calculateEndDate(task.start_date, value, task.duration_type as "calendar" | "business", holidays);
+      updates.end_date = format(endDate, "yyyy-MM-dd");
+    }
+
+    await onUpdateTask(taskId, updates);
+  };
+
+  const DatePickerCell = ({ 
+    value, 
+    onChange, 
+    placeholder = "Seleccionar" 
+  }: { 
+    value: string | null; 
+    onChange: (date: string) => void;
+    placeholder?: string;
+  }) => (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn(
+            "w-full h-8 justify-start text-left font-normal px-2",
+            !value && "text-muted-foreground"
+          )}
+        >
+          <CalendarIcon className="mr-1 h-3 w-3" />
+          {value ? format(parseISO(value), "dd/MM/yy") : placeholder}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0 z-50 bg-popover" align="start">
+        <Calendar
+          mode="single"
+          selected={value ? parseISO(value) : undefined}
+          onSelect={(date) => date && onChange(format(date, "yyyy-MM-dd"))}
+          initialFocus
+          className="p-3 pointer-events-auto"
+        />
+      </PopoverContent>
+    </Popover>
+  );
+
+  return (
+    <div className="border rounded-lg overflow-hidden bg-background">
       <ScrollArea className="w-full">
         <div className="min-w-fit">
-          {/* Header with dates */}
-          <div className="flex border-b bg-muted/50 sticky top-0 z-10">
-            {/* Task name column header */}
-            <div
-              className="flex-shrink-0 border-r px-3 py-2 font-medium text-sm"
-              style={{ width: TASK_NAME_WIDTH }}
-            >
+          {/* Header */}
+          <div className="flex border-b bg-muted/50 sticky top-0 z-20">
+            <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs" style={{ width: TASK_NAME_WIDTH }}>
               Tarea
+            </div>
+            <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: DATE_COL_WIDTH }}>
+              Inicio
+            </div>
+            <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: DURATION_COL_WIDTH }}>
+              Plazo
+            </div>
+            <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: DATE_COL_WIDTH }}>
+              Término
             </div>
             
             {/* Days header */}
@@ -244,17 +268,17 @@ export function GanttChart({
                       <TooltipTrigger asChild>
                         <div
                           className={cn(
-                            "flex-shrink-0 text-center text-xs py-1 border-r border-b",
+                            "flex-shrink-0 text-center text-xs py-1 border-r",
                             isWeekendDay && "bg-muted/80",
                             isHoliday && "bg-red-100 dark:bg-red-900/20",
                             isToday && "bg-primary/10 font-bold"
                           )}
                           style={{ width: DAY_WIDTH }}
                         >
-                          <div className="font-medium">
-                            {format(day, "d", { locale: es })}
+                          <div className="font-medium text-[10px]">
+                            {format(day, "d")}
                           </div>
-                          <div className="text-muted-foreground text-[10px]">
+                          <div className="text-muted-foreground text-[8px]">
                             {format(day, "EEE", { locale: es })}
                           </div>
                         </div>
@@ -276,257 +300,257 @@ export function GanttChart({
 
           {/* Task rows */}
           <div>
-            {visibleTasks.length === 0 ? (
-              <div className="p-8 text-center text-muted-foreground">
-                No hay tareas aún. Haz clic en "Nueva Tarea" para comenzar.
-              </div>
-            ) : (
-              visibleTasks.map(({ task, level }) => {
-                const hasChildren = task.children && task.children.length > 0;
-                const isExpanded = expandedTasks.has(task.id);
-                const position = getTaskPosition(task);
-                
-                return (
+            {visibleTasks.map(({ task, level }) => {
+              const hasChildren = task.children && task.children.length > 0;
+              const isExpanded = expandedTasks.has(task.id);
+              const position = getTaskPosition(task);
+              
+              return (
+                <div
+                  key={task.id}
+                  className="flex border-b hover:bg-muted/20 transition-colors group"
+                  style={{ height: ROW_HEIGHT }}
+                >
+                  {/* Task name */}
                   <div
-                    key={task.id}
-                    className="flex border-b hover:bg-muted/30 transition-colors"
-                    style={{ height: ROW_HEIGHT }}
+                    className="flex-shrink-0 border-r px-1 flex items-center gap-1 overflow-hidden"
+                    style={{ width: TASK_NAME_WIDTH, paddingLeft: 4 + level * 12 }}
                   >
-                    {/* Task name */}
-                    <div
-                      className="flex-shrink-0 border-r px-2 flex items-center gap-1 overflow-hidden"
-                      style={{ width: TASK_NAME_WIDTH, paddingLeft: 8 + level * 16 }}
-                    >
-                      {hasChildren ? (
-                        <button
-                          onClick={() => toggleExpand(task.id)}
-                          className="p-0.5 hover:bg-muted rounded"
-                        >
-                          {isExpanded ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )}
-                        </button>
-                      ) : (
-                        <span className="w-5" />
-                      )}
-                      <span 
-                        className="truncate text-sm cursor-pointer hover:underline" 
-                        title={task.name}
-                        onDoubleClick={() => handleEditTask(task)}
+                    {hasChildren ? (
+                      <button
+                        onClick={() => toggleExpand(task.id)}
+                        className="p-0.5 hover:bg-muted rounded flex-shrink-0"
                       >
-                        {task.name}
-                      </span>
-                      {task.dependencies && task.dependencies.length > 0 && (
-                        <Link className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                      )}
-                    </div>
-
-                    {/* Gantt bar area */}
-                    <div
-                      className="relative flex-1"
-                      style={{ width: totalDays * DAY_WIDTH }}
+                        {isExpanded ? (
+                          <ChevronDown className="h-3 w-3" />
+                        ) : (
+                          <ChevronRight className="h-3 w-3" />
+                        )}
+                      </button>
+                    ) : (
+                      <span className="w-4 flex-shrink-0" />
+                    )}
+                    <Input
+                      value={task.name}
+                      onChange={(e) => handleUpdateTaskField(task.id, "name", e.target.value)}
+                      className="h-7 text-xs border-0 bg-transparent focus:bg-background px-1"
+                    />
+                    {task.dependencies && task.dependencies.length > 0 && (
+                      <Link className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 flex-shrink-0"
+                      onClick={() => onDeleteTask(task.id)}
                     >
-                      {/* Background grid */}
-                      <div className="absolute inset-0 flex">
-                        {days.map((day, idx) => {
-                          const isWeekendDay = isWeekend(day);
-                          const isHoliday = isHolidayDate(day);
-                          
-                          return (
-                            <div
-                              key={idx}
-                              className={cn(
-                                "flex-shrink-0 border-r h-full",
-                                isWeekendDay && "bg-muted/50",
-                                isHoliday && "bg-red-50 dark:bg-red-900/10"
-                              )}
-                              style={{ width: DAY_WIDTH }}
-                            />
-                          );
-                        })}
-                      </div>
-
-                      {/* Task bar */}
-                      {position.visible && (
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div
-                                className={cn(
-                                  "absolute top-1 rounded h-6 cursor-pointer transition-all hover:opacity-80",
-                                  getTaskStatusColor(task.status, task.end_date)
-                                )}
-                                style={{
-                                  left: position.left,
-                                  width: Math.max(position.width - 4, 8),
-                                }}
-                                onDoubleClick={() => handleEditTask(task)}
-                              >
-                                {/* Progress indicator */}
-                                {task.progress > 0 && (
-                                  <div
-                                    className="absolute inset-y-0 left-0 bg-white/30 rounded-l"
-                                    style={{ width: `${task.progress}%` }}
-                                  />
-                                )}
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <div className="space-y-1">
-                                <p className="font-medium">{task.name}</p>
-                                <p className="text-xs">
-                                  {formatGanttDate(task.start_date)} - {formatGanttDate(task.end_date)}
-                                </p>
-                                <p className="text-xs">
-                                  Duración: {task.duration_days} días ({task.duration_type === "business" ? "hábiles" : "corridos"})
-                                </p>
-                                <p className="text-xs">Progreso: {task.progress}%</p>
-                                <p className="text-xs text-muted-foreground">Doble clic para editar</p>
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      )}
-                    </div>
+                      <Trash2 className="h-3 w-3 text-destructive" />
+                    </Button>
                   </div>
-                );
-              })
+
+                  {/* Start date */}
+                  <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
+                    <DatePickerCell
+                      value={task.start_date}
+                      onChange={(date) => handleUpdateTaskField(task.id, "start_date", date)}
+                      placeholder="Inicio"
+                    />
+                  </div>
+
+                  {/* Duration */}
+                  <div className="flex-shrink-0 border-r flex items-center px-1" style={{ width: DURATION_COL_WIDTH }}>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={task.duration_days || 1}
+                      onChange={(e) => handleUpdateTaskField(task.id, "duration_days", parseInt(e.target.value) || 1)}
+                      className="h-7 text-xs border-0 bg-transparent focus:bg-background text-center w-10 px-1"
+                    />
+                    <span className="text-[10px] text-muted-foreground">
+                      {task.duration_type === "business" ? "háb" : "días"}
+                    </span>
+                  </div>
+
+                  {/* End date */}
+                  <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
+                    <DatePickerCell
+                      value={task.end_date}
+                      onChange={(date) => handleUpdateTaskField(task.id, "end_date", date)}
+                      placeholder="Término"
+                    />
+                  </div>
+
+                  {/* Gantt bar area */}
+                  <div
+                    className="relative flex-1"
+                    style={{ width: totalDays * DAY_WIDTH }}
+                  >
+                    {/* Background grid */}
+                    <div className="absolute inset-0 flex">
+                      {days.map((day, idx) => {
+                        const isWeekendDay = isWeekend(day);
+                        const isHoliday = isHolidayDate(day);
+                        
+                        return (
+                          <div
+                            key={idx}
+                            className={cn(
+                              "flex-shrink-0 border-r h-full",
+                              isWeekendDay && "bg-muted/40",
+                              isHoliday && "bg-red-50 dark:bg-red-900/10"
+                            )}
+                            style={{ width: DAY_WIDTH }}
+                          />
+                        );
+                      })}
+                    </div>
+
+                    {/* Task bar */}
+                    {position.visible && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div
+                              className={cn(
+                                "absolute top-1.5 rounded h-6 cursor-pointer transition-all hover:opacity-80 shadow-sm",
+                                getTaskStatusColor(task.status, task.end_date)
+                              )}
+                              style={{
+                                left: position.left,
+                                width: Math.max(position.width - 4, 8),
+                              }}
+                            >
+                              {task.progress > 0 && (
+                                <div
+                                  className="absolute inset-y-0 left-0 bg-white/30 rounded-l"
+                                  style={{ width: `${task.progress}%` }}
+                                />
+                              )}
+                              <span className="absolute inset-0 flex items-center justify-center text-[10px] text-white font-medium truncate px-1">
+                                {position.width > 60 ? task.name : ""}
+                              </span>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <div className="space-y-1">
+                              <p className="font-medium">{task.name}</p>
+                              <p className="text-xs">
+                                {formatGanttDate(task.start_date)} - {formatGanttDate(task.end_date)}
+                              </p>
+                              <p className="text-xs">
+                                Duración: {task.duration_days} días ({task.duration_type === "business" ? "hábiles" : "corridos"})
+                              </p>
+                              <p className="text-xs">Progreso: {task.progress}%</p>
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* New task row */}
+            {newTaskRow && (
+              <div
+                className="flex border-b bg-primary/5"
+                style={{ height: ROW_HEIGHT }}
+                onKeyDown={handleKeyDown}
+              >
+                <div className="flex-shrink-0 border-r px-1 flex items-center gap-1" style={{ width: TASK_NAME_WIDTH }}>
+                  <span className="w-4 flex-shrink-0" />
+                  <Input
+                    ref={nameInputRef}
+                    value={newTaskRow.name}
+                    onChange={(e) => handleNewTaskChange("name", e.target.value)}
+                    placeholder="Nombre de la tarea..."
+                    className="h-7 text-xs"
+                  />
+                </div>
+
+                <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
+                  <DatePickerCell
+                    value={newTaskRow.start_date || null}
+                    onChange={(date) => handleNewTaskChange("start_date", date)}
+                    placeholder="Inicio"
+                  />
+                </div>
+
+                <div className="flex-shrink-0 border-r flex items-center px-1 gap-1" style={{ width: DURATION_COL_WIDTH }}>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={newTaskRow.duration_days}
+                    onChange={(e) => handleNewTaskChange("duration_days", parseInt(e.target.value) || 1)}
+                    className="h-7 text-xs w-10 text-center"
+                  />
+                  <Select
+                    value={newTaskRow.duration_type}
+                    onValueChange={(v: "calendar" | "business") => handleNewTaskChange("duration_type", v)}
+                  >
+                    <SelectTrigger className="h-7 w-12 text-[10px] px-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-popover">
+                      <SelectItem value="calendar">días</SelectItem>
+                      <SelectItem value="business">háb</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
+                  <DatePickerCell
+                    value={newTaskRow.end_date || null}
+                    onChange={(date) => handleNewTaskChange("end_date", date)}
+                    placeholder="Término"
+                  />
+                </div>
+
+                <div className="flex items-center px-2 gap-2">
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={handleSaveNewTask}
+                    disabled={!newTaskRow.name.trim() || isSaving}
+                  >
+                    {isSaving ? "..." : "Agregar"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs"
+                    onClick={() => setNewTaskRow(null)}
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Add task button row */}
+            {!newTaskRow && (
+              <div
+                className="flex items-center border-b hover:bg-muted/20 cursor-pointer transition-colors"
+                style={{ height: ROW_HEIGHT }}
+                onClick={handleAddNewRow}
+              >
+                <div className="flex items-center gap-2 px-3 text-muted-foreground">
+                  <Plus className="h-4 w-4" />
+                  <span className="text-sm">Agregar tarea...</span>
+                </div>
+              </div>
+            )}
+
+            {visibleTasks.length === 0 && !newTaskRow && (
+              <div className="p-8 text-center text-muted-foreground">
+                Haz clic en "Agregar tarea..." para comenzar
+              </div>
             )}
           </div>
         </div>
         <ScrollBar orientation="horizontal" />
       </ScrollArea>
-
-      {/* Task Dialog */}
-      <Dialog open={showTaskDialog} onOpenChange={setShowTaskDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {editingTask ? "Editar Tarea" : "Nueva Tarea"}
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div>
-              <Label>Nombre de la tarea *</Label>
-              <Input
-                value={taskForm.name}
-                onChange={(e) => setTaskForm({ ...taskForm, name: e.target.value })}
-                placeholder="Nombre de la tarea"
-              />
-            </div>
-
-            <div>
-              <Label>Tarea padre (opcional)</Label>
-              <Select
-                value={taskForm.parent_id || "none"}
-                onValueChange={(value) => setTaskForm({ ...taskForm, parent_id: value === "none" ? null : value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Sin padre" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Sin padre (nivel raíz)</SelectItem>
-                  {allTasksFlat
-                    .filter(({ task }) => task.id !== editingTask?.id)
-                    .map(({ task, level }) => (
-                      <SelectItem key={task.id} value={task.id}>
-                        {"—".repeat(level)} {task.name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Fecha inicio</Label>
-                <Input
-                  type="date"
-                  value={taskForm.start_date}
-                  onChange={(e) => setTaskForm({ ...taskForm, start_date: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label>Duración (días)</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={taskForm.duration_days}
-                  onChange={(e) => setTaskForm({ ...taskForm, duration_days: parseInt(e.target.value) || 1 })}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Tipo de días</Label>
-                <Select
-                  value={taskForm.duration_type}
-                  onValueChange={(value: "calendar" | "business") => setTaskForm({ ...taskForm, duration_type: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="calendar">Corridos</SelectItem>
-                    <SelectItem value="business">Hábiles</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Estado</Label>
-                <Select
-                  value={taskForm.status}
-                  onValueChange={(value: TaskStatus) => setTaskForm({ ...taskForm, status: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pending">Pendiente</SelectItem>
-                    <SelectItem value="in_progress">En progreso</SelectItem>
-                    <SelectItem value="completed">Completada</SelectItem>
-                    <SelectItem value="delayed">Atrasada</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div>
-              <Label>Progreso (%)</Label>
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                value={taskForm.progress}
-                onChange={(e) => setTaskForm({ ...taskForm, progress: Math.min(100, Math.max(0, parseInt(e.target.value) || 0)) })}
-              />
-            </div>
-
-            <div>
-              <Label>Notas</Label>
-              <Textarea
-                value={taskForm.notes}
-                onChange={(e) => setTaskForm({ ...taskForm, notes: e.target.value })}
-                placeholder="Notas adicionales..."
-                rows={2}
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowTaskDialog(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleSaveTask} disabled={isSaving || !taskForm.name.trim()}>
-              {isSaving ? "Guardando..." : editingTask ? "Guardar Cambios" : "Crear Tarea"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
