@@ -171,6 +171,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
               taskTree={taskTree}
               holidays={holidays}
               onUpdateTask={updateTask}
+              onAddTask={addTask}
               onAddDependency={addDependency}
               onRemoveDependency={removeDependency}
             />

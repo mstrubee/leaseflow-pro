@@ -1,19 +1,26 @@
 import { useMemo, useState } from "react";
 import { GanttTask } from "@/hooks/useGantt";
-import { Holiday } from "@/lib/ganttDateUtils";
+import { Holiday, calculateEndDate } from "@/lib/ganttDateUtils";
 import { getGanttDateRange, getTaskStatusColor, formatGanttDate } from "@/lib/ganttDateUtils";
 import { format, addDays, differenceInDays, parseISO, eachDayOfInterval, isWeekend } from "date-fns";
 import { es } from "date-fns/locale";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, Link } from "lucide-react";
+import { ChevronDown, ChevronRight, Link, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
 interface GanttChartProps {
   tasks: GanttTask[];
   taskTree: GanttTask[];
   holidays: Array<{ date: string; name: string }>;
   onUpdateTask: (taskId: string, updates: Partial<GanttTask>) => Promise<void>;
+  onAddTask: (name: string, parentId?: string | null, options?: Partial<GanttTask>) => Promise<any>;
   onAddDependency: (taskId: string, dependsOnTaskId: string) => Promise<void>;
   onRemoveDependency: (dependencyId: string) => Promise<void>;
 }
@@ -22,13 +29,42 @@ const DAY_WIDTH = 30;
 const ROW_HEIGHT = 36;
 const TASK_NAME_WIDTH = 250;
 
+type TaskStatus = "pending" | "in_progress" | "completed" | "delayed";
+
+interface TaskFormData {
+  name: string;
+  parent_id: string | null;
+  start_date: string;
+  duration_days: number;
+  duration_type: "calendar" | "business";
+  status: TaskStatus;
+  progress: number;
+  notes: string;
+}
+
+const defaultTaskForm: TaskFormData = {
+  name: "",
+  parent_id: null,
+  start_date: format(new Date(), "yyyy-MM-dd"),
+  duration_days: 1,
+  duration_type: "calendar",
+  status: "pending",
+  progress: 0,
+  notes: "",
+};
+
 export function GanttChart({
   tasks,
   taskTree,
   holidays,
   onUpdateTask,
+  onAddTask,
 }: GanttChartProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
+  const [showTaskDialog, setShowTaskDialog] = useState(false);
+  const [editingTask, setEditingTask] = useState<GanttTask | null>(null);
+  const [taskForm, setTaskForm] = useState<TaskFormData>(defaultTaskForm);
+  const [isSaving, setIsSaving] = useState(false);
 
   const { minDate, maxDate } = useMemo(() => getGanttDateRange(tasks), [tasks]);
 
@@ -67,6 +103,23 @@ export function GanttChart({
     return result;
   }, [taskTree, expandedTasks]);
 
+  // Flatten all tasks for parent selection
+  const allTasksFlat = useMemo(() => {
+    const result: Array<{ task: GanttTask; level: number }> = [];
+    
+    const addTasks = (tasks: GanttTask[], level: number) => {
+      tasks.forEach((task) => {
+        result.push({ task, level });
+        if (task.children && task.children.length > 0) {
+          addTasks(task.children, level + 1);
+        }
+      });
+    };
+    
+    addTasks(taskTree, 0);
+    return result;
+  }, [taskTree]);
+
   const getTaskPosition = (task: GanttTask) => {
     if (!task.start_date || !task.end_date) {
       return { left: 0, width: 0, visible: false };
@@ -90,8 +143,82 @@ export function GanttChart({
     return holidays.some((h) => h.date === dateStr);
   };
 
+  const handleOpenNewTask = () => {
+    setEditingTask(null);
+    setTaskForm(defaultTaskForm);
+    setShowTaskDialog(true);
+  };
+
+  const handleEditTask = (task: GanttTask) => {
+    setEditingTask(task);
+    setTaskForm({
+      name: task.name,
+      parent_id: task.parent_id,
+      start_date: task.start_date || format(new Date(), "yyyy-MM-dd"),
+      duration_days: task.duration_days || 1,
+      duration_type: task.duration_type as "calendar" | "business",
+      status: task.status,
+      progress: task.progress || 0,
+      notes: task.notes || "",
+    });
+    setShowTaskDialog(true);
+  };
+
+  const handleSaveTask = async () => {
+    if (!taskForm.name.trim()) return;
+    
+    setIsSaving(true);
+    try {
+      const endDate = calculateEndDate(
+        taskForm.start_date,
+        taskForm.duration_days,
+        taskForm.duration_type,
+        holidays
+      );
+
+      if (editingTask) {
+        await onUpdateTask(editingTask.id, {
+          name: taskForm.name,
+          parent_id: taskForm.parent_id,
+          start_date: taskForm.start_date,
+          end_date: format(endDate, "yyyy-MM-dd"),
+          duration_days: taskForm.duration_days,
+          duration_type: taskForm.duration_type,
+          status: taskForm.status,
+          progress: taskForm.progress,
+          notes: taskForm.notes,
+        });
+      } else {
+        await onAddTask(
+          taskForm.name,
+          taskForm.parent_id,
+          {
+            start_date: taskForm.start_date,
+            end_date: format(endDate, "yyyy-MM-dd"),
+            duration_days: taskForm.duration_days,
+            duration_type: taskForm.duration_type,
+            status: taskForm.status,
+            progress: taskForm.progress,
+            notes: taskForm.notes,
+          }
+        );
+      }
+      setShowTaskDialog(false);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="border rounded-lg overflow-hidden">
+      {/* Add task button */}
+      <div className="p-2 border-b bg-muted/30 flex justify-end">
+        <Button size="sm" onClick={handleOpenNewTask}>
+          <Plus className="h-4 w-4 mr-1" />
+          Nueva Tarea
+        </Button>
+      </div>
+
       <ScrollArea className="w-full">
         <div className="min-w-fit">
           {/* Header with dates */}
@@ -151,7 +278,7 @@ export function GanttChart({
           <div>
             {visibleTasks.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground">
-                No hay tareas aún. Agrega tareas desde la pestaña "Lista de Tareas".
+                No hay tareas aún. Haz clic en "Nueva Tarea" para comenzar.
               </div>
             ) : (
               visibleTasks.map(({ task, level }) => {
@@ -184,7 +311,11 @@ export function GanttChart({
                       ) : (
                         <span className="w-5" />
                       )}
-                      <span className="truncate text-sm" title={task.name}>
+                      <span 
+                        className="truncate text-sm cursor-pointer hover:underline" 
+                        title={task.name}
+                        onDoubleClick={() => handleEditTask(task)}
+                      >
                         {task.name}
                       </span>
                       {task.dependencies && task.dependencies.length > 0 && (
@@ -231,6 +362,7 @@ export function GanttChart({
                                   left: position.left,
                                   width: Math.max(position.width - 4, 8),
                                 }}
+                                onDoubleClick={() => handleEditTask(task)}
                               >
                                 {/* Progress indicator */}
                                 {task.progress > 0 && (
@@ -251,6 +383,7 @@ export function GanttChart({
                                   Duración: {task.duration_days} días ({task.duration_type === "business" ? "hábiles" : "corridos"})
                                 </p>
                                 <p className="text-xs">Progreso: {task.progress}%</p>
+                                <p className="text-xs text-muted-foreground">Doble clic para editar</p>
                               </div>
                             </TooltipContent>
                           </Tooltip>
@@ -265,6 +398,135 @@ export function GanttChart({
         </div>
         <ScrollBar orientation="horizontal" />
       </ScrollArea>
+
+      {/* Task Dialog */}
+      <Dialog open={showTaskDialog} onOpenChange={setShowTaskDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {editingTask ? "Editar Tarea" : "Nueva Tarea"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label>Nombre de la tarea *</Label>
+              <Input
+                value={taskForm.name}
+                onChange={(e) => setTaskForm({ ...taskForm, name: e.target.value })}
+                placeholder="Nombre de la tarea"
+              />
+            </div>
+
+            <div>
+              <Label>Tarea padre (opcional)</Label>
+              <Select
+                value={taskForm.parent_id || "none"}
+                onValueChange={(value) => setTaskForm({ ...taskForm, parent_id: value === "none" ? null : value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Sin padre" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sin padre (nivel raíz)</SelectItem>
+                  {allTasksFlat
+                    .filter(({ task }) => task.id !== editingTask?.id)
+                    .map(({ task, level }) => (
+                      <SelectItem key={task.id} value={task.id}>
+                        {"—".repeat(level)} {task.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Fecha inicio</Label>
+                <Input
+                  type="date"
+                  value={taskForm.start_date}
+                  onChange={(e) => setTaskForm({ ...taskForm, start_date: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Duración (días)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={taskForm.duration_days}
+                  onChange={(e) => setTaskForm({ ...taskForm, duration_days: parseInt(e.target.value) || 1 })}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Tipo de días</Label>
+                <Select
+                  value={taskForm.duration_type}
+                  onValueChange={(value: "calendar" | "business") => setTaskForm({ ...taskForm, duration_type: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="calendar">Corridos</SelectItem>
+                    <SelectItem value="business">Hábiles</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Estado</Label>
+                <Select
+                  value={taskForm.status}
+                  onValueChange={(value: TaskStatus) => setTaskForm({ ...taskForm, status: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pendiente</SelectItem>
+                    <SelectItem value="in_progress">En progreso</SelectItem>
+                    <SelectItem value="completed">Completada</SelectItem>
+                    <SelectItem value="delayed">Atrasada</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div>
+              <Label>Progreso (%)</Label>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={taskForm.progress}
+                onChange={(e) => setTaskForm({ ...taskForm, progress: Math.min(100, Math.max(0, parseInt(e.target.value) || 0)) })}
+              />
+            </div>
+
+            <div>
+              <Label>Notas</Label>
+              <Textarea
+                value={taskForm.notes}
+                onChange={(e) => setTaskForm({ ...taskForm, notes: e.target.value })}
+                placeholder="Notas adicionales..."
+                rows={2}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowTaskDialog(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveTask} disabled={isSaving || !taskForm.name.trim()}>
+              {isSaving ? "Guardando..." : editingTask ? "Guardar Cambios" : "Crear Tarea"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
