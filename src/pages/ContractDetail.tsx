@@ -15,6 +15,7 @@ import { CommercialConditionsSummary } from "@/components/contracts/CommercialCo
 import { ContractSurfacesSection } from "@/components/contracts/ContractSurfacesSection";
 import { ContractAlerts } from "@/components/alerts/ContractAlerts";
 import { BudgetDashboard } from "@/components/budget/BudgetDashboard";
+import { GanttModule } from "@/components/gantt/GanttModule";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { ImportAuditSection } from "@/components/contracts/ImportAuditSection";
 import { TerminationNoticesSection } from "@/components/contracts/TerminationNoticesSection";

@@ -1005,6 +1005,355 @@ export type Database = {
           },
         ]
       }
+      gantt_task_dependencies: {
+        Row: {
+          created_at: string
+          depends_on_task_id: string
+          id: string
+          task_id: string
+        }
+        Insert: {
+          created_at?: string
+          depends_on_task_id: string
+          id?: string
+          task_id: string
+        }
+        Update: {
+          created_at?: string
+          depends_on_task_id?: string
+          id?: string
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gantt_task_dependencies_depends_on_task_id_fkey"
+            columns: ["depends_on_task_id"]
+            isOneToOne: false
+            referencedRelation: "gantt_tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gantt_task_dependencies_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "gantt_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gantt_task_purchase_orders: {
+        Row: {
+          created_at: string
+          id: string
+          purchase_order_id: string
+          task_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          purchase_order_id: string
+          task_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          purchase_order_id?: string
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gantt_task_purchase_orders_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gantt_task_purchase_orders_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "gantt_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gantt_tasks: {
+        Row: {
+          created_at: string
+          display_order: number | null
+          duration_days: number | null
+          duration_type: string
+          end_date: string | null
+          has_lag: boolean | null
+          id: string
+          lag_days: number | null
+          lag_type: string
+          name: string
+          notes: string | null
+          parent_id: string | null
+          progress: number | null
+          start_date: string | null
+          status: string
+          template_task_id: string | null
+          timeline_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_order?: number | null
+          duration_days?: number | null
+          duration_type?: string
+          end_date?: string | null
+          has_lag?: boolean | null
+          id?: string
+          lag_days?: number | null
+          lag_type?: string
+          name: string
+          notes?: string | null
+          parent_id?: string | null
+          progress?: number | null
+          start_date?: string | null
+          status?: string
+          template_task_id?: string | null
+          timeline_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_order?: number | null
+          duration_days?: number | null
+          duration_type?: string
+          end_date?: string | null
+          has_lag?: boolean | null
+          id?: string
+          lag_days?: number | null
+          lag_type?: string
+          name?: string
+          notes?: string | null
+          parent_id?: string | null
+          progress?: number | null
+          start_date?: string | null
+          status?: string
+          template_task_id?: string | null
+          timeline_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gantt_tasks_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "gantt_tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gantt_tasks_template_task_id_fkey"
+            columns: ["template_task_id"]
+            isOneToOne: false
+            referencedRelation: "gantt_template_tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gantt_tasks_timeline_id_fkey"
+            columns: ["timeline_id"]
+            isOneToOne: false
+            referencedRelation: "gantt_timelines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gantt_template_dependencies: {
+        Row: {
+          created_at: string
+          depends_on_task_id: string
+          id: string
+          lag_days: number | null
+          lag_type: string
+          task_id: string
+        }
+        Insert: {
+          created_at?: string
+          depends_on_task_id: string
+          id?: string
+          lag_days?: number | null
+          lag_type?: string
+          task_id: string
+        }
+        Update: {
+          created_at?: string
+          depends_on_task_id?: string
+          id?: string
+          lag_days?: number | null
+          lag_type?: string
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gantt_template_dependencies_depends_on_task_id_fkey"
+            columns: ["depends_on_task_id"]
+            isOneToOne: false
+            referencedRelation: "gantt_template_tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gantt_template_dependencies_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "gantt_template_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gantt_template_tasks: {
+        Row: {
+          created_at: string
+          default_duration_days: number | null
+          display_order: number | null
+          duration_type: string
+          id: string
+          name: string
+          parent_id: string | null
+          template_id: string
+        }
+        Insert: {
+          created_at?: string
+          default_duration_days?: number | null
+          display_order?: number | null
+          duration_type?: string
+          id?: string
+          name: string
+          parent_id?: string | null
+          template_id: string
+        }
+        Update: {
+          created_at?: string
+          default_duration_days?: number | null
+          display_order?: number | null
+          duration_type?: string
+          id?: string
+          name?: string
+          parent_id?: string | null
+          template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gantt_template_tasks_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "gantt_template_tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gantt_template_tasks_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "gantt_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gantt_templates: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      gantt_timelines: {
+        Row: {
+          contract_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          template_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          contract_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          template_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          contract_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          template_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gantt_timelines_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gantt_timelines_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "gantt_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      holidays: {
+        Row: {
+          country: string
+          created_at: string
+          date: string
+          id: string
+          is_recurring: boolean
+          name: string
+        }
+        Insert: {
+          country?: string
+          created_at?: string
+          date: string
+          id?: string
+          is_recurring?: boolean
+          name: string
+        }
+        Update: {
+          country?: string
+          created_at?: string
+          date?: string
+          id?: string
+          is_recurring?: boolean
+          name?: string
+        }
+        Relationships: []
+      }
       invoices: {
         Row: {
           amount_clp: number | null
