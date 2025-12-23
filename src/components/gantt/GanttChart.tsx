@@ -6,7 +6,7 @@ import { format, differenceInDays, parseISO, eachDayOfInterval, isWeekend } from
 import { es } from "date-fns/locale";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, Link, Plus, Calendar as CalendarIcon, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ interface GanttChartProps {
   onDeleteTask: (taskId: string) => Promise<void>;
   onAddDependency: (taskId: string, dependsOnTaskId: string) => Promise<void>;
   onRemoveDependency: (dependencyId: string) => Promise<void>;
+  onReorderTask: (taskId: string, newIndex: number, siblingIds: string[]) => Promise<void>;
 }
 
 const DAY_WIDTH = 30;
@@ -57,16 +58,22 @@ export function GanttChart({
   onAddTask,
   onDeleteTask,
   onAddDependency,
+  onReorderTask,
 }: GanttChartProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [newTaskRow, setNewTaskRow] = useState<NewTaskRow | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   
-  // Drag state for creating dependencies
+  // Drag state for creating dependencies (bar drag)
   const [dragSource, setDragSource] = useState<string | null>(null);
   const [dragTarget, setDragTarget] = useState<string | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const [isDraggingBar, setIsDraggingBar] = useState(false);
+  
+  // Drag state for row reordering
+  const [rowDragSource, setRowDragSource] = useState<string | null>(null);
+  const [rowDragOverId, setRowDragOverId] = useState<string | null>(null);
+  const [dropPosition, setDropPosition] = useState<"above" | "below" | null>(null);
 
   const { minDate, maxDate } = useMemo(() => getGanttDateRange(tasks), [tasks]);
 
@@ -236,37 +243,96 @@ export function GanttChart({
     }
   };
 
-  // Drag handlers for creating dependencies
-  const handleDragStart = (taskId: string) => {
+  // Drag handlers for creating dependencies (bar drag)
+  const handleBarDragStart = (taskId: string) => {
     setDragSource(taskId);
-    setIsDragging(true);
+    setIsDraggingBar(true);
   };
 
-  const handleDragOver = (e: React.DragEvent, taskId: string) => {
+  const handleBarDragOver = (e: React.DragEvent, taskId: string) => {
     e.preventDefault();
     if (dragSource && dragSource !== taskId) {
       setDragTarget(taskId);
     }
   };
 
-  const handleDragLeave = () => {
+  const handleBarDragLeave = () => {
     setDragTarget(null);
   };
 
-  const handleDrop = async (targetTaskId: string) => {
+  const handleBarDrop = async (targetTaskId: string) => {
     if (dragSource && dragSource !== targetTaskId) {
       // Create dependency: targetTask depends on dragSource
       await onAddDependency(targetTaskId, dragSource);
     }
     setDragSource(null);
     setDragTarget(null);
-    setIsDragging(false);
+    setIsDraggingBar(false);
   };
 
-  const handleDragEnd = () => {
+  const handleBarDragEnd = () => {
     setDragSource(null);
     setDragTarget(null);
-    setIsDragging(false);
+    setIsDraggingBar(false);
+  };
+
+  // Row drag handlers for reordering
+  const handleRowDragStart = (e: React.DragEvent, taskId: string) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", taskId);
+    setRowDragSource(taskId);
+  };
+
+  const handleRowDragOver = (e: React.DragEvent, taskId: string) => {
+    e.preventDefault();
+    if (!rowDragSource || rowDragSource === taskId) return;
+    
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const isAbove = y < rect.height / 2;
+    
+    setRowDragOverId(taskId);
+    setDropPosition(isAbove ? "above" : "below");
+  };
+
+  const handleRowDragLeave = () => {
+    setRowDragOverId(null);
+    setDropPosition(null);
+  };
+
+  const handleRowDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    if (!rowDragSource || !rowDragOverId || rowDragSource === rowDragOverId) {
+      handleRowDragEnd();
+      return;
+    }
+
+    // Get all visible task IDs in order (flattened)
+    const flatTaskIds = visibleTasks.map(vt => vt.task.id);
+    const sourceIdx = flatTaskIds.indexOf(rowDragSource);
+    const targetIdx = flatTaskIds.indexOf(rowDragOverId);
+    
+    if (sourceIdx === -1 || targetIdx === -1) {
+      handleRowDragEnd();
+      return;
+    }
+
+    // Calculate new order
+    const newOrder = [...flatTaskIds];
+    newOrder.splice(sourceIdx, 1);
+    const insertIdx = dropPosition === "above" 
+      ? (targetIdx > sourceIdx ? targetIdx - 1 : targetIdx)
+      : (targetIdx > sourceIdx ? targetIdx : targetIdx + 1);
+    newOrder.splice(insertIdx, 0, rowDragSource);
+
+    await onReorderTask(rowDragSource, insertIdx, newOrder);
+    handleRowDragEnd();
+  };
+
+  const handleRowDragEnd = () => {
+    setRowDragSource(null);
+    setRowDragOverId(null);
+    setDropPosition(null);
   };
 
   const handleUpdateTaskField = async (taskId: string, field: string, value: any) => {
@@ -384,7 +450,7 @@ export function GanttChart({
         <div className="min-w-fit">
           {/* Month/Year Header */}
           <div className="flex border-b bg-muted/70 sticky top-0 z-30">
-            <div className="flex-shrink-0 border-r" style={{ width: TASK_NAME_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH }}>
+            <div className="flex-shrink-0 border-r" style={{ width: 24 + TASK_NAME_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH }}>
               <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">
                 Cronograma
               </div>
@@ -404,9 +470,9 @@ export function GanttChart({
             </div>
           </div>
 
-          {/* Column Headers */}
           <div className="flex border-b bg-muted/50 sticky top-6 z-20">
-            <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs" style={{ width: TASK_NAME_WIDTH }}>
+            <div className="flex-shrink-0 w-6" /> {/* Grip handle space */}
+            <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs" style={{ width: TASK_NAME_WIDTH - 6 }}>
               Tarea
             </div>
             <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: DATE_COL_WIDTH }}>
@@ -472,13 +538,29 @@ export function GanttChart({
               return (
                 <div
                   key={task.id}
-                  className="flex border-b hover:bg-muted/20 transition-colors group"
+                  draggable
+                  onDragStart={(e) => handleRowDragStart(e, task.id)}
+                  onDragOver={(e) => handleRowDragOver(e, task.id)}
+                  onDragLeave={handleRowDragLeave}
+                  onDrop={handleRowDrop}
+                  onDragEnd={handleRowDragEnd}
+                  className={cn(
+                    "flex border-b hover:bg-muted/20 transition-colors group",
+                    rowDragSource === task.id && "opacity-50 bg-muted",
+                    rowDragOverId === task.id && dropPosition === "above" && "border-t-2 border-t-primary",
+                    rowDragOverId === task.id && dropPosition === "below" && "border-b-2 border-b-primary"
+                  )}
                   style={{ height: ROW_HEIGHT }}
                 >
+                  {/* Drag handle */}
+                  <div className="flex-shrink-0 flex items-center justify-center w-6 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity">
+                    <GripVertical className="h-4 w-4 text-muted-foreground" />
+                  </div>
+
                   {/* Task name */}
                   <div
                     className="flex-shrink-0 border-r px-1 flex items-center gap-1 overflow-hidden"
-                    style={{ width: TASK_NAME_WIDTH, paddingLeft: 4 + level * 12 }}
+                    style={{ width: TASK_NAME_WIDTH - 6, paddingLeft: 4 + level * 12 }}
                   >
                     {hasChildren ? (
                       <button
@@ -498,6 +580,8 @@ export function GanttChart({
                       value={task.name}
                       onChange={(e) => handleUpdateTaskField(task.id, "name", e.target.value)}
                       className="h-7 text-xs border-0 bg-transparent focus:bg-background px-1"
+                      onDragStart={(e) => e.stopPropagation()}
+                      draggable={false}
                     />
                     {task.dependencies && task.dependencies.length > 0 && (
                       <Link className="h-3 w-3 text-muted-foreground flex-shrink-0" />
@@ -529,6 +613,8 @@ export function GanttChart({
                       value={task.duration_days || 1}
                       onChange={(e) => handleUpdateTaskField(task.id, "duration_days", parseInt(e.target.value) || 1)}
                       className="h-7 text-xs border-0 bg-transparent focus:bg-background text-center w-10 px-1"
+                      onDragStart={(e) => e.stopPropagation()}
+                      draggable={false}
                     />
                     <span className="text-[10px] text-muted-foreground">
                       {task.duration_type === "business" ? "háb" : "días"}
@@ -548,15 +634,29 @@ export function GanttChart({
                   <div
                     className={cn(
                       "relative flex-1",
-                      isDragging && dragTarget === task.id && "bg-primary/20"
+                      isDraggingBar && dragTarget === task.id && "bg-primary/20"
                     )}
                     style={{ width: totalDays * DAY_WIDTH }}
-                    onDragOver={(e) => handleDragOver(e, task.id)}
-                    onDragLeave={handleDragLeave}
-                    onDrop={() => handleDrop(task.id)}
+                    onDragOver={(e) => {
+                      // Only handle bar drag here
+                      if (dragSource) {
+                        handleBarDragOver(e, task.id);
+                      }
+                    }}
+                    onDragLeave={() => {
+                      if (dragSource) {
+                        handleBarDragLeave();
+                      }
+                    }}
+                    onDrop={(e) => {
+                      e.stopPropagation();
+                      if (dragSource) {
+                        handleBarDrop(task.id);
+                      }
+                    }}
                   >
                     {/* Background grid */}
-                    <div className="absolute inset-0 flex">
+                    <div className="absolute inset-0 flex pointer-events-none">
                       {days.map((day, idx) => {
                         const isWeekendDay = isWeekend(day);
                         const isHoliday = isHolidayDate(day);
@@ -575,15 +675,21 @@ export function GanttChart({
                       })}
                     </div>
 
-                    {/* Task bar - draggable */}
+                    {/* Task bar - draggable for dependencies */}
                     {position.visible && (
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <div
                               draggable
-                              onDragStart={() => handleDragStart(task.id)}
-                              onDragEnd={handleDragEnd}
+                              onDragStart={(e) => {
+                                e.stopPropagation();
+                                handleBarDragStart(task.id);
+                              }}
+                              onDragEnd={(e) => {
+                                e.stopPropagation();
+                                handleBarDragEnd();
+                              }}
                               className={cn(
                                 "absolute top-1.5 rounded h-6 cursor-grab active:cursor-grabbing transition-all hover:opacity-80 shadow-sm",
                                 getTaskStatusColor(task.status, task.end_date),
@@ -635,7 +741,8 @@ export function GanttChart({
                 style={{ height: ROW_HEIGHT }}
                 onKeyDown={handleKeyDown}
               >
-                <div className="flex-shrink-0 border-r px-1 flex items-center gap-1" style={{ width: TASK_NAME_WIDTH }}>
+                <div className="flex-shrink-0 w-6" /> {/* Grip handle space */}
+                <div className="flex-shrink-0 border-r px-1 flex items-center gap-1" style={{ width: TASK_NAME_WIDTH - 6 }}>
                   <span className="w-4 flex-shrink-0" />
                   <Input
                     ref={nameInputRef}
@@ -714,6 +821,7 @@ export function GanttChart({
                 style={{ height: ROW_HEIGHT }}
                 onClick={handleAddNewRow}
               >
+                <div className="flex-shrink-0 w-6" /> {/* Grip handle space */}
                 <div className="flex items-center gap-2 px-3 text-muted-foreground">
                   <Plus className="h-4 w-4" />
                   <span className="text-sm">Agregar tarea...</span>

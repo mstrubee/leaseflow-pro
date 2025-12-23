@@ -32,6 +32,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
     removeDependency,
     linkPurchaseOrder,
     unlinkPurchaseOrder,
+    reorderTask,
     reload,
   } = useGantt(contractId);
 
@@ -175,6 +176,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
               onDeleteTask={deleteTask}
               onAddDependency={addDependency}
               onRemoveDependency={removeDependency}
+              onReorderTask={reorderTask}
             />
           </TabsContent>
 
