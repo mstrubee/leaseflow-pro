@@ -1,10 +1,25 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+// Secure CORS configuration - only allow trusted origins
+const ALLOWED_ORIGINS = [
+  'https://tgxiqvfpirwvhktgqqfa.lovable.app',
+  'http://localhost:5173',
+  'http://localhost:8080',
+];
+
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get('origin') || '';
+  const isAllowed = ALLOWED_ORIGINS.some(allowed => 
+    origin === allowed || origin.endsWith('.lovable.app')
+  );
+  
+  return {
+    'Access-Control-Allow-Origin': isAllowed ? origin : ALLOWED_ORIGINS[0],
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Credentials': 'true',
+  };
+}
 
 interface Alert {
   id: string;
@@ -28,6 +43,8 @@ interface AdminProfile {
 }
 
 const handler = async (req: Request): Promise<Response> => {
+  const corsHeaders = getCorsHeaders(req);
+  
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -42,10 +59,10 @@ const handler = async (req: Request): Promise<Response> => {
     const { action } = await req.json().catch(() => ({ action: "process" }));
 
     if (action === "process") {
-      return await processAlerts(supabase, resendApiKey);
+      return await processAlerts(supabase, resendApiKey, corsHeaders);
     } else if (action === "test") {
       const { alertId } = await req.json();
-      return await testAlert(supabase, resendApiKey, alertId);
+      return await testAlert(supabase, resendApiKey, alertId, corsHeaders);
     }
 
     return new Response(JSON.stringify({ error: "Invalid action" }), {
@@ -61,7 +78,7 @@ const handler = async (req: Request): Promise<Response> => {
   }
 };
 
-async function processAlerts(supabase: any, resendApiKey: string | undefined): Promise<Response> {
+async function processAlerts(supabase: any, resendApiKey: string | undefined, corsHeaders: Record<string, string>): Promise<Response> {
   console.log("Starting alert processing...");
 
   // Obtener alertas pendientes
@@ -327,7 +344,7 @@ async function sendEmailAlert(
   console.log(`Email sent to ${recipients.length} recipients for alert: ${alert.title}`);
 }
 
-async function testAlert(supabase: any, resendApiKey: string | undefined, alertId: string): Promise<Response> {
+async function testAlert(supabase: any, resendApiKey: string | undefined, alertId: string, corsHeaders: Record<string, string>): Promise<Response> {
   if (!resendApiKey) {
     return new Response(JSON.stringify({ error: "RESEND_API_KEY not configured" }), {
       status: 500,
