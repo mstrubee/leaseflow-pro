@@ -270,23 +270,30 @@ const Contracts = () => {
       });
     }
 
-    // Sorting
-    if (sortField) {
-      filtered = [...filtered].sort((a, b) => {
-        let valueA: Date | null = null;
-        let valueB: Date | null = null;
+        // Sorting
+        if (sortField) {
+          filtered = [...filtered].sort((a, b) => {
+            if (sortField === "name") {
+              const nameA = a.name?.toLowerCase() || "";
+              const nameB = b.name?.toLowerCase() || "";
+              const comparison = nameA.localeCompare(nameB, "es");
+              return sortDirection === "asc" ? comparison : -comparison;
+            }
 
-        if (sortField === "end_date") {
-          valueA = calculateEndDate(a);
-          valueB = calculateEndDate(b);
-        } else if (sortField === "notice_deadline") {
-          valueA = calculateNoticeDeadline(a);
-          valueB = calculateNoticeDeadline(b);
-        }
+            let valueA: Date | null = null;
+            let valueB: Date | null = null;
 
-        if (!valueA && !valueB) return 0;
-        if (!valueA) return sortDirection === "asc" ? 1 : -1;
-        if (!valueB) return sortDirection === "asc" ? -1 : 1;
+            if (sortField === "end_date") {
+              valueA = calculateEndDate(a);
+              valueB = calculateEndDate(b);
+            } else if (sortField === "notice_deadline") {
+              valueA = calculateNoticeDeadline(a);
+              valueB = calculateNoticeDeadline(b);
+            }
+
+            if (!valueA && !valueB) return 0;
+            if (!valueA) return sortDirection === "asc" ? 1 : -1;
+            if (!valueB) return sortDirection === "asc" ? -1 : 1;
 
         const comparison = valueA.getTime() - valueB.getTime();
         return sortDirection === "asc" ? comparison : -comparison;
@@ -637,6 +644,20 @@ const Contracts = () => {
                   >
                     <ArrowUpDown className="h-3 w-3 mr-1" />
                     Aviso {sortField === "notice_deadline" && (sortDirection === "asc" ? "↑" : "↓")}
+                  </Button>
+                </div>
+
+                {/* Sort by Name */}
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-medium text-muted-foreground invisible">Ordenar</span>
+                  <Button
+                    variant={sortField === "name" ? "default" : "outline"}
+                    size="sm"
+                    className="h-8 text-xs px-2"
+                    onClick={() => handleSort("name")}
+                  >
+                    <ArrowUpDown className="h-3 w-3 mr-1" />
+                    Nombre {sortField === "name" && (sortDirection === "asc" ? "↑" : "↓")}
                   </Button>
                 </div>
               </div>
