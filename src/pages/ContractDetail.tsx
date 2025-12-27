@@ -77,6 +77,7 @@ interface Contract {
     notice_date: string;
     document_url: string | null;
     storage_provider: string | null;
+    issuer_name: string | null;
     created_at: string;
   }>;
 }

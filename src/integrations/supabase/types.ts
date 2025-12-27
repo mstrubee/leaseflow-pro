@@ -2124,6 +2124,7 @@ export type Database = {
           document_url: string | null
           drive_file_id: string | null
           id: string
+          issuer_name: string | null
           notice_date: string
           notice_type: string
           storage_provider: string | null
@@ -2135,6 +2136,7 @@ export type Database = {
           document_url?: string | null
           drive_file_id?: string | null
           id?: string
+          issuer_name?: string | null
           notice_date: string
           notice_type: string
           storage_provider?: string | null
@@ -2146,6 +2148,7 @@ export type Database = {
           document_url?: string | null
           drive_file_id?: string | null
           id?: string
+          issuer_name?: string | null
           notice_date?: string
           notice_type?: string
           storage_provider?: string | null
