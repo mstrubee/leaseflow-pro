@@ -817,6 +817,7 @@ export type Database = {
         Row: {
           created_at: string
           deleted_at: string | null
+          display_currency: string | null
           drive_folder_id: string | null
           id: string
           is_expired_but_operating: boolean | null
@@ -842,6 +843,7 @@ export type Database = {
         Insert: {
           created_at?: string
           deleted_at?: string | null
+          display_currency?: string | null
           drive_folder_id?: string | null
           id?: string
           is_expired_but_operating?: boolean | null
@@ -867,6 +869,7 @@ export type Database = {
         Update: {
           created_at?: string
           deleted_at?: string | null
+          display_currency?: string | null
           drive_folder_id?: string | null
           id?: string
           is_expired_but_operating?: boolean | null

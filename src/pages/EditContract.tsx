@@ -118,6 +118,7 @@ const EditContract = () => {
       setName(data.name);
       setSuperficieEdificadaLocal(data.superficie_edificada_local || 0);
       setMetrosLinealesFrente(data.metros_lineales_frente || 0);
+      setCurrency((data.display_currency as "UF" | "CLP") || "UF");
 
       const address = data.contract_addresses?.[0];
       if (address) {
@@ -234,13 +235,14 @@ const EditContract = () => {
     setSaving(true);
 
     try {
-      // Update contract including signed_date
+      // Update contract including signed_date and display_currency
       const { error: contractError } = await supabase
         .from("contracts")
         .update({ 
           name,
           signed_date: hasSeparateDates ? signedDate || null : effectiveDate || null,
-        })
+          display_currency: currency,
+        } as any)
         .eq("id", id);
 
       if (contractError) throw contractError;
