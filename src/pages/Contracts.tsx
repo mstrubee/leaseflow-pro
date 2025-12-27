@@ -64,6 +64,7 @@ interface Contract {
   obra_status: string | null;
   patente_status: string | null;
   is_expired_but_operating: boolean | null;
+  display_currency: string | null;
   contract_addresses: Array<{ region: string; commune: string }>;
   contract_versions: ContractVersion[];
   superficie_edificada_local: number | null;
