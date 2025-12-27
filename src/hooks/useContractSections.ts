@@ -6,15 +6,13 @@ export type SectionKey =
   | "address"
   | "contact"
   | "commercial"
-  | "importAudit"
   | "surfaces"
   | "documentVersions"
   | "terminationNotices"
   | "repository"
   | "budget"
   | "gantt"
-  | "alerts"
-  | "additionalInfo";
+  | "alerts";
 
 interface SectionConfig {
   key: SectionKey;
@@ -26,7 +24,6 @@ const DEFAULT_ORDER: SectionKey[] = [
   "address",
   "contact",
   "commercial",
-  "importAudit",
   "surfaces",
   "documentVersions",
   "terminationNotices",
@@ -34,7 +31,6 @@ const DEFAULT_ORDER: SectionKey[] = [
   "budget",
   "gantt",
   "alerts",
-  "additionalInfo",
 ];
 
 const STORAGE_KEY = "contract_detail_sections";
