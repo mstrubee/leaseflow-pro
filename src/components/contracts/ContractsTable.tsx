@@ -137,8 +137,8 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   const formatAmount = (amount: number, currency: string | null) => {
     const displayCurrency = currency || "UF";
     if (displayCurrency === "CLP") {
-      const clpAmount = convertUFToPesos(amount);
-      return `$${clpAmount.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+      // Cuando el contrato está en CLP, los montos ya están en pesos (no convertir)
+      return `$${amount.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
     }
     return `${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
   };
