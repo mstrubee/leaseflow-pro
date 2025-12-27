@@ -468,7 +468,16 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
       />
 
       {/* Delete confirmation - Step 1 */}
-      <AlertDialog open={deleteOrder !== null && deleteStep === 1} onOpenChange={(open) => !open && setDeleteOrder(null)}>
+      <AlertDialog
+        open={deleteOrder !== null && deleteStep === 1}
+        onOpenChange={(open) => {
+          // If user clicked "Continuar", deleteStep is already 2 when the dialog closes
+          if (!open && deleteStep === 1) {
+            setDeleteOrder(null);
+            setDeleteStep(1);
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar Orden de Compra?</AlertDialogTitle>
@@ -482,7 +491,13 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setDeleteOrder(null)}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleDeleteConfirm();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               Continuar
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -490,7 +505,15 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
       </AlertDialog>
 
       {/* Delete confirmation - Step 2 */}
-      <AlertDialog open={deleteOrder !== null && deleteStep === 2} onOpenChange={(open) => !open && setDeleteOrder(null)}>
+      <AlertDialog
+        open={deleteOrder !== null && deleteStep === 2}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteOrder(null);
+            setDeleteStep(1);
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="text-destructive">⚠️ Confirmar Eliminación Definitiva</AlertDialogTitle>
@@ -502,8 +525,21 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => { setDeleteOrder(null); setDeleteStep(1); }}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogCancel
+              onClick={() => {
+                setDeleteOrder(null);
+                setDeleteStep(1);
+              }}
+            >
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleDeleteConfirm();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               Eliminar Definitivamente
             </AlertDialogAction>
           </AlertDialogFooter>
