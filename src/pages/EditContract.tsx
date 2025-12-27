@@ -211,11 +211,8 @@ const EditContract = () => {
         setFondoPromocionPercentage(version.fondo_promocion_percentage?.toString() || "");
         setAdicionalAdministracionPercentage((version as any).adicional_administracion_percentage?.toString() || "");
         
-        // Set extended gastos comunes if any extended field is set
-        setHasExtendedGastosComunes(
-          !!(version as any).gastos_comunes_uf_ml_frente || 
-          !!(version as any).gastos_comunes_prorrata_kwh_clima
-        );
+        // Load extended gastos comunes preference from database
+        setHasExtendedGastosComunes((version as any).has_extended_gastos_comunes ?? false);
         
         // Load notice bilaterality
         setNoticeBilaterality((version as any).notice_bilaterality || "unilateral_gp");
@@ -329,10 +326,11 @@ const EditContract = () => {
             first_adjustment_month: hasPeriodicAdjustments && firstAdjustmentMonth ? parseInt(firstAdjustmentMonth) : null,
             adjustment_periodicity_months: hasPeriodicAdjustments && adjustmentPeriodicityMonths ? parseInt(adjustmentPeriodicityMonths) : null,
             gastos_comunes_uf_m2: gastosComunesUfM2 ? parseFloat(gastosComunesUfM2) : null,
-            gastos_comunes_uf_ml_frente: gastosComunesUfMlFrente ? parseFloat(gastosComunesUfMlFrente) : null,
-            gastos_comunes_prorrata_kwh_clima: gastosComunesProrratKwhClima ? parseFloat(gastosComunesProrratKwhClima) : null,
+            gastos_comunes_uf_ml_frente: hasExtendedGastosComunes && gastosComunesUfMlFrente ? parseFloat(gastosComunesUfMlFrente) : null,
+            gastos_comunes_prorrata_kwh_clima: hasExtendedGastosComunes && gastosComunesProrratKwhClima ? parseFloat(gastosComunesProrratKwhClima) : null,
             fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
-            adicional_administracion_percentage: adicionalAdministracionPercentage ? parseFloat(adicionalAdministracionPercentage) : null,
+            adicional_administracion_percentage: hasExtendedGastosComunes && adicionalAdministracionPercentage ? parseFloat(adicionalAdministracionPercentage) : null,
+            has_extended_gastos_comunes: hasExtendedGastosComunes,
             notice_bilaterality: noticeBilaterality,
             grace_months: graceMonths || 0,
           } as any)
@@ -361,10 +359,11 @@ const EditContract = () => {
             first_adjustment_month: hasPeriodicAdjustments && firstAdjustmentMonth ? parseInt(firstAdjustmentMonth) : null,
             adjustment_periodicity_months: hasPeriodicAdjustments && adjustmentPeriodicityMonths ? parseInt(adjustmentPeriodicityMonths) : null,
             gastos_comunes_uf_m2: gastosComunesUfM2 ? parseFloat(gastosComunesUfM2) : null,
-            gastos_comunes_uf_ml_frente: gastosComunesUfMlFrente ? parseFloat(gastosComunesUfMlFrente) : null,
-            gastos_comunes_prorrata_kwh_clima: gastosComunesProrratKwhClima ? parseFloat(gastosComunesProrratKwhClima) : null,
+            gastos_comunes_uf_ml_frente: hasExtendedGastosComunes && gastosComunesUfMlFrente ? parseFloat(gastosComunesUfMlFrente) : null,
+            gastos_comunes_prorrata_kwh_clima: hasExtendedGastosComunes && gastosComunesProrratKwhClima ? parseFloat(gastosComunesProrratKwhClima) : null,
             fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
-            adicional_administracion_percentage: adicionalAdministracionPercentage ? parseFloat(adicionalAdministracionPercentage) : null,
+            adicional_administracion_percentage: hasExtendedGastosComunes && adicionalAdministracionPercentage ? parseFloat(adicionalAdministracionPercentage) : null,
+            has_extended_gastos_comunes: hasExtendedGastosComunes,
             notice_bilaterality: noticeBilaterality,
           } as any)
           .select()

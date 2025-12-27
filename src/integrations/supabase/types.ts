@@ -732,6 +732,7 @@ export type Database = {
           gastos_comunes_uf_ml_frente: number | null
           grace_months: number | null
           guarantee_multiplier: number | null
+          has_extended_gastos_comunes: boolean | null
           has_periodic_adjustments: boolean | null
           id: string
           initial_rent: number | null
@@ -760,6 +761,7 @@ export type Database = {
           gastos_comunes_uf_ml_frente?: number | null
           grace_months?: number | null
           guarantee_multiplier?: number | null
+          has_extended_gastos_comunes?: boolean | null
           has_periodic_adjustments?: boolean | null
           id?: string
           initial_rent?: number | null
@@ -788,6 +790,7 @@ export type Database = {
           gastos_comunes_uf_ml_frente?: number | null
           grace_months?: number | null
           guarantee_multiplier?: number | null
+          has_extended_gastos_comunes?: boolean | null
           has_periodic_adjustments?: boolean | null
           id?: string
           initial_rent?: number | null

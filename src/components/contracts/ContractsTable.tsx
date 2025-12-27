@@ -28,6 +28,7 @@ interface ContractVersion {
   gastos_comunes_prorrata_kwh_clima?: number | null;
   fondo_promocion_percentage: number | null;
   adicional_administracion_percentage?: number | null;
+  has_extended_gastos_comunes?: boolean | null;
   notice_ranges?: Array<{ start_month: number; end_month: number }>;
 }
 
@@ -191,12 +192,13 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   {currentVersion ? (() => {
                     const superficie = (contract.superficie_edificada_local || 0) + (contract.superficie_terreno || 0);
                     const metrosFrente = contract.metros_lineales_frente || 0;
+                    const hasExtended = currentVersion.has_extended_gastos_comunes ?? false;
                     
-                    // Gastos comunes: sum of all factors including adicional admin
+                    // Gastos comunes: only include extended factors if flag is true
                     const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
-                    const gastosMlFrente = (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente;
-                    const gastosKwhClima = currentVersion.gastos_comunes_prorrata_kwh_clima || 0;
-                    const adicionalAdmin = currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100);
+                    const gastosMlFrente = hasExtended ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente : 0;
+                    const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
+                    const adicionalAdmin = hasExtended ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100) : 0;
                     const gastosComunesTotal = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
                     
                     // Fondo promoción

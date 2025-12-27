@@ -170,10 +170,11 @@ const NewContract = () => {
             first_adjustment_month: hasPeriodicAdjustments && firstAdjustmentMonth ? parseInt(firstAdjustmentMonth) : null,
             adjustment_periodicity_months: hasPeriodicAdjustments && adjustmentPeriodicityMonths ? parseInt(adjustmentPeriodicityMonths) : null,
             gastos_comunes_uf_m2: gastosComunesUfM2 ? parseFloat(gastosComunesUfM2) : null,
-            gastos_comunes_uf_ml_frente: gastosComunesUfMlFrente ? parseFloat(gastosComunesUfMlFrente) : null,
-            gastos_comunes_prorrata_kwh_clima: gastosComunesProrratKwhClima ? parseFloat(gastosComunesProrratKwhClima) : null,
+            gastos_comunes_uf_ml_frente: hasExtendedGastosComunes && gastosComunesUfMlFrente ? parseFloat(gastosComunesUfMlFrente) : null,
+            gastos_comunes_prorrata_kwh_clima: hasExtendedGastosComunes && gastosComunesProrratKwhClima ? parseFloat(gastosComunesProrratKwhClima) : null,
             fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
-            adicional_administracion_percentage: adicionalAdministracionPercentage ? parseFloat(adicionalAdministracionPercentage) : null,
+            adicional_administracion_percentage: hasExtendedGastosComunes && adicionalAdministracionPercentage ? parseFloat(adicionalAdministracionPercentage) : null,
+            has_extended_gastos_comunes: hasExtendedGastosComunes,
             grace_months: graceMonths || 0,
           } as any)
           .select()

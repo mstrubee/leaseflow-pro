@@ -37,6 +37,7 @@ interface ContractVersion {
   gastos_comunes_prorrata_kwh_clima?: number | null;
   fondo_promocion_percentage?: number | null;
   adicional_administracion_percentage?: number | null;
+  has_extended_gastos_comunes?: boolean | null;
   grace_months?: number | null;
   notice_bilaterality?: string | null;
   rent_escalations: Escalation[];
@@ -142,17 +143,19 @@ export function CommercialConditionsSummary({
     ? version.regime_rent / superficieEdificadaLocal
     : null;
 
-  // Gastos comunes calculation - sum of all factors including adicional admin
+  // Gastos comunes calculation - only include extended factors if flag is true
+  const hasExtended = version.has_extended_gastos_comunes ?? false;
+  
   const gastosM2 = version.gastos_comunes_uf_m2 && superficieEdificadaLocal
     ? version.gastos_comunes_uf_m2 * superficieEdificadaLocal
     : 0;
-  const gastosMlFrente = version.gastos_comunes_uf_ml_frente && metrosLinealesFrente
+  const gastosMlFrente = hasExtended && version.gastos_comunes_uf_ml_frente && metrosLinealesFrente
     ? version.gastos_comunes_uf_ml_frente * metrosLinealesFrente
     : 0;
-  const gastosKwhClima = version.gastos_comunes_prorrata_kwh_clima || 0;
+  const gastosKwhClima = hasExtended ? (version.gastos_comunes_prorrata_kwh_clima || 0) : 0;
   
-  // Adicional por administración is now part of gastos comunes
-  const adicionalAdminAmount = version.adicional_administracion_percentage
+  // Adicional por administración is part of gastos comunes when extended
+  const adicionalAdminAmount = hasExtended && version.adicional_administracion_percentage
     ? (version.adicional_administracion_percentage / 100) * version.regime_rent
     : 0;
   
