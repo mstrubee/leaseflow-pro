@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, History, Trash2, ChevronsUpDown, RotateCcw } from "lucide-react";
+import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, History, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, ClipboardCheck, FileCheck, AlertCircle } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { DocumentVersions, DocumentVersion } from "@/components/contracts/DocumentVersions";
@@ -690,7 +690,16 @@ const ContractDetail = () => {
                 case "commercial":
                   if (!displayVersion) return null;
                   return (
-                    <div key={sectionKey}>
+                    <CollapsibleSection
+                      key={sectionKey}
+                      id={sectionKey}
+                      title="Condiciones Comerciales"
+                      icon={<DollarSign className="h-5 w-5" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                      wrapperOnly
+                    >
                       <CommercialConditionsSummary
                         version={{
                           id: displayVersion.id,
@@ -730,29 +739,56 @@ const ContractDetail = () => {
                         onRenegotiationSuccess={loadContract}
                         displayCurrency={contract.display_currency}
                       />
-                    </div>
+                    </CollapsibleSection>
                   );
 
                 case "importAudit":
                   return (
-                    <div key={sectionKey}>
+                    <CollapsibleSection
+                      key={sectionKey}
+                      id={sectionKey}
+                      title="Auditoría de Importación"
+                      icon={<ClipboardCheck className="h-5 w-5" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                      wrapperOnly
+                    >
                       <ImportAuditSection contractId={contract.id} />
-                    </div>
+                    </CollapsibleSection>
                   );
 
                 case "surfaces":
                   return (
-                    <div key={sectionKey}>
+                    <CollapsibleSection
+                      key={sectionKey}
+                      id={sectionKey}
+                      title="Superficies y Datos"
+                      icon={<LayoutGrid className="h-5 w-5" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                      wrapperOnly
+                    >
                       <ContractSurfacesSection
                         contractId={contract.id}
                         onSurfaceChange={(superficie) => setSuperficieEdificada(superficie)}
                       />
-                    </div>
+                    </CollapsibleSection>
                   );
 
                 case "documentVersions":
                   return (
-                    <div key={sectionKey}>
+                    <CollapsibleSection
+                      key={sectionKey}
+                      id={sectionKey}
+                      title="Contrato de Arriendo"
+                      icon={<FileText className="h-5 w-5" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                      wrapperOnly
+                    >
                       {/* Actions for editing - only for negotiating contracts */}
                       {isNegotiating && currentVersion && (
                         <Card className="p-4 mb-6">
@@ -945,31 +981,49 @@ const ContractDetail = () => {
                         onRenegotiationSuccess={loadContract}
                         onDataImported={loadContract}
                       />
-                    </div>
+                    </CollapsibleSection>
                   );
 
                 case "terminationNotices":
                   if (!isSigned) return null;
                   return (
-                    <div key={sectionKey}>
+                    <CollapsibleSection
+                      key={sectionKey}
+                      id={sectionKey}
+                      title="Avisos de Término"
+                      icon={<AlertCircle className="h-5 w-5" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                      wrapperOnly
+                    >
                       <TerminationNoticesSection
                         contractId={contract.id}
                         contractName={contract.name}
                         notices={contract.termination_notices || []}
                         onRefresh={loadContract}
                       />
-                    </div>
+                    </CollapsibleSection>
                   );
 
                 case "repository":
                   return (
-                    <div key={sectionKey}>
+                    <CollapsibleSection
+                      key={sectionKey}
+                      id={sectionKey}
+                      title="Repositorio de Documentos"
+                      icon={<FolderOpen className="h-5 w-5" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                      wrapperOnly
+                    >
                       <RepositorySection
                         contractId={contract.id}
                         contractName={contract.name}
                         contractStatus={contract.status}
                       />
-                    </div>
+                    </CollapsibleSection>
                   );
 
                 case "budget":
@@ -982,6 +1036,7 @@ const ContractDetail = () => {
                       isCollapsed={isCollapsed(sectionKey)}
                       onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
                       isDraggable={canReorder}
+                      wrapperOnly
                     >
                       <BudgetDashboard contractId={contract.id} displayCurrency={contract.display_currency || "UF"} />
                     </CollapsibleSection>
@@ -989,14 +1044,32 @@ const ContractDetail = () => {
 
                 case "gantt":
                   return (
-                    <div key={sectionKey}>
+                    <CollapsibleSection
+                      key={sectionKey}
+                      id={sectionKey}
+                      title="Línea de Tiempo / Gantt"
+                      icon={<Calendar className="h-5 w-5" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                      wrapperOnly
+                    >
                       <GanttModule contractId={contract.id} />
-                    </div>
+                    </CollapsibleSection>
                   );
 
                 case "alerts":
                   return (
-                    <div key={sectionKey}>
+                    <CollapsibleSection
+                      key={sectionKey}
+                      id={sectionKey}
+                      title="Alertas y Recordatorios"
+                      icon={<Bell className="h-5 w-5" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                      wrapperOnly
+                    >
                       <ContractAlerts
                         contractId={contract.id}
                         contractName={contract.name}
@@ -1009,7 +1082,7 @@ const ContractDetail = () => {
                             : undefined
                         }
                       />
-                    </div>
+                    </CollapsibleSection>
                   );
 
                 case "additionalInfo":

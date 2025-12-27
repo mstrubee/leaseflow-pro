@@ -16,6 +16,10 @@ interface CollapsibleSectionProps {
   onCollapsedChange?: (collapsed: boolean) => void;
   isDraggable?: boolean;
   className?: string;
+  /** If true, renders only header + children without Card wrapper - useful for components that have their own Card */
+  wrapperOnly?: boolean;
+  /** Additional actions to show in the header */
+  headerActions?: ReactNode;
 }
 
 export function CollapsibleSection({
@@ -28,6 +32,8 @@ export function CollapsibleSection({
   onCollapsedChange,
   isDraggable = false,
   className,
+  wrapperOnly = false,
+  headerActions,
 }: CollapsibleSectionProps) {
   const [internalCollapsed, setInternalCollapsed] = useState(defaultCollapsed);
   
@@ -56,6 +62,72 @@ export function CollapsibleSection({
     transition,
   };
 
+  const headerContent = (
+    <div className="flex items-center justify-between w-full">
+      <div className="flex items-center gap-2">
+        {isDraggable && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0 cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="h-4 w-4" />
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0"
+          onClick={handleToggle}
+        >
+          {isCollapsed ? (
+            <ChevronRight className="h-4 w-4" />
+          ) : (
+            <ChevronDown className="h-4 w-4" />
+          )}
+        </Button>
+        <div
+          className="flex items-center gap-2 text-base font-semibold cursor-pointer select-none"
+          onClick={handleToggle}
+        >
+          {icon}
+          {title}
+        </div>
+      </div>
+      {headerActions && !isCollapsed && (
+        <div className="flex items-center gap-2">
+          {headerActions}
+        </div>
+      )}
+    </div>
+  );
+
+  // Wrapper-only mode: just a div with drag support and collapse toggle
+  if (wrapperOnly) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={style}
+        className={cn(
+          "transition-all duration-200 space-y-3",
+          isDragging && "opacity-50 z-50",
+          className
+        )}
+      >
+        <div className="flex items-center gap-2 py-2 px-1 rounded-lg bg-muted/30 border border-border/50">
+          {headerContent}
+        </div>
+        {!isCollapsed && (
+          <div className="animate-fade-in">
+            {children}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <Card
       ref={setNodeRef}
@@ -67,38 +139,7 @@ export function CollapsibleSection({
       )}
     >
       <CardHeader className="py-3 px-4">
-        <div className="flex items-center gap-2">
-          {isDraggable && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
-              {...attributes}
-              {...listeners}
-            >
-              <GripVertical className="h-4 w-4" />
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0"
-            onClick={handleToggle}
-          >
-            {isCollapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <ChevronDown className="h-4 w-4" />
-            )}
-          </Button>
-          <CardTitle
-            className="flex items-center gap-2 text-base cursor-pointer select-none"
-            onClick={handleToggle}
-          >
-            {icon}
-            {title}
-          </CardTitle>
-        </div>
+        {headerContent}
       </CardHeader>
       {!isCollapsed && (
         <CardContent className="pt-0 animate-fade-in">
