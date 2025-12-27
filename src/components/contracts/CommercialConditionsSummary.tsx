@@ -415,6 +415,7 @@ export function CommercialConditionsSummary({
               noticeRanges={noticeRanges}
               noticeType={version.notice_type}
               noticeValue={version.notice_value}
+              displayCurrency={displayCurrency}
             />
           </div>
         )}

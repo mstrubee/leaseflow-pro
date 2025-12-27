@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, ReferenceLine, ReferenceArea, CartesianGrid } from "recharts";
 import { addMonths, format } from "date-fns";
 import { es } from "date-fns/locale";
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 
 interface Escalation {
   month_number: number;
@@ -28,6 +29,7 @@ interface CompactEscalationChartProps {
   noticeRanges?: NoticeRange[];
   noticeType?: string;
   noticeValue?: string;
+  displayCurrency?: "UF" | "CLP";
 }
 
 export function CompactEscalationChart({ 
@@ -45,7 +47,9 @@ export function CompactEscalationChart({
   noticeRanges = [],
   noticeType = "meses",
   noticeValue = "",
+  displayCurrency = "UF",
 }: CompactEscalationChartProps) {
+  const { ufValue } = useEconomicIndicators();
   
   // Calculate current month based on effective date
   const currentMonth = useMemo(() => {
@@ -169,8 +173,24 @@ export function CompactEscalationChart({
     return null;
   }, [effectiveDate, noticeType, noticeValue, noticeRanges, durationMonths]);
 
-  const formatUF = (value: number) => {
+  // Format amount based on display currency
+  const formatAmount = (value: number) => {
+    if (displayCurrency === "CLP") {
+      return `$${Math.round(value).toLocaleString("es-CL")}`;
+    }
     return `${value.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} UF`;
+  };
+
+  // Format secondary (illustrative)
+  const formatSecondary = (value: number) => {
+    if (displayCurrency === "CLP" && ufValue > 0) {
+      const uf = value / ufValue;
+      return `${uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
+    } else if (displayCurrency === "UF" && ufValue > 0) {
+      const clp = value * ufValue;
+      return `$${Math.round(clp).toLocaleString("es-CL")}`;
+    }
+    return "";
   };
 
   // If no chart data, show minimal chart with regime rent
@@ -206,7 +226,7 @@ export function CompactEscalationChart({
                 let label = "Canon";
                 if (point?.isGrace) label = "Gracia";
                 if (point?.isAdjustment) label = "Reajuste";
-                return [formatUF(value), label];
+                return [formatAmount(value), label];
               }}
               labelFormatter={(label) => `Mes ${label}`}
             />
@@ -294,7 +314,7 @@ export function CompactEscalationChart({
         )}
         {summaryPoints.slice(0, 3).map((point, idx) => (
           <span key={idx} className={point.isRegime ? "font-medium text-primary" : ""}>
-            M{point.month}: {formatUF(point.rent)}
+            M{point.month}: {formatAmount(point.rent)}
             {point.isRegime && " (régimen)"}
           </span>
         ))}
