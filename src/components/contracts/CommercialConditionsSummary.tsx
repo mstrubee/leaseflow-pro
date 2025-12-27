@@ -54,6 +54,7 @@ interface CommercialConditionsSummaryProps {
   showRenegotiationButton?: boolean;
   hasActiveRenegotiation?: boolean;
   onRenegotiationSuccess?: () => void;
+  displayCurrency?: "UF" | "CLP";
 }
 
 export function CommercialConditionsSummary({ 
@@ -66,10 +67,28 @@ export function CommercialConditionsSummary({
   contractId,
   showRenegotiationButton = false,
   hasActiveRenegotiation = false,
-  onRenegotiationSuccess
+  onRenegotiationSuccess,
+  displayCurrency = "UF"
 }: CommercialConditionsSummaryProps) {
-  const { ufValue } = useEconomicIndicators();
+  const { ufValue, convertUFToPesos } = useEconomicIndicators();
   
+  // Format functions based on display currency
+  const formatPrimary = (amountUF: number) => {
+    if (displayCurrency === "CLP" && ufValue > 0) {
+      const clp = convertUFToPesos(amountUF);
+      return `$${Math.round(clp).toLocaleString("es-CL")}`;
+    }
+    return `${amountUF.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
+  };
+
+  const formatSecondary = (amountUF: number) => {
+    if (displayCurrency === "CLP" && ufValue > 0) {
+      return `${amountUF.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
+    }
+    const clp = convertUFToPesos(amountUF);
+    return clp > 0 ? `$${Math.round(clp).toLocaleString("es-CL")}` : "";
+  };
+
   // Calculate dates
   const dates = useMemo(() => {
     // Find the start date: effective_date of current version, or signed_date for original
@@ -121,14 +140,6 @@ export function CommercialConditionsSummary({
     return { startDate, endDate, noticeDate, noticeDateLabel };
   }, [version, signedDate, noticeRanges]);
 
-  const formatCurrency = (amount: number) => {
-    return `${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
-  };
-
-  const formatCLP = (amount: number) => {
-    return `$${Math.round(amount).toLocaleString("es-CL")}`;
-  };
-
   const formatDateShort = (date: Date) => {
     return format(date, "dd MMM yyyy", { locale: es });
   };
@@ -162,14 +173,25 @@ export function CommercialConditionsSummary({
   const gastosComunesTotalUF = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdminAmount > 0
     ? gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdminAmount
     : null;
-  const gastosComunesTotalCLP = gastosComunesTotalUF && ufValue
-    ? gastosComunesTotalUF * ufValue
-    : null;
 
   // Fondo de promoción calculation
   const fondoPromocionAmount = version.fondo_promocion_percentage
     ? (version.fondo_promocion_percentage / 100) * version.regime_rent
     : null;
+
+  // Format adjustment value based on type
+  const formatAdjustmentValue = () => {
+    if (!version.has_periodic_adjustments || !version.adjustment_value) return null;
+    
+    if (version.adjustment_type === "percentage") {
+      return `${version.adjustment_value}%`;
+    } else {
+      // Fixed amount - show in selected currency
+      return formatPrimary(version.adjustment_value);
+    }
+  };
+
+  const adjustmentValueFormatted = formatAdjustmentValue();
 
   return (
     <Card>
@@ -257,7 +279,10 @@ export function CommercialConditionsSummary({
               Canon en Régimen
             </div>
             <p className="text-sm font-semibold text-primary">
-              {formatCurrency(version.regime_rent)}
+              {formatPrimary(version.regime_rent)}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {formatSecondary(version.regime_rent)}
             </p>
             {canonPerM2 !== null && (
               <p className="text-xs text-muted-foreground">
@@ -287,10 +312,34 @@ export function CommercialConditionsSummary({
                 Garantía
               </div>
               <p className="text-sm font-medium">
-                {formatCurrency(guaranteeAmount)}
+                {formatPrimary(guaranteeAmount)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {formatSecondary(guaranteeAmount)}
               </p>
               <p className="text-xs text-muted-foreground">
                 ({version.guarantee_multiplier}× canon)
+              </p>
+            </div>
+          )}
+
+          {/* Reajuste Periódico */}
+          {version.has_periodic_adjustments && adjustmentValueFormatted && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <TrendingUp className="h-3 w-3" />
+                Reajuste
+              </div>
+              <p className="text-sm font-medium">
+                {adjustmentValueFormatted}
+              </p>
+              {version.adjustment_type === "fixed" && version.adjustment_value && (
+                <p className="text-xs text-muted-foreground">
+                  {formatSecondary(version.adjustment_value)}
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                cada {version.adjustment_periodicity_months} meses
               </p>
             </div>
           )}
@@ -303,16 +352,16 @@ export function CommercialConditionsSummary({
                 Gastos Comunes
               </div>
               <p className="text-sm font-medium">
-                {formatCurrency(gastosComunesTotalUF)}
+                {formatPrimary(gastosComunesTotalUF)}
               </p>
-              <div className="text-xs text-muted-foreground">
-                {gastosComunesTotalCLP && (
-                  <span className="block">{formatCLP(gastosComunesTotalCLP)}</span>
-                )}
-                {adicionalAdminAmount > 0 && (
-                  <span className="block text-[10px]">(incl. {version.adicional_administracion_percentage}% adm.)</span>
-                )}
-              </div>
+              <p className="text-xs text-muted-foreground">
+                {formatSecondary(gastosComunesTotalUF)}
+              </p>
+              {adicionalAdminAmount > 0 && (
+                <p className="text-[10px] text-muted-foreground">
+                  (incl. {version.adicional_administracion_percentage}% adm.)
+                </p>
+              )}
             </div>
           )}
 
@@ -324,7 +373,10 @@ export function CommercialConditionsSummary({
                 Fondo Promoción
               </div>
               <p className="text-sm font-medium">
-                {formatCurrency(fondoPromocionAmount)}
+                {formatPrimary(fondoPromocionAmount)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {formatSecondary(fondoPromocionAmount)}
               </p>
               <p className="text-xs text-muted-foreground">
                 ({version.fondo_promocion_percentage}% del canon)

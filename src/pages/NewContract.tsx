@@ -89,13 +89,14 @@ const NewContract = () => {
     setLoading(true);
 
     try {
-      // Create contract
+      // Create contract with display_currency
       const { data: contract, error: contractError } = await supabase
         .from("contracts")
         .insert({
           name,
           status: "en_negociacion",
           signed_date: hasSeparateDates ? signedDate || null : fechaInicio || null,
+          display_currency: currency,
         })
         .select()
         .single();

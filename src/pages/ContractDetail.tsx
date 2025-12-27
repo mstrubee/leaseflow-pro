@@ -26,6 +26,7 @@ interface Contract {
   signed_date: string | null;
   created_at: string;
   superficie_edificada_local: number | null;
+  metros_lineales_frente: number | null;
   display_currency?: "UF" | "CLP";
   contract_addresses: Array<{
     street: string;
@@ -585,7 +586,7 @@ const ContractDetail = () => {
         adjustment_type: (displayVersion as any).adjustment_type,
         adjustment_value: (displayVersion as any).adjustment_value,
         rent_escalations: displayVersion.rent_escalations || []
-      }} signedDate={contract.signed_date} allVersions={allVersions} superficieEdificadaLocal={superficieEdificada ?? contract.superficie_edificada_local} contractId={contract.id} showRenegotiationButton={isSigned} hasActiveRenegotiation={hasActiveRenegotiation} onRenegotiationSuccess={loadContract} />}
+      }} signedDate={contract.signed_date} allVersions={allVersions} superficieEdificadaLocal={superficieEdificada ?? contract.superficie_edificada_local} metrosLinealesFrente={contract.metros_lineales_frente} contractId={contract.id} showRenegotiationButton={isSigned} hasActiveRenegotiation={hasActiveRenegotiation} onRenegotiationSuccess={loadContract} displayCurrency={contract.display_currency} />}
 
         {/* AI Import Audit Section */}
         <ImportAuditSection contractId={contract.id} />
