@@ -24,7 +24,10 @@ interface ContractVersion {
   notice_type: string;
   notice_value: string;
   gastos_comunes_uf_m2: number | null;
+  gastos_comunes_uf_ml_frente?: number | null;
+  gastos_comunes_prorrata_kwh_clima?: number | null;
   fondo_promocion_percentage: number | null;
+  adicional_administracion_percentage?: number | null;
   notice_ranges?: Array<{ start_month: number; end_month: number }>;
 }
 
@@ -42,6 +45,7 @@ interface Contract {
   contract_versions: ContractVersion[];
   superficie_edificada_local: number | null;
   superficie_terreno: number | null;
+  metros_lineales_frente?: number | null;
   termination_notices?: TerminationNotice[];
 }
 
@@ -186,16 +190,29 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 <TableCell className="text-center min-w-[140px]">
                   {currentVersion ? (() => {
                     const superficie = (contract.superficie_edificada_local || 0) + (contract.superficie_terreno || 0);
-                    const gastosComunes = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
+                    const metrosFrente = contract.metros_lineales_frente || 0;
+                    
+                    // Gastos comunes: sum of all three factors
+                    const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
+                    const gastosMlFrente = (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente;
+                    const gastosKwhClima = currentVersion.gastos_comunes_prorrata_kwh_clima || 0;
+                    const gastosComunes = gastosM2 + gastosMlFrente + gastosKwhClima;
+                    
+                    // Fondo promoción
                     const fondoPromocion = currentVersion.regime_rent * ((currentVersion.fondo_promocion_percentage || 0) / 100);
-                    const total = currentVersion.regime_rent + gastosComunes + fondoPromocion;
+                    
+                    // Adicional por administración (% del canon en régimen)
+                    const adicionalAdmin = currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100);
+                    
+                    const total = currentVersion.regime_rent + gastosComunes + fondoPromocion + adicionalAdmin;
                     return (
                       <div className="flex flex-col items-center">
                         <span className="text-sm font-medium">{formatUF(total)}</span>
                         <div className="text-[9px] text-muted-foreground whitespace-nowrap">
                           <div>Canon: {formatUF(currentVersion.regime_rent)}</div>
                           <div>GC: {formatUF(gastosComunes)}</div>
-                          <div>F. Prom: {formatUF(fondoPromocion)}</div>
+                          {fondoPromocion > 0 && <div>F. Prom: {formatUF(fondoPromocion)}</div>}
+                          {adicionalAdmin > 0 && <div>Adic. Adm: {formatUF(adicionalAdmin)}</div>}
                         </div>
                       </div>
                     );

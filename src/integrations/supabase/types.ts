@@ -717,6 +717,7 @@ export type Database = {
       }
       contract_versions: {
         Row: {
+          adicional_administracion_percentage: number | null
           adjustment_periodicity_months: number | null
           adjustment_type: string | null
           adjustment_value: number | null
@@ -726,7 +727,9 @@ export type Database = {
           effective_date: string | null
           first_adjustment_month: number | null
           fondo_promocion_percentage: number | null
+          gastos_comunes_prorrata_kwh_clima: number | null
           gastos_comunes_uf_m2: number | null
+          gastos_comunes_uf_ml_frente: number | null
           grace_months: number | null
           guarantee_multiplier: number | null
           has_periodic_adjustments: boolean | null
@@ -742,6 +745,7 @@ export type Database = {
           version_number: number
         }
         Insert: {
+          adicional_administracion_percentage?: number | null
           adjustment_periodicity_months?: number | null
           adjustment_type?: string | null
           adjustment_value?: number | null
@@ -751,7 +755,9 @@ export type Database = {
           effective_date?: string | null
           first_adjustment_month?: number | null
           fondo_promocion_percentage?: number | null
+          gastos_comunes_prorrata_kwh_clima?: number | null
           gastos_comunes_uf_m2?: number | null
+          gastos_comunes_uf_ml_frente?: number | null
           grace_months?: number | null
           guarantee_multiplier?: number | null
           has_periodic_adjustments?: boolean | null
@@ -767,6 +773,7 @@ export type Database = {
           version_number: number
         }
         Update: {
+          adicional_administracion_percentage?: number | null
           adjustment_periodicity_months?: number | null
           adjustment_type?: string | null
           adjustment_value?: number | null
@@ -776,7 +783,9 @@ export type Database = {
           effective_date?: string | null
           first_adjustment_month?: number | null
           fondo_promocion_percentage?: number | null
+          gastos_comunes_prorrata_kwh_clima?: number | null
           gastos_comunes_uf_m2?: number | null
+          gastos_comunes_uf_ml_frente?: number | null
           grace_months?: number | null
           guarantee_multiplier?: number | null
           has_periodic_adjustments?: boolean | null
