@@ -18,6 +18,7 @@ interface BudgetSummary {
 
 interface BudgetDashboardProps {
   contractId: string;
+  displayCurrency?: "UF" | "CLP";
 }
 
 const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
@@ -29,7 +30,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
   const [totalOC, setTotalOC] = useState(0);
   const [totalInvoices, setTotalInvoices] = useState(0);
   const { toast } = useToast();
-  const { formatUF, formatCLP, convertUFToPesos } = useBudgetContext();
+  const { formatPrimary, formatSecondary } = useBudgetContext();
 
   useEffect(() => {
     loadAvailableYears();
@@ -180,10 +181,11 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
           <CardContent>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold">{formatUF(inversionSummary.authorized)}</p>
-                <p className="text-xs text-muted-foreground">de {formatUF(inversionSummary.budget)}</p>
+                <p className="text-2xl font-bold">{formatPrimary(inversionSummary.authorized)}</p>
+                <p className="text-xs text-muted-foreground">{formatSecondary(inversionSummary.authorized)}</p>
+                <p className="text-xs text-muted-foreground mt-1">de {formatPrimary(inversionSummary.budget)}</p>
                 {inversionSummary.unauthorized > 0 && (
-                  <p className="text-xs text-yellow-600">+{formatUF(inversionSummary.unauthorized)} pendiente</p>
+                  <p className="text-xs text-yellow-600">+{formatPrimary(inversionSummary.unauthorized)} pendiente</p>
                 )}
               </div>
               <BudgetSemaphore budget={inversionSummary.budget} consumed={inversionSummary.authorized} showLabel={false} size="lg" />
@@ -202,10 +204,11 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
           <CardContent>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold">{formatUF(capexSummary.authorized)}</p>
-                <p className="text-xs text-muted-foreground">de {formatUF(capexSummary.budget)}</p>
+                <p className="text-2xl font-bold">{formatPrimary(capexSummary.authorized)}</p>
+                <p className="text-xs text-muted-foreground">{formatSecondary(capexSummary.authorized)}</p>
+                <p className="text-xs text-muted-foreground mt-1">de {formatPrimary(capexSummary.budget)}</p>
                 {capexSummary.unauthorized > 0 && (
-                  <p className="text-xs text-yellow-600">+{formatUF(capexSummary.unauthorized)} pendiente</p>
+                  <p className="text-xs text-yellow-600">+{formatPrimary(capexSummary.unauthorized)} pendiente</p>
                 )}
               </div>
               <BudgetSemaphore budget={capexSummary.budget} consumed={capexSummary.authorized} showLabel={false} size="lg" />
@@ -222,8 +225,8 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{formatUF(totalOC)}</p>
-            <p className="text-xs text-muted-foreground">{formatCLP(convertUFToPesos(totalOC))}</p>
+            <p className="text-2xl font-bold">{formatPrimary(totalOC)}</p>
+            <p className="text-xs text-muted-foreground">{formatSecondary(totalOC)}</p>
           </CardContent>
         </Card>
 
@@ -236,8 +239,8 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{formatUF(totalInvoices)}</p>
-            <p className="text-xs text-muted-foreground">{formatCLP(convertUFToPesos(totalInvoices))}</p>
+            <p className="text-2xl font-bold">{formatPrimary(totalInvoices)}</p>
+            <p className="text-xs text-muted-foreground">{formatSecondary(totalInvoices)}</p>
           </CardContent>
         </Card>
       </div>
@@ -267,10 +270,10 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
   );
 };
 
-export const BudgetDashboard = (props: BudgetDashboardProps) => {
+export const BudgetDashboard = ({ contractId, displayCurrency = "UF" }: BudgetDashboardProps) => {
   return (
-    <BudgetProvider>
-      <BudgetDashboardContent {...props} />
+    <BudgetProvider initialCurrency={displayCurrency}>
+      <BudgetDashboardContent contractId={contractId} />
     </BudgetProvider>
   );
 };

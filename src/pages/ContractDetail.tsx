@@ -26,6 +26,7 @@ interface Contract {
   signed_date: string | null;
   created_at: string;
   superficie_edificada_local: number | null;
+  display_currency?: "UF" | "CLP";
   contract_addresses: Array<{
     street: string;
     number: string;
@@ -738,7 +739,7 @@ const ContractDetail = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <BudgetDashboard contractId={contract.id} />
+            <BudgetDashboard contractId={contract.id} displayCurrency={contract.display_currency || "UF"} />
           </CardContent>
         </Card>
 
