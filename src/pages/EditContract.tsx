@@ -815,9 +815,7 @@ const EditContract = () => {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  {currency === "CLP" 
-                    ? "Los valores en CLP se convertirán a UF al guardar."
-                    : "Los valores se guardan en UF."}
+                  Los valores se guardan en {currency}. La conversión a {currency === "CLP" ? "UF" : "CLP"} es solo ilustrativa.
                 </p>
               </div>
 
