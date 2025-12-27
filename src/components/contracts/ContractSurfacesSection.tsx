@@ -3,7 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Ruler } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Ruler, Pencil, Check, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
 
@@ -39,7 +40,9 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
     superficie_mezanina_altillo: 0,
     superficie_segundo_nivel: 0,
   });
+  const [originalSurfaces, setOriginalSurfaces] = useState<SurfaceData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isEditing, setIsEditing] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -56,7 +59,7 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
 
       if (error) throw error;
       if (data) {
-        setSurfaces({
+        const loadedSurfaces = {
           superficie_terreno: data.superficie_terreno || 0,
           superficie_edificada_local: data.superficie_edificada_local || 0,
           superficie_showroom: data.superficie_showroom || 0,
@@ -67,7 +70,8 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
           metros_lineales_frente: data.metros_lineales_frente || 0,
           superficie_mezanina_altillo: (data as any).superficie_mezanina_altillo || 0,
           superficie_segundo_nivel: (data as any).superficie_segundo_nivel || 0,
-        });
+        };
+        setSurfaces(loadedSurfaces);
       }
     } catch (error) {
       console.error("Error loading surfaces:", error);
@@ -76,8 +80,36 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
     }
   };
 
-  const handleChange = async (field: keyof SurfaceData, value: string) => {
-    if (readOnly) return;
+  const handleStartEditing = () => {
+    setOriginalSurfaces({ ...surfaces });
+    setIsEditing(true);
+  };
+
+  const handleCancelEditing = () => {
+    if (originalSurfaces) {
+      setSurfaces(originalSurfaces);
+    }
+    setIsEditing(false);
+    setOriginalSurfaces(null);
+  };
+
+  const handleSaveEditing = async () => {
+    try {
+      await supabase.from("contracts").update(surfaces).eq("id", contractId);
+      toast({ title: "Guardado", description: "Superficies actualizadas correctamente" });
+      setIsEditing(false);
+      setOriginalSurfaces(null);
+      
+      if (onSurfaceChange) {
+        onSurfaceChange(surfaces.superficie_edificada_local);
+      }
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
+  const handleChange = (field: keyof SurfaceData, value: string) => {
+    if (!isEditing) return;
     
     const numValue = parseFloat(value) || 0;
     const newData = { ...surfaces, [field]: numValue };
@@ -96,17 +128,6 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
     }
     
     setSurfaces(newData);
-    
-    // Notify parent of surface change for real-time recalculation
-    if (onSurfaceChange) {
-      onSurfaceChange(newData.superficie_edificada_local);
-    }
-    
-    try {
-      await supabase.from("contracts").update(newData).eq("id", contractId);
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
-    }
   };
 
   const fields: { key: keyof SurfaceData; label: string; unit: string; calculated?: boolean }[] = [
@@ -135,10 +156,33 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <Ruler className="h-5 w-5" />
-          Superficies y Datos
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Ruler className="h-5 w-5" />
+            Superficies y Datos
+          </CardTitle>
+          {!readOnly && (
+            <div className="flex items-center gap-2">
+              {isEditing ? (
+                <>
+                  <Button variant="ghost" size="sm" onClick={handleCancelEditing}>
+                    <X className="h-4 w-4 mr-1" />
+                    Cancelar
+                  </Button>
+                  <Button size="sm" onClick={handleSaveEditing}>
+                    <Check className="h-4 w-4 mr-1" />
+                    Guardar
+                  </Button>
+                </>
+              ) : (
+                <Button variant="outline" size="sm" onClick={handleStartEditing}>
+                  <Pencil className="h-4 w-4 mr-1" />
+                  Editar
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -146,16 +190,22 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
             <div key={key} className="space-y-1">
               <Label className="text-xs text-muted-foreground">{label}</Label>
               <div className="flex items-center gap-1">
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={surfaces[key] === 0 ? "" : surfaces[key]}
-                  onChange={(e) => handleChange(key, e.target.value)}
-                  onFocus={(e) => e.target.select()}
-                  disabled={readOnly || calculated}
-                  className={calculated ? "bg-muted" : ""}
-                  placeholder="0"
-                />
+                {isEditing ? (
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={surfaces[key] === 0 ? "" : surfaces[key]}
+                    onChange={(e) => handleChange(key, e.target.value)}
+                    onFocus={(e) => e.target.select()}
+                    disabled={calculated}
+                    className={calculated ? "bg-muted" : ""}
+                    placeholder="0"
+                  />
+                ) : (
+                  <p className="text-sm font-medium py-2">
+                    {surfaces[key] > 0 ? surfaces[key].toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : "-"}
+                  </p>
+                )}
                 <span className="text-xs text-muted-foreground w-8">{unit}</span>
               </div>
             </div>
