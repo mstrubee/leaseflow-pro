@@ -5,6 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Trash2, AlertTriangle, FileCheck, FilePlus } from "lucide-react";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { addMonths, format, subMonths, parseISO, differenceInMonths, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -61,6 +62,7 @@ interface ContractsTableProps {
 
 export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateField, onRefresh }: ContractsTableProps) {
   const navigate = useNavigate();
+  const { ufValue, convertUFToPesos } = useEconomicIndicators();
 
   const calculateEndDate = (contract: Contract): Date | null => {
     const currentVersion = contract.contract_versions?.find((v) => v.is_current);
@@ -132,13 +134,13 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     return `${amount.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} UF`;
   };
 
-  const formatAmount = (amount: number, currency: string | null, ufValue: number = 39000) => {
+  const formatAmount = (amount: number, currency: string | null) => {
     const displayCurrency = currency || "UF";
     if (displayCurrency === "CLP") {
-      const clpAmount = amount * ufValue;
+      const clpAmount = convertUFToPesos(amount);
       return `$${clpAmount.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
     }
-    return `${amount.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} UF`;
+    return `${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
   };
 
   const formatDateShort = (date: Date) => {
