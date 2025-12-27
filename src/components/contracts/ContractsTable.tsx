@@ -202,7 +202,8 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                     const gastosComunesTotal = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
                     
                     // Fondo promoción
-                    const fondoPromocion = currentVersion.regime_rent * ((currentVersion.fondo_promocion_percentage || 0) / 100);
+                    const fondoPromocionPct = currentVersion.fondo_promocion_percentage ?? 0;
+                    const fondoPromocion = currentVersion.regime_rent * (fondoPromocionPct / 100);
                     
                     const total = currentVersion.regime_rent + gastosComunesTotal + fondoPromocion;
                     return (
@@ -211,7 +212,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                         <div className="text-[9px] text-muted-foreground whitespace-nowrap">
                           <div>Canon: {formatUF(currentVersion.regime_rent)}</div>
                           <div>GC: {formatUF(gastosComunesTotal)}</div>
-                          {fondoPromocion > 0 && <div>F. Prom: {formatUF(fondoPromocion)}</div>}
+                          <div>F. Prom: {fondoPromocionPct > 0 ? formatUF(fondoPromocion) : "-"}</div>
                         </div>
                       </div>
                     );
