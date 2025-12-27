@@ -170,10 +170,26 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
           {contracts.map((contract) => {
             const currentVersion = contract.contract_versions?.find((v) => v.is_current);
             const address = contract.contract_addresses?.[0];
-            const endDate = calculateEndDate(contract);
+            const originalEndDate = calculateEndDate(contract);
             const noticeDeadline = calculateNoticeDeadline(contract);
             const isPastNotice = noticeDeadline && noticeDeadline < new Date();
             const isExpiredOperating = contract.status === "vencido" && contract.is_expired_but_operating;
+            
+            // Si hay un aviso de término anticipado, calcular la fecha de término efectivo
+            const hasTerminationNotice = contract.termination_notices && contract.termination_notices.length > 0;
+            const terminationNotice = hasTerminationNotice ? contract.termination_notices[0] : null;
+            let endDate = originalEndDate;
+            
+            if (terminationNotice && currentVersion) {
+              const noticeDate = parseISO(terminationNotice.notice_date);
+              // El término efectivo es la fecha del aviso + los meses de aviso requeridos
+              const noticeMonths = currentVersion.notice_type === "meses" 
+                ? parseInt(currentVersion.notice_value) || 0 
+                : 0;
+              if (noticeMonths > 0) {
+                endDate = addMonths(noticeDate, noticeMonths);
+              }
+            }
 
             return (
               <TableRow
@@ -239,8 +255,15 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   <>
                     <TableCell className="text-center">
                       <div className="flex flex-col">
-                        <span className="text-sm">{endDate ? formatDateShort(endDate) : "-"}</span>
-                        {endDate && currentVersion && (() => {
+                        <span className={`text-sm ${hasTerminationNotice ? "text-amber-600 font-medium" : ""}`}>
+                          {endDate ? formatDateShort(endDate) : "-"}
+                        </span>
+                        {hasTerminationNotice && terminationNotice && (
+                          <span className="text-[9px] text-amber-600">
+                            Por aviso {terminationNotice.notice_type === 'sent' ? 'enviado' : 'recibido'}
+                          </span>
+                        )}
+                        {!hasTerminationNotice && endDate && currentVersion && (() => {
                           const startDate = currentVersion.effective_date
                             ? parseISO(currentVersion.effective_date)
                             : contract.signed_date
