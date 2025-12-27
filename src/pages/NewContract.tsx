@@ -651,25 +651,25 @@ const NewContract = () => {
                         Monto fijo en UF por prorrata de consumo eléctrico de clima
                       </p>
                     </div>
+
+                {/* Adicional por Administración - inside extended gastos comunes */}
+                    <div className="space-y-2">
+                      <Label htmlFor="adicionalAdministracionPercentageNew">Adicional por Administración (%)</Label>
+                      <Input
+                        id="adicionalAdministracionPercentageNew"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="Ej: 5"
+                        value={adicionalAdministracionPercentage}
+                        onChange={(e) => setAdicionalAdministracionPercentage(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Porcentaje sobre el Canon en Régimen (se suma a Gastos Comunes)
+                      </p>
+                    </div>
                   </div>
                 )}
-              </div>
-
-              {/* Adicional por Administración */}
-              <div className="space-y-2">
-                <Label htmlFor="adicionalAdministracionPercentageNew">Adicional por Administración (%)</Label>
-                <Input
-                  id="adicionalAdministracionPercentageNew"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="Ej: 5"
-                  value={adicionalAdministracionPercentage}
-                  onChange={(e) => setAdicionalAdministracionPercentage(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Porcentaje sobre el Canon en Régimen
-                </p>
               </div>
 
               {/* Fondo de Promoción */}

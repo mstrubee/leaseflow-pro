@@ -142,7 +142,7 @@ export function CommercialConditionsSummary({
     ? version.regime_rent / superficieEdificadaLocal
     : null;
 
-  // Gastos comunes calculation - sum of three factors
+  // Gastos comunes calculation - sum of all factors including adicional admin
   const gastosM2 = version.gastos_comunes_uf_m2 && superficieEdificadaLocal
     ? version.gastos_comunes_uf_m2 * superficieEdificadaLocal
     : 0;
@@ -151,8 +151,13 @@ export function CommercialConditionsSummary({
     : 0;
   const gastosKwhClima = version.gastos_comunes_prorrata_kwh_clima || 0;
   
-  const gastosComunesTotalUF = gastosM2 + gastosMlFrente + gastosKwhClima > 0
-    ? gastosM2 + gastosMlFrente + gastosKwhClima
+  // Adicional por administración is now part of gastos comunes
+  const adicionalAdminAmount = version.adicional_administracion_percentage
+    ? (version.adicional_administracion_percentage / 100) * version.regime_rent
+    : 0;
+  
+  const gastosComunesTotalUF = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdminAmount > 0
+    ? gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdminAmount
     : null;
   const gastosComunesTotalCLP = gastosComunesTotalUF && ufValue
     ? gastosComunesTotalUF * ufValue
@@ -161,11 +166,6 @@ export function CommercialConditionsSummary({
   // Fondo de promoción calculation
   const fondoPromocionAmount = version.fondo_promocion_percentage
     ? (version.fondo_promocion_percentage / 100) * version.regime_rent
-    : null;
-
-  // Adicional por administración calculation
-  const adicionalAdminAmount = version.adicional_administracion_percentage
-    ? (version.adicional_administracion_percentage / 100) * version.regime_rent
     : null;
 
   return (
@@ -302,11 +302,14 @@ export function CommercialConditionsSummary({
               <p className="text-sm font-medium">
                 {formatCurrency(gastosComunesTotalUF)}
               </p>
-              <p className="text-xs text-muted-foreground">
+              <div className="text-xs text-muted-foreground">
                 {gastosComunesTotalCLP && (
                   <span className="block">{formatCLP(gastosComunesTotalCLP)}</span>
                 )}
-              </p>
+                {adicionalAdminAmount > 0 && (
+                  <span className="block text-[10px]">(incl. {version.adicional_administracion_percentage}% adm.)</span>
+                )}
+              </div>
             </div>
           )}
 
@@ -322,22 +325,6 @@ export function CommercialConditionsSummary({
               </p>
               <p className="text-xs text-muted-foreground">
                 ({version.fondo_promocion_percentage}% del canon)
-              </p>
-            </div>
-          )}
-
-          {/* Adicional por Administración */}
-          {adicionalAdminAmount !== null && adicionalAdminAmount > 0 && (
-            <div className="space-y-1">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Percent className="h-3 w-3" />
-                Adic. Administración
-              </div>
-              <p className="text-sm font-medium">
-                {formatCurrency(adicionalAdminAmount)}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                ({version.adicional_administracion_percentage}% del canon)
               </p>
             </div>
           )}

@@ -192,27 +192,24 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                     const superficie = (contract.superficie_edificada_local || 0) + (contract.superficie_terreno || 0);
                     const metrosFrente = contract.metros_lineales_frente || 0;
                     
-                    // Gastos comunes: sum of all three factors
+                    // Gastos comunes: sum of all factors including adicional admin
                     const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
                     const gastosMlFrente = (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente;
                     const gastosKwhClima = currentVersion.gastos_comunes_prorrata_kwh_clima || 0;
-                    const gastosComunes = gastosM2 + gastosMlFrente + gastosKwhClima;
+                    const adicionalAdmin = currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100);
+                    const gastosComunesTotal = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
                     
                     // Fondo promoción
                     const fondoPromocion = currentVersion.regime_rent * ((currentVersion.fondo_promocion_percentage || 0) / 100);
                     
-                    // Adicional por administración (% del canon en régimen)
-                    const adicionalAdmin = currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100);
-                    
-                    const total = currentVersion.regime_rent + gastosComunes + fondoPromocion + adicionalAdmin;
+                    const total = currentVersion.regime_rent + gastosComunesTotal + fondoPromocion;
                     return (
                       <div className="flex flex-col items-center">
                         <span className="text-sm font-medium">{formatUF(total)}</span>
                         <div className="text-[9px] text-muted-foreground whitespace-nowrap">
                           <div>Canon: {formatUF(currentVersion.regime_rent)}</div>
-                          <div>GC: {formatUF(gastosComunes)}</div>
+                          <div>GC: {formatUF(gastosComunesTotal)}</div>
                           {fondoPromocion > 0 && <div>F. Prom: {formatUF(fondoPromocion)}</div>}
-                          {adicionalAdmin > 0 && <div>Adic. Adm: {formatUF(adicionalAdmin)}</div>}
                         </div>
                       </div>
                     );
