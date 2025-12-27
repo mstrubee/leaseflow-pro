@@ -1114,14 +1114,14 @@ const EditContract = () => {
                       </div>
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem value="fixed" id="adjFixed" />
-                        <Label htmlFor="adjFixed">Monto fijo (UF)</Label>
+                        <Label htmlFor="adjFixed">Monto fijo ({currency})</Label>
                       </div>
                     </RadioGroup>
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="adjustmentValue">
-                      {adjustmentType === "percentage" ? "Porcentaje de reajuste (%)" : "Monto de reajuste (UF)"}
+                      {adjustmentType === "percentage" ? "Porcentaje de reajuste (%)" : `Monto de reajuste (${currency})`}
                     </Label>
                     <Input
                       id="adjustmentValue"
