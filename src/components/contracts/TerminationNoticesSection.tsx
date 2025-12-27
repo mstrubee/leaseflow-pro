@@ -26,6 +26,7 @@ interface TerminationNotice {
   notice_date: string;
   document_url: string | null;
   storage_provider: string | null;
+  issuer_name: string | null;
   created_at: string;
 }
 
@@ -40,6 +41,7 @@ export function TerminationNoticesSection({ contractId, notices, onRefresh }: Te
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [noticeType, setNoticeType] = useState<"sent" | "received">("sent");
   const [noticeDate, setNoticeDate] = useState("");
+  const [issuerName, setIssuerName] = useState("");
   const [documentUrl, setDocumentUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -62,6 +64,7 @@ export function TerminationNoticesSection({ contractId, notices, onRefresh }: Te
           contract_id: contractId,
           notice_type: noticeType,
           notice_date: noticeDate,
+          issuer_name: issuerName || null,
           document_url: documentUrl || null,
         });
 
@@ -75,6 +78,7 @@ export function TerminationNoticesSection({ contractId, notices, onRefresh }: Te
       setIsDialogOpen(false);
       setNoticeType("sent");
       setNoticeDate("");
+      setIssuerName("");
       setDocumentUrl("");
       onRefresh();
     } catch (error: any) {
@@ -158,6 +162,16 @@ export function TerminationNoticesSection({ contractId, notices, onRefresh }: Te
                 </RadioGroup>
               </div>
               <div className="space-y-2">
+                <Label htmlFor="issuerName">Emisor del Aviso</Label>
+                <Input
+                  id="issuerName"
+                  type="text"
+                  placeholder="Nombre del emisor"
+                  value={issuerName}
+                  onChange={(e) => setIssuerName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="noticeDate">Fecha del Aviso *</Label>
                 <Input
                   id="noticeDate"
@@ -218,6 +232,7 @@ export function TerminationNoticesSection({ contractId, notices, onRefresh }: Te
                   </Badge>
                   <div>
                     <p className="text-sm font-medium">
+                      {notice.issuer_name && <span>{notice.issuer_name} - </span>}
                       {format(parseISO(notice.notice_date), "d 'de' MMMM 'de' yyyy", { locale: es })}
                     </p>
                     {notice.document_url && (
