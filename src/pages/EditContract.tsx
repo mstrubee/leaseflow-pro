@@ -921,15 +921,25 @@ const EditContract = () => {
                   />
                   <span className="text-sm text-muted-foreground">×</span>
                   <span className="text-sm text-muted-foreground">
-                    {regimeRent || "0"} UF
+                    {regimeRent || "0"} {currency}
                   </span>
                   <span className="text-sm text-muted-foreground">=</span>
                   <span className="text-sm font-medium">
                     {guaranteeMultiplier && regimeRent
-                      ? (parseFloat(guaranteeMultiplier) * parseFloat(regimeRent)).toFixed(2)
-                      : "0"} UF
+                      ? (parseFloat(guaranteeMultiplier) * parseFloat(regimeRent)).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                      : "0"} {currency}
                   </span>
                 </div>
+                {currency === "CLP" && ufValue > 0 && guaranteeMultiplier && regimeRent && (
+                  <p className="text-xs text-muted-foreground">
+                    ≈ {(parseFloat(guaranteeMultiplier) * convertPesosToUF(parseFloat(regimeRent))).toFixed(2)} UF
+                  </p>
+                )}
+                {currency === "UF" && ufValue > 0 && guaranteeMultiplier && regimeRent && (
+                  <p className="text-xs text-muted-foreground">
+                    ≈ ${Math.round(parseFloat(guaranteeMultiplier) * parseFloat(regimeRent) * ufValue).toLocaleString("es-CL")}
+                  </p>
+                )}
                 <p className="text-xs text-muted-foreground">
                   Monto de Garantía de Arriendo
                 </p>
