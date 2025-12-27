@@ -43,6 +43,7 @@ interface ContractVersion {
   gastos_comunes_prorrata_kwh_clima?: number | null;
   fondo_promocion_percentage: number | null;
   adicional_administracion_percentage?: number | null;
+  has_extended_gastos_comunes?: boolean | null;
   notice_ranges?: Array<{ start_month: number; end_month: number }>;
 }
 
@@ -122,7 +123,7 @@ const Contracts = () => {
       .select(`
         *,
         contract_addresses (region, commune),
-        contract_versions (id, regime_rent, duration_months, is_current, effective_date, notice_type, notice_value, gastos_comunes_uf_m2, gastos_comunes_uf_ml_frente, gastos_comunes_prorrata_kwh_clima, fondo_promocion_percentage, adicional_administracion_percentage, notice_ranges:notice_ranges(start_month, end_month)),
+        contract_versions (id, regime_rent, duration_months, is_current, effective_date, notice_type, notice_value, gastos_comunes_uf_m2, gastos_comunes_uf_ml_frente, gastos_comunes_prorrata_kwh_clima, fondo_promocion_percentage, adicional_administracion_percentage, has_extended_gastos_comunes, notice_ranges:notice_ranges(start_month, end_month)),
         termination_notices (id, notice_type, notice_date, document_url)
       `)
       .is("deleted_at", null)
