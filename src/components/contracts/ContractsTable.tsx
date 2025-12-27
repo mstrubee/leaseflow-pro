@@ -190,7 +190,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 </TableCell>
                 <TableCell className="text-center min-w-[140px]">
                   {currentVersion ? (() => {
-                    const superficie = (contract.superficie_edificada_local || 0) + (contract.superficie_terreno || 0);
+                    const superficie = contract.superficie_edificada_local || 0;
                     const metrosFrente = contract.metros_lineales_frente || 0;
                     const hasExtended = currentVersion.has_extended_gastos_comunes ?? false;
                     
