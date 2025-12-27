@@ -8,7 +8,6 @@ export type SectionKey =
   | "commercial"
   | "surfaces"
   | "documentVersions"
-  | "terminationNotices"
   | "repository"
   | "budget"
   | "gantt"
@@ -26,7 +25,6 @@ const DEFAULT_ORDER: SectionKey[] = [
   "commercial",
   "surfaces",
   "documentVersions",
-  "terminationNotices",
   "repository",
   "budget",
   "gantt",
