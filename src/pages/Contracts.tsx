@@ -249,8 +249,13 @@ const Contracts = () => {
       filtered = filtered.filter((contract) => {
         const currentVersion = contract.contract_versions?.find((v) => v.is_current);
         if (!currentVersion) return false;
-        const superficie = (contract.superficie_edificada_local || 0) + (contract.superficie_terreno || 0);
-        const gastosComunes = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
+        const superficie = contract.superficie_edificada_local || 0;
+        const hasExtended = currentVersion.has_extended_gastos_comunes ?? false;
+        const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
+        const gastosMlFrente = hasExtended ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * (contract.metros_lineales_frente || 0) : 0;
+        const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
+        const adicionalAdmin = hasExtended ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100) : 0;
+        const gastosComunes = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
         const fondoPromocion = currentVersion.regime_rent * ((currentVersion.fondo_promocion_percentage || 0) / 100);
         const total = currentVersion.regime_rent + gastosComunes + fondoPromocion;
         
