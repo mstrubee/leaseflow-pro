@@ -802,7 +802,10 @@ const EditContract = () => {
 
               <div className="space-y-2">
                 <Label>Moneda para edición</Label>
-                <Select value={currency} onValueChange={(v) => setCurrency(v as "UF" | "CLP")}>
+                <Select value={currency} onValueChange={(v) => {
+                  setCurrency(v as "UF" | "CLP");
+                  setHasUnsavedChanges(true);
+                }}>
                   <SelectTrigger className="w-32">
                     <SelectValue />
                   </SelectTrigger>
@@ -812,7 +815,9 @@ const EditContract = () => {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Los valores se almacenan en UF.
+                  {currency === "CLP" 
+                    ? "Los valores en CLP se convertirán a UF al guardar."
+                    : "Los valores se guardan en UF."}
                 </p>
               </div>
 
