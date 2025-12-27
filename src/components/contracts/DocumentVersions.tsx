@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, FileText, Check, Star, Upload, ChevronDown, ChevronRight, Cloud, Link, Send, FileCheck, Signature, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { Plus, FileText, Check, Star, Upload, ChevronDown, ChevronRight, Cloud, Link, Send, FileCheck, Signature, RefreshCw, Sparkles, Trash2, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { supabase } from "@/integrations/supabase/client";
@@ -146,9 +146,15 @@ export const DocumentVersions = ({
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [uploadedDocumentUrl, setUploadedDocumentUrl] = useState("");
 
-  // Delete confirmation dialog
+  // Delete confirmation dialogs (two-step)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteConfirmFinalOpen, setDeleteConfirmFinalOpen] = useState(false);
   const [docToDelete, setDocToDelete] = useState<string | null>(null);
+
+  // Edit file name dialog
+  const [editNameDialogOpen, setEditNameDialogOpen] = useState(false);
+  const [docToEditName, setDocToEditName] = useState<DocumentVersion | null>(null);
+  const [editedFileName, setEditedFileName] = useState("");
 
   useEffect(() => {
     loadCloudConnections();
@@ -346,6 +352,49 @@ export const DocumentVersions = ({
     }
   };
 
+  const handleOpenEditName = (doc: DocumentVersion) => {
+    setDocToEditName(doc);
+    const fileName = decodeURIComponent(doc.url.split('/').pop() || 'Documento');
+    setEditedFileName(fileName);
+    setEditNameDialogOpen(true);
+  };
+
+  const handleSaveFileName = async () => {
+    if (!docToEditName || !editedFileName.trim()) return;
+    
+    try {
+      // Update the URL by replacing the file name portion
+      const urlParts = docToEditName.url.split('/');
+      urlParts[urlParts.length - 1] = encodeURIComponent(editedFileName.trim());
+      const newUrl = urlParts.join('/');
+      
+      const { error } = await supabase
+        .from("contract_documents")
+        .update({ url: newUrl })
+        .eq("id", docToEditName.id);
+      
+      if (error) throw error;
+      
+      toast({
+        title: "Nombre actualizado",
+        description: "El nombre del archivo ha sido actualizado",
+      });
+      
+      // Trigger refresh by calling onDataImported if available
+      onDataImported?.();
+      
+      setEditNameDialogOpen(false);
+      setDocToEditName(null);
+      setEditedFileName("");
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo actualizar el nombre",
+      });
+    }
+  };
+
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString("es-CL", {
       year: "numeric",
@@ -455,9 +504,22 @@ export const DocumentVersions = ({
                             #{sortedDocuments.length - index}
                           </span>
                         </div>
-                        <p className="text-sm font-medium truncate mb-0.5">
-                          {decodeURIComponent(doc.url.split('/').pop() || 'Documento')}
-                        </p>
+                        <div className="flex items-center gap-1 mb-0.5">
+                          <p className="text-sm font-medium truncate">
+                            {decodeURIComponent(doc.url.split('/').pop() || 'Documento')}
+                          </p>
+                          {!readOnly && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 w-5 p-0 text-muted-foreground hover:text-foreground"
+                              onClick={() => handleOpenEditName(doc)}
+                              title="Editar nombre"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
                         <p className="text-xs text-muted-foreground truncate">
                           {formatDate(doc.uploaded_at)}
                         </p>
@@ -853,17 +915,46 @@ export const DocumentVersions = ({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Delete confirmation dialog */}
+      {/* Delete confirmation dialog - Step 1 */}
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar borrador?</AlertDialogTitle>
+            <AlertDialogTitle>¿Eliminar documento?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción no se puede deshacer. El documento será eliminado permanentemente.
+              ¿Está seguro que desea eliminar este documento?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setDocToDelete(null)}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setDeleteConfirmOpen(false);
+                setDeleteConfirmFinalOpen(true);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Sí, continuar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete confirmation dialog - Step 2 (Final) */}
+      <AlertDialog open={deleteConfirmFinalOpen} onOpenChange={setDeleteConfirmFinalOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive">⚠️ Confirmación final</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción NO se puede deshacer. El documento será eliminado permanentemente del sistema.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setDocToDelete(null);
+              setDeleteConfirmFinalOpen(false);
+            }}>
               Cancelar
             </AlertDialogCancel>
             <AlertDialogAction
@@ -872,15 +963,52 @@ export const DocumentVersions = ({
                   await onDeleteDocument(docToDelete);
                 }
                 setDocToDelete(null);
-                setDeleteConfirmOpen(false);
+                setDeleteConfirmFinalOpen(false);
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Eliminar
+              Eliminar permanentemente
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Edit file name dialog */}
+      <Dialog open={editNameDialogOpen} onOpenChange={setEditNameDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar nombre del archivo</DialogTitle>
+            <DialogDescription>
+              Ingrese el nuevo nombre para el archivo
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Nombre del archivo</Label>
+              <Input
+                value={editedFileName}
+                onChange={(e) => setEditedFileName(e.target.value)}
+                placeholder="Nombre del archivo"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setEditNameDialogOpen(false);
+              setDocToEditName(null);
+              setEditedFileName("");
+            }}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleSaveFileName} 
+              disabled={!editedFileName.trim()}
+            >
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };
