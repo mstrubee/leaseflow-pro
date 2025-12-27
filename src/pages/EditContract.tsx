@@ -88,6 +88,10 @@ const EditContract = () => {
   const [fondoPromocionPercentage, setFondoPromocionPercentage] = useState("");
   const [adicionalAdministracionPercentage, setAdicionalAdministracionPercentage] = useState("");
   
+  // Surface data for gastos comunes calculation
+  const [superficieEdificadaLocal, setSuperficieEdificadaLocal] = useState<number>(0);
+  const [metrosLinealesFrente, setMetrosLinealesFrente] = useState<number>(0);
+  
   const { ufValue, convertPesosToUF } = useEconomicIndicators();
 
   useEffect(() => {
@@ -112,6 +116,8 @@ const EditContract = () => {
       if (error) throw error;
 
       setName(data.name);
+      setSuperficieEdificadaLocal(data.superficie_edificada_local || 0);
+      setMetrosLinealesFrente(data.metros_lineales_frente || 0);
 
       const address = data.contract_addresses?.[0];
       if (address) {
@@ -1003,6 +1009,42 @@ const EditContract = () => {
                         Porcentaje sobre el Canon en Régimen (se suma a Gastos Comunes)
                       </p>
                     </div>
+                  </div>
+                )}
+
+                {/* Gastos Comunes Preview/Total */}
+                {(gastosComunesUfM2 || gastosComunesUfMlFrente || gastosComunesProrratKwhClima || adicionalAdministracionPercentage) && (
+                  <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 space-y-2">
+                    <p className="text-sm font-medium text-primary">Total Gastos Comunes Estimado:</p>
+                    {(() => {
+                      const gastosM2 = (parseFloat(gastosComunesUfM2) || 0) * superficieEdificadaLocal;
+                      const gastosMlFrente = (parseFloat(gastosComunesUfMlFrente) || 0) * metrosLinealesFrente;
+                      const gastosKwhClima = parseFloat(gastosComunesProrratKwhClima) || 0;
+                      const adicionalAdmin = (parseFloat(regimeRent) || 0) * ((parseFloat(adicionalAdministracionPercentage) || 0) / 100);
+                      const totalUF = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
+                      const totalCLP = totalUF * (ufValue || 0);
+                      
+                      return (
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Total:</span>
+                            <span className="font-semibold">{totalUF.toFixed(2)} UF</span>
+                          </div>
+                          {ufValue > 0 && (
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Equivalente:</span>
+                              <span className="font-medium">${Math.round(totalCLP).toLocaleString("es-CL")}</span>
+                            </div>
+                          )}
+                          <div className="text-[10px] text-muted-foreground mt-2 space-y-0.5">
+                            {gastosM2 > 0 && <div>UF/m² × {superficieEdificadaLocal}m² = {gastosM2.toFixed(2)} UF</div>}
+                            {gastosMlFrente > 0 && <div>UF/mL × {metrosLinealesFrente}mL = {gastosMlFrente.toFixed(2)} UF</div>}
+                            {gastosKwhClima > 0 && <div>Prorrata KWH Clima = {gastosKwhClima.toFixed(2)} UF</div>}
+                            {adicionalAdmin > 0 && <div>Adic. Admin ({adicionalAdministracionPercentage}%) = {adicionalAdmin.toFixed(2)} UF</div>}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
