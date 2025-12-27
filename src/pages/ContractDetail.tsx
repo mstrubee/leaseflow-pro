@@ -729,7 +729,7 @@ const ContractDetail = () => {
       } : undefined} onAddDocument={handleAddDocument} onMarkAsFinal={handleMarkAsFinal} onSendForSignature={handleSendForSignature} onMarkAsSigned={handleMarkAsSigned} onChangeDocumentType={handleChangeDocumentType} onDeleteDocument={handleDeleteDocument} readOnly={false} isRenegotiation={isSigned && hasActiveRenegotiation} isSigned={isSigned} hasActiveRenegotiation={hasActiveRenegotiation} onRenegotiationSuccess={loadContract} onDataImported={loadContract} />
 
         {/* Termination Notices Section - only for signed contracts */}
-        {isSigned && <TerminationNoticesSection contractId={contract.id} notices={contract.termination_notices || []} onRefresh={loadContract} />}
+        {isSigned && <TerminationNoticesSection contractId={contract.id} contractName={contract.name} notices={contract.termination_notices || []} onRefresh={loadContract} />}
 
         <RepositorySection contractId={contract.id} contractName={contract.name} contractStatus={contract.status} />
 
