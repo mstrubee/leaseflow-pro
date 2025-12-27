@@ -201,18 +201,34 @@ export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) 
 
     try {
       // Delete all invoices for this order first
-      await supabase.from("invoices").delete().eq("purchase_order_id", deleteOrder.id);
+      const { error: invoiceError } = await supabase
+        .from("invoices")
+        .delete()
+        .eq("purchase_order_id", deleteOrder.id);
+      
+      if (invoiceError) {
+        console.error("Error deleting invoices:", invoiceError);
+        throw invoiceError;
+      }
       
       // Delete the order
-      const { error } = await supabase.from("purchase_orders").delete().eq("id", deleteOrder.id);
-      if (error) throw error;
+      const { error } = await supabase
+        .from("purchase_orders")
+        .delete()
+        .eq("id", deleteOrder.id);
+      
+      if (error) {
+        console.error("Error deleting purchase order:", error);
+        throw error;
+      }
 
       toast({ title: "OC eliminada", description: `Orden de compra ${deleteOrder.order_number} eliminada` });
       setDeleteOrder(null);
       setDeleteStep(1);
-      loadOrders();
+      await loadOrders();
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
+      console.error("Delete error:", error);
+      toast({ variant: "destructive", title: "Error al eliminar", description: error.message });
     }
   };
 
