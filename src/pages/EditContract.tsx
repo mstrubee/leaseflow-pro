@@ -81,8 +81,12 @@ const EditContract = () => {
   const [adjustmentPeriodicityMonths, setAdjustmentPeriodicityMonths] = useState("");
   
   // Gastos comunes and fondo promoción
+  const [hasExtendedGastosComunes, setHasExtendedGastosComunes] = useState(false);
   const [gastosComunesUfM2, setGastosComunesUfM2] = useState("");
+  const [gastosComunesUfMlFrente, setGastosComunesUfMlFrente] = useState("");
+  const [gastosComunesProrratKwhClima, setGastosComunesProrratKwhClima] = useState("");
   const [fondoPromocionPercentage, setFondoPromocionPercentage] = useState("");
+  const [adicionalAdministracionPercentage, setAdicionalAdministracionPercentage] = useState("");
   
   const { ufValue, convertPesosToUF } = useEconomicIndicators();
 
@@ -196,7 +200,16 @@ const EditContract = () => {
         
         // Load gastos comunes and fondo promoción
         setGastosComunesUfM2(version.gastos_comunes_uf_m2?.toString() || "");
+        setGastosComunesUfMlFrente((version as any).gastos_comunes_uf_ml_frente?.toString() || "");
+        setGastosComunesProrratKwhClima((version as any).gastos_comunes_prorrata_kwh_clima?.toString() || "");
         setFondoPromocionPercentage(version.fondo_promocion_percentage?.toString() || "");
+        setAdicionalAdministracionPercentage((version as any).adicional_administracion_percentage?.toString() || "");
+        
+        // Set extended gastos comunes if any extended field is set
+        setHasExtendedGastosComunes(
+          !!(version as any).gastos_comunes_uf_ml_frente || 
+          !!(version as any).gastos_comunes_prorrata_kwh_clima
+        );
         
         // Load notice bilaterality
         setNoticeBilaterality((version as any).notice_bilaterality || "unilateral_gp");
@@ -310,7 +323,10 @@ const EditContract = () => {
             first_adjustment_month: hasPeriodicAdjustments && firstAdjustmentMonth ? parseInt(firstAdjustmentMonth) : null,
             adjustment_periodicity_months: hasPeriodicAdjustments && adjustmentPeriodicityMonths ? parseInt(adjustmentPeriodicityMonths) : null,
             gastos_comunes_uf_m2: gastosComunesUfM2 ? parseFloat(gastosComunesUfM2) : null,
+            gastos_comunes_uf_ml_frente: gastosComunesUfMlFrente ? parseFloat(gastosComunesUfMlFrente) : null,
+            gastos_comunes_prorrata_kwh_clima: gastosComunesProrratKwhClima ? parseFloat(gastosComunesProrratKwhClima) : null,
             fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
+            adicional_administracion_percentage: adicionalAdministracionPercentage ? parseFloat(adicionalAdministracionPercentage) : null,
             notice_bilaterality: noticeBilaterality,
             grace_months: graceMonths || 0,
           } as any)
@@ -339,7 +355,10 @@ const EditContract = () => {
             first_adjustment_month: hasPeriodicAdjustments && firstAdjustmentMonth ? parseInt(firstAdjustmentMonth) : null,
             adjustment_periodicity_months: hasPeriodicAdjustments && adjustmentPeriodicityMonths ? parseInt(adjustmentPeriodicityMonths) : null,
             gastos_comunes_uf_m2: gastosComunesUfM2 ? parseFloat(gastosComunesUfM2) : null,
+            gastos_comunes_uf_ml_frente: gastosComunesUfMlFrente ? parseFloat(gastosComunesUfMlFrente) : null,
+            gastos_comunes_prorrata_kwh_clima: gastosComunesProrratKwhClima ? parseFloat(gastosComunesProrratKwhClima) : null,
             fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
+            adicional_administracion_percentage: adicionalAdministracionPercentage ? parseFloat(adicionalAdministracionPercentage) : null,
             notice_bilaterality: noticeBilaterality,
           } as any)
           .select()
@@ -910,19 +929,81 @@ const EditContract = () => {
               </div>
 
               {/* Gastos Comunes */}
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="hasExtendedGastosComunes"
+                    checked={hasExtendedGastosComunes}
+                    onChange={(e) => {
+                      setHasExtendedGastosComunes(e.target.checked);
+                      setHasUnsavedChanges(true);
+                    }}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  <Label htmlFor="hasExtendedGastosComunes" className="text-sm font-medium">
+                    Ampliar metodología de cálculo de Gastos Comunes
+                  </Label>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="gastosComunesUfM2">Gastos Comunes (UF/m² de superficie)</Label>
+                  <Input
+                    id="gastosComunesUfM2"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="Ej: 0.05"
+                    value={gastosComunesUfM2}
+                    onChange={(e) => setGastosComunesUfM2(e.target.value)}
+                  />
+                </div>
+
+                {hasExtendedGastosComunes && (
+                  <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
+                    <div className="space-y-2">
+                      <Label htmlFor="gastosComunesUfMlFrente">Gastos Comunes (UF/mL de frente)</Label>
+                      <Input
+                        id="gastosComunesUfMlFrente"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="Ej: 0.10"
+                        value={gastosComunesUfMlFrente}
+                        onChange={(e) => setGastosComunesUfMlFrente(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="gastosComunesProrratKwhClima">Prorrata KWH Clima (UF)</Label>
+                      <Input
+                        id="gastosComunesProrratKwhClima"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="Ej: 5.00"
+                        value={gastosComunesProrratKwhClima}
+                        onChange={(e) => setGastosComunesProrratKwhClima(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Adicional por Administración */}
               <div className="space-y-2">
-                <Label htmlFor="gastosComunesUfM2">Gastos Comunes (UF/m²)</Label>
+                <Label htmlFor="adicionalAdministracionPercentage">Adicional por Administración (%)</Label>
                 <Input
-                  id="gastosComunesUfM2"
+                  id="adicionalAdministracionPercentage"
                   type="number"
                   step="0.01"
                   min="0"
-                  placeholder="Ej: 0.05"
-                  value={gastosComunesUfM2}
-                  onChange={(e) => setGastosComunesUfM2(e.target.value)}
+                  placeholder="Ej: 5"
+                  value={adicionalAdministracionPercentage}
+                  onChange={(e) => setAdicionalAdministracionPercentage(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Se multiplica por la Superficie Edificada Local
+                  Porcentaje sobre el Canon en Régimen
                 </p>
               </div>
 
