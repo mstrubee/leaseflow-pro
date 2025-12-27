@@ -1013,14 +1013,15 @@ const EditContract = () => {
                 )}
 
                 {/* Gastos Comunes Preview/Total */}
-                {(gastosComunesUfM2 || gastosComunesUfMlFrente || gastosComunesProrratKwhClima || adicionalAdministracionPercentage) && (
+                {(gastosComunesUfM2 || (hasExtendedGastosComunes && (gastosComunesUfMlFrente || gastosComunesProrratKwhClima || adicionalAdministracionPercentage))) && (
                   <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 space-y-2">
                     <p className="text-sm font-medium text-primary">Total Gastos Comunes Estimado:</p>
                     {(() => {
                       const gastosM2 = (parseFloat(gastosComunesUfM2) || 0) * superficieEdificadaLocal;
-                      const gastosMlFrente = (parseFloat(gastosComunesUfMlFrente) || 0) * metrosLinealesFrente;
-                      const gastosKwhClima = parseFloat(gastosComunesProrratKwhClima) || 0;
-                      const adicionalAdmin = (parseFloat(regimeRent) || 0) * ((parseFloat(adicionalAdministracionPercentage) || 0) / 100);
+                      // Only include extended fields if checkbox is checked
+                      const gastosMlFrente = hasExtendedGastosComunes ? (parseFloat(gastosComunesUfMlFrente) || 0) * metrosLinealesFrente : 0;
+                      const gastosKwhClima = hasExtendedGastosComunes ? (parseFloat(gastosComunesProrratKwhClima) || 0) : 0;
+                      const adicionalAdmin = hasExtendedGastosComunes ? (parseFloat(regimeRent) || 0) * ((parseFloat(adicionalAdministracionPercentage) || 0) / 100) : 0;
                       const totalUF = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
                       const totalCLP = totalUF * (ufValue || 0);
                       
