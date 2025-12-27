@@ -455,7 +455,10 @@ export const DocumentVersions = ({
                             #{sortedDocuments.length - index}
                           </span>
                         </div>
-                        <p className="text-sm text-muted-foreground truncate">
+                        <p className="text-sm font-medium truncate mb-0.5">
+                          {decodeURIComponent(doc.url.split('/').pop() || 'Documento')}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">
                           {formatDate(doc.uploaded_at)}
                         </p>
                       </div>
