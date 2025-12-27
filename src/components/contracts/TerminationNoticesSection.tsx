@@ -6,8 +6,9 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, FileCheck, FilePlus, ExternalLink, Loader2 } from "lucide-react";
+import { Plus, Trash2, FileCheck, FilePlus, ExternalLink, Loader2, Bell } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import {
@@ -32,17 +33,21 @@ interface TerminationNotice {
 
 interface TerminationNoticesSectionProps {
   contractId: string;
+  contractName?: string;
   notices: TerminationNotice[];
   onRefresh: () => void;
 }
 
-export function TerminationNoticesSection({ contractId, notices, onRefresh }: TerminationNoticesSectionProps) {
+export function TerminationNoticesSection({ contractId, contractName, notices, onRefresh }: TerminationNoticesSectionProps) {
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [noticeType, setNoticeType] = useState<"sent" | "received">("sent");
   const [noticeDate, setNoticeDate] = useState("");
   const [issuerName, setIssuerName] = useState("");
   const [documentUrl, setDocumentUrl] = useState("");
+  const [createAlert, setCreateAlert] = useState(false);
+  const [alertDaysBefore, setAlertDaysBefore] = useState("7");
+  const [alertRecipientEmail, setAlertRecipientEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -58,7 +63,8 @@ export function TerminationNoticesSection({ contractId, notices, onRefresh }: Te
 
     setSaving(true);
     try {
-      const { error } = await supabase
+      // Insert the termination notice
+      const { data: noticeData, error: noticeError } = await supabase
         .from("termination_notices")
         .insert({
           contract_id: contractId,
@@ -66,13 +72,52 @@ export function TerminationNoticesSection({ contractId, notices, onRefresh }: Te
           notice_date: noticeDate,
           issuer_name: issuerName || null,
           document_url: documentUrl || null,
-        });
+        })
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (noticeError) throw noticeError;
+
+      // Create alert if requested
+      if (createAlert && noticeData) {
+        const daysBefore = parseInt(alertDaysBefore) || 7;
+        const alertTitle = `Seguimiento aviso de término${contractName ? `: ${contractName}` : ""}`;
+        const alertMessage = `Aviso de término ${noticeType === "sent" ? "enviado" : "recibido"}${issuerName ? ` por ${issuerName}` : ""} el ${format(parseISO(noticeDate), "d 'de' MMMM 'de' yyyy", { locale: es })}`;
+
+        const { data: alertData, error: alertError } = await supabase
+          .from("alerts")
+          .insert({
+            contract_id: contractId,
+            title: alertTitle,
+            message: alertMessage,
+            alert_type: "early_termination_notice",
+            alert_subtype: noticeType,
+            due_date: noticeDate,
+            days_before: [daysBefore],
+            channels: ["email"],
+            is_active: true,
+            item_type: "termination_notice",
+            item_id: noticeData.id,
+          })
+          .select()
+          .single();
+
+        if (alertError) {
+          console.error("Error creating alert:", alertError);
+        } else if (alertData && alertRecipientEmail) {
+          // Add recipient
+          await supabase
+            .from("alert_recipients")
+            .insert({
+              alert_id: alertData.id,
+              email: alertRecipientEmail,
+            });
+        }
+      }
 
       toast({
         title: "Aviso registrado",
-        description: `Aviso de término ${noticeType === "sent" ? "enviado" : "recibido"} registrado correctamente`,
+        description: `Aviso de término ${noticeType === "sent" ? "enviado" : "recibido"} registrado correctamente${createAlert ? " con alerta configurada" : ""}`,
       });
 
       setIsDialogOpen(false);
@@ -80,6 +125,9 @@ export function TerminationNoticesSection({ contractId, notices, onRefresh }: Te
       setNoticeDate("");
       setIssuerName("");
       setDocumentUrl("");
+      setCreateAlert(false);
+      setAlertDaysBefore("7");
+      setAlertRecipientEmail("");
       onRefresh();
     } catch (error: any) {
       toast({
@@ -95,6 +143,13 @@ export function TerminationNoticesSection({ contractId, notices, onRefresh }: Te
   const handleDeleteNotice = async (noticeId: string) => {
     setDeletingId(noticeId);
     try {
+      // Also delete any associated alerts
+      await supabase
+        .from("alerts")
+        .delete()
+        .eq("item_type", "termination_notice")
+        .eq("item_id", noticeId);
+
       const { error } = await supabase
         .from("termination_notices")
         .delete()
@@ -130,7 +185,7 @@ export function TerminationNoticesSection({ contractId, notices, onRefresh }: Te
               Registrar Aviso
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Registrar Aviso de Término</DialogTitle>
               <DialogDescription>
@@ -190,9 +245,47 @@ export function TerminationNoticesSection({ contractId, notices, onRefresh }: Te
                   value={documentUrl}
                   onChange={(e) => setDocumentUrl(e.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Enlace al documento escaneado del aviso
-                </p>
+              </div>
+
+              {/* Alert configuration */}
+              <div className="border-t pt-4 space-y-3">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="createAlert"
+                    checked={createAlert}
+                    onCheckedChange={(checked) => setCreateAlert(checked as boolean)}
+                  />
+                  <Label htmlFor="createAlert" className="flex items-center gap-2 cursor-pointer">
+                    <Bell className="h-4 w-4" />
+                    Crear alerta de seguimiento
+                  </Label>
+                </div>
+
+                {createAlert && (
+                  <div className="pl-6 space-y-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="alertDaysBefore">Días antes para alertar</Label>
+                      <Input
+                        id="alertDaysBefore"
+                        type="number"
+                        min="1"
+                        value={alertDaysBefore}
+                        onChange={(e) => setAlertDaysBefore(e.target.value)}
+                        className="w-24"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="alertEmail">Email para notificación</Label>
+                      <Input
+                        id="alertEmail"
+                        type="email"
+                        placeholder="correo@ejemplo.com"
+                        value={alertRecipientEmail}
+                        onChange={(e) => setAlertRecipientEmail(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
             <DialogFooter>
