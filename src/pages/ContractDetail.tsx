@@ -965,30 +965,21 @@ const ContractDetail = () => {
                         onRenegotiationSuccess={loadContract}
                         onDataImported={loadContract}
                       />
+
+                      {/* Termination Notices - only for signed contracts */}
+                      {isSigned && (
+                        <div className="mt-6">
+                          <TerminationNoticesSection
+                            contractId={contract.id}
+                            contractName={contract.name}
+                            notices={contract.termination_notices || []}
+                            onRefresh={loadContract}
+                          />
+                        </div>
+                      )}
                     </CollapsibleSection>
                   );
 
-                case "terminationNotices":
-                  if (!isSigned) return null;
-                  return (
-                    <CollapsibleSection
-                      key={sectionKey}
-                      id={sectionKey}
-                      title="Avisos de Término"
-                      icon={<AlertCircle className="h-5 w-5" />}
-                      isCollapsed={isCollapsed(sectionKey)}
-                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                      isDraggable={canReorder}
-                      wrapperOnly
-                    >
-                      <TerminationNoticesSection
-                        contractId={contract.id}
-                        contractName={contract.name}
-                        notices={contract.termination_notices || []}
-                        onRefresh={loadContract}
-                      />
-                    </CollapsibleSection>
-                  );
 
                 case "repository":
                   return (
