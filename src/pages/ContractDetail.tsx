@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, History, Trash2 } from "lucide-react";
+import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, History, Trash2, ChevronsUpDown, RotateCcw } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { DocumentVersions, DocumentVersion } from "@/components/contracts/DocumentVersions";
@@ -19,6 +19,29 @@ import { GanttModule } from "@/components/gantt/GanttModule";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { ImportAuditSection } from "@/components/contracts/ImportAuditSection";
 import { TerminationNoticesSection } from "@/components/contracts/TerminationNoticesSection";
+import { CollapsibleSection } from "@/components/contracts/CollapsibleSection";
+import { useContractSections, SectionKey } from "@/hooks/useContractSections";
+import { useAuth } from "@/hooks/useAuth";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 interface Contract {
   id: string;
   name: string;
@@ -89,12 +112,39 @@ const ContractDetail = () => {
   const {
     toast
   } = useToast();
+  const { isAdmin } = useAuth();
+  const {
+    sections,
+    reorderSections,
+    isCollapsed,
+    setCollapsed,
+    collapseAll,
+    expandAll,
+    resetToDefault,
+    canReorder,
+  } = useContractSections();
+  
   const [contract, setContract] = useState<Contract | null>(null);
   const [loading, setLoading] = useState(true);
   const [signingContract, setSigningContract] = useState(false);
   const [showDeleteConfirm1, setShowDeleteConfirm1] = useState(false);
   const [showDeleteConfirm2, setShowDeleteConfirm2] = useState(false);
   const [deletingRenegotiation, setDeletingRenegotiation] = useState(false);
+
+  // DnD sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      reorderSections(active.id as string, over.id as string);
+    }
+  };
 
   // Dynamic superficie for real-time recalculation
   const [superficieEdificada, setSuperficieEdificada] = useState<number | null>(null);
@@ -508,268 +558,492 @@ const ContractDetail = () => {
       </header>
 
       <main className="max-w-15xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MapPin className="h-5 w-5" />
-              Dirección
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {address ? <div className="space-y-1">
-                <p className="text-lg font-medium">
-                  {address.street} {address.number}
-                </p>
-                <p className="text-muted-foreground">
-                  {address.commune}, {address.region}
-                </p>
-                <p className="text-muted-foreground">{address.country}</p>
-              </div> : <p className="text-muted-foreground">No hay dirección registrada</p>}
-          </CardContent>
-        </Card>
+        {/* Section controls for admin */}
+        {isAdmin && (
+          <div className="flex items-center justify-end gap-2 mb-4">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" onClick={collapseAll}>
+                    <ChevronsUpDown className="h-4 w-4 mr-1" />
+                    Colapsar todo
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Colapsar todas las secciones</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" onClick={expandAll}>
+                    <ChevronsUpDown className="h-4 w-4 mr-1" />
+                    Expandir todo
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Expandir todas las secciones</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="sm" onClick={resetToDefault}>
+                    <RotateCcw className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Restablecer orden predeterminado</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <User className="h-5 w-5" />
-              Contacto
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {contact && (contact.company || contact.name || contact.phone || contact.email) ? <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {contact.company && <div>
-                    <p className="text-sm text-muted-foreground">Empresa</p>
-                    <p className="font-medium">{contact.company}</p>
-                  </div>}
-                {contact.name && <div>
-                    <p className="text-sm text-muted-foreground">Nombre</p>
-                    <p className="font-medium">{contact.name}</p>
-                  </div>}
-                <div>
-                  <p className="text-sm text-muted-foreground">Teléfono</p>
-                  <p className="font-medium">{contact.phone || "No se ha entregado"}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Email</p>
-                  {contact.email ? <div className="space-y-1">
-                      {contact.email.split(/[,;]/).map((email, idx) => <p key={idx} className="font-medium">{email.trim()}</p>)}
-                    </div> : <p className="font-medium text-muted-foreground">No se ha entregado</p>}
-                </div>
-              </div> : <p className="text-muted-foreground">No hay contacto registrado. Use el botón Editar de la parte superior para agregar.</p>}
-          </CardContent>
-        </Card>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={sections.map((s) => s.key)}
+            strategy={verticalListSortingStrategy}
+          >
+            {sections.map((section) => {
+              const sectionKey = section.key as SectionKey;
 
-        {/* Condiciones Comerciales - Compact Summary */}
-        {displayVersion && <CommercialConditionsSummary version={{
-        id: displayVersion.id,
-        version_number: displayVersion.version_number,
-        is_current: displayVersion.is_current,
-        is_renegotiation: displayVersion.is_renegotiation,
-        initial_rent: displayVersion.initial_rent,
-        regime_rent: displayVersion.regime_rent,
-        variable_rent_percentage: displayVersion.variable_rent_percentage,
-        duration_months: displayVersion.duration_months,
-        notice_type: displayVersion.notice_type,
-        notice_value: displayVersion.notice_value,
-        effective_date: displayVersion.effective_date,
-        guarantee_multiplier: displayVersion.guarantee_multiplier,
-        has_periodic_adjustments: displayVersion.has_periodic_adjustments,
-        first_adjustment_month: displayVersion.first_adjustment_month,
-        adjustment_periodicity_months: displayVersion.adjustment_periodicity_months,
-        gastos_comunes_uf_m2: (displayVersion as any).gastos_comunes_uf_m2,
-        gastos_comunes_uf_ml_frente: (displayVersion as any).gastos_comunes_uf_ml_frente,
-        gastos_comunes_prorrata_kwh_clima: (displayVersion as any).gastos_comunes_prorrata_kwh_clima,
-        fondo_promocion_percentage: (displayVersion as any).fondo_promocion_percentage,
-        adicional_administracion_percentage: (displayVersion as any).adicional_administracion_percentage,
-        has_extended_gastos_comunes: (displayVersion as any).has_extended_gastos_comunes,
-        grace_months: (displayVersion as any).grace_months,
-        notice_bilaterality: (displayVersion as any).notice_bilaterality,
-        adjustment_type: (displayVersion as any).adjustment_type,
-        adjustment_value: (displayVersion as any).adjustment_value,
-        rent_escalations: displayVersion.rent_escalations || []
-      }} signedDate={contract.signed_date} allVersions={allVersions} superficieEdificadaLocal={superficieEdificada ?? contract.superficie_edificada_local} metrosLinealesFrente={contract.metros_lineales_frente} contractId={contract.id} showRenegotiationButton={isSigned} hasActiveRenegotiation={hasActiveRenegotiation} onRenegotiationSuccess={loadContract} displayCurrency={contract.display_currency} />}
-
-        {/* AI Import Audit Section */}
-        <ImportAuditSection contractId={contract.id} />
-
-        {/* Superficies y Datos - Independent Section */}
-        <ContractSurfacesSection contractId={contract.id} onSurfaceChange={superficie => setSuperficieEdificada(superficie)} />
-
-        {/* Actions for editing - only for negotiating contracts */}
-        {isNegotiating && currentVersion && <Card className="p-4">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">Gestionar condiciones comerciales</p>
-              <div className="flex items-center gap-2">
-                <EscalationDialog escalations={currentVersion.rent_escalations?.map(e => ({
-              id: e.id,
-              month_number: e.month_number,
-              amount: e.amount
-            })) || []} initialRent={currentVersion.initial_rent || currentVersion.regime_rent} regimeRent={currentVersion.regime_rent} durationMonths={currentVersion.duration_months} onSave={handleSaveEscalations} />
-              </div>
-            </div>
-          </Card>}
-
-        {/* Renegotiation in progress notice */}
-        {hasActiveRenegotiation && <Card className="p-4 border-amber-500/30 bg-amber-500/5">
-            <p className="text-sm text-amber-700 dark:text-amber-400">
-              ⚠️ Hay una renegociación en curso. Las condiciones mostradas son las vigentes hasta que se firme la renegociación.
-            </p>
-          </Card>}
-
-        {/* Version History */}
-        {allVersions.length > 1 && <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <History className="h-5 w-5" />
-                Historial de Versiones
-              </CardTitle>
-              <CardDescription>
-                Este contrato tiene {allVersions.length} versiones. Haz clic en una renegociación para editarla.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {allVersions.map(version => <div key={version.id} className={`p-4 rounded-lg border transition-colors ${version.is_current ? "border-primary bg-primary/5" : "border-border bg-muted/30"} ${version.is_renegotiation && version.is_current ? "cursor-pointer hover:bg-primary/10" : ""}`} onClick={() => {
-              if (version.is_renegotiation && version.is_current) {
-                navigate(`/contracts/${contract.id}/edit`);
-              }
-            }}>
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold">Versión {version.version_number}</span>
-                          {version.is_current && <Badge variant="default">Actual</Badge>}
-                          {version.is_renegotiation && <Badge variant="secondary">Renegociación</Badge>}
+              // Render each section based on its key
+              switch (sectionKey) {
+                case "address":
+                  return (
+                    <CollapsibleSection
+                      key={sectionKey}
+                      id={sectionKey}
+                      title="Dirección"
+                      icon={<MapPin className="h-5 w-5" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                    >
+                      {address ? (
+                        <div className="space-y-1">
+                          <p className="text-lg font-medium">
+                            {address.street} {address.number}
+                          </p>
+                          <p className="text-muted-foreground">
+                            {address.commune}, {address.region}
+                          </p>
+                          <p className="text-muted-foreground">{address.country}</p>
                         </div>
-                        <div className="text-sm text-muted-foreground">
-                          Canon: {formatCurrency(version.regime_rent)} · {version.duration_months} meses
-                          {version.variable_rent_percentage && ` · Variable: ${version.variable_rent_percentage}%`}
+                      ) : (
+                        <p className="text-muted-foreground">No hay dirección registrada</p>
+                      )}
+                    </CollapsibleSection>
+                  );
+
+                case "contact":
+                  return (
+                    <CollapsibleSection
+                      key={sectionKey}
+                      id={sectionKey}
+                      title="Contacto"
+                      icon={<User className="h-5 w-5" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                    >
+                      {contact && (contact.company || contact.name || contact.phone || contact.email) ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {contact.company && (
+                            <div>
+                              <p className="text-sm text-muted-foreground">Empresa</p>
+                              <p className="font-medium">{contact.company}</p>
+                            </div>
+                          )}
+                          {contact.name && (
+                            <div>
+                              <p className="text-sm text-muted-foreground">Nombre</p>
+                              <p className="font-medium">{contact.name}</p>
+                            </div>
+                          )}
+                          <div>
+                            <p className="text-sm text-muted-foreground">Teléfono</p>
+                            <p className="font-medium">{contact.phone || "No se ha entregado"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Email</p>
+                            {contact.email ? (
+                              <div className="space-y-1">
+                                {contact.email.split(/[,;]/).map((email, idx) => (
+                                  <p key={idx} className="font-medium">{email.trim()}</p>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="font-medium text-muted-foreground">No se ha entregado</p>
+                            )}
+                          </div>
                         </div>
-                        {version.effective_date && <div className="text-sm text-muted-foreground">
-                            Vigente desde: {formatDate(version.effective_date)}
-                          </div>}
-                        {/* Delete renegotiation button */}
-                        {version.is_renegotiation && version.is_current && <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10 gap-1 mt-2" onClick={e => {
-                    e.stopPropagation();
-                    setShowDeleteConfirm1(true);
-                  }}>
-                            <Trash2 className="h-3 w-3" />
-                            Eliminar Renegociación
-                          </Button>}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {formatDate(version.created_at)}
-                      </div>
+                      ) : (
+                        <p className="text-muted-foreground">
+                          No hay contacto registrado. Use el botón Editar de la parte superior para agregar.
+                        </p>
+                      )}
+                    </CollapsibleSection>
+                  );
+
+                case "commercial":
+                  if (!displayVersion) return null;
+                  return (
+                    <div key={sectionKey}>
+                      <CommercialConditionsSummary
+                        version={{
+                          id: displayVersion.id,
+                          version_number: displayVersion.version_number,
+                          is_current: displayVersion.is_current,
+                          is_renegotiation: displayVersion.is_renegotiation,
+                          initial_rent: displayVersion.initial_rent,
+                          regime_rent: displayVersion.regime_rent,
+                          variable_rent_percentage: displayVersion.variable_rent_percentage,
+                          duration_months: displayVersion.duration_months,
+                          notice_type: displayVersion.notice_type,
+                          notice_value: displayVersion.notice_value,
+                          effective_date: displayVersion.effective_date,
+                          guarantee_multiplier: displayVersion.guarantee_multiplier,
+                          has_periodic_adjustments: displayVersion.has_periodic_adjustments,
+                          first_adjustment_month: displayVersion.first_adjustment_month,
+                          adjustment_periodicity_months: displayVersion.adjustment_periodicity_months,
+                          gastos_comunes_uf_m2: (displayVersion as any).gastos_comunes_uf_m2,
+                          gastos_comunes_uf_ml_frente: (displayVersion as any).gastos_comunes_uf_ml_frente,
+                          gastos_comunes_prorrata_kwh_clima: (displayVersion as any).gastos_comunes_prorrata_kwh_clima,
+                          fondo_promocion_percentage: (displayVersion as any).fondo_promocion_percentage,
+                          adicional_administracion_percentage: (displayVersion as any).adicional_administracion_percentage,
+                          has_extended_gastos_comunes: (displayVersion as any).has_extended_gastos_comunes,
+                          grace_months: (displayVersion as any).grace_months,
+                          notice_bilaterality: (displayVersion as any).notice_bilaterality,
+                          adjustment_type: (displayVersion as any).adjustment_type,
+                          adjustment_value: (displayVersion as any).adjustment_value,
+                          rent_escalations: displayVersion.rent_escalations || [],
+                        }}
+                        signedDate={contract.signed_date}
+                        allVersions={allVersions}
+                        superficieEdificadaLocal={superficieEdificada ?? contract.superficie_edificada_local}
+                        metrosLinealesFrente={contract.metros_lineales_frente}
+                        contractId={contract.id}
+                        showRenegotiationButton={isSigned}
+                        hasActiveRenegotiation={hasActiveRenegotiation}
+                        onRenegotiationSuccess={loadContract}
+                        displayCurrency={contract.display_currency}
+                      />
                     </div>
-                  </div>)}
-              </div>
-            </CardContent>
-          </Card>}
+                  );
 
-        {/* Delete renegotiation confirmation dialogs */}
-        <AlertDialog open={showDeleteConfirm1} onOpenChange={setShowDeleteConfirm1}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>¿Eliminar la renegociación?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Esta acción eliminará la renegociación en curso y todos sus documentos asociados.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={() => {
-              setShowDeleteConfirm1(false);
-              setShowDeleteConfirm2(true);
-            }} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                Continuar
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+                case "importAudit":
+                  return (
+                    <div key={sectionKey}>
+                      <ImportAuditSection contractId={contract.id} />
+                    </div>
+                  );
 
-        <AlertDialog open={showDeleteConfirm2} onOpenChange={setShowDeleteConfirm2}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Confirmar Eliminación de Renegociación</AlertDialogTitle>
-              <AlertDialogDescription>
-                ¿Estás seguro? Esta acción no se puede deshacer. Se eliminarán todos los borradores de la renegociación.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={deletingRenegotiation}>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={() => {
-              if (currentRenegotiation) {
-                handleDeleteRenegotiation(currentRenegotiation.id);
+                case "surfaces":
+                  return (
+                    <div key={sectionKey}>
+                      <ContractSurfacesSection
+                        contractId={contract.id}
+                        onSurfaceChange={(superficie) => setSuperficieEdificada(superficie)}
+                      />
+                    </div>
+                  );
+
+                case "documentVersions":
+                  return (
+                    <div key={sectionKey}>
+                      {/* Actions for editing - only for negotiating contracts */}
+                      {isNegotiating && currentVersion && (
+                        <Card className="p-4 mb-6">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm text-muted-foreground">Gestionar condiciones comerciales</p>
+                            <div className="flex items-center gap-2">
+                              <EscalationDialog
+                                escalations={currentVersion.rent_escalations?.map((e) => ({
+                                  id: e.id,
+                                  month_number: e.month_number,
+                                  amount: e.amount,
+                                })) || []}
+                                initialRent={currentVersion.initial_rent || currentVersion.regime_rent}
+                                regimeRent={currentVersion.regime_rent}
+                                durationMonths={currentVersion.duration_months}
+                                onSave={handleSaveEscalations}
+                              />
+                            </div>
+                          </div>
+                        </Card>
+                      )}
+
+                      {/* Renegotiation in progress notice */}
+                      {hasActiveRenegotiation && (
+                        <Card className="p-4 border-amber-500/30 bg-amber-500/5 mb-6">
+                          <p className="text-sm text-amber-700 dark:text-amber-400">
+                            ⚠️ Hay una renegociación en curso. Las condiciones mostradas son las vigentes hasta que se firme la renegociación.
+                          </p>
+                        </Card>
+                      )}
+
+                      {/* Version History */}
+                      {allVersions.length > 1 && (
+                        <Card className="mb-6">
+                          <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                              <History className="h-5 w-5" />
+                              Historial de Versiones
+                            </CardTitle>
+                            <CardDescription>
+                              Este contrato tiene {allVersions.length} versiones. Haz clic en una renegociación para editarla.
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-3">
+                              {allVersions.map((version) => (
+                                <div
+                                  key={version.id}
+                                  className={`p-4 rounded-lg border transition-colors ${
+                                    version.is_current ? "border-primary bg-primary/5" : "border-border bg-muted/30"
+                                  } ${version.is_renegotiation && version.is_current ? "cursor-pointer hover:bg-primary/10" : ""}`}
+                                  onClick={() => {
+                                    if (version.is_renegotiation && version.is_current) {
+                                      navigate(`/contracts/${contract.id}/edit`);
+                                    }
+                                  }}
+                                >
+                                  <div className="flex items-start justify-between">
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-semibold">Versión {version.version_number}</span>
+                                        {version.is_current && <Badge variant="default">Actual</Badge>}
+                                        {version.is_renegotiation && <Badge variant="secondary">Renegociación</Badge>}
+                                      </div>
+                                      <div className="text-sm text-muted-foreground">
+                                        Canon: {formatCurrency(version.regime_rent)} · {version.duration_months} meses
+                                        {version.variable_rent_percentage && ` · Variable: ${version.variable_rent_percentage}%`}
+                                      </div>
+                                      {version.effective_date && (
+                                        <div className="text-sm text-muted-foreground">
+                                          Vigente desde: {formatDate(version.effective_date)}
+                                        </div>
+                                      )}
+                                      {version.is_renegotiation && version.is_current && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="text-destructive hover:text-destructive hover:bg-destructive/10 gap-1 mt-2"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setShowDeleteConfirm1(true);
+                                          }}
+                                        >
+                                          <Trash2 className="h-3 w-3" />
+                                          Eliminar Renegociación
+                                        </Button>
+                                      )}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {formatDate(version.created_at)}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {/* Delete renegotiation confirmation dialogs */}
+                      <AlertDialog open={showDeleteConfirm1} onOpenChange={setShowDeleteConfirm1}>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>¿Eliminar la renegociación?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Esta acción eliminará la renegociación en curso y todos sus documentos asociados.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => {
+                                setShowDeleteConfirm1(false);
+                                setShowDeleteConfirm2(true);
+                              }}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              Continuar
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+
+                      <AlertDialog open={showDeleteConfirm2} onOpenChange={setShowDeleteConfirm2}>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Confirmar Eliminación de Renegociación</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              ¿Estás seguro? Esta acción no se puede deshacer. Se eliminarán todos los borradores de la renegociación.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel disabled={deletingRenegotiation}>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => {
+                                if (currentRenegotiation) {
+                                  handleDeleteRenegotiation(currentRenegotiation.id);
+                                }
+                              }}
+                              disabled={deletingRenegotiation}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              {deletingRenegotiation ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  Eliminando...
+                                </>
+                              ) : (
+                                "Eliminar Definitivamente"
+                              )}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+
+                      <DocumentVersions
+                        documents={documents.map((d) => ({
+                          id: d.id,
+                          document_type: d.document_type,
+                          url: d.url,
+                          uploaded_at: d.uploaded_at,
+                          version_id: d.version_id,
+                        }))}
+                        contractId={contract.id}
+                        contractName={contract.name}
+                        currentVersion={
+                          currentVersion
+                            ? {
+                                id: currentVersion.id,
+                                version_number: currentVersion.version_number,
+                                initial_rent: currentVersion.initial_rent,
+                                regime_rent: currentVersion.regime_rent,
+                                variable_rent_percentage: currentVersion.variable_rent_percentage,
+                                duration_months: currentVersion.duration_months,
+                                notice_type: currentVersion.notice_type,
+                                notice_value: currentVersion.notice_value,
+                              }
+                            : undefined
+                        }
+                        onAddDocument={handleAddDocument}
+                        onMarkAsFinal={handleMarkAsFinal}
+                        onSendForSignature={handleSendForSignature}
+                        onMarkAsSigned={handleMarkAsSigned}
+                        onChangeDocumentType={handleChangeDocumentType}
+                        onDeleteDocument={handleDeleteDocument}
+                        readOnly={false}
+                        isRenegotiation={isSigned && hasActiveRenegotiation}
+                        isSigned={isSigned}
+                        hasActiveRenegotiation={hasActiveRenegotiation}
+                        onRenegotiationSuccess={loadContract}
+                        onDataImported={loadContract}
+                      />
+                    </div>
+                  );
+
+                case "terminationNotices":
+                  if (!isSigned) return null;
+                  return (
+                    <div key={sectionKey}>
+                      <TerminationNoticesSection
+                        contractId={contract.id}
+                        contractName={contract.name}
+                        notices={contract.termination_notices || []}
+                        onRefresh={loadContract}
+                      />
+                    </div>
+                  );
+
+                case "repository":
+                  return (
+                    <div key={sectionKey}>
+                      <RepositorySection
+                        contractId={contract.id}
+                        contractName={contract.name}
+                        contractStatus={contract.status}
+                      />
+                    </div>
+                  );
+
+                case "budget":
+                  return (
+                    <CollapsibleSection
+                      key={sectionKey}
+                      id={sectionKey}
+                      title="Control Presupuestario"
+                      icon={<DollarSign className="h-5 w-5" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                    >
+                      <BudgetDashboard contractId={contract.id} displayCurrency={contract.display_currency || "UF"} />
+                    </CollapsibleSection>
+                  );
+
+                case "gantt":
+                  return (
+                    <div key={sectionKey}>
+                      <GanttModule contractId={contract.id} />
+                    </div>
+                  );
+
+                case "alerts":
+                  return (
+                    <div key={sectionKey}>
+                      <ContractAlerts
+                        contractId={contract.id}
+                        contractName={contract.name}
+                        expirationDate={
+                          currentVersion?.effective_date
+                            ? new Date(
+                                new Date(currentVersion.effective_date).getTime() +
+                                  currentVersion.duration_months * 30 * 24 * 60 * 60 * 1000
+                              )
+                            : undefined
+                        }
+                      />
+                    </div>
+                  );
+
+                case "additionalInfo":
+                  return (
+                    <CollapsibleSection
+                      key={sectionKey}
+                      id={sectionKey}
+                      title="Información Adicional"
+                      icon={<Calendar className="h-5 w-5" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                    >
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm text-muted-foreground">Fecha de Creación</p>
+                          <p className="font-medium">{formatDate(contract.created_at)}</p>
+                        </div>
+                        {contract.signed_date && (
+                          <div>
+                            <p className="text-sm text-muted-foreground">Fecha de Firma</p>
+                            <p className="font-medium">{formatDate(contract.signed_date)}</p>
+                          </div>
+                        )}
+                      </div>
+                    </CollapsibleSection>
+                  );
+
+                default:
+                  return null;
               }
-            }} disabled={deletingRenegotiation} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                {deletingRenegotiation ? <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Eliminando...
-                  </> : "Eliminar Definitivamente"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        <DocumentVersions documents={documents.map(d => ({
-        id: d.id,
-        document_type: d.document_type,
-        url: d.url,
-        uploaded_at: d.uploaded_at,
-        version_id: d.version_id
-      }))} contractId={contract.id} contractName={contract.name} currentVersion={currentVersion ? {
-        id: currentVersion.id,
-        version_number: currentVersion.version_number,
-        initial_rent: currentVersion.initial_rent,
-        regime_rent: currentVersion.regime_rent,
-        variable_rent_percentage: currentVersion.variable_rent_percentage,
-        duration_months: currentVersion.duration_months,
-        notice_type: currentVersion.notice_type,
-        notice_value: currentVersion.notice_value
-      } : undefined} onAddDocument={handleAddDocument} onMarkAsFinal={handleMarkAsFinal} onSendForSignature={handleSendForSignature} onMarkAsSigned={handleMarkAsSigned} onChangeDocumentType={handleChangeDocumentType} onDeleteDocument={handleDeleteDocument} readOnly={false} isRenegotiation={isSigned && hasActiveRenegotiation} isSigned={isSigned} hasActiveRenegotiation={hasActiveRenegotiation} onRenegotiationSuccess={loadContract} onDataImported={loadContract} />
-
-        {/* Termination Notices Section - only for signed contracts */}
-        {isSigned && <TerminationNoticesSection contractId={contract.id} contractName={contract.name} notices={contract.termination_notices || []} onRefresh={loadContract} />}
-
-        <RepositorySection contractId={contract.id} contractName={contract.name} contractStatus={contract.status} />
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5" />
-              Control Presupuestario
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <BudgetDashboard contractId={contract.id} displayCurrency={contract.display_currency || "UF"} />
-          </CardContent>
-        </Card>
-
-        {/* Gantt Module - Timeline */}
-        <GanttModule contractId={contract.id} />
-
-        <ContractAlerts contractId={contract.id} contractName={contract.name} expirationDate={currentVersion?.effective_date ? new Date(new Date(currentVersion.effective_date).getTime() + currentVersion.duration_months * 30 * 24 * 60 * 60 * 1000) : undefined} />
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5" />
-              Información Adicional
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Fecha de Creación</p>
-                <p className="font-medium">{formatDate(contract.created_at)}</p>
-              </div>
-              {contract.signed_date && <div>
-                  <p className="text-sm text-muted-foreground">Fecha de Firma</p>
-                  <p className="font-medium">{formatDate(contract.signed_date)}</p>
-                </div>}
-            </div>
-          </CardContent>
-        </Card>
+            })}
+          </SortableContext>
+        </DndContext>
       </main>
 
     </div>;
