@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, History, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, ClipboardCheck, FileCheck, AlertCircle } from "lucide-react";
+import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, History, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, FileCheck, AlertCircle } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { DocumentVersions, DocumentVersion } from "@/components/contracts/DocumentVersions";
@@ -17,7 +17,6 @@ import { ContractAlerts } from "@/components/alerts/ContractAlerts";
 import { BudgetDashboard } from "@/components/budget/BudgetDashboard";
 import { GanttModule } from "@/components/gantt/GanttModule";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
-import { ImportAuditSection } from "@/components/contracts/ImportAuditSection";
 import { TerminationNoticesSection } from "@/components/contracts/TerminationNoticesSection";
 import { CollapsibleSection } from "@/components/contracts/CollapsibleSection";
 import { useContractSections, SectionKey } from "@/hooks/useContractSections";
@@ -742,21 +741,6 @@ const ContractDetail = () => {
                     </CollapsibleSection>
                   );
 
-                case "importAudit":
-                  return (
-                    <CollapsibleSection
-                      key={sectionKey}
-                      id={sectionKey}
-                      title="Auditoría de Importación"
-                      icon={<ClipboardCheck className="h-5 w-5" />}
-                      isCollapsed={isCollapsed(sectionKey)}
-                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                      isDraggable={canReorder}
-                      wrapperOnly
-                    >
-                      <ImportAuditSection contractId={contract.id} />
-                    </CollapsibleSection>
-                  );
 
                 case "surfaces":
                   return (
@@ -1085,31 +1069,6 @@ const ContractDetail = () => {
                     </CollapsibleSection>
                   );
 
-                case "additionalInfo":
-                  return (
-                    <CollapsibleSection
-                      key={sectionKey}
-                      id={sectionKey}
-                      title="Información Adicional"
-                      icon={<Calendar className="h-5 w-5" />}
-                      isCollapsed={isCollapsed(sectionKey)}
-                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                      isDraggable={canReorder}
-                    >
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-sm text-muted-foreground">Fecha de Creación</p>
-                          <p className="font-medium">{formatDate(contract.created_at)}</p>
-                        </div>
-                        {contract.signed_date && (
-                          <div>
-                            <p className="text-sm text-muted-foreground">Fecha de Firma</p>
-                            <p className="font-medium">{formatDate(contract.signed_date)}</p>
-                          </div>
-                        )}
-                      </div>
-                    </CollapsibleSection>
-                  );
 
                 default:
                   return null;
