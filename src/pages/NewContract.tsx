@@ -670,6 +670,25 @@ const NewContract = () => {
                     </div>
                   </div>
                 )}
+
+                {/* Gastos Comunes Preview Note */}
+                {(gastosComunesUfM2 || gastosComunesUfMlFrente || gastosComunesProrratKwhClima || adicionalAdministracionPercentage) && (
+                  <div className="bg-muted/50 border border-border rounded-lg p-3">
+                    <p className="text-xs text-muted-foreground">
+                      💡 El total de Gastos Comunes se calculará automáticamente al ingresar las superficies del local en la vista del contrato.
+                    </p>
+                    {(parseFloat(gastosComunesProrratKwhClima) > 0 || parseFloat(adicionalAdministracionPercentage) > 0) && (
+                      <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+                        {parseFloat(gastosComunesProrratKwhClima) > 0 && (
+                          <div>• Prorrata KWH Clima: {gastosComunesProrratKwhClima} UF (fijo)</div>
+                        )}
+                        {parseFloat(adicionalAdministracionPercentage) > 0 && regimeRent && (
+                          <div>• Adic. Admin ({adicionalAdministracionPercentage}%): {((parseFloat(regimeRent) || 0) * (parseFloat(adicionalAdministracionPercentage) / 100)).toFixed(2)} UF</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Fondo de Promoción */}
