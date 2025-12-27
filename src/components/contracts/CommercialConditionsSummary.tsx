@@ -286,7 +286,9 @@ export function CommercialConditionsSummary({
             </p>
             {canonPerM2 !== null && (
               <p className="text-xs text-muted-foreground">
-                ({canonPerM2.toFixed(4)} UF/m²)
+                {displayCurrency === "CLP" && ufValue > 0
+                  ? `($${Math.round(convertUFToPesos(canonPerM2)).toLocaleString("es-CL")}/m²)`
+                  : `(${canonPerM2.toFixed(4)} UF/m²)`}
               </p>
             )}
           </div>
