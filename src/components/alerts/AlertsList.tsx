@@ -334,17 +334,6 @@ export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyAct
                     <Send className={`h-4 w-4 ${sendingTest === alert.id ? "animate-pulse" : ""}`} />
                   </Button>
 
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleComplete(alert.id)}
-                    disabled={completingAlert === alert.id}
-                    className="text-green-600 border-green-600 hover:bg-green-50"
-                  >
-                    <CheckCircle className="h-4 w-4 mr-1" />
-                    Cumplida
-                  </Button>
-
                   <Switch
                     checked={alert.is_active}
                     onCheckedChange={(checked) => handleToggleActive(alert.id, checked)}
