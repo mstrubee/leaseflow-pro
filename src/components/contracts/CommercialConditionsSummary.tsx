@@ -73,20 +73,26 @@ export function CommercialConditionsSummary({
   const { ufValue, convertUFToPesos } = useEconomicIndicators();
   
   // Format functions based on display currency
-  const formatPrimary = (amountUF: number) => {
-    if (displayCurrency === "CLP" && ufValue > 0) {
-      const clp = convertUFToPesos(amountUF);
-      return `$${Math.round(clp).toLocaleString("es-CL")}`;
+  // Values are stored in the selected currency, so we display directly
+  const formatPrimary = (amount: number) => {
+    if (displayCurrency === "CLP") {
+      return `$${Math.round(amount).toLocaleString("es-CL")}`;
     }
-    return `${amountUF.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
+    return `${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
   };
 
-  const formatSecondary = (amountUF: number) => {
+  // Secondary format shows the conversion (illustrative only)
+  const formatSecondary = (amount: number) => {
     if (displayCurrency === "CLP" && ufValue > 0) {
-      return `${amountUF.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
+      // Amount is in CLP, convert to UF for illustrative display
+      const uf = amount / ufValue;
+      return `${uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
+    } else if (displayCurrency === "UF" && ufValue > 0) {
+      // Amount is in UF, convert to CLP for illustrative display
+      const clp = convertUFToPesos(amount);
+      return clp > 0 ? `$${Math.round(clp).toLocaleString("es-CL")}` : "";
     }
-    const clp = convertUFToPesos(amountUF);
-    return clp > 0 ? `$${Math.round(clp).toLocaleString("es-CL")}` : "";
+    return "";
   };
 
   // Calculate dates
@@ -286,8 +292,8 @@ export function CommercialConditionsSummary({
             </p>
             {canonPerM2 !== null && (
               <p className="text-xs text-muted-foreground">
-                {displayCurrency === "CLP" && ufValue > 0
-                  ? `($${Math.round(convertUFToPesos(canonPerM2)).toLocaleString("es-CL")}/m²)`
+                {displayCurrency === "CLP"
+                  ? `($${Math.round(canonPerM2).toLocaleString("es-CL")}/m²)`
                   : `(${canonPerM2.toFixed(4)} UF/m²)`}
               </p>
             )}
