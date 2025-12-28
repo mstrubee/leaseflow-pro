@@ -449,18 +449,15 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     if (!deleteOrder) return;
 
     try {
-      // Delete all credit notes for invoices of this order first
-      const { data: invoices } = await supabase
-        .from("invoices")
-        .select("id")
+      // Delete all credit notes for this order first (they have purchase_order_id directly)
+      const { error: creditNoteError } = await supabase
+        .from("credit_notes")
+        .delete()
         .eq("purchase_order_id", deleteOrder.id);
       
-      if (invoices && invoices.length > 0) {
-        const invoiceIds = invoices.map(i => i.id);
-        await supabase
-          .from("credit_notes")
-          .delete()
-          .in("invoice_id", invoiceIds);
+      if (creditNoteError) {
+        console.error("Error deleting credit notes:", creditNoteError);
+        throw creditNoteError;
       }
 
       // Delete all invoices for this order
