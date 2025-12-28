@@ -54,6 +54,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
+  const [orderInvoiceData, setOrderInvoiceData] = useState<Record<string, { totalInvoiced: number; totalCreditNotes: number }>>({});
   const selectedYear = initialYear ?? new Date().getFullYear();
 
   const [loading, setLoading] = useState(true);
@@ -118,6 +119,35 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
 
       if (error) throw error;
       setOrders(data || []);
+
+      // Load invoice and credit note data for each order
+      if (data && data.length > 0) {
+        const orderIds = data.map(o => o.id);
+        
+        const { data: invoicesData } = await supabase
+          .from("invoices")
+          .select("purchase_order_id, amount_uf")
+          .in("purchase_order_id", orderIds);
+
+        const { data: creditNotesData } = await supabase
+          .from("credit_notes")
+          .select("purchase_order_id, amount_uf")
+          .in("purchase_order_id", orderIds);
+
+        const invoiceDataMap: Record<string, { totalInvoiced: number; totalCreditNotes: number }> = {};
+        
+        orderIds.forEach(orderId => {
+          const orderInvoices = (invoicesData || []).filter(inv => inv.purchase_order_id === orderId);
+          const orderCreditNotes = (creditNotesData || []).filter(cn => cn.purchase_order_id === orderId);
+          
+          invoiceDataMap[orderId] = {
+            totalInvoiced: orderInvoices.reduce((sum, inv) => sum + inv.amount_uf, 0),
+            totalCreditNotes: orderCreditNotes.reduce((sum, cn) => sum + cn.amount_uf, 0),
+          };
+        });
+        
+        setOrderInvoiceData(invoiceDataMap);
+      }
     } catch (error) {
       console.error("Error loading orders:", error);
     } finally {
@@ -298,17 +328,32 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     setExpandedOrders(newExpanded);
   };
 
-  const getStatusBadge = (order: PurchaseOrder, invoiceData?: { totalInvoiced: number; totalCreditNotes: number }) => {
-    // If we have invoice data passed in, use it for more accurate status
-    const status = order.status;
-    
-    switch (status) {
-      case "cerrada":
-        return <Badge className="bg-blue-500">Cerrada</Badge>;
-      case "descuadrada":
-        return <Badge variant="destructive" className="flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Sobrepasado</Badge>;
-      default:
-        return <Badge className="bg-green-500">OK</Badge>;
+  const getStatusBadge = (order: PurchaseOrder) => {
+    // Calculate real status based on invoices and credit notes
+    const data = orderInvoiceData[order.id];
+    if (!data) {
+      // Fallback to database status if no data loaded yet
+      const status = order.status;
+      switch (status) {
+        case "cerrada":
+          return <Badge className="bg-blue-500">Cerrada</Badge>;
+        case "descuadrada":
+          return <Badge variant="destructive" className="flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Sobrepasado</Badge>;
+        default:
+          return <Badge className="bg-green-500">OK</Badge>;
+      }
+    }
+
+    const netInvoiced = data.totalInvoiced - data.totalCreditNotes;
+    const orderAmount = order.amount_uf;
+
+    if (netInvoiced > orderAmount) {
+      return <Badge variant="destructive" className="flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Sobrepasado</Badge>;
+    } else if (Math.abs(netInvoiced - orderAmount) < 0.01) {
+      return <Badge className="bg-blue-500">Cerrada</Badge>;
+    } else {
+      const percentage = orderAmount > 0 ? (netInvoiced / orderAmount) * 100 : 0;
+      return <Badge className="bg-green-500">OK ({percentage.toFixed(0)}%)</Badge>;
     }
   };
 
