@@ -302,11 +302,12 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, onRe
               </div>
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Disponible</p>
-                <p className={`text-xl font-bold ${budgetAmount - authorizedTotal < 0 ? "text-red-600" : ""}`}>
-                  {formatUF(budgetAmount - authorizedTotal)}
+                <p className={`text-xl font-bold ${budgetAmount - authorizedTotal < 0 ? "text-destructive" : "text-foreground"}`}>
+                  {formatUF(Math.abs(budgetAmount - authorizedTotal))}
+                  {budgetAmount - authorizedTotal < 0 && " (Sobrepasado)"}
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  {formatCLP(convertUFToPesos(budgetAmount - authorizedTotal))}
+                  {formatCLP(convertUFToPesos(Math.abs(budgetAmount - authorizedTotal)))}
                 </p>
               </div>
             </div>

@@ -267,11 +267,8 @@ const BudgetLineItem = ({
 };
 
 // Helpers para cálculos
-// Helper to get effective amount (0 if quantity or price is missing)
+// Helper to get effective amount - use amount_uf directly (already calculated)
 const getEffectiveAmount = (item: BudgetLine): number => {
-  const qty = item.quantity || 0;
-  const price = item.unit_price || 0;
-  if (qty <= 0 || price <= 0) return 0;
   return item.amount_uf || 0;
 };
 
@@ -280,7 +277,7 @@ export const calculateAuthorizedTotal = (items: BudgetLine[]): number => {
     if (item.children && item.children.length > 0) {
       return sum + calculateAuthorizedTotal(item.children);
     }
-    // Solo contar si está autorizado Y tiene cantidad y precio > 0
+    // Solo contar si está autorizado
     return item.status === "autorizado" ? sum + getEffectiveAmount(item) : sum;
   }, 0);
 };
@@ -289,7 +286,7 @@ export const calculateUnauthorizedTotal = (items: BudgetLine[]): number => {
     if (item.children && item.children.length > 0) {
       return sum + calculateUnauthorizedTotal(item.children);
     }
-    // Solo contar si NO está autorizado Y tiene cantidad y precio > 0
+    // Solo contar si NO está autorizado
     return item.status === "no_autorizado" ? sum + getEffectiveAmount(item) : sum;
   }, 0);
 };

@@ -267,11 +267,8 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
     // Only count leaf nodes (lines that are not parents of other lines) to avoid double counting
     const leafLines = (lines || []).filter(l => !parentIds.has(l.id));
     
-    // Helper to get effective amount (0 if quantity or price is missing)
+    // Helper to get effective amount - use amount_uf directly (it's already calculated from qty * price)
     const getEffectiveAmount = (line: { quantity?: number | null; unit_price?: number | null; amount_uf: number }) => {
-      const qty = line.quantity || 0;
-      const price = line.unit_price || 0;
-      if (qty <= 0 || price <= 0) return 0;
       return line.amount_uf || 0;
     };
     
