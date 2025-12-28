@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, FileText, Mail, CheckCircle, Clock, Trash2, Upload, Folder, ArrowLeft, Paperclip, ExternalLink, Check, Pencil } from "lucide-react";
+import { Plus, FileText, Mail, CheckCircle, Clock, Trash2, Upload, Folder, ArrowLeft, Paperclip, ExternalLink, Check, Pencil, AlertTriangle, CreditCard, Send } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useBudgetContext } from "./BudgetContext";
 import { BudgetSemaphore } from "./BudgetSemaphore";
@@ -23,6 +23,16 @@ interface Invoice {
   reception_status: string;
   received_at: string | null;
   email_sent_to: string | null;
+  attachment_url: string | null;
+}
+
+interface CreditNote {
+  id: string;
+  credit_note_number: string;
+  credit_note_date: string;
+  amount_uf: number;
+  invoice_id: string;
+  reason: string | null;
   attachment_url: string | null;
 }
 
@@ -52,10 +62,13 @@ interface InvoiceListProps {
 
 export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showStatusDialog, setShowStatusDialog] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
+  const [showCreditNoteDialog, setShowCreditNoteDialog] = useState(false);
+  const [invoiceWarning, setInvoiceWarning] = useState<string | null>(null);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [editInvoice, setEditInvoice] = useState({
     invoice_number: "",
@@ -69,6 +82,16 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     invoice_date: new Date().toISOString().split("T")[0],
     amount: "",
     currency: "UF" as "UF" | "CLP",
+    attachment_url: "",
+    attachment_name: "",
+  });
+  const [newCreditNote, setNewCreditNote] = useState({
+    credit_note_number: "",
+    credit_note_date: new Date().toISOString().split("T")[0],
+    amount: "",
+    currency: "UF" as "UF" | "CLP",
+    invoice_id: "",
+    reason: "",
     attachment_url: "",
     attachment_name: "",
   });
@@ -91,6 +114,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
 
   useEffect(() => {
     loadInvoices();
+    loadCreditNotes();
     loadLastEmail();
     loadContractId();
   }, [purchaseOrder.id]);
@@ -113,6 +137,15 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
       .eq("purchase_order_id", purchaseOrder.id)
       .order("invoice_date", { ascending: false });
     setInvoices(data || []);
+  };
+
+  const loadCreditNotes = async () => {
+    const { data } = await supabase
+      .from("credit_notes")
+      .select("*")
+      .eq("purchase_order_id", purchaseOrder.id)
+      .order("credit_note_date", { ascending: false });
+    setCreditNotes(data || []);
   };
 
   const loadLastEmail = async () => {
@@ -175,6 +208,45 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     return data?.[0] || null;
   };
 
+  // Calculate totals
+  const totalInvoiced = invoices.reduce((sum, inv) => sum + inv.amount_uf, 0);
+  const totalCreditNotes = creditNotes.reduce((sum, cn) => sum + cn.amount_uf, 0);
+  const netInvoiced = totalInvoiced - totalCreditNotes;
+  const pendingAmount = purchaseOrder.amount_uf - netInvoiced;
+  
+  // Determine OC status
+  const getOCStatus = () => {
+    if (netInvoiced > purchaseOrder.amount_uf) {
+      return "sobrepasado";
+    } else if (Math.abs(netInvoiced - purchaseOrder.amount_uf) < 0.01) {
+      return "cerrada";
+    } else {
+      return "ok";
+    }
+  };
+
+  const ocStatus = getOCStatus();
+  const percentageConsumed = purchaseOrder.amount_uf > 0 ? (netInvoiced / purchaseOrder.amount_uf) * 100 : 0;
+
+  // Validate invoice amount
+  const validateInvoiceAmount = (amount: number, excludeInvoiceId?: string) => {
+    const currentTotalInvoiced = invoices
+      .filter(inv => inv.id !== excludeInvoiceId)
+      .reduce((sum, inv) => sum + inv.amount_uf, 0);
+    
+    const projectedTotal = currentTotalInvoiced + amount - totalCreditNotes;
+    
+    if (projectedTotal > purchaseOrder.amount_uf) {
+      return {
+        valid: false,
+        warning: "Factura o suma de facturas sobrepasa el monto de la OC. Regularizar",
+        exceedsBy: projectedTotal - purchaseOrder.amount_uf
+      };
+    }
+    
+    return { valid: true, warning: null };
+  };
+
   const handleCreateInvoice = async () => {
     try {
       const inputAmount = parseFloat(newInvoice.amount) || 0;
@@ -187,6 +259,13 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
       } else {
         amountCLP = inputAmount;
         amountUF = convertPesosToUF(inputAmount);
+      }
+
+      // Validate against OC
+      const validation = validateInvoiceAmount(amountUF);
+      if (!validation.valid) {
+        setInvoiceWarning(validation.warning);
+        // Still allow creation but show warning
       }
 
       const { error } = await supabase.from("invoices").insert({
@@ -202,7 +281,16 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
 
       if (error) throw error;
 
-      toast({ title: "Factura agregada" });
+      if (!validation.valid) {
+        toast({ 
+          variant: "destructive",
+          title: "Advertencia", 
+          description: validation.warning 
+        });
+      } else {
+        toast({ title: "Factura agregada" });
+      }
+      
       setShowNewDialog(false);
       setNewInvoice({ 
         invoice_number: "", 
@@ -212,7 +300,56 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         attachment_url: "",
         attachment_name: "",
       });
+      setInvoiceWarning(null);
       loadInvoices();
+      onUpdate();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
+  const handleCreateCreditNote = async () => {
+    try {
+      const inputAmount = parseFloat(newCreditNote.amount) || 0;
+      let amountUF: number;
+      let amountCLP: number;
+
+      if (newCreditNote.currency === "UF") {
+        amountUF = inputAmount;
+        amountCLP = convertUFToPesos(inputAmount);
+      } else {
+        amountCLP = inputAmount;
+        amountUF = convertPesosToUF(inputAmount);
+      }
+
+      const { error } = await supabase.from("credit_notes").insert({
+        purchase_order_id: purchaseOrder.id,
+        invoice_id: newCreditNote.invoice_id,
+        credit_note_number: newCreditNote.credit_note_number,
+        credit_note_date: newCreditNote.credit_note_date,
+        amount_uf: amountUF,
+        amount_clp: amountCLP,
+        input_currency: newCreditNote.currency,
+        uf_value_at_entry: ufValue,
+        reason: newCreditNote.reason || null,
+        attachment_url: newCreditNote.attachment_url || null,
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Nota de crédito agregada" });
+      setShowCreditNoteDialog(false);
+      setNewCreditNote({ 
+        credit_note_number: "", 
+        credit_note_date: new Date().toISOString().split("T")[0], 
+        amount: "", 
+        currency: "UF",
+        invoice_id: "",
+        reason: "",
+        attachment_url: "",
+        attachment_name: "",
+      });
+      loadCreditNotes();
       onUpdate();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
@@ -221,7 +358,6 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
 
   const handleStatusClick = async (invoice: Invoice) => {
     if (invoice.reception_status === "recibido") {
-      // Already received, just show info
       toast({ title: "Factura ya recibida", description: `Enviada a ${invoice.email_sent_to}` });
       return;
     }
@@ -235,7 +371,6 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     setFolderPath([]);
     setShowStatusDialog(true);
     
-    // Load folder contents
     await loadFolderContents(null);
   };
 
@@ -262,11 +397,9 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
 
     setUploading(true);
     try {
-      // Find or create Facturas folder
       let targetFolder = await findFacturasFolder();
       
       if (!targetFolder) {
-        // Create a facturas folder if it doesn't exist
         const { data: newFolder, error: folderError } = await supabase
           .from("repository_folders")
           .insert({
@@ -340,14 +473,12 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         })
         .eq("id", selectedInvoice.id);
 
-      // Save last email
       if (user) {
         await supabase
           .from("user_settings")
           .upsert({ user_id: user.id, last_invoice_email: email }, { onConflict: "user_id" });
       }
 
-      // TODO: Send actual email via edge function
       toast({ title: "Factura recibida", description: `Email enviado a ${email}` });
       setShowStatusDialog(false);
       setAskSendEmail(false);
@@ -360,8 +491,22 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
 
   const handleDeleteInvoice = async (id: string) => {
     try {
+      // Delete associated credit notes first
+      await supabase.from("credit_notes").delete().eq("invoice_id", id);
+      // Delete the invoice
       await supabase.from("invoices").delete().eq("id", id);
       loadInvoices();
+      loadCreditNotes();
+      onUpdate();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
+  const handleDeleteCreditNote = async (id: string) => {
+    try {
+      await supabase.from("credit_notes").delete().eq("id", id);
+      loadCreditNotes();
       onUpdate();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
@@ -395,6 +540,12 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         amountUF = convertPesosToUF(inputAmount);
       }
 
+      // Validate against OC (excluding current invoice)
+      const validation = validateInvoiceAmount(amountUF, selectedInvoice.id);
+      if (!validation.valid) {
+        setInvoiceWarning(validation.warning);
+      }
+
       const { error } = await supabase
         .from("invoices")
         .update({
@@ -409,9 +560,19 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
 
       if (error) throw error;
 
-      toast({ title: "Factura actualizada" });
+      if (!validation.valid) {
+        toast({ 
+          variant: "destructive",
+          title: "Advertencia", 
+          description: validation.warning 
+        });
+      } else {
+        toast({ title: "Factura actualizada" });
+      }
+      
       setShowEditDialog(false);
       setSelectedInvoice(null);
+      setInvoiceWarning(null);
       loadInvoices();
       onUpdate();
     } catch (error: any) {
@@ -424,8 +585,17 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     loadFolderContents(null);
   };
 
-  const totalInvoiced = invoices.reduce((sum, inv) => sum + inv.amount_uf, 0);
-  const pendingAmount = purchaseOrder.amount_uf - totalInvoiced;
+  const handleRequestCreditNote = () => {
+    // Open email with pre-filled subject for credit note request
+    const subject = encodeURIComponent(`Solicitud de Nota de Crédito - OC ${purchaseOrder.order_number}`);
+    const body = encodeURIComponent(`Estimados,\n\nPor medio del presente, solicito la emisión de una nota de crédito correspondiente a la Orden de Compra ${purchaseOrder.order_number}.\n\nMotivo: La facturación excede el monto de la OC.\n\nSaludos cordiales.`);
+    window.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
+  };
+
+  // Get credit notes for a specific invoice
+  const getCreditNotesForInvoice = (invoiceId: string) => {
+    return creditNotes.filter(cn => cn.invoice_id === invoiceId);
+  };
 
   return (
     <div className="space-y-4">
@@ -439,16 +609,65 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
             <p className="text-xs text-muted-foreground">Facturado</p>
             <p className="font-bold">{formatUF(totalInvoiced)}</p>
           </div>
+          {totalCreditNotes > 0 && (
+            <div>
+              <p className="text-xs text-muted-foreground">Notas Crédito</p>
+              <p className="font-bold text-green-600">-{formatUF(totalCreditNotes)}</p>
+            </div>
+          )}
+          <div>
+            <p className="text-xs text-muted-foreground">Neto Facturado</p>
+            <p className="font-bold">{formatUF(netInvoiced)}</p>
+          </div>
           <div>
             <p className="text-xs text-muted-foreground">Pendiente</p>
-            <p className="font-bold">{formatUF(pendingAmount)}</p>
+            <p className={cn("font-bold", pendingAmount < 0 && "text-red-600")}>
+              {formatUF(pendingAmount)}
+            </p>
           </div>
-          <BudgetSemaphore budget={purchaseOrder.amount_uf} consumed={totalInvoiced} size="sm" />
+          <div className="flex items-center gap-2">
+            {ocStatus === "ok" && (
+              <Badge className="bg-green-500">
+                OK ({percentageConsumed.toFixed(0)}%)
+              </Badge>
+            )}
+            {ocStatus === "cerrada" && (
+              <Badge className="bg-blue-500">Cerrada</Badge>
+            )}
+            {ocStatus === "sobrepasado" && (
+              <Badge variant="destructive" className="flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                Sobrepasado
+              </Badge>
+            )}
+          </div>
         </div>
-        <Button size="sm" variant="outline" onClick={() => setShowNewDialog(true)}>
-          <Plus className="h-4 w-4 mr-1" />
-          Nueva Factura
-        </Button>
+        <div className="flex items-center gap-2">
+          {ocStatus === "sobrepasado" && (
+            <Button 
+              size="sm" 
+              variant="outline" 
+              className="text-amber-600 border-amber-300 hover:bg-amber-50"
+              onClick={handleRequestCreditNote}
+            >
+              <Send className="h-4 w-4 mr-1" />
+              Solicitar Nota Crédito
+            </Button>
+          )}
+          <Button 
+            size="sm" 
+            variant="outline" 
+            onClick={() => setShowCreditNoteDialog(true)}
+            disabled={invoices.length === 0}
+          >
+            <CreditCard className="h-4 w-4 mr-1" />
+            Nota Crédito
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setShowNewDialog(true)}>
+            <Plus className="h-4 w-4 mr-1" />
+            Nueva Factura
+          </Button>
+        </div>
       </div>
 
       {invoices.length > 0 && (
@@ -458,63 +677,95 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
               <TableHead>Nº Factura</TableHead>
               <TableHead>Fecha</TableHead>
               <TableHead className="text-right">Monto</TableHead>
+              <TableHead>Notas Crédito</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {invoices.map((invoice) => (
-              <TableRow key={invoice.id}>
-                <TableCell className="font-medium">
-                  <div className="flex items-center gap-2">
-                    {invoice.invoice_number}
-                    {invoice.attachment_url && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 w-6 p-0"
-                        onClick={() => window.open(invoice.attachment_url!, "_blank")}
-                      >
-                        <Paperclip className="h-3 w-3" />
-                      </Button>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell>{new Date(invoice.invoice_date).toLocaleDateString("es-CL")}</TableCell>
-                <TableCell className="text-right font-mono">{formatUF(invoice.amount_uf)}</TableCell>
-                <TableCell>
-                  <button onClick={() => handleStatusClick(invoice)}>
-                    {invoice.reception_status === "recibido" ? (
-                      <Badge className="bg-green-500 flex items-center gap-1 w-fit cursor-default">
-                        <CheckCircle className="h-3 w-3" />
-                        Recibido
-                      </Badge>
+            {invoices.map((invoice) => {
+              const invoiceCreditNotes = getCreditNotesForInvoice(invoice.id);
+              const invoiceCreditTotal = invoiceCreditNotes.reduce((sum, cn) => sum + cn.amount_uf, 0);
+              
+              return (
+                <TableRow key={invoice.id}>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      {invoice.invoice_number}
+                      {invoice.attachment_url && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 w-6 p-0"
+                          onClick={() => window.open(invoice.attachment_url!, "_blank")}
+                        >
+                          <Paperclip className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>{new Date(invoice.invoice_date).toLocaleDateString("es-CL")}</TableCell>
+                  <TableCell className="text-right font-mono">{formatUF(invoice.amount_uf)}</TableCell>
+                  <TableCell>
+                    {invoiceCreditNotes.length > 0 ? (
+                      <div className="space-y-1">
+                        {invoiceCreditNotes.map((cn) => (
+                          <div key={cn.id} className="flex items-center gap-2 text-sm">
+                            <Badge variant="outline" className="text-green-600 border-green-300">
+                              NC {cn.credit_note_number}: -{formatUF(cn.amount_uf)}
+                            </Badge>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-5 w-5 p-0 text-destructive"
+                              onClick={() => handleDeleteCreditNote(cn.id)}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                        <p className="text-xs text-muted-foreground">
+                          Neto: {formatUF(invoice.amount_uf - invoiceCreditTotal)}
+                        </p>
+                      </div>
                     ) : (
-                      <Badge variant="secondary" className="flex items-center gap-1 w-fit cursor-pointer hover:bg-accent">
-                        <Clock className="h-3 w-3" />
-                        Pendiente
-                      </Badge>
+                      <span className="text-muted-foreground">-</span>
                     )}
-                  </button>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => handleEditClick(invoice)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => handleDeleteInvoice(invoice.id)} className="text-destructive">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+                  </TableCell>
+                  <TableCell>
+                    <button onClick={() => handleStatusClick(invoice)}>
+                      {invoice.reception_status === "recibido" ? (
+                        <Badge className="bg-green-500 flex items-center gap-1 w-fit cursor-default">
+                          <CheckCircle className="h-3 w-3" />
+                          Recibido
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="flex items-center gap-1 w-fit cursor-pointer hover:bg-accent">
+                          <Clock className="h-3 w-3" />
+                          Pendiente
+                        </Badge>
+                      )}
+                    </button>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Button size="sm" variant="ghost" onClick={() => handleEditClick(invoice)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleDeleteInvoice(invoice.id)} className="text-destructive">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       )}
 
       {/* New Invoice Dialog */}
-      <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
+      <Dialog open={showNewDialog} onOpenChange={(open) => { setShowNewDialog(open); if (!open) setInvoiceWarning(null); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Nueva Factura - OC {purchaseOrder.order_number}</DialogTitle>
@@ -557,6 +808,9 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                     : formatCLP(convertUFToPesos(parseFloat(newInvoice.amount)))}
                 </p>
               )}
+              <p className="text-xs text-muted-foreground">
+                Disponible en OC: {formatUF(pendingAmount)}
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Archivo Adjunto</Label>
@@ -583,16 +837,122 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                 )}
               </div>
             </div>
+
+            {invoiceWarning && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm text-amber-800 font-medium">ADVERTENCIA</p>
+                    <p className="text-sm text-amber-800">{invoiceWarning}</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowNewDialog(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setShowNewDialog(false); setInvoiceWarning(null); }}>Cancelar</Button>
             <Button onClick={handleCreateInvoice}>Agregar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      {/* Credit Note Dialog */}
+      <Dialog open={showCreditNoteDialog} onOpenChange={setShowCreditNoteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nueva Nota de Crédito - OC {purchaseOrder.order_number}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Nº Nota de Crédito</Label>
+                <Input 
+                  value={newCreditNote.credit_note_number} 
+                  onChange={(e) => setNewCreditNote({ ...newCreditNote, credit_note_number: e.target.value })} 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Fecha</Label>
+                <Input 
+                  type="date" 
+                  value={newCreditNote.credit_note_date} 
+                  onChange={(e) => setNewCreditNote({ ...newCreditNote, credit_note_date: e.target.value })} 
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Factura Asociada *</Label>
+              <Select 
+                value={newCreditNote.invoice_id} 
+                onValueChange={(v) => setNewCreditNote({ ...newCreditNote, invoice_id: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccione una factura" />
+                </SelectTrigger>
+                <SelectContent>
+                  {invoices.map((invoice) => (
+                    <SelectItem key={invoice.id} value={invoice.id}>
+                      {invoice.invoice_number} - {formatUF(invoice.amount_uf)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Monto</Label>
+              <div className="flex gap-2">
+                <Input 
+                  type="number" 
+                  step={newCreditNote.currency === "UF" ? "0.01" : "1"} 
+                  value={newCreditNote.amount} 
+                  onChange={(e) => setNewCreditNote({ ...newCreditNote, amount: e.target.value })} 
+                  className="flex-1"
+                />
+                <Select 
+                  value={newCreditNote.currency} 
+                  onValueChange={(v) => setNewCreditNote({ ...newCreditNote, currency: v as "UF" | "CLP" })}
+                >
+                  <SelectTrigger className="w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UF">UF</SelectItem>
+                    <SelectItem value="CLP">CLP</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {newCreditNote.amount && ufValue > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Equivalente: {newCreditNote.currency === "CLP" 
+                    ? formatUF(convertPesosToUF(parseFloat(newCreditNote.amount))) 
+                    : formatCLP(convertUFToPesos(parseFloat(newCreditNote.amount)))}
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Motivo</Label>
+              <Input 
+                value={newCreditNote.reason} 
+                onChange={(e) => setNewCreditNote({ ...newCreditNote, reason: e.target.value })} 
+                placeholder="Opcional"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreditNoteDialog(false)}>Cancelar</Button>
+            <Button 
+              onClick={handleCreateCreditNote}
+              disabled={!newCreditNote.invoice_id || !newCreditNote.credit_note_number || !newCreditNote.amount}
+            >
+              Agregar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Edit Invoice Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+      <Dialog open={showEditDialog} onOpenChange={(open) => { setShowEditDialog(open); if (!open) setInvoiceWarning(null); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Editar Factura</DialogTitle>
@@ -646,9 +1006,21 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                 </p>
               )}
             </div>
+
+            {invoiceWarning && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm text-amber-800 font-medium">ADVERTENCIA</p>
+                    <p className="text-sm text-amber-800">{invoiceWarning}</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEditDialog(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setShowEditDialog(false); setInvoiceWarning(null); }}>Cancelar</Button>
             <Button onClick={handleUpdateInvoice}>Guardar</Button>
           </DialogFooter>
         </DialogContent>
