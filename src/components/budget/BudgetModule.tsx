@@ -304,12 +304,12 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Disponible</p>
                 {(() => {
-                  const disponible = budgetAmount - ocTotal;
-                  const isSobrepasado = budgetAmount > 0 && ocTotal > budgetAmount;
+                  const disponible = authorizedTotal - ocTotal;
+                  const isSobrepasado = ocTotal > authorizedTotal;
                   return (
                     <>
                       <p className={`text-xl font-bold ${isSobrepasado ? "text-destructive" : "text-foreground"}`}>
-                        {formatUF(Math.abs(disponible))}
+                        {isSobrepasado ? "-" : ""}{formatUF(Math.abs(disponible))}
                         {isSobrepasado && " (Sobrepasado)"}
                       </p>
                       <p className="text-sm text-muted-foreground">
