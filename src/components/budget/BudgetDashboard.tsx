@@ -21,14 +21,19 @@ interface BudgetDashboardProps {
   displayCurrency?: "UF" | "CLP";
 }
 
+interface BudgetTypeTotals {
+  oc: number;
+  invoices: number;
+}
+
 const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
   const [loading, setLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [availableYears, setAvailableYears] = useState<number[]>([]);
   const [inversionSummary, setInversionSummary] = useState<BudgetSummary>({ budget: 0, authorized: 0, unauthorized: 0 });
   const [capexSummary, setCapexSummary] = useState<BudgetSummary>({ budget: 0, authorized: 0, unauthorized: 0 });
-  const [totalOC, setTotalOC] = useState(0);
-  const [totalInvoices, setTotalInvoices] = useState(0);
+  const [inversionTotals, setInversionTotals] = useState<BudgetTypeTotals>({ oc: 0, invoices: 0 });
+  const [capexTotals, setCapexTotals] = useState<BudgetTypeTotals>({ oc: 0, invoices: 0 });
   const { toast } = useToast();
   const { formatPrimary, formatSecondary } = useBudgetContext();
 
@@ -69,41 +74,59 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
   };
 
   const loadSummaries = async () => {
-    // Cargar resumen de Inversión Inicial (INDEPENDIENTE)
+    // Cargar resumen de Inversión Inicial
     const invSummary = await loadBudgetTypeSummary(contractId, "inversion_inicial", selectedYear);
     setInversionSummary(invSummary);
 
-    // Cargar resumen de CAPEX (INDEPENDIENTE)
+    // Cargar resumen de CAPEX
     const capSummary = await loadBudgetTypeSummary(contractId, "capex", selectedYear);
     setCapexSummary(capSummary);
 
-    // Get OC totals for selected year
-    const { data: orders } = await supabase
-      .from("purchase_orders")
-      .select("amount_uf")
-      .eq("contract_id", contractId)
-      .eq("year", selectedYear);
+    // Get OC and invoice totals by budget type
+    const invTotals = await loadBudgetTypeTotals(contractId, "inversion_inicial", selectedYear);
+    setInversionTotals(invTotals);
 
-    setTotalOC((orders || []).reduce((acc, o) => acc + (o.amount_uf || 0), 0));
+    const capTotals = await loadBudgetTypeTotals(contractId, "capex", selectedYear);
+    setCapexTotals(capTotals);
+  };
 
-    // Get invoice totals for selected year - sum all invoices from purchase orders in this contract/year
-    const { data: ordersWithInvoices } = await supabase
-      .from("purchase_orders")
+  const loadBudgetTypeTotals = async (contractId: string, budgetType: string, year: number): Promise<BudgetTypeTotals> => {
+    // Get budget ID for this type and year
+    const { data: budget } = await supabase
+      .from("contract_budgets")
       .select("id")
       .eq("contract_id", contractId)
-      .eq("year", selectedYear);
+      .eq("budget_type", budgetType)
+      .eq("year", year)
+      .maybeSingle();
 
-    if (ordersWithInvoices && ordersWithInvoices.length > 0) {
-      const orderIds = ordersWithInvoices.map(o => o.id);
+    if (!budget) {
+      return { oc: 0, invoices: 0 };
+    }
+
+    // Get OC totals for this budget
+    const { data: orders } = await supabase
+      .from("purchase_orders")
+      .select("id, amount_uf")
+      .eq("contract_id", contractId)
+      .eq("budget_id", budget.id)
+      .eq("year", year);
+
+    const ocTotal = (orders || []).reduce((acc, o) => acc + (o.amount_uf || 0), 0);
+
+    // Get invoice totals for these OCs
+    let invoicesTotal = 0;
+    if (orders && orders.length > 0) {
+      const orderIds = orders.map(o => o.id);
       const { data: invoices } = await supabase
         .from("invoices")
         .select("amount_uf")
         .in("purchase_order_id", orderIds);
 
-      setTotalInvoices((invoices || []).reduce((acc, i) => acc + (i.amount_uf || 0), 0));
-    } else {
-      setTotalInvoices(0);
+      invoicesTotal = (invoices || []).reduce((acc, i) => acc + (i.amount_uf || 0), 0);
     }
+
+    return { oc: ocTotal, invoices: invoicesTotal };
   };
 
   const loadBudgetTypeSummary = async (contractId: string, budgetType: string, year: number): Promise<BudgetSummary> => {
@@ -168,79 +191,105 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
         </Select>
       </div>
 
-      {/* Summary Cards - CADA UNO INDEPENDIENTE */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {/* Inversión Inicial - INDEPENDIENTE */}
+      {/* Summary Cards - 3 columnas */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* TOTAL GENERAL */}
+        <Card className="border-l-4 border-l-primary">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              TOTAL GENERAL {selectedYear}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div className="flex items-center gap-1.5">
+                <TrendingUp className="h-3.5 w-3.5 text-blue-500" />
+                <span className="text-muted-foreground">Inv. Inicial:</span>
+              </div>
+              <span className="font-medium text-right">{formatPrimary(inversionSummary.authorized)}</span>
+              
+              <div className="flex items-center gap-1.5">
+                <DollarSign className="h-3.5 w-3.5 text-green-500" />
+                <span className="text-muted-foreground">CAPEX:</span>
+              </div>
+              <span className="font-medium text-right">{formatPrimary(capexSummary.authorized)}</span>
+              
+              <div className="flex items-center gap-1.5">
+                <FileText className="h-3.5 w-3.5 text-orange-500" />
+                <span className="text-muted-foreground">OC:</span>
+              </div>
+              <span className="font-medium text-right">{formatPrimary(inversionTotals.oc + capexTotals.oc)}</span>
+              
+              <div className="flex items-center gap-1.5">
+                <Receipt className="h-3.5 w-3.5 text-purple-500" />
+                <span className="text-muted-foreground">Facturación:</span>
+              </div>
+              <span className="font-medium text-right">{formatPrimary(inversionTotals.invoices + capexTotals.invoices)}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* TOTAL INV. INICIAL */}
         <Card className="border-l-4 border-l-blue-500">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-blue-500" />
-              Inversión Inicial {selectedYear}
+              TOTAL INV. INICIAL {selectedYear}
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold">{formatPrimary(inversionSummary.authorized)}</p>
-                <p className="text-xs text-muted-foreground">{formatSecondary(inversionSummary.authorized)}</p>
-                <p className="text-xs text-muted-foreground mt-1">de {formatPrimary(inversionSummary.budget)}</p>
-                {inversionSummary.unauthorized > 0 && (
-                  <p className="text-xs text-yellow-600">+{formatPrimary(inversionSummary.unauthorized)} pendiente</p>
-                )}
+                <p className="text-lg font-bold">{formatPrimary(inversionSummary.authorized)}</p>
+                <p className="text-xs text-muted-foreground">Presup. de {formatPrimary(inversionSummary.budget)}</p>
               </div>
-              <BudgetSemaphore budget={inversionSummary.budget} consumed={inversionSummary.authorized} showLabel={false} size="lg" />
+              <BudgetSemaphore budget={inversionSummary.budget} consumed={inversionSummary.authorized} showLabel={false} size="md" />
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-sm border-t pt-2">
+              <div className="flex items-center gap-1.5">
+                <FileText className="h-3.5 w-3.5 text-orange-500" />
+                <span className="text-muted-foreground">OC:</span>
+              </div>
+              <span className="font-medium text-right">{formatPrimary(inversionTotals.oc)}</span>
+              
+              <div className="flex items-center gap-1.5">
+                <Receipt className="h-3.5 w-3.5 text-purple-500" />
+                <span className="text-muted-foreground">Facturación:</span>
+              </div>
+              <span className="font-medium text-right">{formatPrimary(inversionTotals.invoices)}</span>
             </div>
           </CardContent>
         </Card>
 
-        {/* CAPEX - INDEPENDIENTE */}
+        {/* TOTAL CAPEX */}
         <Card className="border-l-4 border-l-green-500">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <DollarSign className="h-4 w-4 text-green-500" />
-              CAPEX {selectedYear}
+              TOTAL CAPEX {selectedYear}
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold">{formatPrimary(capexSummary.authorized)}</p>
-                <p className="text-xs text-muted-foreground">{formatSecondary(capexSummary.authorized)}</p>
-                <p className="text-xs text-muted-foreground mt-1">de {formatPrimary(capexSummary.budget)}</p>
-                {capexSummary.unauthorized > 0 && (
-                  <p className="text-xs text-yellow-600">+{formatPrimary(capexSummary.unauthorized)} pendiente</p>
-                )}
+                <p className="text-lg font-bold">{formatPrimary(capexSummary.authorized)}</p>
+                <p className="text-xs text-muted-foreground">Presup. de {formatPrimary(capexSummary.budget)}</p>
               </div>
-              <BudgetSemaphore budget={capexSummary.budget} consumed={capexSummary.authorized} showLabel={false} size="lg" />
+              <BudgetSemaphore budget={capexSummary.budget} consumed={capexSummary.authorized} showLabel={false} size="md" />
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Órdenes de Compra */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <FileText className="h-4 w-4" />
-              Órdenes de Compra {selectedYear}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{formatPrimary(totalOC)}</p>
-            <p className="text-xs text-muted-foreground">{formatSecondary(totalOC)}</p>
-          </CardContent>
-        </Card>
-
-        {/* Facturación */}
-        <Card className="border-l-4 border-l-purple-500">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Receipt className="h-4 w-4 text-purple-500" />
-              Facturación {selectedYear}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{formatPrimary(totalInvoices)}</p>
-            <p className="text-xs text-muted-foreground">{formatSecondary(totalInvoices)}</p>
+            <div className="grid grid-cols-2 gap-2 text-sm border-t pt-2">
+              <div className="flex items-center gap-1.5">
+                <FileText className="h-3.5 w-3.5 text-orange-500" />
+                <span className="text-muted-foreground">OC:</span>
+              </div>
+              <span className="font-medium text-right">{formatPrimary(capexTotals.oc)}</span>
+              
+              <div className="flex items-center gap-1.5">
+                <Receipt className="h-3.5 w-3.5 text-purple-500" />
+                <span className="text-muted-foreground">Facturación:</span>
+              </div>
+              <span className="font-medium text-right">{formatPrimary(capexTotals.invoices)}</span>
+            </div>
           </CardContent>
         </Card>
       </div>
