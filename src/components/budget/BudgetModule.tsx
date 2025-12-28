@@ -54,6 +54,9 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
   const [showOCDialog, setShowOCDialog] = useState(false);
   const [ocBudgetLineId, setOcBudgetLineId] = useState("");
   const [ocLineName, setOcLineName] = useState("");
+  const [ocLineAvailable, setOcLineAvailable] = useState(0);
+  const [ocLineBudget, setOcLineBudget] = useState(0);
+  const [loadingLineAvailable, setLoadingLineAvailable] = useState(false);
   const [ocForm, setOcForm] = useState({
     order_number: "",
     supplier_name: "",
@@ -277,7 +280,7 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
   };
 
   // Handle opening OC dialog from budget line
-  const handleCreateOCFromLine = (budgetLineId: string, lineName: string) => {
+  const handleCreateOCFromLine = async (budgetLineId: string, lineName: string) => {
     setOcBudgetLineId(budgetLineId);
     setOcLineName(lineName);
     setOcForm({
@@ -288,6 +291,29 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
       currency: "UF"
     });
     setShowOCDialog(true);
+    setLoadingLineAvailable(true);
+    
+    try {
+      // Get the budget line amount
+      const budgetLine = lines.find(l => l.id === budgetLineId);
+      const lineAmount = budgetLine?.amount_uf || 0;
+      setOcLineBudget(lineAmount);
+      
+      // Get existing OCs for this line to calculate used amount
+      const { data: existingOCs } = await supabase
+        .from("purchase_orders")
+        .select("amount_uf")
+        .eq("budget_line_id", budgetLineId)
+        .eq("year", selectedYear);
+      
+      const usedAmount = (existingOCs || []).reduce((sum, oc) => sum + oc.amount_uf, 0);
+      setOcLineAvailable(lineAmount - usedAmount);
+    } catch (error) {
+      console.error("Error calculating available amount:", error);
+      setOcLineAvailable(0);
+    } finally {
+      setLoadingLineAvailable(false);
+    }
   };
 
   // Handle creating OC
@@ -295,14 +321,28 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
     const budget = budgets.find((b) => b.year === selectedYear);
     if (!budget) return;
 
+    const amount = parseFloat(ocForm.amount) || 0;
+    let amountUf = amount;
+
+    if (ocForm.currency === "CLP" && ufValue > 0) {
+      amountUf = amount / ufValue;
+    }
+
+    // Validate that the OC doesn't exceed available amount
+    if (amountUf > ocLineAvailable + 0.01) {
+      toast({ 
+        variant: "destructive", 
+        title: "Monto excede disponible", 
+        description: `El monto de la OC (${formatUF(amountUf)}) supera el disponible de la línea (${formatUF(ocLineAvailable)})` 
+      });
+      return;
+    }
+
     setCreatingOC(true);
     try {
-      const amount = parseFloat(ocForm.amount) || 0;
-      let amountUf = amount;
       let amountClp = 0;
 
       if (ocForm.currency === "CLP" && ufValue > 0) {
-        amountUf = amount / ufValue;
         amountClp = amount;
       } else {
         amountClp = amount * ufValue;
@@ -710,6 +750,29 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
               Nueva OC para: <strong>{ocLineName}</strong>
             </DialogDescription>
           </DialogHeader>
+          
+          {/* Available amount info */}
+          <div className="p-3 rounded-md bg-muted/50 border">
+            {loadingLineAvailable ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Calculando disponible...
+              </div>
+            ) : (
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Presupuesto de línea:</span>
+                  <span className="font-medium">{formatUF(ocLineBudget)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Disponible para OC:</span>
+                  <span className={`font-semibold ${ocLineAvailable <= 0 ? 'text-destructive' : 'text-green-600 dark:text-green-400'}`}>
+                    {formatUF(ocLineAvailable)}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="oc_number">Número de OC *</Label>
@@ -766,7 +829,10 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
             <Button variant="outline" onClick={() => setShowOCDialog(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleCreateOC} disabled={creatingOC || !ocForm.order_number || !ocForm.amount}>
+            <Button 
+              onClick={handleCreateOC} 
+              disabled={creatingOC || !ocForm.order_number || !ocForm.amount || ocLineAvailable <= 0 || loadingLineAvailable}
+            >
               {creatingOC && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Crear OC
             </Button>
