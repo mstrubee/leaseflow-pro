@@ -61,7 +61,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear }: PurchaseOrders
   const [newOrder, setNewOrder] = useState({
     order_number: "",
     supplier_name: "",
-    order_date: new Date().toISOString().split("T")[0],
+    order_date: `${initialYear ?? new Date().getFullYear()}-01-01`,
     amount: "",
     currency: "UF" as "UF" | "CLP",
     description: "",
@@ -150,7 +150,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear }: PurchaseOrders
       setNewOrder({ 
         order_number: "", 
         supplier_name: "", 
-        order_date: new Date().toISOString().split("T")[0], 
+        order_date: `${selectedYear}-01-01`, 
         amount: "", 
         currency: "UF", 
         description: "",
@@ -338,53 +338,25 @@ export const PurchaseOrdersModule = ({ contractId, initialYear }: PurchaseOrders
     return result;
   }, [orders, filters, sortColumn, sortDirection, budgets]);
 
-  // Column header with sort and filter
+  // Clear all filters
+  const clearAllFilters = () => {
+    setFilters({});
+  };
+
+  const hasActiveFilters = Object.values(filters).some(v => v);
+
+  // Column header with sort only
   const ColumnHeader = ({ column, label, className }: { column: string; label: string; className?: string }) => (
     <TableHead className={className}>
-      <div className="space-y-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 px-1 -ml-1 font-medium hover:bg-transparent"
-          onClick={() => handleSort(column)}
-        >
-          {label}
-          {getSortIcon(column)}
-        </Button>
-        {activeFilter === column ? (
-          <div className="flex items-center gap-1">
-            <Input
-              autoFocus
-              className="h-6 text-xs"
-              placeholder={`Filtrar...`}
-              value={filters[column] || ""}
-              onChange={(e) => setFilters({ ...filters, [column]: e.target.value })}
-              onKeyDown={(e) => e.key === "Escape" && setActiveFilter(null)}
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              onClick={() => {
-                setFilters({ ...filters, [column]: "" });
-                setActiveFilter(null);
-              }}
-            >
-              <X className="h-3 w-3" />
-            </Button>
-          </div>
-        ) : (
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn("h-5 px-1 text-xs", filters[column] ? "text-primary" : "text-muted-foreground")}
-            onClick={() => setActiveFilter(column)}
-          >
-            <Search className="h-3 w-3 mr-1" />
-            {filters[column] || "Filtrar"}
-          </Button>
-        )}
-      </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 px-2 -ml-2 font-medium hover:bg-accent"
+        onClick={() => handleSort(column)}
+      >
+        {label}
+        {getSortIcon(column)}
+      </Button>
     </TableHead>
   );
 
@@ -419,8 +391,83 @@ export const PurchaseOrdersModule = ({ contractId, initialYear }: PurchaseOrders
           </div>
         </div>
 
+        {/* Filter bar */}
+        <div className="mb-4 p-3 bg-muted/20 rounded-lg border">
+          <div className="flex items-center gap-2 mb-2">
+            <Search className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Filtros</span>
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" className="h-6 text-xs ml-auto" onClick={clearAllFilters}>
+                <X className="h-3 w-3 mr-1" />
+                Limpiar filtros
+              </Button>
+            )}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
+            <Input
+              placeholder="Nº OC"
+              className="h-8 text-sm"
+              value={filters.order_number || ""}
+              onChange={(e) => setFilters({ ...filters, order_number: e.target.value })}
+            />
+            <Input
+              placeholder="Fecha"
+              className="h-8 text-sm"
+              value={filters.order_date || ""}
+              onChange={(e) => setFilters({ ...filters, order_date: e.target.value })}
+            />
+            <Input
+              placeholder="Proveedor"
+              className="h-8 text-sm"
+              value={filters.supplier_name || ""}
+              onChange={(e) => setFilters({ ...filters, supplier_name: e.target.value })}
+            />
+            <Select
+              value={filters.type || "all"}
+              onValueChange={(v) => setFilters({ ...filters, type: v === "all" ? "" : v })}
+            >
+              <SelectTrigger className="h-8 text-sm">
+                <SelectValue placeholder="Tipo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los tipos</SelectItem>
+                <SelectItem value="inversión inicial">Inversión Inicial</SelectItem>
+                <SelectItem value="capex">Capex</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              placeholder="Descripción"
+              className="h-8 text-sm"
+              value={filters.description || ""}
+              onChange={(e) => setFilters({ ...filters, description: e.target.value })}
+            />
+            <Input
+              placeholder="Monto"
+              className="h-8 text-sm"
+              value={filters.amount || ""}
+              onChange={(e) => setFilters({ ...filters, amount: e.target.value })}
+            />
+            <Select
+              value={filters.status || "all"}
+              onValueChange={(v) => setFilters({ ...filters, status: v === "all" ? "" : v })}
+            >
+              <SelectTrigger className="h-8 text-sm">
+                <SelectValue placeholder="Estado" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="abierta">Abierta</SelectItem>
+                <SelectItem value="cerrada">Cerrada</SelectItem>
+                <SelectItem value="descuadrada">Descuadrada</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
         {orders.length === 0 ? (
           <p className="text-center text-muted-foreground py-8">No hay órdenes de compra para {selectedYear}</p>
+        ) : filteredAndSortedOrders.length === 0 ? (
+          <p className="text-center text-muted-foreground py-8">No hay resultados para los filtros aplicados</p>
         ) : (
           <Table>
             <TableHeader>
@@ -514,7 +561,14 @@ export const PurchaseOrdersModule = ({ contractId, initialYear }: PurchaseOrders
               </div>
               <div className="space-y-2">
                 <Label>Fecha</Label>
-                <Input type="date" value={newOrder.order_date} onChange={(e) => setNewOrder({ ...newOrder, order_date: e.target.value })} />
+                <Input 
+                  type="date" 
+                  value={newOrder.order_date} 
+                  min={`${selectedYear}-01-01`}
+                  max={`${selectedYear}-12-31`}
+                  onChange={(e) => setNewOrder({ ...newOrder, order_date: e.target.value })} 
+                />
+                <p className="text-xs text-muted-foreground">Solo fechas del año {selectedYear}</p>
               </div>
             </div>
             <div className="space-y-2">
