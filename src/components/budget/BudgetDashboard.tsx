@@ -194,15 +194,23 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
     // Obtener líneas del presupuesto específico
     const { data: lines } = await supabase
       .from("budget_lines")
-      .select("amount_uf, status, parent_id")
+      .select("id, amount_uf, status, parent_id")
       .eq("budget_id", budget.id);
 
-    const authorized = (lines || [])
-      .filter(l => l.status === "autorizado" && l.parent_id === null)
+    // Get all line IDs to identify which are parents
+    const parentIds = new Set((lines || []).filter(l => l.parent_id).map(l => l.parent_id));
+    
+    // Only count leaf nodes (lines that are not parents of other lines) to avoid double counting
+    const leafLines = (lines || []).filter(l => !parentIds.has(l.id));
+    
+    // For lines with parent_id === null that are also not parents, count them
+    // For lines with parent_id !== null, they are already leaf nodes by definition if not in parentIds
+    const authorized = leafLines
+      .filter(l => l.status === "autorizado")
       .reduce((acc, l) => acc + (l.amount_uf || 0), 0);
 
-    const unauthorized = (lines || [])
-      .filter(l => l.status === "no_autorizado" && l.parent_id === null)
+    const unauthorized = leafLines
+      .filter(l => l.status === "no_autorizado")
       .reduce((acc, l) => acc + (l.amount_uf || 0), 0);
 
     return {
