@@ -95,10 +95,16 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
     setLoading(false);
   }, [contractId]);
 
+  const refreshData = async () => {
+    await Promise.all([
+      loadSummaries(),
+      loadCarryover(),
+      loadYearBudgetInfo(),
+    ]);
+  };
+
   useEffect(() => {
-    loadSummaries();
-    loadCarryover();
-    loadYearBudgetInfo();
+    refreshData();
   }, [contractId, selectedYear, refreshKey]);
 
   // Save selected year to localStorage when it changes
@@ -709,7 +715,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
             title="Inversión Inicial" 
             selectedYear={selectedYear}
             ocTotal={inversionTotals.oc}
-            onRefresh={() => setRefreshKey(k => k + 1)}
+            onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
           />
         </TabsContent>
         <TabsContent value="capex" className="mt-4">
@@ -720,14 +726,14 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
             title="CAPEX"
             selectedYear={selectedYear}
             ocTotal={capexTotals.oc}
-            onRefresh={() => setRefreshKey(k => k + 1)}
+            onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
           />
         </TabsContent>
         <TabsContent value="oc" className="mt-4">
           <PurchaseOrdersModule 
             contractId={contractId} 
             initialYear={selectedYear} 
-            onRefresh={() => setRefreshKey(k => k + 1)}
+            onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
           />
         </TabsContent>
       </Tabs>
