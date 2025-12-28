@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Loader2, Lock, AlertTriangle, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { BudgetLineTree, BudgetLine, calculateAuthorizedTotal, calculateUnauthorizedTotal, getUnauthorizedLines, getAllDescendantIds, hasDescendants } from "./BudgetLineTree";
@@ -76,6 +77,21 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
     purchase_order_id: ""
   });
   const [creatingInvoice, setCreatingInvoice] = useState(false);
+
+  // Line Details Dialog state
+  const [showLineDetailsDialog, setShowLineDetailsDialog] = useState(false);
+  const [lineDetailsId, setLineDetailsId] = useState("");
+  const [lineDetailsName, setLineDetailsName] = useState("");
+  const [lineDetailsOCs, setLineDetailsOCs] = useState<{
+    id: string;
+    order_number: string;
+    supplier_name: string | null;
+    amount_uf: number;
+    status: string;
+    invoices: { id: string; invoice_number: string; amount_uf: number; invoice_date: string }[];
+    credit_notes: { id: string; credit_note_number: string; amount_uf: number; invoice_id: string }[];
+  }[]>([]);
+  const [loadingLineDetails, setLoadingLineDetails] = useState(false);
   
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos, ufValue } = useBudgetContext();
@@ -396,6 +412,55 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
     }
   };
 
+  // Handler to view line details (OCs, invoices, credit notes)
+  const handleViewLineDetails = async (budgetLineId: string, lineName: string) => {
+    setLineDetailsId(budgetLineId);
+    setLineDetailsName(lineName);
+    setShowLineDetailsDialog(true);
+    setLoadingLineDetails(true);
+
+    try {
+      // Fetch OCs for this budget line
+      const { data: ocs, error: ocsError } = await supabase
+        .from("purchase_orders")
+        .select("id, order_number, supplier_name, amount_uf, status")
+        .eq("budget_line_id", budgetLineId)
+        .order("order_date", { ascending: false });
+
+      if (ocsError) throw ocsError;
+
+      // For each OC, fetch invoices and credit notes
+      const ocsWithDetails = await Promise.all(
+        (ocs || []).map(async (oc) => {
+          const { data: invoices } = await supabase
+            .from("invoices")
+            .select("id, invoice_number, amount_uf, invoice_date")
+            .eq("purchase_order_id", oc.id)
+            .order("invoice_date", { ascending: false });
+
+          const { data: creditNotes } = await supabase
+            .from("credit_notes")
+            .select("id, credit_note_number, amount_uf, invoice_id")
+            .eq("purchase_order_id", oc.id)
+            .order("credit_note_date", { ascending: false });
+
+          return {
+            ...oc,
+            invoices: invoices || [],
+            credit_notes: creditNotes || [],
+          };
+        })
+      );
+
+      setLineDetailsOCs(ocsWithDetails);
+    } catch (error) {
+      console.error("Error loading line details:", error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudieron cargar los detalles" });
+    } finally {
+      setLoadingLineDetails(false);
+    }
+  };
+
   const handleUpdateTemplate = async () => {
     const budget = budgets.find((b) => b.year === selectedYear);
     if (!budget || !updateTemplateId) return;
@@ -530,6 +595,7 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
               onDeleteLine={handleDeleteLine}
               onCreateOC={handleCreateOCFromLine}
               onCreateInvoice={handleCreateInvoiceFromLine}
+              onViewLineDetails={handleViewLineDetails}
               readOnly={isClosed}
             />
           </>
@@ -812,6 +878,127 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
             >
               {creatingInvoice && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Registrar Factura
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Line Details - OCs, Invoices, Credit Notes */}
+      <Dialog open={showLineDetailsDialog} onOpenChange={setShowLineDetailsDialog}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Detalle de Línea: {lineDetailsName}</DialogTitle>
+            <DialogDescription>
+              Órdenes de compra, facturas y notas de crédito asociadas
+            </DialogDescription>
+          </DialogHeader>
+          
+          {loadingLineDetails ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <span className="ml-2">Cargando...</span>
+            </div>
+          ) : lineDetailsOCs.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>No hay órdenes de compra asociadas a esta línea.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {lineDetailsOCs.map((oc) => {
+                const totalInvoiced = oc.invoices.reduce((sum, inv) => sum + inv.amount_uf, 0);
+                const totalCreditNotes = oc.credit_notes.reduce((sum, cn) => sum + cn.amount_uf, 0);
+                const netInvoiced = totalInvoiced - totalCreditNotes;
+                
+                return (
+                  <div key={oc.id} className="border rounded-lg p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{oc.order_number}</span>
+                        <span className="text-sm text-muted-foreground">
+                          {oc.supplier_name || "Sin proveedor"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{formatUF(oc.amount_uf)}</span>
+                        <Badge 
+                          variant={
+                            oc.status === "cerrada" ? "default" : 
+                            oc.status === "descuadrada" ? "destructive" : 
+                            "secondary"
+                          }
+                          className={oc.status === "cerrada" ? "bg-blue-500" : oc.status === "abierta" ? "bg-green-500" : ""}
+                        >
+                          {oc.status === "cerrada" ? "Cerrada" : oc.status === "descuadrada" ? "Sobrepasado" : "OK"}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    {/* Invoices */}
+                    {oc.invoices.length > 0 && (
+                      <div className="pl-4 border-l-2 border-green-200">
+                        <p className="text-xs font-medium text-green-700 mb-1">Facturas</p>
+                        <div className="space-y-1">
+                          {oc.invoices.map((inv) => {
+                            const invCreditNotes = oc.credit_notes.filter(cn => cn.invoice_id === inv.id);
+                            return (
+                              <div key={inv.id} className="text-sm flex items-center justify-between py-1">
+                                <span>{inv.invoice_number}</span>
+                                <div className="flex items-center gap-4">
+                                  <span className="text-muted-foreground text-xs">
+                                    {new Date(inv.invoice_date).toLocaleDateString("es-CL")}
+                                  </span>
+                                  <span className="font-mono">{formatUF(inv.amount_uf)}</span>
+                                  {invCreditNotes.length > 0 && (
+                                    <span className="text-xs text-red-600">
+                                      - {formatUF(invCreditNotes.reduce((s, c) => s + c.amount_uf, 0))} NC
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Credit Notes Summary */}
+                    {oc.credit_notes.length > 0 && (
+                      <div className="pl-4 border-l-2 border-red-200">
+                        <p className="text-xs font-medium text-red-700 mb-1">Notas de Crédito</p>
+                        <div className="space-y-1">
+                          {oc.credit_notes.map((cn) => (
+                            <div key={cn.id} className="text-sm flex items-center justify-between py-1">
+                              <span>{cn.credit_note_number}</span>
+                              <span className="font-mono text-red-600">-{formatUF(cn.amount_uf)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Summary */}
+                    <div className="flex justify-end gap-6 pt-2 border-t text-sm">
+                      <div className="text-muted-foreground">
+                        Facturado: <span className="font-medium text-foreground">{formatUF(totalInvoiced)}</span>
+                      </div>
+                      {totalCreditNotes > 0 && (
+                        <div className="text-muted-foreground">
+                          NC: <span className="font-medium text-red-600">-{formatUF(totalCreditNotes)}</span>
+                        </div>
+                      )}
+                      <div className="text-muted-foreground">
+                        Neto: <span className="font-medium text-foreground">{formatUF(netInvoiced)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowLineDetailsDialog(false)}>
+              Cerrar
             </Button>
           </DialogFooter>
         </DialogContent>
