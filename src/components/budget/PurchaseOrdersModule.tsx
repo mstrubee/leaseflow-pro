@@ -31,6 +31,7 @@ interface PurchaseOrder {
 
 interface PurchaseOrdersModuleProps {
   contractId: string;
+  initialYear?: number;
 }
 
 interface Budget {
@@ -39,10 +40,17 @@ interface Budget {
   budget_type: string;
 }
 
-export const PurchaseOrdersModule = ({ contractId }: PurchaseOrdersModuleProps) => {
+export const PurchaseOrdersModule = ({ contractId, initialYear }: PurchaseOrdersModuleProps) => {
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [selectedYear, setSelectedYear] = useState<number>(initialYear ?? new Date().getFullYear());
+
+  // Sync with parent's selected year when it changes
+  useEffect(() => {
+    if (initialYear !== undefined) {
+      setSelectedYear(initialYear);
+    }
+  }, [initialYear]);
   const [loading, setLoading] = useState(true);
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);

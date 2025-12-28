@@ -263,7 +263,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
           <BudgetModule contractId={contractId} budgetType="capex" title="CAPEX" />
         </TabsContent>
         <TabsContent value="oc" className="mt-4">
-          <PurchaseOrdersModule contractId={contractId} />
+          <PurchaseOrdersModule contractId={contractId} initialYear={selectedYear} />
         </TabsContent>
       </Tabs>
     </div>
