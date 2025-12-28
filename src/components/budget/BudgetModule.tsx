@@ -27,10 +27,11 @@ interface BudgetModuleProps {
   budgetType: "inversion_inicial" | "capex";
   title: string;
   selectedYear: number;
+  ocTotal?: number;
   onRefresh?: () => void;
 }
 
-export const BudgetModule = ({ contractId, budgetType, title, selectedYear, onRefresh }: BudgetModuleProps) => {
+export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTotal = 0, onRefresh }: BudgetModuleProps) => {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [loading, setLoading] = useState(true);
@@ -302,13 +303,21 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, onRe
               </div>
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Disponible</p>
-                <p className={`text-xl font-bold ${budgetAmount - authorizedTotal < 0 ? "text-destructive" : "text-foreground"}`}>
-                  {formatUF(Math.abs(budgetAmount - authorizedTotal))}
-                  {budgetAmount - authorizedTotal < 0 && " (Sobrepasado)"}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {formatCLP(convertUFToPesos(Math.abs(budgetAmount - authorizedTotal)))}
-                </p>
+                {(() => {
+                  const disponible = budgetAmount - ocTotal;
+                  const isSobrepasado = budgetAmount > 0 && ocTotal > budgetAmount;
+                  return (
+                    <>
+                      <p className={`text-xl font-bold ${isSobrepasado ? "text-destructive" : "text-foreground"}`}>
+                        {formatUF(Math.abs(disponible))}
+                        {isSobrepasado && " (Sobrepasado)"}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {formatCLP(convertUFToPesos(Math.abs(disponible)))}
+                      </p>
+                    </>
+                  );
+                })()}
               </div>
             </div>
 

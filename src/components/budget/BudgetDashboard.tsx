@@ -677,6 +677,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
             budgetType="inversion_inicial" 
             title="Inversión Inicial" 
             selectedYear={selectedYear}
+            ocTotal={inversionTotals.oc}
             onRefresh={() => setRefreshKey(k => k + 1)}
           />
         </TabsContent>
@@ -687,6 +688,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
             budgetType="capex" 
             title="CAPEX"
             selectedYear={selectedYear}
+            ocTotal={capexTotals.oc}
             onRefresh={() => setRefreshKey(k => k + 1)}
           />
         </TabsContent>
