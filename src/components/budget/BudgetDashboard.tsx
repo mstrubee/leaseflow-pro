@@ -255,10 +255,10 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
       return { budget: 0, authorized: 0, unauthorized: 0 };
     }
 
-    // Obtener líneas del presupuesto específico
+    // Obtener líneas del presupuesto específico con quantity y unit_price
     const { data: lines } = await supabase
       .from("budget_lines")
-      .select("id, amount_uf, status, parent_id")
+      .select("id, amount_uf, status, parent_id, quantity, unit_price")
       .eq("budget_id", budget.id);
 
     // Get all line IDs to identify which are parents
@@ -267,13 +267,21 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
     // Only count leaf nodes (lines that are not parents of other lines) to avoid double counting
     const leafLines = (lines || []).filter(l => !parentIds.has(l.id));
     
+    // Helper to get effective amount (0 if quantity or price is missing)
+    const getEffectiveAmount = (line: { quantity?: number | null; unit_price?: number | null; amount_uf: number }) => {
+      const qty = line.quantity || 0;
+      const price = line.unit_price || 0;
+      if (qty <= 0 || price <= 0) return 0;
+      return line.amount_uf || 0;
+    };
+    
     const authorized = leafLines
       .filter(l => l.status === "autorizado")
-      .reduce((acc, l) => acc + (l.amount_uf || 0), 0);
+      .reduce((acc, l) => acc + getEffectiveAmount(l), 0);
 
     const unauthorized = leafLines
       .filter(l => l.status === "no_autorizado")
-      .reduce((acc, l) => acc + (l.amount_uf || 0), 0);
+      .reduce((acc, l) => acc + getEffectiveAmount(l), 0);
 
     return {
       budget: budget.amount_uf || 0,
