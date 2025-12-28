@@ -262,7 +262,7 @@ const BudgetLineItem = ({
           
           {/* OC and Invoice buttons - only for authorized leaf lines */}
           {!isParent && line.status === "autorizado" && !readOnly && (
-            <div className="flex flex-col gap-0.5 ml-2">
+            <div className="flex items-center gap-1 ml-2">
               {onCreateOC && (
                 <TooltipProvider>
                   <Tooltip>
@@ -271,9 +271,9 @@ const BudgetLineItem = ({
                         size="sm" 
                         variant="outline" 
                         onClick={() => onCreateOC(line.id, line.name)} 
-                        className="h-5 px-1.5 text-[10px] border-blue-300 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                        className="h-6 px-2 text-[10px] border-blue-300 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
                       >
-                        <FileText className="h-2.5 w-2.5 mr-0.5" />
+                        <FileText className="h-3 w-3 mr-1" />
                         OC
                       </Button>
                     </TooltipTrigger>
@@ -289,9 +289,9 @@ const BudgetLineItem = ({
                         size="sm" 
                         variant="outline" 
                         onClick={() => onCreateInvoice(line.id, line.name)} 
-                        className="h-5 px-1.5 text-[10px] border-green-300 text-green-600 hover:bg-green-50 hover:text-green-700"
+                        className="h-6 px-2 text-[10px] border-green-300 text-green-600 hover:bg-green-50 hover:text-green-700"
                       >
-                        <Receipt className="h-2.5 w-2.5 mr-0.5" />
+                        <Receipt className="h-3 w-3 mr-1" />
                         Factura
                       </Button>
                     </TooltipTrigger>
