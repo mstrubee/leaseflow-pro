@@ -585,10 +585,10 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-lg font-bold">{formatPrimary(inversionSummary.authorized)}</p>
-                <p className="text-xs text-muted-foreground">Presup. de {formatPrimary(inversionSummary.budget)}</p>
+                <p className="text-lg font-bold">{formatUF(inversionSummary.authorized)}</p>
+                <p className="text-xs text-muted-foreground">{formatSecondary(inversionSummary.authorized)}</p>
               </div>
-              <BudgetSemaphore budget={inversionSummary.budget} consumed={inversionSummary.authorized} showLabel={false} size="md" />
+              <BudgetSemaphore budget={inversionSummary.authorized} consumed={inversionTotals.oc} showLabel={false} size="md" />
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm border-t pt-2">
               <div className="flex items-center gap-1.5">
@@ -602,6 +602,14 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                 <span className="text-muted-foreground">Facturación:</span>
               </div>
               <span className="font-medium text-right">{formatPrimary(inversionTotals.invoices)}</span>
+              
+              <div className="flex items-center gap-1.5">
+                <DollarSign className="h-3.5 w-3.5 text-green-500" />
+                <span className="text-muted-foreground">Disponible:</span>
+              </div>
+              <span className={`font-medium text-right ${inversionTotals.oc > inversionSummary.authorized ? "text-destructive" : "text-green-600"}`}>
+                {formatPrimary(inversionSummary.authorized - inversionTotals.oc)}
+              </span>
               
               {inversionSummary.unauthorized > 0 && (
                 <>
@@ -627,10 +635,10 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-lg font-bold">{formatPrimary(capexSummary.authorized)}</p>
-                <p className="text-xs text-muted-foreground">Presup. de {formatPrimary(capexSummary.budget)}</p>
+                <p className="text-lg font-bold">{formatUF(capexSummary.authorized)}</p>
+                <p className="text-xs text-muted-foreground">{formatSecondary(capexSummary.authorized)}</p>
               </div>
-              <BudgetSemaphore budget={capexSummary.budget} consumed={capexSummary.authorized} showLabel={false} size="md" />
+              <BudgetSemaphore budget={capexSummary.authorized} consumed={capexTotals.oc} showLabel={false} size="md" />
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm border-t pt-2">
               <div className="flex items-center gap-1.5">
@@ -644,6 +652,14 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                 <span className="text-muted-foreground">Facturación:</span>
               </div>
               <span className="font-medium text-right">{formatPrimary(capexTotals.invoices)}</span>
+              
+              <div className="flex items-center gap-1.5">
+                <DollarSign className="h-3.5 w-3.5 text-green-500" />
+                <span className="text-muted-foreground">Disponible:</span>
+              </div>
+              <span className={`font-medium text-right ${capexTotals.oc > capexSummary.authorized ? "text-destructive" : "text-green-600"}`}>
+                {formatPrimary(capexSummary.authorized - capexTotals.oc)}
+              </span>
               
               {capexSummary.unauthorized > 0 && (
                 <>
