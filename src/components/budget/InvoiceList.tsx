@@ -658,12 +658,19 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
             size="sm" 
             variant="outline" 
             onClick={() => setShowCreditNoteDialog(true)}
-            disabled={invoices.length === 0}
+            disabled={invoices.length === 0 || ocStatus === "cerrada"}
+            title={ocStatus === "cerrada" ? "OC cerrada - no se permiten más movimientos" : undefined}
           >
             <CreditCard className="h-4 w-4 mr-1" />
             Nota Crédito
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setShowNewDialog(true)}>
+          <Button 
+            size="sm" 
+            variant="outline" 
+            onClick={() => setShowNewDialog(true)}
+            disabled={ocStatus === "cerrada"}
+            title={ocStatus === "cerrada" ? "OC cerrada - no se permiten más facturas" : undefined}
+          >
             <Plus className="h-4 w-4 mr-1" />
             Nueva Factura
           </Button>
