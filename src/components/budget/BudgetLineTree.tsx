@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight, ChevronDown, Plus, Trash2, Check, X, Edit2, ArrowRight } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, Check, X, Edit2, ArrowRight, FileText, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +28,8 @@ interface BudgetLineTreeProps {
   onAddLine: (parentId: string | null) => void;
   onUpdateLine: (id: string, data: Partial<BudgetLine>) => void;
   onDeleteLine: (id: string) => void;
+  onCreateOC?: (budgetLineId: string, lineName: string) => void;
+  onCreateInvoice?: (budgetLineId: string, lineName: string) => void;
   level?: number;
   readOnly?: boolean;
 }
@@ -36,11 +38,13 @@ export const BudgetLineTree = ({
   onAddLine,
   onUpdateLine,
   onDeleteLine,
+  onCreateOC,
+  onCreateInvoice,
   level = 0,
   readOnly = false
 }: BudgetLineTreeProps) => {
   return <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
-      {lines.map(line => <BudgetLineItem key={line.id} line={line} level={level} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} readOnly={readOnly} />)}
+      {lines.map(line => <BudgetLineItem key={line.id} line={line} level={level} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateInvoice={onCreateInvoice} readOnly={readOnly} />)}
       {level === 0 && !readOnly && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
           Agregar línea madre
@@ -53,6 +57,8 @@ interface BudgetLineItemProps {
   onAddLine: (parentId: string | null) => void;
   onUpdateLine: (id: string, data: Partial<BudgetLine>) => void;
   onDeleteLine: (id: string) => void;
+  onCreateOC?: (budgetLineId: string, lineName: string) => void;
+  onCreateInvoice?: (budgetLineId: string, lineName: string) => void;
   readOnly?: boolean;
 }
 const BudgetLineItem = ({
@@ -61,6 +67,8 @@ const BudgetLineItem = ({
   onAddLine,
   onUpdateLine,
   onDeleteLine,
+  onCreateOC,
+  onCreateInvoice,
   readOnly = false
 }: BudgetLineItemProps) => {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -251,6 +259,49 @@ const BudgetLineItem = ({
                 <TooltipContent>Se arrastrará al próximo año</TooltipContent>
               </Tooltip>
             </TooltipProvider>}
+          
+          {/* OC and Invoice buttons - only for authorized leaf lines */}
+          {!isParent && line.status === "autorizado" && !readOnly && (
+            <div className="flex items-center gap-1 ml-2">
+              {onCreateOC && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={() => onCreateOC(line.id, line.name)} 
+                        className="h-6 px-2 text-xs border-blue-300 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                      >
+                        <FileText className="h-3 w-3 mr-1" />
+                        OC
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Crear Orden de Compra</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              {onCreateInvoice && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={() => onCreateInvoice(line.id, line.name)} 
+                        className="h-6 px-2 text-xs border-green-300 text-green-600 hover:bg-green-50 hover:text-green-700"
+                      >
+                        <Receipt className="h-3 w-3 mr-1" />
+                        Factura
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Registrar Factura</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+            </div>
+          )}
+
           {!readOnly && <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5">
               <Button size="sm" variant="ghost" onClick={() => onAddLine(line.id)} className="h-6 w-6 p-0">
                 <Plus className="h-3 w-3" />
@@ -262,7 +313,7 @@ const BudgetLineItem = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} readOnly={readOnly} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateInvoice={onCreateInvoice} readOnly={readOnly} />}
     </div>;
 };
 
