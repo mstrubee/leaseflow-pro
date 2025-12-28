@@ -536,7 +536,10 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                 <DollarSign className="h-3.5 w-3.5 text-primary" />
                 <span className="text-muted-foreground">Total Presupuesto:</span>
               </div>
-              <span className="font-medium text-right">{formatPrimary(inversionSummary.authorized + capexSummary.authorized + carryover.total)}</span>
+              <div className="text-right">
+                <span className="font-medium">{formatUF(inversionSummary.authorized + capexSummary.authorized + carryover.total)}</span>
+                <span className="text-xs text-muted-foreground ml-1">({formatSecondary(inversionSummary.authorized + capexSummary.authorized + carryover.total)})</span>
+              </div>
               
               {carryover.total > 0 && (
                 <>
@@ -544,7 +547,10 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                     <RotateCcw className="h-3.5 w-3.5 text-amber-500" />
                     <span className="text-muted-foreground">Arrastre Presup.:</span>
                   </div>
-                  <span className="font-medium text-right text-amber-600">{formatPrimary(carryover.total)}</span>
+                  <div className="text-right">
+                    <span className="font-medium text-amber-600">{formatUF(carryover.total)}</span>
+                    <span className="text-xs text-muted-foreground ml-1">({formatSecondary(carryover.total)})</span>
+                  </div>
                 </>
               )}
               
@@ -552,13 +558,19 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                 <FileText className="h-3.5 w-3.5 text-orange-500" />
                 <span className="text-muted-foreground">Total OC:</span>
               </div>
-              <span className="font-medium text-right">{formatPrimary(inversionTotals.oc + capexTotals.oc)}</span>
+              <div className="text-right">
+                <span className="font-medium">{formatUF(inversionTotals.oc + capexTotals.oc)}</span>
+                <span className="text-xs text-muted-foreground ml-1">({formatSecondary(inversionTotals.oc + capexTotals.oc)})</span>
+              </div>
               
               <div className="flex items-center gap-1.5">
                 <Receipt className="h-3.5 w-3.5 text-purple-500" />
                 <span className="text-muted-foreground">Total Facturación:</span>
               </div>
-              <span className="font-medium text-right">{formatPrimary(inversionTotals.invoices + capexTotals.invoices)}</span>
+              <div className="text-right">
+                <span className="font-medium">{formatUF(inversionTotals.invoices + capexTotals.invoices)}</span>
+                <span className="text-xs text-muted-foreground ml-1">({formatSecondary(inversionTotals.invoices + capexTotals.invoices)})</span>
+              </div>
               
               {(inversionSummary.unauthorized + capexSummary.unauthorized) > 0 && (
                 <>
@@ -567,7 +579,10 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                     <AlertCircle className="h-3.5 w-3.5 text-yellow-500" />
                     <span className="text-muted-foreground">Presup. No Autorizado:</span>
                   </div>
-                  <span className="font-medium text-right text-yellow-600">{formatPrimary(inversionSummary.unauthorized + capexSummary.unauthorized)}</span>
+                  <div className="text-right">
+                    <span className="font-medium text-yellow-600">{formatUF(inversionSummary.unauthorized + capexSummary.unauthorized)}</span>
+                    <span className="text-xs text-muted-foreground ml-1">({formatSecondary(inversionSummary.unauthorized + capexSummary.unauthorized)})</span>
+                  </div>
                 </>
               )}
             </div>
