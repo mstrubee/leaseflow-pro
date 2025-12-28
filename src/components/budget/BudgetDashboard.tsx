@@ -26,9 +26,14 @@ interface BudgetTypeTotals {
   invoices: number;
 }
 
+const STORAGE_KEY_PREFIX = "budget_selected_year_";
+
 const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
   const [loading, setLoading] = useState(true);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedYear, setSelectedYear] = useState(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}${contractId}`);
+    return saved ? parseInt(saved) : new Date().getFullYear();
+  });
   const [availableYears, setAvailableYears] = useState<number[]>([]);
   const [inversionSummary, setInversionSummary] = useState<BudgetSummary>({ budget: 0, authorized: 0, unauthorized: 0 });
   const [capexSummary, setCapexSummary] = useState<BudgetSummary>({ budget: 0, authorized: 0, unauthorized: 0 });
@@ -45,6 +50,12 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
   useEffect(() => {
     loadSummaries();
   }, [contractId, selectedYear]);
+
+  // Save selected year to localStorage when it changes
+  const handleYearChange = (year: number) => {
+    setSelectedYear(year);
+    localStorage.setItem(`${STORAGE_KEY_PREFIX}${contractId}`, year.toString());
+  };
 
   const loadAvailableYears = async () => {
     try {
@@ -177,7 +188,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
       {/* Year Selector */}
       <div className="flex items-center gap-4">
         <span className="text-sm font-medium text-muted-foreground">Año:</span>
-        <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(parseInt(v))}>
+        <Select value={selectedYear.toString()} onValueChange={(v) => handleYearChange(parseInt(v))}>
           <SelectTrigger className="w-32">
             <SelectValue />
           </SelectTrigger>
@@ -203,26 +214,20 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div className="flex items-center gap-1.5">
-                <TrendingUp className="h-3.5 w-3.5 text-blue-500" />
-                <span className="text-muted-foreground">Inv. Inicial:</span>
+                <DollarSign className="h-3.5 w-3.5 text-primary" />
+                <span className="text-muted-foreground">Total Presupuesto:</span>
               </div>
-              <span className="font-medium text-right">{formatPrimary(inversionSummary.authorized)}</span>
-              
-              <div className="flex items-center gap-1.5">
-                <DollarSign className="h-3.5 w-3.5 text-green-500" />
-                <span className="text-muted-foreground">CAPEX:</span>
-              </div>
-              <span className="font-medium text-right">{formatPrimary(capexSummary.authorized)}</span>
+              <span className="font-medium text-right">{formatPrimary(inversionSummary.authorized + capexSummary.authorized)}</span>
               
               <div className="flex items-center gap-1.5">
                 <FileText className="h-3.5 w-3.5 text-orange-500" />
-                <span className="text-muted-foreground">OC:</span>
+                <span className="text-muted-foreground">Total OC:</span>
               </div>
               <span className="font-medium text-right">{formatPrimary(inversionTotals.oc + capexTotals.oc)}</span>
               
               <div className="flex items-center gap-1.5">
                 <Receipt className="h-3.5 w-3.5 text-purple-500" />
-                <span className="text-muted-foreground">Facturación:</span>
+                <span className="text-muted-foreground">Total Facturación:</span>
               </div>
               <span className="font-medium text-right">{formatPrimary(inversionTotals.invoices + capexTotals.invoices)}</span>
             </div>
