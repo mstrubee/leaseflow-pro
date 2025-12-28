@@ -289,12 +289,7 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, onRe
       <CardContent className="space-y-4">
         {currentBudget ? (
           <>
-            <div className="grid grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg">
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Presupuesto {selectedYear}</p>
-                <p className="text-xl font-bold">{formatUF(budgetAmount)}</p>
-                <p className="text-sm text-muted-foreground">{formatCLP(convertUFToPesos(budgetAmount))}</p>
-              </div>
+            <div className="grid grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg">
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Autorizado</p>
                 <p className="text-xl font-bold text-green-600">{formatUF(authorizedTotal)}</p>
@@ -307,7 +302,9 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, onRe
               </div>
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Disponible</p>
-                <p className="text-xl font-bold">{formatUF(budgetAmount - authorizedTotal)}</p>
+                <p className={`text-xl font-bold ${budgetAmount - authorizedTotal < 0 ? "text-red-600" : ""}`}>
+                  {formatUF(budgetAmount - authorizedTotal)}
+                </p>
                 <p className="text-sm text-muted-foreground">
                   {formatCLP(convertUFToPesos(budgetAmount - authorizedTotal))}
                 </p>
