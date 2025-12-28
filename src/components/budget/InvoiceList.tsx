@@ -658,8 +658,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
             size="sm" 
             variant="outline" 
             onClick={() => setShowCreditNoteDialog(true)}
-            disabled={invoices.length === 0 || ocStatus === "cerrada"}
-            title={ocStatus === "cerrada" ? "OC cerrada - no se permiten más movimientos" : undefined}
+            disabled={invoices.length === 0}
           >
             <CreditCard className="h-4 w-4 mr-1" />
             Nota Crédito
