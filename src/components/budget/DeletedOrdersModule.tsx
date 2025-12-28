@@ -44,10 +44,11 @@ interface DeletedCreditNote {
 interface DeletedOrdersModuleProps {
   contractId: string;
   selectedYear: number;
+  refreshKey?: number;
   onRefresh?: () => void;
 }
 
-export const DeletedOrdersModule = ({ contractId, selectedYear, onRefresh }: DeletedOrdersModuleProps) => {
+export const DeletedOrdersModule = ({ contractId, selectedYear, refreshKey, onRefresh }: DeletedOrdersModuleProps) => {
   const [deletedOrders, setDeletedOrders] = useState<DeletedOrder[]>([]);
   const [deletedInvoices, setDeletedInvoices] = useState<DeletedInvoice[]>([]);
   const [deletedCreditNotes, setDeletedCreditNotes] = useState<DeletedCreditNote[]>([]);
@@ -64,7 +65,7 @@ export const DeletedOrdersModule = ({ contractId, selectedYear, onRefresh }: Del
 
   useEffect(() => {
     loadDeletedItems();
-  }, [contractId, selectedYear]);
+  }, [contractId, selectedYear, refreshKey]);
 
   const loadDeletedItems = async () => {
     setLoading(true);

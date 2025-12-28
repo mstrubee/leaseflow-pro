@@ -739,6 +739,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
           <DeletedOrdersModule
             contractId={contractId}
             selectedYear={selectedYear}
+            refreshKey={refreshKey}
             onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
           />
         </TabsContent>
