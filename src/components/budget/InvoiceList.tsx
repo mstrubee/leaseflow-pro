@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, FileText, Mail, CheckCircle, Clock, Trash2, Upload, Folder, ArrowLeft, Paperclip, ExternalLink, Check } from "lucide-react";
+import { Plus, FileText, Mail, CheckCircle, Clock, Trash2, Upload, Folder, ArrowLeft, Paperclip, ExternalLink, Check, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useBudgetContext } from "./BudgetContext";
 import { BudgetSemaphore } from "./BudgetSemaphore";
@@ -53,9 +53,16 @@ interface InvoiceListProps {
 export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [showNewDialog, setShowNewDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
   const [showStatusDialog, setShowStatusDialog] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [editInvoice, setEditInvoice] = useState({
+    invoice_number: "",
+    invoice_date: "",
+    amount: "",
+    currency: "UF" as "UF" | "CLP",
+  });
   const [email, setEmail] = useState("");
   const [newInvoice, setNewInvoice] = useState({
     invoice_number: "",
@@ -361,6 +368,57 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     }
   };
 
+  const handleEditClick = (invoice: Invoice) => {
+    setSelectedInvoice(invoice);
+    setEditInvoice({
+      invoice_number: invoice.invoice_number,
+      invoice_date: invoice.invoice_date,
+      amount: invoice.amount_uf.toString(),
+      currency: "UF",
+    });
+    setShowEditDialog(true);
+  };
+
+  const handleUpdateInvoice = async () => {
+    if (!selectedInvoice) return;
+    
+    try {
+      const inputAmount = parseFloat(editInvoice.amount) || 0;
+      let amountUF: number;
+      let amountCLP: number;
+
+      if (editInvoice.currency === "UF") {
+        amountUF = inputAmount;
+        amountCLP = convertUFToPesos(inputAmount);
+      } else {
+        amountCLP = inputAmount;
+        amountUF = convertPesosToUF(inputAmount);
+      }
+
+      const { error } = await supabase
+        .from("invoices")
+        .update({
+          invoice_number: editInvoice.invoice_number,
+          invoice_date: editInvoice.invoice_date,
+          amount_uf: amountUF,
+          amount_clp: amountCLP,
+          input_currency: editInvoice.currency,
+          uf_value_at_entry: ufValue,
+        })
+        .eq("id", selectedInvoice.id);
+
+      if (error) throw error;
+
+      toast({ title: "Factura actualizada" });
+      setShowEditDialog(false);
+      setSelectedInvoice(null);
+      loadInvoices();
+      onUpdate();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
   const openFilePicker = () => {
     setShowFilePicker(true);
     loadFolderContents(null);
@@ -440,9 +498,14 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                   </button>
                 </TableCell>
                 <TableCell>
-                  <Button size="sm" variant="ghost" onClick={() => handleDeleteInvoice(invoice.id)} className="text-destructive">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => handleEditClick(invoice)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => handleDeleteInvoice(invoice.id)} className="text-destructive">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -524,6 +587,69 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowNewDialog(false)}>Cancelar</Button>
             <Button onClick={handleCreateInvoice}>Agregar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Invoice Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Factura</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Nº Factura</Label>
+                <Input 
+                  value={editInvoice.invoice_number} 
+                  onChange={(e) => setEditInvoice({ ...editInvoice, invoice_number: e.target.value })} 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Fecha</Label>
+                <Input 
+                  type="date" 
+                  value={editInvoice.invoice_date} 
+                  onChange={(e) => setEditInvoice({ ...editInvoice, invoice_date: e.target.value })} 
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Monto</Label>
+              <div className="flex gap-2">
+                <Input 
+                  type="number" 
+                  step={editInvoice.currency === "UF" ? "0.01" : "1"} 
+                  value={editInvoice.amount} 
+                  onChange={(e) => setEditInvoice({ ...editInvoice, amount: e.target.value })} 
+                  className="flex-1"
+                />
+                <Select 
+                  value={editInvoice.currency} 
+                  onValueChange={(v) => setEditInvoice({ ...editInvoice, currency: v as "UF" | "CLP" })}
+                >
+                  <SelectTrigger className="w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UF">UF</SelectItem>
+                    <SelectItem value="CLP">CLP</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {editInvoice.amount && ufValue > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Equivalente: {editInvoice.currency === "CLP" 
+                    ? formatUF(convertPesosToUF(parseFloat(editInvoice.amount))) 
+                    : formatCLP(convertUFToPesos(parseFloat(editInvoice.amount)))}
+                </p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditDialog(false)}>Cancelar</Button>
+            <Button onClick={handleUpdateInvoice}>Guardar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
