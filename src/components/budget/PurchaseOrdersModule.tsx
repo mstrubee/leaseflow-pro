@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, FileText, ChevronDown, ChevronRight, AlertTriangle, Paperclip, ExternalLink, Trash2 } from "lucide-react";
+import { Loader2, Plus, FileText, ChevronDown, ChevronRight, AlertTriangle, Paperclip, ExternalLink, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Search, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useBudgetContext } from "./BudgetContext";
 import { InvoiceList } from "./InvoiceList";
@@ -43,20 +43,21 @@ interface Budget {
 export const PurchaseOrdersModule = ({ contractId, initialYear }: PurchaseOrdersModuleProps) => {
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
-  const [selectedYear, setSelectedYear] = useState<number>(initialYear ?? new Date().getFullYear());
+  const selectedYear = initialYear ?? new Date().getFullYear();
 
-  // Sync with parent's selected year when it changes
-  useEffect(() => {
-    if (initialYear !== undefined) {
-      setSelectedYear(initialYear);
-    }
-  }, [initialYear]);
   const [loading, setLoading] = useState(true);
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [deleteOrder, setDeleteOrder] = useState<PurchaseOrder | null>(null);
   const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
+  
+  // Sorting and filtering state
+  const [sortColumn, setSortColumn] = useState<string>("order_date");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  
   const [newOrder, setNewOrder] = useState({
     order_number: "",
     supplier_name: "",
@@ -240,8 +241,152 @@ export const PurchaseOrdersModule = ({ contractId, initialYear }: PurchaseOrders
     }
   };
 
-  const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
   const totalOC = orders.reduce((sum, o) => sum + o.amount_uf, 0);
+
+  // Sorting handler
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortColumn(column);
+      setSortDirection("asc");
+    }
+  };
+
+  // Get sort icon
+  const getSortIcon = (column: string) => {
+    if (sortColumn !== column) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-50" />;
+    return sortDirection === "asc" 
+      ? <ArrowUp className="h-3 w-3 ml-1" />
+      : <ArrowDown className="h-3 w-3 ml-1" />;
+  };
+
+  // Apply filters and sorting
+  const filteredAndSortedOrders = React.useMemo(() => {
+    let result = [...orders];
+
+    // Apply filters
+    Object.entries(filters).forEach(([key, value]) => {
+      if (!value) return;
+      const lowerValue = value.toLowerCase();
+      result = result.filter(order => {
+        switch (key) {
+          case "order_number":
+            return order.order_number.toLowerCase().includes(lowerValue);
+          case "order_date":
+            return new Date(order.order_date).toLocaleDateString("es-CL").includes(lowerValue);
+          case "supplier_name":
+            return (order.supplier_name || "").toLowerCase().includes(lowerValue);
+          case "type":
+            return getBudgetTypeForOrder(order).toLowerCase().includes(lowerValue);
+          case "description":
+            return (order.description || "").toLowerCase().includes(lowerValue);
+          case "amount":
+            return order.amount_uf.toString().includes(lowerValue);
+          case "status":
+            return order.status.toLowerCase().includes(lowerValue);
+          default:
+            return true;
+        }
+      });
+    });
+
+    // Apply sorting
+    result.sort((a, b) => {
+      let aVal: any, bVal: any;
+      switch (sortColumn) {
+        case "order_number":
+          aVal = a.order_number;
+          bVal = b.order_number;
+          break;
+        case "order_date":
+          aVal = new Date(a.order_date).getTime();
+          bVal = new Date(b.order_date).getTime();
+          break;
+        case "supplier_name":
+          aVal = a.supplier_name || "";
+          bVal = b.supplier_name || "";
+          break;
+        case "type":
+          aVal = getBudgetTypeForOrder(a);
+          bVal = getBudgetTypeForOrder(b);
+          break;
+        case "description":
+          aVal = a.description || "";
+          bVal = b.description || "";
+          break;
+        case "amount":
+          aVal = a.amount_uf;
+          bVal = b.amount_uf;
+          break;
+        case "status":
+          aVal = a.status;
+          bVal = b.status;
+          break;
+        default:
+          return 0;
+      }
+      
+      if (typeof aVal === "string") {
+        return sortDirection === "asc" 
+          ? aVal.localeCompare(bVal)
+          : bVal.localeCompare(aVal);
+      }
+      return sortDirection === "asc" ? aVal - bVal : bVal - aVal;
+    });
+
+    return result;
+  }, [orders, filters, sortColumn, sortDirection, budgets]);
+
+  // Column header with sort and filter
+  const ColumnHeader = ({ column, label, className }: { column: string; label: string; className?: string }) => (
+    <TableHead className={className}>
+      <div className="space-y-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 px-1 -ml-1 font-medium hover:bg-transparent"
+          onClick={() => handleSort(column)}
+        >
+          {label}
+          {getSortIcon(column)}
+        </Button>
+        {activeFilter === column ? (
+          <div className="flex items-center gap-1">
+            <Input
+              autoFocus
+              className="h-6 text-xs"
+              placeholder={`Filtrar...`}
+              value={filters[column] || ""}
+              onChange={(e) => setFilters({ ...filters, [column]: e.target.value })}
+              onKeyDown={(e) => e.key === "Escape" && setActiveFilter(null)}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0"
+              onClick={() => {
+                setFilters({ ...filters, [column]: "" });
+                setActiveFilter(null);
+              }}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn("h-5 px-1 text-xs", filters[column] ? "text-primary" : "text-muted-foreground")}
+            onClick={() => setActiveFilter(column)}
+          >
+            <Search className="h-3 w-3 mr-1" />
+            {filters[column] || "Filtrar"}
+          </Button>
+        )}
+      </div>
+    </TableHead>
+  );
 
   if (loading) {
     return (
@@ -258,24 +403,12 @@ export const PurchaseOrdersModule = ({ contractId, initialYear }: PurchaseOrders
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
         <CardTitle className="text-lg flex items-center gap-2">
           <FileText className="h-5 w-5" />
-          Órdenes de Compra
+          Órdenes de Compra - {selectedYear}
         </CardTitle>
-        <div className="flex items-center gap-3">
-          <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(parseInt(v))}>
-            <SelectTrigger className="w-24">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {years.map((year) => (
-                <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button size="sm" onClick={() => setShowNewDialog(true)}>
-            <Plus className="h-4 w-4 mr-1" />
-            Nueva OC
-          </Button>
-        </div>
+        <Button size="sm" onClick={() => setShowNewDialog(true)}>
+          <Plus className="h-4 w-4 mr-1" />
+          Nueva OC
+        </Button>
       </CardHeader>
       <CardContent>
         <div className="mb-4 p-3 bg-muted/30 rounded-lg flex items-center justify-between">
@@ -293,18 +426,18 @@ export const PurchaseOrdersModule = ({ contractId, initialYear }: PurchaseOrders
             <TableHeader>
               <TableRow>
                 <TableHead className="w-8"></TableHead>
-                <TableHead>Nº OC</TableHead>
-                <TableHead>Fecha</TableHead>
-                <TableHead>Proveedor</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Descripción</TableHead>
-                <TableHead className="text-right">Monto</TableHead>
-                <TableHead>Estado</TableHead>
+                <ColumnHeader column="order_number" label="Nº OC" />
+                <ColumnHeader column="order_date" label="Fecha" />
+                <ColumnHeader column="supplier_name" label="Proveedor" />
+                <ColumnHeader column="type" label="Tipo" />
+                <ColumnHeader column="description" label="Descripción" />
+                <ColumnHeader column="amount" label="Monto" className="text-right" />
+                <ColumnHeader column="status" label="Estado" />
                 <TableHead className="w-20"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {orders.map((order) => (
+              {filteredAndSortedOrders.map((order) => (
                 <React.Fragment key={order.id}>
                   <TableRow 
                     className={cn("cursor-pointer hover:bg-accent/50", expandedOrders.has(order.id) && "bg-accent/30")}
