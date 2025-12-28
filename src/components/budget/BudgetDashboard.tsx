@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, TrendingUp, DollarSign, FileText, Receipt } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, FileText, Receipt, RotateCcw, AlertCircle } from "lucide-react";
 import { BudgetProvider, useBudgetContext } from "./BudgetContext";
 import { BudgetModule } from "./BudgetModule";
 import { PurchaseOrdersModule } from "./PurchaseOrdersModule";
@@ -26,6 +26,12 @@ interface BudgetTypeTotals {
   invoices: number;
 }
 
+interface CarryoverData {
+  inversion: number;
+  capex: number;
+  total: number;
+}
+
 const STORAGE_KEY_PREFIX = "budget_selected_year_";
 
 const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
@@ -39,6 +45,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
   const [capexSummary, setCapexSummary] = useState<BudgetSummary>({ budget: 0, authorized: 0, unauthorized: 0 });
   const [inversionTotals, setInversionTotals] = useState<BudgetTypeTotals>({ oc: 0, invoices: 0 });
   const [capexTotals, setCapexTotals] = useState<BudgetTypeTotals>({ oc: 0, invoices: 0 });
+  const [carryover, setCarryover] = useState<CarryoverData>({ inversion: 0, capex: 0, total: 0 });
   const { toast } = useToast();
   const { formatPrimary, formatSecondary } = useBudgetContext();
 
@@ -49,6 +56,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
 
   useEffect(() => {
     loadSummaries();
+    loadCarryover();
   }, [contractId, selectedYear]);
 
   // Save selected year to localStorage when it changes
@@ -99,6 +107,35 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
 
     const capTotals = await loadBudgetTypeTotals(contractId, "capex", selectedYear);
     setCapexTotals(capTotals);
+  };
+
+  const loadCarryover = async () => {
+    try {
+      // Get carryover data for the selected year
+      const { data, error } = await supabase
+        .from("budget_carryover")
+        .select("budget_type, amount_uf")
+        .eq("contract_id", contractId)
+        .eq("target_year", selectedYear);
+
+      if (error) throw error;
+
+      const inversionCarryover = (data || [])
+        .filter(c => c.budget_type === "inversion_inicial")
+        .reduce((acc, c) => acc + (c.amount_uf || 0), 0);
+
+      const capexCarryover = (data || [])
+        .filter(c => c.budget_type === "capex")
+        .reduce((acc, c) => acc + (c.amount_uf || 0), 0);
+
+      setCarryover({
+        inversion: inversionCarryover,
+        capex: capexCarryover,
+        total: inversionCarryover + capexCarryover,
+      });
+    } catch (error) {
+      console.error("Error loading carryover:", error);
+    }
   };
 
   const loadBudgetTypeTotals = async (contractId: string, budgetType: string, year: number): Promise<BudgetTypeTotals> => {
@@ -217,7 +254,17 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                 <DollarSign className="h-3.5 w-3.5 text-primary" />
                 <span className="text-muted-foreground">Total Presupuesto:</span>
               </div>
-              <span className="font-medium text-right">{formatPrimary(inversionSummary.authorized + capexSummary.authorized)}</span>
+              <span className="font-medium text-right">{formatPrimary(inversionSummary.authorized + capexSummary.authorized + carryover.total)}</span>
+              
+              {carryover.total > 0 && (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <RotateCcw className="h-3.5 w-3.5 text-amber-500" />
+                    <span className="text-muted-foreground">Arrastre Presup.:</span>
+                  </div>
+                  <span className="font-medium text-right text-amber-600">{formatPrimary(carryover.total)}</span>
+                </>
+              )}
               
               <div className="flex items-center gap-1.5">
                 <FileText className="h-3.5 w-3.5 text-orange-500" />
@@ -230,6 +277,17 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                 <span className="text-muted-foreground">Total Facturación:</span>
               </div>
               <span className="font-medium text-right">{formatPrimary(inversionTotals.invoices + capexTotals.invoices)}</span>
+              
+              {(inversionSummary.unauthorized + capexSummary.unauthorized) > 0 && (
+                <>
+                  <div className="flex items-center gap-1.5 border-t pt-2 col-span-2"></div>
+                  <div className="flex items-center gap-1.5">
+                    <AlertCircle className="h-3.5 w-3.5 text-yellow-500" />
+                    <span className="text-muted-foreground">Presup. No Autorizado:</span>
+                  </div>
+                  <span className="font-medium text-right text-yellow-600">{formatPrimary(inversionSummary.unauthorized + capexSummary.unauthorized)}</span>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -262,6 +320,16 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                 <span className="text-muted-foreground">Facturación:</span>
               </div>
               <span className="font-medium text-right">{formatPrimary(inversionTotals.invoices)}</span>
+              
+              {inversionSummary.unauthorized > 0 && (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <AlertCircle className="h-3.5 w-3.5 text-yellow-500" />
+                    <span className="text-muted-foreground">Presup. No Autorizado:</span>
+                  </div>
+                  <span className="font-medium text-right text-yellow-600">{formatPrimary(inversionSummary.unauthorized)}</span>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -294,6 +362,16 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                 <span className="text-muted-foreground">Facturación:</span>
               </div>
               <span className="font-medium text-right">{formatPrimary(capexTotals.invoices)}</span>
+              
+              {capexSummary.unauthorized > 0 && (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <AlertCircle className="h-3.5 w-3.5 text-yellow-500" />
+                    <span className="text-muted-foreground">Presup. No Autorizado:</span>
+                  </div>
+                  <span className="font-medium text-right text-yellow-600">{formatPrimary(capexSummary.unauthorized)}</span>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
