@@ -53,6 +53,7 @@ export const DeletedOrdersModule = ({ contractId, selectedYear, onRefresh }: Del
   const [deletedCreditNotes, setDeletedCreditNotes] = useState<DeletedCreditNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+  const [isCollapsed, setIsCollapsed] = useState(true); // Collapsed by default
   
   const [restoreOrder, setRestoreOrder] = useState<DeletedOrder | null>(null);
   const [permanentDeleteOrder, setPermanentDeleteOrder] = useState<DeletedOrder | null>(null);
@@ -222,131 +223,142 @@ export const DeletedOrdersModule = ({ contractId, selectedYear, onRefresh }: Del
 
   return (
     <>
-      <Card className="border-dashed border-muted-foreground/30">
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2 text-muted-foreground">
-            <Trash2 className="h-4 w-4" />
-            Elementos Eliminados ({deletedOrders.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-8"></TableHead>
-                <TableHead>N° OC</TableHead>
-                <TableHead>Proveedor</TableHead>
-                <TableHead>Fecha</TableHead>
-                <TableHead className="text-right">Monto</TableHead>
-                <TableHead>Eliminado</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {deletedOrders.map((order) => {
-                const orderInvoices = getOrderInvoices(order.id);
-                const orderCreditNotes = getOrderCreditNotes(order.id);
-                const hasChildren = orderInvoices.length > 0 || orderCreditNotes.length > 0;
-                const isExpanded = expandedOrders.has(order.id);
+      <Collapsible open={!isCollapsed} onOpenChange={(open) => setIsCollapsed(!open)}>
+        <Card className="border-dashed border-muted-foreground/30">
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+              <CardTitle className="text-base flex items-center gap-2 text-muted-foreground">
+                {isCollapsed ? (
+                  <ChevronRight className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+                <Trash2 className="h-4 w-4" />
+                Elementos Eliminados ({deletedOrders.length})
+              </CardTitle>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-8"></TableHead>
+                    <TableHead>N° OC</TableHead>
+                    <TableHead>Proveedor</TableHead>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead className="text-right">Monto</TableHead>
+                    <TableHead>Eliminado</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {deletedOrders.map((order) => {
+                    const orderInvoices = getOrderInvoices(order.id);
+                    const orderCreditNotes = getOrderCreditNotes(order.id);
+                    const hasChildren = orderInvoices.length > 0 || orderCreditNotes.length > 0;
+                    const isExpanded = expandedOrders.has(order.id);
 
-                return (
-                  <React.Fragment key={order.id}>
-                    <TableRow className="opacity-60 hover:opacity-100">
-                      <TableCell>
-                        {hasChildren && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0"
-                            onClick={() => toggleOrderExpanded(order.id)}
-                          >
-                            {isExpanded ? (
-                              <ChevronDown className="h-4 w-4" />
-                            ) : (
-                              <ChevronRight className="h-4 w-4" />
+                    return (
+                      <React.Fragment key={order.id}>
+                        <TableRow className="opacity-60 hover:opacity-100">
+                          <TableCell>
+                            {hasChildren && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0"
+                                onClick={() => toggleOrderExpanded(order.id)}
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown className="h-4 w-4" />
+                                ) : (
+                                  <ChevronRight className="h-4 w-4" />
+                                )}
+                              </Button>
                             )}
-                          </Button>
+                          </TableCell>
+                          <TableCell className="font-medium">{order.order_number}</TableCell>
+                          <TableCell>{order.supplier_name || "-"}</TableCell>
+                          <TableCell>{format(new Date(order.order_date), "dd/MM/yyyy")}</TableCell>
+                          <TableCell className="text-right">{formatUF(order.amount_uf)}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {format(new Date(order.deleted_at), "dd/MM/yyyy HH:mm", { locale: es })}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 text-green-600 hover:text-green-700"
+                                onClick={() => setRestoreOrder(order)}
+                                title="Restablecer"
+                              >
+                                <RotateCcw className="h-4 w-4" />
+                              </Button>
+                              {isAdmin && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                                  onClick={() => setPermanentDeleteOrder(order)}
+                                  title="Eliminar permanentemente"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                        {isExpanded && hasChildren && (
+                          <TableRow>
+                            <TableCell colSpan={7} className="bg-muted/30 p-4">
+                              <div className="space-y-3">
+                                {orderInvoices.length > 0 && (
+                                  <div>
+                                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground mb-2">
+                                      <FileText className="h-4 w-4" />
+                                      Facturas eliminadas ({orderInvoices.length})
+                                    </div>
+                                    <div className="space-y-1 ml-6">
+                                      {orderInvoices.map((inv) => (
+                                        <div key={inv.id} className="flex justify-between text-sm text-muted-foreground">
+                                          <span>Factura {inv.invoice_number} - {format(new Date(inv.invoice_date), "dd/MM/yyyy")}</span>
+                                          <span>{formatUF(inv.amount_uf)}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {orderCreditNotes.length > 0 && (
+                                  <div>
+                                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground mb-2">
+                                      <Receipt className="h-4 w-4" />
+                                      Notas de crédito eliminadas ({orderCreditNotes.length})
+                                    </div>
+                                    <div className="space-y-1 ml-6">
+                                      {orderCreditNotes.map((cn) => (
+                                        <div key={cn.id} className="flex justify-between text-sm text-muted-foreground">
+                                          <span>NC {cn.credit_note_number} - {format(new Date(cn.credit_note_date), "dd/MM/yyyy")}</span>
+                                          <span className="text-destructive">-{formatUF(cn.amount_uf)}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
                         )}
-                      </TableCell>
-                      <TableCell className="font-medium">{order.order_number}</TableCell>
-                      <TableCell>{order.supplier_name || "-"}</TableCell>
-                      <TableCell>{format(new Date(order.order_date), "dd/MM/yyyy")}</TableCell>
-                      <TableCell className="text-right">{formatUF(order.amount_uf)}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {format(new Date(order.deleted_at), "dd/MM/yyyy HH:mm", { locale: es })}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 text-green-600 hover:text-green-700"
-                            onClick={() => setRestoreOrder(order)}
-                            title="Restablecer"
-                          >
-                            <RotateCcw className="h-4 w-4" />
-                          </Button>
-                          {isAdmin && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                              onClick={() => setPermanentDeleteOrder(order)}
-                              title="Eliminar permanentemente"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                    {isExpanded && hasChildren && (
-                      <TableRow>
-                        <TableCell colSpan={7} className="bg-muted/30 p-4">
-                          <div className="space-y-3">
-                            {orderInvoices.length > 0 && (
-                              <div>
-                                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground mb-2">
-                                  <FileText className="h-4 w-4" />
-                                  Facturas eliminadas ({orderInvoices.length})
-                                </div>
-                                <div className="space-y-1 ml-6">
-                                  {orderInvoices.map((inv) => (
-                                    <div key={inv.id} className="flex justify-between text-sm text-muted-foreground">
-                                      <span>Factura {inv.invoice_number} - {format(new Date(inv.invoice_date), "dd/MM/yyyy")}</span>
-                                      <span>{formatUF(inv.amount_uf)}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {orderCreditNotes.length > 0 && (
-                              <div>
-                                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground mb-2">
-                                  <Receipt className="h-4 w-4" />
-                                  Notas de crédito eliminadas ({orderCreditNotes.length})
-                                </div>
-                                <div className="space-y-1 ml-6">
-                                  {orderCreditNotes.map((cn) => (
-                                    <div key={cn.id} className="flex justify-between text-sm text-muted-foreground">
-                                      <span>NC {cn.credit_note_number} - {format(new Date(cn.credit_note_date), "dd/MM/yyyy")}</span>
-                                      <span className="text-destructive">-{formatUF(cn.amount_uf)}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                      </React.Fragment>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       {/* Restore confirmation */}
       <AlertDialog open={restoreOrder !== null}>
