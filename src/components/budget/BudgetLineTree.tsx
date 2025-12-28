@@ -236,7 +236,7 @@ const BudgetLineItem = ({
         {/* Totals and status */}
         <div className="flex items-center mx-[3px] gap-[50px] text-destructive">
           <span className="text-xs text-center font-sans font-medium whitespace-nowrap min-w-[80px]">{formatUF(calculatedAmount)}</span>
-          <span className="text-[12px] text-muted-foreground font-mono">
+          <span className="text-[12px] text-muted-foreground font-mono whitespace-nowrap min-w-[100px] text-right">
             {formatCLP(convertUFToPesos(calculatedAmount))}
           </span>
           <TooltipProvider>
