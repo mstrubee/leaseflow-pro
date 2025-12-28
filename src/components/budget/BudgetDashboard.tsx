@@ -11,6 +11,7 @@ import { Loader2, TrendingUp, DollarSign, FileText, Receipt, RotateCcw, AlertCir
 import { BudgetProvider, useBudgetContext } from "./BudgetContext";
 import { BudgetModule } from "./BudgetModule";
 import { PurchaseOrdersModule } from "./PurchaseOrdersModule";
+import { DeletedOrdersModule } from "./DeletedOrdersModule";
 import { BudgetSemaphore } from "./BudgetSemaphore";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -729,10 +730,15 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
             onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
           />
         </TabsContent>
-        <TabsContent value="oc" className="mt-4">
+        <TabsContent value="oc" className="mt-4 space-y-6">
           <PurchaseOrdersModule 
             contractId={contractId} 
             initialYear={selectedYear} 
+            onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
+          />
+          <DeletedOrdersModule
+            contractId={contractId}
+            selectedYear={selectedYear}
             onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
           />
         </TabsContent>

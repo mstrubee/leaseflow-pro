@@ -956,6 +956,8 @@ export type Database = {
           created_at: string
           credit_note_date: string
           credit_note_number: string
+          deleted_at: string | null
+          deleted_by: string | null
           drive_file_id: string | null
           id: string
           input_currency: string | null
@@ -973,6 +975,8 @@ export type Database = {
           created_at?: string
           credit_note_date?: string
           credit_note_number: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           drive_file_id?: string | null
           id?: string
           input_currency?: string | null
@@ -990,6 +994,8 @@ export type Database = {
           created_at?: string
           credit_note_date?: string
           credit_note_number?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           drive_file_id?: string | null
           id?: string
           input_currency?: string | null
@@ -1498,6 +1504,8 @@ export type Database = {
           amount_uf: number
           attachment_url: string | null
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
           drive_file_id: string | null
           email_sent_at: string | null
           email_sent_to: string | null
@@ -1518,6 +1526,8 @@ export type Database = {
           amount_uf?: number
           attachment_url?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           drive_file_id?: string | null
           email_sent_at?: string | null
           email_sent_to?: string | null
@@ -1538,6 +1548,8 @@ export type Database = {
           amount_uf?: number
           attachment_url?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           drive_file_id?: string | null
           email_sent_at?: string | null
           email_sent_to?: string | null
@@ -1972,6 +1984,8 @@ export type Database = {
           budget_line_id: string | null
           contract_id: string
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
           description: string | null
           drive_file_id: string | null
           id: string
@@ -1994,6 +2008,8 @@ export type Database = {
           budget_line_id?: string | null
           contract_id: string
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           description?: string | null
           drive_file_id?: string | null
           id?: string
@@ -2016,6 +2032,8 @@ export type Database = {
           budget_line_id?: string | null
           contract_id?: string
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           description?: string | null
           drive_file_id?: string | null
           id?: string

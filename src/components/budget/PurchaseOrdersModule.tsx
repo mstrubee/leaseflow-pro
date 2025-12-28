@@ -28,6 +28,8 @@ interface PurchaseOrder {
   status: string;
   budget_id: string | null;
   budget_line_id: string | null;
+  deleted_at: string | null;
+  deleted_by: string | null;
 }
 
 interface PurchaseOrdersModuleProps {
@@ -115,6 +117,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         .select("*")
         .eq("contract_id", contractId)
         .eq("year", selectedYear)
+        .is("deleted_at", null)
         .order("order_date", { ascending: false });
 
       if (error) throw error;
@@ -449,46 +452,52 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     if (!deleteOrder) return;
 
     try {
-      // Delete all credit notes for this order first (they have purchase_order_id directly)
+      const now = new Date().toISOString();
+      const { data: { user } } = await supabase.auth.getUser();
+      const userId = user?.id || null;
+
+      // Soft delete all credit notes for this order
       const { error: creditNoteError } = await supabase
         .from("credit_notes")
-        .delete()
-        .eq("purchase_order_id", deleteOrder.id);
+        .update({ deleted_at: now, deleted_by: userId })
+        .eq("purchase_order_id", deleteOrder.id)
+        .is("deleted_at", null);
       
       if (creditNoteError) {
-        console.error("Error deleting credit notes:", creditNoteError);
+        console.error("Error soft deleting credit notes:", creditNoteError);
         throw creditNoteError;
       }
 
-      // Delete all invoices for this order
+      // Soft delete all invoices for this order
       const { error: invoiceError } = await supabase
         .from("invoices")
-        .delete()
-        .eq("purchase_order_id", deleteOrder.id);
+        .update({ deleted_at: now, deleted_by: userId })
+        .eq("purchase_order_id", deleteOrder.id)
+        .is("deleted_at", null);
       
       if (invoiceError) {
-        console.error("Error deleting invoices:", invoiceError);
+        console.error("Error soft deleting invoices:", invoiceError);
         throw invoiceError;
       }
       
-      // Delete the order
+      // Soft delete the order
       const { error } = await supabase
         .from("purchase_orders")
-        .delete()
+        .update({ deleted_at: now, deleted_by: userId })
         .eq("id", deleteOrder.id);
       
       if (error) {
-        console.error("Error deleting purchase order:", error);
+        console.error("Error soft deleting purchase order:", error);
         throw error;
       }
 
-      toast({ title: "OC eliminada", description: `Orden de compra ${deleteOrder.order_number} eliminada` });
+      toast({ title: "OC enviada a eliminados", description: `Orden de compra ${deleteOrder.order_number} movida a eliminados` });
       setDeleteOrder(null);
       setDeleteStep(1);
       await loadOrders();
       onRefresh?.();
     } catch (error: any) {
-      console.error("Delete error:", error);
+      console.error("Soft delete error:", error);
       toast({ variant: "destructive", title: "Error al eliminar", description: error.message });
     }
   };
