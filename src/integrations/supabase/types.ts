@@ -948,6 +948,75 @@ export type Database = {
         }
         Relationships: []
       }
+      credit_notes: {
+        Row: {
+          amount_clp: number | null
+          amount_uf: number
+          attachment_url: string | null
+          created_at: string
+          credit_note_date: string
+          credit_note_number: string
+          drive_file_id: string | null
+          id: string
+          input_currency: string | null
+          invoice_id: string
+          purchase_order_id: string
+          reason: string | null
+          storage_provider: string | null
+          uf_value_at_entry: number | null
+          updated_at: string
+        }
+        Insert: {
+          amount_clp?: number | null
+          amount_uf?: number
+          attachment_url?: string | null
+          created_at?: string
+          credit_note_date?: string
+          credit_note_number: string
+          drive_file_id?: string | null
+          id?: string
+          input_currency?: string | null
+          invoice_id: string
+          purchase_order_id: string
+          reason?: string | null
+          storage_provider?: string | null
+          uf_value_at_entry?: number | null
+          updated_at?: string
+        }
+        Update: {
+          amount_clp?: number | null
+          amount_uf?: number
+          attachment_url?: string | null
+          created_at?: string
+          credit_note_date?: string
+          credit_note_number?: string
+          drive_file_id?: string | null
+          id?: string
+          input_currency?: string | null
+          invoice_id?: string
+          purchase_order_id?: string
+          reason?: string | null
+          storage_provider?: string | null
+          uf_value_at_entry?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_notes_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "credit_notes_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dashboard_sections: {
         Row: {
           created_at: string | null

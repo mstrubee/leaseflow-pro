@@ -27,6 +27,7 @@ interface PurchaseOrder {
   year: number;
   status: string;
   budget_id: string | null;
+  budget_line_id: string | null;
 }
 
 interface PurchaseOrdersModuleProps {
@@ -41,9 +42,18 @@ interface Budget {
   budget_type: string;
 }
 
+interface BudgetLine {
+  id: string;
+  name: string;
+  amount_uf: number;
+  budget_id: string;
+  status: string;
+}
+
 export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: PurchaseOrdersModuleProps) => {
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
   const selectedYear = initialYear ?? new Date().getFullYear();
 
   const [loading, setLoading] = useState(true);
@@ -55,6 +65,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
   const [deleteOrder, setDeleteOrder] = useState<PurchaseOrder | null>(null);
   const [editOrder, setEditOrder] = useState<PurchaseOrder | null>(null);
   const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
+  const [budgetWarning, setBudgetWarning] = useState<string | null>(null);
   
   // Sorting and filtering state
   const [sortColumn, setSortColumn] = useState<string>("order_date");
@@ -68,8 +79,8 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     order_date: `${initialYear ?? new Date().getFullYear()}-01-01`,
     amount: "",
     currency: "UF" as "UF" | "CLP",
-    description: "",
     budget_type: "inversion_inicial" as "inversion_inicial" | "capex",
+    budget_line_id: "",
     attachment_url: "",
     attachment_name: "",
   });
@@ -80,8 +91,8 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     order_date: "",
     amount: "",
     currency: "UF" as "UF" | "CLP",
-    description: "",
     budget_type: "inversion_inicial" as "inversion_inicial" | "capex",
+    budget_line_id: "",
     attachment_url: "",
     attachment_name: "",
   });
@@ -92,6 +103,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
   useEffect(() => {
     loadOrders();
     loadBudgets();
+    loadBudgetLines();
   }, [contractId, selectedYear]);
 
   const loadOrders = async () => {
@@ -128,6 +140,79 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     }
   };
 
+  const loadBudgetLines = async () => {
+    try {
+      // Get all budgets for this contract and year
+      const { data: budgetData, error: budgetError } = await supabase
+        .from("contract_budgets")
+        .select("id")
+        .eq("contract_id", contractId)
+        .eq("year", selectedYear);
+
+      if (budgetError) throw budgetError;
+
+      if (budgetData && budgetData.length > 0) {
+        const budgetIds = budgetData.map(b => b.id);
+        
+        const { data: linesData, error: linesError } = await supabase
+          .from("budget_lines")
+          .select("id, name, amount_uf, budget_id, status")
+          .in("budget_id", budgetIds)
+          .eq("status", "autorizado")
+          .is("parent_id", null); // Get only root lines (or adjust based on your needs)
+
+        if (linesError) throw linesError;
+        setBudgetLines(linesData || []);
+      }
+    } catch (error) {
+      console.error("Error loading budget lines:", error);
+    }
+  };
+
+  // Get authorized budget lines for selected budget type
+  const getAuthorizedLinesForBudgetType = (budgetType: string) => {
+    const budget = budgets.find(b => b.budget_type === budgetType);
+    if (!budget) return [];
+    return budgetLines.filter(line => line.budget_id === budget.id);
+  };
+
+  // Calculate total OCs for a budget line
+  const getTotalOCsForBudgetLine = (budgetLineId: string) => {
+    return orders
+      .filter(order => order.budget_line_id === budgetLineId)
+      .reduce((sum, order) => sum + order.amount_uf, 0);
+  };
+
+  // Get available budget for a line
+  const getAvailableBudgetForLine = (budgetLineId: string) => {
+    const line = budgetLines.find(l => l.id === budgetLineId);
+    if (!line) return 0;
+    const usedBudget = getTotalOCsForBudgetLine(budgetLineId);
+    return line.amount_uf - usedBudget;
+  };
+
+  // Validate OC amount against budget line
+  const validateOCAmount = (budgetLineId: string, amount: number, excludeOrderId?: string) => {
+    const line = budgetLines.find(l => l.id === budgetLineId);
+    if (!line) return { valid: false, message: "Línea de presupuesto no encontrada" };
+    
+    let usedBudget = orders
+      .filter(order => order.budget_line_id === budgetLineId && order.id !== excludeOrderId)
+      .reduce((sum, order) => sum + order.amount_uf, 0);
+    
+    const remainingBudget = line.amount_uf - usedBudget;
+    
+    if (amount > remainingBudget) {
+      return { 
+        valid: false, 
+        message: `OC supera el Presupuesto. Disponible: ${formatUF(remainingBudget)}. Solicitar Autorización a Gerencia`,
+        exceedsBy: amount - remainingBudget
+      };
+    }
+    
+    return { valid: true, message: "" };
+  };
+
   const handleCreateOrder = async () => {
     try {
       const inputAmount = parseFloat(newOrder.amount) || 0;
@@ -142,8 +227,18 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         amountUF = convertPesosToUF(inputAmount);
       }
 
+      // Validate against budget line
+      if (newOrder.budget_line_id) {
+        const validation = validateOCAmount(newOrder.budget_line_id, amountUF);
+        if (!validation.valid) {
+          setBudgetWarning(validation.message);
+          return;
+        }
+      }
+
       // Find budget for selected type and year
       const budget = budgets.find(b => b.budget_type === newOrder.budget_type);
+      const selectedLine = budgetLines.find(l => l.id === newOrder.budget_line_id);
 
       const { error } = await supabase.from("purchase_orders").insert({
         contract_id: contractId,
@@ -154,9 +249,10 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         amount_clp: amountCLP,
         input_currency: newOrder.currency,
         uf_value_at_entry: ufValue,
-        description: newOrder.description || null,
+        description: selectedLine?.name || null,
         year: selectedYear,
         budget_id: budget?.id || null,
+        budget_line_id: newOrder.budget_line_id || null,
         attachment_url: newOrder.attachment_url || null,
       });
 
@@ -170,11 +266,12 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         order_date: `${selectedYear}-01-01`, 
         amount: "", 
         currency: "UF", 
-        description: "",
         budget_type: "inversion_inicial",
+        budget_line_id: "",
         attachment_url: "",
         attachment_name: "",
       });
+      setBudgetWarning(null);
       loadOrders();
       onRefresh?.();
     } catch (error: any) {
@@ -201,14 +298,17 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     setExpandedOrders(newExpanded);
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (order: PurchaseOrder, invoiceData?: { totalInvoiced: number; totalCreditNotes: number }) => {
+    // If we have invoice data passed in, use it for more accurate status
+    const status = order.status;
+    
     switch (status) {
       case "cerrada":
-        return <Badge className="bg-green-500">Cerrada</Badge>;
+        return <Badge className="bg-blue-500">Cerrada</Badge>;
       case "descuadrada":
-        return <Badge variant="destructive" className="flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Descuadrada</Badge>;
+        return <Badge variant="destructive" className="flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Sobrepasado</Badge>;
       default:
-        return <Badge variant="secondary">Abierta</Badge>;
+        return <Badge className="bg-green-500">OK</Badge>;
     }
   };
 
@@ -228,8 +328,8 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       order_date: order.order_date,
       amount: order.amount_uf.toString(),
       currency: "UF",
-      description: order.description || "",
       budget_type: (budget?.budget_type || "inversion_inicial") as "inversion_inicial" | "capex",
+      budget_line_id: order.budget_line_id || "",
       attachment_url: order.attachment_url || "",
       attachment_name: order.attachment_url ? "Archivo adjunto" : "",
     });
@@ -252,8 +352,18 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         amountUF = convertPesosToUF(inputAmount);
       }
 
+      // Validate against budget line (excluding current order)
+      if (editFormData.budget_line_id) {
+        const validation = validateOCAmount(editFormData.budget_line_id, amountUF, editOrder.id);
+        if (!validation.valid) {
+          setBudgetWarning(validation.message);
+          return;
+        }
+      }
+
       // Find budget for selected type and year
       const budget = budgets.find(b => b.budget_type === editFormData.budget_type);
+      const selectedLine = budgetLines.find(l => l.id === editFormData.budget_line_id);
 
       const { error } = await supabase
         .from("purchase_orders")
@@ -265,8 +375,9 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
           amount_clp: amountCLP,
           input_currency: editFormData.currency,
           uf_value_at_entry: ufValue,
-          description: editFormData.description || null,
+          description: selectedLine?.name || null,
           budget_id: budget?.id || null,
+          budget_line_id: editFormData.budget_line_id || null,
           attachment_url: editFormData.attachment_url || null,
         })
         .eq("id", editOrder.id);
@@ -276,6 +387,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       toast({ title: "OC actualizada", description: `Orden de compra ${editFormData.order_number} actualizada` });
       setShowEditDialog(false);
       setEditOrder(null);
+      setBudgetWarning(null);
       loadOrders();
       onRefresh?.();
     } catch (error: any) {
@@ -292,7 +404,21 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     if (!deleteOrder) return;
 
     try {
-      // Delete all invoices for this order first
+      // Delete all credit notes for invoices of this order first
+      const { data: invoices } = await supabase
+        .from("invoices")
+        .select("id")
+        .eq("purchase_order_id", deleteOrder.id);
+      
+      if (invoices && invoices.length > 0) {
+        const invoiceIds = invoices.map(i => i.id);
+        await supabase
+          .from("credit_notes")
+          .delete()
+          .in("invoice_id", invoiceIds);
+      }
+
+      // Delete all invoices for this order
       const { error: invoiceError } = await supabase
         .from("invoices")
         .delete()
@@ -540,9 +666,9 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="abierta">Abierta</SelectItem>
+                <SelectItem value="abierta">OK</SelectItem>
                 <SelectItem value="cerrada">Cerrada</SelectItem>
-                <SelectItem value="descuadrada">Descuadrada</SelectItem>
+                <SelectItem value="descuadrada">Sobrepasado</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -606,7 +732,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                       {order.description || "-"}
                     </TableCell>
                     <TableCell className="text-right font-mono">{formatUF(order.amount_uf)}</TableCell>
-                    <TableCell>{getStatusBadge(order.status)}</TableCell>
+                    <TableCell>{getStatusBadge(order)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
                         <Button
@@ -642,7 +768,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         )}
       </CardContent>
 
-      <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
+      <Dialog open={showNewDialog} onOpenChange={(open) => { setShowNewDialog(open); if (!open) setBudgetWarning(null); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Nueva Orden de Compra</DialogTitle>
@@ -667,7 +793,10 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
             </div>
             <div className="space-y-2">
               <Label>Tipo de Presupuesto</Label>
-              <Select value={newOrder.budget_type} onValueChange={(v) => setNewOrder({ ...newOrder, budget_type: v as "inversion_inicial" | "capex" })}>
+              <Select 
+                value={newOrder.budget_type} 
+                onValueChange={(v) => setNewOrder({ ...newOrder, budget_type: v as "inversion_inicial" | "capex", budget_line_id: "" })}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -676,6 +805,40 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                   <SelectItem value="capex">Capex</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Línea de Presupuesto (Descripción) *</Label>
+              <Select 
+                value={newOrder.budget_line_id} 
+                onValueChange={(v) => setNewOrder({ ...newOrder, budget_line_id: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccione una línea autorizada" />
+                </SelectTrigger>
+                <SelectContent>
+                  {getAuthorizedLinesForBudgetType(newOrder.budget_type).map((line) => {
+                    const available = getAvailableBudgetForLine(line.id);
+                    return (
+                      <SelectItem key={line.id} value={line.id}>
+                        <div className="flex items-center justify-between w-full gap-4">
+                          <span>{line.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            (Disponible: {formatUF(available)})
+                          </span>
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+              {getAuthorizedLinesForBudgetType(newOrder.budget_type).length === 0 && (
+                <p className="text-xs text-amber-600">No hay líneas autorizadas para este tipo de presupuesto</p>
+              )}
+              {newOrder.budget_line_id && (
+                <p className="text-xs text-muted-foreground">
+                  Presupuesto disponible: {formatUF(getAvailableBudgetForLine(newOrder.budget_line_id))}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Proveedor</Label>
@@ -710,10 +873,6 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
               )}
             </div>
             <div className="space-y-2">
-              <Label>Descripción</Label>
-              <Input value={newOrder.description} onChange={(e) => setNewOrder({ ...newOrder, description: e.target.value })} />
-            </div>
-            <div className="space-y-2">
               <Label>Archivo Adjunto</Label>
               <div className="flex items-center gap-2">
                 <Button 
@@ -738,10 +897,24 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                 )}
               </div>
             </div>
+
+            {budgetWarning && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-amber-800">{budgetWarning}</p>
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowNewDialog(false)}>Cancelar</Button>
-            <Button onClick={handleCreateOrder}>Crear</Button>
+            <Button variant="outline" onClick={() => { setShowNewDialog(false); setBudgetWarning(null); }}>Cancelar</Button>
+            <Button 
+              onClick={handleCreateOrder}
+              disabled={!newOrder.budget_line_id || !newOrder.order_number}
+            >
+              Crear
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -757,7 +930,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       />
 
       {/* Edit Order Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+      <Dialog open={showEditDialog} onOpenChange={(open) => { setShowEditDialog(open); if (!open) setBudgetWarning(null); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Editar Orden de Compra</DialogTitle>
@@ -781,13 +954,45 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
             </div>
             <div className="space-y-2">
               <Label>Tipo de Presupuesto</Label>
-              <Select value={editFormData.budget_type} onValueChange={(v) => setEditFormData({ ...editFormData, budget_type: v as "inversion_inicial" | "capex" })}>
+              <Select 
+                value={editFormData.budget_type} 
+                onValueChange={(v) => setEditFormData({ ...editFormData, budget_type: v as "inversion_inicial" | "capex", budget_line_id: "" })}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="inversion_inicial">Inversión Inicial</SelectItem>
                   <SelectItem value="capex">Capex</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Línea de Presupuesto (Descripción) *</Label>
+              <Select 
+                value={editFormData.budget_line_id} 
+                onValueChange={(v) => setEditFormData({ ...editFormData, budget_line_id: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccione una línea autorizada" />
+                </SelectTrigger>
+                <SelectContent>
+                  {getAuthorizedLinesForBudgetType(editFormData.budget_type).map((line) => {
+                    const usedByOthers = orders
+                      .filter(o => o.budget_line_id === line.id && o.id !== editOrder?.id)
+                      .reduce((sum, o) => sum + o.amount_uf, 0);
+                    const available = line.amount_uf - usedByOthers;
+                    return (
+                      <SelectItem key={line.id} value={line.id}>
+                        <div className="flex items-center justify-between w-full gap-4">
+                          <span>{line.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            (Disponible: {formatUF(available)})
+                          </span>
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -824,10 +1029,6 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
               )}
             </div>
             <div className="space-y-2">
-              <Label>Descripción</Label>
-              <Input value={editFormData.description} onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })} />
-            </div>
-            <div className="space-y-2">
               <Label>Archivo Adjunto</Label>
               <div className="flex items-center gap-2">
                 <Button 
@@ -852,10 +1053,24 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                 )}
               </div>
             </div>
+
+            {budgetWarning && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-amber-800">{budgetWarning}</p>
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEditDialog(false)}>Cancelar</Button>
-            <Button onClick={handleUpdateOrder}>Guardar</Button>
+            <Button variant="outline" onClick={() => { setShowEditDialog(false); setBudgetWarning(null); }}>Cancelar</Button>
+            <Button 
+              onClick={handleUpdateOrder}
+              disabled={!editFormData.budget_line_id || !editFormData.order_number}
+            >
+              Guardar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -874,7 +1089,6 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       <AlertDialog
         open={deleteOrder !== null && deleteStep === 1}
         onOpenChange={(open) => {
-          // If user clicked "Continuar", deleteStep is already 2 when the dialog closes
           if (!open && deleteStep === 1) {
             setDeleteOrder(null);
             setDeleteStep(1);
@@ -889,18 +1103,14 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
               <strong>{deleteOrder?.supplier_name || "Sin nombre"}</strong> por un monto de{" "}
               <strong>{formatUF(deleteOrder?.amount_uf || 0)}</strong>.
               <br /><br />
-              Esta acción también eliminará todas las facturas asociadas a esta orden.
+              Esta acción también eliminará todas las facturas y notas de crédito asociadas a esta orden.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDeleteOrder(null)}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                handleDeleteConfirm();
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
+            <AlertDialogCancel onClick={() => { setDeleteOrder(null); setDeleteStep(1); }}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteConfirm}>
               Continuar
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -919,31 +1129,27 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-destructive">⚠️ Confirmar Eliminación Definitiva</AlertDialogTitle>
+            <AlertDialogTitle className="text-destructive">⚠️ Confirmar Eliminación</AlertDialogTitle>
             <AlertDialogDescription>
-              <strong>Esta acción es irreversible.</strong>
+              <strong>¿Está completamente seguro?</strong>
               <br /><br />
-              ¿Está completamente seguro de que desea eliminar permanentemente la OC{" "}
-              <strong>{deleteOrder?.order_number}</strong> y todas sus facturas asociadas?
+              Esta acción NO se puede deshacer. Se eliminarán permanentemente:
+              <ul className="list-disc ml-4 mt-2">
+                <li>La orden de compra {deleteOrder?.order_number}</li>
+                <li>Todas las facturas asociadas</li>
+                <li>Todas las notas de crédito asociadas</li>
+              </ul>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => {
-                setDeleteOrder(null);
-                setDeleteStep(1);
-              }}
-            >
+            <AlertDialogCancel onClick={() => { setDeleteOrder(null); setDeleteStep(1); }}>
               Cancelar
             </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                handleDeleteConfirm();
-              }}
+            <AlertDialogAction 
+              onClick={handleDeleteConfirm}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Eliminar Definitivamente
+              Eliminar Permanentemente
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
