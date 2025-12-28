@@ -88,6 +88,16 @@ const BudgetLineItem = ({
   };
   const calculatedAmount = isParent ? calculateChildrenTotal(line.children!) : line.amount_uf;
 
+  // Calculate amount only if both quantity and price are > 0
+  const calculateLineAmount = (qty: number, price: number, currency: string): number => {
+    if (qty <= 0 || price <= 0) return 0;
+    let amountUf = qty * price;
+    if (currency === "CLP" && ufValue > 0) {
+      amountUf = amountUf / ufValue;
+    }
+    return amountUf;
+  };
+
   // Commit quantity on blur
   const handleQuantityBlur = () => {
     if (readOnly) return;
@@ -95,10 +105,7 @@ const BudgetLineItem = ({
     if (qty === (line.quantity || 0)) return;
     const price = line.unit_price || 0;
     const currency = line.currency || "UF";
-    let amountUf = qty * price;
-    if (currency === "CLP" && ufValue > 0) {
-      amountUf = amountUf / ufValue;
-    }
+    const amountUf = calculateLineAmount(qty, price, currency);
     onUpdateLine(line.id, {
       quantity: qty,
       amount_uf: amountUf
@@ -115,10 +122,7 @@ const BudgetLineItem = ({
   const handleSavePrice = () => {
     const qty = line.quantity || 0;
     const price = parseFloat(editUnitPrice) || 0;
-    let amountUf = qty * price;
-    if (editCurrency === "CLP" && ufValue > 0) {
-      amountUf = amountUf / ufValue;
-    }
+    const amountUf = calculateLineAmount(qty, price, editCurrency);
     onUpdateLine(line.id, {
       unit_price: price,
       currency: editCurrency,
