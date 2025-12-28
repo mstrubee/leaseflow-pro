@@ -179,6 +179,60 @@ export type Database = {
           },
         ]
       }
+      budget_carryover: {
+        Row: {
+          amount_uf: number
+          budget_type: string
+          contract_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          notes: string | null
+          purchase_order_id: string
+          source_year: number
+          target_year: number
+        }
+        Insert: {
+          amount_uf?: number
+          budget_type: string
+          contract_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          purchase_order_id: string
+          source_year: number
+          target_year: number
+        }
+        Update: {
+          amount_uf?: number
+          budget_type?: string
+          contract_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          purchase_order_id?: string
+          source_year?: number
+          target_year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_carryover_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_carryover_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       budget_lines: {
         Row: {
           amount_uf: number

@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Plus, Lock, Calendar, ArrowRightCircle, AlertTriangle, FileText, Trash2, RefreshCw } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Loader2, Plus, Lock, Calendar, ArrowRightCircle, AlertTriangle, FileText, Trash2, RefreshCw, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { BudgetLineTree, BudgetLine, calculateAuthorizedTotal, calculateUnauthorizedTotal, getUnauthorizedLines, getAllDescendantIds, hasDescendants } from "./BudgetLineTree";
 import { BudgetSemaphore } from "./BudgetSemaphore";
@@ -43,6 +44,18 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
   const [newBudgetAmount, setNewBudgetAmount] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [applyingTemplate, setApplyingTemplate] = useState(false);
+  const [closeCurrentYearOnCreate, setCloseCurrentYearOnCreate] = useState(false);
+  const [previousYearData, setPreviousYearData] = useState<{
+    hasPreviousYear: boolean;
+    pendingOCs: Array<{
+      id: string;
+      order_number: string;
+      amount_uf: number;
+      invoiced_amount: number;
+      pending_balance: number;
+    }>;
+    totalPending: number;
+  }>({ hasPreviousYear: false, pendingOCs: [], totalPending: 0 });
   
   // Delete budget state
   const [showDeleteBudgetDialog1, setShowDeleteBudgetDialog1] = useState(false);
@@ -137,6 +150,63 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
     return roots;
   };
 
+  // Check for pending OCs from previous year when year changes
+  const checkPreviousYearPendingOCs = async (targetYear: number) => {
+    const previousYear = targetYear - 1;
+    
+    // Check if there's a budget from the previous year
+    const previousBudget = budgets.find(b => b.year === previousYear);
+    if (!previousBudget) {
+      setPreviousYearData({ hasPreviousYear: false, pendingOCs: [], totalPending: 0 });
+      return;
+    }
+
+    // Get OCs from previous year budget
+    const { data: orders } = await supabase
+      .from("purchase_orders")
+      .select("id, order_number, amount_uf")
+      .eq("contract_id", contractId)
+      .eq("budget_id", previousBudget.id)
+      .eq("year", previousYear);
+
+    if (!orders || orders.length === 0) {
+      setPreviousYearData({ hasPreviousYear: true, pendingOCs: [], totalPending: 0 });
+      return;
+    }
+
+    // Calculate invoiced amounts for each OC
+    const pendingOCs: Array<{
+      id: string;
+      order_number: string;
+      amount_uf: number;
+      invoiced_amount: number;
+      pending_balance: number;
+    }> = [];
+
+    for (const order of orders) {
+      const { data: invoices } = await supabase
+        .from("invoices")
+        .select("amount_uf")
+        .eq("purchase_order_id", order.id);
+
+      const invoicedAmount = (invoices || []).reduce((acc, inv) => acc + (inv.amount_uf || 0), 0);
+      const pendingBalance = order.amount_uf - invoicedAmount;
+
+      if (pendingBalance > 0) {
+        pendingOCs.push({
+          id: order.id,
+          order_number: order.order_number,
+          amount_uf: order.amount_uf,
+          invoiced_amount: invoicedAmount,
+          pending_balance: pendingBalance,
+        });
+      }
+    }
+
+    const totalPending = pendingOCs.reduce((acc, oc) => acc + oc.pending_balance, 0);
+    setPreviousYearData({ hasPreviousYear: true, pendingOCs, totalPending });
+  };
+
   const handleCreateBudget = async () => {
     // Validate template is selected
     if (!selectedTemplateId || selectedTemplateId === "none") {
@@ -172,10 +242,46 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
         toast({ variant: "destructive", title: "Error", description: "Error al aplicar la plantilla" });
       }
 
-      toast({ title: "Presupuesto creado", description: `Presupuesto ${title} ${newBudgetYear} creado exitosamente` });
+      // If close current year is checked and there are pending OCs, create carryover records
+      if (closeCurrentYearOnCreate && previousYearData.pendingOCs.length > 0) {
+        const previousYear = newBudgetYear - 1;
+        const previousBudget = budgets.find(b => b.year === previousYear);
+        
+        // Mark previous budget as closed
+        if (previousBudget && !previousBudget.is_closed) {
+          await supabase
+            .from("contract_budgets")
+            .update({ is_closed: true, closed_at: new Date().toISOString() })
+            .eq("id", previousBudget.id);
+        }
+
+        // Create carryover records for pending OCs
+        const { data: userData } = await supabase.auth.getUser();
+        for (const oc of previousYearData.pendingOCs) {
+          await supabase.from("budget_carryover").insert({
+            contract_id: contractId,
+            source_year: previousYear,
+            target_year: newBudgetYear,
+            budget_type: budgetType,
+            purchase_order_id: oc.id,
+            amount_uf: oc.pending_balance,
+            created_by: userData?.user?.id,
+            notes: `Arrastre automático OC ${oc.order_number} - Saldo pendiente de facturación`,
+          });
+        }
+
+        toast({ 
+          title: "Presupuesto creado con arrastre", 
+          description: `Se arrastraron ${previousYearData.pendingOCs.length} OC(s) con saldo pendiente de ${formatUF(previousYearData.totalPending)}` 
+        });
+      } else {
+        toast({ title: "Presupuesto creado", description: `Presupuesto ${title} ${newBudgetYear} creado exitosamente` });
+      }
+
       setShowNewBudgetDialog(false);
       setNewBudgetAmount("");
       setSelectedTemplateId("");
+      setCloseCurrentYearOnCreate(false);
       loadBudgets();
       setSelectedYear(newBudgetYear);
     } catch (error: any) {
@@ -577,8 +683,16 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
       </CardContent>
 
       {/* Dialog: Nuevo presupuesto */}
-      <Dialog open={showNewBudgetDialog} onOpenChange={setShowNewBudgetDialog}>
-        <DialogContent>
+      <Dialog open={showNewBudgetDialog} onOpenChange={(open) => {
+        setShowNewBudgetDialog(open);
+        if (open) {
+          // When dialog opens, check for pending OCs from previous year
+          checkPreviousYearPendingOCs(newBudgetYear);
+        } else {
+          setCloseCurrentYearOnCreate(false);
+        }
+      }}>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Nuevo Presupuesto - {title}</DialogTitle>
             <DialogDescription>
@@ -591,7 +705,11 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
               <Input
                 type="number"
                 value={newBudgetYear}
-                onChange={(e) => setNewBudgetYear(parseInt(e.target.value))}
+                onChange={(e) => {
+                  const year = parseInt(e.target.value);
+                  setNewBudgetYear(year);
+                  checkPreviousYearPendingOCs(year);
+                }}
               />
             </div>
             <div className="space-y-2">
@@ -610,6 +728,51 @@ export const BudgetModule = ({ contractId, budgetType, title }: BudgetModuleProp
               onChange={setSelectedTemplateId}
               label="Cargar plantilla tipo"
             />
+            
+            {/* Close year option */}
+            {previousYearData.hasPreviousYear && (
+              <div className="space-y-3 border-t pt-4">
+                <div className="flex items-start space-x-3">
+                  <Checkbox
+                    id="closeYear"
+                    checked={closeCurrentYearOnCreate}
+                    onCheckedChange={(checked) => setCloseCurrentYearOnCreate(checked === true)}
+                  />
+                  <div className="space-y-1">
+                    <Label htmlFor="closeYear" className="font-medium cursor-pointer">
+                      ¿Cerrar año {newBudgetYear - 1}?
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Al cerrar el año, se arrastrarán las OC con saldo pendiente de facturación.
+                    </p>
+                  </div>
+                </div>
+                
+                {closeCurrentYearOnCreate && previousYearData.pendingOCs.length > 0 && (
+                  <Alert className="border-amber-500 bg-amber-50 dark:bg-amber-950/20">
+                    <RotateCcw className="h-4 w-4 text-amber-600" />
+                    <AlertTitle className="text-amber-700">Arrastre de Presupuesto</AlertTitle>
+                    <AlertDescription className="text-amber-600 space-y-2">
+                      <p>{previousYearData.pendingOCs.length} OC(s) con saldo pendiente por {formatUF(previousYearData.totalPending)}</p>
+                      <div className="max-h-24 overflow-y-auto text-xs space-y-1">
+                        {previousYearData.pendingOCs.map(oc => (
+                          <div key={oc.id} className="flex justify-between">
+                            <span>OC {oc.order_number}</span>
+                            <span>{formatUF(oc.pending_balance)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </AlertDescription>
+                  </Alert>
+                )}
+                
+                {closeCurrentYearOnCreate && previousYearData.pendingOCs.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    No hay OC con saldo pendiente de facturación en el año {newBudgetYear - 1}.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowNewBudgetDialog(false)}>
