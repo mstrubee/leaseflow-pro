@@ -66,11 +66,14 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
   const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
   const [invoiceBudgetLineId, setInvoiceBudgetLineId] = useState("");
   const [invoiceLineName, setInvoiceLineName] = useState("");
+  const [lineOCs, setLineOCs] = useState<{ id: string; order_number: string; supplier_name: string | null; amount_uf: number }[]>([]);
+  const [loadingLineOCs, setLoadingLineOCs] = useState(false);
   const [invoiceForm, setInvoiceForm] = useState({
     invoice_number: "",
     invoice_date: new Date().toISOString().split('T')[0],
     amount: "",
-    currency: "UF"
+    currency: "UF",
+    purchase_order_id: ""
   });
   const [creatingInvoice, setCreatingInvoice] = useState(false);
   
@@ -317,22 +320,44 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
   };
 
   // Handle opening Invoice dialog from budget line
-  const handleCreateInvoiceFromLine = (budgetLineId: string, lineName: string) => {
+  const handleCreateInvoiceFromLine = async (budgetLineId: string, lineName: string) => {
     setInvoiceBudgetLineId(budgetLineId);
     setInvoiceLineName(lineName);
     setInvoiceForm({
       invoice_number: "",
       invoice_date: new Date().toISOString().split('T')[0],
       amount: "",
-      currency: "UF"
+      currency: "UF",
+      purchase_order_id: ""
     });
     setShowInvoiceDialog(true);
+    
+    // Load existing OCs for this budget line
+    setLoadingLineOCs(true);
+    try {
+      const { data, error } = await supabase
+        .from("purchase_orders")
+        .select("id, order_number, supplier_name, amount_uf")
+        .eq("budget_line_id", budgetLineId)
+        .eq("year", selectedYear)
+        .order("order_date", { ascending: false });
+
+      if (error) throw error;
+      setLineOCs(data || []);
+    } catch (error) {
+      console.error("Error loading OCs for line:", error);
+      setLineOCs([]);
+    } finally {
+      setLoadingLineOCs(false);
+    }
   };
 
-  // Handle creating Invoice - need to create OC first if none exists
+  // Handle creating Invoice - must select existing OC
   const handleCreateInvoice = async () => {
-    const budget = budgets.find((b) => b.year === selectedYear);
-    if (!budget) return;
+    if (!invoiceForm.purchase_order_id) {
+      toast({ variant: "destructive", title: "Error", description: "Debe seleccionar una Orden de Compra" });
+      return;
+    }
 
     setCreatingInvoice(true);
     try {
@@ -347,39 +372,9 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
         amountClp = amount * ufValue;
       }
 
-      // First, check if there's an OC for this budget line, or create one
-      const { data: existingOC } = await supabase
-        .from("purchase_orders")
-        .select("id")
-        .eq("budget_line_id", invoiceBudgetLineId)
-        .eq("year", selectedYear)
-        .maybeSingle();
-
-      let purchaseOrderId = existingOC?.id;
-
-      if (!purchaseOrderId) {
-        // Create an OC automatically
-        const { data: newOC, error: ocError } = await supabase.from("purchase_orders").insert({
-          contract_id: contractId,
-          budget_id: budget.id,
-          budget_line_id: invoiceBudgetLineId,
-          order_number: `AUTO-${Date.now()}`,
-          description: `OC automática para ${invoiceLineName}`,
-          amount_uf: amountUf,
-          amount_clp: amountClp,
-          input_currency: invoiceForm.currency,
-          uf_value_at_entry: ufValue,
-          year: selectedYear,
-          status: "abierta"
-        }).select().single();
-
-        if (ocError) throw ocError;
-        purchaseOrderId = newOC.id;
-      }
-
-      // Create the invoice
+      // Create the invoice with selected OC
       const { error } = await supabase.from("invoices").insert({
-        purchase_order_id: purchaseOrderId,
+        purchase_order_id: invoiceForm.purchase_order_id,
         invoice_number: invoiceForm.invoice_number,
         invoice_date: invoiceForm.invoice_date,
         amount_uf: amountUf,
@@ -723,6 +718,40 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {/* OC Selection */}
+            <div className="space-y-2">
+              <Label htmlFor="inv_oc">Orden de Compra *</Label>
+              {loadingLineOCs ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Cargando OC...
+                </div>
+              ) : lineOCs.length === 0 ? (
+                <div className="p-3 border border-yellow-300 bg-yellow-50 dark:bg-yellow-950/20 rounded-md">
+                  <p className="text-sm text-yellow-700 dark:text-yellow-400">
+                    No hay órdenes de compra asociadas a esta línea. 
+                    Primero debe crear una OC para poder registrar facturas.
+                  </p>
+                </div>
+              ) : (
+                <Select 
+                  value={invoiceForm.purchase_order_id} 
+                  onValueChange={(val) => setInvoiceForm({ ...invoiceForm, purchase_order_id: val })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccione una OC" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {lineOCs.map((oc) => (
+                      <SelectItem key={oc.id} value={oc.id}>
+                        {oc.order_number} - {oc.supplier_name || "Sin proveedor"} ({formatUF(oc.amount_uf)})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="inv_number">Número de Factura *</Label>
               <Input
@@ -730,6 +759,7 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
                 value={invoiceForm.invoice_number}
                 onChange={(e) => setInvoiceForm({ ...invoiceForm, invoice_number: e.target.value })}
                 placeholder="Ej: F-001"
+                disabled={lineOCs.length === 0}
               />
             </div>
             <div className="space-y-2">
@@ -739,6 +769,7 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
                 type="date"
                 value={invoiceForm.invoice_date}
                 onChange={(e) => setInvoiceForm({ ...invoiceForm, invoice_date: e.target.value })}
+                disabled={lineOCs.length === 0}
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -750,11 +781,16 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
                   value={invoiceForm.amount}
                   onChange={(e) => setInvoiceForm({ ...invoiceForm, amount: e.target.value })}
                   placeholder="0.00"
+                  disabled={lineOCs.length === 0}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="inv_currency">Moneda</Label>
-                <Select value={invoiceForm.currency} onValueChange={(val) => setInvoiceForm({ ...invoiceForm, currency: val })}>
+                <Select 
+                  value={invoiceForm.currency} 
+                  onValueChange={(val) => setInvoiceForm({ ...invoiceForm, currency: val })}
+                  disabled={lineOCs.length === 0}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -765,15 +801,15 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
                 </Select>
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Si no existe una OC asociada a esta línea, se creará automáticamente.
-            </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowInvoiceDialog(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleCreateInvoice} disabled={creatingInvoice || !invoiceForm.invoice_number || !invoiceForm.amount}>
+            <Button 
+              onClick={handleCreateInvoice} 
+              disabled={creatingInvoice || !invoiceForm.invoice_number || !invoiceForm.amount || !invoiceForm.purchase_order_id || lineOCs.length === 0}
+            >
               {creatingInvoice && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Registrar Factura
             </Button>
