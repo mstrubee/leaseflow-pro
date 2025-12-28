@@ -724,7 +724,11 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
           />
         </TabsContent>
         <TabsContent value="oc" className="mt-4">
-          <PurchaseOrdersModule contractId={contractId} initialYear={selectedYear} />
+          <PurchaseOrdersModule 
+            contractId={contractId} 
+            initialYear={selectedYear} 
+            onRefresh={() => setRefreshKey(k => k + 1)}
+          />
         </TabsContent>
       </Tabs>
 

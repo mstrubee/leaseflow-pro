@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, FileText, ChevronDown, ChevronRight, AlertTriangle, Paperclip, ExternalLink, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Search, X } from "lucide-react";
+import { Loader2, Plus, FileText, ChevronDown, ChevronRight, AlertTriangle, Paperclip, ExternalLink, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Search, X, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useBudgetContext } from "./BudgetContext";
 import { InvoiceList } from "./InvoiceList";
@@ -32,6 +32,7 @@ interface PurchaseOrder {
 interface PurchaseOrdersModuleProps {
   contractId: string;
   initialYear?: number;
+  onRefresh?: () => void;
 }
 
 interface Budget {
@@ -40,16 +41,19 @@ interface Budget {
   budget_type: string;
 }
 
-export const PurchaseOrdersModule = ({ contractId, initialYear }: PurchaseOrdersModuleProps) => {
+export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: PurchaseOrdersModuleProps) => {
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const selectedYear = initialYear ?? new Date().getFullYear();
 
   const [loading, setLoading] = useState(true);
   const [showNewDialog, setShowNewDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
+  const [showEditFilePicker, setShowEditFilePicker] = useState(false);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [deleteOrder, setDeleteOrder] = useState<PurchaseOrder | null>(null);
+  const [editOrder, setEditOrder] = useState<PurchaseOrder | null>(null);
   const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
   
   // Sorting and filtering state
@@ -69,6 +73,19 @@ export const PurchaseOrdersModule = ({ contractId, initialYear }: PurchaseOrders
     attachment_url: "",
     attachment_name: "",
   });
+  
+  const [editFormData, setEditFormData] = useState({
+    order_number: "",
+    supplier_name: "",
+    order_date: "",
+    amount: "",
+    currency: "UF" as "UF" | "CLP",
+    description: "",
+    budget_type: "inversion_inicial" as "inversion_inicial" | "capex",
+    attachment_url: "",
+    attachment_name: "",
+  });
+  
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos, convertPesosToUF, ufValue } = useBudgetContext();
 
@@ -159,6 +176,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear }: PurchaseOrders
         attachment_name: "",
       });
       loadOrders();
+      onRefresh?.();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
@@ -200,6 +218,71 @@ export const PurchaseOrdersModule = ({ contractId, initialYear }: PurchaseOrders
     setDeleteStep(1);
   };
 
+  const handleEditClick = (e: React.MouseEvent, order: PurchaseOrder) => {
+    e.stopPropagation();
+    setEditOrder(order);
+    const budget = budgets.find(b => b.id === order.budget_id);
+    setEditFormData({
+      order_number: order.order_number,
+      supplier_name: order.supplier_name || "",
+      order_date: order.order_date,
+      amount: order.amount_uf.toString(),
+      currency: "UF",
+      description: order.description || "",
+      budget_type: (budget?.budget_type || "inversion_inicial") as "inversion_inicial" | "capex",
+      attachment_url: order.attachment_url || "",
+      attachment_name: order.attachment_url ? "Archivo adjunto" : "",
+    });
+    setShowEditDialog(true);
+  };
+
+  const handleUpdateOrder = async () => {
+    if (!editOrder) return;
+    
+    try {
+      const inputAmount = parseFloat(editFormData.amount) || 0;
+      let amountUF: number;
+      let amountCLP: number;
+
+      if (editFormData.currency === "UF") {
+        amountUF = inputAmount;
+        amountCLP = convertUFToPesos(inputAmount);
+      } else {
+        amountCLP = inputAmount;
+        amountUF = convertPesosToUF(inputAmount);
+      }
+
+      // Find budget for selected type and year
+      const budget = budgets.find(b => b.budget_type === editFormData.budget_type);
+
+      const { error } = await supabase
+        .from("purchase_orders")
+        .update({
+          order_number: editFormData.order_number,
+          supplier_name: editFormData.supplier_name || null,
+          order_date: editFormData.order_date,
+          amount_uf: amountUF,
+          amount_clp: amountCLP,
+          input_currency: editFormData.currency,
+          uf_value_at_entry: ufValue,
+          description: editFormData.description || null,
+          budget_id: budget?.id || null,
+          attachment_url: editFormData.attachment_url || null,
+        })
+        .eq("id", editOrder.id);
+
+      if (error) throw error;
+
+      toast({ title: "OC actualizada", description: `Orden de compra ${editFormData.order_number} actualizada` });
+      setShowEditDialog(false);
+      setEditOrder(null);
+      loadOrders();
+      onRefresh?.();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
   const handleDeleteConfirm = async () => {
     if (deleteStep === 1) {
       setDeleteStep(2);
@@ -235,6 +318,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear }: PurchaseOrders
       setDeleteOrder(null);
       setDeleteStep(1);
       await loadOrders();
+      onRefresh?.();
     } catch (error: any) {
       console.error("Delete error:", error);
       toast({ variant: "destructive", title: "Error al eliminar", description: error.message });
@@ -524,20 +608,30 @@ export const PurchaseOrdersModule = ({ contractId, initialYear }: PurchaseOrders
                     <TableCell className="text-right font-mono">{formatUF(order.amount_uf)}</TableCell>
                     <TableCell>{getStatusBadge(order.status)}</TableCell>
                     <TableCell>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                        onClick={(e) => handleDeleteClick(e, order)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0"
+                          onClick={(e) => handleEditClick(e, order)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                          onClick={(e) => handleDeleteClick(e, order)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                   {expandedOrders.has(order.id) && (
                     <TableRow>
                       <TableCell colSpan={9} className="bg-muted/20 p-4">
-                        <InvoiceList purchaseOrder={order} onUpdate={loadOrders} />
+                        <InvoiceList purchaseOrder={order} onUpdate={() => { loadOrders(); onRefresh?.(); }} />
                       </TableCell>
                     </TableRow>
                   )}
@@ -659,6 +753,120 @@ export const PurchaseOrdersModule = ({ contractId, initialYear }: PurchaseOrders
         title="Seleccionar Archivo de OC"
         onFileSelect={(file) => {
           setNewOrder({ ...newOrder, attachment_url: file.url, attachment_name: file.name });
+        }}
+      />
+
+      {/* Edit Order Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar Orden de Compra</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Nº OC</Label>
+                <Input value={editFormData.order_number} onChange={(e) => setEditFormData({ ...editFormData, order_number: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label>Fecha</Label>
+                <Input 
+                  type="date" 
+                  value={editFormData.order_date} 
+                  min={`${selectedYear}-01-01`}
+                  max={`${selectedYear}-12-31`}
+                  onChange={(e) => setEditFormData({ ...editFormData, order_date: e.target.value })} 
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo de Presupuesto</Label>
+              <Select value={editFormData.budget_type} onValueChange={(v) => setEditFormData({ ...editFormData, budget_type: v as "inversion_inicial" | "capex" })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="inversion_inicial">Inversión Inicial</SelectItem>
+                  <SelectItem value="capex">Capex</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Proveedor</Label>
+              <Input value={editFormData.supplier_name} onChange={(e) => setEditFormData({ ...editFormData, supplier_name: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Monto</Label>
+              <div className="flex gap-2">
+                <Input 
+                  type="number" 
+                  step={editFormData.currency === "UF" ? "0.01" : "1"} 
+                  value={editFormData.amount} 
+                  onChange={(e) => setEditFormData({ ...editFormData, amount: e.target.value })} 
+                  className="flex-1"
+                />
+                <Select value={editFormData.currency} onValueChange={(v) => setEditFormData({ ...editFormData, currency: v as "UF" | "CLP" })}>
+                  <SelectTrigger className="w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UF">UF</SelectItem>
+                    <SelectItem value="CLP">CLP</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {editFormData.amount && ufValue > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Equivalente: {editFormData.currency === "CLP" 
+                    ? formatUF(convertPesosToUF(parseFloat(editFormData.amount))) 
+                    : formatCLP(convertUFToPesos(parseFloat(editFormData.amount)))}
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Descripción</Label>
+              <Input value={editFormData.description} onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Archivo Adjunto</Label>
+              <div className="flex items-center gap-2">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setShowEditFilePicker(true)}
+                  className="flex items-center gap-2"
+                >
+                  <Paperclip className="h-4 w-4" />
+                  {editFormData.attachment_name || "Seleccionar archivo"}
+                </Button>
+                {editFormData.attachment_url && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => window.open(editFormData.attachment_url, "_blank")}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditDialog(false)}>Cancelar</Button>
+            <Button onClick={handleUpdateOrder}>Guardar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <RepositoryFilePicker
+        open={showEditFilePicker}
+        onOpenChange={setShowEditFilePicker}
+        contractId={contractId}
+        title="Seleccionar Archivo de OC"
+        onFileSelect={(file) => {
+          setEditFormData({ ...editFormData, attachment_url: file.url, attachment_name: file.name });
         }}
       />
 
