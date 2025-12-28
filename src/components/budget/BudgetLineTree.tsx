@@ -83,10 +83,23 @@ const BudgetLineItem = ({
       if (child.children && child.children.length > 0) {
         return sum + calculateChildrenTotal(child.children);
       }
+      // Para hojas: solo sumar si cantidad Y precio son > 0
+      const qty = child.quantity || 0;
+      const price = child.unit_price || 0;
+      if (qty <= 0 || price <= 0) return sum;
       return sum + (child.amount_uf || 0);
     }, 0);
   };
-  const calculatedAmount = isParent ? calculateChildrenTotal(line.children!) : line.amount_uf;
+
+  // Para líneas hoja: mostrar 0 si falta cantidad o precio
+  const getLeafAmount = (): number => {
+    const qty = line.quantity || 0;
+    const price = line.unit_price || 0;
+    if (qty <= 0 || price <= 0) return 0;
+    return line.amount_uf || 0;
+  };
+
+  const calculatedAmount = isParent ? calculateChildrenTotal(line.children!) : getLeafAmount();
 
   // Calculate amount only if both quantity and price are > 0
   const calculateLineAmount = (qty: number, price: number, currency: string): number => {
