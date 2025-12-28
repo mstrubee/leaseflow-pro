@@ -11,6 +11,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { BudgetTemplateSelector, updateBudgetTemplatePreservingValues, getCurrentTemplateId } from "./BudgetTemplateSelector";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface Budget {
   id: string;
@@ -46,8 +49,33 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
   const [showStatePropagation, setShowStatePropagation] = useState(false);
   const [pendingStatusChange, setPendingStatusChange] = useState<{ id: string; newStatus: "autorizado" | "no_autorizado"; hasChildren: boolean } | null>(null);
   
+  // OC Dialog state
+  const [showOCDialog, setShowOCDialog] = useState(false);
+  const [ocBudgetLineId, setOcBudgetLineId] = useState("");
+  const [ocLineName, setOcLineName] = useState("");
+  const [ocForm, setOcForm] = useState({
+    order_number: "",
+    supplier_name: "",
+    description: "",
+    amount: "",
+    currency: "UF"
+  });
+  const [creatingOC, setCreatingOC] = useState(false);
+
+  // Invoice Dialog state  
+  const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
+  const [invoiceBudgetLineId, setInvoiceBudgetLineId] = useState("");
+  const [invoiceLineName, setInvoiceLineName] = useState("");
+  const [invoiceForm, setInvoiceForm] = useState({
+    invoice_number: "",
+    invoice_date: new Date().toISOString().split('T')[0],
+    amount: "",
+    currency: "UF"
+  });
+  const [creatingInvoice, setCreatingInvoice] = useState(false);
+  
   const { toast } = useToast();
-  const { formatUF, formatCLP, convertUFToPesos } = useBudgetContext();
+  const { formatUF, formatCLP, convertUFToPesos, ufValue } = useBudgetContext();
 
   useEffect(() => {
     loadBudgets();
@@ -229,6 +257,150 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
     }
   };
 
+  // Handle opening OC dialog from budget line
+  const handleCreateOCFromLine = (budgetLineId: string, lineName: string) => {
+    setOcBudgetLineId(budgetLineId);
+    setOcLineName(lineName);
+    setOcForm({
+      order_number: "",
+      supplier_name: "",
+      description: lineName,
+      amount: "",
+      currency: "UF"
+    });
+    setShowOCDialog(true);
+  };
+
+  // Handle creating OC
+  const handleCreateOC = async () => {
+    const budget = budgets.find((b) => b.year === selectedYear);
+    if (!budget) return;
+
+    setCreatingOC(true);
+    try {
+      const amount = parseFloat(ocForm.amount) || 0;
+      let amountUf = amount;
+      let amountClp = 0;
+
+      if (ocForm.currency === "CLP" && ufValue > 0) {
+        amountUf = amount / ufValue;
+        amountClp = amount;
+      } else {
+        amountClp = amount * ufValue;
+      }
+
+      const { error } = await supabase.from("purchase_orders").insert({
+        contract_id: contractId,
+        budget_id: budget.id,
+        budget_line_id: ocBudgetLineId,
+        order_number: ocForm.order_number,
+        supplier_name: ocForm.supplier_name,
+        description: ocForm.description,
+        amount_uf: amountUf,
+        amount_clp: amountClp,
+        input_currency: ocForm.currency,
+        uf_value_at_entry: ufValue,
+        year: selectedYear,
+        status: "abierta"
+      });
+
+      if (error) throw error;
+
+      toast({ title: "OC creada", description: `Orden de compra ${ocForm.order_number} creada exitosamente` });
+      setShowOCDialog(false);
+      onRefresh?.();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setCreatingOC(false);
+    }
+  };
+
+  // Handle opening Invoice dialog from budget line
+  const handleCreateInvoiceFromLine = (budgetLineId: string, lineName: string) => {
+    setInvoiceBudgetLineId(budgetLineId);
+    setInvoiceLineName(lineName);
+    setInvoiceForm({
+      invoice_number: "",
+      invoice_date: new Date().toISOString().split('T')[0],
+      amount: "",
+      currency: "UF"
+    });
+    setShowInvoiceDialog(true);
+  };
+
+  // Handle creating Invoice - need to create OC first if none exists
+  const handleCreateInvoice = async () => {
+    const budget = budgets.find((b) => b.year === selectedYear);
+    if (!budget) return;
+
+    setCreatingInvoice(true);
+    try {
+      const amount = parseFloat(invoiceForm.amount) || 0;
+      let amountUf = amount;
+      let amountClp = 0;
+
+      if (invoiceForm.currency === "CLP" && ufValue > 0) {
+        amountUf = amount / ufValue;
+        amountClp = amount;
+      } else {
+        amountClp = amount * ufValue;
+      }
+
+      // First, check if there's an OC for this budget line, or create one
+      const { data: existingOC } = await supabase
+        .from("purchase_orders")
+        .select("id")
+        .eq("budget_line_id", invoiceBudgetLineId)
+        .eq("year", selectedYear)
+        .maybeSingle();
+
+      let purchaseOrderId = existingOC?.id;
+
+      if (!purchaseOrderId) {
+        // Create an OC automatically
+        const { data: newOC, error: ocError } = await supabase.from("purchase_orders").insert({
+          contract_id: contractId,
+          budget_id: budget.id,
+          budget_line_id: invoiceBudgetLineId,
+          order_number: `AUTO-${Date.now()}`,
+          description: `OC automática para ${invoiceLineName}`,
+          amount_uf: amountUf,
+          amount_clp: amountClp,
+          input_currency: invoiceForm.currency,
+          uf_value_at_entry: ufValue,
+          year: selectedYear,
+          status: "abierta"
+        }).select().single();
+
+        if (ocError) throw ocError;
+        purchaseOrderId = newOC.id;
+      }
+
+      // Create the invoice
+      const { error } = await supabase.from("invoices").insert({
+        purchase_order_id: purchaseOrderId,
+        invoice_number: invoiceForm.invoice_number,
+        invoice_date: invoiceForm.invoice_date,
+        amount_uf: amountUf,
+        amount_clp: amountClp,
+        input_currency: invoiceForm.currency,
+        uf_value_at_entry: ufValue,
+        reception_status: "pendiente"
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Factura registrada", description: `Factura ${invoiceForm.invoice_number} creada exitosamente` });
+      setShowInvoiceDialog(false);
+      onRefresh?.();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setCreatingInvoice(false);
+    }
+  };
+
   const handleUpdateTemplate = async () => {
     const budget = budgets.find((b) => b.year === selectedYear);
     if (!budget || !updateTemplateId) return;
@@ -361,6 +533,8 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
               onAddLine={handleAddLine}
               onUpdateLine={handleUpdateLine}
               onDeleteLine={handleDeleteLine}
+              onCreateOC={handleCreateOCFromLine}
+              onCreateInvoice={handleCreateInvoiceFromLine}
               readOnly={isClosed}
             />
           </>
@@ -465,6 +639,147 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog: Create OC from Budget Line */}
+      <Dialog open={showOCDialog} onOpenChange={setShowOCDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Crear Orden de Compra</DialogTitle>
+            <DialogDescription>
+              Nueva OC para: <strong>{ocLineName}</strong>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="oc_number">Número de OC *</Label>
+              <Input
+                id="oc_number"
+                value={ocForm.order_number}
+                onChange={(e) => setOcForm({ ...ocForm, order_number: e.target.value })}
+                placeholder="Ej: OC-001"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="oc_supplier">Proveedor</Label>
+              <Input
+                id="oc_supplier"
+                value={ocForm.supplier_name}
+                onChange={(e) => setOcForm({ ...ocForm, supplier_name: e.target.value })}
+                placeholder="Nombre del proveedor"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="oc_description">Descripción</Label>
+              <Input
+                id="oc_description"
+                value={ocForm.description}
+                onChange={(e) => setOcForm({ ...ocForm, description: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="oc_amount">Monto *</Label>
+                <Input
+                  id="oc_amount"
+                  type="number"
+                  value={ocForm.amount}
+                  onChange={(e) => setOcForm({ ...ocForm, amount: e.target.value })}
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="oc_currency">Moneda</Label>
+                <Select value={ocForm.currency} onValueChange={(val) => setOcForm({ ...ocForm, currency: val })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UF">UF</SelectItem>
+                    <SelectItem value="CLP">CLP ($)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowOCDialog(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleCreateOC} disabled={creatingOC || !ocForm.order_number || !ocForm.amount}>
+              {creatingOC && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Crear OC
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Create Invoice from Budget Line */}
+      <Dialog open={showInvoiceDialog} onOpenChange={setShowInvoiceDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Registrar Factura</DialogTitle>
+            <DialogDescription>
+              Nueva factura para: <strong>{invoiceLineName}</strong>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="inv_number">Número de Factura *</Label>
+              <Input
+                id="inv_number"
+                value={invoiceForm.invoice_number}
+                onChange={(e) => setInvoiceForm({ ...invoiceForm, invoice_number: e.target.value })}
+                placeholder="Ej: F-001"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="inv_date">Fecha</Label>
+              <Input
+                id="inv_date"
+                type="date"
+                value={invoiceForm.invoice_date}
+                onChange={(e) => setInvoiceForm({ ...invoiceForm, invoice_date: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="inv_amount">Monto *</Label>
+                <Input
+                  id="inv_amount"
+                  type="number"
+                  value={invoiceForm.amount}
+                  onChange={(e) => setInvoiceForm({ ...invoiceForm, amount: e.target.value })}
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="inv_currency">Moneda</Label>
+                <Select value={invoiceForm.currency} onValueChange={(val) => setInvoiceForm({ ...invoiceForm, currency: val })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UF">UF</SelectItem>
+                    <SelectItem value="CLP">CLP ($)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Si no existe una OC asociada a esta línea, se creará automáticamente.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowInvoiceDialog(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleCreateInvoice} disabled={creatingInvoice || !invoiceForm.invoice_number || !invoiceForm.amount}>
+              {creatingInvoice && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Registrar Factura
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 };
