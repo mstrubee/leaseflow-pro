@@ -30,6 +30,7 @@ interface BudgetLineTreeProps {
   onDeleteLine: (id: string) => void;
   onCreateOC?: (budgetLineId: string, lineName: string) => void;
   onCreateInvoice?: (budgetLineId: string, lineName: string) => void;
+  onViewLineDetails?: (budgetLineId: string, lineName: string) => void;
   level?: number;
   readOnly?: boolean;
 }
@@ -40,11 +41,12 @@ export const BudgetLineTree = ({
   onDeleteLine,
   onCreateOC,
   onCreateInvoice,
+  onViewLineDetails,
   level = 0,
   readOnly = false
 }: BudgetLineTreeProps) => {
   return <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
-      {lines.map(line => <BudgetLineItem key={line.id} line={line} level={level} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateInvoice={onCreateInvoice} readOnly={readOnly} />)}
+      {lines.map(line => <BudgetLineItem key={line.id} line={line} level={level} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} />)}
       {level === 0 && !readOnly && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
           Agregar línea madre
@@ -59,6 +61,7 @@ interface BudgetLineItemProps {
   onDeleteLine: (id: string) => void;
   onCreateOC?: (budgetLineId: string, lineName: string) => void;
   onCreateInvoice?: (budgetLineId: string, lineName: string) => void;
+  onViewLineDetails?: (budgetLineId: string, lineName: string) => void;
   readOnly?: boolean;
 }
 const BudgetLineItem = ({
@@ -69,6 +72,7 @@ const BudgetLineItem = ({
   onDeleteLine,
   onCreateOC,
   onCreateInvoice,
+  onViewLineDetails,
   readOnly = false
 }: BudgetLineItemProps) => {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -169,8 +173,15 @@ const BudgetLineItem = ({
           {hasChildren ? isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" /> : <div className="h-3.5 w-3.5" />}
         </button>
 
-        {/* Line name - fixed width for alignment */}
-        <span className={cn("text-sm flex-shrink-0 min-w-[250px]", level === 0 ? "font-semibold" : "font-medium")}>
+        {/* Line name - fixed width for alignment, clickeable para ver detalles */}
+        <span 
+          className={cn(
+            "text-sm flex-shrink-0 min-w-[250px] cursor-pointer hover:text-primary hover:underline", 
+            level === 0 ? "font-semibold" : "font-medium"
+          )}
+          onClick={() => onViewLineDetails?.(line.id, line.name)}
+          title="Ver OC, Facturas y Notas de Crédito"
+        >
           {line.name}
         </span>
 
@@ -313,7 +324,7 @@ const BudgetLineItem = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateInvoice={onCreateInvoice} readOnly={readOnly} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} />}
     </div>;
 };
 
