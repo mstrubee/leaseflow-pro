@@ -1128,15 +1128,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       />
 
       {/* Delete confirmation - Step 1 */}
-      <AlertDialog
-        open={deleteOrder !== null && deleteStep === 1}
-        onOpenChange={(open) => {
-          if (!open && deleteStep === 1) {
-            setDeleteOrder(null);
-            setDeleteStep(1);
-          }
-        }}
-      >
+      <AlertDialog open={deleteOrder !== null && deleteStep === 1}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar Orden de Compra?</AlertDialogTitle>
@@ -1160,15 +1152,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       </AlertDialog>
 
       {/* Delete confirmation - Step 2 */}
-      <AlertDialog
-        open={deleteOrder !== null && deleteStep === 2}
-        onOpenChange={(open) => {
-          if (!open) {
-            setDeleteOrder(null);
-            setDeleteStep(1);
-          }
-        }}
-      >
+      <AlertDialog open={deleteOrder !== null && deleteStep === 2}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="text-destructive">⚠️ Confirmar Eliminación</AlertDialogTitle>
