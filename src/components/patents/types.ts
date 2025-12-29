@@ -1,5 +1,5 @@
 export type PatentPriority = 'priority_1' | 'priority_2' | 'priority_3' | 'vigente';
-export type PatentDocStatus = 'pendiente' | 'en_curso' | 'ok' | 'nuevo_doc';
+export type PatentDocStatus = 'pendiente' | 'en_curso' | 'ok' | 'nuevo_doc' | 'no_aplica';
 
 export interface PatentChecklistSection {
   id: string;
@@ -92,4 +92,5 @@ export const STATUS_CONFIG: Record<PatentDocStatus, { label: string; color: stri
   en_curso: { label: 'En Curso', color: 'hsl(48, 96%, 53%)', bgColor: 'bg-yellow-100', textColor: 'text-yellow-800' },
   ok: { label: 'Ok', color: 'hsl(142, 71%, 45%)', bgColor: 'bg-green-100', textColor: 'text-green-800' },
   nuevo_doc: { label: 'Nuevo Doc', color: 'hsl(217, 91%, 60%)', bgColor: 'bg-blue-100', textColor: 'text-blue-800' },
+  no_aplica: { label: 'No Aplica', color: 'hsl(220, 9%, 46%)', bgColor: 'bg-gray-100', textColor: 'text-gray-800' },
 };
