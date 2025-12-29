@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download } from "lucide-react";
@@ -52,11 +52,6 @@ export function PatentChecklist({
   onUpdateDocumentStatus,
 }: PatentChecklistProps) {
   const { user } = useAuth();
-  const [confirmDialog, setConfirmDialog] = useState<{
-    type: 'priority' | 'status';
-    value: string;
-    itemId?: string;
-  } | null>(null);
   
   // Local state for document edits
   const [editingDoc, setEditingDoc] = useState<string | null>(null);
@@ -122,34 +117,24 @@ export function PatentChecklist({
     return { start_date: startDate, end_date: endDate, deadline_days: deadlineDays };
   };
 
-  const handlePriorityChange = (priority: PatentPriority) => {
-    setConfirmDialog({ type: 'priority', value: priority });
-  };
-
-  const handleStatusChange = (itemId: string, status: PatentDocStatus) => {
-    setConfirmDialog({ type: 'status', value: status, itemId });
-  };
-
-  const confirmChange = async () => {
-    if (!confirmDialog || !user) return;
-
+  const handlePriorityChange = async (priority: PatentPriority) => {
+    if (!user) return;
     try {
-      if (confirmDialog.type === 'priority') {
-        await onUpdatePriority(contract.id, confirmDialog.value as PatentPriority, user.id);
-        toast.success("Prioridad actualizada");
-      } else if (confirmDialog.type === 'status' && confirmDialog.itemId) {
-        await onUpdateDocumentStatus(
-          contract.id, 
-          confirmDialog.itemId, 
-          confirmDialog.value as PatentDocStatus, 
-          user.id
-        );
-        toast.success("Estado actualizado");
-      }
+      await onUpdatePriority(contract.id, priority, user.id);
+      toast.success("Prioridad actualizada");
     } catch (error) {
-      toast.error("Error al actualizar");
+      toast.error("Error al actualizar prioridad");
     }
-    setConfirmDialog(null);
+  };
+
+  const handleStatusChange = async (itemId: string, status: PatentDocStatus) => {
+    if (!user) return;
+    try {
+      await onUpdateDocumentStatus(contract.id, itemId, status, user.id);
+      toast.success("Estado actualizado");
+    } catch (error) {
+      toast.error("Error al actualizar estado");
+    }
   };
 
   const handleDocumentFieldChange = (itemId: string, field: keyof PatentDocument, value: any) => {
@@ -445,28 +430,6 @@ export function PatentChecklist({
         </Card>
       ))}
 
-      {/* Confirmation Dialog */}
-      <Dialog open={!!confirmDialog} onOpenChange={() => setConfirmDialog(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirmar cambio</DialogTitle>
-            <DialogDescription>
-              {confirmDialog?.type === 'priority' 
-                ? `¿Cambiar la prioridad a "${PRIORITY_CONFIG[confirmDialog.value as PatentPriority]?.label}"?`
-                : `¿Cambiar el estado a "${STATUS_CONFIG[confirmDialog?.value as PatentDocStatus]?.label}"?`
-              }
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDialog(null)}>
-              Cancelar
-            </Button>
-            <Button onClick={confirmChange}>
-              Confirmar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Document Upload Dialog */}
       {uploadDialog && (

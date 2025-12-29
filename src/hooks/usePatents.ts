@@ -82,14 +82,16 @@ export function usePatents() {
       .eq("contract_id", contractId)
       .single();
 
+    const now = new Date().toISOString();
+
     if (existing) {
       await supabase
         .from("contract_patents")
         .update({
           priority,
-          priority_changed_at: new Date().toISOString(),
+          priority_changed_at: now,
           priority_changed_by: userId,
-          updated_at: new Date().toISOString(),
+          updated_at: now,
         })
         .eq("id", existing.id);
     } else {
@@ -98,12 +100,21 @@ export function usePatents() {
         .insert({
           contract_id: contractId,
           priority,
-          priority_changed_at: new Date().toISOString(),
+          priority_changed_at: now,
           priority_changed_by: userId,
         });
     }
 
-    await loadData();
+    // Update local state instead of reloading
+    setContracts(prev => prev.map(c => {
+      if (c.id !== contractId) return c;
+      return {
+        ...c,
+        contract_patents: c.contract_patents 
+          ? { ...c.contract_patents, priority, priority_changed_at: now, priority_changed_by: userId }
+          : { id: '', contract_id: contractId, priority, priority_changed_at: now, priority_changed_by: userId }
+      };
+    }));
   };
 
   const updateDocumentStatus = async (
@@ -119,29 +130,58 @@ export function usePatents() {
       .eq("checklist_item_id", checklistItemId)
       .single();
 
+    const now = new Date().toISOString();
+    let newDocId = existing?.id;
+
     if (existing) {
       await supabase
         .from("patent_documents")
         .update({
           status,
-          status_changed_at: new Date().toISOString(),
+          status_changed_at: now,
           status_changed_by: userId,
-          updated_at: new Date().toISOString(),
+          updated_at: now,
         })
         .eq("id", existing.id);
     } else {
-      await supabase
+      const { data: inserted } = await supabase
         .from("patent_documents")
         .insert({
           contract_id: contractId,
           checklist_item_id: checklistItemId,
           status,
-          status_changed_at: new Date().toISOString(),
+          status_changed_at: now,
           status_changed_by: userId,
-        });
+        })
+        .select("id")
+        .single();
+      newDocId = inserted?.id;
     }
 
-    await loadData();
+    // Update local state instead of reloading
+    setContracts(prev => prev.map(c => {
+      if (c.id !== contractId) return c;
+      const existingDocs = c.patent_documents || [];
+      const docIndex = existingDocs.findIndex(d => d.checklist_item_id === checklistItemId);
+      
+      if (docIndex >= 0) {
+        const updatedDocs = [...existingDocs];
+        updatedDocs[docIndex] = { ...updatedDocs[docIndex], status, status_changed_at: now, status_changed_by: userId };
+        return { ...c, patent_documents: updatedDocs };
+      } else {
+        return {
+          ...c,
+          patent_documents: [...existingDocs, {
+            id: newDocId || '',
+            contract_id: contractId,
+            checklist_item_id: checklistItemId,
+            status,
+            status_changed_at: now,
+            status_changed_by: userId,
+          } as PatentDocument]
+        };
+      }
+    }));
   };
 
   const updateDocument = async (
@@ -156,26 +196,54 @@ export function usePatents() {
       .eq("checklist_item_id", checklistItemId)
       .single();
 
+    const now = new Date().toISOString();
+    let newDocId = existing?.id;
+
     if (existing) {
       await supabase
         .from("patent_documents")
         .update({
           ...data,
-          updated_at: new Date().toISOString(),
+          updated_at: now,
         })
         .eq("id", existing.id);
     } else {
-      await supabase
+      const { data: inserted } = await supabase
         .from("patent_documents")
         .insert({
           contract_id: contractId,
           checklist_item_id: checklistItemId,
           status: 'pendiente',
           ...data,
-        });
+        })
+        .select("id")
+        .single();
+      newDocId = inserted?.id;
     }
 
-    await loadData();
+    // Update local state instead of reloading
+    setContracts(prev => prev.map(c => {
+      if (c.id !== contractId) return c;
+      const existingDocs = c.patent_documents || [];
+      const docIndex = existingDocs.findIndex(d => d.checklist_item_id === checklistItemId);
+      
+      if (docIndex >= 0) {
+        const updatedDocs = [...existingDocs];
+        updatedDocs[docIndex] = { ...updatedDocs[docIndex], ...data };
+        return { ...c, patent_documents: updatedDocs };
+      } else {
+        return {
+          ...c,
+          patent_documents: [...existingDocs, {
+            id: newDocId || '',
+            contract_id: contractId,
+            checklist_item_id: checklistItemId,
+            status: 'pendiente',
+            ...data,
+          } as PatentDocument]
+        };
+      }
+    }));
   };
 
   // Calculate document criticality stats
