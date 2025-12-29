@@ -2422,7 +2422,12 @@ export type Database = {
         | "firmado_r"
       notice_type: "fecha" | "meses" | "rangos"
       notification_channel: "email" | "whatsapp"
-      patent_doc_status: "pendiente" | "en_curso" | "ok" | "nuevo_doc"
+      patent_doc_status:
+        | "pendiente"
+        | "en_curso"
+        | "ok"
+        | "nuevo_doc"
+        | "no_aplica"
       patent_priority: "priority_1" | "priority_2" | "priority_3" | "vigente"
       permission_type: "view" | "edit" | "all"
     }
@@ -2575,7 +2580,13 @@ export const Constants = {
       ],
       notice_type: ["fecha", "meses", "rangos"],
       notification_channel: ["email", "whatsapp"],
-      patent_doc_status: ["pendiente", "en_curso", "ok", "nuevo_doc"],
+      patent_doc_status: [
+        "pendiente",
+        "en_curso",
+        "ok",
+        "nuevo_doc",
+        "no_aplica",
+      ],
       patent_priority: ["priority_1", "priority_2", "priority_3", "vigente"],
       permission_type: ["view", "edit", "all"],
     },

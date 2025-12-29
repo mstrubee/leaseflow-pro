@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText } from "lucide-react";
+import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download } from "lucide-react";
+import { exportPatentsToExcel } from "./exportPatentsExcel";
 import { format, addDays, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { 
@@ -212,8 +213,17 @@ export function PatentChecklist({
           </div>
         </div>
 
-        {/* Priority selector */}
+        {/* Actions */}
         <div className="flex items-center gap-3">
+          <Button 
+            variant="outline" 
+            onClick={() => exportPatentsToExcel(contract, sections, items)}
+            className="gap-2"
+          >
+            <Download className="h-4 w-4" />
+            Descargar Excel
+          </Button>
+          
           <span className="text-sm text-muted-foreground">Prioridad:</span>
           <Select value={currentPriority} onValueChange={(v) => handlePriorityChange(v as PatentPriority)}>
             <SelectTrigger className="w-[180px]">
