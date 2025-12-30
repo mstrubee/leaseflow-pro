@@ -17,11 +17,12 @@ import {
   PatentChecklistSection, 
   PatentChecklistItem,
   PatentEmitter,
+  PatentItemEmitter,
+  PatentStatus,
   PatentDocument,
   PatentPriority,
   PatentDocStatus,
-  PRIORITY_CONFIG,
-  STATUS_CONFIG
+  PRIORITY_CONFIG
 } from "./types";
 import { PatentPriorityBadge } from "./PatentPriorityBadge";
 import { PatentStatusBadge } from "./PatentStatusBadge";
@@ -35,6 +36,8 @@ interface PatentChecklistProps {
   sections: PatentChecklistSection[];
   items: PatentChecklistItem[];
   emitters: PatentEmitter[];
+  itemEmitters: PatentItemEmitter[];
+  statuses: PatentStatus[];
   onBack: () => void;
   onUpdatePriority: (contractId: string, priority: PatentPriority, userId: string) => Promise<void>;
   onUpdateDocument: (contractId: string, itemId: string, data: Partial<PatentDocument>) => Promise<void>;
@@ -46,6 +49,8 @@ export function PatentChecklist({
   sections,
   items,
   emitters,
+  itemEmitters,
+  statuses,
   onBack,
   onUpdatePriority,
   onUpdateDocument,
@@ -76,6 +81,23 @@ export function PatentChecklist({
     });
     return grouped;
   }, [sections, items]);
+
+  // Build fixed emitter lookup (item_id -> emitter_id)
+  const fixedEmitterLookup = useMemo(() => {
+    const lookup: Record<string, string> = {};
+    itemEmitters.forEach(ie => {
+      lookup[ie.checklist_item_id] = ie.emitter_id;
+    });
+    return lookup;
+  }, [itemEmitters]);
+
+  // Get fixed emitter name for an item
+  const getFixedEmitterName = (itemId: string): string | null => {
+    const emitterId = fixedEmitterLookup[itemId];
+    if (!emitterId) return null;
+    const emitter = emitters.find(e => e.id === emitterId);
+    return emitter?.name || null;
+  };
 
   // Get document for an item
   const getDocument = (itemId: string): PatentDocument | undefined => {
@@ -200,14 +222,36 @@ export function PatentChecklist({
 
         {/* Actions */}
         <div className="flex items-center gap-3">
-          <Button 
-            variant="outline" 
-            onClick={() => exportPatentsToExcel(contract, sections, items)}
-            className="gap-2"
-          >
-            <Download className="h-4 w-4" />
-            Descargar Excel
-          </Button>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <Download className="h-4 w-4" />
+                Descargar Excel
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-2">
+              <div className="space-y-1">
+                <Button 
+                  variant="ghost" 
+                  className="w-full justify-start text-sm"
+                  onClick={() => exportPatentsToExcel(contract, sections, items, emitters, itemEmitters)}
+                >
+                  Todas las secciones
+                </Button>
+                <div className="border-t my-1" />
+                {sections.map(section => (
+                  <Button 
+                    key={section.id}
+                    variant="ghost" 
+                    className="w-full justify-start text-sm"
+                    onClick={() => exportPatentsToExcel(contract, sections, items, emitters, itemEmitters, section.id)}
+                  >
+                    {section.name}
+                  </Button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
           
           <span className="text-sm text-muted-foreground">Prioridad:</span>
           <Select value={currentPriority} onValueChange={(v) => handlePriorityChange(v as PatentPriority)}>
@@ -273,14 +317,14 @@ export function PatentChecklist({
                               <PatentStatusBadge status={status} size="sm" />
                             </SelectTrigger>
                             <SelectContent>
-                              {Object.entries(STATUS_CONFIG).map(([key, config]) => (
-                                <SelectItem key={key} value={key}>
+                              {statuses.map((statusItem) => (
+                                <SelectItem key={statusItem.code} value={statusItem.code}>
                                   <div className="flex items-center gap-2">
                                     <div 
                                       className="w-3 h-3 rounded-full" 
-                                      style={{ backgroundColor: config.color }}
+                                      style={{ backgroundColor: statusItem.bg_color }}
                                     />
-                                    {config.label}
+                                    {statusItem.name}
                                   </div>
                                 </SelectItem>
                               ))}
@@ -288,21 +332,27 @@ export function PatentChecklist({
                           </Select>
                         </TableCell>
                         <TableCell>
-                          <Select 
-                            value={getDocValue(item.id, 'emitter_id') || ''} 
-                            onValueChange={(v) => handleDocumentFieldChange(item.id, 'emitter_id', v)}
-                          >
-                            <SelectTrigger className="h-8">
-                              <SelectValue placeholder="Seleccionar" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {emitters.map(emitter => (
-                                <SelectItem key={emitter.id} value={emitter.id}>
-                                  {emitter.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          {getFixedEmitterName(item.id) ? (
+                            <span className="text-sm px-2 py-1 bg-muted rounded">
+                              {getFixedEmitterName(item.id)}
+                            </span>
+                          ) : (
+                            <Select 
+                              value={getDocValue(item.id, 'emitter_id') || ''} 
+                              onValueChange={(v) => handleDocumentFieldChange(item.id, 'emitter_id', v)}
+                            >
+                              <SelectTrigger className="h-8">
+                                <SelectValue placeholder="Seleccionar" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {emitters.map(emitter => (
+                                  <SelectItem key={emitter.id} value={emitter.id}>
+                                    {emitter.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Input

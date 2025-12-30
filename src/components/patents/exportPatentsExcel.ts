@@ -2,57 +2,109 @@ import {
   ContractWithPatent, 
   PatentChecklistSection, 
   PatentChecklistItem,
-  STATUS_CONFIG
+  PatentEmitter,
+  PatentItemEmitter
 } from "./types";
+import { supabase } from "@/integrations/supabase/client";
 
 interface ExportRow {
   seccion: string;
   documento: string;
   estado: string;
   responsable: string;
+  emisor: string;
 }
 
-export function exportPatentsToExcel(
+// Fetch dynamic statuses from database
+async function fetchStatuses(): Promise<Record<string, string>> {
+  const { data } = await supabase
+    .from("patent_statuses")
+    .select("code, name")
+    .eq("is_active", true);
+  
+  const statusMap: Record<string, string> = {};
+  (data || []).forEach((s: any) => {
+    statusMap[s.code] = s.name;
+  });
+  return statusMap;
+}
+
+export async function exportPatentsToExcel(
   contract: ContractWithPatent,
   sections: PatentChecklistSection[],
-  items: PatentChecklistItem[]
+  items: PatentChecklistItem[],
+  emitters: PatentEmitter[],
+  itemEmitters: PatentItemEmitter[],
+  sectionId?: string // Optional: filter by specific section
 ) {
+  const statusMap = await fetchStatuses();
   const rows: ExportRow[] = [];
 
+  // Filter sections if sectionId provided
+  const sectionsToExport = sectionId 
+    ? sections.filter(s => s.id === sectionId)
+    : sections;
+
+  // Build emitter lookup
+  const emitterLookup: Record<string, string> = {};
+  emitters.forEach(e => { emitterLookup[e.id] = e.name; });
+
+  // Build fixed emitter lookup (item_id -> emitter_id)
+  const fixedEmitterLookup: Record<string, string> = {};
+  itemEmitters.forEach(ie => {
+    fixedEmitterLookup[ie.checklist_item_id] = ie.emitter_id;
+  });
+
   // Build rows for each section and item
-  sections.forEach(section => {
+  sectionsToExport.forEach(section => {
     const sectionItems = items.filter(item => item.section_id === section.id);
     
     sectionItems.forEach(item => {
       const doc = (contract.patent_documents || []).find(d => d.checklist_item_id === item.id);
       
+      // Get emitter - prefer document emitter, fallback to fixed emitter
+      let emitterName = '';
+      if (doc?.emitter_id) {
+        emitterName = emitterLookup[doc.emitter_id] || '';
+      } else if (fixedEmitterLookup[item.id]) {
+        emitterName = emitterLookup[fixedEmitterLookup[item.id]] || '';
+      }
+
       rows.push({
         seccion: section.name,
         documento: item.name,
-        estado: doc?.status ? STATUS_CONFIG[doc.status]?.label || '' : '',
+        estado: doc?.status ? (statusMap[doc.status] || doc.status) : '',
         responsable: doc?.responsible || '',
+        emisor: emitterName,
       });
     });
   });
 
   // Generate CSV content with BOM for Excel UTF-8 compatibility
   const BOM = '\uFEFF';
-  const headers = ['Sección', 'Documento', 'Estado', 'Responsable'];
+  const headers = ['Sección', 'Documento', 'Estado', 'Responsable', 'Emisor'];
   const csvContent = BOM + [
     headers.join(';'),
     ...rows.map(row => 
-      [row.seccion, row.documento, row.estado, row.responsable]
+      [row.seccion, row.documento, row.estado, row.responsable, row.emisor]
         .map(cell => `"${(cell || '').replace(/"/g, '""')}"`)
         .join(';')
     )
   ].join('\n');
+
+  // Create filename based on export scope
+  const sectionName = sectionId 
+    ? sectionsToExport[0]?.name.replace(/[^a-zA-Z0-9]/g, '_') 
+    : 'todas_secciones';
+  const contractName = contract.name.replace(/[^a-zA-Z0-9]/g, '_');
+  const filename = `patentes_${contractName}_${sectionName}.csv`;
 
   // Create and download file
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
   const url = URL.createObjectURL(blob);
   link.setAttribute('href', url);
-  link.setAttribute('download', `patentes_${contract.name.replace(/[^a-zA-Z0-9]/g, '_')}.csv`);
+  link.setAttribute('download', filename);
   link.style.visibility = 'hidden';
   document.body.appendChild(link);
   link.click();
