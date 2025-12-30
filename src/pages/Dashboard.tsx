@@ -31,8 +31,8 @@ const Dashboard = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="items-center justify-between flex flex-row">
             <div>
-              <h1 className="text-2xl font-semibold text-sky-950">Gerencia Inmobiliaria</h1>
-              <p className="text-sm text-muted-foreground mt-1">Desarrollo, Administración y Presupuesto</p>
+              <h1 className="text-2xl font-semibold text-sky-950">Gerencia Desarrollo</h1>
+              <p className="text-sm text-muted-foreground mt-1">Desarrollo Negocios y Administración Inmobiliaria</p>
             </div>
             <div className="flex items-center gap-3">
               {isAdmin && <>
