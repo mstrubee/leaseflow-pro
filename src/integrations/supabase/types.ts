@@ -1844,6 +1844,7 @@ export type Database = {
       patent_emitters: {
         Row: {
           created_at: string
+          display_order: number
           id: string
           is_active: boolean
           name: string
@@ -1851,6 +1852,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          display_order?: number
           id?: string
           is_active?: boolean
           name: string
@@ -1858,6 +1860,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          display_order?: number
           id?: string
           is_active?: boolean
           name?: string

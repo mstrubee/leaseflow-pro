@@ -10,10 +10,27 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, Save, X, Palette } from "lucide-react";
+import { Plus, Pencil, Trash2, Save, X, Palette, GripVertical } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { PatentChecklistSection, PatentChecklistItem, PatentEmitter, PatentStatus, PatentItemEmitter } from "./types";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface PatentAdminPanelProps {
   open: boolean;
@@ -22,6 +39,48 @@ interface PatentAdminPanelProps {
   items: PatentChecklistItem[];
   emitters: PatentEmitter[];
   onDataChange: () => void;
+}
+
+// Sortable table row component
+function SortableTableRow({ 
+  id, 
+  children,
+  disabled = false
+}: { 
+  id: string; 
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id, disabled });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <TableRow ref={setNodeRef} style={style}>
+      <TableCell className="w-[40px]">
+        <button
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded disabled:opacity-30 disabled:cursor-not-allowed"
+          disabled={disabled}
+        >
+          <GripVertical className="h-4 w-4 text-muted-foreground" />
+        </button>
+      </TableCell>
+      {children}
+    </TableRow>
+  );
 }
 
 export function PatentAdminPanel({
@@ -63,6 +122,14 @@ export function PatentAdminPanel({
   // Item emitter management state
   const [managingItemEmitters, setManagingItemEmitters] = useState<string | null>(null);
 
+  // DnD sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
   // Sync local state when props change
   useEffect(() => {
     setLocalSections(initialSections);
@@ -98,6 +165,97 @@ export function PatentAdminPanel({
       .from("patent_item_emitters")
       .select("*");
     if (data) setItemEmitters(data);
+  };
+
+  // --- REORDER HANDLERS ---
+  const handleReorderSections = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = localSections.findIndex(s => s.id === active.id);
+    const newIndex = localSections.findIndex(s => s.id === over.id);
+    
+    const reordered = arrayMove(localSections, oldIndex, newIndex);
+    const updatedSections = reordered.map((s, i) => ({ ...s, display_order: i }));
+    setLocalSections(updatedSections);
+
+    // Update in database
+    for (const section of updatedSections) {
+      await supabase
+        .from("patent_checklist_sections")
+        .update({ display_order: section.display_order })
+        .eq("id", section.id);
+    }
+    toast.success("Orden actualizado");
+  };
+
+  const handleReorderItems = async (event: DragEndEvent, sectionId: string) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const sectionItems = localItems.filter(i => i.section_id === sectionId).sort((a, b) => a.display_order - b.display_order);
+    const oldIndex = sectionItems.findIndex(i => i.id === active.id);
+    const newIndex = sectionItems.findIndex(i => i.id === over.id);
+    
+    const reordered = arrayMove(sectionItems, oldIndex, newIndex);
+    const updatedItems = reordered.map((item, i) => ({ ...item, display_order: i }));
+    
+    setLocalItems(prev => {
+      const otherItems = prev.filter(i => i.section_id !== sectionId);
+      return [...otherItems, ...updatedItems];
+    });
+
+    // Update in database
+    for (const item of updatedItems) {
+      await supabase
+        .from("patent_checklist_items")
+        .update({ display_order: item.display_order })
+        .eq("id", item.id);
+    }
+    toast.success("Orden actualizado");
+  };
+
+  const handleReorderEmitters = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const sortedEmitters = [...localEmitters].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+    const oldIndex = sortedEmitters.findIndex(e => e.id === active.id);
+    const newIndex = sortedEmitters.findIndex(e => e.id === over.id);
+    
+    const reordered = arrayMove(sortedEmitters, oldIndex, newIndex);
+    const updatedEmitters = reordered.map((e, i) => ({ ...e, display_order: i }));
+    setLocalEmitters(updatedEmitters);
+
+    // Update in database
+    for (const emitter of updatedEmitters) {
+      await supabase
+        .from("patent_emitters")
+        .update({ display_order: emitter.display_order })
+        .eq("id", emitter.id);
+    }
+    toast.success("Orden actualizado");
+  };
+
+  const handleReorderStatuses = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = statuses.findIndex(s => s.id === active.id);
+    const newIndex = statuses.findIndex(s => s.id === over.id);
+    
+    const reordered = arrayMove(statuses, oldIndex, newIndex);
+    const updatedStatuses = reordered.map((s, i) => ({ ...s, display_order: i }));
+    setStatuses(updatedStatuses);
+
+    // Update in database
+    for (const status of updatedStatuses) {
+      await supabase
+        .from("patent_statuses")
+        .update({ display_order: status.display_order })
+        .eq("id", status.id);
+    }
+    toast.success("Orden actualizado");
   };
 
   // --- ITEMS ---
@@ -301,11 +459,14 @@ export function PatentAdminPanel({
       return;
     }
 
+    const maxOrder = Math.max(0, ...localEmitters.map(e => e.display_order || 0));
+
     const { data: newEmitter, error } = await supabase
       .from("patent_emitters")
       .insert({ 
         name: newEmitterName.trim(),
-        section_id: newEmitterSection || null
+        section_id: newEmitterSection || null,
+        display_order: maxOrder + 1
       })
       .select()
       .single();
@@ -444,6 +605,10 @@ export function PatentAdminPanel({
     return localEmitters.filter(e => !e.section_id || e.section_id === sectionId);
   };
 
+  const sortedSections = [...localSections].sort((a, b) => a.display_order - b.display_order);
+  const sortedEmitters = [...localEmitters].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+  const sortedStatuses = [...statuses].sort((a, b) => a.display_order - b.display_order);
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -480,7 +645,7 @@ export function PatentAdminPanel({
                         <SelectValue placeholder="Sección" />
                       </SelectTrigger>
                       <SelectContent>
-                        {localSections.map(section => (
+                        {sortedSections.map(section => (
                           <SelectItem key={section.id} value={section.id}>
                             {section.code}: {section.name.substring(0, 30)}
                           </SelectItem>
@@ -496,115 +661,134 @@ export function PatentAdminPanel({
               </Card>
 
               <div className="mt-4 space-y-4">
-                {localSections.map(section => (
-                  <Card key={section.id}>
-                    <CardHeader className="py-3">
-                      <CardTitle className="text-sm font-medium">{section.code}: {section.name}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="pt-0">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Nombre</TableHead>
-                            <TableHead className="w-[200px]">Emisores Fijos</TableHead>
-                            <TableHead className="w-[100px]">Acciones</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {localItems
-                            .filter(i => i.section_id === section.id)
-                            .sort((a, b) => a.display_order - b.display_order)
-                            .map(item => (
-                              <TableRow key={item.id}>
-                                <TableCell>
-                                  {editingItem?.id === item.id ? (
-                                    <Input
-                                      value={editingItem.name}
-                                      onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
-                                    />
-                                  ) : (
-                                    item.name
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  {managingItemEmitters === item.id ? (
-                                    <div className="space-y-1">
-                                      {getEmittersForSection(section.id).map(emitter => (
-                                        <div key={emitter.id} className="flex items-center gap-2">
-                                          <Checkbox
-                                            id={`emitter-${item.id}-${emitter.id}`}
-                                            checked={getItemEmitterIds(item.id).includes(emitter.id)}
-                                            onCheckedChange={(checked) => 
-                                              handleToggleItemEmitter(item.id, emitter.id, !!checked)
-                                            }
-                                          />
-                                          <label htmlFor={`emitter-${item.id}-${emitter.id}`} className="text-xs">
-                                            {emitter.name}
-                                          </label>
-                                        </div>
-                                      ))}
-                                      <Button size="sm" variant="outline" onClick={() => setManagingItemEmitters(null)}>
-                                        Listo
-                                      </Button>
-                                    </div>
-                                  ) : (
-                                    <div className="flex flex-wrap gap-1">
-                                      {getItemEmitterIds(item.id).length > 0 ? (
-                                        getItemEmitterIds(item.id).map(emId => {
-                                          const em = localEmitters.find(e => e.id === emId);
-                                          return em ? (
-                                            <Badge key={emId} variant="secondary" className="text-xs">
-                                              {em.name}
-                                            </Badge>
-                                          ) : null;
-                                        })
-                                      ) : (
-                                        <span className="text-xs text-muted-foreground">Todos</span>
-                                      )}
-                                      <Button 
-                                        size="sm" 
-                                        variant="ghost" 
-                                        className="h-5 px-1"
-                                        onClick={() => setManagingItemEmitters(item.id)}
-                                      >
-                                        <Pencil className="h-3 w-3" />
-                                      </Button>
-                                    </div>
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  {editingItem?.id === item.id ? (
-                                    <div className="flex gap-1">
-                                      <Button size="icon" variant="ghost" onClick={() => handleUpdateItem(editingItem)}>
-                                        <Save className="h-4 w-4" />
-                                      </Button>
-                                      <Button size="icon" variant="ghost" onClick={() => setEditingItem(null)}>
-                                        <X className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                  ) : (
-                                    <div className="flex gap-1">
-                                      <Button size="icon" variant="ghost" onClick={() => setEditingItem(item)}>
-                                        <Pencil className="h-4 w-4" />
-                                      </Button>
-                                      <Button 
-                                        size="icon" 
-                                        variant="ghost" 
-                                        className="text-destructive"
-                                        onClick={() => setDeleteConfirm({ type: 'item', id: item.id, name: item.name })}
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                  )}
-                                </TableCell>
+                {sortedSections.map(section => {
+                  const sectionItems = localItems
+                    .filter(i => i.section_id === section.id)
+                    .sort((a, b) => a.display_order - b.display_order);
+                  
+                  return (
+                    <Card key={section.id}>
+                      <CardHeader className="py-3">
+                        <CardTitle className="text-sm font-medium">{section.code}: {section.name}</CardTitle>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <DndContext
+                          sensors={sensors}
+                          collisionDetection={closestCenter}
+                          onDragEnd={(e) => handleReorderItems(e, section.id)}
+                        >
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-[40px]"></TableHead>
+                                <TableHead>Nombre</TableHead>
+                                <TableHead className="w-[200px]">Emisores Fijos</TableHead>
+                                <TableHead className="w-[100px]">Acciones</TableHead>
                               </TableRow>
-                            ))}
-                        </TableBody>
-                      </Table>
-                    </CardContent>
-                  </Card>
-                ))}
+                            </TableHeader>
+                            <TableBody>
+                              <SortableContext
+                                items={sectionItems.map(i => i.id)}
+                                strategy={verticalListSortingStrategy}
+                              >
+                                {sectionItems.map(item => (
+                                  <SortableTableRow 
+                                    key={item.id} 
+                                    id={item.id}
+                                    disabled={!!editingItem || !!managingItemEmitters}
+                                  >
+                                    <TableCell>
+                                      {editingItem?.id === item.id ? (
+                                        <Input
+                                          value={editingItem.name}
+                                          onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
+                                        />
+                                      ) : (
+                                        item.name
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      {managingItemEmitters === item.id ? (
+                                        <div className="space-y-1">
+                                          {getEmittersForSection(section.id).map(emitter => (
+                                            <div key={emitter.id} className="flex items-center gap-2">
+                                              <Checkbox
+                                                id={`emitter-${item.id}-${emitter.id}`}
+                                                checked={getItemEmitterIds(item.id).includes(emitter.id)}
+                                                onCheckedChange={(checked) => 
+                                                  handleToggleItemEmitter(item.id, emitter.id, !!checked)
+                                                }
+                                              />
+                                              <label htmlFor={`emitter-${item.id}-${emitter.id}`} className="text-xs">
+                                                {emitter.name}
+                                              </label>
+                                            </div>
+                                          ))}
+                                          <Button size="sm" variant="outline" onClick={() => setManagingItemEmitters(null)}>
+                                            Listo
+                                          </Button>
+                                        </div>
+                                      ) : (
+                                        <div className="flex flex-wrap gap-1">
+                                          {getItemEmitterIds(item.id).length > 0 ? (
+                                            getItemEmitterIds(item.id).map(emId => {
+                                              const em = localEmitters.find(e => e.id === emId);
+                                              return em ? (
+                                                <Badge key={emId} variant="secondary" className="text-xs">
+                                                  {em.name}
+                                                </Badge>
+                                              ) : null;
+                                            })
+                                          ) : (
+                                            <span className="text-xs text-muted-foreground">Todos</span>
+                                          )}
+                                          <Button 
+                                            size="sm" 
+                                            variant="ghost" 
+                                            className="h-5 px-1"
+                                            onClick={() => setManagingItemEmitters(item.id)}
+                                          >
+                                            <Pencil className="h-3 w-3" />
+                                          </Button>
+                                        </div>
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      {editingItem?.id === item.id ? (
+                                        <div className="flex gap-1">
+                                          <Button size="icon" variant="ghost" onClick={() => handleUpdateItem(editingItem)}>
+                                            <Save className="h-4 w-4" />
+                                          </Button>
+                                          <Button size="icon" variant="ghost" onClick={() => setEditingItem(null)}>
+                                            <X className="h-4 w-4" />
+                                          </Button>
+                                        </div>
+                                      ) : (
+                                        <div className="flex gap-1">
+                                          <Button size="icon" variant="ghost" onClick={() => setEditingItem(item)}>
+                                            <Pencil className="h-4 w-4" />
+                                          </Button>
+                                          <Button 
+                                            size="icon" 
+                                            variant="ghost" 
+                                            className="text-destructive"
+                                            onClick={() => setDeleteConfirm({ type: 'item', id: item.id, name: item.name })}
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </Button>
+                                        </div>
+                                      )}
+                                    </TableCell>
+                                  </SortableTableRow>
+                                ))}
+                              </SortableContext>
+                            </TableBody>
+                          </Table>
+                        </DndContext>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             </TabsContent>
 
@@ -639,67 +823,83 @@ export function PatentAdminPanel({
 
               <Card className="mt-4">
                 <CardContent className="pt-4">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[80px]">Código</TableHead>
-                        <TableHead>Nombre</TableHead>
-                        <TableHead className="w-[100px]">Acciones</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {localSections.sort((a, b) => a.display_order - b.display_order).map(section => (
-                        <TableRow key={section.id}>
-                          <TableCell>
-                            {editingSection?.id === section.id ? (
-                              <Input
-                                value={editingSection.code}
-                                onChange={(e) => setEditingSection({ ...editingSection, code: e.target.value })}
-                              />
-                            ) : (
-                              section.code
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {editingSection?.id === section.id ? (
-                              <Input
-                                value={editingSection.name}
-                                onChange={(e) => setEditingSection({ ...editingSection, name: e.target.value })}
-                              />
-                            ) : (
-                              section.name
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {editingSection?.id === section.id ? (
-                              <div className="flex gap-1">
-                                <Button size="icon" variant="ghost" onClick={() => handleUpdateSection(editingSection)}>
-                                  <Save className="h-4 w-4" />
-                                </Button>
-                                <Button size="icon" variant="ghost" onClick={() => setEditingSection(null)}>
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <div className="flex gap-1">
-                                <Button size="icon" variant="ghost" onClick={() => setEditingSection(section)}>
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                                <Button 
-                                  size="icon" 
-                                  variant="ghost" 
-                                  className="text-destructive"
-                                  onClick={() => setDeleteConfirm({ type: 'section', id: section.id, name: section.name })}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            )}
-                          </TableCell>
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleReorderSections}
+                  >
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[40px]"></TableHead>
+                          <TableHead className="w-[80px]">Código</TableHead>
+                          <TableHead>Nombre</TableHead>
+                          <TableHead className="w-[100px]">Acciones</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        <SortableContext
+                          items={sortedSections.map(s => s.id)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          {sortedSections.map(section => (
+                            <SortableTableRow 
+                              key={section.id} 
+                              id={section.id}
+                              disabled={!!editingSection}
+                            >
+                              <TableCell>
+                                {editingSection?.id === section.id ? (
+                                  <Input
+                                    value={editingSection.code}
+                                    onChange={(e) => setEditingSection({ ...editingSection, code: e.target.value })}
+                                  />
+                                ) : (
+                                  section.code
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {editingSection?.id === section.id ? (
+                                  <Input
+                                    value={editingSection.name}
+                                    onChange={(e) => setEditingSection({ ...editingSection, name: e.target.value })}
+                                  />
+                                ) : (
+                                  section.name
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {editingSection?.id === section.id ? (
+                                  <div className="flex gap-1">
+                                    <Button size="icon" variant="ghost" onClick={() => handleUpdateSection(editingSection)}>
+                                      <Save className="h-4 w-4" />
+                                    </Button>
+                                    <Button size="icon" variant="ghost" onClick={() => setEditingSection(null)}>
+                                      <X className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <div className="flex gap-1">
+                                    <Button size="icon" variant="ghost" onClick={() => setEditingSection(section)}>
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                    <Button 
+                                      size="icon" 
+                                      variant="ghost" 
+                                      className="text-destructive"
+                                      onClick={() => setDeleteConfirm({ type: 'section', id: section.id, name: section.name })}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                )}
+                              </TableCell>
+                            </SortableTableRow>
+                          ))}
+                        </SortableContext>
+                      </TableBody>
+                    </Table>
+                  </DndContext>
                 </CardContent>
               </Card>
             </TabsContent>
@@ -725,7 +925,7 @@ export function PatentAdminPanel({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="global">Global (todas)</SelectItem>
-                        {localSections.map(section => (
+                        {sortedSections.map(section => (
                           <SelectItem key={section.id} value={section.id}>
                             {section.code}: {section.name.substring(0, 20)}
                           </SelectItem>
@@ -742,84 +942,100 @@ export function PatentAdminPanel({
 
               <Card className="mt-4">
                 <CardContent className="pt-4">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Nombre</TableHead>
-                        <TableHead>Sección</TableHead>
-                        <TableHead className="w-[100px]">Acciones</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {localEmitters.map(emitter => (
-                        <TableRow key={emitter.id}>
-                          <TableCell>
-                            {editingEmitter?.id === emitter.id ? (
-                              <Input
-                                value={editingEmitter.name}
-                                onChange={(e) => setEditingEmitter({ ...editingEmitter, name: e.target.value })}
-                              />
-                            ) : (
-                              emitter.name
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {editingEmitter?.id === emitter.id ? (
-                              <Select 
-                                value={editingEmitter.section_id || "global"} 
-                                onValueChange={(v) => setEditingEmitter({ ...editingEmitter, section_id: v === "global" ? undefined : v })}
-                              >
-                                <SelectTrigger className="w-[180px]">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="global">Global</SelectItem>
-                                  {localSections.map(section => (
-                                    <SelectItem key={section.id} value={section.id}>
-                                      {section.code}: {section.name.substring(0, 15)}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              <Badge variant="outline">
-                                {emitter.section_id 
-                                  ? localSections.find(s => s.id === emitter.section_id)?.code || 'Sección'
-                                  : 'Global'
-                                }
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {editingEmitter?.id === emitter.id ? (
-                              <div className="flex gap-1">
-                                <Button size="icon" variant="ghost" onClick={() => handleUpdateEmitter(editingEmitter)}>
-                                  <Save className="h-4 w-4" />
-                                </Button>
-                                <Button size="icon" variant="ghost" onClick={() => setEditingEmitter(null)}>
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <div className="flex gap-1">
-                                <Button size="icon" variant="ghost" onClick={() => setEditingEmitter(emitter)}>
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                                <Button 
-                                  size="icon" 
-                                  variant="ghost" 
-                                  className="text-destructive"
-                                  onClick={() => setDeleteConfirm({ type: 'emitter', id: emitter.id, name: emitter.name })}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            )}
-                          </TableCell>
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleReorderEmitters}
+                  >
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[40px]"></TableHead>
+                          <TableHead>Nombre</TableHead>
+                          <TableHead>Sección</TableHead>
+                          <TableHead className="w-[100px]">Acciones</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        <SortableContext
+                          items={sortedEmitters.map(e => e.id)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          {sortedEmitters.map(emitter => (
+                            <SortableTableRow 
+                              key={emitter.id} 
+                              id={emitter.id}
+                              disabled={!!editingEmitter}
+                            >
+                              <TableCell>
+                                {editingEmitter?.id === emitter.id ? (
+                                  <Input
+                                    value={editingEmitter.name}
+                                    onChange={(e) => setEditingEmitter({ ...editingEmitter, name: e.target.value })}
+                                  />
+                                ) : (
+                                  emitter.name
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {editingEmitter?.id === emitter.id ? (
+                                  <Select 
+                                    value={editingEmitter.section_id || "global"} 
+                                    onValueChange={(v) => setEditingEmitter({ ...editingEmitter, section_id: v === "global" ? undefined : v })}
+                                  >
+                                    <SelectTrigger className="w-[180px]">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="global">Global</SelectItem>
+                                      {sortedSections.map(section => (
+                                        <SelectItem key={section.id} value={section.id}>
+                                          {section.code}: {section.name.substring(0, 15)}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                ) : (
+                                  <Badge variant="outline">
+                                    {emitter.section_id 
+                                      ? localSections.find(s => s.id === emitter.section_id)?.code || 'Sección'
+                                      : 'Global'
+                                    }
+                                  </Badge>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {editingEmitter?.id === emitter.id ? (
+                                  <div className="flex gap-1">
+                                    <Button size="icon" variant="ghost" onClick={() => handleUpdateEmitter(editingEmitter)}>
+                                      <Save className="h-4 w-4" />
+                                    </Button>
+                                    <Button size="icon" variant="ghost" onClick={() => setEditingEmitter(null)}>
+                                      <X className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <div className="flex gap-1">
+                                    <Button size="icon" variant="ghost" onClick={() => setEditingEmitter(emitter)}>
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                    <Button 
+                                      size="icon" 
+                                      variant="ghost" 
+                                      className="text-destructive"
+                                      onClick={() => setDeleteConfirm({ type: 'emitter', id: emitter.id, name: emitter.name })}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                )}
+                              </TableCell>
+                            </SortableTableRow>
+                          ))}
+                        </SortableContext>
+                      </TableBody>
+                    </Table>
+                  </DndContext>
                 </CardContent>
               </Card>
             </TabsContent>
@@ -890,105 +1106,121 @@ export function PatentAdminPanel({
 
               <Card className="mt-4">
                 <CardContent className="pt-4">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[120px]">Código</TableHead>
-                        <TableHead>Nombre</TableHead>
-                        <TableHead className="w-[120px]">Vista Previa</TableHead>
-                        <TableHead className="w-[100px]">Color Fondo</TableHead>
-                        <TableHead className="w-[100px]">Color Texto</TableHead>
-                        <TableHead className="w-[100px]">Acciones</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {statuses.sort((a, b) => a.display_order - b.display_order).map(status => (
-                        <TableRow key={status.id}>
-                          <TableCell className="font-mono text-xs">{status.code}</TableCell>
-                          <TableCell>
-                            {editingStatus?.id === status.id ? (
-                              <Input
-                                value={editingStatus.name}
-                                onChange={(e) => setEditingStatus({ ...editingStatus, name: e.target.value })}
-                              />
-                            ) : (
-                              status.name
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Badge 
-                              style={{ 
-                                backgroundColor: editingStatus?.id === status.id ? editingStatus.bg_color : status.bg_color,
-                                color: editingStatus?.id === status.id ? editingStatus.text_color : status.text_color 
-                              }}
-                            >
-                              {editingStatus?.id === status.id ? editingStatus.name : status.name}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {editingStatus?.id === status.id ? (
-                              <div className="flex gap-1">
-                                <Input
-                                  type="color"
-                                  className="w-8 h-8 p-0.5 cursor-pointer"
-                                  value={editingStatus.bg_color}
-                                  onChange={(e) => setEditingStatus({ ...editingStatus, bg_color: e.target.value })}
-                                />
-                              </div>
-                            ) : (
-                              <div 
-                                className="w-6 h-6 rounded border"
-                                style={{ backgroundColor: status.bg_color }}
-                              />
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {editingStatus?.id === status.id ? (
-                              <div className="flex gap-1">
-                                <Input
-                                  type="color"
-                                  className="w-8 h-8 p-0.5 cursor-pointer"
-                                  value={editingStatus.text_color}
-                                  onChange={(e) => setEditingStatus({ ...editingStatus, text_color: e.target.value })}
-                                />
-                              </div>
-                            ) : (
-                              <div 
-                                className="w-6 h-6 rounded border"
-                                style={{ backgroundColor: status.text_color }}
-                              />
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {editingStatus?.id === status.id ? (
-                              <div className="flex gap-1">
-                                <Button size="icon" variant="ghost" onClick={() => handleUpdateStatus(editingStatus)}>
-                                  <Save className="h-4 w-4" />
-                                </Button>
-                                <Button size="icon" variant="ghost" onClick={() => setEditingStatus(null)}>
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <div className="flex gap-1">
-                                <Button size="icon" variant="ghost" onClick={() => setEditingStatus(status)}>
-                                  <Palette className="h-4 w-4" />
-                                </Button>
-                                <Button 
-                                  size="icon" 
-                                  variant="ghost" 
-                                  className="text-destructive"
-                                  onClick={() => setDeleteConfirm({ type: 'status', id: status.id, name: status.name })}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            )}
-                          </TableCell>
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleReorderStatuses}
+                  >
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[40px]"></TableHead>
+                          <TableHead className="w-[120px]">Código</TableHead>
+                          <TableHead>Nombre</TableHead>
+                          <TableHead className="w-[120px]">Vista Previa</TableHead>
+                          <TableHead className="w-[100px]">Color Fondo</TableHead>
+                          <TableHead className="w-[100px]">Color Texto</TableHead>
+                          <TableHead className="w-[100px]">Acciones</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        <SortableContext
+                          items={sortedStatuses.map(s => s.id)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          {sortedStatuses.map(status => (
+                            <SortableTableRow 
+                              key={status.id} 
+                              id={status.id}
+                              disabled={!!editingStatus}
+                            >
+                              <TableCell className="font-mono text-xs">{status.code}</TableCell>
+                              <TableCell>
+                                {editingStatus?.id === status.id ? (
+                                  <Input
+                                    value={editingStatus.name}
+                                    onChange={(e) => setEditingStatus({ ...editingStatus, name: e.target.value })}
+                                  />
+                                ) : (
+                                  status.name
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Badge 
+                                  style={{ 
+                                    backgroundColor: editingStatus?.id === status.id ? editingStatus.bg_color : status.bg_color,
+                                    color: editingStatus?.id === status.id ? editingStatus.text_color : status.text_color 
+                                  }}
+                                >
+                                  {editingStatus?.id === status.id ? editingStatus.name : status.name}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {editingStatus?.id === status.id ? (
+                                  <div className="flex gap-1">
+                                    <Input
+                                      type="color"
+                                      className="w-8 h-8 p-0.5 cursor-pointer"
+                                      value={editingStatus.bg_color}
+                                      onChange={(e) => setEditingStatus({ ...editingStatus, bg_color: e.target.value })}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div 
+                                    className="w-6 h-6 rounded border"
+                                    style={{ backgroundColor: status.bg_color }}
+                                  />
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {editingStatus?.id === status.id ? (
+                                  <div className="flex gap-1">
+                                    <Input
+                                      type="color"
+                                      className="w-8 h-8 p-0.5 cursor-pointer"
+                                      value={editingStatus.text_color}
+                                      onChange={(e) => setEditingStatus({ ...editingStatus, text_color: e.target.value })}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div 
+                                    className="w-6 h-6 rounded border"
+                                    style={{ backgroundColor: status.text_color }}
+                                  />
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {editingStatus?.id === status.id ? (
+                                  <div className="flex gap-1">
+                                    <Button size="icon" variant="ghost" onClick={() => handleUpdateStatus(editingStatus)}>
+                                      <Save className="h-4 w-4" />
+                                    </Button>
+                                    <Button size="icon" variant="ghost" onClick={() => setEditingStatus(null)}>
+                                      <X className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <div className="flex gap-1">
+                                    <Button size="icon" variant="ghost" onClick={() => setEditingStatus(status)}>
+                                      <Palette className="h-4 w-4" />
+                                    </Button>
+                                    <Button 
+                                      size="icon" 
+                                      variant="ghost" 
+                                      className="text-destructive"
+                                      onClick={() => setDeleteConfirm({ type: 'status', id: status.id, name: status.name })}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                )}
+                              </TableCell>
+                            </SortableTableRow>
+                          ))}
+                        </SortableContext>
+                      </TableBody>
+                    </Table>
+                  </DndContext>
                 </CardContent>
               </Card>
             </TabsContent>
