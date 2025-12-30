@@ -27,12 +27,17 @@ interface PatentAdminPanelProps {
 export function PatentAdminPanel({
   open,
   onOpenChange,
-  sections,
-  items,
-  emitters,
+  sections: initialSections,
+  items: initialItems,
+  emitters: initialEmitters,
   onDataChange,
 }: PatentAdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<'items' | 'sections' | 'emitters' | 'statuses'>('items');
+  const [activeTab, setActiveTab] = useState<'items' | 'sections' | 'emitters' | 'statuses'>('sections');
+  
+  // Local state copies for immediate UI updates
+  const [localSections, setLocalSections] = useState<PatentChecklistSection[]>(initialSections);
+  const [localItems, setLocalItems] = useState<PatentChecklistItem[]>(initialItems);
+  const [localEmitters, setLocalEmitters] = useState<PatentEmitter[]>(initialEmitters);
   const [editingItem, setEditingItem] = useState<PatentChecklistItem | null>(null);
   const [editingSection, setEditingSection] = useState<PatentChecklistSection | null>(null);
   const [editingEmitter, setEditingEmitter] = useState<PatentEmitter & { section_id?: string } | null>(null);
@@ -57,6 +62,19 @@ export function PatentAdminPanel({
   
   // Item emitter management state
   const [managingItemEmitters, setManagingItemEmitters] = useState<string | null>(null);
+
+  // Sync local state when props change
+  useEffect(() => {
+    setLocalSections(initialSections);
+  }, [initialSections]);
+  
+  useEffect(() => {
+    setLocalItems(initialItems);
+  }, [initialItems]);
+  
+  useEffect(() => {
+    setLocalEmitters(initialEmitters);
+  }, [initialEmitters]);
 
   // Load statuses and item emitters
   useEffect(() => {
@@ -89,20 +107,27 @@ export function PatentAdminPanel({
       return;
     }
 
-    const sectionItems = items.filter(i => i.section_id === newItemSection);
+    const sectionItems = localItems.filter(i => i.section_id === newItemSection);
     const maxOrder = Math.max(0, ...sectionItems.map(i => i.display_order));
 
-    const { error } = await supabase
+    const { data: newItem, error } = await supabase
       .from("patent_checklist_items")
       .insert({
         name: newItemName.trim(),
         section_id: newItemSection,
         display_order: maxOrder + 1,
-      });
+      })
+      .select()
+      .single();
 
     if (error) {
       toast.error("Error al crear ítem");
       return;
+    }
+
+    // Update local state immediately
+    if (newItem) {
+      setLocalItems(prev => [...prev, newItem as PatentChecklistItem]);
     }
 
     const { data: vigentContracts } = await supabase
@@ -112,29 +137,19 @@ export function PatentAdminPanel({
       .eq("patente_status", "vigente")
       .is("deleted_at", null);
 
-    if (vigentContracts && vigentContracts.length > 0) {
-      const { data: newItem } = await supabase
-        .from("patent_checklist_items")
-        .select("id")
-        .eq("name", newItemName.trim())
-        .eq("section_id", newItemSection)
-        .single();
-
-      if (newItem) {
-        await supabase.from("patent_documents").insert(
-          vigentContracts.map(c => ({
-            contract_id: c.id,
-            checklist_item_id: newItem.id,
-            status: 'nuevo_doc' as const,
-          }))
-        );
-      }
+    if (vigentContracts && vigentContracts.length > 0 && newItem) {
+      await supabase.from("patent_documents").insert(
+        vigentContracts.map(c => ({
+          contract_id: c.id,
+          checklist_item_id: newItem.id,
+          status: 'nuevo_doc' as const,
+        }))
+      );
     }
 
     toast.success("Ítem creado correctamente");
     setNewItemName("");
     setNewItemSection("");
-    onDataChange();
   };
 
   const handleUpdateItem = async (item: PatentChecklistItem) => {
@@ -148,9 +163,10 @@ export function PatentAdminPanel({
       return;
     }
 
+    // Update local state immediately
+    setLocalItems(prev => prev.map(i => i.id === item.id ? item : i));
     toast.success("Ítem actualizado");
     setEditingItem(null);
-    onDataChange();
   };
 
   const handleDeleteItem = async (id: string) => {
@@ -164,20 +180,26 @@ export function PatentAdminPanel({
       return;
     }
 
+    // Update local state immediately
+    setLocalItems(prev => prev.filter(i => i.id !== id));
     toast.success("Ítem eliminado");
     setDeleteConfirm(null);
-    onDataChange();
   };
 
   // --- ITEM EMITTERS ---
   const handleToggleItemEmitter = async (itemId: string, emitterId: string, isChecked: boolean) => {
     if (isChecked) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("patent_item_emitters")
-        .insert({ checklist_item_id: itemId, emitter_id: emitterId });
+        .insert({ checklist_item_id: itemId, emitter_id: emitterId })
+        .select()
+        .single();
       if (error) {
         toast.error("Error al asignar emisor");
         return;
+      }
+      if (data) {
+        setItemEmitters(prev => [...prev, data as PatentItemEmitter]);
       }
     } else {
       const { error } = await supabase
@@ -189,8 +211,8 @@ export function PatentAdminPanel({
         toast.error("Error al quitar emisor");
         return;
       }
+      setItemEmitters(prev => prev.filter(ie => !(ie.checklist_item_id === itemId && ie.emitter_id === emitterId)));
     }
-    loadItemEmitters();
   };
 
   const getItemEmitterIds = (itemId: string) => {
@@ -204,25 +226,31 @@ export function PatentAdminPanel({
       return;
     }
 
-    const maxOrder = Math.max(0, ...sections.map(s => s.display_order));
+    const maxOrder = Math.max(0, ...localSections.map(s => s.display_order));
 
-    const { error } = await supabase
+    const { data: newSection, error } = await supabase
       .from("patent_checklist_sections")
       .insert({
         name: newSectionName.trim(),
         code: newSectionCode.trim(),
         display_order: maxOrder + 1,
-      });
+      })
+      .select()
+      .single();
 
     if (error) {
       toast.error("Error al crear sección");
       return;
     }
 
+    // Update local state immediately
+    if (newSection) {
+      setLocalSections(prev => [...prev, newSection as PatentChecklistSection]);
+    }
+
     toast.success("Sección creada correctamente");
     setNewSectionName("");
     setNewSectionCode("");
-    onDataChange();
   };
 
   const handleUpdateSection = async (section: PatentChecklistSection) => {
@@ -236,13 +264,14 @@ export function PatentAdminPanel({
       return;
     }
 
+    // Update local state immediately
+    setLocalSections(prev => prev.map(s => s.id === section.id ? section : s));
     toast.success("Sección actualizada");
     setEditingSection(null);
-    onDataChange();
   };
 
   const handleDeleteSection = async (id: string) => {
-    const sectionItems = items.filter(i => i.section_id === id);
+    const sectionItems = localItems.filter(i => i.section_id === id);
     if (sectionItems.length > 0) {
       toast.error("No se puede eliminar una sección con ítems");
       setDeleteConfirm(null);
@@ -259,9 +288,10 @@ export function PatentAdminPanel({
       return;
     }
 
+    // Update local state immediately
+    setLocalSections(prev => prev.filter(s => s.id !== id));
     toast.success("Sección eliminada");
     setDeleteConfirm(null);
-    onDataChange();
   };
 
   // --- EMITTERS ---
@@ -271,22 +301,28 @@ export function PatentAdminPanel({
       return;
     }
 
-    const { error } = await supabase
+    const { data: newEmitter, error } = await supabase
       .from("patent_emitters")
       .insert({ 
         name: newEmitterName.trim(),
         section_id: newEmitterSection || null
-      });
+      })
+      .select()
+      .single();
 
     if (error) {
       toast.error("Error al crear emisor");
       return;
     }
 
+    // Update local state immediately
+    if (newEmitter) {
+      setLocalEmitters(prev => [...prev, newEmitter as PatentEmitter]);
+    }
+
     toast.success("Emisor creado correctamente");
     setNewEmitterName("");
     setNewEmitterSection("");
-    onDataChange();
   };
 
   const handleUpdateEmitter = async (emitter: PatentEmitter & { section_id?: string }) => {
@@ -300,9 +336,10 @@ export function PatentAdminPanel({
       return;
     }
 
+    // Update local state immediately
+    setLocalEmitters(prev => prev.map(e => e.id === emitter.id ? emitter : e));
     toast.success("Emisor actualizado");
     setEditingEmitter(null);
-    onDataChange();
   };
 
   const handleDeleteEmitter = async (id: string) => {
@@ -316,9 +353,10 @@ export function PatentAdminPanel({
       return;
     }
 
+    // Update local state immediately
+    setLocalEmitters(prev => prev.filter(e => e.id !== id));
     toast.success("Emisor eliminado");
     setDeleteConfirm(null);
-    onDataChange();
   };
 
   // --- STATUSES ---
@@ -330,7 +368,7 @@ export function PatentAdminPanel({
 
     const maxOrder = Math.max(0, ...statuses.map(s => s.display_order));
 
-    const { error } = await supabase
+    const { data: newStatus, error } = await supabase
       .from("patent_statuses")
       .insert({
         code: newStatusCode.trim().toLowerCase().replace(/\s+/g, '_'),
@@ -338,7 +376,9 @@ export function PatentAdminPanel({
         bg_color: newStatusBgColor,
         text_color: newStatusTextColor,
         display_order: maxOrder + 1,
-      });
+      })
+      .select()
+      .single();
 
     if (error) {
       if (error.code === '23505') {
@@ -349,12 +389,16 @@ export function PatentAdminPanel({
       return;
     }
 
+    // Update local state immediately
+    if (newStatus) {
+      setStatuses(prev => [...prev, newStatus as PatentStatus]);
+    }
+
     toast.success("Estado creado correctamente");
     setNewStatusCode("");
     setNewStatusName("");
     setNewStatusBgColor("#f3f4f6");
     setNewStatusTextColor("#374151");
-    loadStatuses();
   };
 
   const handleUpdateStatus = async (status: PatentStatus) => {
@@ -372,9 +416,10 @@ export function PatentAdminPanel({
       return;
     }
 
+    // Update local state immediately
+    setStatuses(prev => prev.map(s => s.id === status.id ? status : s));
     toast.success("Estado actualizado");
     setEditingStatus(null);
-    loadStatuses();
   };
 
   const handleDeleteStatus = async (id: string) => {
@@ -388,14 +433,15 @@ export function PatentAdminPanel({
       return;
     }
 
+    // Update local state immediately
+    setStatuses(prev => prev.filter(s => s.id !== id));
     toast.success("Estado eliminado");
     setDeleteConfirm(null);
-    loadStatuses();
   };
 
   // Get section-specific emitters or global emitters
   const getEmittersForSection = (sectionId: string) => {
-    return emitters.filter(e => !e.section_id || e.section_id === sectionId);
+    return localEmitters.filter(e => !e.section_id || e.section_id === sectionId);
   };
 
   return (
@@ -408,10 +454,10 @@ export function PatentAdminPanel({
 
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 overflow-hidden flex flex-col">
             <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="items">Ítems</TabsTrigger>
               <TabsTrigger value="sections">Secciones</TabsTrigger>
+              <TabsTrigger value="items">Ítems</TabsTrigger>
+              <TabsTrigger value="statuses">Estado</TabsTrigger>
               <TabsTrigger value="emitters">Emisores</TabsTrigger>
-              <TabsTrigger value="statuses">Estados</TabsTrigger>
             </TabsList>
 
             {/* ITEMS TAB */}
@@ -434,7 +480,7 @@ export function PatentAdminPanel({
                         <SelectValue placeholder="Sección" />
                       </SelectTrigger>
                       <SelectContent>
-                        {sections.map(section => (
+                        {localSections.map(section => (
                           <SelectItem key={section.id} value={section.id}>
                             {section.code}: {section.name.substring(0, 30)}
                           </SelectItem>
@@ -450,7 +496,7 @@ export function PatentAdminPanel({
               </Card>
 
               <div className="mt-4 space-y-4">
-                {sections.map(section => (
+                {localSections.map(section => (
                   <Card key={section.id}>
                     <CardHeader className="py-3">
                       <CardTitle className="text-sm font-medium">{section.code}: {section.name}</CardTitle>
@@ -465,7 +511,7 @@ export function PatentAdminPanel({
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {items
+                          {localItems
                             .filter(i => i.section_id === section.id)
                             .sort((a, b) => a.display_order - b.display_order)
                             .map(item => (
@@ -505,7 +551,7 @@ export function PatentAdminPanel({
                                     <div className="flex flex-wrap gap-1">
                                       {getItemEmitterIds(item.id).length > 0 ? (
                                         getItemEmitterIds(item.id).map(emId => {
-                                          const em = emitters.find(e => e.id === emId);
+                                          const em = localEmitters.find(e => e.id === emId);
                                           return em ? (
                                             <Badge key={emId} variant="secondary" className="text-xs">
                                               {em.name}
@@ -602,7 +648,7 @@ export function PatentAdminPanel({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {sections.sort((a, b) => a.display_order - b.display_order).map(section => (
+                      {localSections.sort((a, b) => a.display_order - b.display_order).map(section => (
                         <TableRow key={section.id}>
                           <TableCell>
                             {editingSection?.id === section.id ? (
@@ -679,7 +725,7 @@ export function PatentAdminPanel({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="global">Global (todas)</SelectItem>
-                        {sections.map(section => (
+                        {localSections.map(section => (
                           <SelectItem key={section.id} value={section.id}>
                             {section.code}: {section.name.substring(0, 20)}
                           </SelectItem>
@@ -705,7 +751,7 @@ export function PatentAdminPanel({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {emitters.map(emitter => (
+                      {localEmitters.map(emitter => (
                         <TableRow key={emitter.id}>
                           <TableCell>
                             {editingEmitter?.id === emitter.id ? (
@@ -728,7 +774,7 @@ export function PatentAdminPanel({
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="global">Global</SelectItem>
-                                  {sections.map(section => (
+                                  {localSections.map(section => (
                                     <SelectItem key={section.id} value={section.id}>
                                       {section.code}: {section.name.substring(0, 15)}
                                     </SelectItem>
@@ -738,7 +784,7 @@ export function PatentAdminPanel({
                             ) : (
                               <Badge variant="outline">
                                 {emitter.section_id 
-                                  ? sections.find(s => s.id === emitter.section_id)?.code || 'Sección'
+                                  ? localSections.find(s => s.id === emitter.section_id)?.code || 'Sección'
                                   : 'Global'
                                 }
                               </Badge>
