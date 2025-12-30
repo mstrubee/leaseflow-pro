@@ -1847,18 +1847,98 @@ export type Database = {
           id: string
           is_active: boolean
           name: string
+          section_id: string | null
         }
         Insert: {
           created_at?: string
           id?: string
           is_active?: boolean
           name: string
+          section_id?: string | null
         }
         Update: {
           created_at?: string
           id?: string
           is_active?: boolean
           name?: string
+          section_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patent_emitters_section_id_fkey"
+            columns: ["section_id"]
+            isOneToOne: false
+            referencedRelation: "patent_checklist_sections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patent_item_emitters: {
+        Row: {
+          checklist_item_id: string
+          created_at: string
+          emitter_id: string
+          id: string
+        }
+        Insert: {
+          checklist_item_id: string
+          created_at?: string
+          emitter_id: string
+          id?: string
+        }
+        Update: {
+          checklist_item_id?: string
+          created_at?: string
+          emitter_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patent_item_emitters_checklist_item_id_fkey"
+            columns: ["checklist_item_id"]
+            isOneToOne: false
+            referencedRelation: "patent_checklist_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patent_item_emitters_emitter_id_fkey"
+            columns: ["emitter_id"]
+            isOneToOne: false
+            referencedRelation: "patent_emitters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patent_statuses: {
+        Row: {
+          bg_color: string
+          code: string
+          created_at: string
+          display_order: number
+          id: string
+          is_active: boolean
+          name: string
+          text_color: string
+        }
+        Insert: {
+          bg_color?: string
+          code: string
+          created_at?: string
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          name: string
+          text_color?: string
+        }
+        Update: {
+          bg_color?: string
+          code?: string
+          created_at?: string
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          name?: string
+          text_color?: string
         }
         Relationships: []
       }
