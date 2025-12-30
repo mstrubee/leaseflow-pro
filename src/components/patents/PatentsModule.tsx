@@ -11,12 +11,11 @@ import { CriticalAlertsDashboard } from "./CriticalAlertsDashboard";
 import { PatentAdminPanel } from "./PatentAdminPanel";
 import { PatentDocStatus } from "./types";
 import { toast } from "sonner";
-
 export function PatentsModule() {
-  const { 
-    contracts, 
-    sections, 
-    items, 
+  const {
+    contracts,
+    sections,
+    items,
     emitters,
     itemEmitters,
     statuses,
@@ -25,28 +24,27 @@ export function PatentsModule() {
     updatePriority,
     updateDocumentStatus,
     updateDocument,
-    getCriticalStats,
+    getCriticalStats
   } = usePatents();
-  const { user, isAdmin } = useAuth();
+  const {
+    user,
+    isAdmin
+  } = useAuth();
   const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'list' | 'alerts'>('list');
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
-
   const stats = getCriticalStats();
   const selectedContract = contracts.find(c => c.id === selectedContractId);
-
   const handleNavigateToDocument = (contractId: string, itemId: string) => {
     setSelectedContractId(contractId);
     setActiveTab('list');
     // Could scroll to specific item if needed
   };
-
   const handleStatusChangeFromAlerts = async (contractId: string, itemId: string, status: PatentDocStatus) => {
     if (!user) {
       toast.error("Debes iniciar sesión");
       return;
     }
-    
     try {
       await updateDocumentStatus(contractId, itemId, status, user.id);
       toast.success("Estado actualizado");
@@ -54,61 +52,32 @@ export function PatentsModule() {
       toast.error("Error al actualizar estado");
     }
   };
-
   if (loading) {
-    return (
-      <Card>
+    return <Card>
         <CardContent className="py-8 text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
           <p className="mt-2 text-muted-foreground">Cargando módulo de patentes...</p>
         </CardContent>
-      </Card>
-    );
+      </Card>;
   }
 
   // Show detail view if a contract is selected
   if (selectedContract) {
-    return (
-      <PatentChecklist
-        contract={selectedContract}
-        sections={sections}
-        items={items}
-        emitters={emitters}
-        itemEmitters={itemEmitters}
-        statuses={statuses}
-        onBack={() => setSelectedContractId(null)}
-        onUpdatePriority={updatePriority}
-        onUpdateDocument={updateDocument}
-        onUpdateDocumentStatus={updateDocumentStatus}
-      />
-    );
+    return <PatentChecklist contract={selectedContract} sections={sections} items={items} emitters={emitters} itemEmitters={itemEmitters} statuses={statuses} onBack={() => setSelectedContractId(null)} onUpdatePriority={updatePriority} onUpdateDocument={updateDocument} onUpdateDocumentStatus={updateDocumentStatus} />;
   }
-
-  return (
-    <div className="space-y-6">
+  return <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-semibold">Módulo Patentes</h2>
-          <p className="text-muted-foreground">
-            Gestión de documentación para patentes comerciales
-          </p>
+          <h2 className="text-2xl font-semibold">Patentes</h2>
+          <p className="text-muted-foreground">Gestión de documentación para patentes comerciales y Recepciones Definitivas DOM</p>
         </div>
-        {isAdmin && (
-          <Button variant="outline" className="gap-2" onClick={() => setAdminPanelOpen(true)}>
+        {isAdmin && <Button variant="outline" className="gap-2" onClick={() => setAdminPanelOpen(true)}>
             <Settings className="h-4 w-4" />
             Administrar
-          </Button>
-        )}
+          </Button>}
         
-        <PatentAdminPanel
-          open={adminPanelOpen}
-          onOpenChange={setAdminPanelOpen}
-          sections={sections}
-          items={items}
-          emitters={emitters}
-          onDataChange={loadData}
-        />
+        <PatentAdminPanel open={adminPanelOpen} onOpenChange={setAdminPanelOpen} sections={sections} items={items} emitters={emitters} onDataChange={loadData} />
       </div>
 
       {/* Summary Cards */}
@@ -123,10 +92,7 @@ export function PatentsModule() {
           </CardContent>
         </Card>
 
-        <Card 
-          className="cursor-pointer hover:shadow-md transition-shadow border-red-200 bg-red-50 dark:bg-red-950/20"
-          onClick={() => setActiveTab('alerts')}
-        >
+        <Card className="cursor-pointer hover:shadow-md transition-shadow border-red-200 bg-red-50 dark:bg-red-950/20" onClick={() => setActiveTab('alerts')}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-red-700 dark:text-red-400">Críticos</CardTitle>
             <AlertTriangle className="h-4 w-4 text-red-600" />
@@ -158,7 +124,7 @@ export function PatentsModule() {
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'list' | 'alerts')}>
+      <Tabs value={activeTab} onValueChange={v => setActiveTab(v as 'list' | 'alerts')}>
         <TabsList>
           <TabsTrigger value="list" className="gap-2">
             <FileText className="h-4 w-4" />
@@ -171,22 +137,12 @@ export function PatentsModule() {
         </TabsList>
 
         <TabsContent value="list" className="mt-4">
-          <PatentsList 
-            contracts={contracts} 
-            onSelectContract={setSelectedContractId} 
-          />
+          <PatentsList contracts={contracts} onSelectContract={setSelectedContractId} />
         </TabsContent>
 
         <TabsContent value="alerts" className="mt-4">
-          <CriticalAlertsDashboard
-            contracts={contracts}
-            items={items}
-            sections={sections}
-            onNavigateToDocument={handleNavigateToDocument}
-            onStatusChange={handleStatusChangeFromAlerts}
-          />
+          <CriticalAlertsDashboard contracts={contracts} items={items} sections={sections} onNavigateToDocument={handleNavigateToDocument} onStatusChange={handleStatusChangeFromAlerts} />
         </TabsContent>
       </Tabs>
-    </div>
-  );
+    </div>;
 }

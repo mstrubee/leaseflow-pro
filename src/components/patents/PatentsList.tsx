@@ -77,7 +77,7 @@ export function PatentsList({
   };
   return <Card>
       <CardHeader>
-        <CardTitle className="text-lg">Locales con Patentes</CardTitle>
+        <CardTitle className="text-lg">Prioridades</CardTitle>
       </CardHeader>
       <CardContent className="space-y-1">
         {/* Filters */}
