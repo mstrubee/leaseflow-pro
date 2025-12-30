@@ -21,6 +21,7 @@ export interface PatentEmitter {
   name: string;
   is_active: boolean;
   section_id?: string;
+  display_order: number;
 }
 
 export interface PatentStatus {
