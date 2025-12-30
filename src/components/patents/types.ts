@@ -20,6 +20,23 @@ export interface PatentEmitter {
   id: string;
   name: string;
   is_active: boolean;
+  section_id?: string;
+}
+
+export interface PatentStatus {
+  id: string;
+  code: string;
+  name: string;
+  bg_color: string;
+  text_color: string;
+  display_order: number;
+  is_active: boolean;
+}
+
+export interface PatentItemEmitter {
+  id: string;
+  checklist_item_id: string;
+  emitter_id: string;
 }
 
 export interface PatentCustomColumn {
@@ -87,6 +104,7 @@ export const PRIORITY_CONFIG: Record<PatentPriority, { label: string; color: str
   vigente: { label: 'Vigente', color: 'hsl(142, 71%, 45%)', bgColor: 'bg-green-100', textColor: 'text-green-800' },
 };
 
+// Default fallback config - will be overridden by dynamic statuses
 export const STATUS_CONFIG: Record<PatentDocStatus, { label: string; color: string; bgColor: string; textColor: string }> = {
   pendiente: { label: 'Pendiente', color: 'hsl(0, 84%, 60%)', bgColor: 'bg-red-100', textColor: 'text-red-800' },
   en_curso: { label: 'En Curso', color: 'hsl(48, 96%, 53%)', bgColor: 'bg-yellow-100', textColor: 'text-yellow-800' },
