@@ -17,7 +17,9 @@ export function PatentsModule() {
     contracts, 
     sections, 
     items, 
-    emitters, 
+    emitters,
+    itemEmitters,
+    statuses,
     loading,
     loadData,
     updatePriority,
@@ -72,6 +74,8 @@ export function PatentsModule() {
         sections={sections}
         items={items}
         emitters={emitters}
+        itemEmitters={itemEmitters}
+        statuses={statuses}
         onBack={() => setSelectedContractId(null)}
         onUpdatePriority={updatePriority}
         onUpdateDocument={updateDocument}

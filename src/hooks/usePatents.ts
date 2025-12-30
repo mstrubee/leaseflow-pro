@@ -7,7 +7,9 @@ import {
   PatentEmitter,
   PatentDocument,
   PatentPriority,
-  PatentDocStatus 
+  PatentDocStatus,
+  PatentItemEmitter,
+  PatentStatus
 } from "@/components/patents/types";
 
 export function usePatents() {
@@ -15,6 +17,8 @@ export function usePatents() {
   const [sections, setSections] = useState<PatentChecklistSection[]>([]);
   const [items, setItems] = useState<PatentChecklistItem[]>([]);
   const [emitters, setEmitters] = useState<PatentEmitter[]>([]);
+  const [itemEmitters, setItemEmitters] = useState<PatentItemEmitter[]>([]);
+  const [statuses, setStatuses] = useState<PatentStatus[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
@@ -60,10 +64,24 @@ export function usePatents() {
         .eq("is_active", true)
         .order("name");
 
+      // Load item-emitter fixed assignments
+      const { data: itemEmittersData } = await supabase
+        .from("patent_item_emitters")
+        .select("*");
+
+      // Load statuses
+      const { data: statusesData } = await supabase
+        .from("patent_statuses")
+        .select("*")
+        .eq("is_active", true)
+        .order("display_order");
+
       setContracts((contractsData as any[]) || []);
       setSections((sectionsData as PatentChecklistSection[]) || []);
       setItems((itemsData as PatentChecklistItem[]) || []);
       setEmitters((emittersData as PatentEmitter[]) || []);
+      setItemEmitters((itemEmittersData as PatentItemEmitter[]) || []);
+      setStatuses((statusesData as PatentStatus[]) || []);
     } catch (error) {
       console.error("Error loading patents data:", error);
     } finally {
@@ -285,6 +303,8 @@ export function usePatents() {
     sections,
     items,
     emitters,
+    itemEmitters,
+    statuses,
     loading,
     loadData,
     updatePriority,
