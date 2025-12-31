@@ -2455,7 +2455,36 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      cloud_storage_connections_public: {
+        Row: {
+          created_at: string | null
+          folder_url: string | null
+          id: string | null
+          is_active: boolean | null
+          name: string | null
+          provider: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          folder_url?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          name?: string | null
+          provider?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          folder_url?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          name?: string | null
+          provider?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       calculate_next_send_at: {
