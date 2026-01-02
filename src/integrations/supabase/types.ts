@@ -795,6 +795,8 @@ export type Database = {
           notice_bilaterality: string | null
           notice_type: Database["public"]["Enums"]["notice_type"]
           notice_value: string
+          otros_egresos_amount: number | null
+          otros_egresos_description: string | null
           regime_rent: number
           variable_rent_percentage: number | null
           version_number: number
@@ -824,6 +826,8 @@ export type Database = {
           notice_bilaterality?: string | null
           notice_type: Database["public"]["Enums"]["notice_type"]
           notice_value: string
+          otros_egresos_amount?: number | null
+          otros_egresos_description?: string | null
           regime_rent: number
           variable_rent_percentage?: number | null
           version_number: number
@@ -853,6 +857,8 @@ export type Database = {
           notice_bilaterality?: string | null
           notice_type?: Database["public"]["Enums"]["notice_type"]
           notice_value?: string
+          otros_egresos_amount?: number | null
+          otros_egresos_description?: string | null
           regime_rent?: number
           variable_rent_percentage?: number | null
           version_number?: number

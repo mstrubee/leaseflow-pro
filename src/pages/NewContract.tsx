@@ -66,7 +66,9 @@ const NewContract = () => {
   const [gastosComunesUfMlFrente, setGastosComunesUfMlFrente] = useState("");
   const [gastosComunesProrratKwhClima, setGastosComunesProrratKwhClima] = useState("");
   const [fondoPromocionPercentage, setFondoPromocionPercentage] = useState("");
-  const [adicionalAdministracionPercentage, setAdicionalAdministracionPercentage] = useState("");
+const [adicionalAdministracionPercentage, setAdicionalAdministracionPercentage] = useState("");
+  const [otrosEgresosAmount, setOtrosEgresosAmount] = useState("");
+  const [otrosEgresosDescription, setOtrosEgresosDescription] = useState("");
   
   const { ufValue, convertPesosToUF } = useEconomicIndicators();
   
@@ -177,6 +179,8 @@ const NewContract = () => {
             adicional_administracion_percentage: adicionalAdministracionPercentage ? parseFloat(adicionalAdministracionPercentage) : null,
             has_extended_gastos_comunes: hasExtendedGastosComunes,
             grace_months: graceMonths || 0,
+            otros_egresos_amount: otrosEgresosAmount ? getUFValue(otrosEgresosAmount) : null,
+            otros_egresos_description: otrosEgresosDescription || null,
           } as any)
           .select()
           .single();
@@ -709,6 +713,32 @@ const NewContract = () => {
                   Porcentaje sobre el Canon en Régimen (puede ser 0)
                 </p>
               </div>
+
+              {/* Otros Egresos de Arrendamiento */}
+              <div className="space-y-2">
+                <Label htmlFor="otrosEgresosAmountNew">Otros Egresos de Arrendamiento ({currency})</Label>
+                <Input
+                  id="otrosEgresosAmountNew"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="Ej: 10"
+                  value={otrosEgresosAmount}
+                  onChange={(e) => setOtrosEgresosAmount(e.target.value)}
+                />
+              </div>
+              {otrosEgresosAmount && parseFloat(otrosEgresosAmount) > 0 && (
+                <div className="space-y-2">
+                  <Label htmlFor="otrosEgresosDescriptionNew">Descripción de Otros Egresos</Label>
+                  <Input
+                    id="otrosEgresosDescriptionNew"
+                    type="text"
+                    placeholder="Ej: Mantención áreas verdes"
+                    value={otrosEgresosDescription}
+                    onChange={(e) => setOtrosEgresosDescription(e.target.value)}
+                  />
+                </div>
+              )}
 
               {/* Reajustes Periódicos */}
               <div className="space-y-2">
