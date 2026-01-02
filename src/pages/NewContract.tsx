@@ -714,31 +714,35 @@ const [adicionalAdministracionPercentage, setAdicionalAdministracionPercentage] 
                 </p>
               </div>
 
-              {/* Otros Egresos de Arrendamiento */}
+              {/* Otros Arrendamientos */}
               <div className="space-y-2">
-                <Label htmlFor="otrosEgresosAmountNew">Otros Egresos de Arrendamiento ({currency})</Label>
-                <Input
-                  id="otrosEgresosAmountNew"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="Ej: 10"
-                  value={otrosEgresosAmount}
-                  onChange={(e) => setOtrosEgresosAmount(e.target.value)}
-                />
-              </div>
-              {otrosEgresosAmount && parseFloat(otrosEgresosAmount) > 0 && (
-                <div className="space-y-2">
-                  <Label htmlFor="otrosEgresosDescriptionNew">Descripción de Otros Egresos</Label>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="otrosEgresosAmountNew">Otros Arrendamientos ({currency})</Label>
+                  {otrosEgresosDescription && (
+                    <span className="text-xs text-muted-foreground">Nota: {otrosEgresosDescription}</span>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    id="otrosEgresosAmountNew"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="Monto"
+                    value={otrosEgresosAmount}
+                    onChange={(e) => setOtrosEgresosAmount(e.target.value)}
+                    className="flex-1"
+                  />
                   <Input
                     id="otrosEgresosDescriptionNew"
                     type="text"
-                    placeholder="Ej: Mantención áreas verdes"
+                    placeholder="Nota (opcional)"
                     value={otrosEgresosDescription}
                     onChange={(e) => setOtrosEgresosDescription(e.target.value)}
+                    className="flex-1"
                   />
                 </div>
-              )}
+              </div>
 
               {/* Reajustes Periódicos */}
               <div className="space-y-2">
