@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useBudgetContext } from "./BudgetContext";
 import { BudgetSemaphore } from "./BudgetSemaphore";
 import { cn } from "@/lib/utils";
+import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
 
 interface Invoice {
   id: string;
@@ -394,6 +395,20 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    // Validate file before upload
+    const validation = validateFile(file);
+    if (!validation.isValid) {
+      toast({
+        variant: "destructive",
+        title: "Archivo no válido",
+        description: validation.error,
+      });
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      return;
+    }
 
     setUploading(true);
     try {

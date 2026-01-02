@@ -6,6 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Folder, FileText, ArrowLeft, Upload, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
 
 interface RepositoryFolder {
   id: string;
@@ -117,10 +118,25 @@ export const RepositoryFilePicker = ({
     const file = event.target.files?.[0];
     if (!file || !currentFolder) return;
 
+    // Validate file before upload
+    const validation = validateFile(file);
+    if (!validation.isValid) {
+      toast({
+        variant: "destructive",
+        title: "Archivo no válido",
+        description: validation.error,
+      });
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      return;
+    }
+
     setUploading(true);
     try {
       const fileExt = file.name.split(".").pop();
-      const fileName = `${Date.now()}-${file.name}`;
+      const sanitizedName = sanitizeFileName(file.name);
+      const fileName = `${Date.now()}-${sanitizedName}`;
       const filePath = `${contractId}/${currentFolder.id}/${fileName}`;
 
       const { error: uploadError } = await supabase.storage

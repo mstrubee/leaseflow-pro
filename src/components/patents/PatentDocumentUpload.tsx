@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Upload, FolderOpen, Link, X, File, ExternalLink } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
 
 interface PatentDocumentUploadProps {
   open: boolean;
@@ -38,11 +39,22 @@ export function PatentDocumentUpload({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Validate file before upload
+    const validation = validateFile(file);
+    if (!validation.isValid) {
+      toast.error(validation.error);
+      if (e.target) {
+        e.target.value = "";
+      }
+      return;
+    }
+
     setUploading(true);
     try {
       const fileExt = file.name.split('.').pop();
+      const sanitizedName = sanitizeFileName(file.name);
       const folderPath = selectedFolder || `${contractId}/${itemId}`;
-      const fileName = `${folderPath}/${Date.now()}.${fileExt}`;
+      const fileName = `${folderPath}/${Date.now()}_${sanitizedName}`;
 
       const { data, error } = await supabase.storage
         .from('repository-files')
