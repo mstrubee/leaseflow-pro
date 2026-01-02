@@ -19,6 +19,7 @@ import {
   AlertTriangle
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
 import {
   Dialog,
   DialogContent,
@@ -533,9 +534,23 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Validate file before proceeding
+      const validation = validateFile(file);
+      if (!validation.isValid) {
+        toast({
+          variant: "destructive",
+          title: "Archivo no válido",
+          description: validation.error,
+        });
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+        return;
+      }
+      
       setSelectedFile(file);
       const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
-      setSuggestedFileName(nameWithoutExt);
+      setSuggestedFileName(sanitizeFileName(nameWithoutExt));
       setSelectedStatus("pendiente");
       setFileDialogOpen(true);
     }

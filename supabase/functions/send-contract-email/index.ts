@@ -1,10 +1,28 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+// Secure CORS configuration - only allow trusted origins
+const ALLOWED_ORIGINS = [
+  'https://tgxiqvfpirwvhktgqqfa.lovable.app',
+  'http://localhost:5173',
+  'http://localhost:8080',
+  'http://localhost:3000',
+];
+
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get('origin') || '';
+  
+  // Check if origin is in allowed list or is a lovable.app subdomain
+  const isAllowed = ALLOWED_ORIGINS.includes(origin) || 
+    origin.endsWith('.lovable.app') ||
+    origin.endsWith('.lovableproject.com');
+  
+  return {
+    'Access-Control-Allow-Origin': isAllowed ? origin : ALLOWED_ORIGINS[0],
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Max-Age': '86400',
+  };
+}
 
 interface SendContractEmailRequest {
   recipientEmail: string;
@@ -13,16 +31,50 @@ interface SendContractEmailRequest {
   senderName?: string;
 }
 
+// Email validation regex
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// URL validation - must be https or from trusted domains
+function isValidDocumentUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    // Allow https URLs from trusted storage domains
+    return parsed.protocol === 'https:' && (
+      parsed.hostname.endsWith('.supabase.co') ||
+      parsed.hostname.endsWith('.supabase.in') ||
+      parsed.hostname.endsWith('.lovable.app') ||
+      parsed.hostname.includes('storage.googleapis.com') ||
+      parsed.hostname.includes('drive.google.com')
+    );
+  } catch {
+    return false;
+  }
+}
+
 const handler = async (req: Request): Promise<Response> => {
+  const corsHeaders = getCorsHeaders(req);
+  
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Only allow POST requests
+  if (req.method !== "POST") {
+    return new Response(
+      JSON.stringify({ error: "Method not allowed" }),
+      {
+        status: 405,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      }
+    );
   }
 
   try {
     const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
     
     if (!RESEND_API_KEY) {
+      console.error("RESEND_API_KEY not configured");
       return new Response(
         JSON.stringify({ error: "RESEND_API_KEY no está configurado" }),
         {
@@ -32,8 +84,10 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    const { recipientEmail, contractName, documentUrl, senderName }: SendContractEmailRequest = await req.json();
+    const body = await req.json();
+    const { recipientEmail, contractName, documentUrl, senderName }: SendContractEmailRequest = body;
 
+    // Validate required fields
     if (!recipientEmail || !contractName || !documentUrl) {
       return new Response(
         JSON.stringify({ error: "Faltan campos requeridos" }),
@@ -44,6 +98,46 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
+    // Validate email format
+    if (!EMAIL_REGEX.test(recipientEmail)) {
+      return new Response(
+        JSON.stringify({ error: "Formato de email inválido" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        }
+      );
+    }
+
+    // Validate document URL
+    if (!isValidDocumentUrl(documentUrl)) {
+      console.warn(`Invalid document URL attempted: ${documentUrl}`);
+      return new Response(
+        JSON.stringify({ error: "URL del documento no es válida o no es de un origen confiable" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        }
+      );
+    }
+
+    // Sanitize inputs for HTML output (prevent XSS in email)
+    const sanitizedContractName = contractName
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .substring(0, 200); // Limit length
+
+    const sanitizedSenderName = senderName
+      ? senderName
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .substring(0, 100)
+      : null;
+
     const emailResponse = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -53,7 +147,7 @@ const handler = async (req: Request): Promise<Response> => {
       body: JSON.stringify({
         from: "Contratos <onboarding@resend.dev>",
         to: [recipientEmail],
-        subject: `Contrato para firma: ${contractName}`,
+        subject: `Contrato para firma: ${sanitizedContractName}`,
         html: `
           <!DOCTYPE html>
           <html>
@@ -76,8 +170,8 @@ const handler = async (req: Request): Promise<Response> => {
               <div class="content">
                 <p>Estimado/a,</p>
                 <p>Se le ha enviado el siguiente contrato para su revisión y firma:</p>
-                <p><strong>${contractName}</strong></p>
-                ${senderName ? `<p>Enviado por: ${senderName}</p>` : ''}
+                <p><strong>${sanitizedContractName}</strong></p>
+                ${sanitizedSenderName ? `<p>Enviado por: ${sanitizedSenderName}</p>` : ''}
                 <p>Por favor, revise el documento y proceda con la firma según corresponda.</p>
                 <a href="${documentUrl}" class="button">Ver Contrato</a>
                 <div class="footer">
@@ -94,12 +188,13 @@ const handler = async (req: Request): Promise<Response> => {
     const result = await emailResponse.json();
     
     if (!emailResponse.ok) {
+      console.error("Resend API error:", result);
       throw new Error(result.message || "Error al enviar email");
     }
 
-    console.log("Email sent successfully:", result);
+    console.log("Email sent successfully to:", recipientEmail);
 
-    return new Response(JSON.stringify(result), {
+    return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: {
         "Content-Type": "application/json",
@@ -109,7 +204,7 @@ const handler = async (req: Request): Promise<Response> => {
   } catch (error: any) {
     console.error("Error in send-contract-email function:", error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: "Error al procesar la solicitud" }),
       {
         status: 500,
         headers: { "Content-Type": "application/json", ...corsHeaders },

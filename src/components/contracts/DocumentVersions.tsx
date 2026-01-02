@@ -9,6 +9,7 @@ import { format } from "date-fns";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
 import {
   Dialog,
   DialogContent,
@@ -200,6 +201,20 @@ export const DocumentVersions = ({
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Validate file before proceeding
+      const validation = validateFile(file);
+      if (!validation.isValid) {
+        toast({
+          variant: "destructive",
+          title: "Archivo no válido",
+          description: validation.error,
+        });
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+        return;
+      }
+      
       setSelectedFile(file);
       setSuggestedFileName(generateSuggestedName());
       setFileDialogOpen(true);
@@ -212,10 +227,22 @@ export const DocumentVersions = ({
   const handleUploadFile = async (shouldImportData: boolean = false) => {
     if (!selectedFile || !suggestedFileName.trim()) return;
 
+    // Re-validate file before upload (defense in depth)
+    const validation = validateFile(selectedFile);
+    if (!validation.isValid) {
+      toast({
+        variant: "destructive",
+        title: "Archivo no válido",
+        description: validation.error,
+      });
+      return;
+    }
+
     setUploading(true);
     try {
       const ext = selectedFile.name.split('.').pop() || '';
-      const filePath = `contracts/${contractId}/${Date.now()}_${suggestedFileName.trim()}.${ext}`;
+      const sanitizedName = sanitizeFileName(suggestedFileName.trim());
+      const filePath = `contracts/${contractId}/${Date.now()}_${sanitizedName}.${ext}`;
 
       const { error: uploadError } = await supabase.storage
         .from("repository-files")
