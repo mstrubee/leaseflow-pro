@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { DollarSign, Calendar, Bell, TrendingUp, Percent, Shield, Building2, Megaphone, Users } from "lucide-react";
+import { DollarSign, Calendar, Bell, TrendingUp, Percent, Shield, Building2, Megaphone, Users, Receipt } from "lucide-react";
 import { CompactEscalationChart } from "./CompactEscalationChart";
 import { RenegotiationDialog } from "./RenegotiationDialog";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
@@ -40,6 +40,8 @@ interface ContractVersion {
   has_extended_gastos_comunes?: boolean | null;
   grace_months?: number | null;
   notice_bilaterality?: string | null;
+  otros_egresos_amount?: number | null;
+  otros_egresos_description?: string | null;
   rent_escalations: Escalation[];
 }
 
@@ -389,6 +391,27 @@ export function CommercialConditionsSummary({
               <p className="text-xs text-muted-foreground">
                 ({version.fondo_promocion_percentage}% del canon)
               </p>
+            </div>
+          )}
+
+          {/* Otros Egresos */}
+          {version.otros_egresos_amount !== null && version.otros_egresos_amount !== undefined && version.otros_egresos_amount > 0 && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Receipt className="h-3 w-3" />
+                Otros Egresos
+              </div>
+              <p className="text-sm font-medium">
+                {formatPrimary(version.otros_egresos_amount)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {formatSecondary(version.otros_egresos_amount)}
+              </p>
+              {version.otros_egresos_description && (
+                <p className="text-xs text-muted-foreground">
+                  {version.otros_egresos_description}
+                </p>
+              )}
             </div>
           )}
         </div>

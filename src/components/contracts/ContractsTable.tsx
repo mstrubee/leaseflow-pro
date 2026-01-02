@@ -31,6 +31,8 @@ interface ContractVersion {
   adicional_administracion_percentage?: number | null;
   has_extended_gastos_comunes?: boolean | null;
   notice_ranges?: Array<{ start_month: number; end_month: number }>;
+  otros_egresos_amount?: number | null;
+  otros_egresos_description?: string | null;
 }
 
 interface Contract {
@@ -233,7 +235,10 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                     const fondoPromocionPct = currentVersion.fondo_promocion_percentage ?? 0;
                     const fondoPromocion = currentVersion.regime_rent * (fondoPromocionPct / 100);
                     
-                    const total = currentVersion.regime_rent + gastosComunesTotal + fondoPromocion;
+                    // Otros egresos
+                    const otrosEgresos = currentVersion.otros_egresos_amount || 0;
+                    
+                    const total = currentVersion.regime_rent + gastosComunesTotal + fondoPromocion + otrosEgresos;
                     return (
                       <div className="flex flex-col items-center">
                         <span className="text-sm font-medium">{formatAmount(total, contract.display_currency)}</span>
@@ -241,6 +246,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                           <div>Canon: {formatAmount(currentVersion.regime_rent, contract.display_currency)}</div>
                           <div>GC: {formatAmount(gastosComunesTotal, contract.display_currency)}</div>
                           <div>F. Prom: {fondoPromocionPct > 0 ? formatAmount(fondoPromocion, contract.display_currency) : "-"}</div>
+                          {otrosEgresos > 0 && <div>Otros: {formatAmount(otrosEgresos, contract.display_currency)}</div>}
                         </div>
                       </div>
                     );

@@ -86,7 +86,9 @@ const EditContract = () => {
   const [gastosComunesUfMlFrente, setGastosComunesUfMlFrente] = useState("");
   const [gastosComunesProrratKwhClima, setGastosComunesProrratKwhClima] = useState("");
   const [fondoPromocionPercentage, setFondoPromocionPercentage] = useState("");
-  const [adicionalAdministracionPercentage, setAdicionalAdministracionPercentage] = useState("");
+const [adicionalAdministracionPercentage, setAdicionalAdministracionPercentage] = useState("");
+  const [otrosEgresosAmount, setOtrosEgresosAmount] = useState("");
+  const [otrosEgresosDescription, setOtrosEgresosDescription] = useState("");
   
   // Surface data for gastos comunes calculation
   const [superficieEdificadaLocal, setSuperficieEdificadaLocal] = useState<number>(0);
@@ -217,6 +219,10 @@ const EditContract = () => {
         
         // Load notice bilaterality
         setNoticeBilaterality((version as any).notice_bilaterality || "unilateral_gp");
+        
+        // Load otros egresos
+        setOtrosEgresosAmount((version as any).otros_egresos_amount?.toString() || "");
+        setOtrosEgresosDescription((version as any).otros_egresos_description || "");
       }
     } catch (error: any) {
       toast({
@@ -335,6 +341,8 @@ const EditContract = () => {
             has_extended_gastos_comunes: hasExtendedGastosComunes,
             notice_bilaterality: noticeBilaterality,
             grace_months: graceMonths || 0,
+            otros_egresos_amount: otrosEgresosAmount ? parseFloat(otrosEgresosAmount) : null,
+            otros_egresos_description: otrosEgresosDescription || null,
           } as any)
           .eq("id", versionId);
 
@@ -367,6 +375,8 @@ const EditContract = () => {
             adicional_administracion_percentage: adicionalAdministracionPercentage ? parseFloat(adicionalAdministracionPercentage) : null,
             has_extended_gastos_comunes: hasExtendedGastosComunes,
             notice_bilaterality: noticeBilaterality,
+            otros_egresos_amount: otrosEgresosAmount ? parseFloat(otrosEgresosAmount) : null,
+            otros_egresos_description: otrosEgresosDescription || null,
           } as any)
           .select()
           .single();
@@ -1080,6 +1090,38 @@ const EditContract = () => {
                   Porcentaje sobre el Canon en Régimen (puede ser 0)
                 </p>
               </div>
+
+              {/* Otros Egresos de Arrendamiento */}
+              <div className="space-y-2">
+                <Label htmlFor="otrosEgresosAmount">Otros Egresos de Arrendamiento ({currency})</Label>
+                <Input
+                  id="otrosEgresosAmount"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="Ej: 10"
+                  value={otrosEgresosAmount}
+                  onChange={(e) => {
+                    setOtrosEgresosAmount(e.target.value);
+                    setHasUnsavedChanges(true);
+                  }}
+                />
+              </div>
+              {otrosEgresosAmount && parseFloat(otrosEgresosAmount) > 0 && (
+                <div className="space-y-2">
+                  <Label htmlFor="otrosEgresosDescription">Descripción de Otros Egresos</Label>
+                  <Input
+                    id="otrosEgresosDescription"
+                    type="text"
+                    placeholder="Ej: Mantención áreas verdes"
+                    value={otrosEgresosDescription}
+                    onChange={(e) => {
+                      setOtrosEgresosDescription(e.target.value);
+                      setHasUnsavedChanges(true);
+                    }}
+                  />
+                </div>
+              )}
 
               {/* Reajustes Periódicos */}
               <div className="space-y-2">
