@@ -319,7 +319,7 @@ export function CommercialConditionsSummary({
                 <span>Otros:</span>
                 <span>{otrosEgresosAmount > 0 ? formatPrimary(otrosEgresosAmount) : "-"}</span>
               </div>
-              <div className="flex justify-between text-amber-600 font-medium">
+              <div className="flex justify-between text-primary font-medium">
                 <span>Variable:</span>
                 <span>{version.variable_rent_percentage !== null && version.variable_rent_percentage > 0 ? `${version.variable_rent_percentage}%` : "-"}</span>
               </div>

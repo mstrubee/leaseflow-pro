@@ -723,6 +723,8 @@ const ContractDetail = () => {
                           adicional_administracion_percentage: (displayVersion as any).adicional_administracion_percentage,
                           has_extended_gastos_comunes: (displayVersion as any).has_extended_gastos_comunes,
                           grace_months: (displayVersion as any).grace_months,
+                          otros_egresos_amount: (displayVersion as any).otros_egresos_amount,
+                          otros_egresos_description: (displayVersion as any).otros_egresos_description,
                           notice_bilaterality: (displayVersion as any).notice_bilaterality,
                           adjustment_type: (displayVersion as any).adjustment_type,
                           adjustment_value: (displayVersion as any).adjustment_value,
