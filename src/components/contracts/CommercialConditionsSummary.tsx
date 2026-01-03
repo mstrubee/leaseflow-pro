@@ -301,36 +301,28 @@ export function CommercialConditionsSummary({
             <p className="text-xs text-muted-foreground">
               {formatSecondary(totalArriendo)}
             </p>
-            {/* Composición */}
+            {/* Composición - siempre mostrar todos los componentes */}
             <div className="text-[10px] text-muted-foreground space-y-0.5 pt-1 border-t border-border/50">
               <div className="flex justify-between">
                 <span>Canon:</span>
                 <span>{formatPrimary(version.regime_rent)}</span>
               </div>
-              {gastosComunesTotalUF !== null && gastosComunesTotalUF > 0 && (
-                <div className="flex justify-between">
-                  <span>GGCC:</span>
-                  <span>{formatPrimary(gastosComunesTotalUF)}</span>
-                </div>
-              )}
-              {fondoPromocionAmount !== null && fondoPromocionAmount > 0 && (
-                <div className="flex justify-between">
-                  <span>F. Prom:</span>
-                  <span>{formatPrimary(fondoPromocionAmount)}</span>
-                </div>
-              )}
-              {otrosEgresosAmount > 0 && (
-                <div className="flex justify-between">
-                  <span>Otros:</span>
-                  <span>{formatPrimary(otrosEgresosAmount)}</span>
-                </div>
-              )}
-              {version.variable_rent_percentage !== null && version.variable_rent_percentage > 0 && (
-                <div className="flex justify-between text-amber-600 font-medium">
-                  <span>+ Variable:</span>
-                  <span>{version.variable_rent_percentage}%</span>
-                </div>
-              )}
+              <div className="flex justify-between">
+                <span>GGCC:</span>
+                <span>{gastosComunesTotalUF ? formatPrimary(gastosComunesTotalUF) : "-"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>F. Prom:</span>
+                <span>{fondoPromocionAmount ? formatPrimary(fondoPromocionAmount) : "-"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Otros:</span>
+                <span>{otrosEgresosAmount > 0 ? formatPrimary(otrosEgresosAmount) : "-"}</span>
+              </div>
+              <div className="flex justify-between text-amber-600 font-medium">
+                <span>Variable:</span>
+                <span>{version.variable_rent_percentage !== null && version.variable_rent_percentage > 0 ? `${version.variable_rent_percentage}%` : "-"}</span>
+              </div>
             </div>
           </div>
 
