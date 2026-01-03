@@ -187,6 +187,15 @@ export function CommercialConditionsSummary({
     ? (version.fondo_promocion_percentage / 100) * version.regime_rent
     : null;
 
+  // Otros egresos
+  const otrosEgresosAmount = version.otros_egresos_amount || 0;
+
+  // Total arriendo calculation (Canon + GGCC + FP + Otros)
+  const totalArriendo = version.regime_rent + 
+    (gastosComunesTotalUF || 0) + 
+    (fondoPromocionAmount || 0) + 
+    otrosEgresosAmount;
+
   // Format adjustment value based on type
   const formatAdjustmentValue = () => {
     if (!version.has_periodic_adjustments || !version.adjustment_value) return null;
@@ -278,6 +287,51 @@ export function CommercialConditionsSummary({
             <Badge variant={version.notice_bilaterality === "bilateral" ? "default" : "secondary"} className="text-xs">
               {version.notice_bilaterality === "bilateral" ? "Bilateral" : "Unilateral GP"}
             </Badge>
+          </div>
+
+          {/* Total Arriendo */}
+          <div className="space-y-1 col-span-2 md:col-span-1 bg-primary/5 rounded-lg p-3 -m-1">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <DollarSign className="h-3 w-3" />
+              Total Arriendo
+            </div>
+            <p className="text-lg font-bold text-primary">
+              {formatPrimary(totalArriendo)}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {formatSecondary(totalArriendo)}
+            </p>
+            {/* Composición */}
+            <div className="text-[10px] text-muted-foreground space-y-0.5 pt-1 border-t border-border/50">
+              <div className="flex justify-between">
+                <span>Canon:</span>
+                <span>{formatPrimary(version.regime_rent)}</span>
+              </div>
+              {gastosComunesTotalUF !== null && gastosComunesTotalUF > 0 && (
+                <div className="flex justify-between">
+                  <span>GGCC:</span>
+                  <span>{formatPrimary(gastosComunesTotalUF)}</span>
+                </div>
+              )}
+              {fondoPromocionAmount !== null && fondoPromocionAmount > 0 && (
+                <div className="flex justify-between">
+                  <span>F. Prom:</span>
+                  <span>{formatPrimary(fondoPromocionAmount)}</span>
+                </div>
+              )}
+              {otrosEgresosAmount > 0 && (
+                <div className="flex justify-between">
+                  <span>Otros:</span>
+                  <span>{formatPrimary(otrosEgresosAmount)}</span>
+                </div>
+              )}
+              {version.variable_rent_percentage !== null && version.variable_rent_percentage > 0 && (
+                <div className="flex justify-between text-amber-600 font-medium">
+                  <span>+ Variable:</span>
+                  <span>{version.variable_rent_percentage}%</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Canon en Régimen */}
