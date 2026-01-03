@@ -138,7 +138,7 @@ const [adicionalAdministracionPercentage, setAdicionalAdministracionPercentage] 
   const sectionTitles: Record<EditSectionKey, string> = {
     dates: "Fechas",
     currency: "Moneda",
-    escalation: "Arriendo Escalonado",
+    escalation: "Canon Arriendo",
     variableRent: "Arriendo Variable",
     guarantee: "Garantía",
     gastosComunes: "Gastos Comunes",
