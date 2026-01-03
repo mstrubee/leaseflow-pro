@@ -292,8 +292,12 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                           const now = new Date();
                           const monthsRemaining = differenceInMonths(noticeDeadline, now);
                           const daysRemaining = differenceInDays(noticeDeadline, now);
+                          // Only show "Vencido" if notice deadline passed but contract hasn't ended yet
                           if (daysRemaining < 0) {
-                            return <span className="text-[10px] text-destructive font-medium">Vencido</span>;
+                            if (endDate && endDate > now) {
+                              return <span className="text-[10px] text-destructive font-medium">Vencido</span>;
+                            }
+                            return null; // Contract already ended, no need to show notice status
                           } else if (monthsRemaining < 1) {
                             return <span className="text-[10px] text-amber-600 font-medium">Faltan {daysRemaining} días</span>;
                           } else {
