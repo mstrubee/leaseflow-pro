@@ -8,10 +8,26 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Loader2, Plus, X } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, X, RotateCcw, ChevronsUpDown } from "lucide-react";
 import { RentEscalations, Escalation } from "@/components/contracts/RentEscalations";
 import { CurrencyInput } from "@/components/contracts/CurrencyInput";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
+import { useEditContractSections, EditSectionKey } from "@/hooks/useEditContractSections";
+import { EditableSectionWrapper } from "@/components/contracts/EditableSectionWrapper";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -95,6 +111,43 @@ const [adicionalAdministracionPercentage, setAdicionalAdministracionPercentage] 
   const [metrosLinealesFrente, setMetrosLinealesFrente] = useState<number>(0);
   
   const { ufValue, convertPesosToUF } = useEconomicIndicators();
+  
+  const {
+    sections: commercialSections,
+    reorderSections,
+    toggleCollapsed,
+    isCollapsed,
+    collapseAll,
+    expandAll,
+    resetToDefault,
+    canReorder,
+  } = useEditContractSections();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      reorderSections(active.id as string, over.id as string);
+    }
+  };
+
+  const sectionTitles: Record<EditSectionKey, string> = {
+    dates: "Fechas",
+    currency: "Moneda",
+    escalation: "Arriendo Escalonado",
+    variableRent: "Arriendo Variable",
+    guarantee: "Garantía",
+    gastosComunes: "Gastos Comunes",
+    fondoPromocion: "Fondo de Promoción",
+    otrosArrendamientos: "Otros Arrendamientos",
+    periodicAdjustments: "Reajustes Periódicos",
+    duration: "Duración",
+    noticeType: "Aviso de Término",
+  };
 
   useEffect(() => {
     if (id) {
@@ -754,678 +807,769 @@ const [adicionalAdministracionPercentage, setAdicionalAdministracionPercentage] 
 
           <Card>
             <CardHeader>
-              <CardTitle>Condiciones Comerciales</CardTitle>
-              <CardDescription>
-                Modifica las condiciones de la versión actual (valores en UF)
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="hasSeparateDates"
-                    checked={hasSeparateDates}
-                    onChange={(e) => {
-                      setHasSeparateDates(e.target.checked);
-                      setHasUnsavedChanges(true);
-                    }}
-                    className="h-4 w-4 rounded border-gray-300"
-                  />
-                  <Label htmlFor="hasSeparateDates" className="text-sm">
-                    Fecha de firma diferente a fecha de inicio
-                  </Label>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Condiciones Comerciales</CardTitle>
+                  <CardDescription>
+                    Modifica las condiciones de la versión actual (valores en UF)
+                  </CardDescription>
                 </div>
-
-                {hasSeparateDates && (
-                  <div className="space-y-2">
-                    <Label htmlFor="signedDate">Fecha de Firma</Label>
-                    <Input
-                      id="signedDate"
-                      type="date"
-                      value={signedDate}
-                      onChange={(e) => {
-                        setSignedDate(e.target.value);
-                        setHasUnsavedChanges(true);
-                      }}
-                    />
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <Label htmlFor="effectiveDate">
-                    {hasSeparateDates ? "Fecha de Inicio" : "Fecha Firma e Inicio"}
-                  </Label>
-                  <Input
-                    id="effectiveDate"
-                    type="date"
-                    value={effectiveDate}
-                    onChange={(e) => setEffectiveDate(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {hasSeparateDates 
-                      ? "La fecha de inicio del contrato puede completarse más adelante"
-                      : "Fecha de firma e inicio del contrato"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Moneda para edición</Label>
-                <Select value={currency} onValueChange={(v) => {
-                  setCurrency(v as "UF" | "CLP");
-                  setHasUnsavedChanges(true);
-                }}>
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="UF">UF</SelectItem>
-                    <SelectItem value="CLP">Pesos (CLP)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Los valores se guardan en {currency}. La conversión a {currency === "CLP" ? "UF" : "CLP"} es solo ilustrativa.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label>¿Tiene arriendo escalonado?</Label>
-                <RadioGroup
-                  value={hasEscalation ? "yes" : "no"}
-                  onValueChange={(value) => setHasEscalation(value === "yes")}
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="no" id="no" />
-                    <Label htmlFor="no">No</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="yes" id="yes" />
-                    <Label htmlFor="yes">Sí</Label>
-                  </div>
-                </RadioGroup>
-              </div>
-
-              {hasEscalation && (
-                <>
-                  <CurrencyInput
-                    id="initialRent"
-                    label="Canon Inicial"
-                    value={initialRent}
-                    onChange={setInitialRent}
-                    currency={currency}
-                    onCurrencyChange={setCurrency}
-                    required
-                    showCurrencySelector={false}
-                  />
-                  
-                  <CurrencyInput
-                    id="regimeRent"
-                    label="Canon en Régimen"
-                    value={regimeRent}
-                    onChange={setRegimeRent}
-                    currency={currency}
-                    onCurrencyChange={setCurrency}
-                    required
-                    showCurrencySelector={false}
-                  />
-                  
-                  {duration && (
-                    <div className="border border-border rounded-lg p-4 mt-4">
-                      <RentEscalations
-                        escalations={escalations}
-                        onChange={setEscalations}
-                        initialRent={parseFloat(initialRent) || 0}
-                        regimeRent={parseFloat(regimeRent) || 0}
-                        durationMonths={parseInt(duration) || 12}
-                        currency={currency}
-                        graceMonths={graceMonths}
-                        onGraceMonthsChange={setGraceMonths}
-                        effectiveDate={effectiveDate}
-                        hasPeriodicAdjustments={hasPeriodicAdjustments}
-                        adjustmentType={adjustmentType}
-                        adjustmentValue={parseFloat(adjustmentValue) || 0}
-                        firstAdjustmentMonth={parseInt(firstAdjustmentMonth) || 0}
-                        adjustmentPeriodicityMonths={parseInt(adjustmentPeriodicityMonths) || 0}
-                      />
-                    </div>
-                  )}
-                </>
-              )}
-
-              {!hasEscalation && (
-                <CurrencyInput
-                  id="regimeRent"
-                  label="Canon en Régimen"
-                  value={regimeRent}
-                  onChange={setRegimeRent}
-                  currency={currency}
-                  onCurrencyChange={setCurrency}
-                  required
-                  showCurrencySelector={false}
-                />
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="variableRentPercentage">Arriendo Variable (%)</Label>
-                <Input
-                  id="variableRentPercentage"
-                  type="number"
-                  step="0.01"
-                  placeholder="Ej: 5.5"
-                  value={variableRentPercentage}
-                  onChange={(e) => setVariableRentPercentage(e.target.value)}
-                />
-              </div>
-
-              {/* Garantía */}
-              <div className="space-y-2">
-                <Label htmlFor="guaranteeMultiplier">Garantía (multiplicador del arriendo)</Label>
-                <div className="flex items-center gap-4">
-                  <Input
-                    id="guaranteeMultiplier"
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    placeholder="Ej: 2"
-                    value={guaranteeMultiplier}
-                    onChange={(e) => setGuaranteeMultiplier(e.target.value)}
-                    className="w-24"
-                  />
-                  <span className="text-sm text-muted-foreground">×</span>
-                  <span className="text-sm text-muted-foreground">
-                    {regimeRent || "0"} {currency}
-                  </span>
-                  <span className="text-sm text-muted-foreground">=</span>
-                  <span className="text-sm font-medium">
-                    {guaranteeMultiplier && regimeRent
-                      ? (parseFloat(guaranteeMultiplier) * parseFloat(regimeRent)).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                      : "0"} {currency}
-                  </span>
-                </div>
-                {currency === "CLP" && ufValue > 0 && guaranteeMultiplier && regimeRent && (
-                  <p className="text-xs text-muted-foreground">
-                    ≈ {(parseFloat(guaranteeMultiplier) * convertPesosToUF(parseFloat(regimeRent))).toFixed(2)} UF
-                  </p>
-                )}
-                {currency === "UF" && ufValue > 0 && guaranteeMultiplier && regimeRent && (
-                  <p className="text-xs text-muted-foreground">
-                    ≈ ${Math.round(parseFloat(guaranteeMultiplier) * parseFloat(regimeRent) * ufValue).toLocaleString("es-CL")}
-                  </p>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Monto de Garantía de Arriendo
-                </p>
-              </div>
-
-              {/* Gastos Comunes */}
-              <div className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="hasExtendedGastosComunes"
-                    checked={hasExtendedGastosComunes}
-                    onChange={(e) => {
-                      setHasExtendedGastosComunes(e.target.checked);
-                      setHasUnsavedChanges(true);
-                    }}
-                    className="h-4 w-4 rounded border-gray-300"
-                  />
-                  <Label htmlFor="hasExtendedGastosComunes" className="text-sm font-medium">
-                    Ampliar metodología de cálculo de Gastos Comunes
-                  </Label>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="gastosComunesUfM2">Gastos Comunes (UF/m² de superficie)</Label>
-                  <Input
-                    id="gastosComunesUfM2"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="Ej: 0.05"
-                    value={gastosComunesUfM2}
-                    onChange={(e) => setGastosComunesUfM2(e.target.value)}
-                  />
-                </div>
-
-                {hasExtendedGastosComunes && (
-                  <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
-                    <div className="space-y-2">
-                      <Label htmlFor="gastosComunesUfMlFrente">Gastos Comunes (UF/mL de frente)</Label>
-                      <Input
-                        id="gastosComunesUfMlFrente"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="Ej: 0.10"
-                        value={gastosComunesUfMlFrente}
-                        onChange={(e) => setGastosComunesUfMlFrente(e.target.value)}
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="gastosComunesProrratKwhClima">Prorrata KWH Clima (UF)</Label>
-                      <Input
-                        id="gastosComunesProrratKwhClima"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="Ej: 5.00"
-                        value={gastosComunesProrratKwhClima}
-                        onChange={(e) => setGastosComunesProrratKwhClima(e.target.value)}
-                      />
-                    </div>
-
-                    {/* Adicional por Administración - inside extended gastos comunes */}
-                    <div className="space-y-2">
-                      <Label htmlFor="adicionalAdministracionPercentage">Adicional por Administración (%)</Label>
-                      <Input
-                        id="adicionalAdministracionPercentage"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="Ej: 5"
-                        value={adicionalAdministracionPercentage}
-                        onChange={(e) => setAdicionalAdministracionPercentage(e.target.value)}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Porcentaje sobre el Canon en Régimen (se suma a Gastos Comunes)
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Gastos Comunes Preview/Total */}
-                {(gastosComunesUfM2 || (hasExtendedGastosComunes && (gastosComunesUfMlFrente || gastosComunesProrratKwhClima || adicionalAdministracionPercentage))) && (
-                  <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 space-y-2">
-                    <p className="text-sm font-medium text-primary">Total Gastos Comunes Estimado:</p>
-                    {(() => {
-                      const gastosM2 = (parseFloat(gastosComunesUfM2) || 0) * superficieEdificadaLocal;
-                      // Only include extended fields if checkbox is checked
-                      const gastosMlFrente = hasExtendedGastosComunes ? (parseFloat(gastosComunesUfMlFrente) || 0) * metrosLinealesFrente : 0;
-                      const gastosKwhClima = hasExtendedGastosComunes ? (parseFloat(gastosComunesProrratKwhClima) || 0) : 0;
-                      const adicionalAdmin = hasExtendedGastosComunes ? (parseFloat(regimeRent) || 0) * ((parseFloat(adicionalAdministracionPercentage) || 0) / 100) : 0;
-                      const totalUF = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
-                      const totalCLP = totalUF * (ufValue || 0);
-                      
-                      return (
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Total:</span>
-                            <span className="font-semibold">{totalUF.toFixed(2)} UF</span>
-                          </div>
-                          {ufValue > 0 && (
-                            <div className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">Equivalente:</span>
-                              <span className="font-medium">${Math.round(totalCLP).toLocaleString("es-CL")}</span>
-                            </div>
-                          )}
-                          <div className="text-[10px] text-muted-foreground mt-2 space-y-0.5">
-                            {gastosM2 > 0 && <div>UF/m² × {superficieEdificadaLocal}m² = {gastosM2.toFixed(2)} UF</div>}
-                            {gastosMlFrente > 0 && <div>UF/mL × {metrosLinealesFrente}mL = {gastosMlFrente.toFixed(2)} UF</div>}
-                            {gastosKwhClima > 0 && <div>Prorrata KWH Clima = {gastosKwhClima.toFixed(2)} UF</div>}
-                            {adicionalAdmin > 0 && <div>Adic. Admin ({adicionalAdministracionPercentage}%) = {adicionalAdmin.toFixed(2)} UF</div>}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-              </div>
-
-              {/* Fondo de Promoción */}
-              <div className="space-y-2">
-                <Label htmlFor="fondoPromocionPercentage">Fondo de Promoción (%)</Label>
-                <Input
-                  id="fondoPromocionPercentage"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="Ej: 2.5"
-                  value={fondoPromocionPercentage}
-                  onChange={(e) => setFondoPromocionPercentage(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Porcentaje sobre el Canon en Régimen (puede ser 0)
-                </p>
-              </div>
-
-              {/* Otros Arrendamientos */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="otrosEgresosAmount">Otros Arrendamientos ({currency})</Label>
-                  {otrosEgresosDescription && (
-                    <span className="text-xs text-muted-foreground">Nota: {otrosEgresosDescription}</span>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <Input
-                    id="otrosEgresosAmount"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="Monto"
-                    value={otrosEgresosAmount}
-                    onChange={(e) => {
-                      setOtrosEgresosAmount(e.target.value);
-                      setHasUnsavedChanges(true);
-                    }}
-                    className="flex-1"
-                  />
-                  <Input
-                    id="otrosEgresosDescription"
-                    type="text"
-                    placeholder="Nota (opcional)"
-                    value={otrosEgresosDescription}
-                    onChange={(e) => {
-                      setOtrosEgresosDescription(e.target.value);
-                      setHasUnsavedChanges(true);
-                    }}
-                    className="flex-1"
-                  />
-                </div>
-              </div>
-
-              {/* Reajustes Periódicos */}
-              <div className="space-y-2">
-                <Label>¿Tiene reajustes periódicos?</Label>
-                <RadioGroup
-                  value={hasPeriodicAdjustments ? "yes" : "no"}
-                  onValueChange={(value) => setHasPeriodicAdjustments(value === "yes")}
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="no" id="periodicNo" />
-                    <Label htmlFor="periodicNo">No</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="yes" id="periodicYes" />
-                    <Label htmlFor="periodicYes">Sí</Label>
-                  </div>
-                </RadioGroup>
-              </div>
-
-              {hasPeriodicAdjustments && (
-                <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
-                  <div className="space-y-2">
-                    <Label>Tipo de reajuste</Label>
-                    <RadioGroup
-                      value={adjustmentType}
-                      onValueChange={(value: "percentage" | "fixed") => {
-                        setAdjustmentType(value);
-                        setHasUnsavedChanges(true);
-                      }}
-                      className="flex gap-4"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="percentage" id="adjPercentage" />
-                        <Label htmlFor="adjPercentage">Porcentaje (%)</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="fixed" id="adjFixed" />
-                        <Label htmlFor="adjFixed">Monto fijo ({currency})</Label>
-                      </div>
-                    </RadioGroup>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="adjustmentValue">
-                      {adjustmentType === "percentage" ? "Porcentaje de reajuste (%)" : `Monto de reajuste (${currency})`}
-                    </Label>
-                    <Input
-                      id="adjustmentValue"
-                      type="number"
-                      step={adjustmentType === "percentage" ? "0.1" : "0.01"}
-                      min="0"
-                      placeholder={adjustmentType === "percentage" ? "Ej: 10" : "Ej: 5.5"}
-                      value={adjustmentValue}
-                      onChange={(e) => {
-                        setAdjustmentValue(e.target.value);
-                        setHasUnsavedChanges(true);
-                      }}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="firstAdjustmentMonth">Mes del primer reajuste</Label>
-                    <Input
-                      id="firstAdjustmentMonth"
-                      type="number"
-                      min="1"
-                      placeholder="Ej: 60"
-                      value={firstAdjustmentMonth}
-                      onChange={(e) => {
-                        setFirstAdjustmentMonth(e.target.value);
-                        setHasUnsavedChanges(true);
-                      }}
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="adjustmentPeriodicityMonths">Periodicidad (meses)</Label>
-                    <Input
-                      id="adjustmentPeriodicityMonths"
-                      type="number"
-                      min="1"
-                      placeholder="Ej: 60"
-                      value={adjustmentPeriodicityMonths}
-                      onChange={(e) => {
-                        setAdjustmentPeriodicityMonths(e.target.value);
-                        setHasUnsavedChanges(true);
-                      }}
-                    />
-                  </div>
-
-                  {/* Preview of adjustment calculation */}
-                  {adjustmentValue && regimeRent && firstAdjustmentMonth && adjustmentPeriodicityMonths && (
-                    <div className="bg-background/50 rounded p-3 space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">Vista previa de reajustes:</p>
-                      <div className="text-xs space-y-1">
-                        {(() => {
-                          const baseRent = parseFloat(regimeRent);
-                          const adjValue = parseFloat(adjustmentValue);
-                          const firstMonth = parseInt(firstAdjustmentMonth);
-                          const periodicity = parseInt(adjustmentPeriodicityMonths);
-                          const durationMonths = parseInt(duration) || 120;
-                          const adjustments: { month: number; rent: number }[] = [];
-                          
-                          let currentRent = baseRent;
-                          let month = firstMonth;
-                          
-                          while (month <= durationMonths && adjustments.length < 5) {
-                            if (adjustmentType === "percentage") {
-                              currentRent = currentRent * (1 + adjValue / 100);
-                            } else {
-                              currentRent = currentRent + adjValue;
-                            }
-                            adjustments.push({ month, rent: currentRent });
-                            month += periodicity;
-                          }
-                          
-                          return adjustments.map((adj, idx) => (
-                            <div key={idx} className="flex justify-between">
-                              <span>Mes {adj.month}:</span>
-                              <span className="font-medium">{adj.rent.toFixed(2)} UF</span>
-                            </div>
-                          ));
-                        })()}
-                        <p className="text-muted-foreground mt-2 italic">
-                          {adjustmentType === "percentage" 
-                            ? "Los reajustes se aplican sobre la renta ya reajustada (compuesto)"
-                            : "Los reajustes se suman a la renta acumulada"}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="duration">Duración (meses) *</Label>
-                <Input
-                  id="duration"
-                  type="number"
-                  value={duration}
-                  onChange={(e) => setDuration(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Tipo de Aviso de Término *</Label>
-                <Select value={noticeType} onValueChange={(value: any) => {
-                  setNoticeType(value);
-                  setHasUnsavedChanges(true);
-                }}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="meses">Meses antes del vencimiento</SelectItem>
-                    <SelectItem value="fecha">Fecha específica</SelectItem>
-                    <SelectItem value="rangos">Rangos de meses</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Tipo de Aviso</Label>
-                <RadioGroup
-                  value={noticeBilaterality}
-                  onValueChange={(value: "unilateral_gp" | "bilateral") => {
-                    setNoticeBilaterality(value);
-                    setHasUnsavedChanges(true);
-                  }}
-                  className="flex gap-4"
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="unilateral_gp" id="unilateralGp" />
-                    <Label htmlFor="unilateralGp">Unilateral GP</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="bilateral" id="bilateral" />
-                    <Label htmlFor="bilateral">Bilateral</Label>
-                  </div>
-                </RadioGroup>
-                <p className="text-xs text-muted-foreground">
-                  Bilateral: el propietario también puede dar aviso de término
-                </p>
-              </div>
-
-              {noticeType === "meses" && (
-                <div className="space-y-2">
-                  <Label htmlFor="noticeValue">Número de Meses *</Label>
-                  <Input
-                    id="noticeValue"
-                    type="number"
-                    min="1"
-                    value={noticeValue}
-                    onChange={(e) => {
-                      setNoticeValue(e.target.value);
-                      setHasUnsavedChanges(true);
-                    }}
-                    required
-                  />
-                </div>
-              )}
-
-              {noticeType === "fecha" && (
-                <div className="space-y-2">
-                  <Label htmlFor="noticeValue">Fecha *</Label>
-                  <Input
-                    id="noticeValue"
-                    type="date"
-                    value={noticeValue}
-                    onChange={(e) => {
-                      setNoticeValue(e.target.value);
-                      setHasUnsavedChanges(true);
-                    }}
-                    required
-                  />
-                </div>
-              )}
-
-              {noticeType === "rangos" && (
-                <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
-                  <div className="flex items-center justify-between">
-                    <Label>Rangos de Aviso (meses dentro de la vigencia)</Label>
+                {canReorder && (
+                  <div className="flex items-center gap-2">
                     <Button
                       type="button"
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
-                      onClick={() => {
-                        const maxMonth = parseInt(duration) || 12;
-                        setNoticeRanges([...noticeRanges, { start_month: 1, end_month: Math.min(3, maxMonth) }]);
-                        setHasUnsavedChanges(true);
-                      }}
-                      className="gap-1"
+                      onClick={collapseAll}
+                      className="h-8 text-xs"
                     >
-                      <Plus className="h-4 w-4" />
-                      Agregar rango
+                      <ChevronsUpDown className="h-3 w-3 mr-1" />
+                      Colapsar
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={expandAll}
+                      className="h-8 text-xs"
+                    >
+                      Expandir
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={resetToDefault}
+                      className="h-8 text-xs"
+                    >
+                      <RotateCcw className="h-3 w-3 mr-1" />
+                      Reset
                     </Button>
                   </div>
-                  
-                  {noticeRanges.length === 0 && (
-                    <p className="text-sm text-muted-foreground">
-                      No hay rangos definidos. Agrega uno o más rangos de meses.
-                    </p>
-                  )}
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={commercialSections.map((s) => s.key)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="space-y-3">
+                    {commercialSections.map((section) => {
+                      const sectionContent = (() => {
+                        switch (section.key) {
+                          case "dates":
+                            return (
+                              <>
+                                <div className="flex items-center space-x-2">
+                                  <input
+                                    type="checkbox"
+                                    id="hasSeparateDates"
+                                    checked={hasSeparateDates}
+                                    onChange={(e) => {
+                                      setHasSeparateDates(e.target.checked);
+                                      setHasUnsavedChanges(true);
+                                    }}
+                                    className="h-4 w-4 rounded border-gray-300"
+                                  />
+                                  <Label htmlFor="hasSeparateDates" className="text-sm">
+                                    Fecha de firma diferente a fecha de inicio
+                                  </Label>
+                                </div>
 
-                  {noticeRanges.map((range, index) => (
-                    <div key={index} className="flex items-center gap-3 p-3 bg-background rounded-md border">
-                      <span className="text-sm font-medium">Rango {index + 1}:</span>
-                      <div className="flex items-center gap-2">
-                        <Label className="text-sm">Del mes</Label>
-                        <Input
-                          type="number"
-                          min="1"
-                          max={parseInt(duration) || 999}
-                          value={range.start_month}
-                          onChange={(e) => {
-                            const newRanges = [...noticeRanges];
-                            newRanges[index].start_month = parseInt(e.target.value) || 1;
-                            setNoticeRanges(newRanges);
-                            setHasUnsavedChanges(true);
-                          }}
-                          className="w-20"
-                        />
-                        <Label className="text-sm">al mes</Label>
-                        <Input
-                          type="number"
-                          min={range.start_month}
-                          max={parseInt(duration) || 999}
-                          value={range.end_month}
-                          onChange={(e) => {
-                            const newRanges = [...noticeRanges];
-                            newRanges[index].end_month = parseInt(e.target.value) || range.start_month;
-                            setNoticeRanges(newRanges);
-                            setHasUnsavedChanges(true);
-                          }}
-                          className="w-20"
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          const newRanges = noticeRanges.filter((_, i) => i !== index);
-                          setNoticeRanges(newRanges);
-                          setHasUnsavedChanges(true);
-                        }}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
+                                {hasSeparateDates && (
+                                  <div className="space-y-2">
+                                    <Label htmlFor="signedDate">Fecha de Firma</Label>
+                                    <Input
+                                      id="signedDate"
+                                      type="date"
+                                      value={signedDate}
+                                      onChange={(e) => {
+                                        setSignedDate(e.target.value);
+                                        setHasUnsavedChanges(true);
+                                      }}
+                                    />
+                                  </div>
+                                )}
 
-                  {duration && noticeRanges.length > 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      La duración del contrato es de {duration} meses. Los rangos deben estar dentro de este período.
-                    </p>
-                  )}
-                </div>
-              )}
+                                <div className="space-y-2">
+                                  <Label htmlFor="effectiveDate">
+                                    {hasSeparateDates ? "Fecha de Inicio" : "Fecha Firma e Inicio"}
+                                  </Label>
+                                  <Input
+                                    id="effectiveDate"
+                                    type="date"
+                                    value={effectiveDate}
+                                    onChange={(e) => setEffectiveDate(e.target.value)}
+                                  />
+                                  <p className="text-xs text-muted-foreground">
+                                    {hasSeparateDates 
+                                      ? "La fecha de inicio del contrato puede completarse más adelante"
+                                      : "Fecha de firma e inicio del contrato"}
+                                  </p>
+                                </div>
+                              </>
+                            );
+                          case "currency":
+                            return (
+                              <div className="space-y-2">
+                                <Label>Moneda para edición</Label>
+                                <Select value={currency} onValueChange={(v) => {
+                                  setCurrency(v as "UF" | "CLP");
+                                  setHasUnsavedChanges(true);
+                                }}>
+                                  <SelectTrigger className="w-32">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="UF">UF</SelectItem>
+                                    <SelectItem value="CLP">Pesos (CLP)</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <p className="text-xs text-muted-foreground">
+                                  Los valores se guardan en {currency}. La conversión a {currency === "CLP" ? "UF" : "CLP"} es solo ilustrativa.
+                                </p>
+                              </div>
+                            );
+                          case "escalation":
+                            return (
+                              <>
+                                <div className="space-y-2">
+                                  <Label>¿Tiene arriendo escalonado?</Label>
+                                  <RadioGroup
+                                    value={hasEscalation ? "yes" : "no"}
+                                    onValueChange={(value) => setHasEscalation(value === "yes")}
+                                  >
+                                    <div className="flex items-center space-x-2">
+                                      <RadioGroupItem value="no" id="no" />
+                                      <Label htmlFor="no">No</Label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                      <RadioGroupItem value="yes" id="yes" />
+                                      <Label htmlFor="yes">Sí</Label>
+                                    </div>
+                                  </RadioGroup>
+                                </div>
+
+                                {hasEscalation && (
+                                  <>
+                                    <CurrencyInput
+                                      id="initialRent"
+                                      label="Canon Inicial"
+                                      value={initialRent}
+                                      onChange={setInitialRent}
+                                      currency={currency}
+                                      onCurrencyChange={setCurrency}
+                                      required
+                                      showCurrencySelector={false}
+                                    />
+                                    
+                                    <CurrencyInput
+                                      id="regimeRent"
+                                      label="Canon en Régimen"
+                                      value={regimeRent}
+                                      onChange={setRegimeRent}
+                                      currency={currency}
+                                      onCurrencyChange={setCurrency}
+                                      required
+                                      showCurrencySelector={false}
+                                    />
+                                    
+                                    {duration && (
+                                      <div className="border border-border rounded-lg p-4 mt-4">
+                                        <RentEscalations
+                                          escalations={escalations}
+                                          onChange={setEscalations}
+                                          initialRent={parseFloat(initialRent) || 0}
+                                          regimeRent={parseFloat(regimeRent) || 0}
+                                          durationMonths={parseInt(duration) || 12}
+                                          currency={currency}
+                                          graceMonths={graceMonths}
+                                          onGraceMonthsChange={setGraceMonths}
+                                          effectiveDate={effectiveDate}
+                                          hasPeriodicAdjustments={hasPeriodicAdjustments}
+                                          adjustmentType={adjustmentType}
+                                          adjustmentValue={parseFloat(adjustmentValue) || 0}
+                                          firstAdjustmentMonth={parseInt(firstAdjustmentMonth) || 0}
+                                          adjustmentPeriodicityMonths={parseInt(adjustmentPeriodicityMonths) || 0}
+                                        />
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+
+                                {!hasEscalation && (
+                                  <CurrencyInput
+                                    id="regimeRent"
+                                    label="Canon en Régimen"
+                                    value={regimeRent}
+                                    onChange={setRegimeRent}
+                                    currency={currency}
+                                    onCurrencyChange={setCurrency}
+                                    required
+                                    showCurrencySelector={false}
+                                  />
+                                )}
+                              </>
+                            );
+                          case "variableRent":
+                            return (
+                              <div className="space-y-2">
+                                <Label htmlFor="variableRentPercentage">Arriendo Variable (%)</Label>
+                                <Input
+                                  id="variableRentPercentage"
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="Ej: 5.5"
+                                  value={variableRentPercentage}
+                                  onChange={(e) => setVariableRentPercentage(e.target.value)}
+                                />
+                              </div>
+                            );
+                          case "guarantee":
+                            return (
+                              <div className="space-y-2">
+                                <Label htmlFor="guaranteeMultiplier">Garantía (multiplicador del arriendo)</Label>
+                                <div className="flex items-center gap-4">
+                                  <Input
+                                    id="guaranteeMultiplier"
+                                    type="number"
+                                    step="0.5"
+                                    min="0"
+                                    placeholder="Ej: 2"
+                                    value={guaranteeMultiplier}
+                                    onChange={(e) => setGuaranteeMultiplier(e.target.value)}
+                                    className="w-24"
+                                  />
+                                  <span className="text-sm text-muted-foreground">×</span>
+                                  <span className="text-sm text-muted-foreground">
+                                    {regimeRent || "0"} {currency}
+                                  </span>
+                                  <span className="text-sm text-muted-foreground">=</span>
+                                  <span className="text-sm font-medium">
+                                    {guaranteeMultiplier && regimeRent
+                                      ? (parseFloat(guaranteeMultiplier) * parseFloat(regimeRent)).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                      : "0"} {currency}
+                                  </span>
+                                </div>
+                                {currency === "CLP" && ufValue > 0 && guaranteeMultiplier && regimeRent && (
+                                  <p className="text-xs text-muted-foreground">
+                                    ≈ {(parseFloat(guaranteeMultiplier) * convertPesosToUF(parseFloat(regimeRent))).toFixed(2)} UF
+                                  </p>
+                                )}
+                                {currency === "UF" && ufValue > 0 && guaranteeMultiplier && regimeRent && (
+                                  <p className="text-xs text-muted-foreground">
+                                    ≈ ${Math.round(parseFloat(guaranteeMultiplier) * parseFloat(regimeRent) * ufValue).toLocaleString("es-CL")}
+                                  </p>
+                                )}
+                                <p className="text-xs text-muted-foreground">
+                                  Monto de Garantía de Arriendo
+                                </p>
+                              </div>
+                            );
+                          case "gastosComunes":
+                            return (
+                              <div className="space-y-4">
+                                <div className="flex items-center space-x-2">
+                                  <input
+                                    type="checkbox"
+                                    id="hasExtendedGastosComunes"
+                                    checked={hasExtendedGastosComunes}
+                                    onChange={(e) => {
+                                      setHasExtendedGastosComunes(e.target.checked);
+                                      setHasUnsavedChanges(true);
+                                    }}
+                                    className="h-4 w-4 rounded border-gray-300"
+                                  />
+                                  <Label htmlFor="hasExtendedGastosComunes" className="text-sm font-medium">
+                                    Ampliar metodología de cálculo de Gastos Comunes
+                                  </Label>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <Label htmlFor="gastosComunesUfM2">Gastos Comunes (UF/m² de superficie)</Label>
+                                  <Input
+                                    id="gastosComunesUfM2"
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    placeholder="Ej: 0.05"
+                                    value={gastosComunesUfM2}
+                                    onChange={(e) => setGastosComunesUfM2(e.target.value)}
+                                  />
+                                </div>
+
+                                {hasExtendedGastosComunes && (
+                                  <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
+                                    <div className="space-y-2">
+                                      <Label htmlFor="gastosComunesUfMlFrente">Gastos Comunes (UF/mL de frente)</Label>
+                                      <Input
+                                        id="gastosComunesUfMlFrente"
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        placeholder="Ej: 0.10"
+                                        value={gastosComunesUfMlFrente}
+                                        onChange={(e) => setGastosComunesUfMlFrente(e.target.value)}
+                                      />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                      <Label htmlFor="gastosComunesProrratKwhClima">Prorrata KWH Clima (UF)</Label>
+                                      <Input
+                                        id="gastosComunesProrratKwhClima"
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        placeholder="Ej: 5.00"
+                                        value={gastosComunesProrratKwhClima}
+                                        onChange={(e) => setGastosComunesProrratKwhClima(e.target.value)}
+                                      />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                      <Label htmlFor="adicionalAdministracionPercentage">Adicional por Administración (%)</Label>
+                                      <Input
+                                        id="adicionalAdministracionPercentage"
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        placeholder="Ej: 5"
+                                        value={adicionalAdministracionPercentage}
+                                        onChange={(e) => setAdicionalAdministracionPercentage(e.target.value)}
+                                      />
+                                      <p className="text-xs text-muted-foreground">
+                                        Porcentaje sobre el Canon en Régimen (se suma a Gastos Comunes)
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {(gastosComunesUfM2 || (hasExtendedGastosComunes && (gastosComunesUfMlFrente || gastosComunesProrratKwhClima || adicionalAdministracionPercentage))) && (
+                                  <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 space-y-2">
+                                    <p className="text-sm font-medium text-primary">Total Gastos Comunes Estimado:</p>
+                                    {(() => {
+                                      const gastosM2 = (parseFloat(gastosComunesUfM2) || 0) * superficieEdificadaLocal;
+                                      const gastosMlFrente = hasExtendedGastosComunes ? (parseFloat(gastosComunesUfMlFrente) || 0) * metrosLinealesFrente : 0;
+                                      const gastosKwhClima = hasExtendedGastosComunes ? (parseFloat(gastosComunesProrratKwhClima) || 0) : 0;
+                                      const adicionalAdmin = hasExtendedGastosComunes ? (parseFloat(regimeRent) || 0) * ((parseFloat(adicionalAdministracionPercentage) || 0) / 100) : 0;
+                                      const totalUF = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
+                                      const totalCLP = totalUF * (ufValue || 0);
+                                      
+                                      return (
+                                        <div className="space-y-1">
+                                          <div className="flex justify-between text-sm">
+                                            <span className="text-muted-foreground">Total:</span>
+                                            <span className="font-semibold">{totalUF.toFixed(2)} UF</span>
+                                          </div>
+                                          {ufValue > 0 && (
+                                            <div className="flex justify-between text-sm">
+                                              <span className="text-muted-foreground">Equivalente:</span>
+                                              <span className="font-medium">${Math.round(totalCLP).toLocaleString("es-CL")}</span>
+                                            </div>
+                                          )}
+                                          <div className="text-[10px] text-muted-foreground mt-2 space-y-0.5">
+                                            {gastosM2 > 0 && <div>UF/m² × {superficieEdificadaLocal}m² = {gastosM2.toFixed(2)} UF</div>}
+                                            {gastosMlFrente > 0 && <div>UF/mL × {metrosLinealesFrente}mL = {gastosMlFrente.toFixed(2)} UF</div>}
+                                            {gastosKwhClima > 0 && <div>Prorrata KWH Clima = {gastosKwhClima.toFixed(2)} UF</div>}
+                                            {adicionalAdmin > 0 && <div>Adic. Admin ({adicionalAdministracionPercentage}%) = {adicionalAdmin.toFixed(2)} UF</div>}
+                                          </div>
+                                        </div>
+                                      );
+                                    })()}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          case "fondoPromocion":
+                            return (
+                              <div className="space-y-2">
+                                <Label htmlFor="fondoPromocionPercentage">Fondo de Promoción (%)</Label>
+                                <Input
+                                  id="fondoPromocionPercentage"
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  placeholder="Ej: 2.5"
+                                  value={fondoPromocionPercentage}
+                                  onChange={(e) => setFondoPromocionPercentage(e.target.value)}
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                  Porcentaje sobre el Canon en Régimen (puede ser 0)
+                                </p>
+                              </div>
+                            );
+                          case "otrosArrendamientos":
+                            return (
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <Label htmlFor="otrosEgresosAmount">Otros Arrendamientos ({currency})</Label>
+                                  {otrosEgresosDescription && (
+                                    <span className="text-xs text-muted-foreground">Nota: {otrosEgresosDescription}</span>
+                                  )}
+                                </div>
+                                <div className="flex gap-2">
+                                  <Input
+                                    id="otrosEgresosAmount"
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    placeholder="Monto"
+                                    value={otrosEgresosAmount}
+                                    onChange={(e) => {
+                                      setOtrosEgresosAmount(e.target.value);
+                                      setHasUnsavedChanges(true);
+                                    }}
+                                    className="flex-1"
+                                  />
+                                  <Input
+                                    id="otrosEgresosDescription"
+                                    type="text"
+                                    placeholder="Nota (opcional)"
+                                    value={otrosEgresosDescription}
+                                    onChange={(e) => {
+                                      setOtrosEgresosDescription(e.target.value);
+                                      setHasUnsavedChanges(true);
+                                    }}
+                                    className="flex-1"
+                                  />
+                                </div>
+                              </div>
+                            );
+                          case "periodicAdjustments":
+                            return (
+                              <>
+                                <div className="space-y-2">
+                                  <Label>¿Tiene reajustes periódicos?</Label>
+                                  <RadioGroup
+                                    value={hasPeriodicAdjustments ? "yes" : "no"}
+                                    onValueChange={(value) => setHasPeriodicAdjustments(value === "yes")}
+                                  >
+                                    <div className="flex items-center space-x-2">
+                                      <RadioGroupItem value="no" id="periodicNo" />
+                                      <Label htmlFor="periodicNo">No</Label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                      <RadioGroupItem value="yes" id="periodicYes" />
+                                      <Label htmlFor="periodicYes">Sí</Label>
+                                    </div>
+                                  </RadioGroup>
+                                </div>
+
+                                {hasPeriodicAdjustments && (
+                                  <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
+                                    <div className="space-y-2">
+                                      <Label>Tipo de reajuste</Label>
+                                      <RadioGroup
+                                        value={adjustmentType}
+                                        onValueChange={(value: "percentage" | "fixed") => {
+                                          setAdjustmentType(value);
+                                          setHasUnsavedChanges(true);
+                                        }}
+                                        className="flex gap-4"
+                                      >
+                                        <div className="flex items-center space-x-2">
+                                          <RadioGroupItem value="percentage" id="adjPercentage" />
+                                          <Label htmlFor="adjPercentage">Porcentaje (%)</Label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                          <RadioGroupItem value="fixed" id="adjFixed" />
+                                          <Label htmlFor="adjFixed">Monto fijo ({currency})</Label>
+                                        </div>
+                                      </RadioGroup>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                      <Label htmlFor="adjustmentValue">
+                                        {adjustmentType === "percentage" ? "Porcentaje de reajuste (%)" : `Monto de reajuste (${currency})`}
+                                      </Label>
+                                      <Input
+                                        id="adjustmentValue"
+                                        type="number"
+                                        step={adjustmentType === "percentage" ? "0.1" : "0.01"}
+                                        min="0"
+                                        placeholder={adjustmentType === "percentage" ? "Ej: 10" : "Ej: 5.5"}
+                                        value={adjustmentValue}
+                                        onChange={(e) => {
+                                          setAdjustmentValue(e.target.value);
+                                          setHasUnsavedChanges(true);
+                                        }}
+                                      />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                      <Label htmlFor="firstAdjustmentMonth">Mes del primer reajuste</Label>
+                                      <Input
+                                        id="firstAdjustmentMonth"
+                                        type="number"
+                                        min="1"
+                                        placeholder="Ej: 60"
+                                        value={firstAdjustmentMonth}
+                                        onChange={(e) => {
+                                          setFirstAdjustmentMonth(e.target.value);
+                                          setHasUnsavedChanges(true);
+                                        }}
+                                      />
+                                    </div>
+                                    
+                                    <div className="space-y-2">
+                                      <Label htmlFor="adjustmentPeriodicityMonths">Periodicidad (meses)</Label>
+                                      <Input
+                                        id="adjustmentPeriodicityMonths"
+                                        type="number"
+                                        min="1"
+                                        placeholder="Ej: 60"
+                                        value={adjustmentPeriodicityMonths}
+                                        onChange={(e) => {
+                                          setAdjustmentPeriodicityMonths(e.target.value);
+                                          setHasUnsavedChanges(true);
+                                        }}
+                                      />
+                                    </div>
+
+                                    {adjustmentValue && regimeRent && firstAdjustmentMonth && adjustmentPeriodicityMonths && (
+                                      <div className="bg-background/50 rounded p-3 space-y-2">
+                                        <p className="text-xs font-medium text-muted-foreground">Vista previa de reajustes:</p>
+                                        <div className="text-xs space-y-1">
+                                          {(() => {
+                                            const baseRent = parseFloat(regimeRent);
+                                            const adjValue = parseFloat(adjustmentValue);
+                                            const firstMonth = parseInt(firstAdjustmentMonth);
+                                            const periodicity = parseInt(adjustmentPeriodicityMonths);
+                                            const durationMonths = parseInt(duration) || 120;
+                                            const adjustments: { month: number; rent: number }[] = [];
+                                            
+                                            let currentRent = baseRent;
+                                            let month = firstMonth;
+                                            
+                                            while (month <= durationMonths && adjustments.length < 5) {
+                                              if (adjustmentType === "percentage") {
+                                                currentRent = currentRent * (1 + adjValue / 100);
+                                              } else {
+                                                currentRent = currentRent + adjValue;
+                                              }
+                                              adjustments.push({ month, rent: currentRent });
+                                              month += periodicity;
+                                            }
+                                            
+                                            return adjustments.map((adj, idx) => (
+                                              <div key={idx} className="flex justify-between">
+                                                <span>Mes {adj.month}:</span>
+                                                <span className="font-medium">{adj.rent.toFixed(2)} UF</span>
+                                              </div>
+                                            ));
+                                          })()}
+                                          <p className="text-muted-foreground mt-2 italic">
+                                            {adjustmentType === "percentage" 
+                                              ? "Los reajustes se aplican sobre la renta ya reajustada (compuesto)"
+                                              : "Los reajustes se suman a la renta acumulada"}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </>
+                            );
+                          case "duration":
+                            return (
+                              <div className="space-y-2">
+                                <Label htmlFor="duration">Duración (meses) *</Label>
+                                <Input
+                                  id="duration"
+                                  type="number"
+                                  value={duration}
+                                  onChange={(e) => setDuration(e.target.value)}
+                                  required
+                                />
+                              </div>
+                            );
+                          case "noticeType":
+                            return (
+                              <>
+                                <div className="space-y-2">
+                                  <Label>Tipo de Aviso de Término *</Label>
+                                  <Select value={noticeType} onValueChange={(value: any) => {
+                                    setNoticeType(value);
+                                    setHasUnsavedChanges(true);
+                                  }}>
+                                    <SelectTrigger>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="meses">Meses antes del vencimiento</SelectItem>
+                                      <SelectItem value="fecha">Fecha específica</SelectItem>
+                                      <SelectItem value="rangos">Rangos de meses</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <Label>Tipo de Aviso</Label>
+                                  <RadioGroup
+                                    value={noticeBilaterality}
+                                    onValueChange={(value: "unilateral_gp" | "bilateral") => {
+                                      setNoticeBilaterality(value);
+                                      setHasUnsavedChanges(true);
+                                    }}
+                                    className="flex gap-4"
+                                  >
+                                    <div className="flex items-center space-x-2">
+                                      <RadioGroupItem value="unilateral_gp" id="unilateralGp" />
+                                      <Label htmlFor="unilateralGp">Unilateral GP</Label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                      <RadioGroupItem value="bilateral" id="bilateral" />
+                                      <Label htmlFor="bilateral">Bilateral</Label>
+                                    </div>
+                                  </RadioGroup>
+                                  <p className="text-xs text-muted-foreground">
+                                    Bilateral: el propietario también puede dar aviso de término
+                                  </p>
+                                </div>
+
+                                {noticeType === "meses" && (
+                                  <div className="space-y-2">
+                                    <Label htmlFor="noticeValue">Número de Meses *</Label>
+                                    <Input
+                                      id="noticeValue"
+                                      type="number"
+                                      min="1"
+                                      value={noticeValue}
+                                      onChange={(e) => {
+                                        setNoticeValue(e.target.value);
+                                        setHasUnsavedChanges(true);
+                                      }}
+                                      required
+                                    />
+                                  </div>
+                                )}
+
+                                {noticeType === "fecha" && (
+                                  <div className="space-y-2">
+                                    <Label htmlFor="noticeValue">Fecha *</Label>
+                                    <Input
+                                      id="noticeValue"
+                                      type="date"
+                                      value={noticeValue}
+                                      onChange={(e) => {
+                                        setNoticeValue(e.target.value);
+                                        setHasUnsavedChanges(true);
+                                      }}
+                                      required
+                                    />
+                                  </div>
+                                )}
+
+                                {noticeType === "rangos" && (
+                                  <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
+                                    <div className="flex items-center justify-between">
+                                      <Label>Rangos de Aviso (meses dentro de la vigencia)</Label>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                          const maxMonth = parseInt(duration) || 12;
+                                          setNoticeRanges([...noticeRanges, { start_month: 1, end_month: Math.min(3, maxMonth) }]);
+                                          setHasUnsavedChanges(true);
+                                        }}
+                                        className="gap-1"
+                                      >
+                                        <Plus className="h-4 w-4" />
+                                        Agregar rango
+                                      </Button>
+                                    </div>
+                                    
+                                    {noticeRanges.length === 0 && (
+                                      <p className="text-sm text-muted-foreground">
+                                        No hay rangos definidos. Agrega uno o más rangos de meses.
+                                      </p>
+                                    )}
+
+                                    {noticeRanges.map((range, index) => (
+                                      <div key={index} className="flex items-center gap-3 p-3 bg-background rounded-md border">
+                                        <span className="text-sm font-medium">Rango {index + 1}:</span>
+                                        <div className="flex items-center gap-2">
+                                          <Label className="text-sm">Del mes</Label>
+                                          <Input
+                                            type="number"
+                                            min="1"
+                                            max={parseInt(duration) || 999}
+                                            value={range.start_month}
+                                            onChange={(e) => {
+                                              const newRanges = [...noticeRanges];
+                                              newRanges[index].start_month = parseInt(e.target.value) || 1;
+                                              setNoticeRanges(newRanges);
+                                              setHasUnsavedChanges(true);
+                                            }}
+                                            className="w-20"
+                                          />
+                                          <Label className="text-sm">al mes</Label>
+                                          <Input
+                                            type="number"
+                                            min={range.start_month}
+                                            max={parseInt(duration) || 999}
+                                            value={range.end_month}
+                                            onChange={(e) => {
+                                              const newRanges = [...noticeRanges];
+                                              newRanges[index].end_month = parseInt(e.target.value) || range.start_month;
+                                              setNoticeRanges(newRanges);
+                                              setHasUnsavedChanges(true);
+                                            }}
+                                            className="w-20"
+                                          />
+                                        </div>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => {
+                                            const newRanges = noticeRanges.filter((_, i) => i !== index);
+                                            setNoticeRanges(newRanges);
+                                            setHasUnsavedChanges(true);
+                                          }}
+                                        >
+                                          <X className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                    ))}
+
+                                    {duration && noticeRanges.length > 0 && (
+                                      <p className="text-xs text-muted-foreground">
+                                        La duración del contrato es de {duration} meses. Los rangos deben estar dentro de este período.
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+                              </>
+                            );
+                          default:
+                            return null;
+                        }
+                      })();
+
+                      return (
+                        <EditableSectionWrapper
+                          key={section.key}
+                          id={section.key}
+                          title={sectionTitles[section.key]}
+                          isCollapsed={isCollapsed(section.key)}
+                          onToggleCollapse={() => toggleCollapsed(section.key)}
+                          isDraggable={canReorder}
+                        >
+                          {sectionContent}
+                        </EditableSectionWrapper>
+                      );
+                    })}
+                  </div>
+                </SortableContext>
+              </DndContext>
             </CardContent>
           </Card>
 
