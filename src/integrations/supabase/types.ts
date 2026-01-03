@@ -781,7 +781,11 @@ export type Database = {
           effective_date: string | null
           first_adjustment_month: number | null
           fondo_promocion_percentage: number | null
+          gastos_comunes_methodology: string | null
+          gastos_comunes_percentage: number | null
           gastos_comunes_prorrata_kwh_clima: number | null
+          gastos_comunes_tope: number | null
+          gastos_comunes_total_centro: number | null
           gastos_comunes_uf_m2: number | null
           gastos_comunes_uf_ml_frente: number | null
           grace_months: number | null
@@ -812,7 +816,11 @@ export type Database = {
           effective_date?: string | null
           first_adjustment_month?: number | null
           fondo_promocion_percentage?: number | null
+          gastos_comunes_methodology?: string | null
+          gastos_comunes_percentage?: number | null
           gastos_comunes_prorrata_kwh_clima?: number | null
+          gastos_comunes_tope?: number | null
+          gastos_comunes_total_centro?: number | null
           gastos_comunes_uf_m2?: number | null
           gastos_comunes_uf_ml_frente?: number | null
           grace_months?: number | null
@@ -843,7 +851,11 @@ export type Database = {
           effective_date?: string | null
           first_adjustment_month?: number | null
           fondo_promocion_percentage?: number | null
+          gastos_comunes_methodology?: string | null
+          gastos_comunes_percentage?: number | null
           gastos_comunes_prorrata_kwh_clima?: number | null
+          gastos_comunes_tope?: number | null
+          gastos_comunes_total_centro?: number | null
           gastos_comunes_uf_m2?: number | null
           gastos_comunes_uf_ml_frente?: number | null
           grace_months?: number | null

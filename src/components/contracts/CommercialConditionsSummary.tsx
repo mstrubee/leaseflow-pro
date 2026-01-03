@@ -33,6 +33,10 @@ interface ContractVersion {
   gastos_comunes_uf_m2?: number | null;
   gastos_comunes_uf_ml_frente?: number | null;
   gastos_comunes_prorrata_kwh_clima?: number | null;
+  gastos_comunes_methodology?: string | null;
+  gastos_comunes_percentage?: number | null;
+  gastos_comunes_total_centro?: number | null;
+  gastos_comunes_tope?: number | null;
   fondo_promocion_percentage?: number | null;
   adicional_administracion_percentage?: number | null;
   has_extended_gastos_comunes?: boolean | null;
@@ -165,15 +169,34 @@ export function CommercialConditionsSummary({
   // Canon per m2
   const canonPerM2 = superficieEdificadaLocal && superficieEdificadaLocal > 0 ? version.regime_rent / superficieEdificadaLocal : null;
 
-  // Gastos comunes calculation - only include extended factors if flag is true
-  const hasExtended = version.has_extended_gastos_comunes ?? false;
-  const gastosM2 = version.gastos_comunes_uf_m2 && superficieEdificadaLocal ? version.gastos_comunes_uf_m2 * superficieEdificadaLocal : 0;
-  const gastosMlFrente = hasExtended && version.gastos_comunes_uf_ml_frente && metrosLinealesFrente ? version.gastos_comunes_uf_ml_frente * metrosLinealesFrente : 0;
-  const gastosKwhClima = hasExtended ? version.gastos_comunes_prorrata_kwh_clima || 0 : 0;
-
-  // Adicional por administración is part of gastos comunes when extended
-  const adicionalAdminAmount = hasExtended && version.adicional_administracion_percentage ? version.adicional_administracion_percentage / 100 * version.regime_rent : 0;
-  const gastosComunesTotalUF = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdminAmount > 0 ? gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdminAmount : null;
+  // Gastos comunes calculation - based on methodology
+  const gastosComunesMethodology = (version as any).gastos_comunes_methodology || "uf_m2";
+  
+  // Calculate gastos comunes based on methodology
+  const gastosComunesTotalUF = useMemo(() => {
+    if (gastosComunesMethodology === "percentage") {
+      // Percentage methodology
+      const totalCentro = (version as any).gastos_comunes_total_centro || 0;
+      const percentage = (version as any).gastos_comunes_percentage || 0;
+      const tope = (version as any).gastos_comunes_tope || Infinity;
+      
+      if (totalCentro && percentage) {
+        const calculatedAmount = (totalCentro * percentage) / 100;
+        return Math.min(calculatedAmount, tope);
+      }
+      return null;
+    } else {
+      // UF/m2 methodology
+      const hasExtended = version.has_extended_gastos_comunes ?? false;
+      const gastosM2 = version.gastos_comunes_uf_m2 && superficieEdificadaLocal ? version.gastos_comunes_uf_m2 * superficieEdificadaLocal : 0;
+      const gastosMlFrente = hasExtended && version.gastos_comunes_uf_ml_frente && metrosLinealesFrente ? version.gastos_comunes_uf_ml_frente * metrosLinealesFrente : 0;
+      const gastosKwhClima = hasExtended ? version.gastos_comunes_prorrata_kwh_clima || 0 : 0;
+      const adicionalAdminAmount = hasExtended && version.adicional_administracion_percentage ? version.adicional_administracion_percentage / 100 * version.regime_rent : 0;
+      
+      const total = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdminAmount;
+      return total > 0 ? total : null;
+    }
+  }, [version, superficieEdificadaLocal, metrosLinealesFrente, gastosComunesMethodology]);
 
   // Fondo de promoción calculation
   const fondoPromocionAmount = version.fondo_promocion_percentage ? version.fondo_promocion_percentage / 100 * version.regime_rent : null;
@@ -377,8 +400,11 @@ export function CommercialConditionsSummary({
               <p className="text-xs text-muted-foreground">
                 {formatSecondary(gastosComunesTotalUF)}
               </p>
-              {adicionalAdminAmount > 0 && <p className="text-[10px] text-muted-foreground">
+              {gastosComunesMethodology === "uf_m2" && version.adicional_administracion_percentage && version.adicional_administracion_percentage > 0 && <p className="text-[10px] text-muted-foreground">
                   (incl. {version.adicional_administracion_percentage}% adm.)
+                </p>}
+              {gastosComunesMethodology === "percentage" && <p className="text-[10px] text-muted-foreground">
+                  ({(version as any).gastos_comunes_percentage}% del total{(version as any).gastos_comunes_tope ? `, tope ${(version as any).gastos_comunes_tope} UF` : ""})
                 </p>}
             </div>}
 

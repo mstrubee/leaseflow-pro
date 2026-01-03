@@ -62,11 +62,15 @@ const NewContract = () => {
   
   // Gastos comunes and fondo promoción
   const [hasExtendedGastosComunes, setHasExtendedGastosComunes] = useState(false);
+  const [gastosComunesMethodology, setGastosComunesMethodology] = useState<"uf_m2" | "percentage">("uf_m2");
   const [gastosComunesUfM2, setGastosComunesUfM2] = useState("");
   const [gastosComunesUfMlFrente, setGastosComunesUfMlFrente] = useState("");
   const [gastosComunesProrratKwhClima, setGastosComunesProrratKwhClima] = useState("");
+  const [gastosComunesPercentage, setGastosComunesPercentage] = useState("");
+  const [gastosComunesTotalCentro, setGastosComunesTotalCentro] = useState("");
+  const [gastosComunesTope, setGastosComunesTope] = useState("");
   const [fondoPromocionPercentage, setFondoPromocionPercentage] = useState("");
-const [adicionalAdministracionPercentage, setAdicionalAdministracionPercentage] = useState("");
+  const [adicionalAdministracionPercentage, setAdicionalAdministracionPercentage] = useState("");
   const [otrosEgresosAmount, setOtrosEgresosAmount] = useState("");
   const [otrosEgresosDescription, setOtrosEgresosDescription] = useState("");
   
@@ -172,12 +176,16 @@ const [adicionalAdministracionPercentage, setAdicionalAdministracionPercentage] 
             adjustment_value: hasPeriodicAdjustments && adjustmentValue ? parseFloat(adjustmentValue) : null,
             first_adjustment_month: hasPeriodicAdjustments && firstAdjustmentMonth ? parseInt(firstAdjustmentMonth) : null,
             adjustment_periodicity_months: hasPeriodicAdjustments && adjustmentPeriodicityMonths ? parseInt(adjustmentPeriodicityMonths) : null,
-            gastos_comunes_uf_m2: gastosComunesUfM2 ? parseFloat(gastosComunesUfM2) : null,
-            gastos_comunes_uf_ml_frente: gastosComunesUfMlFrente ? parseFloat(gastosComunesUfMlFrente) : null,
-            gastos_comunes_prorrata_kwh_clima: gastosComunesProrratKwhClima ? parseFloat(gastosComunesProrratKwhClima) : null,
+            gastos_comunes_uf_m2: gastosComunesMethodology === "uf_m2" && gastosComunesUfM2 ? parseFloat(gastosComunesUfM2) : null,
+            gastos_comunes_uf_ml_frente: gastosComunesMethodology === "uf_m2" && gastosComunesUfMlFrente ? parseFloat(gastosComunesUfMlFrente) : null,
+            gastos_comunes_prorrata_kwh_clima: gastosComunesMethodology === "uf_m2" && gastosComunesProrratKwhClima ? parseFloat(gastosComunesProrratKwhClima) : null,
+            gastos_comunes_methodology: gastosComunesMethodology,
+            gastos_comunes_percentage: gastosComunesMethodology === "percentage" && gastosComunesPercentage ? parseFloat(gastosComunesPercentage) : null,
+            gastos_comunes_total_centro: gastosComunesMethodology === "percentage" && gastosComunesTotalCentro ? parseFloat(gastosComunesTotalCentro) : null,
+            gastos_comunes_tope: gastosComunesMethodology === "percentage" && gastosComunesTope ? parseFloat(gastosComunesTope) : null,
             fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
             adicional_administracion_percentage: adicionalAdministracionPercentage ? parseFloat(adicionalAdministracionPercentage) : null,
-            has_extended_gastos_comunes: hasExtendedGastosComunes,
+            has_extended_gastos_comunes: gastosComunesMethodology === "uf_m2" ? hasExtendedGastosComunes : false,
             grace_months: graceMonths || 0,
             otros_egresos_amount: otrosEgresosAmount ? getUFValue(otrosEgresosAmount) : null,
             otros_egresos_description: otrosEgresosDescription || null,
@@ -595,102 +603,219 @@ const [adicionalAdministracionPercentage, setAdicionalAdministracionPercentage] 
 
               {/* Gastos Comunes */}
               <div className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="hasExtendedGastosComunesNew"
-                    checked={hasExtendedGastosComunes}
-                    onChange={(e) => setHasExtendedGastosComunes(e.target.checked)}
-                    className="h-4 w-4 rounded border-gray-300"
-                  />
-                  <Label htmlFor="hasExtendedGastosComunesNew" className="text-sm font-medium">
-                    Ampliar metodología de cálculo de Gastos Comunes
-                  </Label>
-                </div>
-
+                {/* Metodología selector */}
                 <div className="space-y-2">
-                  <Label htmlFor="gastosComunesUfM2New">Gastos Comunes (UF/m² de superficie)</Label>
-                  <Input
-                    id="gastosComunesUfM2New"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="Ej: 0.05"
-                    value={gastosComunesUfM2}
-                    onChange={(e) => setGastosComunesUfM2(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Se multiplica por la Superficie Edificada Local
-                  </p>
+                  <Label className="text-sm font-medium">Metodología de Cálculo de Gastos Comunes</Label>
+                  <RadioGroup
+                    value={gastosComunesMethodology}
+                    onValueChange={(value) => setGastosComunesMethodology(value as "uf_m2" | "percentage")}
+                    className="flex flex-col gap-2"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="uf_m2" id="new_methodology_uf_m2" />
+                      <Label htmlFor="new_methodology_uf_m2" className="text-sm font-normal cursor-pointer">
+                        UF por superficie (UF/m², UF/mL, etc.)
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="percentage" id="new_methodology_percentage" />
+                      <Label htmlFor="new_methodology_percentage" className="text-sm font-normal cursor-pointer">
+                        Porcentaje del total de GGCC del centro comercial
+                      </Label>
+                    </div>
+                  </RadioGroup>
                 </div>
 
-                {hasExtendedGastosComunes && (
-                  <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
-                    <div className="space-y-2">
-                      <Label htmlFor="gastosComunesUfMlFrenteNew">Gastos Comunes (UF/mL de frente)</Label>
-                      <Input
-                        id="gastosComunesUfMlFrenteNew"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="Ej: 0.10"
-                        value={gastosComunesUfMlFrente}
-                        onChange={(e) => setGastosComunesUfMlFrente(e.target.value)}
+                {/* Metodología UF/m2 */}
+                {gastosComunesMethodology === "uf_m2" && (
+                  <>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="hasExtendedGastosComunesNew"
+                        checked={hasExtendedGastosComunes}
+                        onChange={(e) => setHasExtendedGastosComunes(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300"
                       />
-                      <p className="text-xs text-muted-foreground">
-                        Se multiplica por los Metros Lineales de Frente
-                      </p>
+                      <Label htmlFor="hasExtendedGastosComunesNew" className="text-sm font-medium">
+                        Ampliar metodología de cálculo
+                      </Label>
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="gastosComunesProrratKwhClimaNew">Prorrata KWH Clima (UF)</Label>
+                      <Label htmlFor="gastosComunesUfM2New">Gastos Comunes (UF/m² de superficie)</Label>
                       <Input
-                        id="gastosComunesProrratKwhClimaNew"
+                        id="gastosComunesUfM2New"
                         type="number"
                         step="0.01"
                         min="0"
-                        placeholder="Ej: 5.00"
-                        value={gastosComunesProrratKwhClima}
-                        onChange={(e) => setGastosComunesProrratKwhClima(e.target.value)}
+                        placeholder="Ej: 0.05"
+                        value={gastosComunesUfM2}
+                        onChange={(e) => setGastosComunesUfM2(e.target.value)}
                       />
                       <p className="text-xs text-muted-foreground">
-                        Monto fijo en UF por prorrata de consumo eléctrico de clima
+                        Se multiplica por la Superficie Edificada Local
                       </p>
                     </div>
 
-                {/* Adicional por Administración - inside extended gastos comunes */}
-                    <div className="space-y-2">
-                      <Label htmlFor="adicionalAdministracionPercentageNew">Adicional por Administración (%)</Label>
-                      <Input
-                        id="adicionalAdministracionPercentageNew"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="Ej: 5"
-                        value={adicionalAdministracionPercentage}
-                        onChange={(e) => setAdicionalAdministracionPercentage(e.target.value)}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Porcentaje sobre el Canon en Régimen (se suma a Gastos Comunes)
-                      </p>
-                    </div>
-                  </div>
+                    {hasExtendedGastosComunes && (
+                      <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
+                        <div className="space-y-2">
+                          <Label htmlFor="gastosComunesUfMlFrenteNew">Gastos Comunes (UF/mL de frente)</Label>
+                          <Input
+                            id="gastosComunesUfMlFrenteNew"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="Ej: 0.10"
+                            value={gastosComunesUfMlFrente}
+                            onChange={(e) => setGastosComunesUfMlFrente(e.target.value)}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Se multiplica por los Metros Lineales de Frente
+                          </p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="gastosComunesProrratKwhClimaNew">Prorrata KWH Clima (UF)</Label>
+                          <Input
+                            id="gastosComunesProrratKwhClimaNew"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="Ej: 5.00"
+                            value={gastosComunesProrratKwhClima}
+                            onChange={(e) => setGastosComunesProrratKwhClima(e.target.value)}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Monto fijo en UF por prorrata de consumo eléctrico de clima
+                          </p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="adicionalAdministracionPercentageNew">Adicional por Administración (%)</Label>
+                          <Input
+                            id="adicionalAdministracionPercentageNew"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="Ej: 5"
+                            value={adicionalAdministracionPercentage}
+                            onChange={(e) => setAdicionalAdministracionPercentage(e.target.value)}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Porcentaje sobre el Canon en Régimen (se suma a Gastos Comunes)
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {(gastosComunesUfM2 || (hasExtendedGastosComunes && (gastosComunesUfMlFrente || gastosComunesProrratKwhClima || adicionalAdministracionPercentage))) && (
+                      <div className="bg-muted/50 border border-border rounded-lg p-3">
+                        <p className="text-xs text-muted-foreground">
+                          💡 El total de Gastos Comunes se calculará automáticamente al ingresar las superficies del local en la vista del contrato.
+                        </p>
+                        {hasExtendedGastosComunes && (parseFloat(gastosComunesProrratKwhClima) > 0 || parseFloat(adicionalAdministracionPercentage) > 0) && (
+                          <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+                            {parseFloat(gastosComunesProrratKwhClima) > 0 && (
+                              <div>• Prorrata KWH Clima: {gastosComunesProrratKwhClima} UF (fijo)</div>
+                            )}
+                            {parseFloat(adicionalAdministracionPercentage) > 0 && regimeRent && (
+                              <div>• Adic. Admin ({adicionalAdministracionPercentage}%): {((parseFloat(regimeRent) || 0) * (parseFloat(adicionalAdministracionPercentage) / 100)).toFixed(2)} UF</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
 
-                {/* Gastos Comunes Preview Note */}
-                {(gastosComunesUfM2 || (hasExtendedGastosComunes && (gastosComunesUfMlFrente || gastosComunesProrratKwhClima || adicionalAdministracionPercentage))) && (
-                  <div className="bg-muted/50 border border-border rounded-lg p-3">
-                    <p className="text-xs text-muted-foreground">
-                      💡 El total de Gastos Comunes se calculará automáticamente al ingresar las superficies del local en la vista del contrato.
-                    </p>
-                    {hasExtendedGastosComunes && (parseFloat(gastosComunesProrratKwhClima) > 0 || parseFloat(adicionalAdministracionPercentage) > 0) && (
-                      <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
-                        {parseFloat(gastosComunesProrratKwhClima) > 0 && (
-                          <div>• Prorrata KWH Clima: {gastosComunesProrratKwhClima} UF (fijo)</div>
-                        )}
-                        {parseFloat(adicionalAdministracionPercentage) > 0 && regimeRent && (
-                          <div>• Adic. Admin ({adicionalAdministracionPercentage}%): {((parseFloat(regimeRent) || 0) * (parseFloat(adicionalAdministracionPercentage) / 100)).toFixed(2)} UF</div>
-                        )}
+                {/* Metodología Porcentaje */}
+                {gastosComunesMethodology === "percentage" && (
+                  <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
+                    <div className="space-y-2">
+                      <Label htmlFor="gastosComunesTotalCentroNew">Total GGCC del Centro Comercial (UF/mes)</Label>
+                      <Input
+                        id="gastosComunesTotalCentroNew"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="Ej: 10000"
+                        value={gastosComunesTotalCentro}
+                        onChange={(e) => setGastosComunesTotalCentro(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Monto total de gastos comunes del centro comercial
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="gastosComunesPercentageNew">Porcentaje de Participación (%)</Label>
+                      <Input
+                        id="gastosComunesPercentageNew"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        placeholder="Ej: 2.5"
+                        value={gastosComunesPercentage}
+                        onChange={(e) => setGastosComunesPercentage(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Porcentaje del total de GGCC que corresponde al local
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="gastosComunesTopeNew">Tope Máximo (UF/mes)</Label>
+                      <Input
+                        id="gastosComunesTopeNew"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="Ej: 150"
+                        value={gastosComunesTope}
+                        onChange={(e) => setGastosComunesTope(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Monto máximo a pagar por concepto de GGCC (opcional)
+                      </p>
+                    </div>
+
+                    {(gastosComunesTotalCentro && gastosComunesPercentage) && (
+                      <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
+                        <p className="text-sm font-medium text-primary">Total Gastos Comunes Estimado:</p>
+                        {(() => {
+                          const totalCentro = parseFloat(gastosComunesTotalCentro) || 0;
+                          const percentage = parseFloat(gastosComunesPercentage) || 0;
+                          const tope = parseFloat(gastosComunesTope) || Infinity;
+                          const calculatedAmount = (totalCentro * percentage) / 100;
+                          const finalAmount = Math.min(calculatedAmount, tope);
+                          const isTopApplied = calculatedAmount > tope && tope !== Infinity;
+                          
+                          return (
+                            <div className="space-y-1 mt-2">
+                              <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">Cálculo:</span>
+                                <span className="font-medium">{calculatedAmount.toFixed(2)} UF</span>
+                              </div>
+                              {isTopApplied && (
+                                <div className="flex justify-between text-sm text-amber-600">
+                                  <span>Tope aplicado:</span>
+                                  <span className="font-medium">-{(calculatedAmount - tope).toFixed(2)} UF</span>
+                                </div>
+                              )}
+                              <div className="flex justify-between text-sm border-t pt-1 mt-1">
+                                <span className="text-muted-foreground font-medium">Total:</span>
+                                <span className="font-semibold">{finalAmount.toFixed(2)} UF</span>
+                              </div>
+                              <div className="text-[10px] text-muted-foreground mt-2">
+                                {totalCentro.toLocaleString("es-CL")} UF × {percentage}% = {calculatedAmount.toFixed(2)} UF
+                                {isTopApplied && <span className="text-amber-600 ml-2">(tope: {tope.toFixed(2)} UF)</span>}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
