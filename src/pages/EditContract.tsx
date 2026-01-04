@@ -1328,10 +1328,18 @@ const EditContract = () => {
                                         {(() => {
                                           const totalCentro = parseFloat(gastosComunesTotalCentro) || 0;
                                           const percentage = parseFloat(gastosComunesPercentage) || 0;
-                                          const tope = parseFloat(gastosComunesTope) || Infinity;
+                                          const topeValue = parseFloat(gastosComunesTope) || 0;
+                                          const superficie = parseFloat(String(superficieEdificadaLocal)) || 0;
+                                          
+                                          // Calculate effective cap based on type
+                                          const effectiveTope = gastosComunesTopeType === "uf_m2" && superficie > 0
+                                            ? topeValue * superficie
+                                            : topeValue;
+                                          
                                           const calculatedAmount = (totalCentro * percentage) / 100;
-                                          const finalAmount = Math.min(calculatedAmount, tope);
-                                          const isTopApplied = calculatedAmount > tope && tope !== Infinity;
+                                          const hasValidTope = topeValue > 0 && (gastosComunesTopeType === "fixed" || superficie > 0);
+                                          const finalAmount = hasValidTope ? Math.min(calculatedAmount, effectiveTope) : calculatedAmount;
+                                          const isTopApplied = hasValidTope && calculatedAmount > effectiveTope;
                                           const totalCLP = finalAmount * (ufValue || 0);
                                           
                                           return (
@@ -1343,7 +1351,7 @@ const EditContract = () => {
                                               {isTopApplied && (
                                                 <div className="flex justify-between text-sm text-amber-600">
                                                   <span>Tope aplicado:</span>
-                                                  <span className="font-medium">-{(calculatedAmount - tope).toFixed(2)} UF</span>
+                                                  <span className="font-medium">-{(calculatedAmount - effectiveTope).toFixed(2)} UF</span>
                                                 </div>
                                               )}
                                               <div className="flex justify-between text-sm border-t pt-1 mt-1">
@@ -1358,7 +1366,13 @@ const EditContract = () => {
                                               )}
                                               <div className="text-[10px] text-muted-foreground mt-2 space-y-0.5">
                                                 <div>{totalCentro.toLocaleString("es-CL")} UF × {percentage}% = {calculatedAmount.toFixed(2)} UF</div>
-                                                {isTopApplied && <div className="text-amber-600">Tope máximo: {tope.toFixed(2)} UF</div>}
+                                                {isTopApplied && (
+                                                  <div className="text-amber-600">
+                                                    Tope máximo: {gastosComunesTopeType === "uf_m2" 
+                                                      ? `${superficie.toFixed(0)} m² × ${topeValue} UF/m² = ${effectiveTope.toFixed(2)} UF`
+                                                      : `${effectiveTope.toFixed(2)} UF`}
+                                                  </div>
+                                                )}
                                               </div>
                                             </div>
                                           );
