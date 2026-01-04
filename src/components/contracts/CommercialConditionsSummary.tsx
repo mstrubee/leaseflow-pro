@@ -37,6 +37,7 @@ interface ContractVersion {
   gastos_comunes_percentage?: number | null;
   gastos_comunes_total_centro?: number | null;
   gastos_comunes_tope?: number | null;
+  gastos_comunes_tope_type?: string | null;
   fondo_promocion_percentage?: number | null;
   adicional_administracion_percentage?: number | null;
   has_extended_gastos_comunes?: boolean | null;
@@ -178,11 +179,17 @@ export function CommercialConditionsSummary({
       // Percentage methodology
       const totalCentro = (version as any).gastos_comunes_total_centro || 0;
       const percentage = (version as any).gastos_comunes_percentage || 0;
-      const tope = (version as any).gastos_comunes_tope || Infinity;
+      const topeValue = (version as any).gastos_comunes_tope || Infinity;
+      const topeType = (version as any).gastos_comunes_tope_type || "fixed";
+      
+      // Calculate effective cap based on type
+      const effectiveTope = topeType === "uf_m2" && superficieEdificadaLocal 
+        ? topeValue * superficieEdificadaLocal 
+        : topeValue;
       
       if (totalCentro && percentage) {
         const calculatedAmount = (totalCentro * percentage) / 100;
-        return Math.min(calculatedAmount, tope);
+        return Math.min(calculatedAmount, effectiveTope);
       }
       return null;
     } else {
@@ -404,7 +411,7 @@ export function CommercialConditionsSummary({
                   (incl. {version.adicional_administracion_percentage}% adm.)
                 </p>}
               {gastosComunesMethodology === "percentage" && <p className="text-[10px] text-muted-foreground">
-                  ({(version as any).gastos_comunes_percentage}% del total{(version as any).gastos_comunes_tope ? `, tope ${(version as any).gastos_comunes_tope} UF` : ""})
+                  ({(version as any).gastos_comunes_percentage}% del total{(version as any).gastos_comunes_tope ? `, tope ${(version as any).gastos_comunes_tope} ${(version as any).gastos_comunes_tope_type === "uf_m2" ? "UF/m²" : "UF"}` : ""})
                 </p>}
             </div>}
 

@@ -785,6 +785,7 @@ export type Database = {
           gastos_comunes_percentage: number | null
           gastos_comunes_prorrata_kwh_clima: number | null
           gastos_comunes_tope: number | null
+          gastos_comunes_tope_type: string | null
           gastos_comunes_total_centro: number | null
           gastos_comunes_uf_m2: number | null
           gastos_comunes_uf_ml_frente: number | null
@@ -820,6 +821,7 @@ export type Database = {
           gastos_comunes_percentage?: number | null
           gastos_comunes_prorrata_kwh_clima?: number | null
           gastos_comunes_tope?: number | null
+          gastos_comunes_tope_type?: string | null
           gastos_comunes_total_centro?: number | null
           gastos_comunes_uf_m2?: number | null
           gastos_comunes_uf_ml_frente?: number | null
@@ -855,6 +857,7 @@ export type Database = {
           gastos_comunes_percentage?: number | null
           gastos_comunes_prorrata_kwh_clima?: number | null
           gastos_comunes_tope?: number | null
+          gastos_comunes_tope_type?: string | null
           gastos_comunes_total_centro?: number | null
           gastos_comunes_uf_m2?: number | null
           gastos_comunes_uf_ml_frente?: number | null
