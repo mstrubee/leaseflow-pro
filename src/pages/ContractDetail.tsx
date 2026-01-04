@@ -716,18 +716,28 @@ const ContractDetail = () => {
                           has_periodic_adjustments: displayVersion.has_periodic_adjustments,
                           first_adjustment_month: displayVersion.first_adjustment_month,
                           adjustment_periodicity_months: displayVersion.adjustment_periodicity_months,
+                          adjustment_type: (displayVersion as any).adjustment_type,
+                          adjustment_value: (displayVersion as any).adjustment_value,
+
+                          // GGCC - both methodologies
+                          gastos_comunes_methodology: (displayVersion as any).gastos_comunes_methodology,
+                          gastos_comunes_percentage: (displayVersion as any).gastos_comunes_percentage,
+                          gastos_comunes_total_centro: (displayVersion as any).gastos_comunes_total_centro,
+                          gastos_comunes_tope: (displayVersion as any).gastos_comunes_tope,
+                          gastos_comunes_tope_type: (displayVersion as any).gastos_comunes_tope_type,
+
                           gastos_comunes_uf_m2: (displayVersion as any).gastos_comunes_uf_m2,
                           gastos_comunes_uf_ml_frente: (displayVersion as any).gastos_comunes_uf_ml_frente,
                           gastos_comunes_prorrata_kwh_clima: (displayVersion as any).gastos_comunes_prorrata_kwh_clima,
                           fondo_promocion_percentage: (displayVersion as any).fondo_promocion_percentage,
                           adicional_administracion_percentage: (displayVersion as any).adicional_administracion_percentage,
                           has_extended_gastos_comunes: (displayVersion as any).has_extended_gastos_comunes,
+
                           grace_months: (displayVersion as any).grace_months,
                           otros_egresos_amount: (displayVersion as any).otros_egresos_amount,
                           otros_egresos_description: (displayVersion as any).otros_egresos_description,
                           notice_bilaterality: (displayVersion as any).notice_bilaterality,
-                          adjustment_type: (displayVersion as any).adjustment_type,
-                          adjustment_value: (displayVersion as any).adjustment_value,
+
                           rent_escalations: displayVersion.rent_escalations || [],
                         }}
                         signedDate={contract.signed_date}
