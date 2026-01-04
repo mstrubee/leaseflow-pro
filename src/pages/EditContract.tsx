@@ -105,6 +105,7 @@ const EditContract = () => {
   const [gastosComunesPercentage, setGastosComunesPercentage] = useState("");
   const [gastosComunesTotalCentro, setGastosComunesTotalCentro] = useState("");
   const [gastosComunesTope, setGastosComunesTope] = useState("");
+  const [gastosComunesTopeType, setGastosComunesTopeType] = useState<"fixed" | "uf_m2">("fixed");
   const [fondoPromocionPercentage, setFondoPromocionPercentage] = useState("");
   const [adicionalAdministracionPercentage, setAdicionalAdministracionPercentage] = useState("");
   const [otrosEgresosAmount, setOtrosEgresosAmount] = useState("");
@@ -279,6 +280,7 @@ const EditContract = () => {
         setGastosComunesPercentage((version as any).gastos_comunes_percentage?.toString() || "");
         setGastosComunesTotalCentro((version as any).gastos_comunes_total_centro?.toString() || "");
         setGastosComunesTope((version as any).gastos_comunes_tope?.toString() || "");
+        setGastosComunesTopeType((version as any).gastos_comunes_tope_type || "fixed");
         
         // Load notice bilaterality
         setNoticeBilaterality((version as any).notice_bilaterality || "unilateral_gp");
@@ -403,6 +405,7 @@ const EditContract = () => {
             gastos_comunes_percentage: gastosComunesMethodology === "percentage" && gastosComunesPercentage ? parseFloat(gastosComunesPercentage) : null,
             gastos_comunes_total_centro: gastosComunesMethodology === "percentage" && gastosComunesTotalCentro ? parseFloat(gastosComunesTotalCentro) : null,
             gastos_comunes_tope: gastosComunesMethodology === "percentage" && gastosComunesTope ? parseFloat(gastosComunesTope) : null,
+            gastos_comunes_tope_type: gastosComunesMethodology === "percentage" ? gastosComunesTopeType : null,
             fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
             adicional_administracion_percentage: adicionalAdministracionPercentage ? parseFloat(adicionalAdministracionPercentage) : null,
             has_extended_gastos_comunes: gastosComunesMethodology === "uf_m2" ? hasExtendedGastosComunes : false,
@@ -442,6 +445,7 @@ const EditContract = () => {
             gastos_comunes_percentage: gastosComunesMethodology === "percentage" && gastosComunesPercentage ? parseFloat(gastosComunesPercentage) : null,
             gastos_comunes_total_centro: gastosComunesMethodology === "percentage" && gastosComunesTotalCentro ? parseFloat(gastosComunesTotalCentro) : null,
             gastos_comunes_tope: gastosComunesMethodology === "percentage" && gastosComunesTope ? parseFloat(gastosComunesTope) : null,
+            gastos_comunes_tope_type: gastosComunesMethodology === "percentage" ? gastosComunesTopeType : null,
             fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
             adicional_administracion_percentage: adicionalAdministracionPercentage ? parseFloat(adicionalAdministracionPercentage) : null,
             has_extended_gastos_comunes: gastosComunesMethodology === "uf_m2" ? hasExtendedGastosComunes : false,
@@ -1276,14 +1280,35 @@ const EditContract = () => {
                                       </p>
                                     </div>
 
-                                    <div className="space-y-2">
-                                      <Label htmlFor="gastosComunesTope">Tope Máximo (UF/mes)</Label>
+                                    <div className="space-y-3">
+                                      <Label className="text-sm font-medium">Tope Máximo (opcional)</Label>
+                                      <RadioGroup
+                                        value={gastosComunesTopeType}
+                                        onValueChange={(value) => {
+                                          setGastosComunesTopeType(value as "fixed" | "uf_m2");
+                                          setHasUnsavedChanges(true);
+                                        }}
+                                        className="flex flex-col gap-2"
+                                      >
+                                        <div className="flex items-center space-x-2">
+                                          <RadioGroupItem value="fixed" id="tope_fixed" />
+                                          <Label htmlFor="tope_fixed" className="text-sm font-normal cursor-pointer">
+                                            Monto fijo (UF/mes)
+                                          </Label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                          <RadioGroupItem value="uf_m2" id="tope_uf_m2" />
+                                          <Label htmlFor="tope_uf_m2" className="text-sm font-normal cursor-pointer">
+                                            Por superficie (UF/m²)
+                                          </Label>
+                                        </div>
+                                      </RadioGroup>
                                       <Input
                                         id="gastosComunesTope"
                                         type="number"
                                         step="0.01"
                                         min="0"
-                                        placeholder="Ej: 150"
+                                        placeholder={gastosComunesTopeType === "fixed" ? "Ej: 150 UF/mes" : "Ej: 0.15 UF/m²"}
                                         value={gastosComunesTope}
                                         onChange={(e) => {
                                           setGastosComunesTope(e.target.value);
@@ -1291,7 +1316,9 @@ const EditContract = () => {
                                         }}
                                       />
                                       <p className="text-xs text-muted-foreground">
-                                        Monto máximo a pagar por concepto de GGCC (opcional)
+                                        {gastosComunesTopeType === "fixed" 
+                                          ? "Monto máximo a pagar por concepto de GGCC" 
+                                          : "Monto máximo por m² de superficie edificada"}
                                       </p>
                                     </div>
 
