@@ -27,6 +27,11 @@ interface ContractVersion {
   gastos_comunes_uf_m2: number | null;
   gastos_comunes_uf_ml_frente?: number | null;
   gastos_comunes_prorrata_kwh_clima?: number | null;
+  gastos_comunes_methodology?: string | null;
+  gastos_comunes_percentage?: number | null;
+  gastos_comunes_total_centro?: number | null;
+  gastos_comunes_tope?: number | null;
+  gastos_comunes_tope_type?: string | null;
   fondo_promocion_percentage: number | null;
   adicional_administracion_percentage?: number | null;
   has_extended_gastos_comunes?: boolean | null;
@@ -223,13 +228,41 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                     const superficie = contract.superficie_edificada_local || 0;
                     const metrosFrente = contract.metros_lineales_frente || 0;
                     const hasExtended = currentVersion.has_extended_gastos_comunes ?? false;
+                    const methodology = currentVersion.gastos_comunes_methodology || "uf_m2";
                     
-                    // Gastos comunes: only include extended factors if flag is true
-                    const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
-                    const gastosMlFrente = hasExtended ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente : 0;
-                    const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
-                    const adicionalAdmin = hasExtended ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100) : 0;
-                    const gastosComunesTotal = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
+                    // Gastos comunes: calculate based on methodology
+                    let gastosComunesTotal = 0;
+                    
+                    if (methodology === "percentage") {
+                      // Percentage methodology
+                      const totalCentro = currentVersion.gastos_comunes_total_centro || 0;
+                      const percentage = currentVersion.gastos_comunes_percentage || 0;
+                      const topeValue = currentVersion.gastos_comunes_tope;
+                      const topeType = currentVersion.gastos_comunes_tope_type || "fixed";
+                      
+                      // Calculate base amount (Total GGCC * Percentage)
+                      const calculatedAmount = (totalCentro * percentage) / 100;
+                      
+                      // Apply cap if configured
+                      if (topeValue && topeValue > 0) {
+                        // Calculate effective cap based on type
+                        const effectiveTope = topeType === "uf_m2" && superficie > 0
+                          ? topeValue * superficie
+                          : topeValue;
+                        
+                        // Apply the cap only if calculated amount exceeds it
+                        gastosComunesTotal = Math.min(calculatedAmount, effectiveTope);
+                      } else {
+                        gastosComunesTotal = calculatedAmount;
+                      }
+                    } else {
+                      // UF/m2 methodology
+                      const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
+                      const gastosMlFrente = hasExtended ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente : 0;
+                      const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
+                      const adicionalAdmin = hasExtended ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100) : 0;
+                      gastosComunesTotal = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
+                    }
                     
                     // Fondo promoción
                     const fondoPromocionPct = currentVersion.fondo_promocion_percentage ?? 0;
@@ -244,7 +277,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                         <span className="text-sm font-medium">{formatAmount(total, contract.display_currency)}</span>
                         <div className="text-[9px] text-muted-foreground whitespace-nowrap">
                           <div>Canon: {formatAmount(currentVersion.regime_rent, contract.display_currency)}</div>
-                          <div>GC: {formatAmount(gastosComunesTotal, contract.display_currency)}</div>
+                          <div>GC: {formatAmount(gastosComunesTotal, contract.display_currency)}{methodology === "percentage" && currentVersion.gastos_comunes_tope && currentVersion.gastos_comunes_tope > 0 ? " (c/tope)" : ""}</div>
                           <div>F. Prom: {fondoPromocionPct > 0 ? formatAmount(fondoPromocion, contract.display_currency) : "-"}</div>
                           {otrosEgresos > 0 && <div>Otros: {formatAmount(otrosEgresos, contract.display_currency)}</div>}
                         </div>
