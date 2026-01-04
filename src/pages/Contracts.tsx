@@ -38,12 +38,26 @@ interface ContractVersion {
   effective_date: string | null;
   notice_type: string;
   notice_value: string;
+
+  // GGCC - UF/m2 methodology
   gastos_comunes_uf_m2: number | null;
   gastos_comunes_uf_ml_frente?: number | null;
   gastos_comunes_prorrata_kwh_clima?: number | null;
-  fondo_promocion_percentage: number | null;
   adicional_administracion_percentage?: number | null;
   has_extended_gastos_comunes?: boolean | null;
+
+  // GGCC - Percentage methodology
+  gastos_comunes_methodology?: string | null;
+  gastos_comunes_percentage?: number | null;
+  gastos_comunes_total_centro?: number | null;
+  gastos_comunes_tope?: number | null;
+  gastos_comunes_tope_type?: string | null;
+
+  // Other items
+  fondo_promocion_percentage: number | null;
+  otros_egresos_amount?: number | null;
+  otros_egresos_description?: string | null;
+
   notice_ranges?: Array<{ start_month: number; end_month: number }>;
 }
 
@@ -124,7 +138,29 @@ const Contracts = () => {
       .select(`
         *,
         contract_addresses (region, commune),
-        contract_versions (id, regime_rent, duration_months, is_current, effective_date, notice_type, notice_value, gastos_comunes_uf_m2, gastos_comunes_uf_ml_frente, gastos_comunes_prorrata_kwh_clima, fondo_promocion_percentage, adicional_administracion_percentage, has_extended_gastos_comunes, otros_egresos_amount, otros_egresos_description, notice_ranges:notice_ranges(start_month, end_month)),
+        contract_versions (
+          id,
+          regime_rent,
+          duration_months,
+          is_current,
+          effective_date,
+          notice_type,
+          notice_value,
+          gastos_comunes_methodology,
+          gastos_comunes_percentage,
+          gastos_comunes_total_centro,
+          gastos_comunes_tope,
+          gastos_comunes_tope_type,
+          gastos_comunes_uf_m2,
+          gastos_comunes_uf_ml_frente,
+          gastos_comunes_prorrata_kwh_clima,
+          fondo_promocion_percentage,
+          adicional_administracion_percentage,
+          has_extended_gastos_comunes,
+          otros_egresos_amount,
+          otros_egresos_description,
+          notice_ranges:notice_ranges(start_month, end_month)
+        ),
         termination_notices (id, notice_type, notice_date, document_url)
       `)
       .is("deleted_at", null)
@@ -251,14 +287,42 @@ const Contracts = () => {
         const currentVersion = contract.contract_versions?.find((v) => v.is_current);
         if (!currentVersion) return false;
         const superficie = contract.superficie_edificada_local || 0;
+        const metrosFrente = contract.metros_lineales_frente || 0;
         const hasExtended = currentVersion.has_extended_gastos_comunes ?? false;
-        const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
-        const gastosMlFrente = hasExtended ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * (contract.metros_lineales_frente || 0) : 0;
-        const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
-        const adicionalAdmin = hasExtended ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100) : 0;
-        const gastosComunes = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
+        const methodology = currentVersion.gastos_comunes_methodology || "uf_m2";
+
+        let gastosComunes = 0;
+
+        if (methodology === "percentage") {
+          const totalCentro = currentVersion.gastos_comunes_total_centro || 0;
+          const percentage = currentVersion.gastos_comunes_percentage || 0;
+          const topeValue = currentVersion.gastos_comunes_tope;
+          const topeType = currentVersion.gastos_comunes_tope_type || "fixed";
+
+          const calculatedAmount = (totalCentro * percentage) / 100;
+
+          if (topeValue && topeValue > 0) {
+            const effectiveTope = topeType === "uf_m2" && superficie > 0 ? topeValue * superficie : topeValue;
+            gastosComunes = Math.min(calculatedAmount, effectiveTope);
+          } else {
+            gastosComunes = calculatedAmount;
+          }
+        } else {
+          const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
+          const gastosMlFrente = hasExtended
+            ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente
+            : 0;
+          const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
+          const adicionalAdmin = hasExtended
+            ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100)
+            : 0;
+
+          gastosComunes = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
+        }
+
         const fondoPromocion = currentVersion.regime_rent * ((currentVersion.fondo_promocion_percentage || 0) / 100);
-        const total = currentVersion.regime_rent + gastosComunes + fondoPromocion;
+        const otrosEgresos = currentVersion.otros_egresos_amount || 0;
+        const total = currentVersion.regime_rent + gastosComunes + fondoPromocion + otrosEgresos;
         
         switch (costoArriendoFilter) {
           case "0-500": return total <= 500;
