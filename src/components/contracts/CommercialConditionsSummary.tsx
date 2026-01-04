@@ -171,27 +171,34 @@ export function CommercialConditionsSummary({
   const canonPerM2 = superficieEdificadaLocal && superficieEdificadaLocal > 0 ? version.regime_rent / superficieEdificadaLocal : null;
 
   // Gastos comunes calculation - based on methodology
-  const gastosComunesMethodology = (version as any).gastos_comunes_methodology || "uf_m2";
+  const gastosComunesMethodology = version.gastos_comunes_methodology || "uf_m2";
   
   // Calculate gastos comunes based on methodology
   const gastosComunesTotalUF = useMemo(() => {
-    if (gastosComunesMethodology === "percentage") {
+    const methodology = version.gastos_comunes_methodology || "uf_m2";
+    
+    if (methodology === "percentage") {
       // Percentage methodology
-      const totalCentro = (version as any).gastos_comunes_total_centro || 0;
-      const percentage = (version as any).gastos_comunes_percentage || 0;
-      const topeValue = (version as any).gastos_comunes_tope || Infinity;
-      const topeType = (version as any).gastos_comunes_tope_type || "fixed";
+      const totalCentro = version.gastos_comunes_total_centro || 0;
+      const percentage = version.gastos_comunes_percentage || 0;
+      const topeValue = version.gastos_comunes_tope;
+      const topeType = version.gastos_comunes_tope_type || "fixed";
       
-      // Calculate effective cap based on type
-      const effectiveTope = topeType === "uf_m2" && superficieEdificadaLocal 
-        ? topeValue * superficieEdificadaLocal 
-        : topeValue;
+      // Calculate base amount (Total GGCC * Percentage)
+      const calculatedAmount = (totalCentro * percentage) / 100;
       
-      if (totalCentro && percentage) {
-        const calculatedAmount = (totalCentro * percentage) / 100;
+      // Apply cap if configured
+      if (topeValue && topeValue > 0 && superficieEdificadaLocal) {
+        // Calculate effective cap based on type
+        const effectiveTope = topeType === "uf_m2"
+          ? topeValue * superficieEdificadaLocal
+          : topeValue;
+        
+        // Apply the cap only if calculated amount exceeds it
         return Math.min(calculatedAmount, effectiveTope);
       }
-      return null;
+      
+      return calculatedAmount > 0 ? calculatedAmount : null;
     } else {
       // UF/m2 methodology
       const hasExtended = version.has_extended_gastos_comunes ?? false;
@@ -203,7 +210,7 @@ export function CommercialConditionsSummary({
       const total = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdminAmount;
       return total > 0 ? total : null;
     }
-  }, [version, superficieEdificadaLocal, metrosLinealesFrente, gastosComunesMethodology]);
+  }, [version, superficieEdificadaLocal, metrosLinealesFrente]);
 
   // Fondo de promoción calculation
   const fondoPromocionAmount = version.fondo_promocion_percentage ? version.fondo_promocion_percentage / 100 * version.regime_rent : null;
