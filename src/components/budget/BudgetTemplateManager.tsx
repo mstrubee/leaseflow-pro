@@ -261,11 +261,30 @@ export const BudgetTemplateManager = () => {
     if (!selectedTemplate) return;
 
     try {
+      // Get max display_order among siblings to add at the end
+      let query = supabase
+        .from("budget_template_lines")
+        .select("display_order")
+        .eq("template_id", selectedTemplate.id);
+
+      if (parentId === null) {
+        query = query.is("parent_id", null);
+      } else {
+        query = query.eq("parent_id", parentId);
+      }
+
+      const { data: siblings } = await query
+        .order("display_order", { ascending: false })
+        .limit(1);
+
+      const maxOrder = siblings && siblings.length > 0 ? (siblings[0].display_order || 0) : 0;
+
       const { error } = await supabase.from("budget_template_lines").insert({
         template_id: selectedTemplate.id,
         parent_id: parentId,
         name: "Nueva línea",
         default_amount_uf: 0,
+        display_order: maxOrder + 1,
       });
 
       if (error) throw error;
