@@ -24,6 +24,7 @@ export interface BudgetLine {
   template_line_id?: string | null;
   supplier_id?: string | null;
   supplier_name?: string | null;
+  category_id?: string | null;
   children?: BudgetLine[];
 }
 interface BudgetLineTreeProps {
@@ -36,6 +37,7 @@ interface BudgetLineTreeProps {
   onViewLineDetails?: (budgetLineId: string, lineName: string) => void;
   level?: number;
   readOnly?: boolean;
+  parentCategoryId?: string | null;
 }
 export const BudgetLineTree = ({
   lines,
@@ -46,10 +48,23 @@ export const BudgetLineTree = ({
   onCreateInvoice,
   onViewLineDetails,
   level = 0,
-  readOnly = false
+  readOnly = false,
+  parentCategoryId = null
 }: BudgetLineTreeProps) => {
   return <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
-      {lines.map(line => <BudgetLineItem key={line.id} line={line} level={level} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} />)}
+      {lines.map(line => <BudgetLineItem 
+        key={line.id} 
+        line={line} 
+        level={level} 
+        onAddLine={onAddLine} 
+        onUpdateLine={onUpdateLine} 
+        onDeleteLine={onDeleteLine} 
+        onCreateOC={onCreateOC} 
+        onCreateInvoice={onCreateInvoice} 
+        onViewLineDetails={onViewLineDetails} 
+        readOnly={readOnly}
+        parentCategoryId={line.category_id || parentCategoryId}
+      />)}
       {level === 0 && !readOnly && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
           Agregar línea madre
@@ -66,6 +81,7 @@ interface BudgetLineItemProps {
   onCreateInvoice?: (budgetLineId: string, lineName: string) => void;
   onViewLineDetails?: (budgetLineId: string, lineName: string) => void;
   readOnly?: boolean;
+  parentCategoryId?: string | null;
 }
 const BudgetLineItem = ({
   line,
@@ -76,7 +92,8 @@ const BudgetLineItem = ({
   onCreateOC,
   onCreateInvoice,
   onViewLineDetails,
-  readOnly = false
+  readOnly = false,
+  parentCategoryId = null
 }: BudgetLineItemProps) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isEditingQuantity, setIsEditingQuantity] = useState(false);
@@ -426,6 +443,7 @@ const BudgetLineItem = ({
               value={line.supplier_id || null}
               onChange={handleSupplierChange}
               templateLineId={line.template_line_id}
+              categoryId={line.category_id || parentCategoryId}
               disabled={readOnly}
             />
           )}
@@ -488,7 +506,7 @@ const BudgetLineItem = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} parentCategoryId={line.category_id || parentCategoryId} />}
     </div>;
 };
 

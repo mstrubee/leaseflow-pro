@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { CategorySelect } from "@/components/suppliers/CategorySelect";
 import {
   DndContext,
   closestCenter,
@@ -37,7 +38,13 @@ export interface TemplateLine {
   unit_type?: string;
   currency?: string;
   supplier_name?: string;
+  category_id?: string | null;
   children?: TemplateLine[];
+}
+
+export interface SupplierCategory {
+  id: string;
+  name: string;
 }
 
 interface BudgetTemplateLineTreeProps {
@@ -722,45 +729,60 @@ const SortableTemplateLineItem = ({
           </div>
         )}
         
-        {/* Parent line with children: show multiplier and subtotal - only for level 1+ */}
-        {hasChildren && level >= 1 && (
+        {/* Parent line with children: show category selector, multiplier and subtotal */}
+        {hasChildren && (
           <>
-            <div className="flex items-center gap-2 flex-1">
-              {/* Multiplier - editable */}
-              <span className="text-xs text-muted-foreground">×</span>
-              {isEditingQuantity ? (
-                <Input
-                  type="number"
-                  value={editQuantity}
-                  onChange={(e) => setEditQuantity(e.target.value)}
-                  onBlur={handleSaveQuantity}
-                  onKeyDown={handleQuantityKeyDown}
-                  className="h-6 w-12 text-xs"
-                  autoFocus
-                  min="1"
-                />
-              ) : (
-                <span 
-                  className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[30px] text-center cursor-text hover:bg-accent/50"
-                  onDoubleClick={() => setIsEditingQuantity(true)}
-                  title="Doble clic para editar"
-                >
-                  {multiplier}
-                </span>
-              )}
-              <span className="text-xs text-muted-foreground">unidades</span>
+            {/* Category selector for parent lines */}
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-muted-foreground">Rubro:</span>
+              <CategorySelect
+                value={line.category_id}
+                onChange={(categoryId) => onUpdateLine(line.id, { category_id: categoryId })}
+                placeholder="Seleccionar"
+                size="sm"
+              />
             </div>
             
-            {/* Total with multiplier on its own line */}
-            <div className="text-xs font-mono bg-primary/10 px-2 py-0.5 rounded font-semibold pl-6">
-              = UF {parentTotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-            </div>
-            
-            {/* Subtotal Unitario on two lines */}
-            <div className="text-xs text-muted-foreground pl-6 flex flex-col">
-              <span>Subtotal Unitario:</span>
-              <span>UF {childrenSubtotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}</span>
-            </div>
+            {level >= 1 && (
+              <>
+                <div className="flex items-center gap-2 flex-1">
+                  {/* Multiplier - editable */}
+                  <span className="text-xs text-muted-foreground">×</span>
+                  {isEditingQuantity ? (
+                    <Input
+                      type="number"
+                      value={editQuantity}
+                      onChange={(e) => setEditQuantity(e.target.value)}
+                      onBlur={handleSaveQuantity}
+                      onKeyDown={handleQuantityKeyDown}
+                      className="h-6 w-12 text-xs"
+                      autoFocus
+                      min="1"
+                    />
+                  ) : (
+                    <span 
+                      className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[30px] text-center cursor-text hover:bg-accent/50"
+                      onDoubleClick={() => setIsEditingQuantity(true)}
+                      title="Doble clic para editar"
+                    >
+                      {multiplier}
+                    </span>
+                  )}
+                  <span className="text-xs text-muted-foreground">unidades</span>
+                </div>
+                
+                {/* Total with multiplier on its own line */}
+                <div className="text-xs font-mono bg-primary/10 px-2 py-0.5 rounded font-semibold pl-6">
+                  = UF {parentTotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+                </div>
+                
+                {/* Subtotal Unitario on two lines */}
+                <div className="text-xs text-muted-foreground pl-6 flex flex-col">
+                  <span>Subtotal Unitario:</span>
+                  <span>UF {childrenSubtotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}</span>
+                </div>
+              </>
+            )}
           </>
         )}
         
