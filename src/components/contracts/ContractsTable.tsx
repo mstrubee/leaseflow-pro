@@ -426,32 +426,18 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                         <div className="flex items-center gap-1.5 justify-center">
                           <div className="flex flex-col">
                             <span className="text-[9px] text-muted-foreground font-medium mb-0.5">Patente</span>
-                            <Select
-                              value={contract.patente_status || "sin_patente"}
-                              onValueChange={(value) =>
-                                onUpdateField(
-                                  { stopPropagation: () => {} } as React.MouseEvent,
-                                  contract.id,
-                                  "patente_status",
-                                  value,
-                                )
-                              }
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-6 text-[10px] px-1.5 w-[85px] justify-start font-normal"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/patents?contractId=${contract.id}`);
+                              }}
                             >
-                              <SelectTrigger className="h-6 text-[10px] px-1.5 w-[85px]">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="sin_patente" className="text-xs">
-                                  Sin Patente
-                                </SelectItem>
-                                <SelectItem value="provisoria" className="text-xs">
-                                  Provisoria
-                                </SelectItem>
-                                <SelectItem value="definitiva" className="text-xs">
-                                  Definitiva
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
+                              {contract.patente_status === "definitiva" ? "Definitiva" : 
+                               contract.patente_status === "provisoria" ? "Provisoria" : "Sin Patente"}
+                            </Button>
                           </div>
 
                           <div className="flex flex-col">

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,7 +12,9 @@ import { CriticalAlertsDashboard } from "./CriticalAlertsDashboard";
 import { PatentAdminPanel } from "./PatentAdminPanel";
 import { PatentDocStatus } from "./types";
 import { toast } from "sonner";
+
 export function PatentsModule() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     contracts,
     sections,
@@ -35,6 +38,19 @@ export function PatentsModule() {
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
   const stats = getCriticalStats();
   const selectedContract = contracts.find(c => c.id === selectedContractId);
+
+  // Handle contractId from URL params
+  useEffect(() => {
+    const contractIdFromUrl = searchParams.get('contractId');
+    if (contractIdFromUrl && contracts.length > 0) {
+      const contractExists = contracts.find(c => c.id === contractIdFromUrl);
+      if (contractExists) {
+        setSelectedContractId(contractIdFromUrl);
+        // Clear the URL param after selecting
+        setSearchParams({}, { replace: true });
+      }
+    }
+  }, [searchParams, contracts, setSearchParams]);
   const handleNavigateToDocument = (contractId: string, itemId: string) => {
     setSelectedContractId(contractId);
     setActiveTab('list');
