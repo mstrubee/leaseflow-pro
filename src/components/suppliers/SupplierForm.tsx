@@ -20,12 +20,14 @@ interface TemplateLineOption {
   id: string;
   name: string;
   template_name: string;
+  parent_name?: string;
 }
 
 export const SupplierForm = ({ supplier, onSave, onCancel }: SupplierFormProps) => {
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState<SupplierCategory[]>([]);
   const [templateLines, setTemplateLines] = useState<TemplateLineOption[]>([]);
+  const [searchProduct, setSearchProduct] = useState("");
   const [formData, setFormData] = useState<SupplierFormData>({
     name: "",
     rut: "",
@@ -62,7 +64,7 @@ export const SupplierForm = ({ supplier, onSave, onCancel }: SupplierFormProps) 
   };
 
   const loadTemplateLines = async () => {
-    // Get all template lines
+    // Get all template lines with parent info
     const { data: allLines } = await supabase
       .from("budget_template_lines")
       .select(`
@@ -74,6 +76,9 @@ export const SupplierForm = ({ supplier, onSave, onCancel }: SupplierFormProps) 
       .order("name");
     
     if (allLines) {
+      // Create a map for parent names
+      const lineMap = new Map(allLines.map(l => [l.id, l]));
+      
       // Find IDs that are parents (have children)
       const parentIds = new Set(
         allLines
@@ -84,11 +89,15 @@ export const SupplierForm = ({ supplier, onSave, onCancel }: SupplierFormProps) 
       // Filter to only leaf lines (not parents)
       const leafLines = allLines.filter(line => !parentIds.has(line.id));
       
-      setTemplateLines(leafLines.map((line: any) => ({
-        id: line.id,
-        name: line.name,
-        template_name: line.template?.name || ""
-      })));
+      setTemplateLines(leafLines.map((line: any) => {
+        const parent = line.parent_id ? lineMap.get(line.parent_id) : null;
+        return {
+          id: line.id,
+          name: line.name,
+          template_name: line.template?.name || "",
+          parent_name: parent?.name || undefined
+        };
+      }));
     }
   };
 
@@ -440,20 +449,65 @@ export const SupplierForm = ({ supplier, onSave, onCancel }: SupplierFormProps) 
         </div>
         {!formData.is_generic && (
           <div className="space-y-2">
-            <Label>Productos/Servicios asociados</Label>
+            <Label>Productos/Servicios asociados de plantillas</Label>
+            
+            {/* Selected products badges */}
+            {formData.product_ids.length > 0 && (
+              <div className="flex flex-wrap gap-1 mb-2">
+                {formData.product_ids.map(id => {
+                  const line = templateLines.find(l => l.id === id);
+                  return line ? (
+                    <Badge key={id} variant="secondary" className="gap-1">
+                      {line.name}
+                      <button type="button" onClick={() => handleProductToggle(id)}>
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ) : null;
+                })}
+              </div>
+            )}
+            
+            {/* Search input */}
+            <Input
+              type="text"
+              value={searchProduct}
+              onChange={e => setSearchProduct(e.target.value)}
+              placeholder="Buscar producto o servicio..."
+              className="mb-2"
+            />
+            
             <div className="max-h-48 overflow-y-auto border rounded-md p-2 space-y-1">
-              {templateLines.map(line => (
-                <div key={line.id} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`product-${line.id}`}
-                    checked={formData.product_ids.includes(line.id)}
-                    onCheckedChange={() => handleProductToggle(line.id)}
-                  />
-                  <Label htmlFor={`product-${line.id}`} className="text-sm font-normal">
-                    {line.name} <span className="text-muted-foreground text-xs">({line.template_name})</span>
-                  </Label>
-                </div>
-              ))}
+              {templateLines
+                .filter(line => 
+                  line.name.toLowerCase().includes(searchProduct.toLowerCase()) ||
+                  line.template_name.toLowerCase().includes(searchProduct.toLowerCase()) ||
+                  line.parent_name?.toLowerCase().includes(searchProduct.toLowerCase())
+                )
+                .map(line => (
+                  <div key={line.id} className="flex items-center space-x-2 hover:bg-muted/50 rounded px-1">
+                    <Checkbox
+                      id={`product-${line.id}`}
+                      checked={formData.product_ids.includes(line.id)}
+                      onCheckedChange={() => handleProductToggle(line.id)}
+                    />
+                    <Label htmlFor={`product-${line.id}`} className="text-sm font-normal cursor-pointer flex-1">
+                      {line.name}
+                      {line.parent_name && (
+                        <span className="text-muted-foreground text-xs ml-1">→ {line.parent_name}</span>
+                      )}
+                      <span className="text-muted-foreground text-xs ml-1">({line.template_name})</span>
+                    </Label>
+                  </div>
+                ))}
+              {templateLines.filter(line => 
+                line.name.toLowerCase().includes(searchProduct.toLowerCase()) ||
+                line.template_name.toLowerCase().includes(searchProduct.toLowerCase())
+              ).length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-2">
+                  No se encontraron productos
+                </p>
+              )}
             </div>
           </div>
         )}
