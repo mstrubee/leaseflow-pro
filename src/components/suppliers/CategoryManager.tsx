@@ -2,28 +2,22 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, CornerDownRight } from "lucide-react";
 import { toast } from "sonner";
 import { SupplierCategory } from "./types";
 import { cn } from "@/lib/utils";
 import {
   DndContext,
-  closestCenter,
-  KeyboardSensor,
+  DragOverlay,
+  useDraggable,
+  useDroppable,
   PointerSensor,
   useSensor,
   useSensors,
   DragEndEvent,
-  DragOverlay,
   DragStartEvent,
+  DragOverEvent,
 } from "@dnd-kit/core";
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 
 interface CategoryWithChildren extends SupplierCategory {
   children: CategoryWithChildren[];
@@ -48,10 +42,10 @@ export const CategoryManager = () => {
   const [addingParentId, setAddingParentId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
 
   useEffect(() => {
@@ -196,30 +190,71 @@ export const CategoryManager = () => {
     setExpandedIds(prev => new Set([...prev, parentId]));
   };
 
+  // Get all descendants of a category
+  const getDescendants = (parentId: string): string[] => {
+    const children = flatCategories.filter(c => c.parent_id === parentId);
+    return children.flatMap(c => [c.id, ...getDescendants(c.id)]);
+  };
+
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    setOverId(event.over?.id as string || null);
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
+    setOverId(null);
 
     if (!over || active.id === over.id) return;
 
     const draggedId = active.id as string;
     const targetId = over.id as string;
 
+    // Handle "root" drop zone
+    if (targetId === "root-drop-zone") {
+      const draggedCat = flatCategories.find(c => c.id === draggedId);
+      if (draggedCat && draggedCat.parent_id !== null) {
+        try {
+          const rootSiblings = flatCategories.filter(c => c.parent_id === null);
+          const maxOrder = rootSiblings.length > 0 ? Math.max(...rootSiblings.map(s => s.display_order)) : 0;
+
+          const { error } = await supabase
+            .from("supplier_categories")
+            .update({ parent_id: null, display_order: maxOrder + 1 })
+            .eq("id", draggedId);
+
+          if (error) throw error;
+          toast.success("Rubro movido al nivel raíz");
+          loadCategories();
+        } catch (error) {
+          toast.error("Error al mover rubro");
+        }
+      }
+      return;
+    }
+
     const draggedCat = flatCategories.find(c => c.id === draggedId);
     const targetCat = flatCategories.find(c => c.id === targetId);
 
     if (!draggedCat || !targetCat) return;
 
+    // Prevent dropping on self
+    if (draggedId === targetId) return;
+
     // Prevent dropping on own descendants
-    const getDescendants = (parentId: string): string[] => {
-      const children = flatCategories.filter(c => c.parent_id === parentId);
-      return children.flatMap(c => [c.id, ...getDescendants(c.id)]);
-    };
-    if (getDescendants(draggedId).includes(targetId)) return;
+    if (getDescendants(draggedId).includes(targetId)) {
+      toast.error("No puedes mover un rubro dentro de sus propios sub-rubros");
+      return;
+    }
+
+    // Prevent dropping on current parent (no change needed)
+    if (draggedCat.parent_id === targetId) {
+      return;
+    }
 
     // Reparent: make dragged item a child of target
     try {
@@ -232,59 +267,52 @@ export const CategoryManager = () => {
         .eq("id", draggedId);
 
       if (error) throw error;
-      toast.success("Rubro movido");
+      toast.success(`"${draggedCat.name}" movido dentro de "${targetCat.name}"`);
+      // Expand target so the moved item is visible
+      setExpandedIds(prev => new Set([...prev, targetId]));
       loadCategories();
     } catch (error) {
       toast.error("Error al mover rubro");
     }
   };
 
-  // Flatten for DnD
-  const flattenForDnd = (nodes: CategoryWithChildren[]): string[] => {
-    const result: string[] = [];
-    const traverse = (list: CategoryWithChildren[]) => {
-      list.forEach(node => {
-        result.push(node.id);
-        if (expandedIds.has(node.id)) traverse(node.children);
-      });
-    };
-    traverse(nodes);
-    return result;
+  const handleDragCancel = () => {
+    setActiveId(null);
+    setOverId(null);
   };
 
-  const dndIds = flattenForDnd(categories);
   const activeCat = activeId ? flatCategories.find(c => c.id === activeId) : null;
+  const overCat = overId && overId !== "root-drop-zone" ? flatCategories.find(c => c.id === overId) : null;
 
-  const SortableCategoryItem = ({ 
-    cat, 
-    level 
-  }: { 
-    cat: CategoryWithChildren; 
-    level: number;
-  }) => {
-    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id });
-    const style = { transform: CSS.Transform.toString(transform), transition };
+  // Draggable + Droppable Category Item
+  const CategoryItem = ({ cat, level }: { cat: CategoryWithChildren; level: number }) => {
+    const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({ id: cat.id });
+    const { setNodeRef: setDropRef, isOver } = useDroppable({ id: cat.id });
 
     const hasChildren = cat.children.length > 0;
     const isExpanded = expandedIds.has(cat.id);
     const isAddingHere = isAdding && addingParentId === cat.id;
     const colors = LEVEL_COLORS[Math.min(level, LEVEL_COLORS.length - 1)];
+    const isValidDropTarget = activeId && activeId !== cat.id && !getDescendants(activeId).includes(cat.id);
 
     return (
-      <div ref={setNodeRef} style={style} className={cn("space-y-1", isDragging && "opacity-30")}>
+      <div className={cn("space-y-1", isDragging && "opacity-30")}>
         <div 
+          ref={setDropRef}
           className={cn(
             "group flex items-center gap-2 p-2 rounded-lg border transition-all",
             colors.bg, colors.border,
-            !cat.is_active && "opacity-50"
+            !cat.is_active && "opacity-50",
+            isOver && isValidDropTarget && "ring-2 ring-primary ring-offset-2 bg-primary/20 scale-[1.02]"
           )}
         >
           {/* Drag handle */}
           <button
+            ref={setDragRef}
             {...attributes}
             {...listeners}
             className="p-1 rounded cursor-grab active:cursor-grabbing hover:bg-accent/50"
-            title="Arrastrar para mover"
+            title="Arrastrar para mover a otra jerarquía"
           >
             <GripVertical className="h-4 w-4 text-muted-foreground" />
           </button>
@@ -396,10 +424,34 @@ export const CategoryManager = () => {
         {hasChildren && isExpanded && (
           <div className="ml-6 border-l-2 border-border pl-2 space-y-1">
             {cat.children.map(child => (
-              <SortableCategoryItem key={child.id} cat={child} level={level + 1} />
+              <CategoryItem key={child.id} cat={child} level={level + 1} />
             ))}
           </div>
         )}
+      </div>
+    );
+  };
+
+  // Root drop zone component
+  const RootDropZone = () => {
+    const { setNodeRef, isOver } = useDroppable({ id: "root-drop-zone" });
+    
+    if (!activeId) return null;
+    
+    const draggedCat = flatCategories.find(c => c.id === activeId);
+    if (!draggedCat || draggedCat.parent_id === null) return null;
+
+    return (
+      <div
+        ref={setNodeRef}
+        className={cn(
+          "p-3 rounded-lg border-2 border-dashed transition-all text-center text-sm",
+          isOver 
+            ? "border-primary bg-primary/10 text-primary" 
+            : "border-muted-foreground/30 text-muted-foreground"
+        )}
+      >
+        Soltar aquí para convertir en rubro principal
       </div>
     );
   };
@@ -448,26 +500,37 @@ export const CategoryManager = () => {
 
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
       >
-        <SortableContext items={dndIds} strategy={verticalListSortingStrategy}>
-          <div className="space-y-2">
-            {categories.map(cat => (
-              <SortableCategoryItem key={cat.id} cat={cat} level={0} />
-            ))}
-          </div>
-        </SortableContext>
+        <div className="space-y-2">
+          {categories.map(cat => (
+            <CategoryItem key={cat.id} cat={cat} level={0} />
+          ))}
+        </div>
+
+        <RootDropZone />
 
         <DragOverlay>
           {activeCat && (
-            <div className="flex items-center gap-2 p-2 rounded-lg bg-background border-2 border-primary shadow-lg">
+            <div className="flex items-center gap-2 p-2 rounded-lg bg-background border-2 border-primary shadow-xl">
               <GripVertical className="h-4 w-4 text-primary" />
               <span className="text-sm font-medium">{activeCat.name}</span>
             </div>
           )}
         </DragOverlay>
+
+        {/* Visual feedback for drop target */}
+        {activeId && overCat && (
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50">
+            <div className="flex items-center gap-2 px-4 py-2 rounded-full shadow-lg bg-primary text-primary-foreground text-sm font-medium">
+              <CornerDownRight className="h-4 w-4" />
+              Mover dentro de "{overCat.name}"
+            </div>
+          </div>
+        )}
       </DndContext>
 
       {categories.length === 0 && !isAdding && (
