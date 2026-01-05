@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download } from "lucide-react";
+import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download, CheckSquare, Square, X } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { exportPatentsToExcel } from "./exportPatentsExcel";
 import { format, addDays, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
@@ -64,6 +65,10 @@ export function PatentChecklist({
   const [editingDoc, setEditingDoc] = useState<string | null>(null);
   const [docEdits, setDocEdits] = useState<Record<string, Partial<PatentDocument>>>({});
   
+  // Bulk selection state
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [bulkStatusDialogOpen, setBulkStatusDialogOpen] = useState(false);
+  
   // Upload and alert dialogs
   const [uploadDialog, setUploadDialog] = useState<{ itemId: string; itemName: string } | null>(null);
   const [alertDialog, setAlertDialog] = useState<{ 
@@ -75,6 +80,60 @@ export function PatentChecklist({
 
   const currentPriority = contract.contract_patents?.priority || 'priority_3';
   const currentPatenteStatus = contract.patente_status || 'sin_patente';
+
+  // Toggle item selection
+  const toggleItemSelection = (itemId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
+      } else {
+        newSet.add(itemId);
+      }
+      return newSet;
+    });
+  };
+
+  // Select all items in a section
+  const toggleSectionSelection = (sectionId: string) => {
+    const sectionItems = itemsBySection[sectionId] || [];
+    const allSelected = sectionItems.every(item => selectedItems.has(item.id));
+    
+    setSelectedItems(prev => {
+      const newSet = new Set(prev);
+      sectionItems.forEach(item => {
+        if (allSelected) {
+          newSet.delete(item.id);
+        } else {
+          newSet.add(item.id);
+        }
+      });
+      return newSet;
+    });
+  };
+
+  // Bulk status change
+  const handleBulkStatusChange = async (status: PatentDocStatus) => {
+    if (!user || selectedItems.size === 0) return;
+    
+    try {
+      const promises = Array.from(selectedItems).map(itemId => 
+        onUpdateDocumentStatus(contract.id, itemId, status, user.id)
+      );
+      await Promise.all(promises);
+      toast.success(`${selectedItems.size} documentos actualizados`);
+      setSelectedItems(new Set());
+      setBulkStatusDialogOpen(false);
+    } catch (error) {
+      toast.error("Error al actualizar documentos");
+    }
+  };
+
+  // Clear selection
+  const clearSelection = () => {
+    setSelectedItems(new Set());
+  };
 
   // Group items by section
   const itemsBySection = useMemo(() => {
@@ -320,17 +379,69 @@ export function PatentChecklist({
         </div>
       </div>
 
+      {/* Bulk actions bar */}
+      {selectedItems.size > 0 && (
+        <Card className="border-primary bg-primary/5">
+          <CardContent className="py-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">{selectedItems.size} seleccionados</Badge>
+              <Button variant="ghost" size="sm" onClick={clearSelection}>
+                <X className="h-4 w-4 mr-1" />
+                Limpiar
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Cambiar estado a:</span>
+              {statuses.map(statusItem => (
+                <Button
+                  key={statusItem.code}
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  style={{ 
+                    backgroundColor: statusItem.bg_color + '20',
+                    borderColor: statusItem.bg_color,
+                    color: statusItem.text_color
+                  }}
+                  onClick={() => handleBulkStatusChange(statusItem.code as PatentDocStatus)}
+                >
+                  {statusItem.name}
+                </Button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Checklist by sections */}
-      {sections.map(section => (
+      {sections.map(section => {
+        const sectionItems = itemsBySection[section.id] || [];
+        const allSectionSelected = sectionItems.length > 0 && sectionItems.every(item => selectedItems.has(item.id));
+        const someSectionSelected = sectionItems.some(item => selectedItems.has(item.id));
+        
+        return (
         <Card key={section.id}>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-lg">{section.name}</CardTitle>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => toggleSectionSelection(section.id)}
+              className="gap-1"
+            >
+              {allSectionSelected ? (
+                <><CheckSquare className="h-4 w-4" /> Deseleccionar</>
+              ) : (
+                <><Square className="h-4 w-4" /> Seleccionar todos</>
+              )}
+            </Button>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <Table className="min-w-[1400px]">
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-[40px]"></TableHead>
                     <TableHead className="min-w-[200px]">Documento</TableHead>
                     <TableHead className="min-w-[120px]">Estado</TableHead>
                     <TableHead className="min-w-[150px]">Emisor</TableHead>
@@ -357,8 +468,20 @@ export function PatentChecklist({
                     const disableOtherFields = isNoAplica || isOk;
                     const disabledCellClass = "opacity-40 pointer-events-none";
 
+                    const isSelected = selectedItems.has(item.id);
+
                     return (
-                      <TableRow key={item.id} onClick={() => setEditingDoc(item.id)}>
+                      <TableRow 
+                        key={item.id} 
+                        onClick={() => setEditingDoc(item.id)}
+                        className={isSelected ? "bg-primary/5" : ""}
+                      >
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Checkbox 
+                            checked={isSelected}
+                            onCheckedChange={() => toggleItemSelection(item.id, { stopPropagation: () => {} } as React.MouseEvent)}
+                          />
+                        </TableCell>
                         <TableCell className="font-medium">{item.name}</TableCell>
                         <TableCell>
                           <Select 
@@ -537,7 +660,8 @@ export function PatentChecklist({
             </div>
           </CardContent>
         </Card>
-      ))}
+        );
+      })}
 
 
       {/* Document Upload Dialog */}
