@@ -10,6 +10,7 @@ interface SupplierSelectProps {
   value: string | null;
   onChange: (supplierId: string | null, supplierName: string | null) => void;
   templateLineId?: string | null;
+  categoryId?: string | null;
   disabled?: boolean;
 }
 
@@ -17,6 +18,7 @@ export const SupplierSelect = ({
   value, 
   onChange, 
   templateLineId,
+  categoryId,
   disabled = false 
 }: SupplierSelectProps) => {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -25,7 +27,7 @@ export const SupplierSelect = ({
 
   useEffect(() => {
     loadSuppliers();
-  }, [templateLineId]);
+  }, [templateLineId, categoryId]);
 
   const loadSuppliers = async () => {
     setLoading(true);
@@ -33,9 +35,21 @@ export const SupplierSelect = ({
       // Get generic suppliers
       const { data: genericSuppliers } = await supabase
         .from("suppliers")
-        .select("id, name, is_generic")
+        .select("id, name, is_generic, category_id")
         .eq("is_generic", true)
         .order("name");
+
+      // Get suppliers by category (if category provided)
+      let categorySuppliers: any[] = [];
+      if (categoryId) {
+        const { data } = await supabase
+          .from("suppliers")
+          .select("id, name, is_generic, category_id")
+          .eq("category_id", categoryId)
+          .eq("is_generic", false)
+          .order("name");
+        categorySuppliers = data || [];
+      }
 
       // Get suppliers associated with the template line
       let associatedSuppliers: any[] = [];
@@ -43,7 +57,7 @@ export const SupplierSelect = ({
         const { data: supplierProducts } = await supabase
           .from("supplier_products")
           .select(`
-            supplier:suppliers(id, name, is_generic)
+            supplier:suppliers(id, name, is_generic, category_id)
           `)
           .eq("template_line_id", templateLineId);
         
@@ -54,8 +68,8 @@ export const SupplierSelect = ({
         }
       }
 
-      // Merge and deduplicate
-      const allSuppliers = [...(genericSuppliers || []), ...associatedSuppliers];
+      // Merge and deduplicate - prioritize: associated > category > generic
+      const allSuppliers = [...associatedSuppliers, ...categorySuppliers, ...(genericSuppliers || [])];
       const uniqueSuppliers = allSuppliers.reduce((acc: Supplier[], curr) => {
         if (!acc.find(s => s.id === curr.id)) {
           acc.push(curr as Supplier);

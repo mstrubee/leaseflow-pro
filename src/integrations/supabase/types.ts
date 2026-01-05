@@ -237,6 +237,7 @@ export type Database = {
         Row: {
           amount_uf: number
           budget_id: string
+          category_id: string | null
           created_at: string
           currency: string | null
           description: string | null
@@ -256,6 +257,7 @@ export type Database = {
         Insert: {
           amount_uf?: number
           budget_id: string
+          category_id?: string | null
           created_at?: string
           currency?: string | null
           description?: string | null
@@ -275,6 +277,7 @@ export type Database = {
         Update: {
           amount_uf?: number
           budget_id?: string
+          category_id?: string | null
           created_at?: string
           currency?: string | null
           description?: string | null
@@ -297,6 +300,13 @@ export type Database = {
             columns: ["budget_id"]
             isOneToOne: false
             referencedRelation: "contract_budgets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_lines_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_categories"
             referencedColumns: ["id"]
           },
           {
@@ -399,6 +409,7 @@ export type Database = {
       }
       budget_template_lines: {
         Row: {
+          category_id: string | null
           created_at: string
           currency: string | null
           default_amount_uf: number | null
@@ -413,6 +424,7 @@ export type Database = {
           unit_type: string | null
         }
         Insert: {
+          category_id?: string | null
           created_at?: string
           currency?: string | null
           default_amount_uf?: number | null
@@ -427,6 +439,7 @@ export type Database = {
           unit_type?: string | null
         }
         Update: {
+          category_id?: string | null
           created_at?: string
           currency?: string | null
           default_amount_uf?: number | null
@@ -441,6 +454,13 @@ export type Database = {
           unit_type?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "budget_template_lines_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_categories"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "budget_template_lines_parent_id_fkey"
             columns: ["parent_id"]
