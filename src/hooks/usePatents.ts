@@ -24,7 +24,7 @@ export function usePatents() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      // Load contracts that match criteria: firmado + patente_status in (Vigente, Provisoria, Sin Patente)
+      // Load contracts with status "firmado" (vigente)
       const { data: contractsData } = await supabase
         .from("contracts")
         .select(`
@@ -41,8 +41,7 @@ export function usePatents() {
           )
         `)
         .eq("status", "firmado")
-        .is("deleted_at", null)
-        .in("patente_status", ["vigente", "provisoria", "sin_patente"]);
+        .is("deleted_at", null);
 
       // Load sections
       const { data: sectionsData } = await supabase
@@ -132,6 +131,19 @@ export function usePatents() {
           ? { ...c.contract_patents, priority, priority_changed_at: now, priority_changed_by: userId }
           : { id: '', contract_id: contractId, priority, priority_changed_at: now, priority_changed_by: userId }
       };
+    }));
+  };
+
+  const updatePatenteStatus = async (contractId: string, patenteStatus: string) => {
+    await supabase
+      .from("contracts")
+      .update({ patente_status: patenteStatus })
+      .eq("id", contractId);
+
+    // Update local state
+    setContracts(prev => prev.map(c => {
+      if (c.id !== contractId) return c;
+      return { ...c, patente_status: patenteStatus };
     }));
   };
 
@@ -308,6 +320,7 @@ export function usePatents() {
     loading,
     loadData,
     updatePriority,
+    updatePatenteStatus,
     updateDocumentStatus,
     updateDocument,
     getCriticalStats,

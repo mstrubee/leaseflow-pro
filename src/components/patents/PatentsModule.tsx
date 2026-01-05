@@ -25,6 +25,7 @@ export function PatentsModule() {
     loading,
     loadData,
     updatePriority,
+    updatePatenteStatus,
     updateDocumentStatus,
     updateDocument,
     getCriticalStats
@@ -79,7 +80,7 @@ export function PatentsModule() {
 
   // Show detail view if a contract is selected
   if (selectedContract) {
-    return <PatentChecklist contract={selectedContract} sections={sections} items={items} emitters={emitters} itemEmitters={itemEmitters} statuses={statuses} onBack={() => setSelectedContractId(null)} onUpdatePriority={updatePriority} onUpdateDocument={updateDocument} onUpdateDocumentStatus={updateDocumentStatus} />;
+    return <PatentChecklist contract={selectedContract} sections={sections} items={items} emitters={emitters} itemEmitters={itemEmitters} statuses={statuses} onBack={() => setSelectedContractId(null)} onUpdatePriority={updatePriority} onUpdatePatenteStatus={updatePatenteStatus} onUpdateDocument={updateDocument} onUpdateDocumentStatus={updateDocumentStatus} />;
   }
   return <div className="space-y-6">
       {/* Header */}
