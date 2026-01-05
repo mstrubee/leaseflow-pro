@@ -3,6 +3,8 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { PermissionSelectionProvider } from "@/contexts/PermissionSelectionContext";
+import { FloatingPermissionSelector } from "@/components/admin/FloatingPermissionSelector";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NewContract from "./pages/NewContract";
@@ -19,24 +21,27 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/auth" element={<Auth />} />
-          <Route path="/admin" element={<AdminPanel />} />
-          <Route path="/contracts" element={<Contracts />} />
-          <Route path="/contracts/new" element={<NewContract />} />
-          <Route path="/contracts/:id" element={<ContractDetail />} />
-          <Route path="/contracts/:id/edit" element={<EditContract />} />
-          <Route path="/deleted" element={<DeletedContracts />} />
-          <Route path="/alerts" element={<AlertsDashboard />} />
-          <Route path="/patents" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
+      <PermissionSelectionProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <FloatingPermissionSelector />
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/auth" element={<Auth />} />
+            <Route path="/admin" element={<AdminPanel />} />
+            <Route path="/contracts" element={<Contracts />} />
+            <Route path="/contracts/new" element={<NewContract />} />
+            <Route path="/contracts/:id" element={<ContractDetail />} />
+            <Route path="/contracts/:id/edit" element={<EditContract />} />
+            <Route path="/deleted" element={<DeletedContracts />} />
+            <Route path="/alerts" element={<AlertsDashboard />} />
+            <Route path="/patents" element={<Index />} />
+            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </PermissionSelectionProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );
