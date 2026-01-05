@@ -3,7 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Plus, LogOut, Shield, Trash2, Bell } from "lucide-react";
 import { DashboardStats } from "@/components/dashboard/DashboardStats";
+import { SuppliersModule } from "@/components/suppliers/SuppliersModule";
 import { useAuth } from "@/hooks/useAuth";
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const {
@@ -62,8 +64,11 @@ const Dashboard = () => {
         </div>
       </header>
 
-      <main className="max-w-12xl mx-auto px-0.5 sm:px-6 lg:px-8 py-8 space-y-1">
+      <main className="max-w-12xl mx-auto px-0.5 sm:px-6 lg:px-8 py-8 space-y-6">
         <DashboardStats />
+        <div className="max-w-7xl mx-auto">
+          <SuppliersModule />
+        </div>
       </main>
     </div>;
 };

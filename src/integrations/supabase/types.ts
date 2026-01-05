@@ -246,6 +246,7 @@ export type Database = {
           parent_id: string | null
           quantity: number | null
           status: string
+          supplier_id: string | null
           supplier_name: string | null
           template_line_id: string | null
           unit_price: number | null
@@ -264,6 +265,7 @@ export type Database = {
           parent_id?: string | null
           quantity?: number | null
           status?: string
+          supplier_id?: string | null
           supplier_name?: string | null
           template_line_id?: string | null
           unit_price?: number | null
@@ -282,6 +284,7 @@ export type Database = {
           parent_id?: string | null
           quantity?: number | null
           status?: string
+          supplier_id?: string | null
           supplier_name?: string | null
           template_line_id?: string | null
           unit_price?: number | null
@@ -301,6 +304,13 @@ export type Database = {
             columns: ["parent_id"]
             isOneToOne: false
             referencedRelation: "budget_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_lines_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
             referencedColumns: ["id"]
           },
           {
@@ -2334,38 +2344,171 @@ export type Database = {
         }
         Relationships: []
       }
+      supplier_categories: {
+        Row: {
+          created_at: string
+          description: string | null
+          display_order: number | null
+          id: string
+          is_active: boolean | null
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      supplier_emails: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          is_primary: boolean | null
+          supplier_id: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          is_primary?: boolean | null
+          supplier_id: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          is_primary?: boolean | null
+          supplier_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_emails_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supplier_products: {
+        Row: {
+          created_at: string
+          id: string
+          supplier_id: string
+          template_line_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          supplier_id: string
+          template_line_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          supplier_id?: string
+          template_line_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_products_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_products_template_line_id_fkey"
+            columns: ["template_line_id"]
+            isOneToOne: false
+            referencedRelation: "budget_template_lines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       suppliers: {
         Row: {
           address: string | null
+          bank_account_number: string | null
+          bank_account_type: string | null
+          bank_name: string | null
+          category_id: string | null
+          commune: string | null
+          contact_name: string | null
           created_at: string
           email: string | null
           id: string
+          is_generic: boolean | null
           name: string
           phone: string | null
           rut: string | null
+          street: string | null
+          street_number: string | null
           updated_at: string
         }
         Insert: {
           address?: string | null
+          bank_account_number?: string | null
+          bank_account_type?: string | null
+          bank_name?: string | null
+          category_id?: string | null
+          commune?: string | null
+          contact_name?: string | null
           created_at?: string
           email?: string | null
           id?: string
+          is_generic?: boolean | null
           name: string
           phone?: string | null
           rut?: string | null
+          street?: string | null
+          street_number?: string | null
           updated_at?: string
         }
         Update: {
           address?: string | null
+          bank_account_number?: string | null
+          bank_account_type?: string | null
+          bank_name?: string | null
+          category_id?: string | null
+          commune?: string | null
+          contact_name?: string | null
           created_at?: string
           email?: string | null
           id?: string
+          is_generic?: boolean | null
           name?: string
           phone?: string | null
           rut?: string | null
+          street?: string | null
+          street_number?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "suppliers_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_categories"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       termination_notices: {
         Row: {
