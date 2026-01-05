@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ChevronDown } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -175,51 +177,60 @@ export const DashboardStats = () => {
       </div>
 
       {/* Regional Breakdown Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Contratos por Región</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Región</TableHead>
-                <TableHead className="text-center">General</TableHead>
-                <TableHead className="text-center text-green-600">Vigentes</TableHead>
-                <TableHead className="text-center text-yellow-600">Negociación</TableHead>
-                <TableHead className="text-center text-red-600">Vencidos</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {stats.byRegion.map((row) => (
-                <TableRow key={row.region}>
-                  <TableCell className="font-medium">{row.region}</TableCell>
-                  <TableCell className="text-center">{row.total}</TableCell>
-                  <TableCell className="text-center text-green-600">{row.vigentes}</TableCell>
-                  <TableCell className="text-center text-yellow-600">{row.negociacion}</TableCell>
-                  <TableCell className="text-center text-red-600">{row.vencidos}</TableCell>
-                </TableRow>
-              ))}
-              {stats.byRegion.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                    No hay contratos registrados
-                  </TableCell>
-                </TableRow>
-              )}
-              {stats.byRegion.length > 0 && (
-                <TableRow className="bg-muted/50 font-semibold">
-                  <TableCell>Total</TableCell>
-                  <TableCell className="text-center">{stats.totalContracts}</TableCell>
-                  <TableCell className="text-center text-green-600">{stats.totalVigentes}</TableCell>
-                  <TableCell className="text-center text-yellow-600">{stats.totalNegociacion}</TableCell>
-                  <TableCell className="text-center text-red-600">{stats.totalVencidos}</TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <Collapsible defaultOpen={false}>
+        <Card>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">Contratos por Región</CardTitle>
+                <ChevronDown className="h-5 w-5 text-muted-foreground transition-transform duration-200 [[data-state=open]>&]:rotate-180" />
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Región</TableHead>
+                    <TableHead className="text-center">General</TableHead>
+                    <TableHead className="text-center text-green-600">Vigentes</TableHead>
+                    <TableHead className="text-center text-yellow-600">Negociación</TableHead>
+                    <TableHead className="text-center text-red-600">Vencidos</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {stats.byRegion.map((row) => (
+                    <TableRow key={row.region}>
+                      <TableCell className="font-medium">{row.region}</TableCell>
+                      <TableCell className="text-center">{row.total}</TableCell>
+                      <TableCell className="text-center text-green-600">{row.vigentes}</TableCell>
+                      <TableCell className="text-center text-yellow-600">{row.negociacion}</TableCell>
+                      <TableCell className="text-center text-red-600">{row.vencidos}</TableCell>
+                    </TableRow>
+                  ))}
+                  {stats.byRegion.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                        No hay contratos registrados
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {stats.byRegion.length > 0 && (
+                    <TableRow className="bg-muted/50 font-semibold">
+                      <TableCell>Total</TableCell>
+                      <TableCell className="text-center">{stats.totalContracts}</TableCell>
+                      <TableCell className="text-center text-green-600">{stats.totalVigentes}</TableCell>
+                      <TableCell className="text-center text-yellow-600">{stats.totalNegociacion}</TableCell>
+                      <TableCell className="text-center text-red-600">{stats.totalVencidos}</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       {/* Patents Module */}
       <PatentsModule />
