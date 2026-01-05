@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight, ChevronDown, Plus, Trash2, Check, X, Edit2, ArrowRight, FileText, Receipt } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -76,10 +76,14 @@ const BudgetLineItem = ({
   readOnly = false
 }: BudgetLineItemProps) => {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [isEditingQuantity, setIsEditingQuantity] = useState(false);
+  const [isEditingUnit, setIsEditingUnit] = useState(false);
   const [isEditingPrice, setIsEditingPrice] = useState(false);
+  const [isEditingCurrency, setIsEditingCurrency] = useState(false);
+  const [editQuantity, setEditQuantity] = useState((line.quantity || 0).toString());
   const [editUnitPrice, setEditUnitPrice] = useState((line.unit_price || 0).toString());
   const [editCurrency, setEditCurrency] = useState(line.currency || "UF");
-  const [localQuantity, setLocalQuantity] = useState((line.quantity || 0).toString());
+  const [editUnit, setEditUnit] = useState(line.unit_type || "m2");
   const {
     formatUF,
     formatCLP,
@@ -89,13 +93,16 @@ const BudgetLineItem = ({
   const hasChildren = line.children && line.children.length > 0;
   const isParent = hasChildren;
 
-  // Calcular el total de hijos si es padre (solo autorizados)
-  const calculateChildrenTotal = (children: BudgetLine[]): number => {
+  // Calculate subtotal of children recursively (for parent lines)
+  const calculateChildrenSubtotal = (children: BudgetLine[]): number => {
     return children.reduce((sum, child) => {
       if (child.children && child.children.length > 0) {
-        return sum + calculateChildrenTotal(child.children);
+        // Child is a parent: get its total (subtotal * multiplier)
+        const childSubtotal = calculateChildrenSubtotal(child.children);
+        const childMultiplier = child.quantity || 1;
+        return sum + (childSubtotal * childMultiplier);
       }
-      // Para hojas: solo sumar si cantidad Y precio son > 0
+      // Leaf: qty * price
       const qty = child.quantity || 0;
       const price = child.unit_price || 0;
       if (qty <= 0 || price <= 0) return sum;
@@ -103,7 +110,7 @@ const BudgetLineItem = ({
     }, 0);
   };
 
-  // Para líneas hoja: mostrar 0 si falta cantidad o precio
+  // For leaf lines: show 0 if missing quantity or price
   const getLeafAmount = (): number => {
     const qty = line.quantity || 0;
     const price = line.unit_price || 0;
@@ -111,7 +118,11 @@ const BudgetLineItem = ({
     return line.amount_uf || 0;
   };
 
-  const calculatedAmount = isParent ? calculateChildrenTotal(line.children!) : getLeafAmount();
+  // For parents: subtotal * multiplier
+  const childrenSubtotal = isParent ? calculateChildrenSubtotal(line.children!) : 0;
+  const multiplier = line.quantity || 1;
+  const parentTotal = childrenSubtotal * multiplier;
+  const calculatedAmount = isParent ? parentTotal : getLeafAmount();
 
   // Calculate amount only if both quantity and price are > 0
   const calculateLineAmount = (qty: number, price: number, currency: string): number => {
@@ -123,11 +134,14 @@ const BudgetLineItem = ({
     return amountUf;
   };
 
-  // Commit quantity on blur
-  const handleQuantityBlur = () => {
+  // Save quantity on blur or Enter
+  const handleSaveQuantity = () => {
     if (readOnly) return;
-    const qty = parseFloat(localQuantity) || 0;
-    if (qty === (line.quantity || 0)) return;
+    const qty = parseFloat(editQuantity) || 0;
+    if (qty === (line.quantity || 0)) {
+      setIsEditingQuantity(false);
+      return;
+    }
     const price = line.unit_price || 0;
     const currency = line.currency || "UF";
     const amountUf = calculateLineAmount(qty, price, currency);
@@ -135,16 +149,20 @@ const BudgetLineItem = ({
       quantity: qty,
       amount_uf: amountUf
     });
+    setIsEditingQuantity(false);
   };
 
-  // Direct unit type update
-  const handleUnitChange = (newUnit: string) => {
+  const handleSaveUnit = (newUnit: string) => {
     if (readOnly) return;
-    onUpdateLine(line.id, {
-      unit_type: newUnit
-    });
+    if (newUnit !== line.unit_type) {
+      onUpdateLine(line.id, { unit_type: newUnit });
+    }
+    setEditUnit(newUnit);
+    setIsEditingUnit(false);
   };
+
   const handleSavePrice = () => {
+    if (readOnly) return;
     const qty = line.quantity || 0;
     const price = parseFloat(editUnitPrice) || 0;
     const amountUf = calculateLineAmount(qty, price, editCurrency);
@@ -155,11 +173,35 @@ const BudgetLineItem = ({
     });
     setIsEditingPrice(false);
   };
-  const handleCancelPrice = () => {
-    setEditUnitPrice((line.unit_price || 0).toString());
-    setEditCurrency(line.currency || "UF");
-    setIsEditingPrice(false);
+
+  const handleSaveCurrency = (newCurrency: string) => {
+    if (readOnly) return;
+    if (newCurrency !== line.currency) {
+      const qty = line.quantity || 0;
+      const price = line.unit_price || 0;
+      const amountUf = calculateLineAmount(qty, price, newCurrency);
+      onUpdateLine(line.id, { currency: newCurrency, amount_uf: amountUf });
+    }
+    setEditCurrency(newCurrency);
+    setIsEditingCurrency(false);
   };
+
+  const handleQuantityKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleSaveQuantity();
+    else if (e.key === "Escape") {
+      setEditQuantity((line.quantity || 0).toString());
+      setIsEditingQuantity(false);
+    }
+  };
+
+  const handlePriceKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleSavePrice();
+    else if (e.key === "Escape") {
+      setEditUnitPrice((line.unit_price || 0).toString());
+      setIsEditingPrice(false);
+    }
+  };
+
   const toggleStatus = () => {
     if (readOnly) return;
     onUpdateLine(line.id, {
@@ -168,7 +210,19 @@ const BudgetLineItem = ({
   };
   const isNotAuthorized = line.status === "no_autorizado";
   return <div>
-      <div className={cn("flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-accent/50 group", hasChildren && "bg-muted/30", !hasChildren && isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20")}>
+      <div className={cn(
+        "flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-accent/50 group transition-all duration-200",
+        // Color hierarchy: parents darker than children
+        level === 0 && hasChildren && "bg-muted/60",
+        level === 0 && !hasChildren && "bg-muted/20",
+        level === 1 && hasChildren && "bg-muted/50",
+        level === 1 && !hasChildren && "bg-muted/15",
+        level === 2 && hasChildren && "bg-muted/40",
+        level === 2 && !hasChildren && "bg-muted/10",
+        level >= 3 && hasChildren && "bg-muted/35",
+        level >= 3 && !hasChildren && "bg-muted/5",
+        !hasChildren && isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20"
+      )}>
         <button onClick={() => setIsExpanded(!isExpanded)} className="p-0.5 hover:bg-accent rounded" disabled={!hasChildren}>
           {hasChildren ? isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" /> : <div className="h-3.5 w-3.5" />}
         </button>
@@ -185,64 +239,148 @@ const BudgetLineItem = ({
           {line.name}
         </span>
 
-        {/* For non-parent lines: show quantity/unit and price inputs - aligned in columns */}
-        {!isParent && <div className="shadow-sm gap-[10px] flex items-center justify-start min-w-[280px]">
-            {/* Quantity - local state for fast typing, commit on blur or Enter */}
-            <Input type="number" value={localQuantity} onChange={e => setLocalQuantity(e.target.value)} onBlur={handleQuantityBlur} disabled={readOnly} className="h-6 w-[80px] text-xs" />
-            {/* Unit type - directly editable */}
-            <Select value={line.unit_type || "m2"} onValueChange={handleUnitChange} disabled={readOnly}>
-              <SelectTrigger className="h-6 w-14 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="m2">m²</SelectItem>
-                <SelectItem value="mL">mL</SelectItem>
-                <SelectItem value="Un">Un</SelectItem>
-              </SelectContent>
-            </Select>
+        {/* For non-parent lines: show quantity/unit and price inputs - editable on double click */}
+        {!isParent && <div className="flex items-center gap-1 min-w-[320px]">
+            {/* Quantity - editable on double click */}
+            {isEditingQuantity && !readOnly ? (
+              <Input 
+                type="number" 
+                value={editQuantity} 
+                onChange={e => setEditQuantity(e.target.value)} 
+                onBlur={handleSaveQuantity}
+                onKeyDown={handleQuantityKeyDown}
+                className="h-6 w-14 text-xs" 
+                autoFocus
+                min="0"
+              />
+            ) : (
+              <span 
+                className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[40px] text-center cursor-text hover:bg-accent/50"
+                onDoubleClick={() => !readOnly && setIsEditingQuantity(true)}
+                title="Doble clic para editar"
+              >
+                {line.quantity || 0}
+              </span>
+            )}
+
+            {/* Unit type - editable on double click */}
+            {isEditingUnit && !readOnly ? (
+              <Select value={editUnit} onValueChange={handleSaveUnit} open={true}>
+                <SelectTrigger className="h-6 w-14 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="m2">m²</SelectItem>
+                  <SelectItem value="mL">mL</SelectItem>
+                  <SelectItem value="Un">Un</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <span 
+                className="text-xs text-muted-foreground min-w-[24px] cursor-pointer hover:bg-accent/50 px-1 py-0.5 rounded"
+                onDoubleClick={() => !readOnly && setIsEditingUnit(true)}
+                title="Doble clic para editar"
+              >
+                {line.unit_type === "m2" ? "m²" : line.unit_type || "m²"}
+              </span>
+            )}
 
             <span className="text-xs text-muted-foreground mx-0.5">×</span>
 
-            {/* Price - editable only via button */}
-            {isEditingPrice && !readOnly ? <div className="flex items-center gap-1">
-                <Input type="number" value={editUnitPrice} onChange={e => setEditUnitPrice(e.target.value)} className="h-6 w-16 text-xs" autoFocus />
-                <Select value={editCurrency} onValueChange={setEditCurrency}>
-                  <SelectTrigger className="h-6 w-20 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="UF">UF/{line.unit_type || "m2"}</SelectItem>
-                    <SelectItem value="CLP">$/{line.unit_type || "m2"}</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button size="sm" variant="ghost" onClick={handleSavePrice} className="h-6 w-6 p-0">
-                  <Check className="h-3 w-3 text-green-600" />
-                </Button>
-                <Button size="sm" variant="ghost" onClick={handleCancelPrice} className="h-6 w-6 p-0">
-                  <X className="h-3 w-3 text-red-600" />
-                </Button>
-              </div> : <div className="flex items-center gap-1">
-                <span className="text-xs bg-muted/50 px-1.5 py-0.5 rounded w-[110px] text-center font-serif font-normal whitespace-nowrap">
-                  {line.currency === "CLP" 
-                    ? Math.round(line.unit_price || 0).toLocaleString("es-CL")
-                    : (line.unit_price || 0).toLocaleString("es-CL", { minimumFractionDigits: 2 })
-                  } {line.currency === "CLP" ? "$" : "UF"}/{line.unit_type || "m2"}
-                </span>
-                {!readOnly && <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button size="sm" variant="ghost" onClick={() => setIsEditingPrice(true)} className="h-5 w-5 p-0">
-                          <Edit2 className="h-2.5 w-2.5" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Editar valor {line.unit_type || "m2"}</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>}
-              </div>}
+            {/* Currency - editable on double click */}
+            {isEditingCurrency && !readOnly ? (
+              <Select value={editCurrency} onValueChange={handleSaveCurrency} open={true}>
+                <SelectTrigger className="h-6 w-16 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="UF">UF/{line.unit_type || "m2"}</SelectItem>
+                  <SelectItem value="CLP">$/{line.unit_type || "m2"}</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <span 
+                className="text-xs text-muted-foreground cursor-pointer hover:bg-accent/50 px-0.5 py-0.5 rounded"
+                onDoubleClick={() => !readOnly && setIsEditingCurrency(true)}
+                title="Doble clic para editar"
+              >
+                {line.currency === "CLP" ? "$" : "UF"}/{line.unit_type || "m2"}
+              </span>
+            )}
+
+            {/* Price - editable on double click */}
+            {isEditingPrice && !readOnly ? (
+              <Input 
+                type="number" 
+                value={editUnitPrice} 
+                onChange={e => setEditUnitPrice(e.target.value)} 
+                onBlur={handleSavePrice}
+                onKeyDown={handlePriceKeyDown}
+                className="h-6 w-20 text-xs" 
+                autoFocus
+                min="0"
+                step="0.01"
+              />
+            ) : (
+              <span 
+                className="text-xs font-mono bg-muted/50 px-1.5 py-0.5 rounded min-w-[70px] text-center cursor-text hover:bg-accent/50"
+                onDoubleClick={() => !readOnly && setIsEditingPrice(true)}
+                title="Doble clic para editar"
+              >
+                {line.currency === "CLP" 
+                  ? Math.round(line.unit_price || 0).toLocaleString("es-CL")
+                  : (line.unit_price || 0).toLocaleString("es-CL", { minimumFractionDigits: 2 })
+                }
+              </span>
+            )}
+
+            {/* Calculated total - read only */}
+            <span className="text-xs font-mono bg-primary/10 px-1.5 py-0.5 rounded min-w-[80px] text-center">
+              = {line.currency === "CLP" ? "$" : "UF"} {((line.quantity || 0) * (line.unit_price || 0)).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+            </span>
           </div>}
 
-        {/* Spacer for parent lines to align totals */}
-        {isParent && <div className="flex-1" />}
+        {/* Parent line with children: show multiplier and subtotal */}
+        {isParent && (
+          <>
+            <div className="flex items-center gap-2 flex-1">
+              {/* Multiplier - editable on double click */}
+              <span className="text-xs text-muted-foreground">×</span>
+              {isEditingQuantity && !readOnly ? (
+                <Input 
+                  type="number" 
+                  value={editQuantity} 
+                  onChange={e => setEditQuantity(e.target.value)} 
+                  onBlur={handleSaveQuantity}
+                  onKeyDown={handleQuantityKeyDown}
+                  className="h-6 w-12 text-xs" 
+                  autoFocus
+                  min="1"
+                />
+              ) : (
+                <span 
+                  className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[30px] text-center cursor-text hover:bg-accent/50"
+                  onDoubleClick={() => !readOnly && setIsEditingQuantity(true)}
+                  title="Doble clic para editar"
+                >
+                  {multiplier}
+                </span>
+              )}
+              <span className="text-xs text-muted-foreground">unidades</span>
+            </div>
+            
+            {/* Total with multiplier */}
+            <div className="text-xs font-mono bg-primary/10 px-2 py-0.5 rounded font-semibold">
+              = UF {parentTotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+            </div>
+            
+            {/* Subtotal Unitario on two lines */}
+            <div className="text-xs text-muted-foreground flex flex-col">
+              <span>Subtotal Unitario:</span>
+              <span>UF {childrenSubtotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}</span>
+            </div>
+          </>
+        )}
 
         {/* Totals and status */}
         <div className="flex items-center mx-[3px] gap-[50px] text-destructive">
