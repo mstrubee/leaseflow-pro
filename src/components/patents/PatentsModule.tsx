@@ -37,8 +37,14 @@ export function PatentsModule() {
   const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'list' | 'alerts'>('list');
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
+  const [cardFilter, setCardFilter] = useState<string | null>(null);
   const stats = getCriticalStats();
   const selectedContract = contracts.find(c => c.id === selectedContractId);
+
+  const handleCardFilterClick = (filter: string) => {
+    setCardFilter(prev => prev === filter ? null : filter);
+    setActiveTab('list');
+  };
 
   // Handle contractId from URL params
   useEffect(() => {
@@ -99,7 +105,10 @@ export function PatentsModule() {
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4 lg:grid-cols-7">
-        <Card>
+        <Card 
+          className={`cursor-pointer hover:shadow-md transition-shadow ${cardFilter === 'all' ? 'ring-2 ring-primary' : ''}`}
+          onClick={() => handleCardFilterClick('all')}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Locales</CardTitle>
             <FileText className="h-4 w-4 text-muted-foreground" />
@@ -109,7 +118,10 @@ export function PatentsModule() {
           </CardContent>
         </Card>
 
-        <Card className="border-green-200 bg-green-50 dark:bg-green-950/20">
+        <Card 
+          className={`cursor-pointer hover:shadow-md transition-shadow border-green-200 bg-green-50 dark:bg-green-950/20 ${cardFilter === 'definitiva' ? 'ring-2 ring-green-500' : ''}`}
+          onClick={() => handleCardFilterClick('definitiva')}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-green-700 dark:text-green-400">Patentes Definitivas</CardTitle>
             <CheckCircle className="h-4 w-4 text-green-600" />
@@ -121,7 +133,10 @@ export function PatentsModule() {
           </CardContent>
         </Card>
 
-        <Card className="border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20">
+        <Card 
+          className={`cursor-pointer hover:shadow-md transition-shadow border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20 ${cardFilter === 'provisoria' ? 'ring-2 ring-yellow-500' : ''}`}
+          onClick={() => handleCardFilterClick('provisoria')}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-yellow-700 dark:text-yellow-400">Patentes Provisorias</CardTitle>
             <FileText className="h-4 w-4 text-yellow-600" />
@@ -133,7 +148,10 @@ export function PatentsModule() {
           </CardContent>
         </Card>
 
-        <Card className="border-gray-200 bg-gray-50 dark:bg-gray-950/20">
+        <Card 
+          className={`cursor-pointer hover:shadow-md transition-shadow border-gray-200 bg-gray-50 dark:bg-gray-950/20 ${cardFilter === 'sin_patente' ? 'ring-2 ring-gray-500' : ''}`}
+          onClick={() => handleCardFilterClick('sin_patente')}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-700 dark:text-gray-400">Sin Patente</CardTitle>
             <FileText className="h-4 w-4 text-gray-500" />
@@ -145,7 +163,10 @@ export function PatentsModule() {
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer hover:shadow-md transition-shadow border-red-200 bg-red-50 dark:bg-red-950/20" onClick={() => setActiveTab('alerts')}>
+        <Card 
+          className={`cursor-pointer hover:shadow-md transition-shadow border-red-200 bg-red-50 dark:bg-red-950/20 ${cardFilter === 'critical' ? 'ring-2 ring-red-500' : ''}`}
+          onClick={() => handleCardFilterClick('critical')}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3">
             <div>
               <p className="text-[10px] text-red-500 dark:text-red-400 uppercase tracking-wide">Documentación</p>
@@ -158,7 +179,10 @@ export function PatentsModule() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card 
+          className={`cursor-pointer hover:shadow-md transition-shadow ${cardFilter === 'pending' ? 'ring-2 ring-yellow-500' : ''}`}
+          onClick={() => handleCardFilterClick('pending')}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3">
             <div>
               <p className="text-[10px] text-yellow-600 uppercase tracking-wide">Documentación</p>
@@ -171,7 +195,10 @@ export function PatentsModule() {
           </CardContent>
         </Card>
 
-        <Card className="border-red-200 bg-red-50 dark:bg-red-950/20">
+        <Card 
+          className={`cursor-pointer hover:shadow-md transition-shadow border-red-200 bg-red-50 dark:bg-red-950/20 ${cardFilter === 'overdue' ? 'ring-2 ring-red-500' : ''}`}
+          onClick={() => handleCardFilterClick('overdue')}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3">
             <div>
               <p className="text-[10px] text-red-500 dark:text-red-400 uppercase tracking-wide">Documentación</p>
@@ -199,7 +226,7 @@ export function PatentsModule() {
         </TabsList>
 
         <TabsContent value="list" className="mt-4">
-          <PatentsList contracts={contracts} onSelectContract={setSelectedContractId} />
+          <PatentsList contracts={contracts} onSelectContract={setSelectedContractId} cardFilter={cardFilter} onClearFilter={() => setCardFilter(null)} />
         </TabsContent>
 
         <TabsContent value="alerts" className="mt-4">
