@@ -34,7 +34,7 @@ const Dashboard = () => {
         <div className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="items-center justify-between flex flex-row">
             <div className="flex items-center gap-6">
-              <img src={logosHeader} alt="AutoPlanet Agroplanet" className="h-10 object-contain" />
+              <img src={logosHeader} alt="AutoPlanet Agroplanet" className="h-[50px] object-contain" />
               <div>
                 <h1 className="text-2xl font-semibold text-sky-950">Gerencia Desarrollo</h1>
                 <p className="text-sm text-muted-foreground mt-1">Desarrollo Negocios y Administración Inmobiliaria</p>
