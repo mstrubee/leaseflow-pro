@@ -231,17 +231,40 @@ export function CompactEscalationChart({
               labelFormatter={(label) => `Mes ${label}`}
             />
             
-            {/* Notice ranges as shaded areas */}
+            {/* Notice ranges as shaded areas with vertical lines at boundaries */}
             {noticeMonthInfo && 'ranges' in noticeMonthInfo && noticeMonthInfo.ranges?.map((range, idx) => (
               <ReferenceArea
-                key={idx}
+                key={`area-${idx}`}
                 x1={range.start_month}
                 x2={range.end_month}
                 fill="hsl(var(--warning))"
-                fillOpacity={0.2}
-                stroke="hsl(var(--warning))"
-                strokeDasharray="3 3"
+                fillOpacity={0.15}
+                stroke="none"
               />
+            ))}
+            {noticeMonthInfo && 'ranges' in noticeMonthInfo && noticeMonthInfo.ranges?.map((range, idx) => (
+              <>
+                <ReferenceLine
+                  key={`start-${idx}`}
+                  x={range.start_month}
+                  stroke="hsl(var(--warning))"
+                  strokeWidth={2}
+                  strokeDasharray="4 4"
+                  label={idx === 0 ? { 
+                    value: `Aviso`, 
+                    fontSize: 10, 
+                    fill: "hsl(var(--warning))",
+                    position: "insideTopRight"
+                  } : undefined}
+                />
+                <ReferenceLine
+                  key={`end-${idx}`}
+                  x={range.end_month}
+                  stroke="hsl(var(--warning))"
+                  strokeWidth={2}
+                  strokeDasharray="4 4"
+                />
+              </>
             ))}
             
             {/* Single notice line for meses/fecha type */}
