@@ -695,16 +695,17 @@ const SortableTemplateLineItem = ({
                 </span>
               )}
               <span className="text-xs text-muted-foreground">unidades</span>
-              
-              {/* Total with multiplier */}
-              <span className="text-xs font-mono bg-primary/10 px-2 py-0.5 rounded font-semibold ml-auto">
-                = UF {parentTotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-              </span>
             </div>
             
-            {/* Subtotal Unitario on separate line */}
-            <div className="text-xs text-muted-foreground pl-6">
-              Subtotal Unitario: UF {childrenSubtotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+            {/* Total with multiplier on its own line */}
+            <div className="text-xs font-mono bg-primary/10 px-2 py-0.5 rounded font-semibold pl-6">
+              = UF {parentTotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+            </div>
+            
+            {/* Subtotal Unitario on two lines */}
+            <div className="text-xs text-muted-foreground pl-6 flex flex-col">
+              <span>Subtotal Unitario:</span>
+              <span>UF {childrenSubtotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}</span>
             </div>
           </>
         )}
