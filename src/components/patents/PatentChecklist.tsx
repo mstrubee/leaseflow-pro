@@ -155,6 +155,12 @@ export function PatentChecklist({
   const handlePatenteStatusChange = async (patenteStatus: string) => {
     try {
       await onUpdatePatenteStatus(contract.id, patenteStatus);
+      
+      // If setting to "definitiva", automatically set priority to "vigente"
+      if (patenteStatus === 'definitiva' && user) {
+        await onUpdatePriority(contract.id, 'vigente', user.id);
+      }
+      
       toast.success("Estado de patente actualizado");
     } catch (error) {
       toast.error("Error al actualizar estado de patente");

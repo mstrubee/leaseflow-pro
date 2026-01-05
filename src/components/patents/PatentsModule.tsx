@@ -87,7 +87,7 @@ export function PatentsModule() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold">Patentes</h2>
-          <p className="text-muted-foreground">Gestión de documentación para patentes comerciales y Recepciones Definitivas DOM</p>
+          <p className="text-muted-foreground">Patentes y Gestión de documentación para patentes comerciales y Recepciones Definitivas DOM</p>
         </div>
         {isAdmin && <Button variant="outline" className="gap-2" onClick={() => setAdminPanelOpen(true)}>
             <Settings className="h-4 w-4" />
@@ -98,7 +98,7 @@ export function PatentsModule() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-4 lg:grid-cols-7">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Locales</CardTitle>
@@ -117,6 +117,30 @@ export function PatentsModule() {
           <CardContent>
             <div className="text-2xl font-bold text-green-700 dark:text-green-400">
               {contracts.filter(c => c.patente_status === 'definitiva').length}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-yellow-700 dark:text-yellow-400">Patentes Provisorias</CardTitle>
+            <FileText className="h-4 w-4 text-yellow-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-yellow-700 dark:text-yellow-400">
+              {contracts.filter(c => c.patente_status === 'provisoria').length}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-gray-200 bg-gray-50 dark:bg-gray-950/20">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-700 dark:text-gray-400">Sin Patente</CardTitle>
+            <FileText className="h-4 w-4 text-gray-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-gray-700 dark:text-gray-400">
+              {contracts.filter(c => !c.patente_status || c.patente_status === 'sin_patente').length}
             </div>
           </CardContent>
         </Card>

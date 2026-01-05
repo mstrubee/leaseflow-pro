@@ -429,7 +429,13 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                             <Button
                               variant="outline"
                               size="sm"
-                              className="h-6 text-[10px] px-1.5 w-[85px] justify-start font-normal"
+                              className={`h-6 text-[10px] px-1.5 w-[85px] justify-start font-normal ${
+                                contract.patente_status === "definitiva" 
+                                  ? "bg-green-100 text-green-700 border-green-300 hover:bg-green-200 dark:bg-green-950/30 dark:text-green-400 dark:border-green-800" 
+                                  : contract.patente_status === "provisoria" 
+                                    ? "bg-yellow-100 text-yellow-700 border-yellow-300 hover:bg-yellow-200 dark:bg-yellow-950/30 dark:text-yellow-400 dark:border-yellow-800" 
+                                    : "bg-red-100 text-red-700 border-red-300 hover:bg-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-800"
+                              }`}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 navigate(`/patents?contractId=${contract.id}`);
