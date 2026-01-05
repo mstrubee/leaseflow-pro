@@ -240,32 +240,32 @@ export function CompactEscalationChart({
                 fill="hsl(var(--warning))"
                 fillOpacity={0.15}
                 stroke="none"
+                label={{
+                  value: noticeMonthInfo.ranges && noticeMonthInfo.ranges.length > 1 
+                    ? `Rango ${idx + 1}` 
+                    : "Rango Aviso",
+                  fontSize: 10,
+                  fill: "hsl(var(--warning))",
+                  position: "insideTop"
+                }}
               />
             ))}
-            {noticeMonthInfo && 'ranges' in noticeMonthInfo && noticeMonthInfo.ranges?.map((range, idx) => (
-              <>
-                <ReferenceLine
-                  key={`start-${idx}`}
-                  x={range.start_month}
-                  stroke="hsl(var(--warning))"
-                  strokeWidth={2}
-                  strokeDasharray="4 4"
-                  label={idx === 0 ? { 
-                    value: `Aviso`, 
-                    fontSize: 10, 
-                    fill: "hsl(var(--warning))",
-                    position: "insideTopRight"
-                  } : undefined}
-                />
-                <ReferenceLine
-                  key={`end-${idx}`}
-                  x={range.end_month}
-                  stroke="hsl(var(--warning))"
-                  strokeWidth={2}
-                  strokeDasharray="4 4"
-                />
-              </>
-            ))}
+            {noticeMonthInfo && 'ranges' in noticeMonthInfo && noticeMonthInfo.ranges?.flatMap((range, idx) => [
+              <ReferenceLine
+                key={`start-${idx}`}
+                x={range.start_month}
+                stroke="hsl(var(--warning))"
+                strokeWidth={2}
+                strokeDasharray="4 4"
+              />,
+              <ReferenceLine
+                key={`end-${idx}`}
+                x={range.end_month}
+                stroke="hsl(var(--warning))"
+                strokeWidth={2}
+                strokeDasharray="4 4"
+              />
+            ])}
             
             {/* Single notice line for meses/fecha type */}
             {noticeMonthInfo && 'month' in noticeMonthInfo && (
