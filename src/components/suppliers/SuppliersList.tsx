@@ -40,7 +40,10 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
         .from("suppliers")
         .select(`
           *,
-          category:supplier_categories(id, name)
+          category:supplier_categories(id, name),
+          supplier_products(
+            template_line:budget_template_lines(id, name)
+          )
         `)
         .order("name");
 
@@ -113,8 +116,8 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
                 <TableHead>Nombre</TableHead>
                 <TableHead>RUT</TableHead>
                 <TableHead>Rubro</TableHead>
+                <TableHead>Productos Asociados</TableHead>
                 <TableHead>Contacto</TableHead>
-                <TableHead>Teléfono</TableHead>
                 <TableHead className="text-center">Tipo</TableHead>
                 <TableHead className="w-[100px]"></TableHead>
               </TableRow>
@@ -129,8 +132,27 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
                       <Badge variant="outline">{supplier.category.name}</Badge>
                     )}
                   </TableCell>
+                  <TableCell>
+                    {supplier.is_generic ? (
+                      <span className="text-xs text-muted-foreground">Todos</span>
+                    ) : (supplier as any).supplier_products?.length > 0 ? (
+                      <div className="flex flex-wrap gap-1 max-w-[200px]">
+                        {(supplier as any).supplier_products.slice(0, 2).map((sp: any) => (
+                          <Badge key={sp.template_line?.id} variant="outline" className="text-xs">
+                            {sp.template_line?.name}
+                          </Badge>
+                        ))}
+                        {(supplier as any).supplier_products.length > 2 && (
+                          <Badge variant="outline" className="text-xs">
+                            +{(supplier as any).supplier_products.length - 2}
+                          </Badge>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Sin asignar</span>
+                    )}
+                  </TableCell>
                   <TableCell>{supplier.contact_name || "-"}</TableCell>
-                  <TableCell>{supplier.phone || "-"}</TableCell>
                   <TableCell className="text-center">
                     {supplier.is_generic ? (
                       <Badge variant="secondary">Genérico</Badge>
