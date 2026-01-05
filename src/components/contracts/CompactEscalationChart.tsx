@@ -244,9 +244,10 @@ export function CompactEscalationChart({
                   value: noticeMonthInfo.ranges && noticeMonthInfo.ranges.length > 1 
                     ? `Rango ${idx + 1}` 
                     : "Rango Aviso",
-                  fontSize: 10,
+                  fontSize: 12,
+                  fontWeight: 600,
                   fill: "hsl(var(--warning))",
-                  position: "insideTop"
+                  position: "center"
                 }}
               />
             ))}
