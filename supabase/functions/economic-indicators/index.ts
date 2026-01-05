@@ -11,50 +11,73 @@ serve(async (req) => {
   }
 
   try {
-    // Fetch UF values from mindicador.cl API (Chilean economic indicators)
     const today = new Date();
+    const currentYear = today.getFullYear();
+    const lastYear = currentYear - 1;
+
+    // Fetch UF values from mindicador.cl API
     const ufResponse = await fetch('https://mindicador.cl/api/uf');
     const ufData = await ufResponse.json();
     
-    // Fetch USD values
-    const dollarResponse = await fetch('https://mindicador.cl/api/dolar');
-    const dollarData = await dollarResponse.json();
+    // Fetch USD values for current year and last year to get full history
+    const [dollarCurrentYearRes, dollarLastYearRes] = await Promise.all([
+      fetch(`https://mindicador.cl/api/dolar/${currentYear}`),
+      fetch(`https://mindicador.cl/api/dolar/${lastYear}`)
+    ]);
+    
+    const dollarCurrentYear = await dollarCurrentYearRes.json();
+    const dollarLastYear = await dollarLastYearRes.json();
+
+    console.log(`Fetched ${dollarCurrentYear.serie?.length || 0} records for ${currentYear}`);
+    console.log(`Fetched ${dollarLastYear.serie?.length || 0} records for ${lastYear}`);
 
     // Get current UF value
     const currentUF = ufData.serie?.[0]?.valor || 0;
     
-    // Get UF values for next 10 days (projected from SII pattern)
+    // Get UF values for last 10 days
     const ufNext10Days = ufData.serie?.slice(0, 10).map((item: any) => ({
       date: item.fecha,
       value: item.valor
     })) || [];
 
-    // Get dollar history for the last year (API returns newest first)
-    const dollarHistory = dollarData.serie?.slice(0, 365).map((item: any) => ({
+    // Combine dollar data from both years
+    const allDollarData = [
+      ...(dollarCurrentYear.serie || []),
+      ...(dollarLastYear.serie || [])
+    ].map((item: any) => ({
       date: item.fecha,
       value: item.valor
-    })) || [];
+    }));
 
-    // Current dollar value
-    const currentDollar = dollarData.serie?.[0]?.valor || 0;
+    // Current dollar value (most recent)
+    const currentDollar = dollarCurrentYear.serie?.[0]?.valor || 0;
 
-    // Filter for 6 months (approx 180 days)
+    // Calculate date limits
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    sixMonthsAgo.setHours(0, 0, 0, 0);
     
-    const dollarSixMonths = dollarHistory.filter((item: any) => {
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    oneYearAgo.setHours(0, 0, 0, 0);
+
+    console.log(`Six months ago: ${sixMonthsAgo.toISOString()}`);
+    console.log(`One year ago: ${oneYearAgo.toISOString()}`);
+
+    // Filter for 6 months
+    const dollarSixMonths = allDollarData.filter((item: any) => {
       const itemDate = new Date(item.date);
       return itemDate >= sixMonthsAgo;
     });
 
     // Filter for 1 year
-    const oneYearAgo = new Date();
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-    
-    const dollarOneYear = dollarHistory.filter((item: any) => {
+    const dollarOneYear = allDollarData.filter((item: any) => {
       const itemDate = new Date(item.date);
       return itemDate >= oneYearAgo;
     });
+
+    console.log(`Six months data points: ${dollarSixMonths.length}`);
+    console.log(`One year data points: ${dollarOneYear.length}`);
 
     // Sort chronologically (oldest to newest for chart display)
     const sortByDate = (a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime();
