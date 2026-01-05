@@ -18,18 +18,6 @@ export interface SupplierEmail {
   created_at: string;
 }
 
-export interface SupplierProduct {
-  id: string;
-  supplier_id: string;
-  template_line_id: string;
-  created_at: string;
-  template_line?: {
-    id: string;
-    name: string;
-    template_id: string;
-  };
-}
-
 export interface Supplier {
   id: string;
   name: string;
@@ -50,7 +38,6 @@ export interface Supplier {
   updated_at: string;
   category?: { id: string; name: string } | null;
   emails?: SupplierEmail[];
-  products?: SupplierProduct[];
 }
 
 export interface SupplierFormData {
@@ -67,5 +54,4 @@ export interface SupplierFormData {
   emails: string[];
   category_id: string;
   is_generic: boolean;
-  product_ids: string[];
 }
