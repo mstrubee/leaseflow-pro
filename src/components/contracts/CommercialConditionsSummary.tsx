@@ -141,7 +141,7 @@ export function CommercialConditionsSummary({
         const rangeEndDate = addMonths(startDate, range.end_month - 1);
         if (rangeStartDate > today) {
           noticeDate = rangeStartDate;
-          noticeDateLabel = `hasta ${format(rangeEndDate, "dd MMM yyyy", { locale: es })}`;
+          noticeDateLabel = `${format(rangeStartDate, "dd MMM yyyy", { locale: es })} - ${format(rangeEndDate, "dd MMM yyyy", { locale: es })}`;
           break;
         }
       }
@@ -149,9 +149,10 @@ export function CommercialConditionsSummary({
       // If all ranges are expired, use the last one and mark as expired
       if (!noticeDate && sortedRanges.length > 0) {
         const lastRange = sortedRanges[sortedRanges.length - 1];
+        const rangeStartDate = addMonths(startDate, lastRange.start_month - 1);
         const rangeEndDate = addMonths(startDate, lastRange.end_month - 1);
-        noticeDate = addMonths(startDate, lastRange.start_month - 1);
-        noticeDateLabel = "vencido";
+        noticeDate = rangeStartDate;
+        noticeDateLabel = `vencido (${format(rangeStartDate, "dd MMM yyyy", { locale: es })} - ${format(rangeEndDate, "dd MMM yyyy", { locale: es })})`;
       }
     }
     
@@ -293,17 +294,28 @@ export function CommercialConditionsSummary({
               <Bell className="h-3 w-3" />
               Fecha Aviso
             </div>
-            <p className={`text-sm font-medium ${dates?.noticeDateLabel === "vencido" ? "text-destructive" : ""}`}>
-              {dates?.noticeDate ? formatDateShort(dates.noticeDate) : "Sin definir"}
-            </p>
-            {dates?.noticeDateLabel === "vencido" ? (
-              <Badge variant="destructive" className="text-xs">
-                Vencido
-              </Badge>
+            {dates?.noticeDateLabel?.startsWith("vencido") ? (
+              <>
+                <Badge variant="destructive" className="text-xs">
+                  Vencido
+                </Badge>
+                {version.notice_type === "rangos" && (
+                  <p className="text-xs text-muted-foreground">
+                    {dates.noticeDateLabel.replace("vencido ", "")}
+                  </p>
+                )}
+              </>
             ) : (
-              <p className="text-xs text-muted-foreground">
-                ({dates?.noticeDateLabel || "sin especificar"})
-              </p>
+              <>
+                <p className="text-sm font-medium">
+                  {dates?.noticeDateLabel || (dates?.noticeDate ? formatDateShort(dates.noticeDate) : "Sin definir")}
+                </p>
+                {version.notice_type !== "rangos" && dates?.noticeDateLabel && (
+                  <p className="text-xs text-muted-foreground">
+                    ({dates.noticeDateLabel})
+                  </p>
+                )}
+              </>
             )}
           </div>
 
