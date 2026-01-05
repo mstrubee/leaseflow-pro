@@ -379,38 +379,41 @@ export function PatentChecklist({
         </div>
       </div>
 
-      {/* Bulk actions bar */}
+      {/* Floating Bulk actions bar - fixed at bottom */}
       {selectedItems.size > 0 && (
-        <Card className="border-primary bg-primary/5">
-          <CardContent className="py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary">{selectedItems.size} seleccionados</Badge>
-              <Button variant="ghost" size="sm" onClick={clearSelection}>
-                <X className="h-4 w-4 mr-1" />
-                Limpiar
-              </Button>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Cambiar estado a:</span>
-              {statuses.map(statusItem => (
-                <Button
-                  key={statusItem.code}
-                  variant="outline"
-                  size="sm"
-                  className="gap-1"
-                  style={{ 
-                    backgroundColor: statusItem.bg_color + '20',
-                    borderColor: statusItem.bg_color,
-                    color: statusItem.text_color
-                  }}
-                  onClick={() => handleBulkStatusChange(statusItem.code as PatentDocStatus)}
-                >
-                  {statusItem.name}
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-auto max-w-[90vw]">
+          <Card className="border-primary bg-background shadow-lg">
+            <CardContent className="py-3 px-6 flex items-center gap-6">
+              <div className="flex items-center gap-2">
+                <Badge variant="default" className="bg-primary">{selectedItems.size} seleccionados</Badge>
+                <Button variant="ghost" size="sm" onClick={clearSelection}>
+                  <X className="h-4 w-4 mr-1" />
+                  Limpiar
                 </Button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+              </div>
+              <div className="h-6 w-px bg-border" />
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground whitespace-nowrap">Cambiar estado a:</span>
+                {statuses.map(statusItem => (
+                  <Button
+                    key={statusItem.code}
+                    variant="outline"
+                    size="sm"
+                    className="gap-1"
+                    style={{ 
+                      backgroundColor: statusItem.bg_color + '20',
+                      borderColor: statusItem.bg_color,
+                      color: statusItem.text_color
+                    }}
+                    onClick={() => handleBulkStatusChange(statusItem.code as PatentDocStatus)}
+                  >
+                    {statusItem.name}
+                  </Button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* Checklist by sections */}
