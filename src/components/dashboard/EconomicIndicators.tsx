@@ -58,6 +58,25 @@ export const EconomicIndicators = () => {
 
   const dollarChartData = dollarPeriod === "6m" ? data?.dollar.sixMonths || [] : data?.dollar.oneYear || [];
 
+  // Calculate statistics for selected period
+  const calculateStats = (dataArray: { date: string; value: number }[]) => {
+    if (!dataArray || dataArray.length === 0) return null;
+    
+    const values = dataArray.map(d => d.value);
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+    const avg = values.reduce((sum, v) => sum + v, 0) / values.length;
+    
+    // Calculate median
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    const median = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    
+    return { max, min, avg, median };
+  };
+
+  const dollarStats = calculateStats(dollarChartData);
+
   // Sample every nth point for cleaner chart
   const sampleData = (arr: any[], maxPoints: number) => {
     if (arr.length <= maxPoints) return arr;
@@ -135,7 +154,7 @@ export const EconomicIndicators = () => {
                 1 año
               </TabsTrigger>
             </TabsList>
-            <div className="h-32 mt-2">
+            <div className="h-28 mt-2">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={sampleData(dollarChartData, 30)} key={dollarPeriod}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -159,6 +178,26 @@ export const EconomicIndicators = () => {
                 </LineChart>
               </ResponsiveContainer>
             </div>
+            {dollarStats && (
+              <div className="grid grid-cols-4 gap-2 mt-3 pt-3 border-t">
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground">Máximo</p>
+                  <p className="text-sm font-semibold text-red-600">{formatCurrency(dollarStats.max)}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground">Mínimo</p>
+                  <p className="text-sm font-semibold text-green-600">{formatCurrency(dollarStats.min)}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground">Mediana</p>
+                  <p className="text-sm font-semibold">{formatCurrency(dollarStats.median)}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground">Promedio</p>
+                  <p className="text-sm font-semibold">{formatCurrency(dollarStats.avg)}</p>
+                </div>
+              </div>
+            )}
           </Tabs>
         </CardContent>
       </Card>
