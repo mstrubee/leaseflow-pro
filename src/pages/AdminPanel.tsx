@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { usePermissionSelection } from "@/contexts/PermissionSelectionContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation } from "lucide-react";
 import { CloudStorageSettings } from "@/components/contracts/CloudStorageSettings";
 import { BudgetTemplateManager } from "@/components/budget/BudgetTemplateManager";
 import { GanttTemplateManager } from "@/components/gantt/GanttTemplateManager";
@@ -70,8 +71,10 @@ const RESOURCES = [
 
 const AdminPanel = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user, isAdmin, loading: authLoading, roleLoaded } = useAuth();
   const { toast } = useToast();
+  const { isSelecting, selectedSections, pendingUserData, startSelection } = usePermissionSelection();
   
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [userRoles, setUserRoles] = useState<UserRole[]>([]);
@@ -86,6 +89,9 @@ const AdminPanel = () => {
   const [newUserPermissions, setNewUserPermissions] = useState<Record<string, "view" | "edit" | "all" | "none">>({});
   const [creating, setCreating] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+
+  // Check if returning from permission selection
+  const completeUser = searchParams.get("completeUser") === "true";
 
   // Permission edit
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -119,6 +125,20 @@ const AdminPanel = () => {
       loadData();
     }
   }, [authLoading, isAdmin, roleLoaded, navigate]);
+
+  // Handle return from permission selection mode
+  useEffect(() => {
+    if (completeUser && pendingUserData && Object.keys(selectedSections).length >= 0) {
+      setNewUserEmail(pendingUserData.email);
+      setNewUserPassword(pendingUserData.password);
+      setNewUserName(pendingUserData.name);
+      setNewUserRole(pendingUserData.role);
+      setNewUserPermissions(selectedSections);
+      setDialogOpen(true);
+      // Clear URL params
+      navigate("/admin", { replace: true });
+    }
+  }, [completeUser, pendingUserData, selectedSections, navigate]);
 
   const loadData = async () => {
     setLoading(true);
@@ -486,7 +506,29 @@ const AdminPanel = () => {
                 </div>
                 {newUserRole === "user" && (
                   <div className="space-y-3">
-                    <Label>Permisos por Sección</Label>
+                    <div className="flex items-center justify-between">
+                      <Label>Permisos por Sección</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          // Save current form data and start selection mode
+                          startSelection({
+                            email: newUserEmail,
+                            password: newUserPassword,
+                            name: newUserName,
+                            role: newUserRole,
+                          });
+                          setDialogOpen(false);
+                          navigate("/");
+                        }}
+                        className="gap-1"
+                      >
+                        <Navigation className="h-3 w-3" />
+                        Navegar y Seleccionar
+                      </Button>
+                    </div>
                     {RESOURCES.map(resource => (
                       <div key={resource.id} className="flex items-center justify-between">
                         <span className="text-sm">{resource.label}</span>
@@ -506,6 +548,20 @@ const AdminPanel = () => {
                         </Select>
                       </div>
                     ))}
+                    {Object.keys(newUserPermissions).filter(k => !RESOURCES.find(r => r.id === k) && newUserPermissions[k] !== "none").length > 0 && (
+                      <div className="pt-2 border-t">
+                        <p className="text-xs text-muted-foreground mb-2">Permisos adicionales seleccionados:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {Object.entries(newUserPermissions)
+                            .filter(([k, v]) => !RESOURCES.find(r => r.id === k) && v !== "none")
+                            .map(([key, value]) => (
+                              <span key={key} className="px-2 py-1 bg-primary/10 text-primary text-xs rounded">
+                                {key}: {value}
+                              </span>
+                            ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
