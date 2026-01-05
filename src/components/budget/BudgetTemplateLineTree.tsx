@@ -676,8 +676,8 @@ const SortableTemplateLineItem = ({
           </div>
         )}
         
-        {/* Parent line with children: show multiplier and subtotal */}
-        {hasChildren && (
+        {/* Parent line with children: show multiplier and subtotal - only for level 1+ */}
+        {hasChildren && level >= 1 && (
           <>
             <div className="flex items-center gap-2 flex-1">
               {/* Multiplier - editable */}
