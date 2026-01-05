@@ -40,6 +40,7 @@ interface PatentChecklistProps {
   statuses: PatentStatus[];
   onBack: () => void;
   onUpdatePriority: (contractId: string, priority: PatentPriority, userId: string) => Promise<void>;
+  onUpdatePatenteStatus: (contractId: string, patenteStatus: string) => Promise<void>;
   onUpdateDocument: (contractId: string, itemId: string, data: Partial<PatentDocument>) => Promise<void>;
   onUpdateDocumentStatus: (contractId: string, itemId: string, status: PatentDocStatus, userId: string) => Promise<void>;
 }
@@ -53,6 +54,7 @@ export function PatentChecklist({
   statuses,
   onBack,
   onUpdatePriority,
+  onUpdatePatenteStatus,
   onUpdateDocument,
   onUpdateDocumentStatus,
 }: PatentChecklistProps) {
@@ -72,6 +74,7 @@ export function PatentChecklist({
   } | null>(null);
 
   const currentPriority = contract.contract_patents?.priority || 'priority_3';
+  const currentPatenteStatus = contract.patente_status || 'sin_patente';
 
   // Group items by section
   const itemsBySection = useMemo(() => {
@@ -146,6 +149,15 @@ export function PatentChecklist({
       toast.success("Prioridad actualizada");
     } catch (error) {
       toast.error("Error al actualizar prioridad");
+    }
+  };
+
+  const handlePatenteStatusChange = async (patenteStatus: string) => {
+    try {
+      await onUpdatePatenteStatus(contract.id, patenteStatus);
+      toast.success("Estado de patente actualizado");
+    } catch (error) {
+      toast.error("Error al actualizar estado de patente");
     }
   };
 
@@ -253,6 +265,33 @@ export function PatentChecklist({
             </PopoverContent>
           </Popover>
           
+          <span className="text-sm text-muted-foreground">Estado Patente:</span>
+          <Select value={currentPatenteStatus} onValueChange={handlePatenteStatusChange}>
+            <SelectTrigger className="w-[130px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="sin_patente">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-red-500" />
+                  Sin Patente
+                </div>
+              </SelectItem>
+              <SelectItem value="provisoria">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-yellow-500" />
+                  Provisoria
+                </div>
+              </SelectItem>
+              <SelectItem value="definitiva">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-green-500" />
+                  Definitiva
+                </div>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+
           <span className="text-sm text-muted-foreground">Prioridad:</span>
           <Select value={currentPriority} onValueChange={(v) => handlePriorityChange(v as PatentPriority)}>
             <SelectTrigger className="w-[180px]">
