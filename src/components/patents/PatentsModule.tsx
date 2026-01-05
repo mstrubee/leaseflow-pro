@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, AlertTriangle, Settings } from "lucide-react";
+import { FileText, AlertTriangle, Settings, CheckCircle } from "lucide-react";
 import { usePatents } from "@/hooks/usePatents";
 import { useAuth } from "@/hooks/useAuth";
 import { PatentsList } from "./PatentsList";
@@ -98,7 +98,7 @@ export function PatentsModule() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Locales</CardTitle>
@@ -106,6 +106,18 @@ export function PatentsModule() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{contracts.length}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-green-200 bg-green-50 dark:bg-green-950/20">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-green-700 dark:text-green-400">Patentes Definitivas</CardTitle>
+            <CheckCircle className="h-4 w-4 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-700 dark:text-green-400">
+              {contracts.filter(c => c.patente_status === 'definitiva').length}
+            </div>
           </CardContent>
         </Card>
 
