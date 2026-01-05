@@ -2372,6 +2372,7 @@ export type Database = {
           id: string
           is_active: boolean | null
           name: string
+          parent_id: string | null
           updated_at: string
         }
         Insert: {
@@ -2381,6 +2382,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           name: string
+          parent_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -2390,9 +2392,18 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           name?: string
+          parent_id?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "supplier_categories_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_categories"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       supplier_emails: {
         Row: {

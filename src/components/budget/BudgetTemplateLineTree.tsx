@@ -729,19 +729,21 @@ const SortableTemplateLineItem = ({
           </div>
         )}
         
-        {/* Parent line with children: show category selector, multiplier and subtotal */}
+        {/* Parent line with children: show category selector (only for non-root), multiplier and subtotal */}
         {hasChildren && (
           <>
-            {/* Category selector for parent lines */}
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-muted-foreground">Rubro:</span>
-              <CategorySelect
-                value={line.category_id}
-                onChange={(categoryId) => onUpdateLine(line.id, { category_id: categoryId })}
-                placeholder="Seleccionar"
-                size="sm"
-              />
-            </div>
+            {/* Category selector only for non-root parent lines (level >= 1) */}
+            {level >= 1 && (
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-muted-foreground">Rubro:</span>
+                <CategorySelect
+                  value={line.category_id}
+                  onChange={(categoryId) => onUpdateLine(line.id, { category_id: categoryId })}
+                  placeholder="Seleccionar"
+                  size="sm"
+                />
+              </div>
+            )}
             
             {level >= 1 && (
               <>
