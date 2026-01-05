@@ -329,8 +329,12 @@ const BudgetLineItem = ({
 };
 
 // Helpers para cálculos
-// Helper to get effective amount - use amount_uf directly (already calculated)
+// Helper to get effective amount - only count lines with valid quantity AND unit_price
 const getEffectiveAmount = (item: BudgetLine): number => {
+  const qty = item.quantity || 0;
+  const price = item.unit_price || 0;
+  // Only return amount if both quantity and price are set
+  if (qty <= 0 || price <= 0) return 0;
   return item.amount_uf || 0;
 };
 
