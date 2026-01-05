@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import { useBudgetContext } from "./BudgetContext";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 export interface BudgetLine {
   id: string;
   budget_id: string;
@@ -21,6 +22,7 @@ export interface BudgetLine {
   currency?: string;
   unit_price?: number;
   template_line_id?: string | null;
+  supplier_id?: string | null;
   supplier_name?: string | null;
   children?: BudgetLine[];
 }
@@ -81,12 +83,10 @@ const BudgetLineItem = ({
   const [isEditingUnit, setIsEditingUnit] = useState(false);
   const [isEditingPrice, setIsEditingPrice] = useState(false);
   const [isEditingCurrency, setIsEditingCurrency] = useState(false);
-  const [isEditingSupplier, setIsEditingSupplier] = useState(false);
   const [editQuantity, setEditQuantity] = useState((line.quantity || 0).toString());
   const [editUnitPrice, setEditUnitPrice] = useState((line.unit_price || 0).toString());
   const [editCurrency, setEditCurrency] = useState(line.currency || "UF");
   const [editUnit, setEditUnit] = useState(line.unit_type || "m2");
-  const [editSupplier, setEditSupplier] = useState(line.supplier_name || "");
   const {
     formatUF,
     formatCLP,
@@ -189,20 +189,12 @@ const BudgetLineItem = ({
     setIsEditingCurrency(false);
   };
 
-  const handleSaveSupplier = () => {
+  const handleSupplierChange = (supplierId: string | null, supplierName: string | null) => {
     if (readOnly) return;
-    if (editSupplier !== (line.supplier_name || "")) {
-      onUpdateLine(line.id, { supplier_name: editSupplier || null });
-    }
-    setIsEditingSupplier(false);
-  };
-
-  const handleSupplierKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleSaveSupplier();
-    else if (e.key === "Escape") {
-      setEditSupplier(line.supplier_name || "");
-      setIsEditingSupplier(false);
-    }
+    onUpdateLine(line.id, { 
+      supplier_id: supplierId,
+      supplier_name: supplierName 
+    });
   };
 
   const handleQuantityKeyDown = (e: React.KeyboardEvent) => {
@@ -428,28 +420,19 @@ const BudgetLineItem = ({
               </Tooltip>
             </TooltipProvider>}
           
-          {/* Supplier - editable on double click - only for leaf lines */}
-          {!isParent && (
-            isEditingSupplier && !readOnly ? (
-              <Input 
-                type="text" 
-                value={editSupplier} 
-                onChange={e => setEditSupplier(e.target.value)} 
-                onBlur={handleSaveSupplier}
-                onKeyDown={handleSupplierKeyDown}
-                className="h-6 w-36 text-xs" 
-                autoFocus
-                placeholder="Proveedor"
-              />
-            ) : (
-              <span 
-                className="text-xs bg-muted/30 px-1.5 py-0.5 rounded min-w-[100px] text-center cursor-text hover:bg-accent/50 truncate max-w-[140px]"
-                onDoubleClick={() => !readOnly && setIsEditingSupplier(true)}
-                title={line.supplier_name || "Doble clic para ingresar proveedor"}
-              >
-                {line.supplier_name || <span className="text-muted-foreground italic">Proveedor</span>}
-              </span>
-            )
+          {/* Supplier dropdown - only for leaf lines */}
+          {!isParent && !readOnly && (
+            <SupplierSelect
+              value={line.supplier_id || null}
+              onChange={handleSupplierChange}
+              templateLineId={line.template_line_id}
+              disabled={readOnly}
+            />
+          )}
+          {!isParent && readOnly && line.supplier_name && (
+            <span className="text-xs bg-muted/30 px-1.5 py-0.5 rounded truncate max-w-[140px]">
+              {line.supplier_name}
+            </span>
           )}
           
           {/* OC and Invoice buttons - only for authorized leaf lines */}
