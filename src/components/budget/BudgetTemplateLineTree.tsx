@@ -670,41 +670,43 @@ const SortableTemplateLineItem = ({
         
         {/* Parent line with children: show multiplier and subtotal */}
         {hasChildren && (
-          <div className="flex items-center gap-2 flex-1">
-            {/* Multiplier - editable */}
-            <span className="text-xs text-muted-foreground">×</span>
-            {isEditingQuantity ? (
-              <Input
-                type="number"
-                value={editQuantity}
-                onChange={(e) => setEditQuantity(e.target.value)}
-                onBlur={handleSaveQuantity}
-                onKeyDown={handleQuantityKeyDown}
-                className="h-6 w-12 text-xs"
-                autoFocus
-                min="1"
-              />
-            ) : (
-              <span 
-                className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[30px] text-center cursor-text hover:bg-accent/50"
-                onDoubleClick={() => setIsEditingQuantity(true)}
-                title="Doble clic para editar"
-              >
-                {multiplier}
+          <>
+            <div className="flex items-center gap-2 flex-1">
+              {/* Multiplier - editable */}
+              <span className="text-xs text-muted-foreground">×</span>
+              {isEditingQuantity ? (
+                <Input
+                  type="number"
+                  value={editQuantity}
+                  onChange={(e) => setEditQuantity(e.target.value)}
+                  onBlur={handleSaveQuantity}
+                  onKeyDown={handleQuantityKeyDown}
+                  className="h-6 w-12 text-xs"
+                  autoFocus
+                  min="1"
+                />
+              ) : (
+                <span 
+                  className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[30px] text-center cursor-text hover:bg-accent/50"
+                  onDoubleClick={() => setIsEditingQuantity(true)}
+                  title="Doble clic para editar"
+                >
+                  {multiplier}
+                </span>
+              )}
+              <span className="text-xs text-muted-foreground">unidades</span>
+              
+              {/* Total with multiplier */}
+              <span className="text-xs font-mono bg-primary/10 px-2 py-0.5 rounded font-semibold ml-auto">
+                = UF {parentTotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
               </span>
-            )}
-            <span className="text-xs text-muted-foreground">unidades</span>
+            </div>
             
-            {/* Subtotal of children */}
-            <span className="text-xs text-muted-foreground ml-2">
-              (Subtotal hijas: UF {childrenSubtotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })})
-            </span>
-            
-            {/* Total with multiplier */}
-            <span className="text-xs font-mono bg-primary/10 px-2 py-0.5 rounded font-semibold ml-auto">
-              = UF {parentTotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-            </span>
-          </div>
+            {/* Subtotal Unitario on separate line */}
+            <div className="text-xs text-muted-foreground pl-6">
+              Subtotal Unitario: UF {childrenSubtotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+            </div>
+          </>
         )}
         
         <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
