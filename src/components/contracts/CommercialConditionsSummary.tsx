@@ -138,9 +138,10 @@ export function CommercialConditionsSummary({
       const sortedRanges = [...noticeRanges].sort((a, b) => a.start_month - b.start_month);
       for (const range of sortedRanges) {
         const rangeStartDate = addMonths(startDate, range.start_month - 1);
+        const rangeEndDate = addMonths(startDate, range.end_month - 1);
         if (rangeStartDate > today) {
           noticeDate = rangeStartDate;
-          noticeDateLabel = `rango: meses ${range.start_month}-${range.end_month}`;
+          noticeDateLabel = `hasta ${format(rangeEndDate, "dd MMM yyyy", { locale: es })}`;
           break;
         }
       }
@@ -148,8 +149,9 @@ export function CommercialConditionsSummary({
       // If all ranges are expired, use the last one
       if (!noticeDate && sortedRanges.length > 0) {
         const lastRange = sortedRanges[sortedRanges.length - 1];
+        const rangeEndDate = addMonths(startDate, lastRange.end_month - 1);
         noticeDate = addMonths(startDate, lastRange.start_month - 1);
-        noticeDateLabel = `rango: meses ${lastRange.start_month}-${lastRange.end_month}`;
+        noticeDateLabel = `hasta ${format(rangeEndDate, "dd MMM yyyy", { locale: es })}`;
       }
     }
     return {
