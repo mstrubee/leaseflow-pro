@@ -62,18 +62,29 @@ export const SupplierForm = ({ supplier, onSave, onCancel }: SupplierFormProps) 
   };
 
   const loadTemplateLines = async () => {
-    const { data } = await supabase
+    // Get all template lines
+    const { data: allLines } = await supabase
       .from("budget_template_lines")
       .select(`
         id,
         name,
+        parent_id,
         template:budget_templates(name)
       `)
-      .is("parent_id", null)
       .order("name");
     
-    if (data) {
-      setTemplateLines(data.map((line: any) => ({
+    if (allLines) {
+      // Find IDs that are parents (have children)
+      const parentIds = new Set(
+        allLines
+          .filter(line => line.parent_id)
+          .map(line => line.parent_id)
+      );
+      
+      // Filter to only leaf lines (not parents)
+      const leafLines = allLines.filter(line => !parentIds.has(line.id));
+      
+      setTemplateLines(leafLines.map((line: any) => ({
         id: line.id,
         name: line.name,
         template_name: line.template?.name || ""
