@@ -5,6 +5,7 @@ import { Plus, LogOut, Shield, Trash2, Bell } from "lucide-react";
 import { DashboardStats } from "@/components/dashboard/DashboardStats";
 import { SuppliersModule } from "@/components/suppliers/SuppliersModule";
 import { useAuth } from "@/hooks/useAuth";
+import logosHeader from "@/assets/logos-header.png";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -32,9 +33,12 @@ const Dashboard = () => {
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="items-center justify-between flex flex-row">
-            <div>
-              <h1 className="text-2xl font-semibold text-sky-950">Gerencia Desarrollo</h1>
-              <p className="text-sm text-muted-foreground mt-1">Desarrollo Negocios y Administración Inmobiliaria</p>
+            <div className="flex items-center gap-6">
+              <img src={logosHeader} alt="AutoPlanet Agroplanet" className="h-10 object-contain" />
+              <div>
+                <h1 className="text-2xl font-semibold text-sky-950">Gerencia Desarrollo</h1>
+                <p className="text-sm text-muted-foreground mt-1">Desarrollo Negocios y Administración Inmobiliaria</p>
+              </div>
             </div>
             <div className="flex items-center gap-3">
               {isAdmin && <>
