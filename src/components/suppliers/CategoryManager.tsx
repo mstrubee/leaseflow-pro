@@ -2,18 +2,44 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical } from "lucide-react";
 import { toast } from "sonner";
 import { SupplierCategory } from "./types";
 import { cn } from "@/lib/utils";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface CategoryWithChildren extends SupplierCategory {
   children: CategoryWithChildren[];
 }
 
+// Color palette for hierarchy levels
+const LEVEL_COLORS = [
+  { bg: "bg-primary/20", border: "border-primary/40", text: "text-primary" },
+  { bg: "bg-primary/12", border: "border-primary/25", text: "text-primary/90" },
+  { bg: "bg-primary/8", border: "border-primary/15", text: "text-primary/80" },
+  { bg: "bg-primary/5", border: "border-primary/10", text: "text-primary/70" },
+];
+
 export const CategoryManager = () => {
   const [categories, setCategories] = useState<CategoryWithChildren[]>([]);
+  const [flatCategories, setFlatCategories] = useState<SupplierCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -21,22 +47,26 @@ export const CategoryManager = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [addingParentId, setAddingParentId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   useEffect(() => {
     loadCategories();
   }, []);
 
-  const buildTree = (flatCategories: SupplierCategory[]): CategoryWithChildren[] => {
+  const buildTree = (flatCats: SupplierCategory[]): CategoryWithChildren[] => {
     const map = new Map<string, CategoryWithChildren>();
     const roots: CategoryWithChildren[] = [];
 
-    // First pass: create all nodes
-    flatCategories.forEach(cat => {
+    flatCats.forEach(cat => {
       map.set(cat.id, { ...cat, children: [] });
     });
 
-    // Second pass: build tree
-    flatCategories.forEach(cat => {
+    flatCats.forEach(cat => {
       const node = map.get(cat.id)!;
       if (cat.parent_id && map.has(cat.parent_id)) {
         map.get(cat.parent_id)!.children.push(node);
@@ -45,7 +75,6 @@ export const CategoryManager = () => {
       }
     });
 
-    // Sort children by display_order
     const sortChildren = (nodes: CategoryWithChildren[]) => {
       nodes.sort((a, b) => a.display_order - b.display_order);
       nodes.forEach(n => sortChildren(n.children));
@@ -62,9 +91,10 @@ export const CategoryManager = () => {
         .select("*")
         .order("display_order");
       if (error) throw error;
-      setCategories(buildTree(data || []));
-      // Expand all by default
-      setExpandedIds(new Set((data || []).map(c => c.id)));
+      const cats = data || [];
+      setFlatCategories(cats);
+      setCategories(buildTree(cats));
+      setExpandedIds(new Set(cats.map(c => c.id)));
     } catch (error) {
       console.error("Error loading categories:", error);
     } finally {
@@ -75,14 +105,8 @@ export const CategoryManager = () => {
   const handleAdd = async (parentId: string | null = null) => {
     if (!newName.trim()) return;
     try {
-      const { data: existing } = await supabase
-        .from("supplier_categories")
-        .select("display_order")
-        .eq("parent_id", parentId ?? null)
-        .order("display_order", { ascending: false })
-        .limit(1);
-      
-      const maxOrder = existing && existing.length > 0 ? existing[0].display_order : 0;
+      const siblings = flatCategories.filter(c => c.parent_id === parentId);
+      const maxOrder = siblings.length > 0 ? Math.max(...siblings.map(s => s.display_order)) : 0;
       
       const { error } = await supabase
         .from("supplier_categories")
@@ -128,9 +152,7 @@ export const CategoryManager = () => {
 
   const handleDelete = async (id: string, hasChildren: boolean) => {
     if (hasChildren) {
-      if (!confirm("Este rubro tiene sub-rubros. ¿Eliminar todos?")) {
-        return;
-      }
+      if (!confirm("Este rubro tiene sub-rubros. ¿Eliminar todos?")) return;
     }
     try {
       const { error } = await supabase
@@ -161,11 +183,8 @@ export const CategoryManager = () => {
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
@@ -177,88 +196,187 @@ export const CategoryManager = () => {
     setExpandedIds(prev => new Set([...prev, parentId]));
   };
 
-  const renderCategory = (cat: CategoryWithChildren, level: number = 0) => {
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+
+    if (!over || active.id === over.id) return;
+
+    const draggedId = active.id as string;
+    const targetId = over.id as string;
+
+    const draggedCat = flatCategories.find(c => c.id === draggedId);
+    const targetCat = flatCategories.find(c => c.id === targetId);
+
+    if (!draggedCat || !targetCat) return;
+
+    // Prevent dropping on own descendants
+    const getDescendants = (parentId: string): string[] => {
+      const children = flatCategories.filter(c => c.parent_id === parentId);
+      return children.flatMap(c => [c.id, ...getDescendants(c.id)]);
+    };
+    if (getDescendants(draggedId).includes(targetId)) return;
+
+    // Reparent: make dragged item a child of target
+    try {
+      const newSiblings = flatCategories.filter(c => c.parent_id === targetId);
+      const maxOrder = newSiblings.length > 0 ? Math.max(...newSiblings.map(s => s.display_order)) : 0;
+
+      const { error } = await supabase
+        .from("supplier_categories")
+        .update({ parent_id: targetId, display_order: maxOrder + 1 })
+        .eq("id", draggedId);
+
+      if (error) throw error;
+      toast.success("Rubro movido");
+      loadCategories();
+    } catch (error) {
+      toast.error("Error al mover rubro");
+    }
+  };
+
+  // Flatten for DnD
+  const flattenForDnd = (nodes: CategoryWithChildren[]): string[] => {
+    const result: string[] = [];
+    const traverse = (list: CategoryWithChildren[]) => {
+      list.forEach(node => {
+        result.push(node.id);
+        if (expandedIds.has(node.id)) traverse(node.children);
+      });
+    };
+    traverse(nodes);
+    return result;
+  };
+
+  const dndIds = flattenForDnd(categories);
+  const activeCat = activeId ? flatCategories.find(c => c.id === activeId) : null;
+
+  const SortableCategoryItem = ({ 
+    cat, 
+    level 
+  }: { 
+    cat: CategoryWithChildren; 
+    level: number;
+  }) => {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cat.id });
+    const style = { transform: CSS.Transform.toString(transform), transition };
+
     const hasChildren = cat.children.length > 0;
     const isExpanded = expandedIds.has(cat.id);
     const isAddingHere = isAdding && addingParentId === cat.id;
+    const colors = LEVEL_COLORS[Math.min(level, LEVEL_COLORS.length - 1)];
 
     return (
-      <div key={cat.id} className={cn("space-y-1", level > 0 && "ml-4 border-l border-border pl-2")}>
-        <div className="group flex items-center gap-1">
-          {/* Expand/collapse button */}
+      <div ref={setNodeRef} style={style} className={cn("space-y-1", isDragging && "opacity-30")}>
+        <div 
+          className={cn(
+            "group flex items-center gap-2 p-2 rounded-lg border transition-all",
+            colors.bg, colors.border,
+            !cat.is_active && "opacity-50"
+          )}
+        >
+          {/* Drag handle */}
+          <button
+            {...attributes}
+            {...listeners}
+            className="p-1 rounded cursor-grab active:cursor-grabbing hover:bg-accent/50"
+            title="Arrastrar para mover"
+          >
+            <GripVertical className="h-4 w-4 text-muted-foreground" />
+          </button>
+
+          {/* Expand/collapse */}
           <button
             onClick={() => toggleExpand(cat.id)}
             className="p-0.5 hover:bg-accent rounded transition-colors"
             disabled={!hasChildren}
           >
             {hasChildren ? (
-              isExpanded ? (
-                <ChevronDown className="h-3 w-3" />
-              ) : (
-                <ChevronRight className="h-3 w-3" />
-              )
+              isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />
             ) : (
-              <div className="h-3 w-3" />
+              <div className="h-4 w-4" />
             )}
           </button>
 
+          {/* Name */}
           {editingId === cat.id ? (
-            <div className="flex items-center gap-1 bg-muted rounded-md px-2 py-1">
+            <div className="flex items-center gap-1 flex-1">
               <Input
                 value={editName}
                 onChange={e => setEditName(e.target.value)}
-                className="h-6 w-32 text-xs"
+                className="h-7 flex-1 text-sm"
                 autoFocus
-                onKeyDown={e => e.key === "Enter" && handleUpdate(cat.id)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") handleUpdate(cat.id);
+                  if (e.key === "Escape") setEditingId(null);
+                }}
               />
-              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => handleUpdate(cat.id)}>
-                <Check className="h-3 w-3 text-green-600" />
+              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleUpdate(cat.id)}>
+                <Check className="h-4 w-4 text-green-600" />
               </Button>
-              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingId(null)}>
-                <X className="h-3 w-3" />
+              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingId(null)}>
+                <X className="h-4 w-4" />
               </Button>
             </div>
           ) : (
-            <Badge
-              variant={cat.is_active ? "secondary" : "outline"}
-              className={cn(
-                "cursor-pointer gap-1 pr-1",
-                level === 0 && "font-semibold"
-              )}
-              onClick={() => handleToggleActive(cat)}
-            >
-              {level > 0 && <span className="text-muted-foreground">↳</span>}
-              {cat.name}
-              <span className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 ml-1">
-                <button
-                  onClick={e => { e.stopPropagation(); startAddingSubCategory(cat.id); }}
+            <>
+              <span 
+                className={cn(
+                  "flex-1 text-sm font-medium cursor-pointer hover:underline",
+                  colors.text,
+                  level === 0 && "font-semibold"
+                )}
+                onClick={() => handleToggleActive(cat)}
+                title={cat.is_active ? "Clic para desactivar" : "Clic para activar"}
+              >
+                {cat.name}
+              </span>
+              
+              <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6"
+                  onClick={() => startAddingSubCategory(cat.id)}
                   title="Agregar sub-rubro"
                 >
-                  <Plus className="h-3 w-3 text-primary" />
-                </button>
-                <button
-                  onClick={e => { e.stopPropagation(); setEditingId(cat.id); setEditName(cat.name); }}
+                  <Plus className="h-3 w-3" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6"
+                  onClick={() => { setEditingId(cat.id); setEditName(cat.name); }}
+                  title="Editar"
                 >
                   <Pencil className="h-3 w-3" />
-                </button>
-                <button
-                  onClick={e => { e.stopPropagation(); handleDelete(cat.id, hasChildren); }}
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6 text-destructive"
+                  onClick={() => handleDelete(cat.id, hasChildren)}
+                  title="Eliminar"
                 >
-                  <Trash2 className="h-3 w-3 text-destructive" />
-                </button>
-              </span>
-            </Badge>
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
+            </>
           )}
         </div>
 
         {/* Add sub-category input */}
         {isAddingHere && (
-          <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-md ml-6">
+          <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-md ml-8">
             <Input
               value={newName}
               onChange={e => setNewName(e.target.value)}
               placeholder="Nombre del sub-rubro"
-              className="h-7 text-xs"
+              className="h-7 text-sm"
               autoFocus
               onKeyDown={e => {
                 if (e.key === "Enter") handleAdd(cat.id);
@@ -266,18 +384,20 @@ export const CategoryManager = () => {
               }}
             />
             <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleAdd(cat.id)}>
-              <Check className="h-3 w-3 text-green-600" />
+              <Check className="h-4 w-4 text-green-600" />
             </Button>
             <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setIsAdding(false); setAddingParentId(null); }}>
-              <X className="h-3 w-3" />
+              <X className="h-4 w-4" />
             </Button>
           </div>
         )}
 
         {/* Children */}
         {hasChildren && isExpanded && (
-          <div className="space-y-1">
-            {cat.children.map(child => renderCategory(child, level + 1))}
+          <div className="ml-6 border-l-2 border-border pl-2 space-y-1">
+            {cat.children.map(child => (
+              <SortableCategoryItem key={child.id} cat={child} level={level + 1} />
+            ))}
           </div>
         )}
       </div>
@@ -289,7 +409,7 @@ export const CategoryManager = () => {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <FolderTree className="h-4 w-4 text-muted-foreground" />
@@ -305,7 +425,7 @@ export const CategoryManager = () => {
 
       {/* Add root category input */}
       {isAdding && addingParentId === null && (
-        <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-md">
+        <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg border border-dashed">
           <Input
             value={newName}
             onChange={e => setNewName(e.target.value)}
@@ -326,9 +446,29 @@ export const CategoryManager = () => {
         </div>
       )}
 
-      <div className="space-y-1">
-        {categories.map(cat => renderCategory(cat))}
-      </div>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext items={dndIds} strategy={verticalListSortingStrategy}>
+          <div className="space-y-2">
+            {categories.map(cat => (
+              <SortableCategoryItem key={cat.id} cat={cat} level={0} />
+            ))}
+          </div>
+        </SortableContext>
+
+        <DragOverlay>
+          {activeCat && (
+            <div className="flex items-center gap-2 p-2 rounded-lg bg-background border-2 border-primary shadow-lg">
+              <GripVertical className="h-4 w-4 text-primary" />
+              <span className="text-sm font-medium">{activeCat.name}</span>
+            </div>
+          )}
+        </DragOverlay>
+      </DndContext>
 
       {categories.length === 0 && !isAdding && (
         <p className="text-sm text-muted-foreground text-center py-4">

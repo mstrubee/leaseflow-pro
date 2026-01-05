@@ -8,7 +8,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { X, Plus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { Supplier, SupplierCategory, SupplierFormData } from "./types";
+import { Supplier, SupplierFormData } from "./types";
+import { CategorySelect } from "./CategorySelect";
 
 interface SupplierFormProps {
   supplier?: Supplier | null;
@@ -25,7 +26,6 @@ interface TemplateLineOption {
 
 export const SupplierForm = ({ supplier, onSave, onCancel }: SupplierFormProps) => {
   const [loading, setLoading] = useState(false);
-  const [categories, setCategories] = useState<SupplierCategory[]>([]);
   const [templateLines, setTemplateLines] = useState<TemplateLineOption[]>([]);
   const [searchProduct, setSearchProduct] = useState("");
   const [formData, setFormData] = useState<SupplierFormData>({
@@ -47,21 +47,11 @@ export const SupplierForm = ({ supplier, onSave, onCancel }: SupplierFormProps) 
   const [newEmail, setNewEmail] = useState("");
 
   useEffect(() => {
-    loadCategories();
     loadTemplateLines();
     if (supplier) {
       loadSupplierData();
     }
   }, [supplier]);
-
-  const loadCategories = async () => {
-    const { data } = await supabase
-      .from("supplier_categories")
-      .select("*")
-      .eq("is_active", true)
-      .order("display_order");
-    if (data) setCategories(data);
-  };
 
   const loadTemplateLines = async () => {
     // Get all template lines with parent info
@@ -420,20 +410,16 @@ export const SupplierForm = ({ supplier, onSave, onCancel }: SupplierFormProps) 
 
       {/* Category */}
       <div className="space-y-4">
-        <h4 className="font-medium text-sm border-b pb-2">Rubro *</h4>
-        <Select
-          value={formData.category_id}
-          onValueChange={value => setFormData(prev => ({ ...prev, category_id: value }))}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Seleccionar rubro" />
-          </SelectTrigger>
-          <SelectContent>
-            {categories.map(cat => (
-              <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <h4 className="font-medium text-sm border-b pb-2">Rubro</h4>
+        <CategorySelect
+          value={formData.category_id || null}
+          onChange={(categoryId) => setFormData(prev => ({ ...prev, category_id: categoryId || "" }))}
+          placeholder="Seleccionar rubro"
+          allowAllLevels={true}
+        />
+        <p className="text-xs text-muted-foreground">
+          Puedes seleccionar cualquier nivel de la jerarquía de rubros
+        </p>
       </div>
 
       {/* Generic / Products */}
