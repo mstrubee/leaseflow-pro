@@ -29,7 +29,7 @@ serve(async (req) => {
       value: item.valor
     })) || [];
 
-    // Get dollar history for 6 months and 1 year
+    // Get dollar history for the last year (API returns newest first)
     const dollarHistory = dollarData.serie?.slice(0, 365).map((item: any) => ({
       date: item.fecha,
       value: item.valor
@@ -38,25 +38,38 @@ serve(async (req) => {
     // Current dollar value
     const currentDollar = dollarData.serie?.[0]?.valor || 0;
 
-    // Filter for 6 months (approx 180 days) and 1 year
+    // Filter for 6 months (approx 180 days)
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
     
-    const dollarSixMonths = dollarHistory.filter((item: any) => 
-      new Date(item.date) >= sixMonthsAgo
-    );
+    const dollarSixMonths = dollarHistory.filter((item: any) => {
+      const itemDate = new Date(item.date);
+      return itemDate >= sixMonthsAgo;
+    });
+
+    // Filter for 1 year
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    
+    const dollarOneYear = dollarHistory.filter((item: any) => {
+      const itemDate = new Date(item.date);
+      return itemDate >= oneYearAgo;
+    });
+
+    // Sort chronologically (oldest to newest for chart display)
+    const sortByDate = (a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime();
 
     return new Response(
       JSON.stringify({
         uf: {
           current: currentUF,
-          next10Days: ufNext10Days.reverse(),
+          next10Days: [...ufNext10Days].sort(sortByDate),
           date: today.toISOString()
         },
         dollar: {
           current: currentDollar,
-          sixMonths: dollarSixMonths.reverse(),
-          oneYear: dollarHistory.reverse(),
+          sixMonths: [...dollarSixMonths].sort(sortByDate),
+          oneYear: [...dollarOneYear].sort(sortByDate),
           date: today.toISOString()
         }
       }),
