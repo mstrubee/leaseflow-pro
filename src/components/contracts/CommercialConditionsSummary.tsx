@@ -146,14 +146,21 @@ export function CommercialConditionsSummary({
         }
       }
 
-      // If all ranges are expired, use the last one
+      // If all ranges are expired, use the last one and mark as expired
       if (!noticeDate && sortedRanges.length > 0) {
         const lastRange = sortedRanges[sortedRanges.length - 1];
         const rangeEndDate = addMonths(startDate, lastRange.end_month - 1);
         noticeDate = addMonths(startDate, lastRange.start_month - 1);
-        noticeDateLabel = `hasta ${format(rangeEndDate, "dd MMM yyyy", { locale: es })}`;
+        noticeDateLabel = "vencido";
       }
     }
+    
+    // Check if notice date is expired (for non-range types)
+    const isNoticeExpired = noticeDate && noticeDate < new Date() && noticeDateLabel !== "vencido";
+    if (isNoticeExpired && version.notice_type !== "rangos") {
+      noticeDateLabel = "vencido";
+    }
+    
     return {
       startDate,
       endDate,
@@ -286,12 +293,18 @@ export function CommercialConditionsSummary({
               <Bell className="h-3 w-3" />
               Fecha Aviso
             </div>
-            <p className="text-sm font-medium">
+            <p className={`text-sm font-medium ${dates?.noticeDateLabel === "vencido" ? "text-destructive" : ""}`}>
               {dates?.noticeDate ? formatDateShort(dates.noticeDate) : "Sin definir"}
             </p>
-            <p className="text-xs text-muted-foreground">
-              ({dates?.noticeDateLabel || "sin especificar"})
-            </p>
+            {dates?.noticeDateLabel === "vencido" ? (
+              <Badge variant="destructive" className="text-xs">
+                Vencido
+              </Badge>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                ({dates?.noticeDateLabel || "sin especificar"})
+              </p>
+            )}
           </div>
 
           {/* Tipo de Aviso (Bilateralidad) */}
