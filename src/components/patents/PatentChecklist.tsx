@@ -344,6 +344,13 @@ export function PatentChecklist({
                     const isEditing = editingDoc === item.id;
                     const hasChanges = !!docEdits[item.id];
 
+                    // Determine which fields to disable based on status
+                    const isNoAplica = status === 'no_aplica';
+                    const isOk = status === 'ok';
+                    const disableEmitter = isNoAplica;
+                    const disableOtherFields = isNoAplica || isOk;
+                    const disabledCellClass = "opacity-40 pointer-events-none";
+
                     return (
                       <TableRow key={item.id} onClick={() => setEditingDoc(item.id)}>
                         <TableCell className="font-medium">{item.name}</TableCell>
@@ -370,7 +377,7 @@ export function PatentChecklist({
                             </SelectContent>
                           </Select>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className={disableEmitter ? disabledCellClass : ""}>
                           {getFixedEmitterName(item.id) ? (
                             <span className="text-sm px-2 py-1 bg-muted rounded">
                               {getFixedEmitterName(item.id)}
@@ -379,6 +386,7 @@ export function PatentChecklist({
                             <Select 
                               value={getDocValue(item.id, 'emitter_id') || ''} 
                               onValueChange={(v) => handleDocumentFieldChange(item.id, 'emitter_id', v)}
+                              disabled={disableEmitter}
                             >
                               <SelectTrigger className="h-8">
                                 <SelectValue placeholder="Seleccionar" />
@@ -393,18 +401,19 @@ export function PatentChecklist({
                             </Select>
                           )}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className={disableOtherFields ? disabledCellClass : ""}>
                           <Input
                             className="h-8"
                             value={getDocValue(item.id, 'responsible') || ''}
                             onChange={(e) => handleDocumentFieldChange(item.id, 'responsible', e.target.value)}
                             placeholder="Responsable"
+                            disabled={disableOtherFields}
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className={disableOtherFields ? disabledCellClass : ""}>
                           <Popover>
                             <PopoverTrigger asChild>
-                              <Button variant="outline" size="sm" className="h-8 w-full justify-start">
+                              <Button variant="outline" size="sm" className="h-8 w-full justify-start" disabled={disableOtherFields}>
                                 <CalendarIcon className="mr-2 h-3 w-3" />
                                 {getDocValue(item.id, 'start_date') 
                                   ? format(new Date(getDocValue(item.id, 'start_date')), 'dd/MM/yyyy')
@@ -422,19 +431,20 @@ export function PatentChecklist({
                             </PopoverContent>
                           </Popover>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className={disableOtherFields ? disabledCellClass : ""}>
                           <Input
                             className="h-8"
                             type="number"
                             value={getDocValue(item.id, 'deadline_days') || ''}
                             onChange={(e) => handleDocumentFieldChange(item.id, 'deadline_days', e.target.value ? parseInt(e.target.value) : undefined)}
                             placeholder="Días"
+                            disabled={disableOtherFields}
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className={disableOtherFields ? disabledCellClass : ""}>
                           <Popover>
                             <PopoverTrigger asChild>
-                              <Button variant="outline" size="sm" className="h-8 w-full justify-start">
+                              <Button variant="outline" size="sm" className="h-8 w-full justify-start" disabled={disableOtherFields}>
                                 <CalendarIcon className="mr-2 h-3 w-3" />
                                 {getDocValue(item.id, 'end_date') 
                                   ? format(new Date(getDocValue(item.id, 'end_date')), 'dd/MM/yyyy')
@@ -452,10 +462,11 @@ export function PatentChecklist({
                             </PopoverContent>
                           </Popover>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className={isNoAplica ? disabledCellClass : ""}>
                           <Button
                             size="sm"
                             variant={getDocValue(item.id, 'document_url') ? "secondary" : "outline"}
+                            disabled={isNoAplica}
                             onClick={(e) => {
                               e.stopPropagation();
                               setUploadDialog({ itemId: item.id, itemName: item.name });
@@ -468,18 +479,19 @@ export function PatentChecklist({
                             )}
                           </Button>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className={disableOtherFields ? disabledCellClass : ""}>
                           <Input
                             className="h-8"
                             maxLength={150}
                             value={getDocValue(item.id, 'notes') || ''}
                             onChange={(e) => handleDocumentFieldChange(item.id, 'notes', e.target.value)}
                             placeholder="Notas (máx 150)"
+                            disabled={disableOtherFields}
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className={disableOtherFields ? disabledCellClass : ""}>
                           <div className="flex gap-1">
-                            {hasChanges && (
+                            {hasChanges && !disableOtherFields && (
                               <Button size="sm" variant="default" onClick={(e) => {
                                 e.stopPropagation();
                                 saveDocumentChanges(item.id);
@@ -487,26 +499,28 @@ export function PatentChecklist({
                                 <Save className="h-3 w-3" />
                               </Button>
                             )}
-                            <Button 
-                              size="sm" 
-                              variant="ghost"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const d = getDocument(item.id);
-                                if (d?.id) {
-                                  setAlertDialog({
-                                    docId: d.id,
-                                    itemName: item.name,
-                                    startDate: getDocValue(item.id, 'start_date'),
-                                    endDate: getDocValue(item.id, 'end_date'),
-                                  });
-                                } else {
-                                  toast.error("Guarda primero los cambios del documento");
-                                }
-                              }}
-                            >
-                              <Bell className="h-3 w-3" />
-                            </Button>
+                            {!disableOtherFields && (
+                              <Button 
+                                size="sm" 
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const d = getDocument(item.id);
+                                  if (d?.id) {
+                                    setAlertDialog({
+                                      docId: d.id,
+                                      itemName: item.name,
+                                      startDate: getDocValue(item.id, 'start_date'),
+                                      endDate: getDocValue(item.id, 'end_date'),
+                                    });
+                                  } else {
+                                    toast.error("Guarda primero los cambios del documento");
+                                  }
+                                }}
+                              >
+                                <Bell className="h-3 w-3" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
