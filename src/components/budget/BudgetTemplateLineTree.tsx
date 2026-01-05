@@ -510,14 +510,15 @@ const SortableTemplateLineItem = ({
       <div
         className={cn(
           "flex items-center gap-2 py-2 px-2 rounded-md hover:bg-accent/50 group transition-all duration-200",
-          // Color hierarchy: deeper levels get darker backgrounds
-          level === 0 && "bg-muted/20",
-          level === 1 && hasChildren && "bg-muted/40",
-          level === 1 && !hasChildren && "bg-muted/10",
-          level === 2 && hasChildren && "bg-muted/60",
-          level === 2 && !hasChildren && "bg-muted/20",
-          level >= 3 && hasChildren && "bg-muted/80",
-          level >= 3 && !hasChildren && "bg-muted/30",
+          // Color hierarchy: parents darker than children, same color range
+          level === 0 && hasChildren && "bg-muted/60",
+          level === 0 && !hasChildren && "bg-muted/20",
+          level === 1 && hasChildren && "bg-muted/50",
+          level === 1 && !hasChildren && "bg-muted/15",
+          level === 2 && hasChildren && "bg-muted/40",
+          level === 2 && !hasChildren && "bg-muted/10",
+          level >= 3 && hasChildren && "bg-muted/35",
+          level >= 3 && !hasChildren && "bg-muted/5",
           isReparentTarget && "ring-2 ring-primary ring-offset-2 bg-primary/10 scale-[1.02]",
           isReorderTarget && "border-t-2 border-primary"
         )}
