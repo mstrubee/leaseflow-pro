@@ -4,7 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus } from "lucide-react";
+import { Plus, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +25,7 @@ interface CategorySelectProps {
   disabled?: boolean;
   showManageButton?: boolean;
   size?: "sm" | "default";
+  allowAllLevels?: boolean; // Allow selecting any level, not just leaves
 }
 
 export const CategorySelect = ({ 
@@ -33,7 +34,8 @@ export const CategorySelect = ({
   placeholder = "Seleccionar rubro",
   disabled = false,
   showManageButton = false,
-  size = "default"
+  size = "default",
+  allowAllLevels = true
 }: CategorySelectProps) => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [tree, setTree] = useState<CategoryWithChildren[]>([]);
@@ -88,14 +90,8 @@ export const CategorySelect = ({
     if (!newCategoryName.trim()) return;
     setSaving(true);
     try {
-      const { data: existing } = await supabase
-        .from("supplier_categories")
-        .select("display_order")
-        .eq("parent_id", newParentId)
-        .order("display_order", { ascending: false })
-        .limit(1);
-      
-      const maxOrder = existing && existing.length > 0 ? existing[0].display_order : 0;
+      const siblings = categories.filter(c => c.parent_id === newParentId);
+      const maxOrder = siblings.length > 0 ? siblings.length : 0;
       
       const { data, error } = await supabase
         .from("supplier_categories")
@@ -141,37 +137,49 @@ export const CategorySelect = ({
     onChange(val);
   };
 
-  const getDisplayName = (categoryId: string): string => {
-    const category = categories.find(c => c.id === categoryId);
-    if (!category) return "";
+  // Build full path for display
+  const getFullPath = (categoryId: string): string[] => {
+    const path: string[] = [];
+    let current = categories.find(c => c.id === categoryId);
     
-    if (category.parent_id) {
-      const parent = categories.find(c => c.id === category.parent_id);
-      if (parent) {
-        return `${parent.name} → ${category.name}`;
-      }
+    while (current) {
+      path.unshift(current.name);
+      current = current.parent_id ? categories.find(c => c.id === current!.parent_id) : undefined;
     }
-    return category.name;
+    
+    return path;
+  };
+
+  const getDisplayName = (categoryId: string): string => {
+    const path = getFullPath(categoryId);
+    return path.join(" → ");
   };
 
   const selectedCategory = categories.find(c => c.id === value);
   const sizeClasses = size === "sm" ? "h-6 text-xs" : "";
 
-  // Render flat list with hierarchy indicators
+  // Render hierarchical options
   const renderOptions = () => {
     const items: JSX.Element[] = [];
     
     const renderNode = (node: CategoryWithChildren, level: number) => {
-      const prefix = level > 0 ? "↳ " : "";
+      const hasChildren = node.children.length > 0;
+      const indent = level * 12;
+      
       items.push(
         <SelectItem 
           key={node.id} 
           value={node.id}
-          className={cn(level > 0 && "pl-6")}
+          className="flex items-center"
         >
-          {prefix}{node.name}
+          <span style={{ paddingLeft: `${indent}px` }} className="flex items-center gap-1">
+            {level > 0 && <span className="text-muted-foreground">↳</span>}
+            <span className={cn(level === 0 && "font-medium")}>{node.name}</span>
+            {hasChildren && <ChevronRight className="h-3 w-3 text-muted-foreground ml-1" />}
+          </span>
         </SelectItem>
       );
+      
       node.children.forEach(child => renderNode(child, level + 1));
     };
 
@@ -179,7 +187,7 @@ export const CategorySelect = ({
     return items;
   };
 
-  // Get parent categories for the dialog
+  // Get all categories for parent selection in dialog
   const rootCategories = categories.filter(c => !c.parent_id);
 
   return (
@@ -225,13 +233,16 @@ export const CategorySelect = ({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Ninguno (rubro principal)</SelectItem>
-                  {rootCategories.map(cat => (
+                  {categories.map(cat => (
                     <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
+                      {getDisplayName(cat.id)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                Selecciona un rubro padre para crear un sub-rubro
+              </p>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">
