@@ -78,6 +78,18 @@ const getDescendantIds = (line: TemplateLine): string[] => {
   return ids;
 };
 
+// Helper to calculate subtotal of children recursively
+const calculateChildrenSubtotal = (line: TemplateLine): number => {
+  if (!line.children || line.children.length === 0) {
+    // Leaf node: calculate its own total (qty * price, or 0 if either is missing)
+    const qty = line.quantity || 0;
+    const price = line.default_amount_uf || 0;
+    return qty > 0 && price > 0 ? qty * price : 0;
+  }
+  // Parent node: sum of children subtotals
+  return line.children.reduce((sum, child) => sum + calculateChildrenSubtotal(child), 0);
+};
+
 // Helper to find a line by ID in the tree
 const findLineById = (lines: TemplateLine[], id: string): TemplateLine | null => {
   for (const line of lines) {
@@ -377,13 +389,18 @@ const SortableTemplateLineItem = ({
   const [isEditing, setIsEditing] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState(line.name);
-  const [editQuantity, setEditQuantity] = useState((line.quantity || 0).toString());
+  const [editQuantity, setEditQuantity] = useState((line.quantity ?? 1).toString());
   const [editUnit, setEditUnit] = useState(line.unit_type || "m2");
   const [editAmount, setEditAmount] = useState(line.default_amount_uf.toString());
   const [editCurrency, setEditCurrency] = useState(line.currency || "UF");
 
   const hasChildren = line.children && line.children.length > 0;
   const calculatedTotal = (parseFloat(editQuantity) || 0) * (parseFloat(editAmount) || 0);
+  
+  // For parent lines: calculate children subtotal and apply multiplier
+  const childrenSubtotal = hasChildren ? calculateChildrenSubtotal(line) : 0;
+  const multiplier = line.quantity ?? 1;
+  const parentTotal = childrenSubtotal * multiplier;
 
   // Determine if this is a drop target for reparenting
   const isDropTarget = overId === line.id && activeId !== line.id;
@@ -495,45 +512,57 @@ const SortableTemplateLineItem = ({
                 value={editQuantity}
                 onChange={(e) => setEditQuantity(e.target.value)}
                 className="h-7 w-16"
-                placeholder="Cant."
-                disabled={hasChildren}
+                placeholder={hasChildren ? "Mult." : "Cant."}
+                min="1"
               />
-              <Select value={editUnit} onValueChange={setEditUnit} disabled={hasChildren}>
-                <SelectTrigger className="h-7 w-16">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="m2">m²</SelectItem>
-                  <SelectItem value="mL">mL</SelectItem>
-                  <SelectItem value="Un">Un</SelectItem>
-                </SelectContent>
-              </Select>
+              {!hasChildren && (
+                <Select value={editUnit} onValueChange={setEditUnit}>
+                  <SelectTrigger className="h-7 w-16">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="m2">m²</SelectItem>
+                    <SelectItem value="mL">mL</SelectItem>
+                    <SelectItem value="Un">Un</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+              {hasChildren && (
+                <span className="text-xs text-muted-foreground">unidades</span>
+              )}
             </div>
-            {/* Amount and currency */}
-            <div className="flex items-center gap-1">
-              <Input
-                type="number"
-                value={editAmount}
-                onChange={(e) => setEditAmount(e.target.value)}
-                className="h-7 w-20"
-                placeholder="Monto"
-                disabled={hasChildren}
-              />
-              <Select value={editCurrency} onValueChange={setEditCurrency} disabled={hasChildren}>
-                <SelectTrigger className="h-7 w-16">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="UF">UF</SelectItem>
-                  <SelectItem value="CLP">$</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {/* Calculated total */}
+            {/* Amount and currency - only for leaf nodes */}
+            {!hasChildren && (
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  value={editAmount}
+                  onChange={(e) => setEditAmount(e.target.value)}
+                  className="h-7 w-20"
+                  placeholder="Monto"
+                />
+                <Select value={editCurrency} onValueChange={setEditCurrency}>
+                  <SelectTrigger className="h-7 w-16">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UF">UF</SelectItem>
+                    <SelectItem value="CLP">$</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {/* Calculated total for leaf nodes */}
             {!hasChildren && (
               <div className="w-28 text-right font-mono text-sm bg-muted/50 px-2 py-1 rounded">
                 = {editCurrency === "UF" ? "UF " : "$ "}
                 {calculatedTotal.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            )}
+            {/* Parent line preview of totals */}
+            {hasChildren && (
+              <div className="text-xs text-muted-foreground">
+                (Total: UF {(childrenSubtotal * (parseFloat(editQuantity) || 1)).toLocaleString("es-CL", { minimumFractionDigits: 2 })})
               </div>
             )}
             <Button size="sm" variant="ghost" onClick={handleSave} className="h-7 w-7 p-0">
@@ -594,8 +623,27 @@ const SortableTemplateLineItem = ({
               </div>
             )}
             
-            {/* Spacer for parent lines */}
-            {hasChildren && <div className="flex-1" />}
+            {/* Parent line with children: show multiplier and subtotal */}
+            {hasChildren && (
+              <div className="flex items-center gap-2 flex-1">
+                {/* Multiplier */}
+                <span className="text-xs text-muted-foreground">×</span>
+                <span className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[30px] text-center">
+                  {multiplier}
+                </span>
+                <span className="text-xs text-muted-foreground">unidades</span>
+                
+                {/* Subtotal of children */}
+                <span className="text-xs text-muted-foreground ml-2">
+                  (Subtotal hijas: UF {childrenSubtotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })})
+                </span>
+                
+                {/* Total with multiplier */}
+                <span className="text-xs font-mono bg-primary/10 px-2 py-0.5 rounded font-semibold ml-auto">
+                  = UF {parentTotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            )}
             
             <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
               <Button
