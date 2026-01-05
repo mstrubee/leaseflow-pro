@@ -1,8 +1,16 @@
 import { createContext, useContext, useState, ReactNode } from "react";
 
+export type PermissionLevel = "none" | "view" | "edit" | "full"; // full = ver + editar + guardar
+
+export interface ElementPermission {
+  elementId: string;
+  label: string;
+  permission: PermissionLevel;
+}
+
 interface PermissionSelectionState {
   isSelecting: boolean;
-  selectedSections: Record<string, "view" | "edit" | "all" | "none">;
+  selectedElements: Record<string, ElementPermission>;
   pendingUserData: {
     email: string;
     password: string;
@@ -13,9 +21,14 @@ interface PermissionSelectionState {
 
 interface PermissionSelectionContextType extends PermissionSelectionState {
   startSelection: (userData: PermissionSelectionState["pendingUserData"]) => void;
-  toggleSection: (sectionId: string, permission: "view" | "edit" | "all" | "none") => void;
-  confirmSelection: () => { userData: PermissionSelectionState["pendingUserData"]; permissions: Record<string, "view" | "edit" | "all" | "none"> };
+  setElementPermission: (elementId: string, label: string, permission: PermissionLevel) => void;
+  removeElementPermission: (elementId: string) => void;
+  confirmSelection: () => { 
+    userData: PermissionSelectionState["pendingUserData"]; 
+    permissions: Record<string, ElementPermission>;
+  };
   cancelSelection: () => void;
+  getElementPermission: (elementId: string) => PermissionLevel;
 }
 
 const PermissionSelectionContext = createContext<PermissionSelectionContextType | null>(null);
@@ -23,7 +36,18 @@ const PermissionSelectionContext = createContext<PermissionSelectionContextType 
 export const usePermissionSelection = () => {
   const context = useContext(PermissionSelectionContext);
   if (!context) {
-    throw new Error("usePermissionSelection must be used within a PermissionSelectionProvider");
+    // Return a default object for components outside the provider
+    return {
+      isSelecting: false,
+      selectedElements: {},
+      pendingUserData: null,
+      startSelection: () => {},
+      setElementPermission: () => {},
+      removeElementPermission: () => {},
+      confirmSelection: () => ({ userData: null, permissions: {} }),
+      cancelSelection: () => {},
+      getElementPermission: () => "none" as PermissionLevel,
+    };
   }
   return context;
 };
@@ -31,36 +55,43 @@ export const usePermissionSelection = () => {
 export const PermissionSelectionProvider = ({ children }: { children: ReactNode }) => {
   const [state, setState] = useState<PermissionSelectionState>({
     isSelecting: false,
-    selectedSections: {},
+    selectedElements: {},
     pendingUserData: null,
   });
 
   const startSelection = (userData: PermissionSelectionState["pendingUserData"]) => {
     setState({
       isSelecting: true,
-      selectedSections: {},
+      selectedElements: {},
       pendingUserData: userData,
     });
   };
 
-  const toggleSection = (sectionId: string, permission: "view" | "edit" | "all" | "none") => {
+  const setElementPermission = (elementId: string, label: string, permission: PermissionLevel) => {
     setState(prev => ({
       ...prev,
-      selectedSections: {
-        ...prev.selectedSections,
-        [sectionId]: permission,
+      selectedElements: {
+        ...prev.selectedElements,
+        [elementId]: { elementId, label, permission },
       },
     }));
+  };
+
+  const removeElementPermission = (elementId: string) => {
+    setState(prev => {
+      const { [elementId]: _, ...rest } = prev.selectedElements;
+      return { ...prev, selectedElements: rest };
+    });
   };
 
   const confirmSelection = () => {
     const result = {
       userData: state.pendingUserData,
-      permissions: state.selectedSections,
+      permissions: state.selectedElements,
     };
     setState({
       isSelecting: false,
-      selectedSections: {},
+      selectedElements: {},
       pendingUserData: null,
     });
     return result;
@@ -69,9 +100,13 @@ export const PermissionSelectionProvider = ({ children }: { children: ReactNode 
   const cancelSelection = () => {
     setState({
       isSelecting: false,
-      selectedSections: {},
+      selectedElements: {},
       pendingUserData: null,
     });
+  };
+
+  const getElementPermission = (elementId: string): PermissionLevel => {
+    return state.selectedElements[elementId]?.permission || "none";
   };
 
   return (
@@ -79,9 +114,11 @@ export const PermissionSelectionProvider = ({ children }: { children: ReactNode 
       value={{
         ...state,
         startSelection,
-        toggleSection,
+        setElementPermission,
+        removeElementPermission,
         confirmSelection,
         cancelSelection,
+        getElementPermission,
       }}
     >
       {children}
