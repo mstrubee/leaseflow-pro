@@ -143,6 +143,7 @@ export const applyBudgetTemplate = async (
           currency: line.currency || "UF",
           unit_price: unitPrice, // Calculate from default amount
           template_line_id: line.id, // Reference to original template line
+          supplier_name: line.supplier_name || null, // Copy supplier from template
         })
         .select()
         .single();
@@ -285,6 +286,7 @@ export const updateBudgetTemplatePreservingValues = async (
           currency: line.currency || "UF",
           template_line_id: line.id,
           parent_id: null,
+          supplier_name: line.supplier_name || null, // Copy supplier from template
         })
         .select()
         .single();

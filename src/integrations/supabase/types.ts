@@ -246,6 +246,7 @@ export type Database = {
           parent_id: string | null
           quantity: number | null
           status: string
+          supplier_name: string | null
           template_line_id: string | null
           unit_price: number | null
           unit_type: string | null
@@ -263,6 +264,7 @@ export type Database = {
           parent_id?: string | null
           quantity?: number | null
           status?: string
+          supplier_name?: string | null
           template_line_id?: string | null
           unit_price?: number | null
           unit_type?: string | null
@@ -280,6 +282,7 @@ export type Database = {
           parent_id?: string | null
           quantity?: number | null
           status?: string
+          supplier_name?: string | null
           template_line_id?: string | null
           unit_price?: number | null
           unit_type?: string | null
