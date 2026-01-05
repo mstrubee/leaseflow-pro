@@ -3,8 +3,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Pencil, Trash2, Search, Building2 } from "lucide-react";
+import { Pencil, Trash2, Search, Building2, Download, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { Supplier } from "./types";
 import {
@@ -17,17 +18,29 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import * as XLSX from "xlsx";
 
 interface SuppliersListProps {
   onEdit: (supplier: Supplier) => void;
   refreshKey: number;
 }
 
+interface SupplierWithEmails extends Omit<Supplier, 'emails'> {
+  emails?: { email: string; is_primary: boolean }[];
+}
+
 export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierWithEmails[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadSuppliers();
@@ -40,12 +53,14 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
         .from("suppliers")
         .select(`
           *,
-          category:supplier_categories(id, name)
+          category:supplier_categories(id, name),
+          emails:supplier_emails(email, is_primary)
         `)
         .order("name");
 
       if (error) throw error;
       setSuppliers(data || []);
+      setSelectedIds(new Set());
     } catch (error) {
       console.error("Error loading suppliers:", error);
       toast.error("Error al cargar proveedores");
@@ -72,11 +87,84 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
     }
   };
 
-  const filteredSuppliers = suppliers.filter(s =>
+  const filteredSuppliers: SupplierWithEmails[] = suppliers.filter(s =>
     s.name.toLowerCase().includes(search.toLowerCase()) ||
     s.rut?.toLowerCase().includes(search.toLowerCase()) ||
     s.category?.name?.toLowerCase().includes(search.toLowerCase())
   );
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredSuppliers.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredSuppliers.map(s => s.id)));
+    }
+  };
+
+  const exportToExcel = (suppliersToExport: SupplierWithEmails[]) => {
+    if (suppliersToExport.length === 0) {
+      toast.error("No hay proveedores para exportar");
+      return;
+    }
+
+    const data = suppliersToExport.map(s => ({
+      "Nombre": s.name,
+      "RUT": s.rut || "",
+      "Rubro": s.category?.name || "",
+      "Tipo": s.is_generic ? "Genérico" : "Específico",
+      "Contacto": s.contact_name || "",
+      "Teléfono": s.phone || "",
+      "Email Principal": (s as any).emails?.find((e: any) => e.is_primary)?.email || 
+                         (s as any).emails?.[0]?.email || "",
+      "Otros Emails": (s as any).emails?.filter((e: any) => !e.is_primary).map((e: any) => e.email).join(", ") || "",
+      "Calle": s.street || "",
+      "Número": s.street_number || "",
+      "Comuna": s.commune || "",
+      "Banco": s.bank_name || "",
+      "Tipo Cuenta": s.bank_account_type || "",
+      "N° Cuenta": s.bank_account_number || "",
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Proveedores");
+
+    // Auto-width columns
+    const colWidths = Object.keys(data[0] || {}).map(key => ({
+      wch: Math.max(key.length, ...data.map(row => String((row as any)[key] || "").length)) + 2
+    }));
+    ws["!cols"] = colWidths;
+
+    const fileName = suppliersToExport.length === 1 
+      ? `Proveedor_${suppliersToExport[0].name.replace(/[^a-zA-Z0-9]/g, "_")}.xlsx`
+      : `Proveedores_${new Date().toISOString().split("T")[0]}.xlsx`;
+
+    XLSX.writeFile(wb, fileName);
+    toast.success(`${suppliersToExport.length} proveedor(es) exportado(s)`);
+  };
+
+  const exportSelected = () => {
+    const selected = suppliers.filter(s => selectedIds.has(s.id));
+    exportToExcel(selected);
+  };
+
+  const exportSingle = (supplier: SupplierWithEmails) => {
+    exportToExcel([supplier]);
+  };
+
+  const handleEdit = (supplier: SupplierWithEmails) => {
+    // Convert back to Supplier type for edit handler
+    onEdit(supplier as unknown as Supplier);
+  };
 
   if (loading) {
     return (
@@ -98,6 +186,20 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
             className="pl-9"
           />
         </div>
+        
+        {selectedIds.size > 0 && (
+          <Button onClick={exportSelected} variant="outline" className="gap-2">
+            <FileSpreadsheet className="h-4 w-4" />
+            Exportar ({selectedIds.size})
+          </Button>
+        )}
+        
+        {filteredSuppliers.length > 0 && selectedIds.size === 0 && (
+          <Button onClick={() => exportToExcel(filteredSuppliers)} variant="outline" className="gap-2">
+            <Download className="h-4 w-4" />
+            Exportar todos
+          </Button>
+        )}
       </div>
 
       {filteredSuppliers.length === 0 ? (
@@ -110,17 +212,29 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-[40px]">
+                  <Checkbox
+                    checked={selectedIds.size === filteredSuppliers.length && filteredSuppliers.length > 0}
+                    onCheckedChange={toggleSelectAll}
+                  />
+                </TableHead>
                 <TableHead>Nombre</TableHead>
                 <TableHead>RUT</TableHead>
                 <TableHead>Rubro</TableHead>
                 <TableHead>Contacto</TableHead>
                 <TableHead className="text-center">Tipo</TableHead>
-                <TableHead className="w-[100px]"></TableHead>
+                <TableHead className="w-[120px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredSuppliers.map(supplier => (
-                <TableRow key={supplier.id}>
+                <TableRow key={supplier.id} className={selectedIds.has(supplier.id) ? "bg-muted/50" : ""}>
+                  <TableCell>
+                    <Checkbox
+                      checked={selectedIds.has(supplier.id)}
+                      onCheckedChange={() => toggleSelect(supplier.id)}
+                    />
+                  </TableCell>
                   <TableCell className="font-medium">{supplier.name}</TableCell>
                   <TableCell className="text-muted-foreground">{supplier.rut || "-"}</TableCell>
                   <TableCell>
@@ -138,10 +252,24 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button size="icon" variant="ghost" title="Exportar">
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => exportSingle(supplier)}>
+                            <FileSpreadsheet className="h-4 w-4 mr-2" />
+                            Exportar a Excel
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                       <Button
                         size="icon"
                         variant="ghost"
-                        onClick={() => onEdit(supplier)}
+                        onClick={() => handleEdit(supplier)}
+                        title="Editar"
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -149,6 +277,7 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
                         size="icon"
                         variant="ghost"
                         onClick={() => setDeleteId(supplier.id)}
+                        title="Eliminar"
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
