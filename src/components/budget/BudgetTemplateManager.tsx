@@ -69,8 +69,8 @@ export const BudgetTemplateManager = () => {
     }
   };
 
-  const loadLines = async (templateId: string) => {
-    setLoadingLines(true);
+  const loadLines = async (templateId: string, showLoading = true) => {
+    if (showLoading) setLoadingLines(true);
     try {
       const { data, error } = await supabase
         .from("budget_template_lines")
@@ -83,7 +83,7 @@ export const BudgetTemplateManager = () => {
     } catch (error) {
       console.error("Error loading template lines:", error);
     } finally {
-      setLoadingLines(false);
+      if (showLoading) setLoadingLines(false);
     }
   };
 
@@ -288,7 +288,7 @@ export const BudgetTemplateManager = () => {
       });
 
       if (error) throw error;
-      loadLines(selectedTemplate.id);
+      loadLines(selectedTemplate.id, false);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
@@ -302,7 +302,7 @@ export const BudgetTemplateManager = () => {
         .eq("id", id);
 
       if (error) throw error;
-      if (selectedTemplate) loadLines(selectedTemplate.id);
+      if (selectedTemplate) loadLines(selectedTemplate.id, false);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
@@ -316,7 +316,7 @@ export const BudgetTemplateManager = () => {
         .eq("id", id);
 
       if (error) throw error;
-      if (selectedTemplate) loadLines(selectedTemplate.id);
+      if (selectedTemplate) loadLines(selectedTemplate.id, false);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
@@ -331,7 +331,7 @@ export const BudgetTemplateManager = () => {
 
       if (error) throw error;
       toast({ title: "Línea movida", description: "La estructura se ha actualizado" });
-      if (selectedTemplate) loadLines(selectedTemplate.id);
+      if (selectedTemplate) loadLines(selectedTemplate.id, false);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
