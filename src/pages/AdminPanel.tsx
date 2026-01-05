@@ -74,7 +74,7 @@ const AdminPanel = () => {
   const [searchParams] = useSearchParams();
   const { user, isAdmin, loading: authLoading, roleLoaded } = useAuth();
   const { toast } = useToast();
-  const { isSelecting, selectedSections, pendingUserData, startSelection } = usePermissionSelection();
+  const { isSelecting, selectedElements, pendingUserData, startSelection } = usePermissionSelection();
   
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [userRoles, setUserRoles] = useState<UserRole[]>([]);
@@ -128,17 +128,22 @@ const AdminPanel = () => {
 
   // Handle return from permission selection mode
   useEffect(() => {
-    if (completeUser && pendingUserData && Object.keys(selectedSections).length >= 0) {
+    if (completeUser && pendingUserData && Object.keys(selectedElements).length >= 0) {
       setNewUserEmail(pendingUserData.email);
       setNewUserPassword(pendingUserData.password);
       setNewUserName(pendingUserData.name);
       setNewUserRole(pendingUserData.role);
-      setNewUserPermissions(selectedSections);
+      // Convert selectedElements to permissions format
+      const perms: Record<string, "view" | "edit" | "all" | "none"> = {};
+      Object.values(selectedElements).forEach(el => {
+        perms[el.elementId] = el.permission === "full" ? "all" : el.permission;
+      });
+      setNewUserPermissions(perms);
       setDialogOpen(true);
       // Clear URL params
       navigate("/admin", { replace: true });
     }
-  }, [completeUser, pendingUserData, selectedSections, navigate]);
+  }, [completeUser, pendingUserData, selectedElements, navigate]);
 
   const loadData = async () => {
     setLoading(true);
