@@ -705,13 +705,13 @@ const SortableTemplateLineItem = ({
                   onChange={(e) => setEditSupplier(e.target.value)}
                   onBlur={handleSaveSupplier}
                   onKeyDown={handleSupplierKeyDown}
-                  className="h-6 w-32 text-xs"
+                  className="h-6 w-56 text-xs"
                   autoFocus
                   placeholder="Nombre..."
                 />
               ) : (
                 <span 
-                  className="text-xs bg-muted/30 px-1.5 py-0.5 rounded min-w-[80px] cursor-text hover:bg-accent/50"
+                  className="text-xs bg-muted/30 px-1.5 py-0.5 rounded min-w-[200px] cursor-text hover:bg-accent/50"
                   onDoubleClick={() => setIsEditingSupplier(true)}
                   title="Doble clic para editar"
                 >
