@@ -375,6 +375,7 @@ const SortableTemplateLineItem = ({
 
   const [isExpanded, setIsExpanded] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState(line.name);
   const [editQuantity, setEditQuantity] = useState((line.quantity || 0).toString());
   const [editUnit, setEditUnit] = useState(line.unit_type || "m2");
@@ -408,6 +409,25 @@ const SortableTemplateLineItem = ({
     setEditAmount(line.default_amount_uf.toString());
     setEditCurrency(line.currency || "UF");
     setIsEditing(false);
+    setIsEditingName(false);
+  };
+
+  const handleSaveName = () => {
+    if (editName.trim() && editName !== line.name) {
+      onUpdateLine(line.id, { name: editName.trim() });
+    } else {
+      setEditName(line.name);
+    }
+    setIsEditingName(false);
+  };
+
+  const handleNameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleSaveName();
+    } else if (e.key === "Escape") {
+      setEditName(line.name);
+      setIsEditingName(false);
+    }
   };
 
   const handleDelete = () => {
@@ -525,13 +545,28 @@ const SortableTemplateLineItem = ({
           </div>
         ) : (
           <>
-            {/* Line name - fixed width for alignment */}
-            <span className={cn(
-              "text-sm font-medium min-w-[180px] flex-shrink-0",
-              level === 0 && "font-semibold"
-            )}>
-              {line.name}
-            </span>
+            {/* Line name - fixed width for alignment, editable inline */}
+            {isEditingName ? (
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                onBlur={handleSaveName}
+                onKeyDown={handleNameKeyDown}
+                className="h-7 min-w-[180px] max-w-[250px] flex-shrink-0 text-sm"
+                autoFocus
+              />
+            ) : (
+              <span 
+                className={cn(
+                  "text-sm font-medium min-w-[180px] flex-shrink-0 cursor-text hover:bg-accent/50 px-1 py-0.5 rounded -ml-1",
+                  level === 0 && "font-semibold"
+                )}
+                onDoubleClick={() => setIsEditingName(true)}
+                title="Doble clic para editar"
+              >
+                {line.name}
+              </span>
+            )}
             
             {/* Inputs section - always visible, aligned */}
             {!hasChildren && (
