@@ -357,28 +357,6 @@ const BudgetLineItem = ({
             <span className="text-xs font-mono bg-primary/10 px-1.5 py-0.5 rounded min-w-[80px] text-center">
               = {line.currency === "CLP" ? "$" : "UF"} {((line.quantity || 0) * (line.unit_price || 0)).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
             </span>
-
-            {/* Supplier - editable on double click */}
-            {isEditingSupplier && !readOnly ? (
-              <Input 
-                type="text" 
-                value={editSupplier} 
-                onChange={e => setEditSupplier(e.target.value)} 
-                onBlur={handleSaveSupplier}
-                onKeyDown={handleSupplierKeyDown}
-                className="h-6 w-40 text-xs" 
-                autoFocus
-                placeholder="Proveedor"
-              />
-            ) : (
-              <span 
-                className="text-xs bg-muted/30 px-1.5 py-0.5 rounded min-w-[120px] text-center cursor-text hover:bg-accent/50 truncate max-w-[160px]"
-                onDoubleClick={() => !readOnly && setIsEditingSupplier(true)}
-                title={line.supplier_name || "Doble clic para ingresar proveedor"}
-              >
-                {line.supplier_name || <span className="text-muted-foreground italic">Sin proveedor</span>}
-              </span>
-            )}
           </div>}
 
         {/* Parent line with children: show multiplier and subtotal - only for level 1+ */}
@@ -449,6 +427,30 @@ const BudgetLineItem = ({
                 <TooltipContent>Se arrastrará al próximo año</TooltipContent>
               </Tooltip>
             </TooltipProvider>}
+          
+          {/* Supplier - editable on double click - only for leaf lines */}
+          {!isParent && (
+            isEditingSupplier && !readOnly ? (
+              <Input 
+                type="text" 
+                value={editSupplier} 
+                onChange={e => setEditSupplier(e.target.value)} 
+                onBlur={handleSaveSupplier}
+                onKeyDown={handleSupplierKeyDown}
+                className="h-6 w-36 text-xs" 
+                autoFocus
+                placeholder="Proveedor"
+              />
+            ) : (
+              <span 
+                className="text-xs bg-muted/30 px-1.5 py-0.5 rounded min-w-[100px] text-center cursor-text hover:bg-accent/50 truncate max-w-[140px]"
+                onDoubleClick={() => !readOnly && setIsEditingSupplier(true)}
+                title={line.supplier_name || "Doble clic para ingresar proveedor"}
+              >
+                {line.supplier_name || <span className="text-muted-foreground italic">Proveedor</span>}
+              </span>
+            )
+          )}
           
           {/* OC and Invoice buttons - only for authorized leaf lines */}
           {!isParent && line.status === "autorizado" && !readOnly && (
