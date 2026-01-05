@@ -4,18 +4,23 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, ArrowUpDown, Eye } from "lucide-react";
+import { Search, ArrowUpDown, Eye, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { ContractWithPatent, PatentPriority, PatentDocStatus, PRIORITY_CONFIG } from "./types";
 import { PatentPriorityBadge } from "./PatentPriorityBadge";
 interface PatentsListProps {
   contracts: ContractWithPatent[];
   onSelectContract: (contractId: string) => void;
+  cardFilter?: string | null;
+  onClearFilter?: () => void;
 }
 type SortField = "priority" | "name" | "criticality";
 type SortOrder = "asc" | "desc";
 export function PatentsList({
   contracts,
-  onSelectContract
+  onSelectContract,
+  cardFilter,
+  onClearFilter
 }: PatentsListProps) {
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState<SortField>("priority");
@@ -32,8 +37,35 @@ export function PatentsList({
     return overdueCount * 10 + pendingCount;
   };
   const priorityOrder: PatentPriority[] = ['priority_1', 'priority_2', 'priority_3', 'vigente'];
+  
   const filteredAndSorted = useMemo(() => {
     let result = [...contracts];
+    const today = new Date();
+
+    // Apply card filter first
+    if (cardFilter) {
+      if (cardFilter === 'definitiva') {
+        result = result.filter(c => c.patente_status === 'definitiva');
+      } else if (cardFilter === 'provisoria') {
+        result = result.filter(c => c.patente_status === 'provisoria');
+      } else if (cardFilter === 'sin_patente') {
+        result = result.filter(c => !c.patente_status || c.patente_status === 'sin_patente');
+      } else if (cardFilter === 'critical') {
+        // Contracts with overdue docs or high priority with pending docs
+        result = result.filter(c => {
+          const docs = c.patent_documents || [];
+          const hasOverdue = docs.some(d => d.status === 'pendiente' && d.end_date && new Date(d.end_date) < today);
+          const priority = c.contract_patents?.priority || 'priority_3';
+          const hasPending = docs.some(d => d.status === 'pendiente');
+          return hasOverdue || (priority === 'priority_1' && hasPending);
+        });
+      } else if (cardFilter === 'pending') {
+        result = result.filter(c => (c.patent_documents || []).some(d => d.status === 'pendiente'));
+      } else if (cardFilter === 'overdue') {
+        result = result.filter(c => (c.patent_documents || []).some(d => d.status === 'pendiente' && d.end_date && new Date(d.end_date) < today));
+      }
+      // 'all' shows everything, no filter needed
+    }
 
     // Filter by search
     if (search) {
@@ -66,7 +98,7 @@ export function PatentsList({
       return sortOrder === "asc" ? comparison : -comparison;
     });
     return result;
-  }, [contracts, search, sortField, sortOrder, priorityFilter, statusFilter]);
+  }, [contracts, search, sortField, sortOrder, priorityFilter, statusFilter, cardFilter]);
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
       setSortOrder(prev => prev === "asc" ? "desc" : "asc");
@@ -75,9 +107,30 @@ export function PatentsList({
       setSortOrder("asc");
     }
   };
+  const getCardFilterLabel = (filter: string | null | undefined): string => {
+    const labels: Record<string, string> = {
+      'all': 'Todos los Locales',
+      'definitiva': 'Patentes Definitivas',
+      'provisoria': 'Patentes Provisorias',
+      'sin_patente': 'Sin Patente',
+      'critical': 'Críticos',
+      'pending': 'Docs Pendientes',
+      'overdue': 'Vencidos'
+    };
+    return filter ? labels[filter] || filter : '';
+  };
+
   return <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-lg">Prioridades</CardTitle>
+        {cardFilter && (
+          <Badge variant="secondary" className="gap-1 text-xs">
+            Filtro: {getCardFilterLabel(cardFilter)}
+            <button onClick={onClearFilter} className="ml-1 hover:text-destructive">
+              <X className="h-3 w-3" />
+            </button>
+          </Badge>
+        )}
       </CardHeader>
       <CardContent className="space-y-1">
         {/* Filters */}
