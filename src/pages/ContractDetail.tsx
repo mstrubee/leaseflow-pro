@@ -85,6 +85,10 @@ interface Contract {
       month_number: number;
       amount: number;
     }>;
+    notice_ranges?: Array<{
+      start_month: number;
+      end_month: number;
+    }>;
   }>;
   contract_documents: Array<{
     id: string;
@@ -161,7 +165,7 @@ const ContractDetail = () => {
           *,
           contract_addresses (*),
           contract_contacts (*),
-          contract_versions (*, rent_escalations (*)),
+          contract_versions (*, rent_escalations (*), notice_ranges (start_month, end_month)),
           contract_documents (*),
           termination_notices (*)
         `).eq("id", id).single();
@@ -744,6 +748,7 @@ const ContractDetail = () => {
                         allVersions={allVersions}
                         superficieEdificadaLocal={superficieEdificada ?? contract.superficie_edificada_local}
                         metrosLinealesFrente={contract.metros_lineales_frente}
+                        noticeRanges={displayVersion.notice_ranges || []}
                         contractId={contract.id}
                         showRenegotiationButton={isSigned}
                         hasActiveRenegotiation={hasActiveRenegotiation}
