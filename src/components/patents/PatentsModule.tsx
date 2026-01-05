@@ -146,32 +146,41 @@ export function PatentsModule() {
         </Card>
 
         <Card className="cursor-pointer hover:shadow-md transition-shadow border-red-200 bg-red-50 dark:bg-red-950/20" onClick={() => setActiveTab('alerts')}>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-red-700 dark:text-red-400">Críticos</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3">
+            <div>
+              <p className="text-[10px] text-red-500 dark:text-red-400 uppercase tracking-wide">Documentación</p>
+              <CardTitle className="text-sm font-medium text-red-700 dark:text-red-400">Críticos</CardTitle>
+            </div>
             <AlertTriangle className="h-4 w-4 text-red-600" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-700 dark:text-red-400">{stats.criticalContracts}</div>
+          <CardContent className="pb-3 pt-1">
+            <div className="text-xl font-bold text-red-700 dark:text-red-400">{stats.criticalContracts}</div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Docs Pendientes</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3">
+            <div>
+              <p className="text-[10px] text-yellow-600 uppercase tracking-wide">Documentación</p>
+              <CardTitle className="text-sm font-medium">Docs Pendientes</CardTitle>
+            </div>
             <FileText className="h-4 w-4 text-yellow-600" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{stats.pendingCount}</div>
+          <CardContent className="pb-3 pt-1">
+            <div className="text-xl font-bold text-yellow-600">{stats.pendingCount}</div>
           </CardContent>
         </Card>
 
         <Card className="border-red-200 bg-red-50 dark:bg-red-950/20">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-red-700 dark:text-red-400">Vencidos</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3">
+            <div>
+              <p className="text-[10px] text-red-500 dark:text-red-400 uppercase tracking-wide">Documentación</p>
+              <CardTitle className="text-sm font-medium text-red-700 dark:text-red-400">Vencidos</CardTitle>
+            </div>
             <AlertTriangle className="h-4 w-4 text-red-600" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-700 dark:text-red-400">{stats.overdueCount}</div>
+          <CardContent className="pb-3 pt-1">
+            <div className="text-xl font-bold text-red-700 dark:text-red-400">{stats.overdueCount}</div>
           </CardContent>
         </Card>
       </div>
