@@ -386,8 +386,8 @@ export const BudgetTemplateManager = () => {
           </TabsList>
 
           <TabsContent value={activeTab} className="space-y-4">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {/* Lista de plantillas */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+              {/* Lista de plantillas - más estrecha */}
               <div className="space-y-2">
                 <h4 className="font-medium text-sm text-muted-foreground mb-2">
                   Plantillas de {activeTab === "inversion_inicial" ? "Inversión Inicial" : "CAPEX"}
@@ -456,8 +456,8 @@ export const BudgetTemplateManager = () => {
                 )}
               </div>
 
-              {/* Editor de líneas */}
-              <div className="lg:col-span-2 border rounded-lg p-4">
+              {/* Editor de líneas - más ancho */}
+              <div className="lg:col-span-4 border rounded-lg p-4">
                 {selectedTemplate ? (
                   <>
                     <div className="flex items-center justify-between mb-4">
