@@ -340,8 +340,8 @@ const BudgetLineItem = ({
             </span>
           </div>}
 
-        {/* Parent line with children: show multiplier and subtotal */}
-        {isParent && (
+        {/* Parent line with children: show multiplier and subtotal - only for level 1+ */}
+        {isParent && level >= 1 && (
           <>
             <div className="flex items-center gap-2 flex-1">
               {/* Multiplier - editable on double click */}
