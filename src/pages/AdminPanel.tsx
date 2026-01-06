@@ -17,6 +17,7 @@ import { CloudStorageSettings } from "@/components/contracts/CloudStorageSetting
 import { BudgetTemplateManager } from "@/components/budget/BudgetTemplateManager";
 import { GanttTemplateManager } from "@/components/gantt/GanttTemplateManager";
 import { StorageProviderSettings } from "@/components/admin/StorageProviderSettings";
+import { CompanyManager } from "@/components/admin/CompanyManager";
 interface Profile {
   id: string;
   email: string;
@@ -718,6 +719,9 @@ const AdminPanel = () => {
             </Table>
           </CardContent>
         </Card>
+
+        {/* Companies */}
+        <CompanyManager />
 
         {/* Cloud Storage Settings */}
         <CloudStorageSettings />

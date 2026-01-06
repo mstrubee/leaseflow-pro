@@ -79,12 +79,18 @@ interface Contract {
   patente_status: string | null;
   is_expired_but_operating: boolean | null;
   display_currency: string | null;
+  company_id: string | null;
   contract_addresses: Array<{ region: string; commune: string }>;
   contract_versions: ContractVersion[];
   superficie_edificada_local: number | null;
   superficie_terreno: number | null;
   metros_lineales_frente?: number | null;
   termination_notices?: TerminationNotice[];
+}
+
+interface Company {
+  id: string;
+  name: string;
 }
 
 type SortField = "end_date" | "notice_deadline" | "name" | null;
@@ -111,6 +117,8 @@ const Contracts = () => {
   const [proyectoFilter, setProyectoFilter] = useState<string>("todos");
   const [ubicacionFilter, setUbicacionFilter] = useState<string>("todos");
   const [costoArriendoFilter, setCostoArriendoFilter] = useState<string>("todos");
+  const [companyFilter, setCompanyFilter] = useState<string>("todos");
+  const [companies, setCompanies] = useState<Company[]>([]);
 
   // Sorting
   const [sortField, setSortField] = useState<SortField>(null);
@@ -125,12 +133,21 @@ const Contracts = () => {
   useEffect(() => {
     if (user) {
       loadContracts();
+      loadCompanies();
     }
   }, [user]);
 
+  const loadCompanies = async () => {
+    const { data } = await supabase
+      .from("companies")
+      .select("id, name")
+      .order("name", { ascending: true });
+    setCompanies(data || []);
+  };
+
   useEffect(() => {
     filterAndSortContracts();
-  }, [searchTerm, statusFilter, contracts, operationFilter, obraFilter, patenteFilter, proyectoFilter, ubicacionFilter, costoArriendoFilter, sortField, sortDirection]);
+  }, [searchTerm, statusFilter, contracts, operationFilter, obraFilter, patenteFilter, proyectoFilter, ubicacionFilter, costoArriendoFilter, companyFilter, sortField, sortDirection]);
 
   const loadContracts = async () => {
     const { data } = await supabase
@@ -334,6 +351,11 @@ const Contracts = () => {
       });
     }
 
+    // Company filter
+    if (companyFilter !== "todos") {
+      filtered = filtered.filter((contract) => contract.company_id === companyFilter);
+    }
+
         // Sorting
         if (sortField) {
           filtered = [...filtered].sort((a, b) => {
@@ -388,12 +410,13 @@ const Contracts = () => {
     setProyectoFilter("todos");
     setUbicacionFilter("todos");
     setCostoArriendoFilter("todos");
+    setCompanyFilter("todos");
     setSortField(null);
     setSortDirection("asc");
     setSearchTerm("");
   };
 
-  const hasActiveFilters = operationFilter !== "todos" || obraFilter !== "todos" || patenteFilter !== "todos" || proyectoFilter !== "todos" || ubicacionFilter !== "todos" || costoArriendoFilter !== "todos" || sortField !== null;
+  const hasActiveFilters = operationFilter !== "todos" || obraFilter !== "todos" || patenteFilter !== "todos" || proyectoFilter !== "todos" || ubicacionFilter !== "todos" || costoArriendoFilter !== "todos" || companyFilter !== "todos" || sortField !== null;
 
   // Get unique communes for ubicacion filter
   const uniqueCommunes = [...new Set(contracts.flatMap(c => c.contract_addresses?.map(a => a.commune) || []))].filter(Boolean).sort();
@@ -574,14 +597,41 @@ const Contracts = () => {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-4">
         {/* Search and Filters */}
         <Card className="p-4 space-y-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar contratos..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar contratos..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+
+            {/* Company Filter - Available for all views */}
+            {companies.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-medium text-muted-foreground">Empresa</span>
+                <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                  <SelectTrigger className="h-8 text-xs w-[140px]">
+                    <SelectValue placeholder="Todas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos" className="text-xs">Todas</SelectItem>
+                    {companies.map((company) => (
+                      <SelectItem key={company.id} value={company.id} className="text-xs">{company.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {(hasActiveFilters || companyFilter !== "todos") && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground h-8">
+                <X className="h-4 w-4 mr-1" />
+                Limpiar
+              </Button>
+            )}
           </div>
 
           {isFirmadoView && (
@@ -725,13 +775,6 @@ const Contracts = () => {
                   </Button>
                 </div>
               </div>
-
-              {hasActiveFilters && (
-                <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
-                  <X className="h-4 w-4 mr-1" />
-                  Limpiar filtros
-                </Button>
-              )}
             </>
           )}
         </Card>

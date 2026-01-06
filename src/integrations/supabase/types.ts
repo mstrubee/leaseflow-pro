@@ -546,6 +546,27 @@ export type Database = {
         }
         Relationships: []
       }
+      companies: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       contract_addresses: {
         Row: {
           commune: string
@@ -926,6 +947,7 @@ export type Database = {
       }
       contracts: {
         Row: {
+          company_id: string | null
           created_at: string
           deleted_at: string | null
           display_currency: string | null
@@ -952,6 +974,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          company_id?: string | null
           created_at?: string
           deleted_at?: string | null
           display_currency?: string | null
@@ -978,6 +1001,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          company_id?: string | null
           created_at?: string
           deleted_at?: string | null
           display_currency?: string | null
@@ -1003,7 +1027,15 @@ export type Database = {
           superficie_terreno?: number | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "contracts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       credit_notes: {
         Row: {
