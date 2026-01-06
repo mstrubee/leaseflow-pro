@@ -13,6 +13,7 @@ import { RentEscalations, Escalation } from "@/components/contracts/RentEscalati
 import { CurrencyInput } from "@/components/contracts/CurrencyInput";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { CHILE_DEMOGRAPHICS } from "@/data/chileRegionsData";
+import { CompanySelect } from "@/components/contracts/CompanySelect";
 
 const NewContract = () => {
   const navigate = useNavigate();
@@ -20,6 +21,7 @@ const NewContract = () => {
   const [loading, setLoading] = useState(false);
 
   // Contract basic info
+  const [companyId, setCompanyId] = useState("");
   const [name, setName] = useState("");
   
   // Address (Datos de la Propiedad)
@@ -96,7 +98,7 @@ const NewContract = () => {
     setLoading(true);
 
     try {
-      // Create contract with display_currency
+      // Create contract with display_currency and company
       const { data: contract, error: contractError } = await supabase
         .from("contracts")
         .insert({
@@ -104,6 +106,7 @@ const NewContract = () => {
           status: "en_negociacion",
           signed_date: hasSeparateDates ? signedDate || null : fechaInicio || null,
           display_currency: currency,
+          company_id: companyId || null,
         })
         .select()
         .single();
@@ -269,6 +272,7 @@ const NewContract = () => {
               <CardDescription>Datos básicos del contrato</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <CompanySelect value={companyId} onChange={setCompanyId} />
               <div className="space-y-2">
                 <Label htmlFor="name">Nombre del Contrato *</Label>
                 <Input
