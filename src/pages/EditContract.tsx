@@ -46,6 +46,8 @@ const EditContract = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showMissingFieldsDialog, setShowMissingFieldsDialog] = useState(false);
+  const [missingFields, setMissingFields] = useState<string[]>([]);
 
   // Contract basic info
   const [companyId, setCompanyId] = useState("");
@@ -304,8 +306,31 @@ const EditContract = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const getRequiredFieldsStatus = () => {
+    const missing: string[] = [];
+    if (!name.trim()) missing.push("Nombre del Contrato");
+    if (!street.trim()) missing.push("Calle");
+    if (!number.trim()) missing.push("Número");
+    if (!commune.trim()) missing.push("Comuna");
+    if (!region.trim()) missing.push("Región");
+    if (!regimeRent.trim()) missing.push("Renta en Régimen");
+    if (!duration.trim()) missing.push("Duración");
+    return missing;
+  };
+
+  const handleSubmit = async (e: React.FormEvent, bypassValidation = false) => {
     e.preventDefault();
+    
+    // Check for missing required fields
+    if (!bypassValidation) {
+      const missing = getRequiredFieldsStatus();
+      if (missing.length > 0) {
+        setMissingFields(missing);
+        setShowMissingFieldsDialog(true);
+        return;
+      }
+    }
+    
     setSaving(true);
 
     try {
@@ -628,6 +653,14 @@ const EditContract = () => {
     }
   };
 
+  const handleConfirmSaveWithMissingFields = async () => {
+    setShowMissingFieldsDialog(false);
+    setSaving(true);
+    // Create a synthetic event and call handleSubmit with bypass
+    const syntheticEvent = { preventDefault: () => {} } as React.FormEvent;
+    await handleSubmit(syntheticEvent, true);
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
@@ -664,6 +697,32 @@ const EditContract = () => {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Missing Fields Confirmation Dialog */}
+      <AlertDialog open={showMissingFieldsDialog} onOpenChange={setShowMissingFieldsDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Faltan datos obligatorios</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span>Los siguientes campos están vacíos:</span>
+              <ul className="list-disc list-inside mt-2 text-destructive">
+                {missingFields.map((field, idx) => (
+                  <li key={idx}>{field}</li>
+                ))}
+              </ul>
+              <span className="block mt-2">¿Desea guardar de todas formas?</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmSaveWithMissingFields}>
+              Guardar de todas formas
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <form onSubmit={handleSubmit} className="space-y-6">
           <Card>
@@ -681,7 +740,6 @@ const EditContract = () => {
                   id="name"
                   value={name}
                   onChange={(e) => { setName(e.target.value); setHasUnsavedChanges(true); }}
-                  required
                 />
               </div>
             </CardContent>
@@ -699,7 +757,6 @@ const EditContract = () => {
                     id="street"
                     value={street}
                     onChange={(e) => { setStreet(e.target.value); setHasUnsavedChanges(true); }}
-                    required
                   />
                 </div>
                 <div className="space-y-2">
@@ -708,7 +765,6 @@ const EditContract = () => {
                     id="number"
                     value={number}
                     onChange={(e) => { setNumber(e.target.value); setHasUnsavedChanges(true); }}
-                    required
                   />
                 </div>
                 <div className="space-y-2">
@@ -717,7 +773,6 @@ const EditContract = () => {
                     id="commune"
                     value={commune}
                     onChange={(e) => { setCommune(e.target.value); setHasUnsavedChanges(true); }}
-                    required
                   />
                 </div>
                 <div className="space-y-2">
@@ -726,7 +781,6 @@ const EditContract = () => {
                     id="region"
                     value={region}
                     onChange={(e) => { setRegion(e.target.value); setHasUnsavedChanges(true); }}
-                    required
                   />
                 </div>
                 <div className="space-y-2">
@@ -754,7 +808,6 @@ const EditContract = () => {
                     id="company"
                     value={company}
                     onChange={(e) => { setCompany(e.target.value); setHasUnsavedChanges(true); }}
-                    required
                   />
                 </div>
                 <div className="space-y-2">
@@ -763,7 +816,6 @@ const EditContract = () => {
                     id="contactName"
                     value={contactName}
                     onChange={(e) => { setContactName(e.target.value); setHasUnsavedChanges(true); }}
-                    required
                   />
                 </div>
                 <div className="space-y-2">
@@ -995,7 +1047,6 @@ const EditContract = () => {
                                       onChange={setInitialRent}
                                       currency={currency}
                                       onCurrencyChange={setCurrency}
-                                      required
                                       showCurrencySelector={false}
                                     />
                                     
@@ -1006,7 +1057,6 @@ const EditContract = () => {
                                       onChange={setRegimeRent}
                                       currency={currency}
                                       onCurrencyChange={setCurrency}
-                                      required
                                       showCurrencySelector={false}
                                     />
                                     
@@ -1041,7 +1091,6 @@ const EditContract = () => {
                                     onChange={setRegimeRent}
                                     currency={currency}
                                     onCurrencyChange={setCurrency}
-                                    required
                                     showCurrencySelector={false}
                                   />
                                 )}
@@ -1590,7 +1639,6 @@ const EditContract = () => {
                                   type="number"
                                   value={duration}
                                   onChange={(e) => setDuration(e.target.value)}
-                                  required
                                 />
                               </div>
                             );
@@ -1650,7 +1698,6 @@ const EditContract = () => {
                                         setNoticeValue(e.target.value);
                                         setHasUnsavedChanges(true);
                                       }}
-                                      required
                                     />
                                   </div>
                                 )}
@@ -1666,7 +1713,6 @@ const EditContract = () => {
                                         setNoticeValue(e.target.value);
                                         setHasUnsavedChanges(true);
                                       }}
-                                      required
                                     />
                                   </div>
                                 )}
