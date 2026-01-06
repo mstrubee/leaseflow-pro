@@ -23,7 +23,7 @@ const NewContract = () => {
   const [loading, setLoading] = useState(false);
 
   // Contract basic info
-  const [companyId, setCompanyId] = useState("");
+  const [companyIds, setCompanyIds] = useState<string[]>([]);
   const [name, setName] = useState("");
   
   // Address (Datos de la Propiedad)
@@ -101,7 +101,7 @@ const NewContract = () => {
     setLoading(true);
 
     try {
-      // Create contract with display_currency and company
+      // Create contract with display_currency
       const { data: contract, error: contractError } = await supabase
         .from("contracts")
         .insert({
@@ -109,12 +109,22 @@ const NewContract = () => {
           status: "en_negociacion",
           signed_date: hasSeparateDates ? signedDate || null : fechaInicio || null,
           display_currency: currency,
-          company_id: companyId || null,
         })
         .select()
         .single();
 
       if (contractError) throw contractError;
+
+      // Insert company associations
+      if (companyIds.length > 0) {
+        const { error: companyError } = await supabase
+          .from("contract_companies")
+          .insert(companyIds.map(companyId => ({
+            contract_id: contract.id,
+            company_id: companyId,
+          })));
+        if (companyError) throw companyError;
+      }
 
       // Create address (Datos de la Propiedad) only if at least one field is filled
       if (street || number || commune || region || rolSii) {
@@ -278,7 +288,7 @@ const NewContract = () => {
               <CardDescription>Datos básicos del contrato</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <CompanySelect value={companyId} onChange={setCompanyId} />
+              <CompanySelect value={companyIds} onChange={setCompanyIds} />
               <div className="space-y-2">
                 <Label htmlFor="name">Nombre del Contrato *</Label>
                 <Input

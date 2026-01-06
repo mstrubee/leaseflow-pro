@@ -694,6 +694,42 @@ export type Database = {
           },
         ]
       }
+      contract_companies: {
+        Row: {
+          company_id: string
+          contract_id: string
+          created_at: string
+          id: string
+        }
+        Insert: {
+          company_id: string
+          contract_id: string
+          created_at?: string
+          id?: string
+        }
+        Update: {
+          company_id?: string
+          contract_id?: string
+          created_at?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_companies_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_companies_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contract_contacts: {
         Row: {
           cedula_identidad: string | null
