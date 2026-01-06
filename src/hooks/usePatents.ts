@@ -24,63 +24,62 @@ export function usePatents() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      // Load contracts with status "firmado" (vigente)
-      const { data: contractsData } = await supabase
-        .from("contracts")
-        .select(`
-          id,
-          name,
-          status,
-          patente_status,
-          contract_addresses (region, commune),
-          contract_patents (id, contract_id, priority, priority_changed_at, priority_changed_by),
-          patent_documents (
-            id, contract_id, checklist_item_id, status, status_changed_at,
-            emitter_id, responsible, start_date, deadline_days, end_date,
-            document_url, notes, custom_data
-          )
-        `)
-        .eq("status", "firmado")
-        .is("deleted_at", null);
+      // Execute all queries in parallel for better performance
+      const [
+        contractsResult,
+        sectionsResult,
+        itemsResult,
+        emittersResult,
+        itemEmittersResult,
+        statusesResult
+      ] = await Promise.all([
+        supabase
+          .from("contracts")
+          .select(`
+            id,
+            name,
+            status,
+            patente_status,
+            contract_addresses (region, commune),
+            contract_patents (id, contract_id, priority, priority_changed_at, priority_changed_by),
+            patent_documents (
+              id, contract_id, checklist_item_id, status, status_changed_at,
+              emitter_id, responsible, start_date, deadline_days, end_date,
+              document_url, notes, custom_data
+            )
+          `)
+          .eq("status", "firmado")
+          .is("deleted_at", null),
+        supabase
+          .from("patent_checklist_sections")
+          .select("*")
+          .order("display_order"),
+        supabase
+          .from("patent_checklist_items")
+          .select("*")
+          .eq("is_active", true)
+          .order("display_order"),
+        supabase
+          .from("patent_emitters")
+          .select("*")
+          .eq("is_active", true)
+          .order("name"),
+        supabase
+          .from("patent_item_emitters")
+          .select("*"),
+        supabase
+          .from("patent_statuses")
+          .select("*")
+          .eq("is_active", true)
+          .order("display_order")
+      ]);
 
-      // Load sections
-      const { data: sectionsData } = await supabase
-        .from("patent_checklist_sections")
-        .select("*")
-        .order("display_order");
-
-      // Load items
-      const { data: itemsData } = await supabase
-        .from("patent_checklist_items")
-        .select("*")
-        .eq("is_active", true)
-        .order("display_order");
-
-      // Load emitters
-      const { data: emittersData } = await supabase
-        .from("patent_emitters")
-        .select("*")
-        .eq("is_active", true)
-        .order("name");
-
-      // Load item-emitter fixed assignments
-      const { data: itemEmittersData } = await supabase
-        .from("patent_item_emitters")
-        .select("*");
-
-      // Load statuses
-      const { data: statusesData } = await supabase
-        .from("patent_statuses")
-        .select("*")
-        .eq("is_active", true)
-        .order("display_order");
-
-      setContracts((contractsData as any[]) || []);
-      setSections((sectionsData as PatentChecklistSection[]) || []);
-      setItems((itemsData as PatentChecklistItem[]) || []);
-      setEmitters((emittersData as PatentEmitter[]) || []);
-      setItemEmitters((itemEmittersData as PatentItemEmitter[]) || []);
-      setStatuses((statusesData as PatentStatus[]) || []);
+      setContracts((contractsResult.data as any[]) || []);
+      setSections((sectionsResult.data as PatentChecklistSection[]) || []);
+      setItems((itemsResult.data as PatentChecklistItem[]) || []);
+      setEmitters((emittersResult.data as PatentEmitter[]) || []);
+      setItemEmitters((itemEmittersResult.data as PatentItemEmitter[]) || []);
+      setStatuses((statusesResult.data as PatentStatus[]) || []);
     } catch (error) {
       console.error("Error loading patents data:", error);
     } finally {

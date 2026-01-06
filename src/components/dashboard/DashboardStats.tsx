@@ -36,7 +36,7 @@ interface Stats {
 
 export const DashboardStats = () => {
   const navigate = useNavigate();
-  const { isHidden } = useUserPermissions();
+  const { isHidden, loading: permissionsLoading } = useUserPermissions();
   const [stats, setStats] = useState<Stats>({
     totalContracts: 0,
     totalVigentes: 0,
@@ -44,68 +44,73 @@ export const DashboardStats = () => {
     totalVencidos: 0,
     byRegion: [],
   });
+  const [statsLoading, setStatsLoading] = useState(true);
 
   useEffect(() => {
     loadStats();
   }, []);
 
   const loadStats = async () => {
-    const { data: contracts } = await supabase
-      .from("contracts")
-      .select(`
-        id,
-        status,
-        contract_addresses (region)
-      `)
-      .is("deleted_at", null);
+    try {
+      const { data: contracts } = await supabase
+        .from("contracts")
+        .select(`
+          id,
+          status,
+          contract_addresses (region)
+        `)
+        .is("deleted_at", null);
 
-    const regionMap: Record<string, RegionStats> = {};
-    let totalVigentes = 0;
-    let totalNegociacion = 0;
-    let totalVencidos = 0;
+      const regionMap: Record<string, RegionStats> = {};
+      let totalVigentes = 0;
+      let totalNegociacion = 0;
+      let totalVencidos = 0;
 
-    contracts?.forEach((contract: any) => {
-      const region = contract.contract_addresses?.[0]?.region || "Sin región";
-      
-      if (!regionMap[region]) {
-        regionMap[region] = {
-          region,
-          total: 0,
-          vigentes: 0,
-          negociacion: 0,
-          vencidos: 0,
-        };
-      }
+      contracts?.forEach((contract: any) => {
+        const region = contract.contract_addresses?.[0]?.region || "Sin región";
+        
+        if (!regionMap[region]) {
+          regionMap[region] = {
+            region,
+            total: 0,
+            vigentes: 0,
+            negociacion: 0,
+            vencidos: 0,
+          };
+        }
 
-      regionMap[region].total++;
+        regionMap[region].total++;
 
-      switch (contract.status) {
-        case "firmado":
-          regionMap[region].vigentes++;
-          totalVigentes++;
-          break;
-        case "en_negociacion":
-          regionMap[region].negociacion++;
-          totalNegociacion++;
-          break;
-        case "vencido":
-          regionMap[region].vencidos++;
-          totalVencidos++;
-          break;
-      }
-    });
+        switch (contract.status) {
+          case "firmado":
+            regionMap[region].vigentes++;
+            totalVigentes++;
+            break;
+          case "en_negociacion":
+            regionMap[region].negociacion++;
+            totalNegociacion++;
+            break;
+          case "vencido":
+            regionMap[region].vencidos++;
+            totalVencidos++;
+            break;
+        }
+      });
 
-    const byRegion = Object.values(regionMap).sort((a, b) => 
-      a.region.localeCompare(b.region)
-    );
+      const byRegion = Object.values(regionMap).sort((a, b) => 
+        a.region.localeCompare(b.region)
+      );
 
-    setStats({
-      totalContracts: contracts?.length || 0,
-      totalVigentes,
-      totalNegociacion,
-      totalVencidos,
-      byRegion,
-    });
+      setStats({
+        totalContracts: contracts?.length || 0,
+        totalVigentes,
+        totalNegociacion,
+        totalVencidos,
+        byRegion,
+      });
+    } finally {
+      setStatsLoading(false);
+    }
   };
 
   const handleCardClick = (status?: string) => {
@@ -115,6 +120,20 @@ export const DashboardStats = () => {
       navigate("/contracts?status=todos");
     }
   };
+
+  // Wait for permissions to load before showing content to prevent flickering
+  if (permissionsLoading || statsLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="h-24 bg-muted/50 rounded-lg animate-pulse" />
+        <div className="grid gap-4 md:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-28 bg-muted/50 rounded-lg animate-pulse" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
