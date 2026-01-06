@@ -19,8 +19,10 @@ import { GanttModule } from "@/components/gantt/GanttModule";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { TerminationNoticesSection } from "@/components/contracts/TerminationNoticesSection";
 import { CollapsibleSection } from "@/components/contracts/CollapsibleSection";
+import { SelectableElement } from "@/components/admin/SelectableElement";
 import { useContractSections, SectionKey } from "@/hooks/useContractSections";
 import { useAuth } from "@/hooks/useAuth";
+import { useUserPermissions } from "@/hooks/useUserPermissions";
 import {
   DndContext,
   closestCenter,
@@ -116,6 +118,7 @@ const ContractDetail = () => {
     toast
   } = useToast();
   const { isAdmin } = useAuth();
+  const { isHidden } = useUserPermissions();
   const {
     sections,
     reorderSections,
@@ -126,6 +129,19 @@ const ContractDetail = () => {
     resetToDefault,
     canReorder,
   } = useContractSections();
+
+  // Map section keys to permission element IDs
+  const sectionPermissionMap: Record<SectionKey, string> = {
+    address: "contract_address",
+    contact: "contract_contact",
+    commercial: "contract_commercial",
+    surfaces: "contract_surfaces",
+    documentVersions: "contract_documents",
+    repository: "contract_repository",
+    budget: "contract_budget",
+    gantt: "contract_gantt",
+    alerts: "contract_alerts",
+  };
   
   const [contract, setContract] = useState<Contract | null>(null);
   const [loading, setLoading] = useState(true);
@@ -613,469 +629,525 @@ const ContractDetail = () => {
 
               // Render each section based on its key
               switch (sectionKey) {
-                case "address":
+                case "address": {
+                  const permId = sectionPermissionMap[sectionKey];
+                  if (isHidden(permId)) return null;
                   return (
-                    <CollapsibleSection
+                    <SelectableElement
                       key={sectionKey}
-                      id={sectionKey}
-                      title="Dirección"
-                      icon={<MapPin className="h-5 w-5" />}
-                      isCollapsed={isCollapsed(sectionKey)}
-                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                      isDraggable={canReorder}
+                      elementId={permId}
+                      label="Dirección"
                     >
-                      {address ? (
-                        <div className="space-y-1">
-                          <p className="text-lg font-medium">
-                            {address.street} {address.number}
-                          </p>
-                          <p className="text-muted-foreground">
-                            {address.commune}, {address.region}
-                          </p>
-                          <p className="text-muted-foreground">{address.country}</p>
-                        </div>
-                      ) : (
-                        <p className="text-muted-foreground">No hay dirección registrada</p>
-                      )}
-                    </CollapsibleSection>
-                  );
-
-                case "contact":
-                  return (
-                    <CollapsibleSection
-                      key={sectionKey}
-                      id={sectionKey}
-                      title="Contacto"
-                      icon={<User className="h-5 w-5" />}
-                      isCollapsed={isCollapsed(sectionKey)}
-                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                      isDraggable={canReorder}
-                    >
-                      {contact && (contact.company || contact.name || contact.phone || contact.email) ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {contact.company && (
-                            <div>
-                              <p className="text-sm text-muted-foreground">Empresa</p>
-                              <p className="font-medium">{contact.company}</p>
-                            </div>
-                          )}
-                          {contact.name && (
-                            <div>
-                              <p className="text-sm text-muted-foreground">Nombre</p>
-                              <p className="font-medium">{contact.name}</p>
-                            </div>
-                          )}
-                          <div>
-                            <p className="text-sm text-muted-foreground">Teléfono</p>
-                            <p className="font-medium">{contact.phone || "No se ha entregado"}</p>
+                      <CollapsibleSection
+                        id={sectionKey}
+                        title="Dirección"
+                        icon={<MapPin className="h-5 w-5" />}
+                        isCollapsed={isCollapsed(sectionKey)}
+                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                        isDraggable={canReorder}
+                      >
+                        {address ? (
+                          <div className="space-y-1">
+                            <p className="text-lg font-medium">
+                              {address.street} {address.number}
+                            </p>
+                            <p className="text-muted-foreground">
+                              {address.commune}, {address.region}
+                            </p>
+                            <p className="text-muted-foreground">{address.country}</p>
                           </div>
-                          <div>
-                            <p className="text-sm text-muted-foreground">Email</p>
-                            {contact.email ? (
-                              <div className="space-y-1">
-                                {contact.email.split(/[,;]/).map((email, idx) => (
-                                  <p key={idx} className="font-medium">{email.trim()}</p>
-                                ))}
+                        ) : (
+                          <p className="text-muted-foreground">No hay dirección registrada</p>
+                        )}
+                      </CollapsibleSection>
+                    </SelectableElement>
+                  );
+                }
+
+                case "contact": {
+                  const permId = sectionPermissionMap[sectionKey];
+                  if (isHidden(permId)) return null;
+                  return (
+                    <SelectableElement
+                      key={sectionKey}
+                      elementId={permId}
+                      label="Contacto"
+                    >
+                      <CollapsibleSection
+                        id={sectionKey}
+                        title="Contacto"
+                        icon={<User className="h-5 w-5" />}
+                        isCollapsed={isCollapsed(sectionKey)}
+                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                        isDraggable={canReorder}
+                      >
+                        {contact && (contact.company || contact.name || contact.phone || contact.email) ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {contact.company && (
+                              <div>
+                                <p className="text-sm text-muted-foreground">Empresa</p>
+                                <p className="font-medium">{contact.company}</p>
                               </div>
-                            ) : (
-                              <p className="font-medium text-muted-foreground">No se ha entregado</p>
                             )}
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-muted-foreground">
-                          No hay contacto registrado. Use el botón Editar de la parte superior para agregar.
-                        </p>
-                      )}
-                    </CollapsibleSection>
-                  );
-
-                case "commercial":
-                  if (!displayVersion) return null;
-                  return (
-                    <CollapsibleSection
-                      key={sectionKey}
-                      id={sectionKey}
-                      title="Condiciones Comerciales"
-                      icon={<DollarSign className="h-5 w-5" />}
-                      isCollapsed={isCollapsed(sectionKey)}
-                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                      isDraggable={canReorder}
-                      wrapperOnly
-                    >
-                      <CommercialConditionsSummary
-                        version={{
-                          id: displayVersion.id,
-                          version_number: displayVersion.version_number,
-                          is_current: displayVersion.is_current,
-                          is_renegotiation: displayVersion.is_renegotiation,
-                          initial_rent: displayVersion.initial_rent,
-                          regime_rent: displayVersion.regime_rent,
-                          variable_rent_percentage: displayVersion.variable_rent_percentage,
-                          duration_months: displayVersion.duration_months,
-                          notice_type: displayVersion.notice_type,
-                          notice_value: displayVersion.notice_value,
-                          effective_date: displayVersion.effective_date,
-                          guarantee_multiplier: displayVersion.guarantee_multiplier,
-                          has_periodic_adjustments: displayVersion.has_periodic_adjustments,
-                          first_adjustment_month: displayVersion.first_adjustment_month,
-                          adjustment_periodicity_months: displayVersion.adjustment_periodicity_months,
-                          adjustment_type: (displayVersion as any).adjustment_type,
-                          adjustment_value: (displayVersion as any).adjustment_value,
-
-                          // GGCC - both methodologies
-                          gastos_comunes_methodology: (displayVersion as any).gastos_comunes_methodology,
-                          gastos_comunes_percentage: (displayVersion as any).gastos_comunes_percentage,
-                          gastos_comunes_total_centro: (displayVersion as any).gastos_comunes_total_centro,
-                          gastos_comunes_tope: (displayVersion as any).gastos_comunes_tope,
-                          gastos_comunes_tope_type: (displayVersion as any).gastos_comunes_tope_type,
-
-                          gastos_comunes_uf_m2: (displayVersion as any).gastos_comunes_uf_m2,
-                          gastos_comunes_uf_ml_frente: (displayVersion as any).gastos_comunes_uf_ml_frente,
-                          gastos_comunes_prorrata_kwh_clima: (displayVersion as any).gastos_comunes_prorrata_kwh_clima,
-                          fondo_promocion_percentage: (displayVersion as any).fondo_promocion_percentage,
-                          adicional_administracion_percentage: (displayVersion as any).adicional_administracion_percentage,
-                          has_extended_gastos_comunes: (displayVersion as any).has_extended_gastos_comunes,
-
-                          grace_months: (displayVersion as any).grace_months,
-                          otros_egresos_amount: (displayVersion as any).otros_egresos_amount,
-                          otros_egresos_description: (displayVersion as any).otros_egresos_description,
-                          notice_bilaterality: (displayVersion as any).notice_bilaterality,
-
-                          rent_escalations: displayVersion.rent_escalations || [],
-                        }}
-                        signedDate={contract.signed_date}
-                        allVersions={allVersions}
-                        superficieEdificadaLocal={superficieEdificada ?? contract.superficie_edificada_local}
-                        metrosLinealesFrente={contract.metros_lineales_frente}
-                        noticeRanges={displayVersion.notice_ranges || []}
-                        contractId={contract.id}
-                        showRenegotiationButton={isSigned}
-                        hasActiveRenegotiation={hasActiveRenegotiation}
-                        onRenegotiationSuccess={loadContract}
-                        displayCurrency={contract.display_currency}
-                      />
-                    </CollapsibleSection>
-                  );
-
-
-                case "surfaces":
-                  return (
-                    <CollapsibleSection
-                      key={sectionKey}
-                      id={sectionKey}
-                      title="Superficies y Datos"
-                      icon={<LayoutGrid className="h-5 w-5" />}
-                      isCollapsed={isCollapsed(sectionKey)}
-                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                      isDraggable={canReorder}
-                      wrapperOnly
-                    >
-                      <ContractSurfacesSection
-                        contractId={contract.id}
-                        onSurfaceChange={(superficie) => setSuperficieEdificada(superficie)}
-                      />
-                    </CollapsibleSection>
-                  );
-
-                case "documentVersions":
-                  return (
-                    <CollapsibleSection
-                      key={sectionKey}
-                      id={sectionKey}
-                      title="Contrato de Arriendo"
-                      icon={<FileText className="h-5 w-5" />}
-                      isCollapsed={isCollapsed(sectionKey)}
-                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                      isDraggable={canReorder}
-                      wrapperOnly
-                    >
-                      {/* Actions for editing - only for negotiating contracts */}
-                      {isNegotiating && currentVersion && (
-                        <Card className="p-4 mb-6">
-                          <div className="flex items-center justify-between">
-                            <p className="text-sm text-muted-foreground">Gestionar condiciones comerciales</p>
-                            <div className="flex items-center gap-2">
-                              <EscalationDialog
-                                escalations={currentVersion.rent_escalations?.map((e) => ({
-                                  id: e.id,
-                                  month_number: e.month_number,
-                                  amount: e.amount,
-                                })) || []}
-                                initialRent={currentVersion.initial_rent || currentVersion.regime_rent}
-                                regimeRent={currentVersion.regime_rent}
-                                durationMonths={currentVersion.duration_months}
-                                onSave={handleSaveEscalations}
-                              />
+                            {contact.name && (
+                              <div>
+                                <p className="text-sm text-muted-foreground">Nombre</p>
+                                <p className="font-medium">{contact.name}</p>
+                              </div>
+                            )}
+                            <div>
+                              <p className="text-sm text-muted-foreground">Teléfono</p>
+                              <p className="font-medium">{contact.phone || "No se ha entregado"}</p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-muted-foreground">Email</p>
+                              {contact.email ? (
+                                <div className="space-y-1">
+                                  {contact.email.split(/[,;]/).map((email, idx) => (
+                                    <p key={idx} className="font-medium">{email.trim()}</p>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="font-medium text-muted-foreground">No se ha entregado</p>
+                              )}
                             </div>
                           </div>
-                        </Card>
-                      )}
-
-                      {/* Renegotiation in progress notice */}
-                      {hasActiveRenegotiation && (
-                        <Card className="p-4 border-amber-500/30 bg-amber-500/5 mb-6">
-                          <p className="text-sm text-amber-700 dark:text-amber-400">
-                            ⚠️ Hay una renegociación en curso. Las condiciones mostradas son las vigentes hasta que se firme la renegociación.
+                        ) : (
+                          <p className="text-muted-foreground">
+                            No hay contacto registrado. Use el botón Editar de la parte superior para agregar.
                           </p>
-                        </Card>
-                      )}
+                        )}
+                      </CollapsibleSection>
+                    </SelectableElement>
+                  );
+                }
 
-                      {/* Version History */}
-                      {allVersions.length > 1 && (
-                        <Card className="mb-6">
-                          <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                              <History className="h-5 w-5" />
-                              Historial de Versiones
-                            </CardTitle>
-                            <CardDescription>
-                              Este contrato tiene {allVersions.length} versiones. Haz clic en una renegociación para editarla.
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="space-y-3">
-                              {allVersions.map((version) => (
-                                <div
-                                  key={version.id}
-                                  className={`p-4 rounded-lg border transition-colors ${
-                                    version.is_current ? "border-primary bg-primary/5" : "border-border bg-muted/30"
-                                  } ${version.is_renegotiation && version.is_current ? "cursor-pointer hover:bg-primary/10" : ""}`}
-                                  onClick={() => {
-                                    if (version.is_renegotiation && version.is_current) {
-                                      navigate(`/contracts/${contract.id}/edit`);
-                                    }
-                                  }}
-                                >
-                                  <div className="flex items-start justify-between">
-                                    <div className="space-y-1">
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-semibold">Versión {version.version_number}</span>
-                                        {version.is_current && <Badge variant="default">Actual</Badge>}
-                                        {version.is_renegotiation && <Badge variant="secondary">Renegociación</Badge>}
-                                      </div>
-                                      <div className="text-sm text-muted-foreground">
-                                        Canon: {formatCurrency(version.regime_rent)} · {version.duration_months} meses
-                                        {version.variable_rent_percentage && ` · Variable: ${version.variable_rent_percentage}%`}
-                                      </div>
-                                      {version.effective_date && (
-                                        <div className="text-sm text-muted-foreground">
-                                          Vigente desde: {formatDate(version.effective_date)}
+                case "commercial": {
+                  if (!displayVersion) return null;
+                  const permId = sectionPermissionMap[sectionKey];
+                  if (isHidden(permId)) return null;
+                  return (
+                    <SelectableElement
+                      key={sectionKey}
+                      elementId={permId}
+                      label="Condiciones Comerciales"
+                    >
+                      <CollapsibleSection
+                        id={sectionKey}
+                        title="Condiciones Comerciales"
+                        icon={<DollarSign className="h-5 w-5" />}
+                        isCollapsed={isCollapsed(sectionKey)}
+                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                        isDraggable={canReorder}
+                        wrapperOnly
+                      >
+                        <CommercialConditionsSummary
+                          version={{
+                            id: displayVersion.id,
+                            version_number: displayVersion.version_number,
+                            is_current: displayVersion.is_current,
+                            is_renegotiation: displayVersion.is_renegotiation,
+                            initial_rent: displayVersion.initial_rent,
+                            regime_rent: displayVersion.regime_rent,
+                            variable_rent_percentage: displayVersion.variable_rent_percentage,
+                            duration_months: displayVersion.duration_months,
+                            notice_type: displayVersion.notice_type,
+                            notice_value: displayVersion.notice_value,
+                            effective_date: displayVersion.effective_date,
+                            guarantee_multiplier: displayVersion.guarantee_multiplier,
+                            has_periodic_adjustments: displayVersion.has_periodic_adjustments,
+                            first_adjustment_month: displayVersion.first_adjustment_month,
+                            adjustment_periodicity_months: displayVersion.adjustment_periodicity_months,
+                            adjustment_type: (displayVersion as any).adjustment_type,
+                            adjustment_value: (displayVersion as any).adjustment_value,
+                            gastos_comunes_methodology: (displayVersion as any).gastos_comunes_methodology,
+                            gastos_comunes_percentage: (displayVersion as any).gastos_comunes_percentage,
+                            gastos_comunes_total_centro: (displayVersion as any).gastos_comunes_total_centro,
+                            gastos_comunes_tope: (displayVersion as any).gastos_comunes_tope,
+                            gastos_comunes_tope_type: (displayVersion as any).gastos_comunes_tope_type,
+                            gastos_comunes_uf_m2: (displayVersion as any).gastos_comunes_uf_m2,
+                            gastos_comunes_uf_ml_frente: (displayVersion as any).gastos_comunes_uf_ml_frente,
+                            gastos_comunes_prorrata_kwh_clima: (displayVersion as any).gastos_comunes_prorrata_kwh_clima,
+                            fondo_promocion_percentage: (displayVersion as any).fondo_promocion_percentage,
+                            adicional_administracion_percentage: (displayVersion as any).adicional_administracion_percentage,
+                            has_extended_gastos_comunes: (displayVersion as any).has_extended_gastos_comunes,
+                            grace_months: (displayVersion as any).grace_months,
+                            otros_egresos_amount: (displayVersion as any).otros_egresos_amount,
+                            otros_egresos_description: (displayVersion as any).otros_egresos_description,
+                            notice_bilaterality: (displayVersion as any).notice_bilaterality,
+                            rent_escalations: displayVersion.rent_escalations || [],
+                          }}
+                          signedDate={contract.signed_date}
+                          allVersions={allVersions}
+                          superficieEdificadaLocal={superficieEdificada ?? contract.superficie_edificada_local}
+                          metrosLinealesFrente={contract.metros_lineales_frente}
+                          noticeRanges={displayVersion.notice_ranges || []}
+                          contractId={contract.id}
+                          showRenegotiationButton={isSigned}
+                          hasActiveRenegotiation={hasActiveRenegotiation}
+                          onRenegotiationSuccess={loadContract}
+                          displayCurrency={contract.display_currency}
+                        />
+                      </CollapsibleSection>
+                    </SelectableElement>
+                  );
+                }
+
+
+                case "surfaces": {
+                  const permId = sectionPermissionMap[sectionKey];
+                  if (isHidden(permId)) return null;
+                  return (
+                    <SelectableElement
+                      key={sectionKey}
+                      elementId={permId}
+                      label="Superficies y Datos"
+                    >
+                      <CollapsibleSection
+                        id={sectionKey}
+                        title="Superficies y Datos"
+                        icon={<LayoutGrid className="h-5 w-5" />}
+                        isCollapsed={isCollapsed(sectionKey)}
+                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                        isDraggable={canReorder}
+                        wrapperOnly
+                      >
+                        <ContractSurfacesSection
+                          contractId={contract.id}
+                          onSurfaceChange={(superficie) => setSuperficieEdificada(superficie)}
+                        />
+                      </CollapsibleSection>
+                    </SelectableElement>
+                  );
+                }
+
+                case "documentVersions": {
+                  const permId = sectionPermissionMap[sectionKey];
+                  if (isHidden(permId)) return null;
+                  return (
+                    <SelectableElement
+                      key={sectionKey}
+                      elementId={permId}
+                      label="Contrato de Arriendo"
+                    >
+                      <CollapsibleSection
+                        id={sectionKey}
+                        title="Contrato de Arriendo"
+                        icon={<FileText className="h-5 w-5" />}
+                        isCollapsed={isCollapsed(sectionKey)}
+                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                        isDraggable={canReorder}
+                        wrapperOnly
+                      >
+                        {isNegotiating && currentVersion && (
+                          <Card className="p-4 mb-6">
+                            <div className="flex items-center justify-between">
+                              <p className="text-sm text-muted-foreground">Gestionar condiciones comerciales</p>
+                              <div className="flex items-center gap-2">
+                                <EscalationDialog
+                                  escalations={currentVersion.rent_escalations?.map((e) => ({
+                                    id: e.id,
+                                    month_number: e.month_number,
+                                    amount: e.amount,
+                                  })) || []}
+                                  initialRent={currentVersion.initial_rent || currentVersion.regime_rent}
+                                  regimeRent={currentVersion.regime_rent}
+                                  durationMonths={currentVersion.duration_months}
+                                  onSave={handleSaveEscalations}
+                                />
+                              </div>
+                            </div>
+                          </Card>
+                        )}
+                        {hasActiveRenegotiation && (
+                          <Card className="p-4 border-amber-500/30 bg-amber-500/5 mb-6">
+                            <p className="text-sm text-amber-700 dark:text-amber-400">
+                              ⚠️ Hay una renegociación en curso. Las condiciones mostradas son las vigentes hasta que se firme la renegociación.
+                            </p>
+                          </Card>
+                        )}
+                        {allVersions.length > 1 && (
+                          <Card className="mb-6">
+                            <CardHeader>
+                              <CardTitle className="flex items-center gap-2">
+                                <History className="h-5 w-5" />
+                                Historial de Versiones
+                              </CardTitle>
+                              <CardDescription>
+                                Este contrato tiene {allVersions.length} versiones. Haz clic en una renegociación para editarla.
+                              </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="space-y-3">
+                                {allVersions.map((version) => (
+                                  <div
+                                    key={version.id}
+                                    className={`p-4 rounded-lg border transition-colors ${
+                                      version.is_current ? "border-primary bg-primary/5" : "border-border bg-muted/30"
+                                    } ${version.is_renegotiation && version.is_current ? "cursor-pointer hover:bg-primary/10" : ""}`}
+                                    onClick={() => {
+                                      if (version.is_renegotiation && version.is_current) {
+                                        navigate(`/contracts/${contract.id}/edit`);
+                                      }
+                                    }}
+                                  >
+                                    <div className="flex items-start justify-between">
+                                      <div className="space-y-1">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-semibold">Versión {version.version_number}</span>
+                                          {version.is_current && <Badge variant="default">Actual</Badge>}
+                                          {version.is_renegotiation && <Badge variant="secondary">Renegociación</Badge>}
                                         </div>
-                                      )}
-                                      {version.is_renegotiation && version.is_current && (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="text-destructive hover:text-destructive hover:bg-destructive/10 gap-1 mt-2"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setShowDeleteConfirm1(true);
-                                          }}
-                                        >
-                                          <Trash2 className="h-3 w-3" />
-                                          Eliminar Renegociación
-                                        </Button>
-                                      )}
-                                    </div>
-                                    <div className="text-xs text-muted-foreground">
-                                      {formatDate(version.created_at)}
+                                        <div className="text-sm text-muted-foreground">
+                                          Canon: {formatCurrency(version.regime_rent)} · {version.duration_months} meses
+                                          {version.variable_rent_percentage && ` · Variable: ${version.variable_rent_percentage}%`}
+                                        </div>
+                                        {version.effective_date && (
+                                          <div className="text-sm text-muted-foreground">
+                                            Vigente desde: {formatDate(version.effective_date)}
+                                          </div>
+                                        )}
+                                        {version.is_renegotiation && version.is_current && (
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="text-destructive hover:text-destructive hover:bg-destructive/10 gap-1 mt-2"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setShowDeleteConfirm1(true);
+                                            }}
+                                          >
+                                            <Trash2 className="h-3 w-3" />
+                                            Eliminar Renegociación
+                                          </Button>
+                                        )}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        {formatDate(version.created_at)}
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                              ))}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      )}
-
-                      {/* Delete renegotiation confirmation dialogs */}
-                      <AlertDialog open={showDeleteConfirm1} onOpenChange={setShowDeleteConfirm1}>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>¿Eliminar la renegociación?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Esta acción eliminará la renegociación en curso y todos sus documentos asociados.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() => {
-                                setShowDeleteConfirm1(false);
-                                setShowDeleteConfirm2(true);
-                              }}
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            >
-                              Continuar
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-
-                      <AlertDialog open={showDeleteConfirm2} onOpenChange={setShowDeleteConfirm2}>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Confirmar Eliminación de Renegociación</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              ¿Estás seguro? Esta acción no se puede deshacer. Se eliminarán todos los borradores de la renegociación.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel disabled={deletingRenegotiation}>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() => {
-                                if (currentRenegotiation) {
-                                  handleDeleteRenegotiation(currentRenegotiation.id);
+                                ))}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        )}
+                        <AlertDialog open={showDeleteConfirm1} onOpenChange={setShowDeleteConfirm1}>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>¿Eliminar la renegociación?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Esta acción eliminará la renegociación en curso y todos sus documentos asociados.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => {
+                                  setShowDeleteConfirm1(false);
+                                  setShowDeleteConfirm2(true);
+                                }}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Continuar
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                        <AlertDialog open={showDeleteConfirm2} onOpenChange={setShowDeleteConfirm2}>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Confirmar Eliminación de Renegociación</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                ¿Estás seguro? Esta acción no se puede deshacer. Se eliminarán todos los borradores de la renegociación.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel disabled={deletingRenegotiation}>Cancelar</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => {
+                                  if (currentRenegotiation) {
+                                    handleDeleteRenegotiation(currentRenegotiation.id);
+                                  }
+                                }}
+                                disabled={deletingRenegotiation}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                {deletingRenegotiation ? (
+                                  <>
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                    Eliminando...
+                                  </>
+                                ) : (
+                                  "Eliminar Definitivamente"
+                                )}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                        <DocumentVersions
+                          documents={documents.map((d) => ({
+                            id: d.id,
+                            document_type: d.document_type,
+                            url: d.url,
+                            uploaded_at: d.uploaded_at,
+                            version_id: d.version_id,
+                          }))}
+                          contractId={contract.id}
+                          contractName={contract.name}
+                          currentVersion={
+                            currentVersion
+                              ? {
+                                  id: currentVersion.id,
+                                  version_number: currentVersion.version_number,
+                                  initial_rent: currentVersion.initial_rent,
+                                  regime_rent: currentVersion.regime_rent,
+                                  variable_rent_percentage: currentVersion.variable_rent_percentage,
+                                  duration_months: currentVersion.duration_months,
+                                  notice_type: currentVersion.notice_type,
+                                  notice_value: currentVersion.notice_value,
                                 }
-                              }}
-                              disabled={deletingRenegotiation}
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            >
-                              {deletingRenegotiation ? (
-                                <>
-                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                  Eliminando...
-                                </>
-                              ) : (
-                                "Eliminar Definitivamente"
-                              )}
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-
-                      <DocumentVersions
-                        documents={documents.map((d) => ({
-                          id: d.id,
-                          document_type: d.document_type,
-                          url: d.url,
-                          uploaded_at: d.uploaded_at,
-                          version_id: d.version_id,
-                        }))}
-                        contractId={contract.id}
-                        contractName={contract.name}
-                        currentVersion={
-                          currentVersion
-                            ? {
-                                id: currentVersion.id,
-                                version_number: currentVersion.version_number,
-                                initial_rent: currentVersion.initial_rent,
-                                regime_rent: currentVersion.regime_rent,
-                                variable_rent_percentage: currentVersion.variable_rent_percentage,
-                                duration_months: currentVersion.duration_months,
-                                notice_type: currentVersion.notice_type,
-                                notice_value: currentVersion.notice_value,
-                              }
-                            : undefined
-                        }
-                        onAddDocument={handleAddDocument}
-                        onMarkAsFinal={handleMarkAsFinal}
-                        onSendForSignature={handleSendForSignature}
-                        onMarkAsSigned={handleMarkAsSigned}
-                        onChangeDocumentType={handleChangeDocumentType}
-                        onDeleteDocument={handleDeleteDocument}
-                        readOnly={false}
-                        isRenegotiation={isSigned && hasActiveRenegotiation}
-                        isSigned={isSigned}
-                        hasActiveRenegotiation={hasActiveRenegotiation}
-                        onRenegotiationSuccess={loadContract}
-                        onDataImported={loadContract}
-                      />
-
-                      {/* Termination Notices - only for signed contracts */}
-                      {isSigned && (
-                        <div className="mt-6">
-                          <TerminationNoticesSection
-                            contractId={contract.id}
-                            contractName={contract.name}
-                            notices={contract.termination_notices || []}
-                            onRefresh={loadContract}
-                          />
-                        </div>
-                      )}
-                    </CollapsibleSection>
+                              : undefined
+                          }
+                          onAddDocument={handleAddDocument}
+                          onMarkAsFinal={handleMarkAsFinal}
+                          onSendForSignature={handleSendForSignature}
+                          onMarkAsSigned={handleMarkAsSigned}
+                          onChangeDocumentType={handleChangeDocumentType}
+                          onDeleteDocument={handleDeleteDocument}
+                          readOnly={false}
+                          isRenegotiation={isSigned && hasActiveRenegotiation}
+                          isSigned={isSigned}
+                          hasActiveRenegotiation={hasActiveRenegotiation}
+                          onRenegotiationSuccess={loadContract}
+                          onDataImported={loadContract}
+                        />
+                        {isSigned && (
+                          <div className="mt-6">
+                            <TerminationNoticesSection
+                              contractId={contract.id}
+                              contractName={contract.name}
+                              notices={contract.termination_notices || []}
+                              onRefresh={loadContract}
+                            />
+                          </div>
+                        )}
+                      </CollapsibleSection>
+                    </SelectableElement>
                   );
+                }
 
 
-                case "repository":
+                case "repository": {
+                  const permId = sectionPermissionMap[sectionKey];
+                  if (isHidden(permId)) return null;
                   return (
-                    <CollapsibleSection
+                    <SelectableElement
                       key={sectionKey}
-                      id={sectionKey}
-                      title="Repositorio de Documentos"
-                      icon={<FolderOpen className="h-5 w-5" />}
-                      isCollapsed={isCollapsed(sectionKey)}
-                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                      isDraggable={canReorder}
-                      wrapperOnly
+                      elementId={permId}
+                      label="Repositorio de Documentos"
                     >
-                      <RepositorySection
-                        contractId={contract.id}
-                        contractName={contract.name}
-                        contractStatus={contract.status}
-                      />
-                    </CollapsibleSection>
+                      <CollapsibleSection
+                        id={sectionKey}
+                        title="Repositorio de Documentos"
+                        icon={<FolderOpen className="h-5 w-5" />}
+                        isCollapsed={isCollapsed(sectionKey)}
+                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                        isDraggable={canReorder}
+                        wrapperOnly
+                      >
+                        <RepositorySection
+                          contractId={contract.id}
+                          contractName={contract.name}
+                          contractStatus={contract.status}
+                        />
+                      </CollapsibleSection>
+                    </SelectableElement>
                   );
+                }
 
-                case "budget":
+                case "budget": {
+                  const permId = sectionPermissionMap[sectionKey];
+                  if (isHidden(permId)) return null;
                   return (
-                    <CollapsibleSection
+                    <SelectableElement
                       key={sectionKey}
-                      id={sectionKey}
-                      title="Control Presupuestario"
-                      icon={<DollarSign className="h-5 w-5" />}
-                      isCollapsed={isCollapsed(sectionKey)}
-                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                      isDraggable={canReorder}
-                      wrapperOnly
+                      elementId={permId}
+                      label="Control Presupuestario"
                     >
-                      <BudgetDashboard contractId={contract.id} displayCurrency={contract.display_currency || "UF"} />
-                    </CollapsibleSection>
+                      <CollapsibleSection
+                        id={sectionKey}
+                        title="Control Presupuestario"
+                        icon={<DollarSign className="h-5 w-5" />}
+                        isCollapsed={isCollapsed(sectionKey)}
+                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                        isDraggable={canReorder}
+                        wrapperOnly
+                      >
+                        <BudgetDashboard contractId={contract.id} displayCurrency={contract.display_currency || "UF"} />
+                      </CollapsibleSection>
+                    </SelectableElement>
                   );
+                }
 
-                case "gantt":
+                case "gantt": {
+                  const permId = sectionPermissionMap[sectionKey];
+                  if (isHidden(permId)) return null;
                   return (
-                    <CollapsibleSection
+                    <SelectableElement
                       key={sectionKey}
-                      id={sectionKey}
-                      title="Línea de Tiempo / Gantt"
-                      icon={<Calendar className="h-5 w-5" />}
-                      isCollapsed={isCollapsed(sectionKey)}
-                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                      isDraggable={canReorder}
-                      wrapperOnly
+                      elementId={permId}
+                      label="Línea de Tiempo / Gantt"
                     >
-                      <GanttModule contractId={contract.id} />
-                    </CollapsibleSection>
+                      <CollapsibleSection
+                        id={sectionKey}
+                        title="Línea de Tiempo / Gantt"
+                        icon={<Calendar className="h-5 w-5" />}
+                        isCollapsed={isCollapsed(sectionKey)}
+                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                        isDraggable={canReorder}
+                        wrapperOnly
+                      >
+                        <GanttModule contractId={contract.id} />
+                      </CollapsibleSection>
+                    </SelectableElement>
                   );
+                }
 
-                case "alerts":
+                case "alerts": {
+                  const permId = sectionPermissionMap[sectionKey];
+                  if (isHidden(permId)) return null;
                   return (
-                    <CollapsibleSection
+                    <SelectableElement
                       key={sectionKey}
-                      id={sectionKey}
-                      title="Alertas y Recordatorios"
-                      icon={<Bell className="h-5 w-5" />}
-                      isCollapsed={isCollapsed(sectionKey)}
-                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                      isDraggable={canReorder}
-                      wrapperOnly
+                      elementId={permId}
+                      label="Alertas y Recordatorios"
                     >
-                      <ContractAlerts
-                        contractId={contract.id}
-                        contractName={contract.name}
-                        expirationDate={
-                          currentVersion?.effective_date
-                            ? new Date(
-                                new Date(currentVersion.effective_date).getTime() +
-                                  currentVersion.duration_months * 30 * 24 * 60 * 60 * 1000
-                              )
-                            : undefined
-                        }
-                      />
-                    </CollapsibleSection>
+                      <CollapsibleSection
+                        id={sectionKey}
+                        title="Alertas y Recordatorios"
+                        icon={<Bell className="h-5 w-5" />}
+                        isCollapsed={isCollapsed(sectionKey)}
+                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                        isDraggable={canReorder}
+                        wrapperOnly
+                      >
+                        <ContractAlerts
+                          contractId={contract.id}
+                          contractName={contract.name}
+                          expirationDate={
+                            currentVersion?.effective_date
+                              ? new Date(
+                                  new Date(currentVersion.effective_date).getTime() +
+                                    currentVersion.duration_months * 30 * 24 * 60 * 60 * 1000
+                                )
+                              : undefined
+                          }
+                        />
+                      </CollapsibleSection>
+                    </SelectableElement>
                   );
+                }
 
 
                 default:
