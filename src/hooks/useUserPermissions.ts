@@ -81,15 +81,32 @@ export const useUserPermissions = () => {
     const contractSectionIds = [
       "contract_address", "contract_contact", "contract_commercial", 
       "contract_surfaces", "contract_documents", "contract_repository",
-      "contract_budget", "contract_gantt", "contract_alerts"
+      "contract_budget", "contract_gantt", "contract_alerts", "contract_patents"
     ];
+    
+    // Dashboard section IDs
+    const dashboardSectionIds = [
+      "dashboard_stats", "dashboard_map", "dashboard_economic", "dashboard_patents"
+    ];
+    
+    // Main resource IDs
+    const mainResourceIds = ["contracts", "dashboard", "repository", "suppliers"];
     
     const hasContractPermissions = permissions.some(p => 
       contractSectionIds.includes(p.resource)
     );
     
+    const hasDashboardPermissions = permissions.some(p => 
+      dashboardSectionIds.includes(p.resource)
+    );
+    
     // If user has any contract section permissions, check if this element is included
     if (hasContractPermissions && contractSectionIds.includes(elementId)) {
+      return !permissions.some(p => p.resource === elementId);
+    }
+    
+    // If user has any dashboard section permissions, check if this element is included
+    if (hasDashboardPermissions && dashboardSectionIds.includes(elementId)) {
       return !permissions.some(p => p.resource === elementId);
     }
     

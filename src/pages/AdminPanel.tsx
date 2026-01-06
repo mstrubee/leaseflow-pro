@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation, Eye, EyeOff } from "lucide-react";
 import { CloudStorageSettings } from "@/components/contracts/CloudStorageSettings";
 import { BudgetTemplateManager } from "@/components/budget/BudgetTemplateManager";
 import { GanttTemplateManager } from "@/components/gantt/GanttTemplateManager";
@@ -63,11 +63,41 @@ interface UserPermission {
   permission: "view" | "edit" | "all";
 }
 
-const RESOURCES = [
-  { id: "contracts", label: "Contratos" },
-  { id: "dashboard", label: "Dashboard" },
-  { id: "repository", label: "Repositorio" },
+// Recursos principales
+const MAIN_RESOURCES = [
+  { id: "contracts", label: "Contratos", category: "principal" },
+  { id: "dashboard", label: "Dashboard", category: "principal" },
+  { id: "repository", label: "Repositorio", category: "principal" },
+  { id: "suppliers", label: "Proveedores", category: "principal" },
 ];
+
+// Secciones del Dashboard
+const DASHBOARD_SECTIONS = [
+  { id: "dashboard_stats", label: "Estadísticas de Contratos", category: "dashboard" },
+  { id: "dashboard_map", label: "Mapa Interactivo", category: "dashboard" },
+  { id: "dashboard_economic", label: "Indicadores Económicos", category: "dashboard" },
+  { id: "dashboard_patents", label: "Patentes (Dashboard)", category: "dashboard" },
+];
+
+// Secciones de Detalle de Contrato
+const CONTRACT_SECTIONS = [
+  { id: "contract_address", label: "Dirección", category: "contrato" },
+  { id: "contract_contact", label: "Contacto", category: "contrato" },
+  { id: "contract_commercial", label: "Condiciones Comerciales", category: "contrato" },
+  { id: "contract_surfaces", label: "Superficies y Datos", category: "contrato" },
+  { id: "contract_documents", label: "Contrato de Arriendo", category: "contrato" },
+  { id: "contract_repository", label: "Repositorio de Documentos", category: "contrato" },
+  { id: "contract_budget", label: "Control Presupuestario", category: "contrato" },
+  { id: "contract_gantt", label: "Línea de Tiempo / Gantt", category: "contrato" },
+  { id: "contract_alerts", label: "Alertas y Recordatorios", category: "contrato" },
+  { id: "contract_patents", label: "Patentes (Contrato)", category: "contrato" },
+];
+
+// Todos los recursos combinados
+const ALL_RESOURCES = [...MAIN_RESOURCES, ...DASHBOARD_SECTIONS, ...CONTRACT_SECTIONS];
+
+// Solo para compatibilidad con código anterior
+const RESOURCES = MAIN_RESOURCES;
 
 const AdminPanel = () => {
   const navigate = useNavigate();
@@ -116,6 +146,7 @@ const AdminPanel = () => {
   const [editUserRole, setEditUserRole] = useState<"admin" | "user">("user");
   const [editUserPermissions, setEditUserPermissions] = useState<Record<string, "view" | "edit" | "all" | "none">>({});
   const [updatingUser, setUpdatingUser] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     if (!authLoading && roleLoaded && !isAdmin) {
@@ -888,14 +919,14 @@ const AdminPanel = () => {
 
         {/* Edit User Dialog */}
         <Dialog open={editUserDialogOpen} onOpenChange={setEditUserDialogOpen}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
             <DialogHeader>
               <DialogTitle>Editar Usuario</DialogTitle>
               <DialogDescription>
                 Modifica los datos del usuario. Deja la contraseña vacía para no cambiarla.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
+            <div className="space-y-4 py-4 overflow-y-auto flex-1 pr-2">
               <div className="space-y-2">
                 <Label htmlFor="edit-name">Nombre Completo</Label>
                 <Input
@@ -917,13 +948,24 @@ const AdminPanel = () => {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-password">Nueva Contraseña (opcional)</Label>
-                <Input
-                  id="edit-password"
-                  type="password"
-                  value={editUserPassword}
-                  onChange={(e) => setEditUserPassword(e.target.value)}
-                  placeholder="Dejar vacío para no cambiar"
-                />
+                <div className="relative">
+                  <Input
+                    id="edit-password"
+                    type={showPassword ? "text" : "password"}
+                    value={editUserPassword}
+                    onChange={(e) => setEditUserPassword(e.target.value)}
+                    placeholder="Dejar vacío para no cambiar"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
               </div>
               {editingUserProfile?.id !== user?.id && (
                 <div className="space-y-2">
@@ -954,7 +996,7 @@ const AdminPanel = () => {
                           if (value !== "none") {
                             existingPerms[key] = {
                               elementId: key,
-                              label: RESOURCES.find(r => r.id === key)?.label || key,
+                              label: ALL_RESOURCES.find(r => r.id === key)?.label || key,
                               permission: value === "all" ? "full" : value,
                             };
                           }
@@ -975,39 +1017,78 @@ const AdminPanel = () => {
                       Navegar y Seleccionar
                     </Button>
                   </div>
-                  {RESOURCES.map(resource => (
-                    <div key={resource.id} className="flex items-center justify-between">
-                      <span className="text-sm">{resource.label}</span>
-                      <Select
-                        value={editUserPermissions[resource.id] || "none"}
-                        onValueChange={(v) => setEditUserPermissions(prev => ({ ...prev, [resource.id]: v as any }))}
-                      >
-                        <SelectTrigger className="w-32">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Sin acceso</SelectItem>
-                          <SelectItem value="view">Ver</SelectItem>
-                          <SelectItem value="edit">Editar</SelectItem>
-                          <SelectItem value="all">Todo</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))}
-                  {Object.keys(editUserPermissions).filter(k => !RESOURCES.find(r => r.id === k) && editUserPermissions[k] !== "none").length > 0 && (
-                    <div className="pt-2 border-t">
-                      <p className="text-xs text-muted-foreground mb-2">Permisos adicionales (DIV/Cards):</p>
-                      <div className="flex flex-wrap gap-1">
-                        {Object.entries(editUserPermissions)
-                          .filter(([k, v]) => !RESOURCES.find(r => r.id === k) && v !== "none")
-                          .map(([key, value]) => (
-                            <span key={key} className="px-2 py-1 bg-primary/10 text-primary text-xs rounded">
-                              {key}: {value}
-                            </span>
-                          ))}
+                  
+                  {/* Secciones Principales */}
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase">Secciones Principales</p>
+                    {MAIN_RESOURCES.map(resource => (
+                      <div key={resource.id} className="flex items-center justify-between">
+                        <span className="text-sm">{resource.label}</span>
+                        <Select
+                          value={editUserPermissions[resource.id] || "none"}
+                          onValueChange={(v) => setEditUserPermissions(prev => ({ ...prev, [resource.id]: v as any }))}
+                        >
+                          <SelectTrigger className="w-32">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Sin acceso</SelectItem>
+                            <SelectItem value="view">Ver</SelectItem>
+                            <SelectItem value="edit">Editar</SelectItem>
+                            <SelectItem value="all">Todo</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
-                    </div>
-                  )}
+                    ))}
+                  </div>
+
+                  {/* Dashboard Cards */}
+                  <div className="space-y-2 pt-2 border-t">
+                    <p className="text-xs font-medium text-muted-foreground uppercase">Cards del Dashboard</p>
+                    {DASHBOARD_SECTIONS.map(resource => (
+                      <div key={resource.id} className="flex items-center justify-between">
+                        <span className="text-sm">{resource.label}</span>
+                        <Select
+                          value={editUserPermissions[resource.id] || "none"}
+                          onValueChange={(v) => setEditUserPermissions(prev => ({ ...prev, [resource.id]: v as any }))}
+                        >
+                          <SelectTrigger className="w-32">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Sin acceso</SelectItem>
+                            <SelectItem value="view">Ver</SelectItem>
+                            <SelectItem value="edit">Editar</SelectItem>
+                            <SelectItem value="all">Todo</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Contract Sections */}
+                  <div className="space-y-2 pt-2 border-t">
+                    <p className="text-xs font-medium text-muted-foreground uppercase">Secciones de Contrato</p>
+                    {CONTRACT_SECTIONS.map(resource => (
+                      <div key={resource.id} className="flex items-center justify-between">
+                        <span className="text-sm">{resource.label}</span>
+                        <Select
+                          value={editUserPermissions[resource.id] || "none"}
+                          onValueChange={(v) => setEditUserPermissions(prev => ({ ...prev, [resource.id]: v as any }))}
+                        >
+                          <SelectTrigger className="w-32">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Sin acceso</SelectItem>
+                            <SelectItem value="view">Ver</SelectItem>
+                            <SelectItem value="edit">Editar</SelectItem>
+                            <SelectItem value="all">Todo</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
