@@ -8,24 +8,29 @@ export interface ElementPermission {
   permission: PermissionLevel;
 }
 
+interface PendingUserData {
+  email: string;
+  password: string;
+  name: string;
+  role: "admin" | "user";
+  userId?: string; // For editing existing users
+}
+
 interface PermissionSelectionState {
   isSelecting: boolean;
   selectedElements: Record<string, ElementPermission>;
-  pendingUserData: {
-    email: string;
-    password: string;
-    name: string;
-    role: "admin" | "user";
-  } | null;
+  pendingUserData: PendingUserData | null;
+  isEditMode: boolean; // true when editing existing user, false when creating new
 }
 
 interface PermissionSelectionContextType extends PermissionSelectionState {
-  startSelection: (userData: PermissionSelectionState["pendingUserData"]) => void;
+  startSelection: (userData: PendingUserData, existingPermissions?: Record<string, ElementPermission>) => void;
   setElementPermission: (elementId: string, label: string, permission: PermissionLevel) => void;
   removeElementPermission: (elementId: string) => void;
   confirmSelection: () => { 
-    userData: PermissionSelectionState["pendingUserData"]; 
+    userData: PendingUserData | null; 
     permissions: Record<string, ElementPermission>;
+    isEditMode: boolean;
   };
   cancelSelection: () => void;
   getElementPermission: (elementId: string) => PermissionLevel;
@@ -41,10 +46,11 @@ export const usePermissionSelection = () => {
       isSelecting: false,
       selectedElements: {},
       pendingUserData: null,
+      isEditMode: false,
       startSelection: () => {},
       setElementPermission: () => {},
       removeElementPermission: () => {},
-      confirmSelection: () => ({ userData: null, permissions: {} }),
+      confirmSelection: () => ({ userData: null, permissions: {}, isEditMode: false }),
       cancelSelection: () => {},
       getElementPermission: () => "none" as PermissionLevel,
     };
@@ -57,13 +63,15 @@ export const PermissionSelectionProvider = ({ children }: { children: ReactNode 
     isSelecting: false,
     selectedElements: {},
     pendingUserData: null,
+    isEditMode: false,
   });
 
-  const startSelection = (userData: PermissionSelectionState["pendingUserData"]) => {
+  const startSelection = (userData: PendingUserData, existingPermissions?: Record<string, ElementPermission>) => {
     setState({
       isSelecting: true,
-      selectedElements: {},
+      selectedElements: existingPermissions || {},
       pendingUserData: userData,
+      isEditMode: !!userData.userId,
     });
   };
 
@@ -88,11 +96,13 @@ export const PermissionSelectionProvider = ({ children }: { children: ReactNode 
     const result = {
       userData: state.pendingUserData,
       permissions: state.selectedElements,
+      isEditMode: state.isEditMode,
     };
     setState({
       isSelecting: false,
       selectedElements: {},
       pendingUserData: null,
+      isEditMode: false,
     });
     return result;
   };
@@ -102,6 +112,7 @@ export const PermissionSelectionProvider = ({ children }: { children: ReactNode 
       isSelecting: false,
       selectedElements: {},
       pendingUserData: null,
+      isEditMode: false,
     });
   };
 

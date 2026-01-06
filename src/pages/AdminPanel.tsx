@@ -74,7 +74,7 @@ const AdminPanel = () => {
   const [searchParams] = useSearchParams();
   const { user, isAdmin, loading: authLoading, roleLoaded } = useAuth();
   const { toast } = useToast();
-  const { isSelecting, selectedElements, pendingUserData, startSelection } = usePermissionSelection();
+  const { isSelecting, selectedElements, pendingUserData, startSelection, isEditMode } = usePermissionSelection();
   
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [userRoles, setUserRoles] = useState<UserRole[]>([]);
@@ -114,6 +114,7 @@ const AdminPanel = () => {
   const [editUserName, setEditUserName] = useState("");
   const [editUserPassword, setEditUserPassword] = useState("");
   const [editUserRole, setEditUserRole] = useState<"admin" | "user">("user");
+  const [editUserPermissions, setEditUserPermissions] = useState<Record<string, "view" | "edit" | "all" | "none">>({});
   const [updatingUser, setUpdatingUser] = useState(false);
 
   useEffect(() => {
@@ -129,21 +130,37 @@ const AdminPanel = () => {
   // Handle return from permission selection mode
   useEffect(() => {
     if (completeUser && pendingUserData && Object.keys(selectedElements).length >= 0) {
-      setNewUserEmail(pendingUserData.email);
-      setNewUserPassword(pendingUserData.password);
-      setNewUserName(pendingUserData.name);
-      setNewUserRole(pendingUserData.role);
       // Convert selectedElements to permissions format
       const perms: Record<string, "view" | "edit" | "all" | "none"> = {};
       Object.values(selectedElements).forEach(el => {
         perms[el.elementId] = el.permission === "full" ? "all" : el.permission;
       });
-      setNewUserPermissions(perms);
-      setDialogOpen(true);
+
+      if (isEditMode && pendingUserData.userId) {
+        // Editing existing user
+        const profile = profiles.find(p => p.id === pendingUserData.userId);
+        if (profile) {
+          setEditingUserProfile(profile);
+          setEditUserEmail(pendingUserData.email);
+          setEditUserName(pendingUserData.name);
+          setEditUserPassword(pendingUserData.password);
+          setEditUserRole(pendingUserData.role);
+          setEditUserPermissions(perms);
+          setEditUserDialogOpen(true);
+        }
+      } else {
+        // Creating new user
+        setNewUserEmail(pendingUserData.email);
+        setNewUserPassword(pendingUserData.password);
+        setNewUserName(pendingUserData.name);
+        setNewUserRole(pendingUserData.role);
+        setNewUserPermissions(perms);
+        setDialogOpen(true);
+      }
       // Clear URL params
       navigate("/admin", { replace: true });
     }
-  }, [completeUser, pendingUserData, selectedElements, navigate]);
+  }, [completeUser, pendingUserData, selectedElements, navigate, isEditMode, profiles]);
 
   const loadData = async () => {
     setLoading(true);
@@ -282,6 +299,13 @@ const AdminPanel = () => {
     setEditUserName(profile.full_name || "");
     setEditUserPassword("");
     setEditUserRole(getUserRole(profile.id) as "admin" | "user");
+    // Load existing permissions
+    const userPerms = getUserPermissions(profile.id);
+    const permsMap: Record<string, "view" | "edit" | "all" | "none"> = {};
+    userPerms.forEach(p => {
+      permsMap[p.resource] = p.permission;
+    });
+    setEditUserPermissions(permsMap);
     setEditUserDialogOpen(true);
   };
 
@@ -306,6 +330,7 @@ const AdminPanel = () => {
             fullName: editUserName !== editingUserProfile.full_name ? editUserName : undefined,
             password: editUserPassword || undefined,
             role: editUserRole !== getUserRole(editingUserProfile.id) ? editUserRole : undefined,
+            permissions: editUserPermissions,
           })
         }
       );
@@ -319,6 +344,7 @@ const AdminPanel = () => {
       toast({ title: "Usuario actualizado", description: "Los cambios se guardaron exitosamente" });
       setEditUserDialogOpen(false);
       setEditingUserProfile(null);
+      setEditUserPermissions({});
       loadData();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
@@ -911,6 +937,77 @@ const AdminPanel = () => {
                       <SelectItem value="admin">Administrador</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+              )}
+              {editUserRole === "user" && editingUserProfile && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label>Permisos por Sección</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        // Convert current permissions to ElementPermission format
+                        const existingPerms: Record<string, { elementId: string; label: string; permission: "none" | "view" | "edit" | "full" }> = {};
+                        Object.entries(editUserPermissions).forEach(([key, value]) => {
+                          if (value !== "none") {
+                            existingPerms[key] = {
+                              elementId: key,
+                              label: RESOURCES.find(r => r.id === key)?.label || key,
+                              permission: value === "all" ? "full" : value,
+                            };
+                          }
+                        });
+                        startSelection({
+                          email: editUserEmail,
+                          password: editUserPassword,
+                          name: editUserName,
+                          role: editUserRole,
+                          userId: editingUserProfile.id,
+                        }, existingPerms);
+                        setEditUserDialogOpen(false);
+                        navigate("/");
+                      }}
+                      className="gap-1"
+                    >
+                      <Navigation className="h-3 w-3" />
+                      Navegar y Seleccionar
+                    </Button>
+                  </div>
+                  {RESOURCES.map(resource => (
+                    <div key={resource.id} className="flex items-center justify-between">
+                      <span className="text-sm">{resource.label}</span>
+                      <Select
+                        value={editUserPermissions[resource.id] || "none"}
+                        onValueChange={(v) => setEditUserPermissions(prev => ({ ...prev, [resource.id]: v as any }))}
+                      >
+                        <SelectTrigger className="w-32">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Sin acceso</SelectItem>
+                          <SelectItem value="view">Ver</SelectItem>
+                          <SelectItem value="edit">Editar</SelectItem>
+                          <SelectItem value="all">Todo</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                  {Object.keys(editUserPermissions).filter(k => !RESOURCES.find(r => r.id === k) && editUserPermissions[k] !== "none").length > 0 && (
+                    <div className="pt-2 border-t">
+                      <p className="text-xs text-muted-foreground mb-2">Permisos adicionales (DIV/Cards):</p>
+                      <div className="flex flex-wrap gap-1">
+                        {Object.entries(editUserPermissions)
+                          .filter(([k, v]) => !RESOURCES.find(r => r.id === k) && v !== "none")
+                          .map(([key, value]) => (
+                            <span key={key} className="px-2 py-1 bg-primary/10 text-primary text-xs rounded">
+                              {key}: {value}
+                            </span>
+                          ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
     }
 
     // Get request body
-    const { userId, email, fullName, password, role } = await req.json()
+    const { userId, email, fullName, password, role, permissions } = await req.json()
 
     if (!userId) {
       return new Response(JSON.stringify({ error: 'User ID is required' }), {
@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    console.log(`Updating user ${userId} with email: ${email}, fullName: ${fullName}, role: ${role}, password: ${password ? 'provided' : 'not provided'}`)
+    console.log(`Updating user ${userId} with email: ${email}, fullName: ${fullName}, role: ${role}, password: ${password ? 'provided' : 'not provided'}, permissions: ${permissions ? 'provided' : 'not provided'}`)
 
     // Update auth user
     const updateData: { email?: string; password?: string; user_metadata?: { full_name: string } } = {}
@@ -135,6 +135,34 @@ Deno.serve(async (req) => {
       
       if (roleError) {
         console.error('Error updating role:', roleError)
+      }
+    }
+
+    // Update permissions if provided
+    if (permissions && typeof permissions === 'object') {
+      // Delete existing permissions
+      await supabaseAdmin
+        .from('user_permissions')
+        .delete()
+        .eq('user_id', userId)
+
+      // Insert new permissions
+      const permissionsToInsert = Object.entries(permissions)
+        .filter(([_, perm]) => perm !== 'none')
+        .map(([resource, permission]) => ({
+          user_id: userId,
+          resource,
+          permission: permission === 'full' ? 'all' : permission
+        }))
+
+      if (permissionsToInsert.length > 0) {
+        const { error: permError } = await supabaseAdmin
+          .from('user_permissions')
+          .insert(permissionsToInsert)
+
+        if (permError) {
+          console.error('Error updating permissions:', permError)
+        }
       }
     }
 
