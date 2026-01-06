@@ -14,6 +14,7 @@ import AdminPanel from "./pages/AdminPanel";
 import Contracts from "./pages/Contracts";
 import DeletedContracts from "./pages/DeletedContracts";
 import AlertsDashboard from "./pages/AlertsDashboard";
+import BulkContractUpload from "./pages/BulkContractUpload";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -32,6 +33,7 @@ const App = () => (
             <Route path="/admin" element={<AdminPanel />} />
             <Route path="/contracts" element={<Contracts />} />
             <Route path="/contracts/new" element={<NewContract />} />
+            <Route path="/contracts/bulk-upload" element={<BulkContractUpload />} />
             <Route path="/contracts/:id" element={<ContractDetail />} />
             <Route path="/contracts/:id/edit" element={<EditContract />} />
             <Route path="/deleted" element={<DeletedContracts />} />
