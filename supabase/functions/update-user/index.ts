@@ -152,7 +152,7 @@ Deno.serve(async (req) => {
         .map(([resource, permission]) => ({
           user_id: userId,
           resource,
-          permission: permission === 'full' ? 'all' : permission
+          permission
         }))
 
       if (permissionsToInsert.length > 0) {

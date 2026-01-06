@@ -2,7 +2,7 @@ import { ReactNode, useState } from "react";
 import { usePermissionSelection, PermissionLevel } from "@/contexts/PermissionSelectionContext";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Check, Eye, Edit, Shield } from "lucide-react";
+import { Check, Eye, Edit, EyeOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SelectableElementProps {
@@ -13,9 +13,9 @@ interface SelectableElementProps {
 }
 
 const PERMISSION_OPTIONS: { value: PermissionLevel; label: string; icon: ReactNode; description: string }[] = [
+  { value: "none", label: "Sin Acceso", icon: <EyeOff className="h-4 w-4" />, description: "No puede ver esta sección" },
   { value: "view", label: "Ver", icon: <Eye className="h-4 w-4" />, description: "Solo puede visualizar" },
-  { value: "edit", label: "Editar", icon: <Edit className="h-4 w-4" />, description: "Puede ver y modificar" },
-  { value: "full", label: "Completo", icon: <Shield className="h-4 w-4" />, description: "Ver, editar y guardar" },
+  { value: "edit", label: "Editar", icon: <Edit className="h-4 w-4" />, description: "Puede ver, modificar y guardar" },
 ];
 
 export const SelectableElement = ({ elementId, label, children, className }: SelectableElementProps) => {
@@ -77,15 +77,6 @@ export const SelectableElement = ({ elementId, label, children, className }: Sel
               {currentPermission === option.value && <Check className="h-4 w-4 text-primary" />}
             </Button>
           ))}
-          {isSelected && (
-            <Button
-              variant="ghost"
-              className="w-full justify-start gap-2 text-destructive hover:text-destructive"
-              onClick={() => handleSelectPermission("none")}
-            >
-              Quitar selección
-            </Button>
-          )}
         </div>
       </PopoverContent>
     </Popover>

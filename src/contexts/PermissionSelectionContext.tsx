@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, ReactNode } from "react";
 
-export type PermissionLevel = "none" | "view" | "edit" | "full"; // full = ver + editar + guardar
+export type PermissionLevel = "none" | "view" | "edit"; // edit = ver + modificar + guardar
 
 export interface ElementPermission {
   elementId: string;

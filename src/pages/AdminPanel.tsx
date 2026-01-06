@@ -33,7 +33,7 @@ interface UserPermission {
   id: string;
   user_id: string;
   resource: string;
-  permission: "view" | "edit" | "all";
+  permission: "view" | "edit" | "all"; // 'all' kept for backwards compatibility with DB enum
 }
 
 interface FolderTemplate {
@@ -60,7 +60,7 @@ interface UserPermission {
   id: string;
   user_id: string;
   resource: string;
-  permission: "view" | "edit" | "all";
+  permission: "view" | "edit" | "all"; // 'all' kept for backwards compatibility with DB enum
 }
 
 // Recursos principales
@@ -116,7 +116,7 @@ const AdminPanel = () => {
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserName, setNewUserName] = useState("");
   const [newUserRole, setNewUserRole] = useState<"admin" | "user">("user");
-  const [newUserPermissions, setNewUserPermissions] = useState<Record<string, "view" | "edit" | "all" | "none">>({});
+  const [newUserPermissions, setNewUserPermissions] = useState<Record<string, "view" | "edit" | "none">>({});
   const [creating, setCreating] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -125,7 +125,7 @@ const AdminPanel = () => {
 
   // Permission edit
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const [editPermissions, setEditPermissions] = useState<Record<string, "view" | "edit" | "all" | "none">>({});
+  const [editPermissions, setEditPermissions] = useState<Record<string, "view" | "edit" | "none">>({});
 
   // Folder templates
   const [folderTemplates, setFolderTemplates] = useState<FolderTemplate[]>([]);
@@ -144,7 +144,7 @@ const AdminPanel = () => {
   const [editUserName, setEditUserName] = useState("");
   const [editUserPassword, setEditUserPassword] = useState("");
   const [editUserRole, setEditUserRole] = useState<"admin" | "user">("user");
-  const [editUserPermissions, setEditUserPermissions] = useState<Record<string, "view" | "edit" | "all" | "none">>({});
+  const [editUserPermissions, setEditUserPermissions] = useState<Record<string, "view" | "edit" | "none">>({});
   const [updatingUser, setUpdatingUser] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -162,9 +162,9 @@ const AdminPanel = () => {
   useEffect(() => {
     if (completeUser && pendingUserData && Object.keys(selectedElements).length >= 0) {
       // Convert selectedElements to permissions format
-      const perms: Record<string, "view" | "edit" | "all" | "none"> = {};
+      const perms: Record<string, "view" | "edit" | "none"> = {};
       Object.values(selectedElements).forEach(el => {
-        perms[el.elementId] = el.permission === "full" ? "all" : el.permission;
+        perms[el.elementId] = el.permission;
       });
 
       if (isEditMode && pendingUserData.userId) {
@@ -298,7 +298,7 @@ const AdminPanel = () => {
         .map(([resource, permission]) => ({
           user_id: userId,
           resource,
-          permission: permission as "view" | "edit" | "all"
+          permission: permission as "view" | "edit"
         }));
 
       if (permissionsToInsert.length > 0) {
@@ -315,10 +315,12 @@ const AdminPanel = () => {
 
   const openEditPermissions = (userId: string) => {
     const userPerms = getUserPermissions(userId);
-    const permsMap: Record<string, "view" | "edit" | "all" | "none"> = {};
+    const permsMap: Record<string, "view" | "edit" | "none"> = {};
     RESOURCES.forEach(r => {
       const perm = userPerms.find(p => p.resource === r.id);
-      permsMap[r.id] = perm?.permission || "none";
+      // Map legacy 'all' to 'edit'
+      const permValue = perm?.permission === "all" ? "edit" : perm?.permission;
+      permsMap[r.id] = permValue || "none";
     });
     setEditPermissions(permsMap);
     setEditingUserId(userId);
@@ -332,9 +334,10 @@ const AdminPanel = () => {
     setEditUserRole(getUserRole(profile.id) as "admin" | "user");
     // Load existing permissions
     const userPerms = getUserPermissions(profile.id);
-    const permsMap: Record<string, "view" | "edit" | "all" | "none"> = {};
+    const permsMap: Record<string, "view" | "edit" | "none"> = {};
     userPerms.forEach(p => {
-      permsMap[p.resource] = p.permission;
+      // Map legacy 'all' to 'edit'
+      permsMap[p.resource] = p.permission === "all" ? "edit" : p.permission;
     });
     setEditUserPermissions(permsMap);
     setEditUserDialogOpen(true);
@@ -605,7 +608,6 @@ const AdminPanel = () => {
                             <SelectItem value="none">Sin acceso</SelectItem>
                             <SelectItem value="view">Ver</SelectItem>
                             <SelectItem value="edit">Editar</SelectItem>
-                            <SelectItem value="all">Todo</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -869,7 +871,6 @@ const AdminPanel = () => {
                       <SelectItem value="none">Sin acceso</SelectItem>
                       <SelectItem value="view">Ver</SelectItem>
                       <SelectItem value="edit">Editar</SelectItem>
-                      <SelectItem value="all">Todo</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -991,13 +992,13 @@ const AdminPanel = () => {
                       size="sm"
                       onClick={() => {
                         // Convert current permissions to ElementPermission format
-                        const existingPerms: Record<string, { elementId: string; label: string; permission: "none" | "view" | "edit" | "full" }> = {};
+                        const existingPerms: Record<string, { elementId: string; label: string; permission: "none" | "view" | "edit" }> = {};
                         Object.entries(editUserPermissions).forEach(([key, value]) => {
                           if (value !== "none") {
                             existingPerms[key] = {
                               elementId: key,
                               label: ALL_RESOURCES.find(r => r.id === key)?.label || key,
-                              permission: value === "all" ? "full" : value,
+                              permission: value,
                             };
                           }
                         });
@@ -1035,7 +1036,6 @@ const AdminPanel = () => {
                             <SelectItem value="none">Sin acceso</SelectItem>
                             <SelectItem value="view">Ver</SelectItem>
                             <SelectItem value="edit">Editar</SelectItem>
-                            <SelectItem value="all">Todo</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -1059,7 +1059,6 @@ const AdminPanel = () => {
                             <SelectItem value="none">Sin acceso</SelectItem>
                             <SelectItem value="view">Ver</SelectItem>
                             <SelectItem value="edit">Editar</SelectItem>
-                            <SelectItem value="all">Todo</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -1083,7 +1082,6 @@ const AdminPanel = () => {
                             <SelectItem value="none">Sin acceso</SelectItem>
                             <SelectItem value="view">Ver</SelectItem>
                             <SelectItem value="edit">Editar</SelectItem>
-                            <SelectItem value="all">Todo</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
