@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Plus, LogOut, Shield, Trash2, Bell } from "lucide-react";
+import { Plus, LogOut, Shield, Trash2, Bell, Upload } from "lucide-react";
 import { DashboardStats } from "@/components/dashboard/DashboardStats";
 import { SuppliersModule } from "@/components/suppliers/SuppliersModule";
 import { useAuth } from "@/hooks/useAuth";
@@ -57,10 +57,16 @@ const Dashboard = () => {
                   </Button>
                 </>}
               {isAdmin && (
-                <Button onClick={() => navigate("/contracts/new")} className="gap-2">
-                  <Plus className="h-4 w-4" />
-                  Nuevo Contrato
-                </Button>
+                <>
+                  <Button variant="outline" onClick={() => navigate("/contracts/bulk-upload")} className="gap-2">
+                    <Upload className="h-4 w-4" />
+                    Carga Masiva
+                  </Button>
+                  <Button onClick={() => navigate("/contracts/new")} className="gap-2">
+                    <Plus className="h-4 w-4" />
+                    Nuevo Contrato
+                  </Button>
+                </>
               )}
               <Button variant="outline" onClick={handleLogout} className="gap-2">
                 <LogOut className="h-4 w-4" />
