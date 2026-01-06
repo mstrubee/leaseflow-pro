@@ -3,44 +3,35 @@ import * as XLSX from 'xlsx';
 export const generateSupplierTemplate = () => {
   const workbook = XLSX.utils.book_new();
 
-  // Sheet 1: Proveedores (data entry)
-  const headers = [
-    "Nombre Empresa *",
-    "RUT",
-    "Calle",
-    "Número",
-    "Comuna",
-    "Banco",
-    "Tipo Cuenta",
-    "Número Cuenta",
-    "Nombre Contacto",
-    "Teléfono",
-    "Email 1",
-    "Email 2",
-    "Email 3",
-    "Rubro *",
-    "Proveedor Genérico (SI/NO)"
+  // Sheet 1: Proveedores (data entry) - Headers in column A, data in columns B onwards
+  const rows = [
+    ["Nombre Empresa *"],
+    ["RUT"],
+    ["Calle"],
+    ["Número"],
+    ["Comuna"],
+    ["Banco"],
+    ["Tipo Cuenta"],
+    ["Número Cuenta"],
+    ["Nombre Contacto"],
+    ["Teléfono"],
+    ["Email 1"],
+    ["Email 2"],
+    ["Email 3"],
+    ["Rubro *"],
+    ["Proveedor Genérico (SI/NO)"]
   ];
 
-  const suppliersSheet = XLSX.utils.aoa_to_sheet([headers]);
+  const suppliersSheet = XLSX.utils.aoa_to_sheet(rows);
   
-  // Set column widths
+  // Set column widths - Column A for labels, B+ for data
   suppliersSheet['!cols'] = [
-    { wch: 30 }, // Nombre Empresa
-    { wch: 15 }, // RUT
-    { wch: 25 }, // Calle
-    { wch: 10 }, // Número
-    { wch: 20 }, // Comuna
-    { wch: 20 }, // Banco
-    { wch: 18 }, // Tipo Cuenta
-    { wch: 18 }, // Número Cuenta
-    { wch: 25 }, // Nombre Contacto
-    { wch: 18 }, // Teléfono
-    { wch: 30 }, // Email 1
-    { wch: 30 }, // Email 2
-    { wch: 30 }, // Email 3
-    { wch: 25 }, // Rubro
-    { wch: 20 }, // Proveedor Genérico
+    { wch: 30 }, // Column A: Labels
+    { wch: 30 }, // Column B: Proveedor 1
+    { wch: 30 }, // Column C: Proveedor 2
+    { wch: 30 }, // Column D: Proveedor 3
+    { wch: 30 }, // Column E: Proveedor 4
+    { wch: 30 }, // Column F: Proveedor 5
   ];
 
   XLSX.utils.book_append_sheet(workbook, suppliersSheet, "Proveedores");
@@ -131,71 +122,83 @@ export const parseSupplierExcel = async (file: File): Promise<{ suppliers: Parse
         const worksheet = workbook.Sheets[sheetName];
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
         
-        if (jsonData.length < 2) {
-          resolve({ suppliers: [], errors: ["El archivo está vacío o solo tiene encabezados"] });
+        // New format: headers in column A, data in columns B onwards
+        // Each column (starting from B) represents one supplier
+        if (jsonData.length < 15) {
+          resolve({ suppliers: [], errors: ["El archivo no tiene el formato correcto (faltan filas)"] });
           return;
         }
 
         const suppliers: ParsedSupplier[] = [];
         const errors: string[] = [];
 
-        // Skip header row
-        for (let i = 1; i < jsonData.length; i++) {
-          const row = jsonData[i];
-          if (!row || row.length === 0 || !row[0]) continue;
+        // Find how many columns have data (starting from column B = index 1)
+        const maxCols = Math.max(...jsonData.map(row => row?.length || 0));
+        
+        // Process each column starting from B (index 1)
+        for (let col = 1; col < maxCols; col++) {
+          const colLetter = String.fromCharCode(65 + col); // B, C, D, etc.
+          
+          // Extract data from each row for this column
+          const name = String(jsonData[0]?.[col] || "").trim();
+          const rut = String(jsonData[1]?.[col] || "").trim();
+          const street = String(jsonData[2]?.[col] || "").trim();
+          const street_number = String(jsonData[3]?.[col] || "").trim();
+          const commune = String(jsonData[4]?.[col] || "").trim();
+          const bank_name = String(jsonData[5]?.[col] || "").trim();
+          let bank_account_type = String(jsonData[6]?.[col] || "").trim().toLowerCase();
+          const bank_account_number = String(jsonData[7]?.[col] || "").trim();
+          const contact_name = String(jsonData[8]?.[col] || "").trim();
+          const phone = String(jsonData[9]?.[col] || "").trim();
+          const email1 = String(jsonData[10]?.[col] || "").trim();
+          const email2 = String(jsonData[11]?.[col] || "").trim();
+          const email3 = String(jsonData[12]?.[col] || "").trim();
+          const category_name = String(jsonData[13]?.[col] || "").trim();
+          const genericValue = String(jsonData[14]?.[col] || "").trim().toUpperCase();
 
-          const rowNum = i + 1;
-          const name = String(row[0] || "").trim();
-          const categoryName = String(row[13] || "").trim();
+          // Skip empty columns
+          if (!name) continue;
 
           // Validate required fields
-          if (!name) {
-            errors.push(`Fila ${rowNum}: Nombre de empresa es requerido`);
-            continue;
-          }
-          if (!categoryName) {
-            errors.push(`Fila ${rowNum}: Rubro es requerido`);
+          if (!category_name) {
+            errors.push(`Columna ${colLetter}: Rubro es requerido para "${name}"`);
             continue;
           }
 
           // Parse emails
           const emails: string[] = [];
-          if (row[10]) emails.push(String(row[10]).trim());
-          if (row[11]) emails.push(String(row[11]).trim());
-          if (row[12]) emails.push(String(row[12]).trim());
-
-          const phone = String(row[9] || "").trim();
+          if (email1) emails.push(email1);
+          if (email2) emails.push(email2);
+          if (email3) emails.push(email3);
           
           // Validate at least email or phone
-          if (emails.filter(e => e).length === 0 && !phone) {
-            errors.push(`Fila ${rowNum}: Debe tener al menos un email o teléfono`);
+          if (emails.length === 0 && !phone) {
+            errors.push(`Columna ${colLetter}: Debe tener al menos un email o teléfono para "${name}"`);
             continue;
           }
 
           // Parse is_generic
-          const genericValue = String(row[14] || "").trim().toUpperCase();
           const isGeneric = genericValue === "SI" || genericValue === "SÍ" || genericValue === "YES" || genericValue === "1" || genericValue === "TRUE";
 
-          // Parse bank account type
-          let bankAccountType = String(row[6] || "").trim().toLowerCase();
-          if (bankAccountType && !["corriente", "vista", "ahorro"].includes(bankAccountType)) {
-            errors.push(`Fila ${rowNum}: Tipo de cuenta inválido "${bankAccountType}". Usando vacío.`);
-            bankAccountType = "";
+          // Validate bank account type
+          if (bank_account_type && !["corriente", "vista", "ahorro"].includes(bank_account_type)) {
+            errors.push(`Columna ${colLetter}: Tipo de cuenta inválido "${bank_account_type}" para "${name}". Usando vacío.`);
+            bank_account_type = "";
           }
 
           suppliers.push({
             name,
-            rut: String(row[1] || "").trim(),
-            street: String(row[2] || "").trim(),
-            street_number: String(row[3] || "").trim(),
-            commune: String(row[4] || "").trim(),
-            bank_name: String(row[5] || "").trim(),
-            bank_account_type: bankAccountType,
-            bank_account_number: String(row[7] || "").trim(),
-            contact_name: String(row[8] || "").trim(),
+            rut,
+            street,
+            street_number,
+            commune,
+            bank_name,
+            bank_account_type,
+            bank_account_number,
+            contact_name,
             phone,
-            emails: emails.filter(e => e),
-            category_name: categoryName,
+            emails,
+            category_name,
             is_generic: isGeneric,
           });
         }
