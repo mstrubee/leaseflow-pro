@@ -94,7 +94,7 @@ const Contracts = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const statusFilter = searchParams.get("status") || "todos";
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, roleLoaded } = useAuth();
 
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [filteredContracts, setFilteredContracts] = useState<Contract[]>([]);
@@ -523,7 +523,7 @@ const Contracts = () => {
     en_curso: "Proyecto en Curso",
   };
 
-  if (authLoading) {
+  if (authLoading || !roleLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>

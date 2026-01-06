@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Trash2, AlertTriangle, FileCheck, FilePlus } from "lucide-react";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
+import { useAuth } from "@/hooks/useAuth";
 import { addMonths, format, subMonths, parseISO, differenceInMonths, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -70,6 +71,7 @@ interface ContractsTableProps {
 export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateField, onRefresh }: ContractsTableProps) {
   const navigate = useNavigate();
   const { ufValue, convertUFToPesos } = useEconomicIndicators();
+  const { isAdmin } = useAuth();
 
   const calculateEndDate = (contract: Contract): Date | null => {
     const currentVersion = contract.contract_versions?.find((v) => v.is_current);
@@ -170,7 +172,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 <TableHead className="font-semibold text-center">Estado</TableHead>
               </>
             )}
-            <TableHead className="w-[50px]"></TableHead>
+            {isAdmin && <TableHead className="w-[50px]"></TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -373,6 +375,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                                   value,
                                 )
                               }
+                              disabled={!isAdmin}
                             >
                               <SelectTrigger className="h-6 text-[10px] px-1.5 w-[85px]">
                                 <SelectValue />
@@ -400,6 +403,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                                   value,
                                 )
                               }
+                              disabled={!isAdmin}
                             >
                               <SelectTrigger className="h-6 text-[10px] px-1.5 w-[100px]">
                                 <SelectValue />
@@ -458,6 +462,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                                   value,
                                 )
                               }
+                              disabled={!isAdmin}
                             >
                               <SelectTrigger className="h-6 text-[10px] px-1.5 w-[100px]">
                                 <SelectValue />
@@ -477,16 +482,18 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                     </TableCell>
                   </>
                 )}
-                <TableCell onClick={(e) => e.stopPropagation()}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-                    onClick={(e) => onDelete(e, contract)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </TableCell>
+                {isAdmin && (
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={(e) => onDelete(e, contract)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
+                )}
               </TableRow>
             );
           })}

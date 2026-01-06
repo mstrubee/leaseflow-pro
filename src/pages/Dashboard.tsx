@@ -13,6 +13,7 @@ const Dashboard = () => {
     user,
     loading,
     isAdmin,
+    roleLoaded,
     signOut
   } = useAuth();
   useEffect(() => {
@@ -24,7 +25,7 @@ const Dashboard = () => {
     await signOut();
     navigate("/auth");
   };
-  if (loading) {
+  if (loading || !roleLoaded) {
     return <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>;
@@ -55,10 +56,12 @@ const Dashboard = () => {
                     Admin
                   </Button>
                 </>}
-              <Button onClick={() => navigate("/contracts/new")} className="gap-2">
-                <Plus className="h-4 w-4" />
-                Nuevo Contrato
-              </Button>
+              {isAdmin && (
+                <Button onClick={() => navigate("/contracts/new")} className="gap-2">
+                  <Plus className="h-4 w-4" />
+                  Nuevo Contrato
+                </Button>
+              )}
               <Button variant="outline" onClick={handleLogout} className="gap-2">
                 <LogOut className="h-4 w-4" />
                 Salir
