@@ -512,39 +512,75 @@ export type Database = {
       }
       cloud_storage_connections: {
         Row: {
-          access_token: string | null
           created_at: string
           folder_url: string | null
           id: string
           is_active: boolean | null
           name: string
           provider: string
-          refresh_token: string | null
           updated_at: string
         }
         Insert: {
-          access_token?: string | null
           created_at?: string
           folder_url?: string | null
           id?: string
           is_active?: boolean | null
           name: string
           provider: string
-          refresh_token?: string | null
           updated_at?: string
         }
         Update: {
-          access_token?: string | null
           created_at?: string
           folder_url?: string | null
           id?: string
           is_active?: boolean | null
           name?: string
           provider?: string
-          refresh_token?: string | null
           updated_at?: string
         }
         Relationships: []
+      }
+      cloud_storage_tokens: {
+        Row: {
+          access_token: string | null
+          connection_id: string
+          created_at: string
+          id: string
+          refresh_token: string | null
+          updated_at: string
+        }
+        Insert: {
+          access_token?: string | null
+          connection_id: string
+          created_at?: string
+          id?: string
+          refresh_token?: string | null
+          updated_at?: string
+        }
+        Update: {
+          access_token?: string | null
+          connection_id?: string
+          created_at?: string
+          id?: string
+          refresh_token?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cloud_storage_tokens_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: true
+            referencedRelation: "cloud_storage_connections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cloud_storage_tokens_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: true
+            referencedRelation: "cloud_storage_connections_public"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       companies: {
         Row: {
@@ -2729,6 +2765,20 @@ export type Database = {
         }
         Returns: string
       }
+      get_cloud_storage_token: {
+        Args: { p_connection_id: string }
+        Returns: {
+          access_token: string
+          refresh_token: string
+        }[]
+      }
+      get_cloud_storage_token_internal: {
+        Args: { p_connection_id: string }
+        Returns: {
+          access_token: string
+          refresh_token: string
+        }[]
+      }
       has_permission: {
         Args: {
           _permission: Database["public"]["Enums"]["permission_type"]
@@ -2743,6 +2793,14 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      set_cloud_storage_token: {
+        Args: {
+          p_access_token: string
+          p_connection_id: string
+          p_refresh_token: string
+        }
+        Returns: undefined
       }
     }
     Enums: {
