@@ -700,16 +700,6 @@ const AdminPanel = () => {
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        {getUserRole(profile.id) !== "admin" && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openEditPermissions(profile.id)}
-                            title="Editar permisos"
-                          >
-                            <Shield className="h-4 w-4" />
-                          </Button>
-                        )}
                         {profile.id !== user?.id && (
                           <Button
                             variant="destructive"
