@@ -90,7 +90,8 @@ Deno.serve(async (req) => {
       })
     }
 
-    console.log(`Updating user ${userId} with email: ${email}, fullName: ${fullName}, role: ${role}, password: ${password ? 'provided' : 'not provided'}, permissions: ${permissions ? 'provided' : 'not provided'}`)
+    // Log operation without sensitive user details
+    console.log('Processing user update operation');
 
     // Update auth user
     const updateData: { email?: string; password?: string; user_metadata?: { full_name: string } } = {}
