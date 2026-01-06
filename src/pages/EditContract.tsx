@@ -15,6 +15,8 @@ import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useEditContractSections, EditSectionKey } from "@/hooks/useEditContractSections";
 import { CompanySelect } from "@/components/contracts/CompanySelect";
 import { EditableSectionWrapper } from "@/components/contracts/EditableSectionWrapper";
+import { CustomFieldsManager } from "@/components/contracts/CustomFieldsManager";
+import { useCustomFieldValues } from "@/hooks/useCustomFieldValues";
 import {
   DndContext,
   closestCenter,
@@ -120,6 +122,7 @@ const EditContract = () => {
   const [metrosLinealesFrente, setMetrosLinealesFrente] = useState<number>(0);
   
   const { ufValue, convertPesosToUF } = useEconomicIndicators();
+  const { values: customFieldValues, updateValue: updateCustomFieldValue, saveValues: saveCustomFieldValues, loading: loadingCustomFields } = useCustomFieldValues(id);
   
   const {
     sections: commercialSections,
@@ -601,6 +604,9 @@ const EditContract = () => {
         }
       }
 
+      // Save custom field values
+      await saveCustomFieldValues(id!);
+
       setHasUnsavedChanges(false);
 
       toast({
@@ -742,6 +748,14 @@ const EditContract = () => {
                   onChange={(e) => { setName(e.target.value); setHasUnsavedChanges(true); }}
                 />
               </div>
+              <CustomFieldsManager
+                contractId={id}
+                values={customFieldValues}
+                onChange={(fieldId, value) => {
+                  updateCustomFieldValue(fieldId, value);
+                  setHasUnsavedChanges(true);
+                }}
+              />
             </CardContent>
           </Card>
 
