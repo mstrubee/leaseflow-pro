@@ -117,8 +117,8 @@ const ContractDetail = () => {
   const {
     toast
   } = useToast();
-  const { isAdmin } = useAuth();
-  const { isHidden } = useUserPermissions();
+  const { isAdmin, roleLoaded } = useAuth();
+  const { isHidden, loading: permissionsLoading } = useUserPermissions();
   const {
     sections,
     reorderSections,
@@ -526,7 +526,7 @@ const ContractDetail = () => {
       day: "numeric"
     });
   };
-  if (loading) {
+  if (loading || !roleLoaded || permissionsLoading) {
     return <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>;
@@ -566,11 +566,13 @@ const ContractDetail = () => {
               {getStatusBadge(contract.status)}
             </div>
             <div className="flex items-center gap-2">
-              {(isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} onStatusChange={loadContract} />}
-              <Button variant="outline" onClick={() => navigate(`/contracts/${contract.id}/edit`)} className="gap-2">
-                <Edit className="h-4 w-4" />
-                Editar
-              </Button>
+              {isAdmin && (isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} onStatusChange={loadContract} />}
+              {isAdmin && (
+                <Button variant="outline" onClick={() => navigate(`/contracts/${contract.id}/edit`)} className="gap-2">
+                  <Edit className="h-4 w-4" />
+                  Editar
+                </Button>
+              )}
             </div>
           </div>
         </div>
