@@ -110,10 +110,28 @@ async function getAccessToken(credentials: ServiceAccountCredentials): Promise<s
   return tokenData.access_token;
 }
 
+// Sanitize folder/file names to prevent query injection and invalid characters
+function sanitizeDriveName(name: string): string {
+  if (!name || typeof name !== 'string') {
+    return 'unnamed';
+  }
+  // Remove or replace special characters that could cause issues
+  // Drive API doesn't allow: / \ : * ? " < > |
+  // Also escape quotes for query safety
+  return name
+    .replace(/[\/\\:*?"<>|]/g, '_')
+    .replace(/'/g, '_')
+    .replace(/\\/g, '_')
+    .trim()
+    .substring(0, 255) || 'unnamed';
+}
+
 // Create a folder in Google Drive
 async function createDriveFolder(accessToken: string, name: string, parentId?: string): Promise<{ id: string; webViewLink: string }> {
+  const sanitizedName = sanitizeDriveName(name);
+  
   const metadata: any = {
-    name: name,
+    name: sanitizedName,
     mimeType: "application/vnd.google-apps.folder",
   };
   
@@ -139,9 +157,22 @@ async function createDriveFolder(accessToken: string, name: string, parentId?: s
   return await response.json();
 }
 
+// Sanitize name for Drive API query (escapes single quotes properly)
+function sanitizeForDriveQuery(name: string): string {
+  if (!name || typeof name !== 'string') {
+    return 'unnamed';
+  }
+  // Escape single quotes for Drive query and limit length
+  return name
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .substring(0, 255);
+}
+
 // Check if a folder exists by name in a parent
 async function getFolderByName(accessToken: string, name: string, parentId?: string): Promise<{ id: string; webViewLink: string } | null> {
-  let query = `name='${name.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const sanitizedName = sanitizeForDriveQuery(name);
+  let query = `name='${sanitizedName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
   
   if (parentId) {
     query += ` and '${parentId}' in parents`;
@@ -174,8 +205,10 @@ async function uploadFileToDrive(
   mimeType: string,
   folderId: string
 ): Promise<{ id: string; webViewLink: string; webContentLink: string }> {
+  const sanitizedFileName = sanitizeDriveName(fileName);
+  
   const metadata = {
-    name: fileName,
+    name: sanitizedFileName,
     parents: [folderId],
   };
   
