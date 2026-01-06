@@ -52,6 +52,9 @@ interface Contract {
   superficie_edificada_local: number | null;
   metros_lineales_frente: number | null;
   display_currency?: "UF" | "CLP";
+  companies?: {
+    name: string;
+  } | null;
   contract_addresses: Array<{
     street: string;
     number: string;
@@ -222,6 +225,7 @@ const ContractDetail = () => {
         error
       } = await supabase.from("contracts").select(`
           *,
+          companies (name),
           contract_addresses (*),
           contract_contacts (*),
           contract_versions (*, rent_escalations (*), notice_ranges (start_month, end_month)),
@@ -609,8 +613,13 @@ const ContractDetail = () => {
                 <h1 className="text-2xl font-semibold text-foreground">{contract.name}</h1>
                 {getStatusBadge(contract.status)}
               </div>
-              {customFields.length > 0 && (
+              {(contract.companies?.name || customFields.some(f => customFieldValues[f.id])) && (
                 <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
+                  {contract.companies?.name && (
+                    <span>
+                      <span className="font-medium">Empresa:</span> {contract.companies.name}
+                    </span>
+                  )}
                   {customFields.map((field) => {
                     const value = customFieldValues[field.id];
                     if (!value) return null;
