@@ -52,9 +52,9 @@ interface Contract {
   superficie_edificada_local: number | null;
   metros_lineales_frente: number | null;
   display_currency?: "UF" | "CLP";
-  companies?: {
-    name: string;
-  } | null;
+  contract_companies?: Array<{
+    companies: { name: string } | null;
+  }>;
   contract_addresses: Array<{
     street: string;
     number: string;
@@ -154,6 +154,7 @@ const ContractDetail = () => {
   
   const [contract, setContract] = useState<Contract | null>(null);
   const [loading, setLoading] = useState(true);
+  const [companyNames, setCompanyNames] = useState<string[]>([]);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
   const [signingContract, setSigningContract] = useState(false);
@@ -225,7 +226,7 @@ const ContractDetail = () => {
         error
       } = await supabase.from("contracts").select(`
           *,
-          companies (name),
+          contract_companies (companies (name)),
           contract_addresses (*),
           contract_contacts (*),
           contract_versions (*, rent_escalations (*), notice_ranges (start_month, end_month)),
@@ -234,6 +235,12 @@ const ContractDetail = () => {
         `).eq("id", id).single();
       if (error) throw error;
       setContract(data as Contract);
+      
+      // Extract company names from the relation
+      const names = data.contract_companies
+        ?.map((cc: any) => cc.companies?.name)
+        .filter((n: string | undefined): n is string => !!n) || [];
+      setCompanyNames(names);
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -613,11 +620,11 @@ const ContractDetail = () => {
                 <h1 className="text-2xl font-semibold text-foreground">{contract.name}</h1>
                 {getStatusBadge(contract.status)}
               </div>
-              {(contract.companies?.name || customFields.some(f => customFieldValues[f.id])) && (
+              {(companyNames.length > 0 || customFields.some(f => customFieldValues[f.id])) && (
                 <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
-                  {contract.companies?.name && (
+                  {companyNames.length > 0 && (
                     <span>
-                      <span className="font-medium">Empresa:</span> {contract.companies.name}
+                      <span className="font-medium">Empresa{companyNames.length > 1 ? 's' : ''}:</span> {companyNames.join(', ')}
                     </span>
                   )}
                   {customFields.map((field) => {

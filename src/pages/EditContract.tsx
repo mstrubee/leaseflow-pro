@@ -52,7 +52,7 @@ const EditContract = () => {
   const [missingFields, setMissingFields] = useState<string[]>([]);
 
   // Contract basic info
-  const [companyId, setCompanyId] = useState("");
+  const [companyIds, setCompanyIds] = useState<string[]>([]);
   const [name, setName] = useState("");
   
   // Address
@@ -183,7 +183,13 @@ const EditContract = () => {
       if (error) throw error;
 
       setName(data.name);
-      setCompanyId(data.company_id || "");
+      
+      // Load company associations
+      const { data: companyData } = await supabase
+        .from("contract_companies")
+        .select("company_id")
+        .eq("contract_id", id);
+      setCompanyIds(companyData?.map(c => c.company_id) || []);
       setSuperficieEdificadaLocal(data.superficie_edificada_local || 0);
       setMetrosLinealesFrente(data.metros_lineales_frente || 0);
       setCurrency((data.display_currency as "UF" | "CLP") || "UF");
@@ -337,18 +343,29 @@ const EditContract = () => {
     setSaving(true);
 
     try {
-      // Update contract including signed_date, display_currency, and company_id
+      // Update contract
       const { error: contractError } = await supabase
         .from("contracts")
         .update({ 
           name,
           signed_date: hasSeparateDates ? signedDate || null : effectiveDate || null,
           display_currency: currency,
-          company_id: companyId || null,
         } as any)
         .eq("id", id);
 
       if (contractError) throw contractError;
+
+      // Update company associations
+      await supabase.from("contract_companies").delete().eq("contract_id", id);
+      if (companyIds.length > 0) {
+        const { error: companyError } = await supabase
+          .from("contract_companies")
+          .insert(companyIds.map(companyId => ({
+            contract_id: id,
+            company_id: companyId,
+          })));
+        if (companyError) throw companyError;
+      }
 
       // Update or create address
       const fullPhone = phoneDigits ? `${countryCode} ${phoneDigits}` : "";
@@ -737,8 +754,8 @@ const EditContract = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               <CompanySelect 
-                value={companyId} 
-                onChange={(val) => { setCompanyId(val); setHasUnsavedChanges(true); }} 
+                value={companyIds} 
+                onChange={(val) => { setCompanyIds(val); setHasUnsavedChanges(true); }} 
               />
               <div className="space-y-2">
                 <Label htmlFor="name">Nombre del Contrato *</Label>
