@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { CategorySelect } from "@/components/suppliers/CategorySelect";
+import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import {
   DndContext,
   closestCenter,
@@ -399,13 +400,11 @@ const SortableTemplateLineItem = ({
   const [isEditingUnit, setIsEditingUnit] = useState(false);
   const [isEditingAmount, setIsEditingAmount] = useState(false);
   const [isEditingCurrency, setIsEditingCurrency] = useState(false);
-  const [isEditingSupplier, setIsEditingSupplier] = useState(false);
   const [editName, setEditName] = useState(line.name);
   const [editQuantity, setEditQuantity] = useState((line.quantity ?? 1).toString());
   const [editUnit, setEditUnit] = useState(line.unit_type || "m2");
   const [editAmount, setEditAmount] = useState(line.default_amount_uf.toString());
   const [editCurrency, setEditCurrency] = useState(line.currency || "UF");
-  const [editSupplier, setEditSupplier] = useState(line.supplier_name || "");
 
   const hasChildren = line.children && line.children.length > 0;
   const calculatedTotal = (parseFloat(editQuantity) || 0) * (parseFloat(editAmount) || 0);
@@ -457,20 +456,8 @@ const SortableTemplateLineItem = ({
     setIsEditingCurrency(false);
   };
 
-  const handleSaveSupplier = () => {
-    if (editSupplier !== (line.supplier_name || "")) {
-      onUpdateLine(line.id, { supplier_name: editSupplier.trim() || null });
-    }
-    setIsEditingSupplier(false);
-  };
-
-  const handleSupplierKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      handleSaveSupplier();
-    } else if (e.key === "Escape") {
-      setEditSupplier(line.supplier_name || "");
-      setIsEditingSupplier(false);
-    }
+  const handleSupplierChange = (supplierId: string | null, supplierName: string | null) => {
+    onUpdateLine(line.id, { supplier_name: supplierName });
   };
 
   const handleCancelAll = () => {
@@ -479,13 +466,11 @@ const SortableTemplateLineItem = ({
     setEditUnit(line.unit_type || "m2");
     setEditAmount(line.default_amount_uf.toString());
     setEditCurrency(line.currency || "UF");
-    setEditSupplier(line.supplier_name || "");
     setIsEditingName(false);
     setIsEditingQuantity(false);
     setIsEditingUnit(false);
     setIsEditingAmount(false);
     setIsEditingCurrency(false);
-    setIsEditingSupplier(false);
   };
 
   const handleSaveName = () => {
@@ -702,27 +687,17 @@ const SortableTemplateLineItem = ({
               = {line.currency === "CLP" ? "$" : "UF"} {((line.quantity || 0) * line.default_amount_uf).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
             </span>
             
-            {/* Supplier - editable */}
+            {/* Supplier - select from list */}
             <div className="flex items-center gap-1 ml-2 border-l border-border pl-2">
               <span className="text-xs text-muted-foreground">Proveedor:</span>
-              {isEditingSupplier ? (
-                <Input
-                  type="text"
-                  value={editSupplier}
-                  onChange={(e) => setEditSupplier(e.target.value)}
-                  onBlur={handleSaveSupplier}
-                  onKeyDown={handleSupplierKeyDown}
-                  className="h-6 w-56 text-xs"
-                  autoFocus
-                  placeholder="Nombre..."
-                />
-              ) : (
-                <span 
-                  className="text-xs bg-muted/30 px-1.5 py-0.5 rounded min-w-[200px] cursor-text hover:bg-accent/50"
-                  onDoubleClick={() => setIsEditingSupplier(true)}
-                  title="Doble clic para editar"
-                >
-                  {line.supplier_name || "-"}
+              <SupplierSelect
+                value={null}
+                onChange={handleSupplierChange}
+                categoryId={line.category_id}
+              />
+              {line.supplier_name && (
+                <span className="text-xs text-muted-foreground">
+                  ({line.supplier_name})
                 </span>
               )}
             </div>
