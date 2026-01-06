@@ -3,34 +3,59 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, ChevronRight, Plus, Building2, Settings } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Building2, Settings, Upload, Download } from "lucide-react";
 import { SupplierForm } from "./SupplierForm";
 import { SuppliersList } from "./SuppliersList";
+import { SupplierBulkUpload } from "./SupplierBulkUpload";
 import { CategoryManager } from "./CategoryManager";
 import { Supplier } from "./types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SelectableElement } from "@/components/admin/SelectableElement";
+import { generateSupplierTemplate } from "@/lib/generateSupplierTemplate";
+
+type DialogMode = "form" | "bulk";
 
 export const SuppliersModule = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [showForm, setShowForm] = useState(false);
+  const [showDialog, setShowDialog] = useState(false);
+  const [dialogMode, setDialogMode] = useState<DialogMode>("form");
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const handleEdit = (supplier: Supplier) => {
     setEditingSupplier(supplier);
-    setShowForm(true);
+    setDialogMode("form");
+    setShowDialog(true);
+  };
+
+  const handleNewSupplier = () => {
+    setEditingSupplier(null);
+    setDialogMode("form");
+    setShowDialog(true);
   };
 
   const handleSave = () => {
-    setShowForm(false);
+    setShowDialog(false);
     setEditingSupplier(null);
     setRefreshKey(prev => prev + 1);
   };
 
   const handleCancel = () => {
-    setShowForm(false);
+    setShowDialog(false);
     setEditingSupplier(null);
+  };
+
+  const handleBulkUploadComplete = () => {
+    setShowDialog(false);
+    setRefreshKey(prev => prev + 1);
+  };
+
+  const switchToBulkUpload = () => {
+    setDialogMode("bulk");
+  };
+
+  const switchToForm = () => {
+    setDialogMode("form");
   };
 
   return (
@@ -47,13 +72,23 @@ export const SuppliersModule = () => {
                     <CardTitle className="text-lg">Proveedores</CardTitle>
                   </div>
                   {isOpen && (
-                    <Button
-                      size="sm"
-                      onClick={e => { e.stopPropagation(); setShowForm(true); }}
-                    >
-                      <Plus className="h-4 w-4 mr-1" />
-                      Nuevo Proveedor
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={e => { e.stopPropagation(); generateSupplierTemplate(); }}
+                      >
+                        <Download className="h-4 w-4 mr-1" />
+                        Descargar Plantilla
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={e => { e.stopPropagation(); handleNewSupplier(); }}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Nuevo Proveedor
+                      </Button>
+                    </div>
                   )}
                 </div>
               </CollapsibleTrigger>
@@ -81,18 +116,54 @@ export const SuppliersModule = () => {
         </Card>
       </SelectableElement>
 
-      <Dialog open={showForm} onOpenChange={setShowForm}>
+      <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {editingSupplier ? "Editar Proveedor" : "Nuevo Proveedor"}
+              {dialogMode === "bulk" 
+                ? "Carga Masiva de Proveedores" 
+                : editingSupplier 
+                  ? "Editar Proveedor" 
+                  : "Nuevo Proveedor"}
             </DialogTitle>
           </DialogHeader>
-          <SupplierForm
-            supplier={editingSupplier}
-            onSave={handleSave}
-            onCancel={handleCancel}
-          />
+
+          {dialogMode === "form" && !editingSupplier && (
+            <div className="flex items-center justify-between p-3 mb-4 border rounded-lg bg-muted/30">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Upload className="h-4 w-4" />
+                <span>¿Tienes múltiples proveedores?</span>
+              </div>
+              <Button variant="link" size="sm" onClick={switchToBulkUpload}>
+                Cargar desde Excel
+              </Button>
+            </div>
+          )}
+
+          {dialogMode === "bulk" && (
+            <div className="flex items-center justify-between p-3 mb-4 border rounded-lg bg-muted/30">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Plus className="h-4 w-4" />
+                <span>¿Solo un proveedor?</span>
+              </div>
+              <Button variant="link" size="sm" onClick={switchToForm}>
+                Crear manualmente
+              </Button>
+            </div>
+          )}
+
+          {dialogMode === "form" ? (
+            <SupplierForm
+              supplier={editingSupplier}
+              onSave={handleSave}
+              onCancel={handleCancel}
+            />
+          ) : (
+            <SupplierBulkUpload
+              onComplete={handleBulkUploadComplete}
+              onCancel={handleCancel}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </>
