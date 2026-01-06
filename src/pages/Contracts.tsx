@@ -80,6 +80,7 @@ interface Contract {
   is_expired_but_operating: boolean | null;
   display_currency: string | null;
   company_id: string | null;
+  company?: { id: string; name: string } | null;
   contract_addresses: Array<{ region: string; commune: string }>;
   contract_versions: ContractVersion[];
   superficie_edificada_local: number | null;
@@ -154,6 +155,7 @@ const Contracts = () => {
       .from("contracts")
       .select(`
         *,
+        company:companies(id, name),
         contract_addresses (region, commune),
         contract_versions (
           id,
