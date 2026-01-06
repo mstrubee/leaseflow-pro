@@ -738,6 +738,78 @@ export type Database = {
           },
         ]
       }
+      contract_custom_field_values: {
+        Row: {
+          contract_id: string
+          created_at: string
+          field_id: string
+          field_value: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          contract_id: string
+          created_at?: string
+          field_id: string
+          field_value?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          contract_id?: string
+          created_at?: string
+          field_id?: string
+          field_value?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_custom_field_values_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_custom_field_values_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "contract_custom_fields"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contract_custom_fields: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          display_order: number | null
+          field_name: string
+          id: string
+          is_active: boolean | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          display_order?: number | null
+          field_name: string
+          id?: string
+          is_active?: boolean | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          display_order?: number | null
+          field_name?: string
+          id?: string
+          is_active?: boolean | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       contract_documents: {
         Row: {
           contract_id: string

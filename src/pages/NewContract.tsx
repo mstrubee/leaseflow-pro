@@ -14,6 +14,8 @@ import { CurrencyInput } from "@/components/contracts/CurrencyInput";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { CHILE_DEMOGRAPHICS } from "@/data/chileRegionsData";
 import { CompanySelect } from "@/components/contracts/CompanySelect";
+import { CustomFieldsManager } from "@/components/contracts/CustomFieldsManager";
+import { useCustomFieldValues } from "@/hooks/useCustomFieldValues";
 
 const NewContract = () => {
   const navigate = useNavigate();
@@ -78,6 +80,7 @@ const NewContract = () => {
   const [otrosEgresosDescription, setOtrosEgresosDescription] = useState("");
   
   const { ufValue, convertPesosToUF } = useEconomicIndicators();
+  const { values: customFieldValues, updateValue: updateCustomFieldValue, saveValues: saveCustomFieldValues } = useCustomFieldValues();
   
   // Document
   const [documentUrl, setDocumentUrl] = useState("");
@@ -231,6 +234,9 @@ const NewContract = () => {
         if (docError) throw docError;
       }
 
+      // Save custom field values
+      await saveCustomFieldValues(contract.id);
+
       toast({
         title: "Contrato creado",
         description: "El contrato ha sido creado exitosamente",
@@ -282,6 +288,10 @@ const NewContract = () => {
                   required
                 />
               </div>
+              <CustomFieldsManager
+                values={customFieldValues}
+                onChange={updateCustomFieldValue}
+              />
             </CardContent>
           </Card>
 
