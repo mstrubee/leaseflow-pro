@@ -13,6 +13,7 @@ import { RentEscalations, Escalation } from "@/components/contracts/RentEscalati
 import { CurrencyInput } from "@/components/contracts/CurrencyInput";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useEditContractSections, EditSectionKey } from "@/hooks/useEditContractSections";
+import { CompanySelect } from "@/components/contracts/CompanySelect";
 import { EditableSectionWrapper } from "@/components/contracts/EditableSectionWrapper";
 import {
   DndContext,
@@ -47,6 +48,7 @@ const EditContract = () => {
   const [saving, setSaving] = useState(false);
 
   // Contract basic info
+  const [companyId, setCompanyId] = useState("");
   const [name, setName] = useState("");
   
   // Address
@@ -176,6 +178,7 @@ const EditContract = () => {
       if (error) throw error;
 
       setName(data.name);
+      setCompanyId(data.company_id || "");
       setSuperficieEdificadaLocal(data.superficie_edificada_local || 0);
       setMetrosLinealesFrente(data.metros_lineales_frente || 0);
       setCurrency((data.display_currency as "UF" | "CLP") || "UF");
@@ -306,13 +309,14 @@ const EditContract = () => {
     setSaving(true);
 
     try {
-      // Update contract including signed_date and display_currency
+      // Update contract including signed_date, display_currency, and company_id
       const { error: contractError } = await supabase
         .from("contracts")
         .update({ 
           name,
           signed_date: hasSeparateDates ? signedDate || null : effectiveDate || null,
           display_currency: currency,
+          company_id: companyId || null,
         } as any)
         .eq("id", id);
 
@@ -667,6 +671,10 @@ const EditContract = () => {
               <CardTitle>Información General</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              <CompanySelect 
+                value={companyId} 
+                onChange={(val) => { setCompanyId(val); setHasUnsavedChanges(true); }} 
+              />
               <div className="space-y-2">
                 <Label htmlFor="name">Nombre del Contrato *</Label>
                 <Input
