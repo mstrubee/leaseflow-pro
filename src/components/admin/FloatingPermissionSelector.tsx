@@ -10,7 +10,6 @@ const PERMISSION_LABELS: Record<PermissionLevel, string> = {
   none: "Sin acceso",
   view: "Ver",
   edit: "Editar",
-  full: "Completo",
 };
 
 export const FloatingPermissionSelector = () => {
@@ -87,9 +86,9 @@ export const FloatingPermissionSelector = () => {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="none">Sin acceso</SelectItem>
                         <SelectItem value="view">Ver</SelectItem>
                         <SelectItem value="edit">Editar</SelectItem>
-                        <SelectItem value="full">Completo</SelectItem>
                       </SelectContent>
                     </Select>
                     <Button

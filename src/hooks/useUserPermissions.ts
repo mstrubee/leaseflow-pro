@@ -47,7 +47,7 @@ export const useUserPermissions = () => {
     const perm = permissions.find(p => p.resource === elementId);
     if (!perm) return true; // If no specific permission set, allow by default
     
-    return perm.permission === "view" || perm.permission === "edit" || perm.permission === "all";
+    return perm.permission === "view" || perm.permission === "edit";
   };
 
   // Check if user can edit a specific element
@@ -57,7 +57,7 @@ export const useUserPermissions = () => {
     const perm = permissions.find(p => p.resource === elementId);
     if (!perm) return true;
     
-    return perm.permission === "edit" || perm.permission === "all";
+    return perm.permission === "edit";
   };
 
   // Check if element has any restriction set for this user
