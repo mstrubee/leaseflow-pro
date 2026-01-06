@@ -109,6 +109,12 @@ interface Contract {
     created_at: string;
   }>;
 }
+interface CustomField {
+  id: string;
+  field_name: string;
+  display_order: number | null;
+}
+
 const ContractDetail = () => {
   const {
     id
@@ -145,6 +151,8 @@ const ContractDetail = () => {
   
   const [contract, setContract] = useState<Contract | null>(null);
   const [loading, setLoading] = useState(true);
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
   const [signingContract, setSigningContract] = useState(false);
   const [showDeleteConfirm1, setShowDeleteConfirm1] = useState(false);
   const [showDeleteConfirm2, setShowDeleteConfirm2] = useState(false);
@@ -170,8 +178,43 @@ const ContractDetail = () => {
   useEffect(() => {
     if (id) {
       loadContract();
+      loadCustomFields();
     }
   }, [id]);
+
+  const loadCustomFields = async () => {
+    try {
+      // Load custom fields
+      const { data: fields, error: fieldsError } = await supabase
+        .from("contract_custom_fields")
+        .select("id, field_name, display_order")
+        .eq("is_active", true)
+        .order("display_order", { ascending: true });
+
+      if (fieldsError) throw fieldsError;
+      setCustomFields(fields || []);
+
+      // Load field values for this contract
+      if (id) {
+        const { data: values, error: valuesError } = await supabase
+          .from("contract_custom_field_values")
+          .select("field_id, field_value")
+          .eq("contract_id", id);
+
+        if (valuesError) throw valuesError;
+        
+        const valuesMap: Record<string, string> = {};
+        (values || []).forEach((v) => {
+          if (v.field_value) {
+            valuesMap[v.field_id] = v.field_value;
+          }
+        });
+        setCustomFieldValues(valuesMap);
+      }
+    } catch (error) {
+      console.error("Error loading custom fields:", error);
+    }
+  };
   const loadContract = async () => {
     try {
       const {
@@ -560,10 +603,25 @@ const ContractDetail = () => {
             <ArrowLeft className="h-4 w-4" />
             Volver al Listado de Contratos
           </Button>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-semibold text-foreground">{contract.name}</h1>
-              {getStatusBadge(contract.status)}
+          <div className="flex items-start justify-between">
+            <div className="flex flex-col">
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-semibold text-foreground">{contract.name}</h1>
+                {getStatusBadge(contract.status)}
+              </div>
+              {customFields.length > 0 && (
+                <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
+                  {customFields.map((field) => {
+                    const value = customFieldValues[field.id];
+                    if (!value) return null;
+                    return (
+                      <span key={field.id}>
+                        <span className="font-medium">{field.field_name}:</span> {value}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2">
               {isAdmin && (isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} onStatusChange={loadContract} />}
