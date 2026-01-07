@@ -68,6 +68,11 @@ interface TerminationNotice {
   document_url: string | null;
 }
 
+interface ContractCompany {
+  company_id: string;
+  companies: { id: string; name: string } | null;
+}
+
 interface Contract {
   id: string;
   name: string;
@@ -79,8 +84,7 @@ interface Contract {
   patente_status: string | null;
   is_expired_but_operating: boolean | null;
   display_currency: string | null;
-  company_id: string | null;
-  company?: { id: string; name: string } | null;
+  contract_companies: ContractCompany[];
   contract_addresses: Array<{ region: string; commune: string }>;
   contract_versions: ContractVersion[];
   superficie_edificada_local: number | null;
@@ -155,7 +159,10 @@ const Contracts = () => {
       .from("contracts")
       .select(`
         *,
-        company:companies(id, name),
+        contract_companies (
+          company_id,
+          companies (id, name)
+        ),
         contract_addresses (region, commune),
         contract_versions (
           id,
@@ -355,7 +362,9 @@ const Contracts = () => {
 
     // Company filter
     if (companyFilter !== "todos") {
-      filtered = filtered.filter((contract) => contract.company_id === companyFilter);
+      filtered = filtered.filter((contract) => 
+        contract.contract_companies?.some(cc => cc.company_id === companyFilter)
+      );
     }
 
         // Sorting

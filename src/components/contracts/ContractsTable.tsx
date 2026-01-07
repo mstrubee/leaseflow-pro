@@ -41,6 +41,11 @@ interface ContractVersion {
   otros_egresos_description?: string | null;
 }
 
+interface ContractCompany {
+  company_id: string;
+  companies: { id: string; name: string } | null;
+}
+
 interface Contract {
   id: string;
   name: string;
@@ -52,8 +57,7 @@ interface Contract {
   patente_status: string | null;
   is_expired_but_operating: boolean | null;
   display_currency: string | null;
-  company_id: string | null;
-  company?: { id: string; name: string } | null;
+  contract_companies?: ContractCompany[];
   contract_addresses: Array<{ region: string; commune: string }>;
   contract_versions: ContractVersion[];
   superficie_edificada_local: number | null;
@@ -212,8 +216,10 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   <div className="flex items-center gap-2">
                     <div>
                       <div className="font-medium text-sm">{contract.name}</div>
-                      {contract.company && (
-                        <div className="text-[10px] text-muted-foreground">{contract.company.name}</div>
+                      {contract.contract_companies && contract.contract_companies.length > 0 && (
+                        <div className="text-[10px] text-muted-foreground">
+                          {contract.contract_companies.map(cc => cc.companies?.name).filter(Boolean).join(", ")}
+                        </div>
                       )}
                       <div className="flex items-center gap-1.5 mt-0.5">
                         {getStatusBadge(isExpiredOperating ? "firmado" : contract.status)}
