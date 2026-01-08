@@ -9,9 +9,11 @@ import { ArrowLeft, Download, Upload, FileSpreadsheet, CheckCircle2, XCircle, Al
 import { useAuth } from "@/hooks/useAuth";
 import { generateContractTemplate } from "@/lib/generateContractTemplate";
 import { generateMinimalContractTemplate } from "@/lib/generateMinimalContractTemplate";
-import { parseExcelFile, validateRows, uploadContracts, ContractRow, ValidationResult, UploadResult } from "@/lib/bulkContractUpload";
+import { parseExcelFile, validateRows, uploadContracts, ContractRow, ValidationResult, UploadResult, ValidationError } from "@/lib/bulkContractUpload";
 import { parseMinimalExcelFile, validateMinimalRows, uploadMinimalContracts, MinimalContractRow, MinimalValidationResult, MinimalUploadResult } from "@/lib/minimalContractUpload";
 import { useToast } from "@/hooks/use-toast";
+import { ValidationErrorsTable } from "@/components/bulk-upload/ValidationErrorsTable";
+import { supabase } from "@/integrations/supabase/client";
 import logosHeader from "@/assets/logos-header.png";
 
 type UploadMode = 'minimal' | 'standard';
@@ -203,6 +205,101 @@ const BulkContractUpload = () => {
     setMinimalParsedRows([]);
     setMinimalValidationResult(null);
     setMinimalUploadResult(null);
+  };
+
+  // Handlers para errores de validación con acciones
+  const handleAssignContract = (rowNumber: number, contractName: string, rowData: ContractRow) => {
+    if (!validationResult) return;
+    
+    // Actualizar el row con el nombre de contrato correcto
+    const updatedRow = { ...rowData, nombre_contrato: contractName };
+    
+    // Mover de errores a válidos
+    const newErrors = validationResult.errors.filter(e => e.row !== rowNumber);
+    const newValid = [...validationResult.valid, updatedRow];
+    
+    setValidationResult({
+      ...validationResult,
+      valid: newValid,
+      errors: newErrors
+    });
+    
+    toast({
+      title: "Contrato asignado",
+      description: `Fila ${rowNumber} asignada a "${contractName}"`,
+    });
+  };
+
+  const handleCreateContract = async (rowNumber: number, rowData: ContractRow) => {
+    if (!validationResult) return;
+    
+    try {
+      // Crear el contrato
+      const { data: newContract, error } = await supabase
+        .from('contracts')
+        .insert({ name: rowData.nombre_contrato })
+        .select('id, name')
+        .single();
+      
+      if (error) throw error;
+      
+      // Mover de errores a válidos
+      const newErrors = validationResult.errors.filter(e => e.row !== rowNumber);
+      const newValid = [...validationResult.valid, rowData];
+      
+      // Agregar el nuevo contrato a la lista
+      const updatedContracts = [...(validationResult.existingContracts || []), newContract];
+      
+      setValidationResult({
+        ...validationResult,
+        valid: newValid,
+        errors: newErrors,
+        existingContracts: updatedContracts
+      });
+      
+      toast({
+        title: "Contrato creado",
+        description: `Se creó el contrato "${rowData.nombre_contrato}"`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error al crear contrato",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleUseSuggestion = (rowNumber: number, field: string, suggestion: string, rowData: ContractRow) => {
+    if (!validationResult) return;
+    
+    // Actualizar el row con el valor sugerido
+    const updatedRow = { ...rowData };
+    if (field === 'nombre_contrato') {
+      updatedRow.nombre_contrato = suggestion;
+    } else if (field === 'region/comuna') {
+      // Determinar si es región o comuna basado en el valor
+      if (updatedRow.region && suggestion.toLowerCase().includes(updatedRow.region.toLowerCase().substring(0, 3))) {
+        updatedRow.region = suggestion;
+      } else {
+        updatedRow.comuna = suggestion;
+      }
+    }
+    
+    // Mover de errores a válidos
+    const newErrors = validationResult.errors.filter(e => e.row !== rowNumber);
+    const newValid = [...validationResult.valid, updatedRow];
+    
+    setValidationResult({
+      ...validationResult,
+      valid: newValid,
+      errors: newErrors
+    });
+    
+    toast({
+      title: "Valor corregido",
+      description: `Fila ${rowNumber}: se usó "${suggestion}"`,
+    });
   };
 
   if (loading || !roleLoaded) {
@@ -566,28 +663,17 @@ const BulkContractUpload = () => {
                 <CardHeader>
                   <CardTitle className="text-destructive">Errores de Validación</CardTitle>
                   <CardDescription>
-                    Corrige estos errores en el archivo Excel y vuelve a subirlo.
+                    Revisa los errores y usa las opciones disponibles para corregirlos, o corrige el Excel y vuelve a subirlo.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-20">Fila</TableHead>
-                        <TableHead className="w-40">Campo</TableHead>
-                        <TableHead>Error</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {validationResult.errors.map((error, index) => (
-                        <TableRow key={index}>
-                          <TableCell className="font-mono">{error.row}</TableCell>
-                          <TableCell className="font-medium">{error.field}</TableCell>
-                          <TableCell className="text-destructive">{error.message}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                  <ValidationErrorsTable
+                    errors={validationResult.errors}
+                    existingContracts={validationResult.existingContracts}
+                    onAssignContract={handleAssignContract}
+                    onCreateContract={handleCreateContract}
+                    onUseSuggestion={handleUseSuggestion}
+                  />
                 </CardContent>
               </Card>
             )}
