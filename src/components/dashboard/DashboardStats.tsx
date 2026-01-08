@@ -182,7 +182,13 @@ export const DashboardStats = () => {
                 <div className="text-2xl font-bold text-green-600">{stats.totalVigentes}</div>
                 <p className="text-xs text-muted-foreground">Contratos activos</p>
                 {stats.totalAtencionEspecial > 0 && (
-                  <div className="mt-2 pt-2 border-t border-orange-200">
+                  <div 
+                    className="mt-2 pt-2 border-t border-orange-200 cursor-pointer hover:bg-orange-100/50 -mx-2 px-2 rounded transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate("/contracts?status=firmado&atencion_especial=true");
+                    }}
+                  >
                     <div className="flex items-center gap-1.5">
                       <AlertTriangle className="h-3 w-3 text-orange-500" />
                       <span className="text-xs font-medium text-orange-600">
