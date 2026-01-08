@@ -115,7 +115,7 @@ const BulkContractUpload = () => {
     try {
       const rows = await parseExcelFile(selectedFile);
       setParsedRows(rows);
-      const validation = validateRows(rows);
+      const validation = await validateRows(rows);
       setValidationResult(validation);
     } catch (error: any) {
       toast({
