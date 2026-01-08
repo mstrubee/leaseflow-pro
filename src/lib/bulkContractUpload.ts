@@ -64,31 +64,116 @@ const formatDateForDB = (date: Date): string => {
   return date.toISOString().split('T')[0];
 };
 
+// Normaliza strings eliminando tildes, NBSP, espacios múltiples, etc.
 const normalizeString = (str: string): string => {
-  return str.toLowerCase().trim();
+  return str
+    .toLowerCase()
+    .trim()
+    .replace(/\u00A0/g, ' ')           // NBSP -> espacio normal
+    .replace(/\s+/g, ' ')              // Múltiples espacios -> uno
+    .normalize('NFD')                   // Descomponer caracteres Unicode
+    .replace(/[\u0300-\u036f]/g, '')   // Eliminar diacríticos (tildes)
+    .replace(/[''`]/g, "'");           // Unificar apóstrofes
+};
+
+// Alias comunes para regiones
+const REGION_ALIASES: Record<string, string> = {
+  'region de arica y parinacota': 'arica y parinacota',
+  'xv region': 'arica y parinacota',
+  'region de tarapaca': 'tarapaca',
+  'i region': 'tarapaca',
+  'region de antofagasta': 'antofagasta',
+  'ii region': 'antofagasta',
+  'region de atacama': 'atacama',
+  'iii region': 'atacama',
+  'region de coquimbo': 'coquimbo',
+  'iv region': 'coquimbo',
+  'region de valparaiso': 'valparaiso',
+  'v region': 'valparaiso',
+  'region metropolitana': 'metropolitana de santiago',
+  'region metropolitana de santiago': 'metropolitana de santiago',
+  'rm': 'metropolitana de santiago',
+  'santiago': 'metropolitana de santiago',
+  'xiii region': 'metropolitana de santiago',
+  "region del libertador general bernardo o'higgins": "o'higgins",
+  'region de ohiggins': "o'higgins",
+  'vi region': "o'higgins",
+  'region del maule': 'maule',
+  'vii region': 'maule',
+  'region del nuble': 'nuble',
+  'xvi region': 'nuble',
+  'region del biobio': 'biobio',
+  'region del bio bio': 'biobio',
+  'viii region': 'biobio',
+  'region de la araucania': 'araucania',
+  'ix region': 'araucania',
+  'region de los rios': 'los rios',
+  'xiv region': 'los rios',
+  'region de los lagos': 'los lagos',
+  'x region': 'los lagos',
+  'region de aysen del general carlos ibanez del campo': 'aysen',
+  'region de aysen': 'aysen',
+  'xi region': 'aysen',
+  'region de magallanes y de la antartica chilena': 'magallanes y antartica chilena',
+  'region de magallanes': 'magallanes y antartica chilena',
+  'xii region': 'magallanes y antartica chilena',
 };
 
 const findRegionKey = (region: string): string | undefined => {
   const normalized = normalizeString(region);
-  return Object.keys(CHILE_DEMOGRAPHICS).find(key => normalizeString(key) === normalized);
+  
+  // Primero buscar match directo
+  const directMatch = Object.keys(CHILE_DEMOGRAPHICS).find(key => normalizeString(key) === normalized);
+  if (directMatch) return directMatch;
+  
+  // Luego buscar por alias
+  const aliasMatch = REGION_ALIASES[normalized];
+  if (aliasMatch) {
+    return Object.keys(CHILE_DEMOGRAPHICS).find(key => normalizeString(key) === aliasMatch);
+  }
+  
+  // Buscar match parcial (si contiene el nombre de la región)
+  return Object.keys(CHILE_DEMOGRAPHICS).find(key => 
+    normalized.includes(normalizeString(key)) || normalizeString(key).includes(normalized)
+  );
 };
 
-const validateRegionCommune = (region?: string, comuna?: string): boolean => {
-  if (!region && !comuna) return true;
+const validateRegionCommune = (region?: string, comuna?: string): { valid: boolean; error?: string } => {
+  if (!region && !comuna) return { valid: true };
   
   const matchedRegionKey = region ? findRegionKey(region) : undefined;
-  if (region && !matchedRegionKey) return false;
+  if (region && !matchedRegionKey) {
+    return { 
+      valid: false, 
+      error: `Región no reconocida: "${region}". Verifique que esté escrita correctamente.`
+    };
+  }
   
   if (matchedRegionKey && comuna) {
     const regionData = CHILE_DEMOGRAPHICS[matchedRegionKey];
-    return regionData.communes.some(c => normalizeString(c.name) === normalizeString(comuna));
+    const communeExists = regionData.communes.some(c => normalizeString(c.name) === normalizeString(comuna));
+    if (!communeExists) {
+      return { 
+        valid: false, 
+        error: `Comuna "${comuna}" no encontrada en región "${matchedRegionKey}". Verifique ortografía.`
+      };
+    }
   }
-  return true;
+  return { valid: true };
 };
 
 const getCorrectRegionName = (region: string): string => {
   const matchedKey = findRegionKey(region);
   return matchedKey || region;
+};
+
+const getCorrectCommuneName = (region: string, comuna: string): string => {
+  const matchedRegionKey = findRegionKey(region);
+  if (!matchedRegionKey) return comuna;
+  
+  const regionData = CHILE_DEMOGRAPHICS[matchedRegionKey];
+  const matchedCommune = regionData.communes.find(c => normalizeString(c.name) === normalizeString(comuna));
+  return matchedCommune ? matchedCommune.name : comuna;
 };
 
 export const parseExcelFile = async (file: File): Promise<ContractRow[]> => {
@@ -193,8 +278,9 @@ export const validateRows = async (rows: ContractRow[]): Promise<ValidationResul
     }
     
     // Region/Comuna validation
-    if (!validateRegionCommune(row.region, row.comuna)) {
-      errors.push({ row: row.rowNumber, field: 'region/comuna', message: 'Región o comuna no válida' });
+    const regionCommuneValidation = validateRegionCommune(row.region, row.comuna);
+    if (!regionCommuneValidation.valid) {
+      errors.push({ row: row.rowNumber, field: 'region/comuna', message: regionCommuneValidation.error || 'Región o comuna no válida' });
       hasError = true;
     }
     
@@ -273,8 +359,14 @@ export const uploadContracts = async (rows: ContractRow[]): Promise<UploadResult
         const addressData: Record<string, any> = {};
         if (row.calle) addressData.street = row.calle;
         if (row.numero) addressData.number = row.numero;
-        if (row.comuna) addressData.commune = row.comuna;
-        if (row.region) addressData.region = getCorrectRegionName(row.region);
+        if (row.comuna && row.region) {
+          addressData.commune = getCorrectCommuneName(row.region, row.comuna);
+          addressData.region = getCorrectRegionName(row.region);
+        } else if (row.comuna) {
+          addressData.commune = row.comuna;
+        } else if (row.region) {
+          addressData.region = getCorrectRegionName(row.region);
+        }
         if (row.rol_sii) addressData.rol_sii = row.rol_sii;
         
         if (existingAddress) {
@@ -289,7 +381,7 @@ export const uploadContracts = async (rows: ContractRow[]): Promise<UploadResult
             contract_id: contractId,
             street: row.calle,
             number: row.numero,
-            commune: row.comuna,
+            commune: getCorrectCommuneName(row.region, row.comuna),
             region: getCorrectRegionName(row.region),
             rol_sii: row.rol_sii || null,
           });
