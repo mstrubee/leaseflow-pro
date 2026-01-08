@@ -123,7 +123,16 @@ const Contracts = () => {
   const [ubicacionFilter, setUbicacionFilter] = useState<string>("todos");
   const [costoArriendoFilter, setCostoArriendoFilter] = useState<string>("todos");
   const [companyFilter, setCompanyFilter] = useState<string>("todos");
+  const [atencionEspecialFilter, setAtencionEspecialFilter] = useState<string>("todos");
   const [companies, setCompanies] = useState<Company[]>([]);
+
+  // Initialize atencion especial filter from URL
+  useEffect(() => {
+    const atencionEspecialParam = searchParams.get("atencion_especial");
+    if (atencionEspecialParam === "true") {
+      setAtencionEspecialFilter("si");
+    }
+  }, [searchParams]);
 
   // Sorting
   const [sortField, setSortField] = useState<SortField>(null);
@@ -152,7 +161,7 @@ const Contracts = () => {
 
   useEffect(() => {
     filterAndSortContracts();
-  }, [searchTerm, statusFilter, contracts, operationFilter, obraFilter, patenteFilter, proyectoFilter, ubicacionFilter, costoArriendoFilter, companyFilter, sortField, sortDirection]);
+  }, [searchTerm, statusFilter, contracts, operationFilter, obraFilter, patenteFilter, proyectoFilter, ubicacionFilter, costoArriendoFilter, companyFilter, atencionEspecialFilter, sortField, sortDirection]);
 
   const loadContracts = async () => {
     const { data } = await supabase
@@ -367,6 +376,14 @@ const Contracts = () => {
       );
     }
 
+    // Atención Especial filter
+    if (atencionEspecialFilter !== "todos") {
+      filtered = filtered.filter((contract) => {
+        const hasSpecialAttention = (contract as any).requires_special_attention === true;
+        return atencionEspecialFilter === "si" ? hasSpecialAttention : !hasSpecialAttention;
+      });
+    }
+
         // Sorting
         if (sortField) {
           filtered = [...filtered].sort((a, b) => {
@@ -422,12 +439,13 @@ const Contracts = () => {
     setUbicacionFilter("todos");
     setCostoArriendoFilter("todos");
     setCompanyFilter("todos");
+    setAtencionEspecialFilter("todos");
     setSortField(null);
     setSortDirection("asc");
     setSearchTerm("");
   };
 
-  const hasActiveFilters = operationFilter !== "todos" || obraFilter !== "todos" || patenteFilter !== "todos" || proyectoFilter !== "todos" || ubicacionFilter !== "todos" || costoArriendoFilter !== "todos" || companyFilter !== "todos" || sortField !== null;
+  const hasActiveFilters = operationFilter !== "todos" || obraFilter !== "todos" || patenteFilter !== "todos" || proyectoFilter !== "todos" || ubicacionFilter !== "todos" || costoArriendoFilter !== "todos" || companyFilter !== "todos" || atencionEspecialFilter !== "todos" || sortField !== null;
 
   // Get unique communes for ubicacion filter
   const uniqueCommunes = [...new Set(contracts.flatMap(c => c.contract_addresses?.map(a => a.commune) || []))].filter(Boolean).sort();
@@ -740,6 +758,26 @@ const Contracts = () => {
                       <SelectItem value="500-1000" className="text-xs">500 - 1.000 UF</SelectItem>
                       <SelectItem value="1000-2000" className="text-xs">1.000 - 2.000 UF</SelectItem>
                       <SelectItem value="2000+" className="text-xs">Más de 2.000 UF</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Atención Especial Filter */}
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-medium text-muted-foreground">Atención Especial</span>
+                  <Select value={atencionEspecialFilter} onValueChange={setAtencionEspecialFilter}>
+                    <SelectTrigger className="h-8 text-xs w-[130px]">
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos" className="text-xs">Todos</SelectItem>
+                      <SelectItem value="si" className="text-xs">
+                        <div className="flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3 text-orange-500" />
+                          Sí
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="no" className="text-xs">No</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
