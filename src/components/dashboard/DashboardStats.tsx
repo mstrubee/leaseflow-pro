@@ -259,11 +259,36 @@ export const DashboardStats = () => {
                     <TableBody>
                       {stats.byRegion.map((row) => (
                         <TableRow key={row.region}>
-                          <TableCell className="font-medium">{row.region}</TableCell>
-                          <TableCell className="text-center">{row.total}</TableCell>
-                          <TableCell className="text-center text-green-600">{row.vigentes}</TableCell>
-                          <TableCell className="text-center text-yellow-600">{row.negociacion}</TableCell>
-                          <TableCell className="text-center text-red-600">{row.vencidos}</TableCell>
+                          <TableCell 
+                            className="font-medium cursor-pointer hover:text-primary hover:underline"
+                            onClick={() => navigate(`/contracts?ubicacion=${encodeURIComponent(row.region)}&status=todos`)}
+                          >
+                            {row.region}
+                          </TableCell>
+                          <TableCell 
+                            className="text-center cursor-pointer hover:bg-muted/50"
+                            onClick={() => navigate(`/contracts?ubicacion=${encodeURIComponent(row.region)}&status=todos`)}
+                          >
+                            {row.total}
+                          </TableCell>
+                          <TableCell 
+                            className="text-center text-green-600 cursor-pointer hover:bg-green-100/50"
+                            onClick={() => navigate(`/contracts?ubicacion=${encodeURIComponent(row.region)}&status=firmado`)}
+                          >
+                            {row.vigentes}
+                          </TableCell>
+                          <TableCell 
+                            className="text-center text-yellow-600 cursor-pointer hover:bg-yellow-100/50"
+                            onClick={() => navigate(`/contracts?ubicacion=${encodeURIComponent(row.region)}&status=en_negociacion`)}
+                          >
+                            {row.negociacion}
+                          </TableCell>
+                          <TableCell 
+                            className="text-center text-red-600 cursor-pointer hover:bg-red-100/50"
+                            onClick={() => navigate(`/contracts?ubicacion=${encodeURIComponent(row.region)}&status=vencido`)}
+                          >
+                            {row.vencidos}
+                          </TableCell>
                         </TableRow>
                       ))}
                       {stats.byRegion.length === 0 && (
