@@ -707,7 +707,13 @@ const BulkContractUpload = () => {
                     Paso 3: Confirmar Carga
                   </CardTitle>
                   <CardDescription>
-                    Se crearán {validationResult.valid.length} contratos.
+                    {validationResult.toUpdate.length > 0 && validationResult.toCreate.length > 0 ? (
+                      <>Se actualizarán {validationResult.toUpdate.length} contratos y se crearán {validationResult.toCreate.length} nuevos.</>
+                    ) : validationResult.toUpdate.length > 0 ? (
+                      <>Se actualizarán {validationResult.toUpdate.length} contratos.</>
+                    ) : (
+                      <>Se crearán {validationResult.toCreate.length} contratos nuevos.</>
+                    )}
                     {validationResult.errors.length > 0 && (
                       <span className="text-destructive"> Las filas con errores serán omitidas.</span>
                     )}
@@ -722,12 +728,26 @@ const BulkContractUpload = () => {
                     {uploading ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        Creando contratos...
+                        Procesando contratos...
                       </>
                     ) : (
                       <>
-                        <Upload className="h-4 w-4" />
-                        Crear {validationResult.valid.length} Contratos
+                        {validationResult.toUpdate.length > 0 && validationResult.toCreate.length === 0 ? (
+                          <>
+                            <RefreshCw className="h-4 w-4" />
+                            Actualizar {validationResult.toUpdate.length} Contratos
+                          </>
+                        ) : validationResult.toCreate.length > 0 && validationResult.toUpdate.length === 0 ? (
+                          <>
+                            <Upload className="h-4 w-4" />
+                            Crear {validationResult.toCreate.length} Contratos
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-4 w-4" />
+                            Procesar {validationResult.valid.length} Contratos
+                          </>
+                        )}
                       </>
                     )}
                   </Button>
