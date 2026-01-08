@@ -1,273 +1,434 @@
 // Chilean Regions demographic data
-// Source: INE Chile (Instituto Nacional de Estadísticas) - Census 2017 estimates
+// Source: INE Chile (Instituto Nacional de Estadísticas)
 
 export interface CommuneData {
   name: string;
-  population: number;
+  population?: number;
   mayor?: string;
   politicalTendency?: string;
 }
 
 export interface RegionDemographics {
-  population: number;
+  population?: number;
   capital: string;
   communes: CommuneData[];
 }
 
 export const CHILE_DEMOGRAPHICS: Record<string, RegionDemographics> = {
   "Arica y Parinacota": {
-    population: 252110,
     capital: "Arica",
     communes: [
-      { name: "Arica", population: 247552, mayor: "Gerardo Espíndola", politicalTendency: "Centro-izquierda" },
-      { name: "Camarones", population: 1233, mayor: "Cristian Zavala", politicalTendency: "Independiente" },
-      { name: "Putre", population: 2515, mayor: "Maricel Gutiérrez", politicalTendency: "Centro" },
-      { name: "General Lagos", population: 810, mayor: "Gregorio Mendoza", politicalTendency: "Independiente" }
+      { name: "Arica" },
+      { name: "Camarones" },
+      { name: "Putre" },
+      { name: "General Lagos" }
     ]
   },
   "Tarapacá": {
-    population: 382773,
     capital: "Iquique",
     communes: [
-      { name: "Iquique", population: 223463, mayor: "Mauricio Soria", politicalTendency: "Centro-derecha" },
-      { name: "Alto Hospicio", population: 129999, mayor: "Patricio Ferreira", politicalTendency: "Centro-izquierda" },
-      { name: "Pozo Almonte", population: 17395, mayor: "Richard Godoy", politicalTendency: "Centro" },
-      { name: "Camiña", population: 1375, mayor: "Sandra Caqueo", politicalTendency: "Independiente" },
-      { name: "Colchane", population: 1649, mayor: "Javier García", politicalTendency: "Independiente" },
-      { name: "Huara", population: 3123, mayor: "Néstor Vilca", politicalTendency: "Centro" },
-      { name: "Pica", population: 5769, mayor: "Iván Infante", politicalTendency: "Centro-derecha" }
+      { name: "Iquique" },
+      { name: "Alto Hospicio" },
+      { name: "Pozo Almonte" },
+      { name: "Camiña" },
+      { name: "Colchane" },
+      { name: "Huara" },
+      { name: "Pica" }
     ]
   },
   "Antofagasta": {
-    population: 691854,
     capital: "Antofagasta",
     communes: [
-      { name: "Antofagasta", population: 425725, mayor: "Jonathan Velásquez", politicalTendency: "Izquierda" },
-      { name: "Calama", population: 192531, mayor: "Eliecer Chamorro", politicalTendency: "Centro-izquierda" },
-      { name: "Tocopilla", population: 27813, mayor: "Juan Carvajal", politicalTendency: "Centro" },
-      { name: "Mejillones", population: 14758, mayor: "Marcelino Carvajal", politicalTendency: "Centro-derecha" },
-      { name: "Taltal", population: 14042, mayor: "Sergio Orellana", politicalTendency: "Centro" },
-      { name: "María Elena", population: 6457, mayor: "Boris Aravena", politicalTendency: "Centro-izquierda" },
-      { name: "Sierra Gorda", population: 3703, mayor: "Nelson Vásquez", politicalTendency: "Independiente" },
-      { name: "Ollagüe", population: 318, mayor: "Félix Esquivel", politicalTendency: "Independiente" },
-      { name: "San Pedro de Atacama", population: 10507, mayor: "Aliro Catur", politicalTendency: "Centro" }
+      { name: "Antofagasta" },
+      { name: "Mejillones" },
+      { name: "Sierra Gorda" },
+      { name: "Taltal" },
+      { name: "Calama" },
+      { name: "Ollagüe" },
+      { name: "San Pedro de Atacama" },
+      { name: "Tocopilla" },
+      { name: "María Elena" }
     ]
   },
   "Atacama": {
-    population: 314709,
     capital: "Copiapó",
     communes: [
-      { name: "Copiapó", population: 175643, mayor: "Marcos López", politicalTendency: "Centro-izquierda" },
-      { name: "Caldera", population: 19324, mayor: "Brunilda González", politicalTendency: "Centro" },
-      { name: "Tierra Amarilla", population: 14984, mayor: "Osvaldo Delgado", politicalTendency: "Centro-izquierda" },
-      { name: "Chañaral", population: 12785, mayor: "Héctor Volta", politicalTendency: "Centro-derecha" },
-      { name: "Diego de Almagro", population: 19016, mayor: "Patricio Carmona", politicalTendency: "Centro" },
-      { name: "Vallenar", population: 54828, mayor: "Armando Flores", politicalTendency: "Centro-izquierda" },
-      { name: "Freirina", population: 6706, mayor: "César Orellana", politicalTendency: "Centro" },
-      { name: "Huasco", population: 11049, mayor: "Rodrigo Loyola", politicalTendency: "Centro-derecha" },
-      { name: "Alto del Carmen", population: 5374, mayor: "Nora Campillay", politicalTendency: "Independiente" }
+      { name: "Copiapó" },
+      { name: "Caldera" },
+      { name: "Tierra Amarilla" },
+      { name: "Chañaral" },
+      { name: "Diego de Almagro" },
+      { name: "Vallenar" },
+      { name: "Freirina" },
+      { name: "Huasco" },
+      { name: "Alto del Carmen" }
     ]
   },
   "Coquimbo": {
-    population: 836683,
     capital: "La Serena",
     communes: [
-      { name: "La Serena", population: 249257, mayor: "Roberto Jacob", politicalTendency: "Centro-derecha" },
-      { name: "Coquimbo", population: 252757, mayor: "Ali Manouchehri", politicalTendency: "Centro-izquierda" },
-      { name: "Ovalle", population: 120317, mayor: "Claudio Rentería", politicalTendency: "Centro" },
-      { name: "Illapel", population: 32460, mayor: "Denis Cortés", politicalTendency: "Centro-izquierda" },
-      { name: "Los Vilos", population: 24977, mayor: "Edgardo González", politicalTendency: "Centro" },
-      { name: "Salamanca", population: 28017, mayor: "Gerardo Rojas", politicalTendency: "Centro-derecha" },
-      { name: "Andacollo", population: 12082, mayor: "Juan Carlos Alfaro", politicalTendency: "Centro" },
-      { name: "Vicuña", population: 31204, mayor: "Rafael Vera", politicalTendency: "Centro-izquierda" },
-      { name: "Paihuano", population: 4582, mayor: "Patricia Brito", politicalTendency: "Centro" }
+      { name: "La Serena" },
+      { name: "Coquimbo" },
+      { name: "Andacollo" },
+      { name: "La Higuera" },
+      { name: "Paiguano" },
+      { name: "Vicuña" },
+      { name: "Ovalle" },
+      { name: "Combarbalá" },
+      { name: "Monte Patria" },
+      { name: "Punitaqui" },
+      { name: "Río Hurtado" },
+      { name: "Illapel" },
+      { name: "Canela" },
+      { name: "Los Vilos" },
+      { name: "Salamanca" }
     ]
   },
   "Valparaíso": {
-    population: 1960170,
     capital: "Valparaíso",
     communes: [
-      { name: "Valparaíso", population: 315732, mayor: "Jorge Sharp", politicalTendency: "Izquierda" },
-      { name: "Viña del Mar", population: 361371, mayor: "Macarena Ripamonti", politicalTendency: "Centro-izquierda" },
-      { name: "Quilpué", population: 179540, mayor: "Mauricio Viñambres", politicalTendency: "Centro" },
-      { name: "Villa Alemana", population: 153153, mayor: "Carolina Corti", politicalTendency: "Centro-derecha" },
-      { name: "San Antonio", population: 103607, mayor: "Constanza Lizana", politicalTendency: "Centro-izquierda" },
-      { name: "Quillota", population: 97136, mayor: "Óscar Calderón", politicalTendency: "Centro" },
-      { name: "Los Andes", population: 76032, mayor: "Mauricio Navarro", politicalTendency: "Centro-derecha" },
-      { name: "San Felipe", population: 85580, mayor: "Patricio Freire", politicalTendency: "Centro-derecha" },
-      { name: "La Calera", population: 60421, mayor: "John Byrne", politicalTendency: "Centro" }
+      { name: "Valparaíso" },
+      { name: "Viña del Mar" },
+      { name: "Concón" },
+      { name: "Quintero" },
+      { name: "Puchuncaví" },
+      { name: "Casablanca" },
+      { name: "Juan Fernández" },
+      { name: "San Antonio" },
+      { name: "Algarrobo" },
+      { name: "Cartagena" },
+      { name: "El Quisco" },
+      { name: "El Tabo" },
+      { name: "Santo Domingo" },
+      { name: "Quillota" },
+      { name: "La Calera" },
+      { name: "Hijuelas" },
+      { name: "La Cruz" },
+      { name: "Nogales" },
+      { name: "Petorca" },
+      { name: "La Ligua" },
+      { name: "Cabildo" },
+      { name: "Zapallar" },
+      { name: "Papudo" },
+      { name: "San Felipe" },
+      { name: "Catemu" },
+      { name: "Llaillay" },
+      { name: "Panquehue" },
+      { name: "Putaendo" },
+      { name: "Santa María" },
+      { name: "Los Andes" },
+      { name: "Calle Larga" },
+      { name: "Rinconada" },
+      { name: "San Esteban" },
+      { name: "Quilpué" },
+      { name: "Villa Alemana" },
+      { name: "Limache" },
+      { name: "Olmué" }
     ]
   },
   "Metropolitana de Santiago": {
-    population: 8125072,
     capital: "Santiago",
     communes: [
-      { name: "Alhué", population: 6165 },
-      { name: "Buin", population: 98671 },
-      { name: "Calera de Tango", population: 26683 },
-      { name: "Cerrillos", population: 85269 },
-      { name: "Cerro Navia", population: 142465 },
-      { name: "Colina", population: 194550 },
-      { name: "Conchalí", population: 126955 },
-      { name: "Curacaví", population: 38207 },
-      { name: "El Bosque", population: 172805 },
-      { name: "El Monte", population: 38455 },
-      { name: "Estación Central", population: 206792 },
-      { name: "Huechuraba", population: 112528 },
-      { name: "Independencia", population: 142065 },
-      { name: "Isla de Maipo", population: 39585 },
-      { name: "La Cisterna", population: 100434 },
-      { name: "La Florida", population: 402433 },
-      { name: "La Granja", population: 116571 },
-      { name: "La Pintana", population: 189335 },
-      { name: "La Reina", population: 92787 },
-      { name: "Lampa", population: 128483 },
-      { name: "Las Condes", population: 330759 },
-      { name: "Lo Barnechea", population: 124700 },
-      { name: "Lo Espejo", population: 103865 },
-      { name: "Lo Prado", population: 96249 },
-      { name: "Macul", population: 134635 },
-      { name: "Maipú", population: 578605 },
-      { name: "María Pinto", population: 14108 },
-      { name: "Melipilla", population: 127285 },
-      { name: "Ñuñoa", population: 250192 },
-      { name: "Padre Hurtado", population: 75917 },
-      { name: "Paine", population: 82766 },
-      { name: "Pedro Aguirre Cerda", population: 107803 },
-      { name: "Peñaflor", population: 98850 },
-      { name: "Peñalolén", population: 252013 },
-      { name: "Pirque", population: 26521 },
-      { name: "Providencia", population: 157749 },
-      { name: "Pudahuel", population: 262604 },
-      { name: "Puente Alto", population: 645909 },
-      { name: "Quilicura", population: 254694 },
-      { name: "Quinta Normal", population: 110026 },
-      { name: "Recoleta", population: 190075 },
-      { name: "Renca", population: 160847 },
-      { name: "San Bernardo", population: 343413 },
-      { name: "San Joaquín", population: 97625 },
-      { name: "San José de Maipo", population: 18180 },
-      { name: "San Miguel", population: 107954 },
-      { name: "San Pedro", population: 9590 },
-      { name: "San Ramón", population: 86510 },
-      { name: "Santiago", population: 503147 },
-      { name: "Talagante", population: 74237 },
-      { name: "Tiltil", population: 21477 },
-      { name: "Vitacura", population: 85384 }
+      { name: "Alhué" },
+      { name: "Buin" },
+      { name: "Calera de Tango" },
+      { name: "Cerrillos" },
+      { name: "Cerro Navia" },
+      { name: "Colina" },
+      { name: "Conchalí" },
+      { name: "Curacaví" },
+      { name: "El Bosque" },
+      { name: "El Monte" },
+      { name: "Estación Central" },
+      { name: "Huechuraba" },
+      { name: "Independencia" },
+      { name: "Isla de Maipo" },
+      { name: "La Cisterna" },
+      { name: "La Florida" },
+      { name: "La Granja" },
+      { name: "La Pintana" },
+      { name: "La Reina" },
+      { name: "Lampa" },
+      { name: "Las Condes" },
+      { name: "Lo Barnechea" },
+      { name: "Lo Espejo" },
+      { name: "Lo Prado" },
+      { name: "Macul" },
+      { name: "Maipú" },
+      { name: "María Pinto" },
+      { name: "Melipilla" },
+      { name: "Ñuñoa" },
+      { name: "Padre Hurtado" },
+      { name: "Paine" },
+      { name: "Pedro Aguirre Cerda" },
+      { name: "Peñaflor" },
+      { name: "Peñalolén" },
+      { name: "Pirque" },
+      { name: "Providencia" },
+      { name: "Pudahuel" },
+      { name: "Puente Alto" },
+      { name: "Quilicura" },
+      { name: "Quinta Normal" },
+      { name: "Recoleta" },
+      { name: "Renca" },
+      { name: "San Bernardo" },
+      { name: "San Joaquín" },
+      { name: "San José de Maipo" },
+      { name: "San Miguel" },
+      { name: "San Pedro" },
+      { name: "San Ramón" },
+      { name: "Santiago" },
+      { name: "Talagante" },
+      { name: "Tiltil" },
+      { name: "Vitacura" }
     ]
   },
   "O'Higgins": {
-    population: 991063,
     capital: "Rancagua",
     communes: [
-      { name: "Rancagua", population: 273518, mayor: "Juan Ramón Godoy", politicalTendency: "Centro-izquierda" },
-      { name: "San Fernando", population: 81608, mayor: "Pablo Silva", politicalTendency: "Centro" },
-      { name: "Rengo", population: 70565, mayor: "Carlos Soto", politicalTendency: "Centro-derecha" },
-      { name: "Machalí", population: 54010, mayor: "José Miguel Urrutia", politicalTendency: "Centro" },
-      { name: "Santa Cruz", population: 43346, mayor: "William Arévalo", politicalTendency: "Centro-derecha" },
-      { name: "Graneros", population: 34234, mayor: "Claudio Segovia", politicalTendency: "Centro-izquierda" },
-      { name: "Pichilemu", population: 17438, mayor: "Cristian Pozo", politicalTendency: "Centro" }
+      { name: "Rancagua" },
+      { name: "Machalí" },
+      { name: "Graneros" },
+      { name: "Mostazal" },
+      { name: "Codegua" },
+      { name: "Doñihue" },
+      { name: "Coltauco" },
+      { name: "Coinco" },
+      { name: "Olivar" },
+      { name: "Requínoa" },
+      { name: "Rengo" },
+      { name: "Malloa" },
+      { name: "Quinta de Tilcoco" },
+      { name: "San Vicente" },
+      { name: "Pichidegua" },
+      { name: "Peumo" },
+      { name: "Las Cabras" },
+      { name: "San Fernando" },
+      { name: "Chimbarongo" },
+      { name: "Nancagua" },
+      { name: "Placilla" },
+      { name: "Pumanque" },
+      { name: "Santa Cruz" },
+      { name: "Lolol" },
+      { name: "Peralillo" },
+      { name: "Marchigüe" },
+      { name: "Pichilemu" },
+      { name: "Navidad" },
+      { name: "La Estrella" },
+      { name: "Litueche" }
     ]
   },
   "Maule": {
-    population: 1131939,
     capital: "Talca",
     communes: [
-      { name: "Talca", population: 257192, mayor: "Juan Carlos Díaz", politicalTendency: "Centro" },
-      { name: "Curicó", population: 164931, mayor: "Javier Muñoz", politicalTendency: "Centro-derecha" },
-      { name: "Linares", population: 105000, mayor: "Rolando Rentería", politicalTendency: "Centro-izquierda" },
-      { name: "Constitución", population: 52389, mayor: "Carlos Valenzuela", politicalTendency: "Centro" },
-      { name: "Cauquenes", population: 42034, mayor: "Pedro Ortega", politicalTendency: "Centro-derecha" },
-      { name: "Parral", population: 39942, mayor: "Felipe Ortiz", politicalTendency: "Centro" },
-      { name: "Molina", population: 49226, mayor: "Priscila Castillo", politicalTendency: "Centro-izquierda" }
+      { name: "Talca" },
+      { name: "San Clemente" },
+      { name: "Pelarco" },
+      { name: "Río Claro" },
+      { name: "Maule" },
+      { name: "San Rafael" },
+      { name: "Curepto" },
+      { name: "Constitución" },
+      { name: "Empedrado" },
+      { name: "Pencahue" },
+      { name: "Linares" },
+      { name: "Yerbas Buenas" },
+      { name: "Colbún" },
+      { name: "Longaví" },
+      { name: "Parral" },
+      { name: "Retiro" },
+      { name: "Villa Alegre" },
+      { name: "San Javier" },
+      { name: "Cauquenes" },
+      { name: "Pelluhue" },
+      { name: "Chanco" },
+      { name: "Curicó" },
+      { name: "Teno" },
+      { name: "Romeral" },
+      { name: "Molina" },
+      { name: "Sagrada Familia" },
+      { name: "Hualañé" },
+      { name: "Licantén" },
+      { name: "Vichuquén" }
     ]
   },
   "Ñuble": {
-    population: 511551,
     capital: "Chillán",
     communes: [
-      { name: "Chillán", population: 194136, mayor: "Camilo Benavente", politicalTendency: "Centro-izquierda" },
-      { name: "Chillán Viejo", population: 35585, mayor: "Felipe Aylwin", politicalTendency: "Centro" },
-      { name: "San Carlos", population: 55693, mayor: "Marco Venegas", politicalTendency: "Centro-derecha" },
-      { name: "Bulnes", population: 22259, mayor: "Álex Reyes", politicalTendency: "Centro" },
-      { name: "Yungay", population: 18756, mayor: "Omar Caamaño", politicalTendency: "Centro-izquierda" },
-      { name: "Quirihue", population: 12396, mayor: "Richard Irribarra", politicalTendency: "Centro" }
+      { name: "Chillán" },
+      { name: "Chillán Viejo" },
+      { name: "Bulnes" },
+      { name: "Quillón" },
+      { name: "San Ignacio" },
+      { name: "Yungay" },
+      { name: "El Carmen" },
+      { name: "Pemuco" },
+      { name: "Pinto" },
+      { name: "Coihueco" },
+      { name: "San Carlos" },
+      { name: "Ñiquén" },
+      { name: "San Fabián" },
+      { name: "San Nicolás" },
+      { name: "Cobquecura" },
+      { name: "Quirihue" },
+      { name: "Ninhue" },
+      { name: "Portezuelo" },
+      { name: "Ránquil" },
+      { name: "Treguaco" }
     ]
   },
   "Biobío": {
-    population: 1663696,
     capital: "Concepción",
     communes: [
-      { name: "Concepción", population: 237069, mayor: "Álvaro Ortiz", politicalTendency: "Centro-izquierda" },
-      { name: "Talcahuano", population: 183872, mayor: "Henry Campos", politicalTendency: "Centro" },
-      { name: "Los Ángeles", population: 210918, mayor: "Esteban Krause", politicalTendency: "Centro-derecha" },
-      { name: "Chiguayante", population: 104424, mayor: "Carolina Sotelo", politicalTendency: "Centro-izquierda" },
-      { name: "Coronel", population: 122116, mayor: "Boris Chamorro", politicalTendency: "Centro" },
-      { name: "San Pedro de la Paz", population: 155498, mayor: "Audito Retamal", politicalTendency: "Centro-izquierda" },
-      { name: "Hualpén", population: 104330, mayor: "Fabiola Lagos", politicalTendency: "Centro" },
-      { name: "Lota", population: 49763, mayor: "Patricio Marchant", politicalTendency: "Centro-izquierda" }
+      { name: "Concepción" },
+      { name: "Talcahuano" },
+      { name: "Hualpén" },
+      { name: "San Pedro de la Paz" },
+      { name: "Chiguayante" },
+      { name: "Penco" },
+      { name: "Tomé" },
+      { name: "Coronel" },
+      { name: "Lota" },
+      { name: "Santa Juana" },
+      { name: "Hualqui" },
+      { name: "Florida" },
+      { name: "Arauco" },
+      { name: "Curanilahue" },
+      { name: "Lebu" },
+      { name: "Los Álamos" },
+      { name: "Cañete" },
+      { name: "Contulmo" },
+      { name: "Tirúa" },
+      { name: "Los Ángeles" },
+      { name: "Nacimiento" },
+      { name: "Negrete" },
+      { name: "Mulchén" },
+      { name: "Quilaco" },
+      { name: "Quilleco" },
+      { name: "Santa Bárbara" },
+      { name: "San Rosendo" },
+      { name: "Laja" },
+      { name: "Cabrero" },
+      { name: "Yumbel" },
+      { name: "Antuco" },
+      { name: "Alto Biobío" }
     ]
   },
   "La Araucanía": {
-    population: 1014343,
     capital: "Temuco",
     communes: [
-      { name: "Temuco", population: 302931, mayor: "Roberto Neira", politicalTendency: "Centro-izquierda" },
-      { name: "Padre Las Casas", population: 97664, mayor: "Juan Eduardo Delgado", politicalTendency: "Centro" },
-      { name: "Villarrica", population: 60469, mayor: "Julia Aravena", politicalTendency: "Centro-derecha" },
-      { name: "Angol", population: 54678, mayor: "Julio Maturana", politicalTendency: "Centro" },
-      { name: "Victoria", population: 35848, mayor: "Carlos Contreras", politicalTendency: "Centro-izquierda" },
-      { name: "Pucón", population: 33507, mayor: "Carlos Barra", politicalTendency: "Centro-derecha" },
-      { name: "Lautaro", population: 37949, mayor: "Nélida Chandía", politicalTendency: "Centro" }
+      { name: "Temuco" },
+      { name: "Padre Las Casas" },
+      { name: "Vilcún" },
+      { name: "Freire" },
+      { name: "Cunco" },
+      { name: "Melipeuco" },
+      { name: "Curarrehue" },
+      { name: "Pucón" },
+      { name: "Villarrica" },
+      { name: "Loncoche" },
+      { name: "Gorbea" },
+      { name: "Toltén" },
+      { name: "Teodoro Schmidt" },
+      { name: "Saavedra" },
+      { name: "Carahue" },
+      { name: "Nueva Imperial" },
+      { name: "Cholchol" },
+      { name: "Galvarino" },
+      { name: "Lautaro" },
+      { name: "Perquenco" },
+      { name: "Victoria" },
+      { name: "Traiguén" },
+      { name: "Lumaco" },
+      { name: "Purén" },
+      { name: "Los Sauces" },
+      { name: "Angol" },
+      { name: "Renaico" },
+      { name: "Collipulli" },
+      { name: "Ercilla" },
+      { name: "Lonquimay" }
     ]
   },
   "Los Ríos": {
-    population: 405835,
     capital: "Valdivia",
     communes: [
-      { name: "Valdivia", population: 178561, mayor: "Carla Amtmann", politicalTendency: "Centro-izquierda" },
-      { name: "La Unión", population: 43846, mayor: "Óscar Escobar", politicalTendency: "Centro" },
-      { name: "Río Bueno", population: 32749, mayor: "Luis Reyes", politicalTendency: "Centro-derecha" },
-      { name: "Panguipulli", population: 36476, mayor: "Rodrigo Valdivia", politicalTendency: "Centro-izquierda" },
-      { name: "Lanco", population: 18160, mayor: "Alejandro Troncoso", politicalTendency: "Centro" },
-      { name: "Paillaco", population: 21072, mayor: "Ramón Llanquilef", politicalTendency: "Centro" }
+      { name: "Valdivia" },
+      { name: "Corral" },
+      { name: "Lanco" },
+      { name: "Los Lagos" },
+      { name: "Máfil" },
+      { name: "Mariquina" },
+      { name: "Paillaco" },
+      { name: "Panguipulli" },
+      { name: "La Unión" },
+      { name: "Río Bueno" },
+      { name: "Lago Ranco" },
+      { name: "Futrono" }
     ]
   },
   "Los Lagos": {
-    population: 891440,
     capital: "Puerto Montt",
     communes: [
-      { name: "Puerto Montt", population: 277939, mayor: "Gervoy Paredes", politicalTendency: "Centro-izquierda" },
-      { name: "Osorno", population: 171419, mayor: "Emeterio Carrillo", politicalTendency: "Centro" },
-      { name: "Castro", population: 48543, mayor: "Juan Eduardo Vera", politicalTendency: "Centro-derecha" },
-      { name: "Puerto Varas", population: 48992, mayor: "Tomás Gárate", politicalTendency: "Centro" },
-      { name: "Ancud", population: 42776, mayor: "Luis Soto", politicalTendency: "Centro-izquierda" },
-      { name: "Calbuco", population: 35408, mayor: "Víctor Salas", politicalTendency: "Centro" },
-      { name: "Quellón", population: 33523, mayor: "Cristian Ojeda", politicalTendency: "Centro-derecha" }
+      { name: "Puerto Montt" },
+      { name: "Puerto Varas" },
+      { name: "Llanquihue" },
+      { name: "Frutillar" },
+      { name: "Los Muermos" },
+      { name: "Maullín" },
+      { name: "Calbuco" },
+      { name: "Cochamó" },
+      { name: "Ancud" },
+      { name: "Castro" },
+      { name: "Chonchi" },
+      { name: "Curaco de Vélez" },
+      { name: "Dalcahue" },
+      { name: "Puqueldón" },
+      { name: "Queilén" },
+      { name: "Quellón" },
+      { name: "Quemchi" },
+      { name: "Quinchao" },
+      { name: "Osorno" },
+      { name: "Puerto Octay" },
+      { name: "Purranque" },
+      { name: "Puyehue" },
+      { name: "Río Negro" },
+      { name: "San Juan de la Costa" },
+      { name: "San Pablo" },
+      { name: "Chaitén" },
+      { name: "Futaleufú" },
+      { name: "Hualaihué" },
+      { name: "Palena" }
     ]
   },
   "Aysén": {
-    population: 107334,
     capital: "Coyhaique",
     communes: [
-      { name: "Coyhaique", population: 62554, mayor: "Carlos Gatica", politicalTendency: "Centro-izquierda" },
-      { name: "Puerto Aysén", population: 26672, mayor: "Luis Martínez", politicalTendency: "Centro" },
-      { name: "Chile Chico", population: 5385, mayor: "Lupercio Muñoz", politicalTendency: "Centro-derecha" },
-      { name: "Cochrane", population: 3283, mayor: "Jorge Calderón", politicalTendency: "Centro" },
-      { name: "Cisnes", population: 6291, mayor: "Francisco Roncagliolo", politicalTendency: "Centro-izquierda" },
-      { name: "Guaitecas", population: 1808, mayor: "Karina Ruiz", politicalTendency: "Independiente" }
+      { name: "Coyhaique" },
+      { name: "Lago Verde" },
+      { name: "Aysén" },
+      { name: "Cisnes" },
+      { name: "Guaitecas" },
+      { name: "Chile Chico" },
+      { name: "Río Ibáñez" },
+      { name: "Cochrane" },
+      { name: "O'Higgins" },
+      { name: "Tortel" }
     ]
   },
-  "Magallanes y Antártica Chilena": {
-    population: 178362,
+  "Magallanes": {
     capital: "Punta Arenas",
     communes: [
-      { name: "Punta Arenas", population: 142729, mayor: "Claudio Radonich", politicalTendency: "Centro-derecha" },
-      { name: "Puerto Natales", population: 22249, mayor: "Antonieta Oyarzo", politicalTendency: "Centro" },
-      { name: "Porvenir", population: 7546, mayor: "Marisol Andrade", politicalTendency: "Centro-izquierda" },
-      { name: "Puerto Williams", population: 2874, mayor: "Patricio Fernández", politicalTendency: "Independiente" },
-      { name: "Primavera", population: 1117, mayor: "Sofía Herrera", politicalTendency: "Centro" },
-      { name: "Timaukel", population: 407, mayor: "José Ruiz", politicalTendency: "Independiente" }
+      { name: "Punta Arenas" },
+      { name: "Laguna Blanca" },
+      { name: "Río Verde" },
+      { name: "San Gregorio" },
+      { name: "Puerto Natales" },
+      { name: "Torres del Paine" },
+      { name: "Porvenir" },
+      { name: "Primavera" },
+      { name: "Timaukel" },
+      { name: "Cabo de Hornos" },
+      { name: "Antártica" }
     ]
   }
 };
@@ -278,4 +439,32 @@ export const getRegionDemographics = (regionName: string): RegionDemographics | 
 
 export const formatPopulation = (population: number): string => {
   return new Intl.NumberFormat('es-CL').format(population);
+};
+
+export const getRegionByCommune = (communeName: string): string | null => {
+  const normalizedCommune = communeName.toLowerCase().trim();
+  
+  for (const [regionName, regionData] of Object.entries(CHILE_DEMOGRAPHICS)) {
+    const found = regionData.communes.some(
+      commune => commune.name.toLowerCase() === normalizedCommune
+    );
+    if (found) {
+      return regionName;
+    }
+  }
+  return null;
+};
+
+export const getAllCommunes = (): string[] => {
+  const communes: string[] = [];
+  for (const regionData of Object.values(CHILE_DEMOGRAPHICS)) {
+    for (const commune of regionData.communes) {
+      communes.push(commune.name);
+    }
+  }
+  return communes;
+};
+
+export const getRegionNames = (): string[] => {
+  return Object.keys(CHILE_DEMOGRAPHICS);
 };
