@@ -57,6 +57,8 @@ interface Contract {
   patente_status: string | null;
   is_expired_but_operating: boolean | null;
   display_currency: string | null;
+  requires_special_attention: boolean | null;
+  special_attention_reason: string | null;
   contract_companies?: ContractCompany[];
   contract_addresses: Array<{ region: string; commune: string }>;
   contract_versions: ContractVersion[];
@@ -221,12 +223,18 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                           {contract.contract_companies.map(cc => cc.companies?.name).filter(Boolean).join(", ")}
                         </div>
                       )}
-                      <div className="flex items-center gap-1.5 mt-0.5">
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         {getStatusBadge(isExpiredOperating ? "firmado" : contract.status)}
                         {isExpiredOperating && (
                           <Badge variant="destructive" className="text-[10px] px-1 py-0 gap-0.5">
                             <AlertTriangle className="h-2.5 w-2.5" />
                             VENCIDO
+                          </Badge>
+                        )}
+                        {contract.requires_special_attention && (
+                          <Badge className="bg-orange-500 hover:bg-orange-600 text-white text-[10px] px-1 py-0 gap-0.5">
+                            <AlertTriangle className="h-2.5 w-2.5" />
+                            Atención Especial
                           </Badge>
                         )}
                       </div>
