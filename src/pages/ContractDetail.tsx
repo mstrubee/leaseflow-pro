@@ -52,6 +52,7 @@ interface Contract {
   superficie_edificada_local: number | null;
   metros_lineales_frente: number | null;
   display_currency?: "UF" | "CLP";
+  requires_special_attention?: boolean;
   contract_companies?: Array<{
     companies: { name: string } | null;
   }>;
@@ -640,7 +641,7 @@ const ContractDetail = () => {
               )}
             </div>
             <div className="flex items-center gap-2">
-              {isAdmin && (isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} onStatusChange={loadContract} />}
+              {isAdmin && (isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} requiresSpecialAttention={contract.requires_special_attention} onStatusChange={loadContract} />}
               {isAdmin && (
                 <Button variant="outline" onClick={() => navigate(`/contracts/${contract.id}/edit`)} className="gap-2">
                   <Edit className="h-4 w-4" />

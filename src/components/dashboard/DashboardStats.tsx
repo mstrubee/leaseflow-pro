@@ -31,6 +31,7 @@ interface Stats {
   totalVigentes: number;
   totalNegociacion: number;
   totalVencidos: number;
+  totalAtencionEspecial: number;
   byRegion: RegionStats[];
 }
 
@@ -42,6 +43,7 @@ export const DashboardStats = () => {
     totalVigentes: 0,
     totalNegociacion: 0,
     totalVencidos: 0,
+    totalAtencionEspecial: 0,
     byRegion: [],
   });
   const [statsLoading, setStatsLoading] = useState(true);
@@ -57,6 +59,7 @@ export const DashboardStats = () => {
         .select(`
           id,
           status,
+          requires_special_attention,
           contract_addresses (region)
         `)
         .is("deleted_at", null);
@@ -65,6 +68,7 @@ export const DashboardStats = () => {
       let totalVigentes = 0;
       let totalNegociacion = 0;
       let totalVencidos = 0;
+      let totalAtencionEspecial = 0;
 
       contracts?.forEach((contract: any) => {
         const region = contract.contract_addresses?.[0]?.region || "Sin región";
@@ -85,6 +89,9 @@ export const DashboardStats = () => {
           case "firmado":
             regionMap[region].vigentes++;
             totalVigentes++;
+            if (contract.requires_special_attention) {
+              totalAtencionEspecial++;
+            }
             break;
           case "en_negociacion":
             regionMap[region].negociacion++;
@@ -106,6 +113,7 @@ export const DashboardStats = () => {
         totalVigentes,
         totalNegociacion,
         totalVencidos,
+        totalAtencionEspecial,
         byRegion,
       });
     } finally {
@@ -173,6 +181,16 @@ export const DashboardStats = () => {
               <CardContent>
                 <div className="text-2xl font-bold text-green-600">{stats.totalVigentes}</div>
                 <p className="text-xs text-muted-foreground">Contratos activos</p>
+                {stats.totalAtencionEspecial > 0 && (
+                  <div className="mt-2 pt-2 border-t border-orange-200">
+                    <div className="flex items-center gap-1.5">
+                      <AlertTriangle className="h-3 w-3 text-orange-500" />
+                      <span className="text-xs font-medium text-orange-600">
+                        Atención Especial: {stats.totalAtencionEspecial}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
