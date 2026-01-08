@@ -84,6 +84,8 @@ interface Contract {
   patente_status: string | null;
   is_expired_but_operating: boolean | null;
   display_currency: string | null;
+  requires_special_attention: boolean | null;
+  special_attention_reason: string | null;
   contract_companies: ContractCompany[];
   contract_addresses: Array<{ region: string; commune: string }>;
   contract_versions: ContractVersion[];
