@@ -30,6 +30,7 @@ interface ContractStatusActionsProps {
   contractName: string;
   currentStatus: string;
   isExpiredButOperating: boolean;
+  requiresSpecialAttention?: boolean;
   onStatusChange: () => void;
 }
 
@@ -38,6 +39,7 @@ export function ContractStatusActions({
   contractName,
   currentStatus,
   isExpiredButOperating,
+  requiresSpecialAttention = false,
   onStatusChange,
 }: ContractStatusActionsProps) {
   const [loading, setLoading] = useState(false);
@@ -217,24 +219,70 @@ export function ContractStatusActions({
     }
   };
 
+  const handleToggleSpecialAttention = async (enable: boolean) => {
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from("contracts")
+        .update({
+          requires_special_attention: enable,
+        })
+        .eq("id", contractId);
+
+      if (error) throw error;
+
+      toast.success(enable ? "Marcado como Atención Especial" : "Marcado como Vigente", {
+        description: enable 
+          ? "El contrato requiere atención especial"
+          : "El contrato vuelve a estado vigente normal"
+      });
+      
+      onStatusChange();
+    } catch (error: any) {
+      toast.error("Error al actualizar estado", { description: error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // For signed/active contracts
   if (currentStatus === "firmado") {
     return (
       <>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm">
-              <MoreVertical className="h-4 w-4 mr-2" />
-              Acciones
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setShowExpireDialog(true)}>
-              <Clock className="h-4 w-4 mr-2" />
-              Marcar como Vencido
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-2">
+          {requiresSpecialAttention && (
+            <Badge variant="outline" className="gap-1 border-orange-400 text-orange-600 bg-orange-50">
+              <AlertTriangle className="h-3 w-3" />
+              Atención Especial
+            </Badge>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <MoreVertical className="h-4 w-4 mr-2" />
+                Estado
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setShowExpireDialog(true)}>
+                <Clock className="h-4 w-4 mr-2" />
+                Marcar como Vencido
+              </DropdownMenuItem>
+              {!requiresSpecialAttention && (
+                <DropdownMenuItem onClick={() => handleToggleSpecialAttention(true)}>
+                  <AlertTriangle className="h-4 w-4 mr-2 text-orange-500" />
+                  Atención Especial
+                </DropdownMenuItem>
+              )}
+              {requiresSpecialAttention && (
+                <DropdownMenuItem onClick={() => handleToggleSpecialAttention(false)}>
+                  <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
+                  Vigente
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
 
         <AlertDialog open={showExpireDialog} onOpenChange={setShowExpireDialog}>
           <AlertDialogContent>
@@ -347,7 +395,7 @@ export function ContractStatusActions({
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm">
                 <MoreVertical className="h-4 w-4 mr-2" />
-                Acciones
+                Estado
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -432,7 +480,7 @@ export function ContractStatusActions({
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm">
             <MoreVertical className="h-4 w-4 mr-2" />
-            Acciones
+            Estado
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
