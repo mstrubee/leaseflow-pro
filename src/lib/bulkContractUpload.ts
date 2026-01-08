@@ -132,6 +132,7 @@ const REGION_ALIASES: Record<string, string> = {
   'v region': 'valparaiso',
   'region metropolitana': 'metropolitana de santiago',
   'region metropolitana de santiago': 'metropolitana de santiago',
+  'metropolitana': 'metropolitana de santiago',
   'rm': 'metropolitana de santiago',
   'santiago': 'metropolitana de santiago',
   'xiii region': 'metropolitana de santiago',
