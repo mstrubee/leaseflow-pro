@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,6 +16,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -23,7 +32,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Loader2, MoreVertical, AlertTriangle, Clock, XCircle, CheckCircle, Upload, FileText } from "lucide-react";
+import { Loader2, MoreVertical, AlertTriangle, Clock, XCircle, CheckCircle, Upload, FileText, Pencil } from "lucide-react";
 
 interface ContractStatusActionsProps {
   contractId: string;
@@ -31,6 +40,7 @@ interface ContractStatusActionsProps {
   currentStatus: string;
   isExpiredButOperating: boolean;
   requiresSpecialAttention?: boolean;
+  specialAttentionReason?: string | null;
   onStatusChange: () => void;
 }
 
@@ -40,6 +50,7 @@ export function ContractStatusActions({
   currentStatus,
   isExpiredButOperating,
   requiresSpecialAttention = false,
+  specialAttentionReason = null,
   onStatusChange,
 }: ContractStatusActionsProps) {
   const [loading, setLoading] = useState(false);
@@ -49,6 +60,8 @@ export function ContractStatusActions({
   const [keepInVigentes, setKeepInVigentes] = useState(true);
   const [finiquitoUrl, setFiniquitoUrl] = useState("");
   const [showFiniquitoWarning, setShowFiniquitoWarning] = useState(false);
+  const [showSpecialAttentionDialog, setShowSpecialAttentionDialog] = useState(false);
+  const [specialAttentionDescription, setSpecialAttentionDescription] = useState(specialAttentionReason || "");
 
   const handleMarkAsExpired = async () => {
     // Check if finiquito is attached
@@ -219,22 +232,52 @@ export function ContractStatusActions({
     }
   };
 
-  const handleToggleSpecialAttention = async (enable: boolean) => {
+  const handleOpenSpecialAttentionDialog = () => {
+    setSpecialAttentionDescription(specialAttentionReason || "");
+    setShowSpecialAttentionDialog(true);
+  };
+
+  const handleSaveSpecialAttention = async () => {
     setLoading(true);
     try {
       const { error } = await supabase
         .from("contracts")
         .update({
-          requires_special_attention: enable,
+          requires_special_attention: true,
+          special_attention_reason: specialAttentionDescription.trim() || null,
         })
         .eq("id", contractId);
 
       if (error) throw error;
 
-      toast.success(enable ? "Marcado como Atención Especial" : "Marcado como Vigente", {
-        description: enable 
-          ? "El contrato requiere atención especial"
-          : "El contrato vuelve a estado vigente normal"
+      toast.success("Marcado como Atención Especial", {
+        description: "El contrato requiere atención especial"
+      });
+      
+      setShowSpecialAttentionDialog(false);
+      onStatusChange();
+    } catch (error: any) {
+      toast.error("Error al actualizar estado", { description: error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRemoveSpecialAttention = async () => {
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from("contracts")
+        .update({
+          requires_special_attention: false,
+          special_attention_reason: null,
+        })
+        .eq("id", contractId);
+
+      if (error) throw error;
+
+      toast.success("Marcado como Vigente", {
+        description: "El contrato vuelve a estado vigente normal"
       });
       
       onStatusChange();
@@ -269,16 +312,22 @@ export function ContractStatusActions({
                 Marcar como Vencido
               </DropdownMenuItem>
               {!requiresSpecialAttention && (
-                <DropdownMenuItem onClick={() => handleToggleSpecialAttention(true)}>
+                <DropdownMenuItem onClick={handleOpenSpecialAttentionDialog}>
                   <AlertTriangle className="h-4 w-4 mr-2 text-orange-500" />
                   Atención Especial
                 </DropdownMenuItem>
               )}
               {requiresSpecialAttention && (
-                <DropdownMenuItem onClick={() => handleToggleSpecialAttention(false)}>
-                  <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
-                  Vigente
-                </DropdownMenuItem>
+                <>
+                  <DropdownMenuItem onClick={handleOpenSpecialAttentionDialog}>
+                    <Pencil className="h-4 w-4 mr-2 text-orange-500" />
+                    Editar Descripción
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleRemoveSpecialAttention}>
+                    <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
+                    Vigente
+                  </DropdownMenuItem>
+                </>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -378,6 +427,43 @@ export function ContractStatusActions({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        <Dialog open={showSpecialAttentionDialog} onOpenChange={setShowSpecialAttentionDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-orange-500" />
+                Atención Especial
+              </DialogTitle>
+              <DialogDescription>
+                Ingrese una descripción para este estado de atención especial (máximo 200 caracteres).
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Label htmlFor="specialAttentionReason">Descripción</Label>
+              <Textarea
+                id="specialAttentionReason"
+                placeholder="Describa el motivo de atención especial..."
+                value={specialAttentionDescription}
+                onChange={(e) => setSpecialAttentionDescription(e.target.value.slice(0, 200))}
+                maxLength={200}
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground text-right">
+                {specialAttentionDescription.length}/200 caracteres
+              </p>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowSpecialAttentionDialog(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={handleSaveSpecialAttention} disabled={loading}>
+                {loading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                Guardar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </>
     );
   }

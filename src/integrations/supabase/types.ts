@@ -1107,6 +1107,7 @@ export type Database = {
           proyecto_status: string | null
           requires_special_attention: boolean | null
           signed_date: string | null
+          special_attention_reason: string | null
           status: Database["public"]["Enums"]["contract_status"]
           superficie_bodega_backoffice: number | null
           superficie_edificada_local: number | null
@@ -1135,6 +1136,7 @@ export type Database = {
           proyecto_status?: string | null
           requires_special_attention?: boolean | null
           signed_date?: string | null
+          special_attention_reason?: string | null
           status?: Database["public"]["Enums"]["contract_status"]
           superficie_bodega_backoffice?: number | null
           superficie_edificada_local?: number | null
@@ -1163,6 +1165,7 @@ export type Database = {
           proyecto_status?: string | null
           requires_special_attention?: boolean | null
           signed_date?: string | null
+          special_attention_reason?: string | null
           status?: Database["public"]["Enums"]["contract_status"]
           superficie_bodega_backoffice?: number | null
           superficie_edificada_local?: number | null

@@ -53,6 +53,7 @@ interface Contract {
   metros_lineales_frente: number | null;
   display_currency?: "UF" | "CLP";
   requires_special_attention?: boolean;
+  special_attention_reason?: string | null;
   contract_companies?: Array<{
     companies: { name: string } | null;
   }>;
@@ -641,7 +642,7 @@ const ContractDetail = () => {
               )}
             </div>
             <div className="flex items-center gap-2">
-              {isAdmin && (isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} requiresSpecialAttention={contract.requires_special_attention} onStatusChange={loadContract} />}
+              {isAdmin && (isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} requiresSpecialAttention={contract.requires_special_attention} specialAttentionReason={contract.special_attention_reason} onStatusChange={loadContract} />}
               {isAdmin && (
                 <Button variant="outline" onClick={() => navigate(`/contracts/${contract.id}/edit`)} className="gap-2">
                   <Edit className="h-4 w-4" />
@@ -654,41 +655,62 @@ const ContractDetail = () => {
       </header>
 
       <main className="max-w-15xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        {/* Special Attention Banner */}
+        {contract.requires_special_attention && contract.special_attention_reason && (
+          <div className="flex items-center gap-2 p-3 border-2 border-destructive rounded-lg bg-destructive/10">
+            <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0" />
+            <p className="font-bold text-foreground">{contract.special_attention_reason}</p>
+          </div>
+        )}
+
         {/* Section controls for admin */}
         {isAdmin && (
-          <div className="flex items-center justify-end gap-2 mb-4">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="outline" size="sm" onClick={collapseAll}>
-                    <ChevronsUpDown className="h-4 w-4 mr-1" />
-                    Colapsar todo
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Colapsar todas las secciones</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="outline" size="sm" onClick={expandAll}>
-                    <ChevronsUpDown className="h-4 w-4 mr-1" />
-                    Expandir todo
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Expandir todas las secciones</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="sm" onClick={resetToDefault}>
-                    <RotateCcw className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Restablecer orden predeterminado</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+          <div className="flex items-center justify-between gap-2 mb-4">
+            {/* Left side: Special Attention Banner (when no reason) */}
+            <div className="flex-1">
+              {contract.requires_special_attention && !contract.special_attention_reason && (
+                <div className="inline-flex items-center gap-2 p-2 border-2 border-destructive rounded-lg bg-destructive/10">
+                  <AlertCircle className="h-4 w-4 text-destructive" />
+                  <span className="font-bold text-foreground text-sm">Requiere Atención Especial</span>
+                </div>
+              )}
+            </div>
+
+            {/* Right side: Controls */}
+            <div className="flex items-center gap-2">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" size="sm" onClick={collapseAll}>
+                      <ChevronsUpDown className="h-4 w-4 mr-1" />
+                      Colapsar todo
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Colapsar todas las secciones</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" size="sm" onClick={expandAll}>
+                      <ChevronsUpDown className="h-4 w-4 mr-1" />
+                      Expandir todo
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Expandir todas las secciones</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="sm" onClick={resetToDefault}>
+                      <RotateCcw className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Restablecer orden predeterminado</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
           </div>
         )}
 
