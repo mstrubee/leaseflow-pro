@@ -64,14 +64,31 @@ const formatDateForDB = (date: Date): string => {
   return date.toISOString().split('T')[0];
 };
 
+const normalizeString = (str: string): string => {
+  return str.toLowerCase().trim();
+};
+
+const findRegionKey = (region: string): string | undefined => {
+  const normalized = normalizeString(region);
+  return Object.keys(CHILE_DEMOGRAPHICS).find(key => normalizeString(key) === normalized);
+};
+
 const validateRegionCommune = (region?: string, comuna?: string): boolean => {
   if (!region && !comuna) return true;
-  if (region && !CHILE_DEMOGRAPHICS[region]) return false;
-  if (region && comuna) {
-    const regionData = CHILE_DEMOGRAPHICS[region];
-    return regionData.communes.some(c => c.name.toLowerCase() === comuna.toLowerCase());
+  
+  const matchedRegionKey = region ? findRegionKey(region) : undefined;
+  if (region && !matchedRegionKey) return false;
+  
+  if (matchedRegionKey && comuna) {
+    const regionData = CHILE_DEMOGRAPHICS[matchedRegionKey];
+    return regionData.communes.some(c => normalizeString(c.name) === normalizeString(comuna));
   }
   return true;
+};
+
+const getCorrectRegionName = (region: string): string => {
+  const matchedKey = findRegionKey(region);
+  return matchedKey || region;
 };
 
 export const parseExcelFile = async (file: File): Promise<ContractRow[]> => {
@@ -257,7 +274,7 @@ export const uploadContracts = async (rows: ContractRow[]): Promise<UploadResult
         if (row.calle) addressData.street = row.calle;
         if (row.numero) addressData.number = row.numero;
         if (row.comuna) addressData.commune = row.comuna;
-        if (row.region) addressData.region = row.region;
+        if (row.region) addressData.region = getCorrectRegionName(row.region);
         if (row.rol_sii) addressData.rol_sii = row.rol_sii;
         
         if (existingAddress) {
@@ -273,7 +290,7 @@ export const uploadContracts = async (rows: ContractRow[]): Promise<UploadResult
             street: row.calle,
             number: row.numero,
             commune: row.comuna,
-            region: row.region,
+            region: getCorrectRegionName(row.region),
             rol_sii: row.rol_sii || null,
           });
         }
