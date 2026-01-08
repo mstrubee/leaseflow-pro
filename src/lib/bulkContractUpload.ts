@@ -26,9 +26,20 @@ export interface ContractRow {
   aviso_termino_meses?: number;
 }
 
+export interface ValidationError {
+  row: number;
+  field: string;
+  message: string;
+  type?: 'contract_not_found' | 'region_commune' | 'other';
+  originalValue?: string;
+  suggestions?: string[];
+  rowData?: ContractRow;
+}
+
 export interface ValidationResult {
   valid: ContractRow[];
-  errors: { row: number; field: string; message: string }[];
+  errors: ValidationError[];
+  existingContracts?: { id: string; name: string }[];
 }
 
 export interface UploadResult {
@@ -74,6 +85,33 @@ const normalizeString = (str: string): string => {
     .normalize('NFD')                   // Descomponer caracteres Unicode
     .replace(/[\u0300-\u036f]/g, '')   // Eliminar diacríticos (tildes)
     .replace(/[''`]/g, "'");           // Unificar apóstrofes
+};
+
+// Calcular distancia de Levenshtein para fuzzy matching
+const levenshteinDistance = (a: string, b: string): number => {
+  const matrix: number[][] = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      matrix[i][j] = b.charAt(i - 1) === a.charAt(j - 1)
+        ? matrix[i - 1][j - 1]
+        : Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1);
+    }
+  }
+  return matrix[b.length][a.length];
+};
+
+// Encontrar matches cercanos con fuzzy matching
+const findClosestMatches = (input: string, candidates: string[], maxDistance: number = 3, maxResults: number = 3): string[] => {
+  const normalizedInput = normalizeString(input);
+  const matches = candidates
+    .map(c => ({ name: c, distance: levenshteinDistance(normalizedInput, normalizeString(c)) }))
+    .filter(m => m.distance <= maxDistance && m.distance > 0)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, maxResults)
+    .map(m => m.name);
+  return matches;
 };
 
 // Alias comunes para regiones
@@ -133,33 +171,71 @@ const findRegionKey = (region: string): string | undefined => {
   }
   
   // Buscar match parcial (si contiene el nombre de la región)
-  return Object.keys(CHILE_DEMOGRAPHICS).find(key => 
+  const partialMatch = Object.keys(CHILE_DEMOGRAPHICS).find(key => 
     normalized.includes(normalizeString(key)) || normalizeString(key).includes(normalized)
   );
+  if (partialMatch) return partialMatch;
+  
+  // Fuzzy match - buscar región más cercana (tolerancia de 2 caracteres)
+  const regions = Object.keys(CHILE_DEMOGRAPHICS);
+  for (const key of regions) {
+    if (levenshteinDistance(normalized, normalizeString(key)) <= 2) {
+      return key;
+    }
+  }
+  
+  return undefined;
 };
 
-const validateRegionCommune = (region?: string, comuna?: string): { valid: boolean; error?: string } => {
+// Buscar comuna con fuzzy matching
+const findCommuneInRegion = (comuna: string, regionKey: string): string | undefined => {
+  const regionData = CHILE_DEMOGRAPHICS[regionKey];
+  if (!regionData) return undefined;
+  
+  const normalizedCommune = normalizeString(comuna);
+  
+  // Match exacto
+  const exactMatch = regionData.communes.find(c => normalizeString(c.name) === normalizedCommune);
+  if (exactMatch) return exactMatch.name;
+  
+  // Fuzzy match (tolerancia de 2 caracteres)
+  for (const c of regionData.communes) {
+    if (levenshteinDistance(normalizedCommune, normalizeString(c.name)) <= 2) {
+      return c.name;
+    }
+  }
+  
+  return undefined;
+};
+
+const validateRegionCommune = (region?: string, comuna?: string): { valid: boolean; error?: string; suggestions?: string[]; correctedRegion?: string; correctedCommune?: string } => {
   if (!region && !comuna) return { valid: true };
   
   const matchedRegionKey = region ? findRegionKey(region) : undefined;
   if (region && !matchedRegionKey) {
+    const suggestions = findClosestMatches(region, Object.keys(CHILE_DEMOGRAPHICS));
     return { 
       valid: false, 
-      error: `Región no reconocida: "${region}". Verifique que esté escrita correctamente.`
+      error: `Región no reconocida: "${region}"`,
+      suggestions
     };
   }
   
   if (matchedRegionKey && comuna) {
-    const regionData = CHILE_DEMOGRAPHICS[matchedRegionKey];
-    const communeExists = regionData.communes.some(c => normalizeString(c.name) === normalizeString(comuna));
-    if (!communeExists) {
+    const matchedCommune = findCommuneInRegion(comuna, matchedRegionKey);
+    if (!matchedCommune) {
+      const regionData = CHILE_DEMOGRAPHICS[matchedRegionKey];
+      const suggestions = findClosestMatches(comuna, regionData.communes.map(c => c.name));
       return { 
         valid: false, 
-        error: `Comuna "${comuna}" no encontrada en región "${matchedRegionKey}". Verifique ortografía.`
+        error: `Comuna "${comuna}" no encontrada en región "${matchedRegionKey}"`,
+        suggestions
       };
     }
+    // Retornar valores corregidos si hubo match fuzzy
+    return { valid: true, correctedRegion: matchedRegionKey, correctedCommune: matchedCommune };
   }
-  return { valid: true };
+  return { valid: true, correctedRegion: matchedRegionKey };
 };
 
 const getCorrectRegionName = (region: string): string => {
@@ -226,7 +302,7 @@ export const parseExcelFile = async (file: File): Promise<ContractRow[]> => {
 
 export const validateRows = async (rows: ContractRow[]): Promise<ValidationResult> => {
   const valid: ContractRow[] = [];
-  const errors: { row: number; field: string; message: string }[] = [];
+  const errors: ValidationError[] = [];
   
   // Get all existing contracts to validate
   const { data: existingContracts } = await supabase
@@ -234,54 +310,85 @@ export const validateRows = async (rows: ContractRow[]): Promise<ValidationResul
     .select('id, name')
     .is('deleted_at', null);
   
-  const contractNames = new Set(existingContracts?.map(c => c.name.toLowerCase()) || []);
+  const contractList = existingContracts || [];
+  const contractNames = new Set(contractList.map(c => c.name.toLowerCase()));
   
   for (const row of rows) {
     let hasError = false;
     
     // Required field: nombre_contrato
     if (!row.nombre_contrato) {
-      errors.push({ row: row.rowNumber, field: 'nombre_contrato', message: 'Nombre del contrato es obligatorio' });
+      errors.push({ 
+        row: row.rowNumber, 
+        field: 'nombre_contrato', 
+        message: 'Nombre del contrato es obligatorio',
+        type: 'other'
+      });
       hasError = true;
     } else if (!contractNames.has(row.nombre_contrato.toLowerCase())) {
-      errors.push({ row: row.rowNumber, field: 'nombre_contrato', message: `Contrato "${row.nombre_contrato}" no existe en el sistema` });
+      // Buscar sugerencias de contratos similares
+      const suggestions = findClosestMatches(row.nombre_contrato, contractList.map(c => c.name), 5, 5);
+      errors.push({ 
+        row: row.rowNumber, 
+        field: 'nombre_contrato', 
+        message: `Contrato "${row.nombre_contrato}" no existe en el sistema`,
+        type: 'contract_not_found',
+        originalValue: row.nombre_contrato,
+        suggestions,
+        rowData: row
+      });
       hasError = true;
     }
     
     // Validate moneda if provided
     if (row.moneda && !['UF', 'CLP'].includes(row.moneda)) {
-      errors.push({ row: row.rowNumber, field: 'moneda', message: 'Moneda debe ser UF o CLP' });
+      errors.push({ row: row.rowNumber, field: 'moneda', message: 'Moneda debe ser UF o CLP', type: 'other' });
       hasError = true;
     }
     
     // Validate duracion_meses if provided
     if (row.duracion_meses !== undefined && row.duracion_meses <= 0) {
-      errors.push({ row: row.rowNumber, field: 'duracion_meses', message: 'Duración en meses debe ser mayor a 0' });
+      errors.push({ row: row.rowNumber, field: 'duracion_meses', message: 'Duración en meses debe ser mayor a 0', type: 'other' });
       hasError = true;
     }
     
     // Validate canon_arriendo if provided
     if (row.canon_arriendo !== undefined && row.canon_arriendo <= 0) {
-      errors.push({ row: row.rowNumber, field: 'canon_arriendo', message: 'Canon de arriendo debe ser mayor a 0' });
+      errors.push({ row: row.rowNumber, field: 'canon_arriendo', message: 'Canon de arriendo debe ser mayor a 0', type: 'other' });
       hasError = true;
     }
     
     // Date validation
     if (row.fecha_firma && !parseDate(row.fecha_firma)) {
-      errors.push({ row: row.rowNumber, field: 'fecha_firma', message: 'Formato de fecha inválido (usar DD/MM/YYYY)' });
+      errors.push({ row: row.rowNumber, field: 'fecha_firma', message: 'Formato de fecha inválido (usar DD/MM/YYYY)', type: 'other' });
       hasError = true;
     }
     
     if (row.fecha_inicio && !parseDate(row.fecha_inicio)) {
-      errors.push({ row: row.rowNumber, field: 'fecha_inicio', message: 'Formato de fecha inválido (usar DD/MM/YYYY)' });
+      errors.push({ row: row.rowNumber, field: 'fecha_inicio', message: 'Formato de fecha inválido (usar DD/MM/YYYY)', type: 'other' });
       hasError = true;
     }
     
-    // Region/Comuna validation
+    // Region/Comuna validation - ahora con autocorrección
     const regionCommuneValidation = validateRegionCommune(row.region, row.comuna);
     if (!regionCommuneValidation.valid) {
-      errors.push({ row: row.rowNumber, field: 'region/comuna', message: regionCommuneValidation.error || 'Región o comuna no válida' });
+      errors.push({ 
+        row: row.rowNumber, 
+        field: 'region/comuna', 
+        message: regionCommuneValidation.error || 'Región o comuna no válida',
+        type: 'region_commune',
+        suggestions: regionCommuneValidation.suggestions,
+        rowData: row
+      });
       hasError = true;
+    } else if (regionCommuneValidation.correctedRegion || regionCommuneValidation.correctedCommune) {
+      // Auto-corregir valores si hubo fuzzy match
+      if (regionCommuneValidation.correctedRegion && row.region) {
+        row.region = regionCommuneValidation.correctedRegion;
+      }
+      if (regionCommuneValidation.correctedCommune && row.comuna) {
+        row.comuna = regionCommuneValidation.correctedCommune;
+      }
     }
     
     if (!hasError) {
@@ -289,7 +396,7 @@ export const validateRows = async (rows: ContractRow[]): Promise<ValidationResul
     }
   }
   
-  return { valid, errors };
+  return { valid, errors, existingContracts: contractList };
 };
 
 export const uploadContracts = async (rows: ContractRow[]): Promise<UploadResult> => {
