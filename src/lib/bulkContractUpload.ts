@@ -40,6 +40,8 @@ export interface ValidationResult {
   valid: ContractRow[];
   errors: ValidationError[];
   existingContracts?: { id: string; name: string }[];
+  toUpdate: ContractRow[];  // Contratos que ya existen y serán actualizados
+  toCreate: ContractRow[];  // Contratos nuevos que serán creados
 }
 
 export interface UploadResult {
@@ -302,6 +304,8 @@ export const parseExcelFile = async (file: File): Promise<ContractRow[]> => {
 
 export const validateRows = async (rows: ContractRow[]): Promise<ValidationResult> => {
   const valid: ContractRow[] = [];
+  const toUpdate: ContractRow[] = [];
+  const toCreate: ContractRow[] = [];
   const errors: ValidationError[] = [];
   
   // Get all existing contracts to validate
@@ -311,10 +315,11 @@ export const validateRows = async (rows: ContractRow[]): Promise<ValidationResul
     .is('deleted_at', null);
   
   const contractList = existingContracts || [];
-  const contractNames = new Set(contractList.map(c => c.name.toLowerCase()));
+  const contractNamesSet = new Set(contractList.map(c => c.name.toLowerCase()));
   
   for (const row of rows) {
     let hasError = false;
+    let isExistingContract = false;
     
     // Required field: nombre_contrato
     if (!row.nombre_contrato) {
@@ -325,19 +330,24 @@ export const validateRows = async (rows: ContractRow[]): Promise<ValidationResul
         type: 'other'
       });
       hasError = true;
-    } else if (!contractNames.has(row.nombre_contrato.toLowerCase())) {
-      // Buscar sugerencias de contratos similares
-      const suggestions = findClosestMatches(row.nombre_contrato, contractList.map(c => c.name), 5, 5);
-      errors.push({ 
-        row: row.rowNumber, 
-        field: 'nombre_contrato', 
-        message: `Contrato "${row.nombre_contrato}" no existe en el sistema`,
-        type: 'contract_not_found',
-        originalValue: row.nombre_contrato,
-        suggestions,
-        rowData: row
-      });
-      hasError = true;
+    } else {
+      // Check if contract exists
+      isExistingContract = contractNamesSet.has(row.nombre_contrato.toLowerCase());
+      
+      if (!isExistingContract) {
+        // Buscar sugerencias de contratos similares
+        const suggestions = findClosestMatches(row.nombre_contrato, contractList.map(c => c.name), 5, 5);
+        errors.push({ 
+          row: row.rowNumber, 
+          field: 'nombre_contrato', 
+          message: `Contrato "${row.nombre_contrato}" no existe en el sistema`,
+          type: 'contract_not_found',
+          originalValue: row.nombre_contrato,
+          suggestions,
+          rowData: row
+        });
+        hasError = true;
+      }
     }
     
     // Validate moneda if provided
@@ -393,10 +403,15 @@ export const validateRows = async (rows: ContractRow[]): Promise<ValidationResul
     
     if (!hasError) {
       valid.push(row);
+      if (isExistingContract) {
+        toUpdate.push(row);
+      } else {
+        toCreate.push(row);
+      }
     }
   }
   
-  return { valid, errors, existingContracts: contractList };
+  return { valid, errors, existingContracts: contractList, toUpdate, toCreate };
 };
 
 export const uploadContracts = async (rows: ContractRow[]): Promise<UploadResult> => {

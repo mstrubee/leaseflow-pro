@@ -173,16 +173,28 @@ const BulkContractUpload = () => {
       setUploadResult(result);
       
       if (result.success > 0) {
+        const updatedCount = validationResult.toUpdate.length;
+        const createdCount = validationResult.toCreate.length;
+        
+        let message = '';
+        if (updatedCount > 0 && createdCount > 0) {
+          message = `Se actualizaron ${updatedCount} contratos y se crearon ${createdCount} nuevos.`;
+        } else if (updatedCount > 0) {
+          message = `Se actualizaron ${updatedCount} contratos exitosamente.`;
+        } else if (createdCount > 0) {
+          message = `Se crearon ${createdCount} contratos exitosamente.`;
+        }
+        
         toast({
           title: "Carga completada",
-          description: `Se crearon ${result.success} contratos exitosamente.`,
+          description: message,
         });
       }
       
       if (result.failed > 0) {
         toast({
           title: "Algunos contratos fallaron",
-          description: `${result.failed} contratos no pudieron ser creados.`,
+          description: `${result.failed} contratos no pudieron ser procesados.`,
           variant: "destructive",
         });
       }
@@ -640,14 +652,22 @@ const BulkContractUpload = () => {
                     <AlertTitle>Resumen de Validación</AlertTitle>
                     <AlertDescription>
                       <div className="mt-2 space-y-1">
-                        <p className="flex items-center gap-2">
-                          <CheckCircle2 className="h-4 w-4 text-green-600" />
-                          {validationResult.valid.length} contratos válidos
-                        </p>
+                        {validationResult.toUpdate.length > 0 && (
+                          <p className="flex items-center gap-2">
+                            <RefreshCw className="h-4 w-4 text-blue-600" />
+                            Actualizaré {validationResult.toUpdate.length} contrato{validationResult.toUpdate.length !== 1 ? 's' : ''}
+                          </p>
+                        )}
+                        {validationResult.toCreate.length > 0 && (
+                          <p className="flex items-center gap-2">
+                            <FilePlus className="h-4 w-4 text-green-600" />
+                            Cargaré {validationResult.toCreate.length} contrato{validationResult.toCreate.length !== 1 ? 's' : ''} nuevo{validationResult.toCreate.length !== 1 ? 's' : ''}
+                          </p>
+                        )}
                         {validationResult.errors.length > 0 && (
                           <p className="flex items-center gap-2">
                             <XCircle className="h-4 w-4 text-red-600" />
-                            {validationResult.errors.length} errores encontrados
+                            {validationResult.errors.length} error{validationResult.errors.length !== 1 ? 'es' : ''} encontrado{validationResult.errors.length !== 1 ? 's' : ''}
                           </p>
                         )}
                       </div>
