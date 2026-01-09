@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -12,10 +12,10 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { RentEscalations, Escalation } from "@/components/contracts/RentEscalations";
 import { CurrencyInput } from "@/components/contracts/CurrencyInput";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
-import { CHILE_DEMOGRAPHICS } from "@/data/chileRegionsData";
 import { CompanySelect } from "@/components/contracts/CompanySelect";
 import { CustomFieldsManager } from "@/components/contracts/CustomFieldsManager";
 import { useCustomFieldValues } from "@/hooks/useCustomFieldValues";
+import { RegionCommuneSelect } from "@/components/contracts/RegionCommuneSelect";
 
 const NewContract = () => {
   const navigate = useNavigate();
@@ -84,17 +84,6 @@ const NewContract = () => {
   
   // Document
   const [documentUrl, setDocumentUrl] = useState("");
-
-  // Get communes for selected region
-  const availableCommunes = useMemo(() => {
-    if (!region || !CHILE_DEMOGRAPHICS[region]) return [];
-    return CHILE_DEMOGRAPHICS[region].communes.map(c => c.name).sort();
-  }, [region]);
-
-  // Get all regions
-  const availableRegions = useMemo(() => {
-    return Object.keys(CHILE_DEMOGRAPHICS).sort();
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -330,42 +319,12 @@ const NewContract = () => {
                     placeholder="Ej: 1234"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="region">Región</Label>
-                  <Select 
-                    value={region} 
-                    onValueChange={(value) => {
-                      setRegion(value);
-                      setCommune(""); // Reset commune when region changes
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar región" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableRegions.map((r) => (
-                        <SelectItem key={r} value={r}>{r}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="commune">Comuna</Label>
-                  <Select 
-                    value={commune} 
-                    onValueChange={setCommune}
-                    disabled={!region}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={region ? "Seleccionar comuna" : "Seleccione región primero"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableCommunes.map((c) => (
-                        <SelectItem key={c} value={c}>{c}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <RegionCommuneSelect
+                  region={region}
+                  commune={commune}
+                  onRegionChange={setRegion}
+                  onCommuneChange={setCommune}
+                />
                 <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="rolSii">Rol SII</Label>
                   <Input
