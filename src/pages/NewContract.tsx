@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, X } from "lucide-react";
 import { RentEscalations, Escalation } from "@/components/contracts/RentEscalations";
 import { CurrencyInput } from "@/components/contracts/CurrencyInput";
 import { DurationInput } from "@/components/contracts/DurationInput";
@@ -50,8 +50,10 @@ const NewContract = () => {
   const [regimeRent, setRegimeRent] = useState("");
   const [variableRentPercentage, setVariableRentPercentage] = useState("");
   const [duration, setDuration] = useState("");
-  const [noticeType, setNoticeType] = useState<"fecha" | "meses">("meses");
+  const [noticeType, setNoticeType] = useState<"fecha" | "meses" | "rangos">("meses");
   const [noticeValue, setNoticeValue] = useState("");
+  const [noticeRanges, setNoticeRanges] = useState<Array<{ start_month: number; end_month: number }>>([]);
+  const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">("unilateral_gp");
   const [escalations, setEscalations] = useState<Escalation[]>([]);
   const [fechaInicio, setFechaInicio] = useState("");
   const [signedDate, setSignedDate] = useState("");
@@ -160,7 +162,7 @@ const NewContract = () => {
       };
 
       // Create version only if commercial conditions are provided
-      const hasCommercialConditions = regimeRent || duration || noticeValue;
+      const hasCommercialConditions = regimeRent || duration || noticeValue || noticeRanges.length > 0;
       let version = null;
       
       if (hasCommercialConditions) {
@@ -175,7 +177,8 @@ const NewContract = () => {
             variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
             duration_months: duration ? parseInt(duration) : 12,
             notice_type: noticeType,
-            notice_value: noticeValue || "6",
+            notice_value: noticeType === "rangos" ? "rangos" : (noticeValue || "6"),
+            notice_bilaterality: noticeBilaterality,
             effective_date: fechaInicio || null,
             guarantee_multiplier: guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
             has_periodic_adjustments: hasPeriodicAdjustments,
@@ -203,8 +206,22 @@ const NewContract = () => {
 
         if (versionError) throw versionError;
         version = versionData;
-      }
 
+        // Create notice ranges if any
+        if (noticeType === "rangos" && noticeRanges.length > 0) {
+          const { error: rangesError } = await supabase
+            .from("notice_ranges")
+            .insert(
+              noticeRanges.map((range) => ({
+                version_id: version.id,
+                start_month: range.start_month,
+                end_month: range.end_month,
+              }))
+            );
+
+          if (rangesError) throw rangesError;
+        }
+      }
       // Create escalations if any
       if (version && hasEscalation && escalations.length > 0) {
         const { error: escalationError } = await supabase
@@ -1001,23 +1018,136 @@ const NewContract = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="meses">Meses</SelectItem>
+                    <SelectItem value="meses">Meses antes del vencimiento</SelectItem>
                     <SelectItem value="fecha">Fecha específica</SelectItem>
+                    <SelectItem value="rangos">Rangos de meses</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="noticeValue">
-                  {noticeType === "meses" ? "Número de Meses" : "Fecha"}
-                </Label>
-                <Input
-                  id="noticeValue"
-                  type={noticeType === "meses" ? "number" : "date"}
-                  value={noticeValue}
-                  onChange={(e) => setNoticeValue(e.target.value)}
-                />
+                <Label>Tipo de Aviso</Label>
+                <RadioGroup
+                  value={noticeBilaterality}
+                  onValueChange={(value: "unilateral_gp" | "bilateral") => setNoticeBilaterality(value)}
+                  className="flex gap-4"
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="unilateral_gp" id="unilateralGpNew" />
+                    <Label htmlFor="unilateralGpNew">Unilateral GP</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="bilateral" id="bilateralNew" />
+                    <Label htmlFor="bilateralNew">Bilateral</Label>
+                  </div>
+                </RadioGroup>
+                <p className="text-xs text-muted-foreground">
+                  Bilateral: el propietario también puede dar aviso de término
+                </p>
               </div>
+
+              {noticeType === "meses" && (
+                <div className="space-y-2">
+                  <Label htmlFor="noticeValue">Número de Meses</Label>
+                  <Input
+                    id="noticeValue"
+                    type="number"
+                    min="1"
+                    value={noticeValue}
+                    onChange={(e) => setNoticeValue(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {noticeType === "fecha" && (
+                <div className="space-y-2">
+                  <Label htmlFor="noticeValue">Fecha</Label>
+                  <Input
+                    id="noticeValue"
+                    type="date"
+                    value={noticeValue}
+                    onChange={(e) => setNoticeValue(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {noticeType === "rangos" && (
+                <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
+                  <div className="flex items-center justify-between">
+                    <Label>Rangos de Aviso (meses dentro de la vigencia)</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const maxMonth = parseInt(duration) || 12;
+                        setNoticeRanges([...noticeRanges, { start_month: 1, end_month: Math.min(3, maxMonth) }]);
+                      }}
+                      className="gap-1"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Agregar rango
+                    </Button>
+                  </div>
+                  
+                  {noticeRanges.length === 0 && (
+                    <p className="text-sm text-muted-foreground">
+                      No hay rangos definidos. Agrega uno o más rangos de meses.
+                    </p>
+                  )}
+
+                  {noticeRanges.map((range, index) => (
+                    <div key={index} className="flex items-center gap-3 p-3 bg-background rounded-md border">
+                      <span className="text-sm font-medium">Rango {index + 1}:</span>
+                      <div className="flex items-center gap-2">
+                        <Label className="text-sm">Del mes</Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          max={parseInt(duration) || 999}
+                          value={range.start_month}
+                          onChange={(e) => {
+                            const newRanges = [...noticeRanges];
+                            newRanges[index].start_month = parseInt(e.target.value) || 1;
+                            setNoticeRanges(newRanges);
+                          }}
+                          className="w-20"
+                        />
+                        <Label className="text-sm">al mes</Label>
+                        <Input
+                          type="number"
+                          min={range.start_month}
+                          max={parseInt(duration) || 999}
+                          value={range.end_month}
+                          onChange={(e) => {
+                            const newRanges = [...noticeRanges];
+                            newRanges[index].end_month = parseInt(e.target.value) || range.start_month;
+                            setNoticeRanges(newRanges);
+                          }}
+                          className="w-20"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          const newRanges = noticeRanges.filter((_, i) => i !== index);
+                          setNoticeRanges(newRanges);
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+
+                  {duration && noticeRanges.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      La duración del contrato es de {duration} meses. Los rangos deben estar dentro de este período.
+                    </p>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
