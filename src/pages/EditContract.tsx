@@ -162,7 +162,7 @@ const EditContract = () => {
     otrosArrendamientos: "Otros Arrendamientos",
     periodicAdjustments: "Reajustes Periódicos",
     duration: "Duración",
-    noticeType: "Aviso de Término",
+    noticeType: "Avisos",
   };
 
   useEffect(() => {
