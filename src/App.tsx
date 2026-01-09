@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { PermissionSelectionProvider } from "@/contexts/PermissionSelectionContext";
 import { FloatingPermissionSelector } from "@/components/admin/FloatingPermissionSelector";
+import { MainLayout } from "@/components/layout/MainLayout";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NewContract from "./pages/NewContract";
@@ -26,22 +27,24 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <FloatingPermissionSelector />
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/admin" element={<AdminPanel />} />
-            <Route path="/contracts" element={<Contracts />} />
-            <Route path="/contracts/new" element={<NewContract />} />
-            <Route path="/contracts/bulk-upload" element={<BulkContractUpload />} />
-            <Route path="/contracts/:id" element={<ContractDetail />} />
-            <Route path="/contracts/:id/edit" element={<EditContract />} />
-            <Route path="/deleted" element={<DeletedContracts />} />
-            <Route path="/alerts" element={<AlertsDashboard />} />
-            <Route path="/patents" element={<Index />} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <MainLayout>
+            <FloatingPermissionSelector />
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/auth" element={<Auth />} />
+              <Route path="/admin" element={<AdminPanel />} />
+              <Route path="/contracts" element={<Contracts />} />
+              <Route path="/contracts/new" element={<NewContract />} />
+              <Route path="/contracts/bulk-upload" element={<BulkContractUpload />} />
+              <Route path="/contracts/:id" element={<ContractDetail />} />
+              <Route path="/contracts/:id/edit" element={<EditContract />} />
+              <Route path="/deleted" element={<DeletedContracts />} />
+              <Route path="/alerts" element={<AlertsDashboard />} />
+              <Route path="/patents" element={<Index />} />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </MainLayout>
         </BrowserRouter>
       </PermissionSelectionProvider>
     </TooltipProvider>
