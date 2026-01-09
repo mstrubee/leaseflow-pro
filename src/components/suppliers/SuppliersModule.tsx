@@ -63,37 +63,33 @@ export const SuppliersModule = () => {
       <SelectableElement elementId="suppliers.module" label="Módulo de Proveedores">
         <Card>
           <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-            <CardHeader className="py-3 px-4 w-full">
-              <CollapsibleTrigger asChild className="w-full">
-                <div className="flex items-center justify-between cursor-pointer w-full">
-                  <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                      {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                    </Button>
-                    <Building2 className="h-5 w-5 text-muted-foreground" />
-                    <CardTitle className="text-lg">Proveedores</CardTitle>
-                  </div>
-                  {isOpen && (
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={e => { e.stopPropagation(); generateSupplierTemplate(); }}
-                      >
-                        <Download className="h-4 w-4 mr-1" />
-                        Descargar Plantilla
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={e => { e.stopPropagation(); handleNewSupplier(); }}
-                      >
-                        <Plus className="h-4 w-4 mr-1" />
-                        Nuevo Proveedor
-                      </Button>
-                    </div>
-                  )}
-                </div>
+            <CardHeader className="flex flex-row items-center justify-between py-3">
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" className="flex items-center gap-2 p-0 h-auto hover:bg-transparent">
+                  {isOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                  <Building2 className="h-5 w-5 text-muted-foreground" />
+                  <CardTitle className="text-lg">Proveedores</CardTitle>
+                </Button>
               </CollapsibleTrigger>
+              {isOpen && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={e => { e.stopPropagation(); generateSupplierTemplate(); }}
+                  >
+                    <Download className="h-4 w-4 mr-1" />
+                    Descargar Plantilla
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={e => { e.stopPropagation(); handleNewSupplier(); }}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Nuevo Proveedor
+                  </Button>
+                </div>
+              )}
             </CardHeader>
             <CollapsibleContent>
               <CardContent className="pt-0">

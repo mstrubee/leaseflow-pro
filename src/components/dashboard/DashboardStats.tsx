@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Button } from "@/components/ui/button";
 import { ChevronDown } from "lucide-react";
 import {
   Table,
@@ -234,14 +235,14 @@ export const DashboardStats = () => {
         <SelectableElement elementId="dashboard_map" label="Mapa / Contratos por Región">
           <Collapsible defaultOpen={false}>
             <Card>
-              <CollapsibleTrigger asChild>
-                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
-                  <div className="flex items-center justify-between">
+              <CardHeader className="flex flex-row items-center justify-between py-3">
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" className="flex items-center gap-2 p-0 h-auto hover:bg-transparent">
+                    <ChevronDown className="h-5 w-5 transition-transform duration-200 [[data-state=closed]>&]:-rotate-90" />
                     <CardTitle className="text-lg">Contratos por Región</CardTitle>
-                    <ChevronDown className="h-5 w-5 text-muted-foreground transition-transform duration-200 [[data-state=open]>&]:rotate-180" />
-                  </div>
-                </CardHeader>
-              </CollapsibleTrigger>
+                  </Button>
+                </CollapsibleTrigger>
+              </CardHeader>
               <CollapsibleContent>
                 <CardContent>
                   <Table>
