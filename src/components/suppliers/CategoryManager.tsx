@@ -9,15 +9,20 @@ import { cn } from "@/lib/utils";
 import {
   DndContext,
   DragOverlay,
-  useDraggable,
-  useDroppable,
   PointerSensor,
   useSensor,
   useSensors,
   DragEndEvent,
   DragStartEvent,
-  DragOverEvent,
+  closestCenter,
+  MeasuringStrategy,
 } from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface CategoryWithChildren extends SupplierCategory {
   children: CategoryWithChildren[];
@@ -42,7 +47,6 @@ export const CategoryManager = () => {
   const [addingParentId, setAddingParentId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -200,119 +204,138 @@ export const CategoryManager = () => {
     setActiveId(event.active.id as string);
   };
 
-  const handleDragOver = (event: DragOverEvent) => {
-    setOverId(event.over?.id as string || null);
-  };
-
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
-    setOverId(null);
 
     if (!over || active.id === over.id) return;
 
     const draggedId = active.id as string;
     const targetId = over.id as string;
 
-    // Handle "root" drop zone
-    if (targetId === "root-drop-zone") {
-      const draggedCat = flatCategories.find(c => c.id === draggedId);
-      if (draggedCat && draggedCat.parent_id !== null) {
-        try {
-          const rootSiblings = flatCategories.filter(c => c.parent_id === null);
-          const maxOrder = rootSiblings.length > 0 ? Math.max(...rootSiblings.map(s => s.display_order)) : 0;
-
-          const { error } = await supabase
-            .from("supplier_categories")
-            .update({ parent_id: null, display_order: maxOrder + 1 })
-            .eq("id", draggedId);
-
-          if (error) throw error;
-          toast.success("Rubro movido al nivel raíz");
-          loadCategories();
-        } catch (error) {
-          toast.error("Error al mover rubro");
-        }
-      }
-      return;
-    }
-
     const draggedCat = flatCategories.find(c => c.id === draggedId);
     const targetCat = flatCategories.find(c => c.id === targetId);
 
     if (!draggedCat || !targetCat) return;
 
-    // Prevent dropping on self
-    if (draggedId === targetId) return;
+    // Check if they are siblings (same parent)
+    const areSiblings = draggedCat.parent_id === targetCat.parent_id;
 
-    // Prevent dropping on own descendants
-    if (getDescendants(draggedId).includes(targetId)) {
-      toast.error("No puedes mover un rubro dentro de sus propios sub-rubros");
-      return;
-    }
+    if (areSiblings) {
+      // Reorder within the same level
+      const siblings = flatCategories
+        .filter(c => c.parent_id === draggedCat.parent_id)
+        .sort((a, b) => a.display_order - b.display_order);
 
-    // Prevent dropping on current parent (no change needed)
-    if (draggedCat.parent_id === targetId) {
-      return;
-    }
+      const oldIndex = siblings.findIndex(s => s.id === draggedId);
+      const newIndex = siblings.findIndex(s => s.id === targetId);
 
-    // Reparent: make dragged item a child of target
-    try {
-      const newSiblings = flatCategories.filter(c => c.parent_id === targetId);
-      const maxOrder = newSiblings.length > 0 ? Math.max(...newSiblings.map(s => s.display_order)) : 0;
+      if (oldIndex === -1 || newIndex === -1) return;
 
-      const { error } = await supabase
-        .from("supplier_categories")
-        .update({ parent_id: targetId, display_order: maxOrder + 1 })
-        .eq("id", draggedId);
+      // Reorder the array
+      const reordered = [...siblings];
+      const [removed] = reordered.splice(oldIndex, 1);
+      reordered.splice(newIndex, 0, removed);
 
-      if (error) throw error;
-      toast.success(`"${draggedCat.name}" movido dentro de "${targetCat.name}"`);
-      // Expand target so the moved item is visible
-      setExpandedIds(prev => new Set([...prev, targetId]));
-      loadCategories();
-    } catch (error) {
-      toast.error("Error al mover rubro");
+      // Update display_order for all affected items
+      try {
+        const updates = reordered.map((cat, index) => ({
+          id: cat.id,
+          display_order: index + 1,
+        }));
+
+        for (const update of updates) {
+          await supabase
+            .from("supplier_categories")
+            .update({ display_order: update.display_order })
+            .eq("id", update.id);
+        }
+
+        toast.success("Orden actualizado");
+        loadCategories();
+      } catch (error) {
+        toast.error("Error al reordenar");
+      }
+    } else {
+      // Reparent: make dragged item a child of target
+      // Prevent dropping on own descendants
+      if (getDescendants(draggedId).includes(targetId)) {
+        toast.error("No puedes mover un rubro dentro de sus propios sub-rubros");
+        return;
+      }
+
+      // Prevent dropping on current parent (no change needed)
+      if (draggedCat.parent_id === targetId) {
+        return;
+      }
+
+      try {
+        const newSiblings = flatCategories.filter(c => c.parent_id === targetId);
+        const maxOrder = newSiblings.length > 0 ? Math.max(...newSiblings.map(s => s.display_order)) : 0;
+
+        const { error } = await supabase
+          .from("supplier_categories")
+          .update({ parent_id: targetId, display_order: maxOrder + 1 })
+          .eq("id", draggedId);
+
+        if (error) throw error;
+        toast.success(`"${draggedCat.name}" movido dentro de "${targetCat.name}"`);
+        // Expand target so the moved item is visible
+        setExpandedIds(prev => new Set([...prev, targetId]));
+        loadCategories();
+      } catch (error) {
+        toast.error("Error al mover rubro");
+      }
     }
   };
 
   const handleDragCancel = () => {
     setActiveId(null);
-    setOverId(null);
   };
 
   const activeCat = activeId ? flatCategories.find(c => c.id === activeId) : null;
-  const overCat = overId && overId !== "root-drop-zone" ? flatCategories.find(c => c.id === overId) : null;
 
-  // Draggable + Droppable Category Item
+  // Sortable Category Item
   const CategoryItem = ({ cat, level }: { cat: CategoryWithChildren; level: number }) => {
-    const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({ id: cat.id });
-    const { setNodeRef: setDropRef, isOver } = useDroppable({ id: cat.id });
+    const {
+      attributes,
+      listeners,
+      setNodeRef,
+      transform,
+      transition,
+      isDragging,
+    } = useSortable({ id: cat.id });
+
+    const style = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+    };
 
     const hasChildren = cat.children.length > 0;
     const isExpanded = expandedIds.has(cat.id);
     const isAddingHere = isAdding && addingParentId === cat.id;
     const colors = LEVEL_COLORS[Math.min(level, LEVEL_COLORS.length - 1)];
-    const isValidDropTarget = activeId && activeId !== cat.id && !getDescendants(activeId).includes(cat.id);
 
     return (
-      <div className={cn("space-y-1", isDragging && "opacity-30")}>
+      <div 
+        ref={setNodeRef}
+        style={style}
+        className={cn("space-y-1", isDragging && "opacity-50 z-50")}
+      >
         <div 
-          ref={setDropRef}
           className={cn(
             "group flex items-center gap-2 p-2 rounded-lg border transition-all",
             colors.bg, colors.border,
             !cat.is_active && "opacity-50",
-            isOver && isValidDropTarget && "ring-2 ring-primary ring-offset-2 bg-primary/20 scale-[1.02]"
+            isDragging && "shadow-lg"
           )}
         >
           {/* Drag handle */}
           <button
-            ref={setDragRef}
             {...attributes}
             {...listeners}
             className="p-1 rounded cursor-grab active:cursor-grabbing hover:bg-accent/50"
-            title="Arrastrar para mover a otra jerarquía"
+            title="Arrastrar para reordenar o mover a otra jerarquía"
           >
             <GripVertical className="h-4 w-4 text-muted-foreground" />
           </button>
@@ -423,35 +446,13 @@ export const CategoryManager = () => {
         {/* Children */}
         {hasChildren && isExpanded && (
           <div className="ml-6 border-l-2 border-border pl-2 space-y-1">
-            {cat.children.map(child => (
-              <CategoryItem key={child.id} cat={child} level={level + 1} />
-            ))}
+            <SortableContext items={cat.children.map(c => c.id)} strategy={verticalListSortingStrategy}>
+              {cat.children.map(child => (
+                <CategoryItem key={child.id} cat={child} level={level + 1} />
+              ))}
+            </SortableContext>
           </div>
         )}
-      </div>
-    );
-  };
-
-  // Root drop zone component
-  const RootDropZone = () => {
-    const { setNodeRef, isOver } = useDroppable({ id: "root-drop-zone" });
-    
-    if (!activeId) return null;
-    
-    const draggedCat = flatCategories.find(c => c.id === activeId);
-    if (!draggedCat || draggedCat.parent_id === null) return null;
-
-    return (
-      <div
-        ref={setNodeRef}
-        className={cn(
-          "p-3 rounded-lg border-2 border-dashed transition-all text-center text-sm",
-          isOver 
-            ? "border-primary bg-primary/10 text-primary" 
-            : "border-muted-foreground/30 text-muted-foreground"
-        )}
-      >
-        Soltar aquí para convertir en rubro principal
       </div>
     );
   };
@@ -500,42 +501,39 @@ export const CategoryManager = () => {
 
       <DndContext
         sensors={sensors}
+        collisionDetection={closestCenter}
         onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
+        measuring={{
+          droppable: {
+            strategy: MeasuringStrategy.Always,
+          },
+        }}
       >
-        <div className="space-y-2">
-          {categories.map(cat => (
-            <CategoryItem key={cat.id} cat={cat} level={0} />
-          ))}
-        </div>
-
-        <RootDropZone />
+        <SortableContext items={categories.map(c => c.id)} strategy={verticalListSortingStrategy}>
+          <div className="space-y-2">
+            {categories.map(cat => (
+              <CategoryItem key={cat.id} cat={cat} level={0} />
+            ))}
+          </div>
+        </SortableContext>
 
         <DragOverlay>
           {activeCat && (
-            <div className="flex items-center gap-2 p-2 rounded-lg bg-background border-2 border-primary shadow-xl">
-              <GripVertical className="h-4 w-4 text-primary" />
-              <span className="text-sm font-medium">{activeCat.name}</span>
+            <div className="p-2 rounded-lg border bg-card shadow-xl opacity-90">
+              <div className="flex items-center gap-2">
+                <GripVertical className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">{activeCat.name}</span>
+              </div>
             </div>
           )}
         </DragOverlay>
-
-        {/* Visual feedback for drop target */}
-        {activeId && overCat && (
-          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50">
-            <div className="flex items-center gap-2 px-4 py-2 rounded-full shadow-lg bg-primary text-primary-foreground text-sm font-medium">
-              <CornerDownRight className="h-4 w-4" />
-              Mover dentro de "{overCat.name}"
-            </div>
-          </div>
-        )}
       </DndContext>
 
-      {categories.length === 0 && !isAdding && (
+      {categories.length === 0 && (
         <p className="text-sm text-muted-foreground text-center py-4">
-          No hay rubros creados. Crea uno para comenzar.
+          No hay rubros definidos. Crea uno para comenzar.
         </p>
       )}
     </div>
