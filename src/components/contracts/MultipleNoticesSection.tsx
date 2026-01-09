@@ -46,7 +46,7 @@ export function MultipleNoticesSection({ notices, onChange, durationMonths }: Mu
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <Label className="text-base font-medium">Avisos de Término</Label>
+        <Label className="text-base font-medium">Avisos</Label>
         <Button type="button" variant="outline" size="sm" onClick={addNotice} className="gap-1">
           <Plus className="h-4 w-4" />
           Agregar Aviso
@@ -80,9 +80,26 @@ export function MultipleNoticesSection({ notices, onChange, durationMonths }: Mu
               </Button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Tipo de Aviso</Label>
+                <Select
+                  value={notice.description || "renovacion"}
+                  onValueChange={(value) => updateNotice(index, "description", value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="renovacion">Fecha tope para aviso de renovación</SelectItem>
+                    <SelectItem value="termino">Aviso de Término o Salida Anticipada</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Formato</Label>
                 <Select
                   value={notice.notice_type}
                   onValueChange={(value) => updateNotice(index, "notice_type", value)}
@@ -142,14 +159,6 @@ export function MultipleNoticesSection({ notices, onChange, durationMonths }: Mu
               </RadioGroup>
             </div>
 
-            <div className="space-y-2">
-              <Label>Descripción (opcional)</Label>
-              <Input
-                type="text"
-                value={notice.description || ""}
-                onChange={(e) => updateNotice(index, "description", e.target.value)}
-                placeholder="Ej: Aviso para renovación automática"
-              />
             </div>
           </div>
         ))}
