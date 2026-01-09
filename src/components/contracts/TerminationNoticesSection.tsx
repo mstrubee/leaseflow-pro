@@ -463,14 +463,14 @@ export function TerminationNoticesSection({ contractId, contractName, notices, o
                     <div className="space-y-2">
                       <Label htmlFor="repeatAlert">Repetir alerta cada (días)</Label>
                       <Select
-                        value={repeatAlertDays?.toString() || ""}
-                        onValueChange={(v) => setRepeatAlertDays(v ? parseInt(v) : null)}
+                        value={repeatAlertDays?.toString() || "none"}
+                        onValueChange={(v) => setRepeatAlertDays(v === "none" ? null : parseInt(v))}
                       >
                         <SelectTrigger className="w-40">
                           <SelectValue placeholder="Sin repetición" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">Sin repetición</SelectItem>
+                          <SelectItem value="none">Sin repetición</SelectItem>
                           <SelectItem value="1">Cada día</SelectItem>
                           <SelectItem value="3">Cada 3 días</SelectItem>
                           <SelectItem value="7">Cada 7 días</SelectItem>
