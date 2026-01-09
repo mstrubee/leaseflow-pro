@@ -536,16 +536,6 @@ const NewContract = () => {
                     showCurrencySelector={false}
                   />
                   
-                  <CurrencyInput
-                    id="regimeRent"
-                    label="Canon en Régimen"
-                    value={regimeRent}
-                    onChange={setRegimeRent}
-                    currency={currency}
-                    onCurrencyChange={setCurrency}
-                    showCurrencySelector={false}
-                  />
-                  
                   {duration && (
                     <div className="border border-border rounded-lg p-4 mt-4">
                       <RentEscalations
