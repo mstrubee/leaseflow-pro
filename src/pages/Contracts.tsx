@@ -105,40 +105,82 @@ type SortDirection = "asc" | "desc";
 
 const Contracts = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = searchParams.get("status") || "todos";
   const { user, loading: authLoading, roleLoaded } = useAuth();
 
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [filteredContracts, setFilteredContracts] = useState<Contract[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [confirmDeleteDialogOpen, setConfirmDeleteDialogOpen] = useState(false);
   const [contractToDelete, setContractToDelete] = useState<Contract | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-
-  // Filters
-  const [operationFilter, setOperationFilter] = useState<string>("todos");
-  const [obraFilter, setObraFilter] = useState<string>("todos");
-  const [patenteFilter, setPatenteFilter] = useState<string>("todos");
-  const [proyectoFilter, setProyectoFilter] = useState<string>("todos");
-  const [ubicacionFilter, setUbicacionFilter] = useState<string>("todos");
-  const [costoArriendoFilter, setCostoArriendoFilter] = useState<string>("todos");
-  const [companyFilter, setCompanyFilter] = useState<string>("todos");
-  const [atencionEspecialFilter, setAtencionEspecialFilter] = useState<string>("todos");
   const [companies, setCompanies] = useState<Company[]>([]);
 
-  // Initialize atencion especial filter from URL
-  useEffect(() => {
-    const atencionEspecialParam = searchParams.get("atencion_especial");
-    if (atencionEspecialParam === "true") {
-      setAtencionEspecialFilter("si");
-    }
-  }, [searchParams]);
+  // Read filters from URL params
+  const searchTerm = searchParams.get("search") || "";
+  const operationFilter = searchParams.get("operation") || "todos";
+  const obraFilter = searchParams.get("obra") || "todos";
+  const patenteFilter = searchParams.get("patente") || "todos";
+  const proyectoFilter = searchParams.get("proyecto") || "todos";
+  const ubicacionFilter = searchParams.get("ubicacion") || "todos";
+  const costoArriendoFilter = searchParams.get("costo") || "todos";
+  const companyFilter = searchParams.get("company") || "todos";
+  const atencionEspecialFilter = searchParams.get("atencion_especial") === "true" ? "si" : (searchParams.get("atencion_especial") === "false" ? "no" : "todos");
+  const sortField = (searchParams.get("sort") as SortField) || null;
+  const sortDirection = (searchParams.get("dir") as SortDirection) || "asc";
 
-  // Sorting
-  const [sortField, setSortField] = useState<SortField>(null);
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  // Helper to update a single filter in URL
+  const updateFilter = (key: string, value: string) => {
+    const newParams = new URLSearchParams(searchParams);
+    if (value === "todos" || value === "" || value === null) {
+      newParams.delete(key);
+    } else {
+      newParams.set(key, value);
+    }
+    setSearchParams(newParams, { replace: true });
+  };
+
+  const setSearchTerm = (value: string) => updateFilter("search", value);
+  const setOperationFilter = (value: string) => updateFilter("operation", value);
+  const setObraFilter = (value: string) => updateFilter("obra", value);
+  const setPatenteFilter = (value: string) => updateFilter("patente", value);
+  const setProyectoFilter = (value: string) => updateFilter("proyecto", value);
+  const setUbicacionFilter = (value: string) => updateFilter("ubicacion", value);
+  const setCostoArriendoFilter = (value: string) => updateFilter("costo", value);
+  const setCompanyFilter = (value: string) => updateFilter("company", value);
+  const setAtencionEspecialFilter = (value: string) => {
+    const newParams = new URLSearchParams(searchParams);
+    if (value === "si") {
+      newParams.set("atencion_especial", "true");
+    } else if (value === "no") {
+      newParams.set("atencion_especial", "false");
+    } else {
+      newParams.delete("atencion_especial");
+    }
+    setSearchParams(newParams, { replace: true });
+  };
+
+  const setSortField = (field: SortField) => {
+    const newParams = new URLSearchParams(searchParams);
+    if (field === null) {
+      newParams.delete("sort");
+      newParams.delete("dir");
+    } else {
+      newParams.set("sort", field);
+    }
+    setSearchParams(newParams, { replace: true });
+  };
+
+  const setSortDirection = (dir: SortDirection) => {
+    const newParams = new URLSearchParams(searchParams);
+    if (dir === "asc") {
+      newParams.delete("dir");
+    } else {
+      newParams.set("dir", dir);
+    }
+    setSearchParams(newParams, { replace: true });
+  };
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -420,31 +462,29 @@ const Contracts = () => {
   };
 
   const handleSort = (field: SortField) => {
+    const newParams = new URLSearchParams(searchParams);
     if (sortField === field) {
       if (sortDirection === "asc") {
-        setSortDirection("desc");
+        newParams.set("dir", "desc");
       } else {
-        setSortField(null);
-        setSortDirection("asc");
+        newParams.delete("sort");
+        newParams.delete("dir");
       }
     } else {
-      setSortField(field);
-      setSortDirection("asc");
+      newParams.set("sort", field as string);
+      newParams.delete("dir");
     }
+    setSearchParams(newParams, { replace: true });
   };
 
   const clearFilters = () => {
-    setOperationFilter("todos");
-    setObraFilter("todos");
-    setPatenteFilter("todos");
-    setProyectoFilter("todos");
-    setUbicacionFilter("todos");
-    setCostoArriendoFilter("todos");
-    setCompanyFilter("todos");
-    setAtencionEspecialFilter("todos");
-    setSortField(null);
-    setSortDirection("asc");
-    setSearchTerm("");
+    // Clear all filter params but keep status if present
+    const newParams = new URLSearchParams();
+    const status = searchParams.get("status");
+    if (status) {
+      newParams.set("status", status);
+    }
+    setSearchParams(newParams, { replace: true });
   };
 
   const hasActiveFilters = operationFilter !== "todos" || obraFilter !== "todos" || patenteFilter !== "todos" || proyectoFilter !== "todos" || ubicacionFilter !== "todos" || costoArriendoFilter !== "todos" || companyFilter !== "todos" || atencionEspecialFilter !== "todos" || sortField !== null;
