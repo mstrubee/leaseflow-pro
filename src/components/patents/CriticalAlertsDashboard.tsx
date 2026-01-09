@@ -1,9 +1,10 @@
-import { useMemo } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, FileWarning, Clock, CalendarClock, Bell, ExternalLink, User } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { AlertTriangle, FileWarning, Clock, CalendarClock, Bell, ExternalLink, User, ChevronDown, ChevronRight } from "lucide-react";
 import { differenceInDays, format } from "date-fns";
 import { es } from "date-fns/locale";
 import { ContractWithPatent, PatentChecklistItem, PatentDocStatus, PRIORITY_CONFIG, STATUS_CONFIG } from "./types";
@@ -41,6 +42,7 @@ export function CriticalAlertsDashboard({
   onStatusChange,
   overdueThreshold = 30
 }: CriticalAlertsDashboardProps) {
+  const [isTableOpen, setIsTableOpen] = useState(true);
   const today = new Date();
 
   // Calculate KPIs and critical documents
@@ -183,80 +185,91 @@ export function CriticalAlertsDashboard({
 
       {/* Critical Documents Table */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">Documentación<AlertTriangle className="h-5 w-5 text-red-600" />
-            Alertas Críticas Activas
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Local</TableHead>
-                  <TableHead>Documento</TableHead>
-                  <TableHead>Sección</TableHead>
-                  <TableHead className="text-center">Estado</TableHead>
-                  <TableHead>Fecha Término</TableHead>
-                  <TableHead className="text-center">Días</TableHead>
-                  <TableHead>Responsable</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {criticalDocuments.map((doc, idx) => <TableRow key={`${doc.contractId}-${doc.itemId}-${idx}`} className={getRowBgColor(doc)}>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium">{doc.contractName}</div>
-                        <div className="text-xs text-muted-foreground">{doc.region}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-medium">{doc.itemName}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{doc.sectionName}</TableCell>
-                    <TableCell className="text-center">
-                      <Select value={doc.status} onValueChange={v => onStatusChange(doc.contractId, doc.itemId, v as PatentDocStatus)}>
-                        <SelectTrigger className="h-7 w-[110px]">
-                          <PatentStatusBadge status={doc.status} size="sm" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(STATUS_CONFIG).map(([key, config]) => <SelectItem key={key} value={key}>
-                              {config.label}
-                            </SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>
-                      {doc.endDate ? format(new Date(doc.endDate), 'dd/MM/yyyy', {
-                    locale: es
-                  }) : '-'}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {doc.daysRemaining !== undefined ? <span className={doc.daysRemaining < 0 ? 'text-red-700 font-bold' : doc.daysRemaining <= 7 ? 'text-orange-600 font-medium' : 'text-yellow-600'}>
-                          {doc.daysRemaining < 0 ? `${Math.abs(doc.daysRemaining)} atraso` : doc.daysRemaining}
-                        </span> : '-'}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <User className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-sm">{doc.responsible || '-'}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" onClick={() => onNavigateToDocument(doc.contractId, doc.itemId)}>
-                        <ExternalLink className="h-3 w-3 mr-1" />
-                        Ver
-                      </Button>
-                    </TableCell>
-                  </TableRow>)}
-                {criticalDocuments.length === 0 && <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                      No hay documentos críticos en este momento
-                    </TableCell>
-                  </TableRow>}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
+        <Collapsible open={isTableOpen} onOpenChange={setIsTableOpen}>
+          <CardHeader className="py-3">
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" className="flex items-center gap-2 p-0 h-auto hover:bg-transparent w-full justify-start">
+                {isTableOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                <CardTitle className="text-lg flex items-center gap-2">
+                  Documentación
+                  <AlertTriangle className="h-5 w-5 text-red-600" />
+                  Alertas Críticas Activas
+                </CardTitle>
+              </Button>
+            </CollapsibleTrigger>
+          </CardHeader>
+          <CollapsibleContent>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Local</TableHead>
+                      <TableHead>Documento</TableHead>
+                      <TableHead>Sección</TableHead>
+                      <TableHead className="text-center">Estado</TableHead>
+                      <TableHead>Fecha Término</TableHead>
+                      <TableHead className="text-center">Días</TableHead>
+                      <TableHead>Responsable</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {criticalDocuments.map((doc, idx) => <TableRow key={`${doc.contractId}-${doc.itemId}-${idx}`} className={getRowBgColor(doc)}>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{doc.contractName}</div>
+                            <div className="text-xs text-muted-foreground">{doc.region}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-medium">{doc.itemName}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{doc.sectionName}</TableCell>
+                        <TableCell className="text-center">
+                          <Select value={doc.status} onValueChange={v => onStatusChange(doc.contractId, doc.itemId, v as PatentDocStatus)}>
+                            <SelectTrigger className="h-7 w-[110px]">
+                              <PatentStatusBadge status={doc.status} size="sm" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(STATUS_CONFIG).map(([key, config]) => <SelectItem key={key} value={key}>
+                                  {config.label}
+                                </SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          {doc.endDate ? format(new Date(doc.endDate), 'dd/MM/yyyy', {
+                        locale: es
+                      }) : '-'}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {doc.daysRemaining !== undefined ? <span className={doc.daysRemaining < 0 ? 'text-red-700 font-bold' : doc.daysRemaining <= 7 ? 'text-orange-600 font-medium' : 'text-yellow-600'}>
+                              {doc.daysRemaining < 0 ? `${Math.abs(doc.daysRemaining)} atraso` : doc.daysRemaining}
+                            </span> : '-'}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <User className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-sm">{doc.responsible || '-'}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="sm" onClick={() => onNavigateToDocument(doc.contractId, doc.itemId)}>
+                            <ExternalLink className="h-3 w-3 mr-1" />
+                            Ver
+                          </Button>
+                        </TableCell>
+                      </TableRow>)}
+                    {criticalDocuments.length === 0 && <TableRow>
+                        <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                          No hay documentos críticos en este momento
+                        </TableCell>
+                      </TableRow>}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
       </Card>
 
       {/* Legend */}
