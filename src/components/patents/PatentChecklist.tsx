@@ -457,9 +457,9 @@ export function PatentChecklist({
           className="gap-1"
         >
           {allItemsSelected ? (
-            <><CheckSquare className="h-4 w-4" /> Deseleccionar todos</>
+            <><CheckSquare className="h-4 w-4" /> Deseleccionar todos los documentos</>
           ) : (
-            <><Square className="h-4 w-4" /> Seleccionar todos</>
+            <><Square className="h-4 w-4" /> Seleccionar todos los documentos</>
           )}
         </Button>
         <Button
