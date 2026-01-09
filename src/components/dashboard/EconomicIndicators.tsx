@@ -113,92 +113,92 @@ export const EconomicIndicators = () => {
     <div className="grid gap-4 md:grid-cols-2">
       {/* UF Card */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 py-2 px-4">
           <CardTitle className="text-sm font-medium">Valor UF</CardTitle>
-          <Calendar className="h-2 w-4 text-muted-foreground" />
+          <Calendar className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold text-primary mb-4">
-            {data?.uf.current ? formatCurrency(data.uf.current) : "-"}
+        <CardContent className="pt-0 px-4 pb-3">
+          <div className="flex items-baseline gap-3 mb-2">
+            <span className="text-xl font-bold text-primary">
+              {data?.uf.current ? formatCurrency(data.uf.current) : "-"}
+            </span>
+            <span className="text-xs text-muted-foreground">Últimos 10 días</span>
           </div>
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground font-medium">Últimos 10 días</p>
-            <div className="grid grid-cols-5 gap-1">
-              {data?.uf.next10Days.slice(0, 10).map((item, idx) => (
-                <div key={idx} className="text-center p-1 bg-muted/50 rounded text-xs">
-                  <div className="text-muted-foreground">{formatDate(item.date)}</div>
-                  <div className="font-medium">{item.value.toLocaleString("es-CL", { maximumFractionDigits: 0 })}</div>
-                </div>
-              ))}
-            </div>
+          <div className="grid grid-cols-5 gap-1">
+            {data?.uf.next10Days.slice(0, 10).map((item, idx) => (
+              <div key={idx} className="text-center py-1 px-0.5 bg-muted/50 rounded text-xs">
+                <div className="text-muted-foreground text-[10px]">{formatDate(item.date)}</div>
+                <div className="font-medium text-[11px]">{item.value.toLocaleString("es-CL", { maximumFractionDigits: 0 })}</div>
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>
 
       {/* Dollar Card */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Valor Dólar</CardTitle>
-          <DollarSign className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold text-green-600 mb-4">
-            {data?.dollar.current ? formatCurrency(data.dollar.current) : "-"}
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 py-2 px-4">
+          <div className="flex items-center gap-3">
+            <CardTitle className="text-sm font-medium">Valor Dólar</CardTitle>
+            <span className="text-xl font-bold text-green-600">
+              {data?.dollar.current ? formatCurrency(data.dollar.current) : "-"}
+            </span>
           </div>
-          <Tabs value={dollarPeriod} onValueChange={(v) => setDollarPeriod(v as "6m" | "1y")}>
-            <TabsList className="h-8 mb-2">
-              <TabsTrigger value="6m" className="text-xs">
-                6 meses
-              </TabsTrigger>
-              <TabsTrigger value="1y" className="text-xs">
-                1 año
-              </TabsTrigger>
-            </TabsList>
-            <div className="h-28 mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={sampleData(dollarChartData, 30)} key={dollarPeriod}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fontSize: 10 }}
-                    tickFormatter={formatDate}
-                    interval="preserveStartEnd"
-                  />
-                  <YAxis
-                    tick={{ fontSize: 10 }}
-                    domain={["dataMin - 10", "dataMax + 10"]}
-                    tickFormatter={(v) => `$${Math.round(v)}`}
-                    width={50}
-                  />
-                  <Tooltip
-                    formatter={(value: number) => [formatCurrency(value), "Dólar"]}
-                    labelFormatter={formatDate}
-                  />
-                  <Line type="monotone" dataKey="value" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-            {dollarStats && (
-              <div className="grid grid-cols-4 gap-2 mt-3 pt-3 border-t">
-                <div className="text-center">
-                  <p className="text-xs text-muted-foreground">Máximo</p>
-                  <p className="text-sm font-semibold text-red-600">{formatCurrency(dollarStats.max)}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs text-muted-foreground">Mínimo</p>
-                  <p className="text-sm font-semibold text-green-600">{formatCurrency(dollarStats.min)}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs text-muted-foreground">Mediana</p>
-                  <p className="text-sm font-semibold">{formatCurrency(dollarStats.median)}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs text-muted-foreground">Promedio</p>
-                  <p className="text-sm font-semibold">{formatCurrency(dollarStats.avg)}</p>
-                </div>
+          <div className="flex items-center gap-2">
+            <Tabs value={dollarPeriod} onValueChange={(v) => setDollarPeriod(v as "6m" | "1y")}>
+              <TabsList className="h-7">
+                <TabsTrigger value="6m" className="text-xs px-2 py-1">6 meses</TabsTrigger>
+                <TabsTrigger value="1y" className="text-xs px-2 py-1">1 año</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0 px-4 pb-3">
+          <div className="h-20">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={sampleData(dollarChartData, 30)} key={dollarPeriod}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 9 }}
+                  tickFormatter={formatDate}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tick={{ fontSize: 9 }}
+                  domain={["dataMin - 10", "dataMax + 10"]}
+                  tickFormatter={(v) => `$${Math.round(v)}`}
+                  width={40}
+                />
+                <Tooltip
+                  formatter={(value: number) => [formatCurrency(value), "Dólar"]}
+                  labelFormatter={formatDate}
+                />
+                <Line type="monotone" dataKey="value" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          {dollarStats && (
+            <div className="grid grid-cols-4 gap-2 mt-2 pt-2 border-t">
+              <div className="text-center">
+                <p className="text-[10px] text-muted-foreground">Máximo</p>
+                <p className="text-xs font-semibold text-red-600">{formatCurrency(dollarStats.max)}</p>
               </div>
-            )}
-          </Tabs>
+              <div className="text-center">
+                <p className="text-[10px] text-muted-foreground">Mínimo</p>
+                <p className="text-xs font-semibold text-green-600">{formatCurrency(dollarStats.min)}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] text-muted-foreground">Mediana</p>
+                <p className="text-xs font-semibold">{formatCurrency(dollarStats.median)}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] text-muted-foreground">Promedio</p>
+                <p className="text-xs font-semibold">{formatCurrency(dollarStats.avg)}</p>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
