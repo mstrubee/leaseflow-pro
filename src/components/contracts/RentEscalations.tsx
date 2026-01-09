@@ -627,18 +627,6 @@ export const RentEscalations = ({
         </div>
       )}
 
-      {/* Summary */}
-      <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
-        <div>
-          <p className="text-sm text-muted-foreground">Canon Inicial</p>
-          <p className="text-lg font-semibold">{formatCurrency(initialRent || regimeRent)}</p>
-        </div>
-        <div>
-          <p className="text-sm text-muted-foreground">Canon en Régimen</p>
-          <p className="text-lg font-semibold">{formatCurrency(regimeRent)}</p>
-        </div>
-      </div>
-
       {/* Edit dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent>
