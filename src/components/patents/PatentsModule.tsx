@@ -104,17 +104,17 @@ export function PatentsModule() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-4 lg:grid-cols-7">
+      <div className="grid gap-2 md:grid-cols-4 lg:grid-cols-7">
         <Card 
           className={`cursor-pointer hover:shadow-md transition-shadow ${cardFilter === 'all' ? 'ring-2 ring-primary' : ''}`}
           onClick={() => handleCardFilterClick('all')}
         >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Locales</CardTitle>
+          <CardContent className="p-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground">Total Locales</p>
+              <p className="text-xl font-bold">{contracts.length}</p>
+            </div>
             <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{contracts.length}</div>
           </CardContent>
         </Card>
 
@@ -122,14 +122,14 @@ export function PatentsModule() {
           className={`cursor-pointer hover:shadow-md transition-shadow border-green-200 bg-green-50 dark:bg-green-950/20 ${cardFilter === 'definitiva' ? 'ring-2 ring-green-500' : ''}`}
           onClick={() => handleCardFilterClick('definitiva')}
         >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-green-700 dark:text-green-400">Patentes Definitivas</CardTitle>
-            <CheckCircle className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-700 dark:text-green-400">
-              {contracts.filter(c => c.patente_status === 'definitiva').length}
+          <CardContent className="p-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-green-700 dark:text-green-400">Patentes Definitivas</p>
+              <p className="text-xl font-bold text-green-700 dark:text-green-400">
+                {contracts.filter(c => c.patente_status === 'definitiva').length}
+              </p>
             </div>
+            <CheckCircle className="h-4 w-4 text-green-600" />
           </CardContent>
         </Card>
 
@@ -137,14 +137,14 @@ export function PatentsModule() {
           className={`cursor-pointer hover:shadow-md transition-shadow border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20 ${cardFilter === 'provisoria' ? 'ring-2 ring-yellow-500' : ''}`}
           onClick={() => handleCardFilterClick('provisoria')}
         >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-yellow-700 dark:text-yellow-400">Patentes Provisorias</CardTitle>
-            <FileText className="h-4 w-4 text-yellow-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-yellow-700 dark:text-yellow-400">
-              {contracts.filter(c => c.patente_status === 'provisoria').length}
+          <CardContent className="p-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-yellow-700 dark:text-yellow-400">Patentes Provisorias</p>
+              <p className="text-xl font-bold text-yellow-700 dark:text-yellow-400">
+                {contracts.filter(c => c.patente_status === 'provisoria').length}
+              </p>
             </div>
+            <FileText className="h-4 w-4 text-yellow-600" />
           </CardContent>
         </Card>
 
@@ -152,14 +152,14 @@ export function PatentsModule() {
           className={`cursor-pointer hover:shadow-md transition-shadow border-gray-200 bg-gray-50 dark:bg-gray-950/20 ${cardFilter === 'sin_patente' ? 'ring-2 ring-gray-500' : ''}`}
           onClick={() => handleCardFilterClick('sin_patente')}
         >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-700 dark:text-gray-400">Sin Patente</CardTitle>
-            <FileText className="h-4 w-4 text-gray-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-gray-700 dark:text-gray-400">
-              {contracts.filter(c => !c.patente_status || c.patente_status === 'sin_patente').length}
+          <CardContent className="p-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-gray-700 dark:text-gray-400">Sin Patente</p>
+              <p className="text-xl font-bold text-gray-700 dark:text-gray-400">
+                {contracts.filter(c => !c.patente_status || c.patente_status === 'sin_patente').length}
+              </p>
             </div>
+            <FileText className="h-4 w-4 text-gray-500" />
           </CardContent>
         </Card>
 
@@ -167,15 +167,13 @@ export function PatentsModule() {
           className={`cursor-pointer hover:shadow-md transition-shadow border-red-200 bg-red-50 dark:bg-red-950/20 ${cardFilter === 'critical' ? 'ring-2 ring-red-500' : ''}`}
           onClick={() => handleCardFilterClick('critical')}
         >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3">
+          <CardContent className="p-3 flex items-center justify-between">
             <div>
               <p className="text-[10px] text-red-500 dark:text-red-400 uppercase tracking-wide">Documentación</p>
-              <CardTitle className="text-sm font-medium text-red-700 dark:text-red-400">Críticos</CardTitle>
+              <p className="text-xs font-medium text-red-700 dark:text-red-400">Críticos</p>
+              <p className="text-xl font-bold text-red-700 dark:text-red-400">{stats.criticalContracts}</p>
             </div>
             <AlertTriangle className="h-4 w-4 text-red-600" />
-          </CardHeader>
-          <CardContent className="pb-3 pt-1">
-            <div className="text-xl font-bold text-red-700 dark:text-red-400">{stats.criticalContracts}</div>
           </CardContent>
         </Card>
 
@@ -183,15 +181,13 @@ export function PatentsModule() {
           className={`cursor-pointer hover:shadow-md transition-shadow ${cardFilter === 'pending' ? 'ring-2 ring-yellow-500' : ''}`}
           onClick={() => handleCardFilterClick('pending')}
         >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3">
+          <CardContent className="p-3 flex items-center justify-between">
             <div>
               <p className="text-[10px] text-yellow-600 uppercase tracking-wide">Documentación</p>
-              <CardTitle className="text-sm font-medium">Docs Pendientes</CardTitle>
+              <p className="text-xs font-medium">Docs Pendientes</p>
+              <p className="text-xl font-bold text-yellow-600">{stats.pendingCount}</p>
             </div>
             <FileText className="h-4 w-4 text-yellow-600" />
-          </CardHeader>
-          <CardContent className="pb-3 pt-1">
-            <div className="text-xl font-bold text-yellow-600">{stats.pendingCount}</div>
           </CardContent>
         </Card>
 
@@ -199,15 +195,13 @@ export function PatentsModule() {
           className={`cursor-pointer hover:shadow-md transition-shadow border-red-200 bg-red-50 dark:bg-red-950/20 ${cardFilter === 'overdue' ? 'ring-2 ring-red-500' : ''}`}
           onClick={() => handleCardFilterClick('overdue')}
         >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3">
+          <CardContent className="p-3 flex items-center justify-between">
             <div>
               <p className="text-[10px] text-red-500 dark:text-red-400 uppercase tracking-wide">Documentación</p>
-              <CardTitle className="text-sm font-medium text-red-700 dark:text-red-400">Vencidos</CardTitle>
+              <p className="text-xs font-medium text-red-700 dark:text-red-400">Vencidos</p>
+              <p className="text-xl font-bold text-red-700 dark:text-red-400">{stats.overdueCount}</p>
             </div>
             <AlertTriangle className="h-4 w-4 text-red-600" />
-          </CardHeader>
-          <CardContent className="pb-3 pt-1">
-            <div className="text-xl font-bold text-red-700 dark:text-red-400">{stats.overdueCount}</div>
           </CardContent>
         </Card>
       </div>
