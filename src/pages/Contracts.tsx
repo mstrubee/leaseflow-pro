@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -105,9 +105,15 @@ type SortDirection = "asc" | "desc";
 
 const Contracts = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = searchParams.get("status") || "todos";
   const { user, loading: authLoading, roleLoaded } = useAuth();
+
+  useEffect(() => {
+    // Remember last contracts list URL so the detail "Volver" can restore filters even after refresh
+    sessionStorage.setItem("contracts:lastListUrl", `${location.pathname}${location.search}`);
+  }, [location.pathname, location.search]);
 
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [filteredContracts, setFilteredContracts] = useState<Contract[]>([]);
