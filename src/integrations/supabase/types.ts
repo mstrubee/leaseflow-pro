@@ -2734,6 +2734,7 @@ export type Database = {
           issuer_name: string | null
           notice_date: string
           notice_type: string
+          required_exit_date: string | null
           storage_provider: string | null
         }
         Insert: {
@@ -2746,6 +2747,7 @@ export type Database = {
           issuer_name?: string | null
           notice_date: string
           notice_type: string
+          required_exit_date?: string | null
           storage_provider?: string | null
         }
         Update: {
@@ -2758,6 +2760,7 @@ export type Database = {
           issuer_name?: string | null
           notice_date?: string
           notice_type?: string
+          required_exit_date?: string | null
           storage_provider?: string | null
         }
         Relationships: [

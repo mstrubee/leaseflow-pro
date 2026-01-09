@@ -81,6 +81,7 @@ interface TerminationNotice {
   id: string;
   notice_type: string;
   notice_date: string;
+  required_exit_date: string | null;
   document_url: string | null;
 }
 
@@ -270,7 +271,7 @@ const Contracts = () => {
           notice_ranges:notice_ranges(start_month, end_month),
           rent_escalations:rent_escalations(id, month_number, amount)
         ),
-        termination_notices (id, notice_type, notice_date, document_url)
+        termination_notices (id, notice_type, notice_date, required_exit_date, document_url)
       `)
       .is("deleted_at", null)
       .order("created_at", { ascending: false });

@@ -27,13 +27,23 @@ interface RegionStats {
   vencidos: number;
 }
 
+interface TerminationAlert {
+  id: string;
+  name: string;
+  required_exit_date: string;
+  notice_type: string;
+  issuer_name: string | null;
+}
+
 interface Stats {
   totalContracts: number;
   totalVigentes: number;
   totalNegociacion: number;
   totalVencidos: number;
   totalAtencionEspecial: number;
+  totalTerminationNotices: number;
   byRegion: RegionStats[];
+  terminationAlerts: TerminationAlert[];
 }
 
 export const DashboardStats = () => {
@@ -45,7 +55,9 @@ export const DashboardStats = () => {
     totalNegociacion: 0,
     totalVencidos: 0,
     totalAtencionEspecial: 0,
+    totalTerminationNotices: 0,
     byRegion: [],
+    terminationAlerts: [],
   });
   const [statsLoading, setStatsLoading] = useState(true);
 
@@ -55,13 +67,16 @@ export const DashboardStats = () => {
 
   const loadStats = async () => {
     try {
+      // Load contracts for stats
       const { data: contracts } = await supabase
         .from("contracts")
         .select(`
           id,
+          name,
           status,
           requires_special_attention,
-          contract_addresses (region)
+          contract_addresses (region),
+          termination_notices (id, notice_type, required_exit_date, issuer_name)
         `)
         .is("deleted_at", null);
 
@@ -70,6 +85,7 @@ export const DashboardStats = () => {
       let totalNegociacion = 0;
       let totalVencidos = 0;
       let totalAtencionEspecial = 0;
+      const terminationAlerts: TerminationAlert[] = [];
 
       contracts?.forEach((contract: any) => {
         const region = contract.contract_addresses?.[0]?.region || "Sin región";
@@ -85,6 +101,19 @@ export const DashboardStats = () => {
         }
 
         regionMap[region].total++;
+
+        // Check for termination notices with exit dates
+        const notices = contract.termination_notices || [];
+        const noticesWithExitDate = notices.filter((n: any) => n.required_exit_date);
+        noticesWithExitDate.forEach((notice: any) => {
+          terminationAlerts.push({
+            id: contract.id,
+            name: contract.name,
+            required_exit_date: notice.required_exit_date,
+            notice_type: notice.notice_type,
+            issuer_name: notice.issuer_name,
+          });
+        });
 
         switch (contract.status) {
           case "firmado":
@@ -109,13 +138,20 @@ export const DashboardStats = () => {
         a.region.localeCompare(b.region)
       );
 
+      // Sort termination alerts by date
+      terminationAlerts.sort((a, b) => 
+        new Date(a.required_exit_date).getTime() - new Date(b.required_exit_date).getTime()
+      );
+
       setStats({
         totalContracts: contracts?.length || 0,
         totalVigentes,
         totalNegociacion,
         totalVencidos,
         totalAtencionEspecial,
+        totalTerminationNotices: terminationAlerts.length,
         byRegion,
+        terminationAlerts,
       });
     } finally {
       setStatsLoading(false);
@@ -191,6 +227,20 @@ export const DashboardStats = () => {
                       <AlertTriangle className="h-3 w-3 text-orange-500" />
                       <span className="text-[10px] font-medium text-orange-600">
                         Atención Especial: {stats.totalAtencionEspecial}
+                      </span>
+                    </div>
+                  )}
+                  {stats.totalTerminationNotices > 0 && (
+                    <div 
+                      className="mt-1 cursor-pointer hover:bg-amber-100/50 rounded transition-colors inline-flex items-center gap-1"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate("/alerts");
+                      }}
+                    >
+                      <Clock className="h-3 w-3 text-amber-600" />
+                      <span className="text-[10px] font-medium text-amber-600">
+                        Con aviso de término: {stats.totalTerminationNotices}
                       </span>
                     </div>
                   )}
