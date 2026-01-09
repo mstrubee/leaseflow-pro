@@ -4,7 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Bell, BellRing, Clock, CheckCircle, AlertTriangle, Plus, RefreshCw, Archive } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { ArrowLeft, Bell, BellRing, Clock, CheckCircle, AlertTriangle, Plus, RefreshCw, Archive, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { AlertForm } from "@/components/alerts/AlertForm";
@@ -14,6 +16,16 @@ import { UpcomingAlertsPanel } from "@/components/alerts/UpcomingAlertsPanel";
 import { useToast } from "@/hooks/use-toast";
 import { format, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface AlertStats {
   total: number;
@@ -54,6 +66,11 @@ export default function AlertsDashboard() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  
+  // History bulk delete state
+  const [selectedHistory, setSelectedHistory] = useState<Set<string>>(new Set());
+  const [showBulkDeleteHistoryDialog, setShowBulkDeleteHistoryDialog] = useState(false);
+  const [bulkDeleteHistoryConfirmation, setBulkDeleteHistoryConfirmation] = useState("");
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -121,6 +138,7 @@ export default function AlertsDashboard() {
 
       if (error) throw error;
       setHistory(data || []);
+      setSelectedHistory(new Set());
     } catch (error) {
       console.error("Error loading history:", error);
     } finally {
@@ -151,6 +169,52 @@ export default function AlertsDashboard() {
       });
     } finally {
       setProcessing(false);
+    }
+  };
+
+  const toggleSelectHistoryItem = (id: string) => {
+    setSelectedHistory(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleSelectAllHistory = () => {
+    if (selectedHistory.size === history.length) {
+      setSelectedHistory(new Set());
+    } else {
+      setSelectedHistory(new Set(history.map(h => h.id)));
+    }
+  };
+
+  const handleBulkDeleteHistory = async () => {
+    if (bulkDeleteHistoryConfirmation !== "ELIMINAR" || selectedHistory.size === 0) return;
+
+    try {
+      const { error } = await supabase
+        .from("alert_history")
+        .delete()
+        .in("id", Array.from(selectedHistory));
+
+      if (error) throw error;
+
+      setHistory(prev => prev.filter(h => !selectedHistory.has(h.id)));
+      toast({ title: `${selectedHistory.size} registros de historial eliminados` });
+      setSelectedHistory(new Set());
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setShowBulkDeleteHistoryDialog(false);
+      setBulkDeleteHistoryConfirmation("");
     }
   };
 
@@ -287,7 +351,12 @@ export default function AlertsDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <FinalizedAlertsList key={`finalized-${refreshKey}`} showAll defaultOpen={true} />
+                <FinalizedAlertsList 
+                  key={`finalized-${refreshKey}`} 
+                  showAll 
+                  defaultOpen={true} 
+                  onRefresh={() => setRefreshKey((k) => k + 1)}
+                />
               </CardContent>
             </Card>
           </TabsContent>
@@ -305,47 +374,107 @@ export default function AlertsDashboard() {
                     No hay alertas enviadas aún
                   </p>
                 ) : (
-                  <div className="space-y-3">
-                    {history.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
-                      >
-                        <div className="space-y-1">
-                          <p className="font-medium">{item.alerts?.title || "Alerta eliminada"}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {item.alerts?.contracts?.name}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {item.recipient_email}
-                          </p>
-                        </div>
-                        <div className="text-right space-y-1">
-                          <Badge
-                            variant={item.status === "sent" ? "default" : "destructive"}
-                          >
-                            {item.status === "sent" ? "Enviado" : "Fallido"}
-                          </Badge>
-                          <p className="text-xs text-muted-foreground">
-                            {format(new Date(item.sent_at), "dd/MM/yyyy HH:mm", { locale: es })}
-                          </p>
-                          {item.days_before_due !== null && (
-                            <p className="text-xs text-muted-foreground">
-                              {item.days_before_due === 0
-                                ? "El mismo día"
-                                : `${item.days_before_due} días antes`}
-                            </p>
-                          )}
-                        </div>
+                  <>
+                    {/* Bulk Actions Bar */}
+                    <div className="flex items-center justify-between mb-4 p-3 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <Checkbox
+                          checked={selectedHistory.size === history.length && history.length > 0}
+                          onCheckedChange={toggleSelectAllHistory}
+                        />
+                        <span className="text-sm text-muted-foreground">
+                          {selectedHistory.size > 0 
+                            ? `${selectedHistory.size} seleccionados` 
+                            : "Seleccionar todos"}
+                        </span>
                       </div>
-                    ))}
-                  </div>
+                      {selectedHistory.size > 0 && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => setShowBulkDeleteHistoryDialog(true)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Eliminar seleccionados ({selectedHistory.size})
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="space-y-3">
+                      {history.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Checkbox
+                              checked={selectedHistory.has(item.id)}
+                              onCheckedChange={() => toggleSelectHistoryItem(item.id)}
+                            />
+                            <div className="space-y-1">
+                              <p className="font-medium">{item.alerts?.title || "Alerta eliminada"}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {item.alerts?.contracts?.name}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {item.recipient_email}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right space-y-1">
+                            <Badge
+                              variant={item.status === "sent" ? "default" : "destructive"}
+                            >
+                              {item.status === "sent" ? "Enviado" : "Fallido"}
+                            </Badge>
+                            <p className="text-xs text-muted-foreground">
+                              {format(new Date(item.sent_at), "dd/MM/yyyy HH:mm", { locale: es })}
+                            </p>
+                            {item.days_before_due !== null && (
+                              <p className="text-xs text-muted-foreground">
+                                {item.days_before_due === 0
+                                  ? "El mismo día"
+                                  : `${item.days_before_due} días antes`}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* Bulk Delete History Dialog */}
+      <AlertDialog open={showBulkDeleteHistoryDialog} onOpenChange={() => { setShowBulkDeleteHistoryDialog(false); setBulkDeleteHistoryConfirmation(""); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar {selectedHistory.size} registros del historial?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-4">
+              <p>Esta acción eliminará permanentemente los registros seleccionados del historial de envíos. Para confirmar, escribe <strong>ELIMINAR</strong> en el campo de abajo.</p>
+              <Input
+                value={bulkDeleteHistoryConfirmation}
+                onChange={(e) => setBulkDeleteHistoryConfirmation(e.target.value)}
+                placeholder="Escribe ELIMINAR para confirmar"
+              />
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleBulkDeleteHistory} 
+              className="bg-destructive text-destructive-foreground"
+              disabled={bulkDeleteHistoryConfirmation !== "ELIMINAR"}
+            >
+              Eliminar {selectedHistory.size} registros
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
