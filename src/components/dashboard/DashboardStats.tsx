@@ -211,7 +211,7 @@ export const DashboardStats = () => {
               className="border-green-500/20 bg-green-500/5 cursor-pointer hover:shadow-lg transition-shadow"
               onClick={() => handleCardClick("firmado")}
             >
-              <CardContent className="flex items-center justify-between py-3 px-4">
+              <CardContent className="flex items-center justify-between py-3 px-4 relative">
                 <div className="flex-1">
                   <p className="text-xs text-muted-foreground font-medium text-green-600">Vigentes</p>
                   <div className="text-2xl font-bold text-green-600">{stats.totalVigentes}</div>
@@ -232,14 +232,14 @@ export const DashboardStats = () => {
                   )}
                   {stats.totalTerminationNotices > 0 && (
                     <div 
-                      className="mt-1 cursor-pointer hover:bg-amber-100/50 rounded transition-colors inline-flex items-center gap-1"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer hover:bg-red-100/50 rounded transition-colors inline-flex items-center gap-1 border-2 border-red-500 px-2 py-1 bg-red-50"
                       onClick={(e) => {
                         e.stopPropagation();
                         navigate("/alerts");
                       }}
                     >
-                      <Clock className="h-3 w-3 text-amber-600" />
-                      <span className="text-[10px] font-medium text-amber-600">
+                      <Clock className="h-3 w-3 text-red-600" />
+                      <span className="text-[10px] font-medium text-red-600">
                         Con aviso de término: {stats.totalTerminationNotices}
                       </span>
                     </div>
