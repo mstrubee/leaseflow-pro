@@ -656,6 +656,7 @@ const Contracts = () => {
   }
 
   const isFirmadoView = statusFilter === "firmado";
+  const showAdvancedFilters = statusFilter === "firmado" || statusFilter === "todos";
 
   return (
     <div className="min-h-screen bg-background">
@@ -735,7 +736,7 @@ const Contracts = () => {
             )}
           </div>
 
-          {isFirmadoView && (
+          {showAdvancedFilters && (
             <>
               <div className="flex flex-wrap items-end gap-3">
                 {/* Operation Filter */}
