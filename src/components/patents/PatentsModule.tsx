@@ -3,9 +3,11 @@ import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, AlertTriangle, Settings, CheckCircle } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { FileText, AlertTriangle, Settings, CheckCircle, ChevronDown } from "lucide-react";
 import { usePatents } from "@/hooks/usePatents";
 import { useAuth } from "@/hooks/useAuth";
+import { useSingleCollapsible } from "@/hooks/useCollapsibleState";
 import { PatentsList } from "./PatentsList";
 import { PatentChecklist } from "./PatentChecklist";
 import { CriticalAlertsDashboard } from "./CriticalAlertsDashboard";
@@ -38,12 +40,15 @@ export function PatentsModule() {
   const [activeTab, setActiveTab] = useState<'list' | 'alerts'>('list');
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
   const [cardFilter, setCardFilter] = useState<string | null>(null);
+  const { isOpen: isListOpen, setIsOpen: setIsListOpen } = useSingleCollapsible('patents-list-collapsed', false);
   const stats = getCriticalStats();
   const selectedContract = contracts.find(c => c.id === selectedContractId);
 
   const handleCardFilterClick = (filter: string) => {
     setCardFilter(prev => prev === filter ? null : filter);
     setActiveTab('list');
+    // Expand the list section when clicking a card
+    setIsListOpen(true);
   };
 
   // Handle contractId from URL params
@@ -206,26 +211,42 @@ export function PatentsModule() {
         </Card>
       </div>
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={v => setActiveTab(v as 'list' | 'alerts')}>
-        <TabsList>
-          <TabsTrigger value="list" className="gap-2">
-            <FileText className="h-4 w-4" />
-            Listado de Locales
-          </TabsTrigger>
-          <TabsTrigger value="alerts" className="gap-2">
-            <AlertTriangle className="h-4 w-4" />
-            Alertas Críticas
-          </TabsTrigger>
-        </TabsList>
+      {/* Collapsible List Section */}
+      <Collapsible open={isListOpen} onOpenChange={setIsListOpen}>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between py-3">
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" className="flex items-center gap-2 p-0 h-auto hover:bg-transparent">
+                <ChevronDown className={`h-5 w-5 transition-transform duration-200 ${isListOpen ? '' : '-rotate-90'}`} />
+                <CardTitle className="text-lg">Listado de Locales</CardTitle>
+              </Button>
+            </CollapsibleTrigger>
+          </CardHeader>
+          <CollapsibleContent>
+            <CardContent className="pt-0">
+              <Tabs value={activeTab} onValueChange={v => setActiveTab(v as 'list' | 'alerts')}>
+                <TabsList>
+                  <TabsTrigger value="list" className="gap-2">
+                    <FileText className="h-4 w-4" />
+                    Locales
+                  </TabsTrigger>
+                  <TabsTrigger value="alerts" className="gap-2">
+                    <AlertTriangle className="h-4 w-4" />
+                    Alertas Críticas
+                  </TabsTrigger>
+                </TabsList>
 
-        <TabsContent value="list" className="mt-4">
-          <PatentsList contracts={contracts} onSelectContract={setSelectedContractId} cardFilter={cardFilter} onClearFilter={() => setCardFilter(null)} />
-        </TabsContent>
+                <TabsContent value="list" className="mt-4">
+                  <PatentsList contracts={contracts} onSelectContract={setSelectedContractId} cardFilter={cardFilter} onClearFilter={() => setCardFilter(null)} />
+                </TabsContent>
 
-        <TabsContent value="alerts" className="mt-4">
-          <CriticalAlertsDashboard contracts={contracts} items={items} sections={sections} onNavigateToDocument={handleNavigateToDocument} onStatusChange={handleStatusChangeFromAlerts} />
-        </TabsContent>
-      </Tabs>
+                <TabsContent value="alerts" className="mt-4">
+                  <CriticalAlertsDashboard contracts={contracts} items={items} sections={sections} onNavigateToDocument={handleNavigateToDocument} onStatusChange={handleStatusChangeFromAlerts} />
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
     </div>;
 }
