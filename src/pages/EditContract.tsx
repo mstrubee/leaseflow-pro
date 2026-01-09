@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Loader2, Plus, X, RotateCcw, ChevronsUpDown } from "lucide-react";
+import { RegionCommuneSelect } from "@/components/contracts/RegionCommuneSelect";
 import { RentEscalations, Escalation } from "@/components/contracts/RentEscalations";
 import { CurrencyInput } from "@/components/contracts/CurrencyInput";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
@@ -798,22 +799,14 @@ const EditContract = () => {
                     onChange={(e) => { setNumber(e.target.value); setHasUnsavedChanges(true); }}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="commune">Comuna *</Label>
-                  <Input
-                    id="commune"
-                    value={commune}
-                    onChange={(e) => { setCommune(e.target.value); setHasUnsavedChanges(true); }}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="region">Región *</Label>
-                  <Input
-                    id="region"
-                    value={region}
-                    onChange={(e) => { setRegion(e.target.value); setHasUnsavedChanges(true); }}
-                  />
-                </div>
+                <RegionCommuneSelect
+                  region={region}
+                  commune={commune}
+                  onRegionChange={(val) => { setRegion(val); setHasUnsavedChanges(true); }}
+                  onCommuneChange={(val) => { setCommune(val); setHasUnsavedChanges(true); }}
+                  regionRequired
+                  communeRequired
+                />
                 <div className="space-y-2">
                   <Label htmlFor="rolSii">ROL SII</Label>
                   <Input
