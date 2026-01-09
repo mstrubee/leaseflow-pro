@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useCollapsibleState } from "@/hooks/useCollapsibleState";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -79,7 +80,7 @@ export const CategoryManager = () => {
   const [newName, setNewName] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [addingParentId, setAddingParentId] = useState<string | null>(null);
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const { expandedIds, setExpandedIds, toggle: toggleExpand, expandAll, collapseAll, expand } = useCollapsibleState("category-manager-expanded");
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -126,7 +127,7 @@ export const CategoryManager = () => {
       const cats = data || [];
       setFlatCategories(cats);
       setCategories(buildTree(cats));
-      setExpandedIds(new Set(cats.map(c => c.id)));
+      // Don't override expandedIds - let the hook manage persistence
     } catch (error) {
       console.error("Error loading categories:", error);
     } finally {
@@ -275,20 +276,12 @@ export const CategoryManager = () => {
     }
   };
 
-  const toggleExpand = (id: string) => {
-    setExpandedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
 
   const startAddingSubCategory = (parentId: string) => {
     setAddingParentId(parentId);
     setIsAdding(true);
     setNewName("");
-    setExpandedIds(prev => new Set([...prev, parentId]));
+    expand(parentId);
   };
 
   // Get all descendants of a category
@@ -388,7 +381,7 @@ export const CategoryManager = () => {
       );
       setFlatCategories(updatedFlat);
       setCategories(buildTree(updatedFlat));
-      setExpandedIds(prev => new Set([...prev, targetId]));
+      expand(targetId);
 
       try {
         const { error } = await supabase
@@ -575,7 +568,7 @@ export const CategoryManager = () => {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => setExpandedIds(new Set(flatCategories.map(c => c.id)))}
+            onClick={() => expandAll(flatCategories.map(c => c.id))}
           >
             <ChevronsUpDown className="h-4 w-4 mr-1" />
             Expandir
@@ -583,7 +576,7 @@ export const CategoryManager = () => {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => setExpandedIds(new Set())}
+            onClick={collapseAll}
           >
             <ChevronsDownUp className="h-4 w-4 mr-1" />
             Colapsar

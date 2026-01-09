@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useSingleCollapsible } from "@/hooks/useCollapsibleState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -42,7 +43,7 @@ export function CriticalAlertsDashboard({
   onStatusChange,
   overdueThreshold = 30
 }: CriticalAlertsDashboardProps) {
-  const [isTableOpen, setIsTableOpen] = useState(true);
+  const { isOpen: isTableOpen, setIsOpen: setIsTableOpen } = useSingleCollapsible("patents-critical-alerts", false);
   const today = new Date();
 
   // Calculate KPIs and critical documents
