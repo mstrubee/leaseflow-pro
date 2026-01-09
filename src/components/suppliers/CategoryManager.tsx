@@ -576,17 +576,17 @@ export const CategoryManager = () => {
             size="sm"
             variant="ghost"
             onClick={() => setExpandedIds(new Set(flatCategories.map(c => c.id)))}
-            title="Expandir todo"
           >
-            <ChevronsUpDown className="h-4 w-4" />
+            <ChevronsUpDown className="h-4 w-4 mr-1" />
+            Expandir
           </Button>
           <Button
             size="sm"
             variant="ghost"
             onClick={() => setExpandedIds(new Set())}
-            title="Colapsar todo"
           >
-            <ChevronsDownUp className="h-4 w-4" />
+            <ChevronsDownUp className="h-4 w-4 mr-1" />
+            Colapsar
           </Button>
           {!isAdding && (
             <Button size="sm" variant="outline" onClick={() => { setIsAdding(true); setAddingParentId(null); }}>
