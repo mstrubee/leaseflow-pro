@@ -12,6 +12,7 @@ import { ArrowLeft, Loader2, Plus, X, RotateCcw, ChevronsUpDown } from "lucide-r
 import { RegionCommuneSelect } from "@/components/contracts/RegionCommuneSelect";
 import { RentEscalations, Escalation } from "@/components/contracts/RentEscalations";
 import { CurrencyInput } from "@/components/contracts/CurrencyInput";
+import { DurationInput } from "@/components/contracts/DurationInput";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useEditContractSections, EditSectionKey } from "@/hooks/useEditContractSections";
 import { CompanySelect } from "@/components/contracts/CompanySelect";
@@ -1580,35 +1581,27 @@ const EditContract = () => {
                                       />
                                     </div>
 
-                                    <div className="space-y-2">
-                                      <Label htmlFor="firstAdjustmentMonth">Mes del primer reajuste</Label>
-                                      <Input
-                                        id="firstAdjustmentMonth"
-                                        type="number"
-                                        min="1"
-                                        placeholder="Ej: 60"
-                                        value={firstAdjustmentMonth}
-                                        onChange={(e) => {
-                                          setFirstAdjustmentMonth(e.target.value);
-                                          setHasUnsavedChanges(true);
-                                        }}
-                                      />
-                                    </div>
+                                    <DurationInput
+                                      id="firstAdjustmentMonth"
+                                      label="Mes del primer reajuste"
+                                      value={firstAdjustmentMonth}
+                                      onChange={(val) => {
+                                        setFirstAdjustmentMonth(val);
+                                        setHasUnsavedChanges(true);
+                                      }}
+                                      showEquivalent={true}
+                                    />
                                     
-                                    <div className="space-y-2">
-                                      <Label htmlFor="adjustmentPeriodicityMonths">Periodicidad (meses)</Label>
-                                      <Input
-                                        id="adjustmentPeriodicityMonths"
-                                        type="number"
-                                        min="1"
-                                        placeholder="Ej: 60"
-                                        value={adjustmentPeriodicityMonths}
-                                        onChange={(e) => {
-                                          setAdjustmentPeriodicityMonths(e.target.value);
-                                          setHasUnsavedChanges(true);
-                                        }}
-                                      />
-                                    </div>
+                                    <DurationInput
+                                      id="adjustmentPeriodicityMonths"
+                                      label="Periodicidad"
+                                      value={adjustmentPeriodicityMonths}
+                                      onChange={(val) => {
+                                        setAdjustmentPeriodicityMonths(val);
+                                        setHasUnsavedChanges(true);
+                                      }}
+                                      description="Cada cuánto tiempo se aplica el reajuste"
+                                    />
 
                                     {adjustmentValue && regimeRent && firstAdjustmentMonth && adjustmentPeriodicityMonths && (
                                       <div className="bg-background/50 rounded p-3 space-y-2">
@@ -1656,15 +1649,14 @@ const EditContract = () => {
                             );
                           case "duration":
                             return (
-                              <div className="space-y-2">
-                                <Label htmlFor="duration">Duración (meses) *</Label>
-                                <Input
-                                  id="duration"
-                                  type="number"
-                                  value={duration}
-                                  onChange={(e) => setDuration(e.target.value)}
-                                />
-                              </div>
+                              <DurationInput
+                                id="duration"
+                                label="Duración"
+                                value={duration}
+                                onChange={setDuration}
+                                required
+                                description="Duración total del contrato"
+                              />
                             );
                           case "noticeType":
                             return (

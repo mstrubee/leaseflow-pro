@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { RentEscalations, Escalation } from "@/components/contracts/RentEscalations";
 import { CurrencyInput } from "@/components/contracts/CurrencyInput";
+import { DurationInput } from "@/components/contracts/DurationInput";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { CompanySelect } from "@/components/contracts/CompanySelect";
 import { CustomFieldsManager } from "@/components/contracts/CustomFieldsManager";
@@ -927,31 +928,21 @@ const NewContract = () => {
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="firstAdjustmentMonthNew">Mes del primer reajuste</Label>
-                    <Input
-                      id="firstAdjustmentMonthNew"
-                      type="number"
-                      min="1"
-                      placeholder="Ej: 60"
-                      value={firstAdjustmentMonth}
-                      onChange={(e) => setFirstAdjustmentMonth(e.target.value)}
-                    />
-                  </div>
+                  <DurationInput
+                    id="firstAdjustmentMonthNew"
+                    label="Mes del primer reajuste"
+                    value={firstAdjustmentMonth}
+                    onChange={setFirstAdjustmentMonth}
+                    showEquivalent={true}
+                  />
                   
-                  <div className="space-y-2">
-                    <Label htmlFor="adjustmentPeriodicityMonthsNew">Periodicidad (meses)</Label>
-                    <Input
-                      id="adjustmentPeriodicityMonthsNew"
-                      type="number"
-                      min="1"
-                      placeholder="Ej: 60"
-                      value={adjustmentPeriodicityMonths}
-                      onChange={(e) => setAdjustmentPeriodicityMonths(e.target.value)}
-                    />
-                  </div>
-
-                  {/* Preview of adjustment calculation */}
+                  <DurationInput
+                    id="adjustmentPeriodicityMonthsNew"
+                    label="Periodicidad"
+                    value={adjustmentPeriodicityMonths}
+                    onChange={setAdjustmentPeriodicityMonths}
+                    description="Cada cuánto tiempo se aplica el reajuste"
+                  />
                   {adjustmentValue && regimeRent && firstAdjustmentMonth && adjustmentPeriodicityMonths && (
                     <div className="bg-background/50 rounded p-3 space-y-2">
                       <p className="text-xs font-medium text-muted-foreground">Vista previa de reajustes:</p>
@@ -995,15 +986,13 @@ const NewContract = () => {
                 </div>
               )}
 
-              <div className="space-y-2">
-                <Label htmlFor="duration">Duración (meses)</Label>
-                <Input
-                  id="duration"
-                  type="number"
-                  value={duration}
-                  onChange={(e) => setDuration(e.target.value)}
-                />
-              </div>
+              <DurationInput
+                id="duration"
+                label="Duración"
+                value={duration}
+                onChange={setDuration}
+                description="Duración total del contrato"
+              />
 
               <div className="space-y-2">
                 <Label>Tipo de Aviso de Término</Label>

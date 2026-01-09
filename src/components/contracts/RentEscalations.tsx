@@ -9,6 +9,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Plus, Trash2 } from "lucide-react";
 import {
   LineChart,
@@ -20,6 +27,208 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
+
+type DurationUnit = "months" | "years";
+
+// Grace months input component with month/year selector
+const GraceMonthsInput = ({
+  value,
+  onChange,
+  maxMonths,
+}: {
+  value: number;
+  onChange: (months: number) => void;
+  maxMonths: number;
+}) => {
+  const [unit, setUnit] = useState<DurationUnit>("months");
+  
+  const displayValue = unit === "years" ? (value / 12).toString() : value.toString();
+  
+  const handleValueChange = (newValue: string) => {
+    const numValue = parseFloat(newValue) || 0;
+    const months = unit === "years" ? Math.round(numValue * 12) : Math.round(numValue);
+    onChange(Math.min(months, maxMonths));
+  };
+
+  const handleUnitChange = (newUnit: DurationUnit) => {
+    setUnit(newUnit);
+  };
+
+  const equivalentText = (() => {
+    if (value === 0) return null;
+    if (unit === "months" && value >= 12) {
+      const years = Math.floor(value / 12);
+      const remainingMonths = value % 12;
+      if (remainingMonths === 0) {
+        return `= ${years} ${years === 1 ? "año" : "años"}`;
+      }
+      return `= ${years} ${years === 1 ? "año" : "años"} y ${remainingMonths} ${remainingMonths === 1 ? "mes" : "meses"}`;
+    } else if (unit === "years") {
+      return `= ${value} ${value === 1 ? "mes" : "meses"}`;
+    }
+    return null;
+  })();
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <Input
+          type="number"
+          min={0}
+          max={unit === "years" ? maxMonths / 12 : maxMonths}
+          step={unit === "years" ? "0.5" : "1"}
+          value={value === 0 ? "" : displayValue}
+          onChange={(e) => handleValueChange(e.target.value)}
+          className="w-24"
+          placeholder="0"
+        />
+        <Select value={unit} onValueChange={(v) => handleUnitChange(v as DurationUnit)}>
+          <SelectTrigger className="w-[90px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="months">Meses</SelectItem>
+            <SelectItem value="years">Años</SelectItem>
+          </SelectContent>
+        </Select>
+        <span className="text-sm text-muted-foreground">al inicio sin pago de arriendo</span>
+      </div>
+      {equivalentText && (
+        <p className="text-xs text-primary font-medium">{equivalentText}</p>
+      )}
+    </div>
+  );
+};
+
+// Escalation month input component with month/year selector
+const EscalationMonthInput = ({
+  startMonth,
+  endMonth,
+  amount,
+  onStartMonthChange,
+  onEndMonthChange,
+  onAmountChange,
+  onAdd,
+  graceMonths,
+  durationMonths,
+  currency,
+}: {
+  startMonth: string;
+  endMonth: string;
+  amount: string;
+  onStartMonthChange: (value: string) => void;
+  onEndMonthChange: (value: string) => void;
+  onAmountChange: (value: string) => void;
+  onAdd: () => void;
+  graceMonths: number;
+  durationMonths: number;
+  currency: "UF" | "CLP";
+}) => {
+  const [startUnit, setStartUnit] = useState<DurationUnit>("months");
+  const [endUnit, setEndUnit] = useState<DurationUnit>("months");
+
+  const handleStartChange = (value: string) => {
+    const numValue = parseFloat(value) || 0;
+    const months = startUnit === "years" ? Math.round(numValue * 12) : Math.round(numValue);
+    onStartMonthChange(months.toString());
+  };
+
+  const handleEndChange = (value: string) => {
+    const numValue = parseFloat(value) || 0;
+    const months = endUnit === "years" ? Math.round(numValue * 12) : Math.round(numValue);
+    onEndMonthChange(months.toString());
+  };
+
+  const startDisplayValue = startMonth 
+    ? (startUnit === "years" ? (parseInt(startMonth) / 12).toString() : startMonth)
+    : "";
+  const endDisplayValue = endMonth 
+    ? (endUnit === "years" ? (parseInt(endMonth) / 12).toString() : endMonth)
+    : "";
+
+  const startMonthNum = parseInt(startMonth) || 0;
+  const endMonthNum = parseInt(endMonth) || 0;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2 items-end flex-wrap">
+        <div className="flex-1 min-w-[140px]">
+          <Label className="text-xs text-muted-foreground">Mes Inicio</Label>
+          <div className="flex gap-1">
+            <Input
+              type="number"
+              placeholder={startUnit === "years" ? "Año" : "Mes"}
+              value={startDisplayValue}
+              onChange={(e) => handleStartChange(e.target.value)}
+              min={startUnit === "years" ? (graceMonths + 1) / 12 : graceMonths + 1}
+              max={startUnit === "years" ? durationMonths / 12 : durationMonths}
+              step={startUnit === "years" ? "0.5" : "1"}
+              className="flex-1"
+            />
+            <Select value={startUnit} onValueChange={(v) => setStartUnit(v as DurationUnit)}>
+              <SelectTrigger className="w-[70px] px-2">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="months">Mes</SelectItem>
+                <SelectItem value="years">Año</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {startUnit === "years" && startMonthNum > 0 && (
+            <p className="text-[10px] text-primary mt-0.5">= mes {startMonthNum}</p>
+          )}
+        </div>
+        <div className="flex-1 min-w-[140px]">
+          <Label className="text-xs text-muted-foreground">Mes Fin</Label>
+          <div className="flex gap-1">
+            <Input
+              type="number"
+              placeholder={endUnit === "years" ? "Año" : "Mes"}
+              value={endDisplayValue}
+              onChange={(e) => handleEndChange(e.target.value)}
+              min={endUnit === "years" ? (parseInt(startMonth) || graceMonths + 1) / 12 : (parseInt(startMonth) || graceMonths + 1)}
+              max={endUnit === "years" ? durationMonths / 12 : durationMonths}
+              step={endUnit === "years" ? "0.5" : "1"}
+              className="flex-1"
+            />
+            <Select value={endUnit} onValueChange={(v) => setEndUnit(v as DurationUnit)}>
+              <SelectTrigger className="w-[70px] px-2">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="months">Mes</SelectItem>
+                <SelectItem value="years">Año</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {endUnit === "years" && endMonthNum > 0 && (
+            <p className="text-[10px] text-primary mt-0.5">= mes {endMonthNum}</p>
+          )}
+        </div>
+        <div className="flex-1 min-w-[100px]">
+          <Label className="text-xs text-muted-foreground">Monto</Label>
+          <Input
+            type="number"
+            placeholder={currency === "UF" ? "UF" : "CLP"}
+            value={amount}
+            onChange={(e) => onAmountChange(e.target.value)}
+            min={0}
+            step={currency === "UF" ? "0.01" : "1"}
+          />
+        </div>
+        <Button
+          type="button"
+          onClick={onAdd}
+          disabled={!startMonth || !amount}
+          size="icon"
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+};
 
 export interface Escalation {
   id?: string;
@@ -312,19 +521,12 @@ export const RentEscalations = ({
       {/* Grace months */}
       {!readOnly && onGraceMonthsChange && (
         <div className="space-y-2 pb-4 border-b border-border">
-          <Label className="text-sm font-medium">Meses de gracia (sin pago)</Label>
-          <div className="flex items-center gap-3">
-            <Input
-              type="number"
-              min={0}
-              max={durationMonths - 1}
-              value={graceMonths || ''}
-              onChange={(e) => onGraceMonthsChange(parseInt(e.target.value) || 0)}
-              className="w-24"
-              placeholder="0"
-            />
-            <span className="text-sm text-muted-foreground">meses al inicio sin pago de arriendo</span>
-          </div>
+          <Label className="text-sm font-medium">Período de gracia (sin pago)</Label>
+          <GraceMonthsInput
+            value={graceMonths}
+            onChange={onGraceMonthsChange}
+            maxMonths={durationMonths - 1}
+          />
         </div>
       )}
 
@@ -332,49 +534,18 @@ export const RentEscalations = ({
       {!readOnly && (
         <div className="space-y-3 pt-2">
           <Label className="text-sm font-medium">Agregar escalón</Label>
-          <div className="flex gap-3 items-end">
-            <div className="flex-1">
-              <Label className="text-xs text-muted-foreground">Mes Inicio</Label>
-              <Input
-                type="number"
-                placeholder="Desde"
-                value={newStartMonth}
-                onChange={(e) => setNewStartMonth(e.target.value)}
-                min={graceMonths + 1}
-                max={durationMonths}
-              />
-            </div>
-            <div className="flex-1">
-              <Label className="text-xs text-muted-foreground">Mes Fin</Label>
-              <Input
-                type="number"
-                placeholder="Hasta"
-                value={newEndMonth}
-                onChange={(e) => setNewEndMonth(e.target.value)}
-                min={parseInt(newStartMonth) || graceMonths + 1}
-                max={durationMonths}
-              />
-            </div>
-            <div className="flex-1">
-              <Label className="text-xs text-muted-foreground">Monto</Label>
-              <Input
-                type="number"
-                placeholder={currency === "UF" ? "UF" : "CLP"}
-                value={newAmount}
-                onChange={(e) => setNewAmount(e.target.value)}
-                min={0}
-                step={currency === "UF" ? "0.01" : "1"}
-              />
-            </div>
-            <Button
-              type="button"
-              onClick={handleAdd}
-              disabled={!newStartMonth || !newAmount}
-              size="icon"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          </div>
+          <EscalationMonthInput
+            startMonth={newStartMonth}
+            endMonth={newEndMonth}
+            amount={newAmount}
+            onStartMonthChange={setNewStartMonth}
+            onEndMonthChange={setNewEndMonth}
+            onAmountChange={setNewAmount}
+            onAdd={handleAdd}
+            graceMonths={graceMonths}
+            durationMonths={durationMonths}
+            currency={currency}
+          />
           <p className="text-xs text-muted-foreground">
             {graceMonths > 0 
               ? `Los primeros ${graceMonths} meses son de gracia. El mes ${graceMonths + 1} es el primer mes con pago.`
