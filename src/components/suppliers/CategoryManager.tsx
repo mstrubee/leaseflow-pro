@@ -377,13 +377,10 @@ export const CategoryManager = () => {
             <div className="flex items-center gap-1 flex-1">
               <input
                 type="text"
-                defaultValue={cat.name}
+                value={editName}
                 onChange={e => setEditName(e.target.value)}
-                className="h-7 flex-1 text-sm px-2 rounded-md border border-input bg-background"
+                className="h-7 flex-1 text-sm px-2 rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
                 autoFocus
-                onFocus={e => {
-                  setEditName(e.target.value);
-                }}
                 onKeyDown={e => {
                   if (e.key === "Enter") handleUpdate(cat.id);
                   if (e.key === "Escape") setEditingId(null);
