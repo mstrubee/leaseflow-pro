@@ -146,6 +146,40 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     return subMonths(endDate, noticeMonths);
   };
 
+  // Check if we're currently inside a notice range
+  const getNoticeRangeStatus = (contract: Contract): { isInsideRange: boolean; rangeEndDate: Date | null } => {
+    const currentVersion = contract.contract_versions?.find((v) => v.is_current);
+    if (!currentVersion || currentVersion.notice_type !== "rangos") {
+      return { isInsideRange: false, rangeEndDate: null };
+    }
+
+    const startDate = currentVersion.effective_date
+      ? parseISO(currentVersion.effective_date)
+      : contract.signed_date
+        ? parseISO(contract.signed_date)
+        : null;
+
+    if (!startDate) return { isInsideRange: false, rangeEndDate: null };
+
+    const noticeRanges = currentVersion.notice_ranges || [];
+    if (noticeRanges.length === 0) return { isInsideRange: false, rangeEndDate: null };
+
+    const today = new Date();
+    const sortedRanges = [...noticeRanges].sort((a, b) => a.start_month - b.start_month);
+
+    for (const range of sortedRanges) {
+      const rangeStartDate = addMonths(startDate, range.start_month - 1);
+      const rangeEndDate = addMonths(startDate, range.end_month - 1);
+      
+      // Check if today is within this range
+      if (today >= rangeStartDate && today <= rangeEndDate) {
+        return { isInsideRange: true, rangeEndDate };
+      }
+    }
+
+    return { isInsideRange: false, rangeEndDate: null };
+  };
+
   // Calculate current rent based on escalations and current month
   const calculateCurrentRent = (version: ContractVersion, signedDate: string | null): { currentRent: number; hasEscalations: boolean } => {
     const escalations = version.rent_escalations || [];
@@ -245,7 +279,8 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
             const address = contract.contract_addresses?.[0];
             const originalEndDate = calculateEndDate(contract);
             const noticeDeadline = calculateNoticeDeadline(contract);
-            const isPastNotice = noticeDeadline && noticeDeadline < new Date();
+            const noticeRangeStatus = getNoticeRangeStatus(contract);
+            const isPastNotice = noticeDeadline && noticeDeadline < new Date() && !noticeRangeStatus.isInsideRange;
             const isExpiredOperating = contract.status === "vencido" && contract.is_expired_but_operating;
             
             // Si hay un aviso de término anticipado, calcular la fecha de término efectivo
@@ -409,6 +444,21 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                           const now = new Date();
                           const monthsRemaining = differenceInMonths(noticeDeadline, now);
                           const daysRemaining = differenceInDays(noticeDeadline, now);
+                          
+                          // Check if we're inside a notice range
+                          if (noticeRangeStatus.isInsideRange && noticeRangeStatus.rangeEndDate) {
+                            const rangeEndDays = differenceInDays(noticeRangeStatus.rangeEndDate, now);
+                            return (
+                              <div className="flex flex-col items-center">
+                                <span className="text-[10px] text-amber-600 font-medium">Posible Salida en Curso</span>
+                                <span className="text-[9px] text-muted-foreground">
+                                  Vence el {formatDateShort(noticeRangeStatus.rangeEndDate)}
+                                  {rangeEndDays > 0 && ` (${rangeEndDays} días)`}
+                                </span>
+                              </div>
+                            );
+                          }
+                          
                           // Only show "Vencido" if notice deadline passed but contract hasn't ended yet
                           if (daysRemaining < 0) {
                             if (endDate && endDate > now) {
