@@ -8,8 +8,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Search, ArrowUpDown, Eye, X, ChevronDown, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { ContractWithPatent, PatentPriority, PatentDocStatus, PRIORITY_CONFIG } from "./types";
+import { ContractWithPatent, PatentPriority, PRIORITY_CONFIG } from "./types";
 import { PatentPriorityBadge } from "./PatentPriorityBadge";
+
+interface ContractCompany {
+  companies?: {
+    name: string;
+  };
+}
 interface PatentsListProps {
   contracts: ContractWithPatent[];
   onSelectContract: (contractId: string) => void;
@@ -18,6 +24,16 @@ interface PatentsListProps {
 }
 type SortField = "priority" | "name" | "criticality";
 type SortOrder = "asc" | "desc";
+
+// Helper to get company name from contract
+const getCompanyName = (contract: ContractWithPatent): string => {
+  const companies = (contract as any).contract_companies as ContractCompany[] | undefined;
+  if (companies && companies.length > 0 && companies[0].companies?.name) {
+    return companies[0].companies.name;
+  }
+  return 'Sin empresa';
+};
+
 export function PatentsList({
   contracts,
   onSelectContract,
@@ -29,6 +45,30 @@ export function PatentsList({
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [companyFilter, setCompanyFilter] = useState<string>("all");
+  const [communeFilter, setCommuneFilter] = useState<string>("all");
+
+  // Extract unique companies and communes for filters
+  const { uniqueCompanies, uniqueCommunes } = useMemo(() => {
+    const companies = new Set<string>();
+    const communes = new Set<string>();
+    
+    contracts.forEach(contract => {
+      const companyName = getCompanyName(contract);
+      if (companyName !== 'Sin empresa') {
+        companies.add(companyName);
+      }
+      const commune = contract.contract_addresses?.[0]?.commune;
+      if (commune) {
+        communes.add(commune);
+      }
+    });
+    
+    return {
+      uniqueCompanies: Array.from(companies).sort(),
+      uniqueCommunes: Array.from(communes).sort()
+    };
+  }, [contracts]);
 
   // Calculate criticality for a contract
   const getCriticality = (contract: ContractWithPatent): number => {
@@ -84,6 +124,16 @@ export function PatentsList({
       result = result.filter(c => (c.patent_documents || []).some(d => d.status === statusFilter));
     }
 
+    // Filter by company
+    if (companyFilter !== "all") {
+      result = result.filter(c => getCompanyName(c) === companyFilter);
+    }
+
+    // Filter by commune
+    if (communeFilter !== "all") {
+      result = result.filter(c => (c.contract_addresses?.[0]?.commune || '') === communeFilter);
+    }
+
     // Sort
     result.sort((a, b) => {
       let comparison = 0;
@@ -99,7 +149,7 @@ export function PatentsList({
       return sortOrder === "asc" ? comparison : -comparison;
     });
     return result;
-  }, [contracts, search, sortField, sortOrder, priorityFilter, statusFilter, cardFilter]);
+  }, [contracts, search, sortField, sortOrder, priorityFilter, statusFilter, companyFilter, communeFilter, cardFilter]);
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
       setSortOrder(prev => prev === "asc" ? "desc" : "asc");
@@ -171,6 +221,30 @@ export function PatentsList({
                   <SelectItem value="nuevo_doc">Nuevo Doc</SelectItem>
                 </SelectContent>
               </Select>
+
+              <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filtrar por empresa" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas las empresas</SelectItem>
+                  {uniqueCompanies.map(company => (
+                    <SelectItem key={company} value={company}>{company}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={communeFilter} onValueChange={setCommuneFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filtrar por comuna" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas las comunas</SelectItem>
+                  {uniqueCommunes.map(commune => (
+                    <SelectItem key={commune} value={commune}>{commune}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Sort buttons */}
@@ -193,7 +267,9 @@ export function PatentsList({
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Empresa</TableHead>
                   <TableHead>Local</TableHead>
+                  <TableHead>Comuna</TableHead>
                   <TableHead>Región</TableHead>
                   <TableHead className="text-center">Prioridad</TableHead>
                   <TableHead className="text-center">Docs Pendientes</TableHead>
@@ -209,8 +285,12 @@ export function PatentsList({
                 const today = new Date();
                 const overdueCount = docs.filter(d => d.status === 'pendiente' && d.end_date && new Date(d.end_date) < today).length;
                 const region = contract.contract_addresses?.[0]?.region || 'Sin región';
+                const commune = contract.contract_addresses?.[0]?.commune || 'Sin comuna';
+                const companyName = getCompanyName(contract);
                 return <TableRow key={contract.id}>
+                      <TableCell className="text-muted-foreground">{companyName}</TableCell>
                       <TableCell className="font-medium">{contract.name}</TableCell>
+                      <TableCell className="text-muted-foreground">{commune}</TableCell>
                       <TableCell className="text-muted-foreground">{region}</TableCell>
                       <TableCell className="text-center">
                         <PatentPriorityBadge priority={priority} />
@@ -230,7 +310,7 @@ export function PatentsList({
                     </TableRow>;
               })}
                 {filteredAndSorted.length === 0 && <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                       No hay locales que coincidan con los filtros
                     </TableCell>
                   </TableRow>}
