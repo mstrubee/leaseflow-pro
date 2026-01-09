@@ -46,7 +46,7 @@ export function MultipleNoticesSection({ notices, onChange, durationMonths }: Mu
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <Label className="text-base font-medium">Avisos</Label>
+        <Label className="text-base font-medium">Otros Avisos</Label>
         <Button type="button" variant="outline" size="sm" onClick={addNotice} className="gap-1">
           <Plus className="h-4 w-4" />
           Agregar Aviso
