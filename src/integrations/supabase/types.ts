@@ -2941,6 +2941,7 @@ export type Database = {
       notification_channel: "email" | "whatsapp"
       patent_doc_status:
         | "pendiente"
+        | "solicitado"
         | "en_curso"
         | "ok"
         | "nuevo_doc"
@@ -3099,6 +3100,7 @@ export const Constants = {
       notification_channel: ["email", "whatsapp"],
       patent_doc_status: [
         "pendiente",
+        "solicitado",
         "en_curso",
         "ok",
         "nuevo_doc",
