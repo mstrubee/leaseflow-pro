@@ -8,11 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download, CheckSquare, Square, X } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download, CheckSquare, Square, X, ChevronDown } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { exportPatentsToExcel } from "./exportPatentsExcel";
 import { format, addDays, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
+import { useCollapsibleState } from "@/hooks/useCollapsibleState";
 import { 
   ContractWithPatent, 
   PatentChecklistSection, 
@@ -60,6 +62,9 @@ export function PatentChecklist({
   onUpdateDocumentStatus,
 }: PatentChecklistProps) {
   const { user } = useAuth();
+  
+  // Section collapsible state - collapsed by default
+  const { isExpanded, toggle: toggleSection, expandAll, collapseAll } = useCollapsibleState('patent-checklist-sections', []);
   
   // Local state for document edits
   const [editingDoc, setEditingDoc] = useState<string | null>(null);
@@ -134,6 +139,17 @@ export function PatentChecklist({
   const clearSelection = () => {
     setSelectedItems(new Set());
   };
+
+  // Select all items from all sections
+  const selectAllItems = () => {
+    const allItemIds = items.map(item => item.id);
+    setSelectedItems(new Set(allItemIds));
+    // Expand all sections to show selection
+    expandAll(sections.map(s => s.id));
+  };
+
+  // Check if all items are selected
+  const allItemsSelected = items.length > 0 && items.every(item => selectedItems.has(item.id));
 
   // Group items by section
   const itemsBySection = useMemo(() => {
@@ -253,6 +269,16 @@ export function PatentChecklist({
     }
 
     setDocEdits(prev => ({ ...prev, [itemId]: updates }));
+  };
+
+  // Convenience function for date changes
+  const handleDateChange = (itemId: string, field: 'start_date' | 'end_date', value: string) => {
+    handleDocumentFieldChange(itemId, field, value);
+  };
+
+  // Convenience function for deadline days changes
+  const handleDeadlineDaysChange = (itemId: string, days: number) => {
+    handleDocumentFieldChange(itemId, 'deadline_days', days > 0 ? days : null);
   };
 
   const saveDocumentChanges = async (itemId: string) => {
@@ -416,253 +442,317 @@ export function PatentChecklist({
         </div>
       )}
 
+      {/* Global select all button */}
+      <div className="flex items-center gap-2">
+        <Button
+          variant={allItemsSelected ? "default" : "outline"}
+          size="sm"
+          onClick={() => {
+            if (allItemsSelected) {
+              clearSelection();
+            } else {
+              selectAllItems();
+            }
+          }}
+          className="gap-1"
+        >
+          {allItemsSelected ? (
+            <><CheckSquare className="h-4 w-4" /> Deseleccionar todos</>
+          ) : (
+            <><Square className="h-4 w-4" /> Seleccionar todos</>
+          )}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => expandAll(sections.map(s => s.id))}
+          className="gap-1"
+        >
+          Expandir todo
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => collapseAll()}
+          className="gap-1"
+        >
+          Colapsar todo
+        </Button>
+      </div>
+
       {/* Checklist by sections */}
       {sections.map(section => {
         const sectionItems = itemsBySection[section.id] || [];
         const allSectionSelected = sectionItems.length > 0 && sectionItems.every(item => selectedItems.has(item.id));
         const someSectionSelected = sectionItems.some(item => selectedItems.has(item.id));
+        const isSectionExpanded = isExpanded(section.id);
         
         return (
-        <Card key={section.id}>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-lg">{section.name}</CardTitle>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={() => toggleSectionSelection(section.id)}
-              className="gap-1"
-            >
-              {allSectionSelected ? (
-                <><CheckSquare className="h-4 w-4" /> Deseleccionar</>
-              ) : (
-                <><Square className="h-4 w-4" /> Seleccionar todos</>
-              )}
-            </Button>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table className="min-w-[1400px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[40px]"></TableHead>
-                    <TableHead className="min-w-[200px]">Documento</TableHead>
-                    <TableHead className="min-w-[120px]">Estado</TableHead>
-                    <TableHead className="min-w-[150px]">Emisor</TableHead>
-                    <TableHead className="min-w-[150px]">Responsable</TableHead>
-                    <TableHead className="min-w-[130px]">Fecha Inicio</TableHead>
-                    <TableHead className="min-w-[100px]">Plazo (días)</TableHead>
-                    <TableHead className="min-w-[130px]">Fecha Término</TableHead>
-                    <TableHead className="min-w-[100px]">Archivo</TableHead>
-                    <TableHead className="min-w-[200px]">Notas</TableHead>
-                    <TableHead className="min-w-[120px]">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(itemsBySection[section.id] || []).map(item => {
-                    const doc = getDocument(item.id);
-                    const status = getDocValue(item.id, 'status') as PatentDocStatus || 'pendiente';
-                    const isEditing = editingDoc === item.id;
-                    const hasChanges = !!docEdits[item.id];
+        <Collapsible key={section.id} open={isSectionExpanded} onOpenChange={() => toggleSection(section.id)}>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between py-3">
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" className="flex items-center gap-2 p-0 h-auto hover:bg-transparent">
+                  <ChevronDown className={`h-5 w-5 transition-transform duration-200 ${isSectionExpanded ? '' : '-rotate-90'}`} />
+                  <CardTitle className="text-lg">{section.name}</CardTitle>
+                  {someSectionSelected && (
+                    <Badge variant="secondary" className="ml-2">
+                      {sectionItems.filter(i => selectedItems.has(i.id)).length} seleccionados
+                    </Badge>
+                  )}
+                </Button>
+              </CollapsibleTrigger>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleSectionSelection(section.id);
+                }}
+                className="gap-1"
+              >
+                {allSectionSelected ? (
+                  <><CheckSquare className="h-4 w-4" /> Deseleccionar</>
+                ) : (
+                  <><Square className="h-4 w-4" /> Seleccionar todos</>
+                )}
+              </Button>
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <Table className="min-w-[1400px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[40px]"></TableHead>
+                        <TableHead className="min-w-[200px]">Documento</TableHead>
+                        <TableHead className="min-w-[120px]">Estado</TableHead>
+                        <TableHead className="min-w-[150px]">Emisor</TableHead>
+                        <TableHead className="min-w-[150px]">Responsable</TableHead>
+                        <TableHead className="min-w-[130px]">Fecha Inicio</TableHead>
+                        <TableHead className="min-w-[100px]">Plazo (días)</TableHead>
+                        <TableHead className="min-w-[130px]">Fecha Término</TableHead>
+                        <TableHead className="min-w-[100px]">Archivo</TableHead>
+                        <TableHead className="min-w-[200px]">Notas</TableHead>
+                        <TableHead className="min-w-[120px]">Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(itemsBySection[section.id] || []).map(item => {
+                        const doc = getDocument(item.id);
+                        const status = getDocValue(item.id, 'status') as PatentDocStatus || 'pendiente';
+                        const isEditing = editingDoc === item.id;
+                        const hasChanges = !!docEdits[item.id];
 
-                    // Determine which fields to disable based on status
-                    const isNoAplica = status === 'no_aplica';
-                    const isOk = status === 'ok';
-                    const disableEmitter = isNoAplica;
-                    const disableOtherFields = isNoAplica || isOk;
-                    const disabledCellClass = "opacity-40 pointer-events-none";
+                        // Determine which fields to disable based on status
+                        const isNoAplica = status === 'no_aplica';
+                        const isOk = status === 'ok';
+                        const disableEmitter = isNoAplica;
+                        const disableOtherFields = isNoAplica || isOk;
+                        const disabledCellClass = "opacity-40 pointer-events-none";
 
-                    const isSelected = selectedItems.has(item.id);
+                        const isSelected = selectedItems.has(item.id);
 
-                    return (
-                      <TableRow 
-                        key={item.id} 
-                        onClick={() => setEditingDoc(item.id)}
-                        className={isSelected ? "bg-primary/5" : ""}
-                      >
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          <Checkbox 
-                            checked={isSelected}
-                            onCheckedChange={() => toggleItemSelection(item.id, { stopPropagation: () => {} } as React.MouseEvent)}
-                          />
-                        </TableCell>
-                        <TableCell className="font-medium">{item.name}</TableCell>
-                        <TableCell>
-                          <Select 
-                            value={status} 
-                            onValueChange={(v) => handleStatusChange(item.id, v as PatentDocStatus)}
+                        return (
+                          <TableRow 
+                            key={item.id} 
+                            onClick={() => setEditingDoc(item.id)}
+                            className={isSelected ? "bg-primary/5" : ""}
                           >
-                            <SelectTrigger className="h-8">
-                              <PatentStatusBadge status={status} size="sm" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {statuses.map((statusItem) => (
-                                <SelectItem key={statusItem.code} value={statusItem.code}>
-                                  <div className="flex items-center gap-2">
-                                    <div 
-                                      className="w-3 h-3 rounded-full" 
-                                      style={{ backgroundColor: statusItem.bg_color }}
-                                    />
-                                    {statusItem.name}
-                                  </div>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell className={disableEmitter ? disabledCellClass : ""}>
-                          {getFixedEmitterName(item.id) ? (
-                            <span className="text-sm px-2 py-1 bg-muted rounded">
-                              {getFixedEmitterName(item.id)}
-                            </span>
-                          ) : (
-                            <Select 
-                              value={getDocValue(item.id, 'emitter_id') || ''} 
-                              onValueChange={(v) => handleDocumentFieldChange(item.id, 'emitter_id', v)}
-                              disabled={disableEmitter}
-                            >
-                              <SelectTrigger className="h-8">
-                                <SelectValue placeholder="Seleccionar" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {emitters.map(emitter => (
-                                  <SelectItem key={emitter.id} value={emitter.id}>
-                                    {emitter.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          )}
-                        </TableCell>
-                        <TableCell className={disableOtherFields ? disabledCellClass : ""}>
-                          <Input
-                            className="h-8"
-                            value={getDocValue(item.id, 'responsible') || ''}
-                            onChange={(e) => handleDocumentFieldChange(item.id, 'responsible', e.target.value)}
-                            placeholder="Responsable"
-                            disabled={disableOtherFields}
-                          />
-                        </TableCell>
-                        <TableCell className={disableOtherFields ? disabledCellClass : ""}>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <Button variant="outline" size="sm" className="h-8 w-full justify-start" disabled={disableOtherFields}>
-                                <CalendarIcon className="mr-2 h-3 w-3" />
-                                {getDocValue(item.id, 'start_date') 
-                                  ? format(new Date(getDocValue(item.id, 'start_date')), 'dd/MM/yyyy')
-                                  : 'Seleccionar'
-                                }
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0">
-                              <Calendar
-                                mode="single"
-                                selected={getDocValue(item.id, 'start_date') ? new Date(getDocValue(item.id, 'start_date')) : undefined}
-                                onSelect={(date) => handleDocumentFieldChange(item.id, 'start_date', date ? format(date, 'yyyy-MM-dd') : undefined)}
-                                locale={es}
+                            <TableCell onClick={(e) => e.stopPropagation()}>
+                              <Checkbox 
+                                checked={isSelected}
+                                onCheckedChange={() => toggleItemSelection(item.id, { stopPropagation: () => {} } as React.MouseEvent)}
                               />
-                            </PopoverContent>
-                          </Popover>
-                        </TableCell>
-                        <TableCell className={disableOtherFields ? disabledCellClass : ""}>
-                          <Input
-                            className="h-8"
-                            type="number"
-                            value={getDocValue(item.id, 'deadline_days') || ''}
-                            onChange={(e) => handleDocumentFieldChange(item.id, 'deadline_days', e.target.value ? parseInt(e.target.value) : undefined)}
-                            placeholder="Días"
-                            disabled={disableOtherFields}
-                          />
-                        </TableCell>
-                        <TableCell className={disableOtherFields ? disabledCellClass : ""}>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <Button variant="outline" size="sm" className="h-8 w-full justify-start" disabled={disableOtherFields}>
-                                <CalendarIcon className="mr-2 h-3 w-3" />
-                                {getDocValue(item.id, 'end_date') 
-                                  ? format(new Date(getDocValue(item.id, 'end_date')), 'dd/MM/yyyy')
-                                  : 'Seleccionar'
-                                }
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0">
-                              <Calendar
-                                mode="single"
-                                selected={getDocValue(item.id, 'end_date') ? new Date(getDocValue(item.id, 'end_date')) : undefined}
-                                onSelect={(date) => handleDocumentFieldChange(item.id, 'end_date', date ? format(date, 'yyyy-MM-dd') : undefined)}
-                                locale={es}
+                            </TableCell>
+                            <TableCell className="font-medium">{item.name}</TableCell>
+                            <TableCell>
+                              <Select 
+                                value={status} 
+                                onValueChange={(v) => handleStatusChange(item.id, v as PatentDocStatus)}
+                              >
+                                <SelectTrigger className="h-8">
+                                  <PatentStatusBadge status={status} size="sm" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {statuses.map((statusItem) => (
+                                    <SelectItem key={statusItem.code} value={statusItem.code}>
+                                      <div className="flex items-center gap-2">
+                                        <div 
+                                          className="w-3 h-3 rounded-full" 
+                                          style={{ backgroundColor: statusItem.bg_color }}
+                                        />
+                                        {statusItem.name}
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                            <TableCell className={disableEmitter ? disabledCellClass : ""}>
+                              {getFixedEmitterName(item.id) ? (
+                                <span className="text-muted-foreground">{getFixedEmitterName(item.id)}</span>
+                              ) : (
+                                <Select 
+                                  value={getDocValue(item.id, 'emitter_id') || ''} 
+                                  onValueChange={(v) => handleDocumentFieldChange(item.id, 'emitter_id', v)}
+                                  disabled={disableEmitter}
+                                >
+                                  <SelectTrigger className="h-8">
+                                    <SelectValue placeholder="Emisor" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {emitters.map((emitter) => (
+                                      <SelectItem key={emitter.id} value={emitter.id}>
+                                        {emitter.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            </TableCell>
+                            <TableCell className={disableOtherFields ? disabledCellClass : ""}>
+                              <Input
+                                className="h-8"
+                                value={getDocValue(item.id, 'responsible') || ''}
+                                onChange={(e) => handleDocumentFieldChange(item.id, 'responsible', e.target.value)}
+                                placeholder="Responsable"
+                                disabled={disableOtherFields}
                               />
-                            </PopoverContent>
-                          </Popover>
-                        </TableCell>
-                        <TableCell className={isNoAplica ? disabledCellClass : ""}>
-                          <Button
-                            size="sm"
-                            variant={getDocValue(item.id, 'document_url') ? "secondary" : "outline"}
-                            disabled={isNoAplica}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setUploadDialog({ itemId: item.id, itemName: item.name });
-                            }}
-                          >
-                            {getDocValue(item.id, 'document_url') ? (
-                              <FileText className="h-3 w-3" />
-                            ) : (
-                              <Upload className="h-3 w-3" />
-                            )}
-                          </Button>
-                        </TableCell>
-                        <TableCell className={disableOtherFields ? disabledCellClass : ""}>
-                          <Input
-                            className="h-8"
-                            maxLength={150}
-                            value={getDocValue(item.id, 'notes') || ''}
-                            onChange={(e) => handleDocumentFieldChange(item.id, 'notes', e.target.value)}
-                            placeholder="Notas (máx 150)"
-                            disabled={disableOtherFields}
-                          />
-                        </TableCell>
-                        <TableCell className={disableOtherFields ? disabledCellClass : ""}>
-                          <div className="flex gap-1">
-                            {hasChanges && !disableOtherFields && (
-                              <Button size="sm" variant="default" onClick={(e) => {
-                                e.stopPropagation();
-                                saveDocumentChanges(item.id);
-                              }}>
-                                <Save className="h-3 w-3" />
-                              </Button>
-                            )}
-                            {!disableOtherFields && (
-                              <Button 
-                                size="sm" 
+                            </TableCell>
+                            <TableCell className={disableOtherFields ? disabledCellClass : ""}>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <Button variant="outline" size="sm" className="h-8 w-full justify-start" disabled={disableOtherFields}>
+                                    <CalendarIcon className="h-3 w-3 mr-1" />
+                                    {getDocValue(item.id, 'start_date') 
+                                      ? format(new Date(getDocValue(item.id, 'start_date') as string), 'dd/MM/yyyy')
+                                      : '-'}
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start">
+                                  <Calendar
+                                    mode="single"
+                                    selected={getDocValue(item.id, 'start_date') ? new Date(getDocValue(item.id, 'start_date') as string) : undefined}
+                                    onSelect={(date) => {
+                                      if (date) {
+                                        handleDateChange(item.id, 'start_date', format(date, 'yyyy-MM-dd'));
+                                      }
+                                    }}
+                                    locale={es}
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                            </TableCell>
+                            <TableCell className={disableOtherFields ? disabledCellClass : ""}>
+                              <Input
+                                className="h-8 w-20"
+                                type="number"
+                                value={getDocValue(item.id, 'deadline_days') || ''}
+                                onChange={(e) => {
+                                  const days = parseInt(e.target.value) || 0;
+                                  handleDeadlineDaysChange(item.id, days);
+                                }}
+                                placeholder="Días"
+                                disabled={disableOtherFields}
+                              />
+                            </TableCell>
+                            <TableCell className={disableOtherFields ? disabledCellClass : ""}>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <Button variant="outline" size="sm" className="h-8 w-full justify-start" disabled={disableOtherFields}>
+                                    <CalendarIcon className="h-3 w-3 mr-1" />
+                                    {getDocValue(item.id, 'end_date') 
+                                      ? format(new Date(getDocValue(item.id, 'end_date') as string), 'dd/MM/yyyy')
+                                      : '-'}
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start">
+                                  <Calendar
+                                    mode="single"
+                                    selected={getDocValue(item.id, 'end_date') ? new Date(getDocValue(item.id, 'end_date') as string) : undefined}
+                                    onSelect={(date) => {
+                                      if (date) {
+                                        handleDateChange(item.id, 'end_date', format(date, 'yyyy-MM-dd'));
+                                      }
+                                    }}
+                                    locale={es}
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                            </TableCell>
+                            <TableCell className={disableOtherFields ? disabledCellClass : ""}>
+                              <Button
                                 variant="ghost"
+                                size="sm"
+                                className="h-8"
+                                disabled={disableOtherFields}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  const d = getDocument(item.id);
-                                  if (d?.id) {
-                                    setAlertDialog({
-                                      docId: d.id,
-                                      itemName: item.name,
-                                      startDate: getDocValue(item.id, 'start_date'),
-                                      endDate: getDocValue(item.id, 'end_date'),
-                                    });
-                                  } else {
-                                    toast.error("Guarda primero los cambios del documento");
-                                  }
+                                  setUploadDialog({ itemId: item.id, itemName: item.name });
                                 }}
                               >
-                                <Bell className="h-3 w-3" />
+                                {getDocValue(item.id, 'document_url') ? (
+                                  <FileText className="h-3 w-3" />
+                                ) : (
+                                  <Upload className="h-3 w-3" />
+                                )}
                               </Button>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+                            </TableCell>
+                            <TableCell className={disableOtherFields ? disabledCellClass : ""}>
+                              <Input
+                                className="h-8"
+                                maxLength={150}
+                                value={getDocValue(item.id, 'notes') || ''}
+                                onChange={(e) => handleDocumentFieldChange(item.id, 'notes', e.target.value)}
+                                placeholder="Notas (máx 150)"
+                                disabled={disableOtherFields}
+                              />
+                            </TableCell>
+                            <TableCell className={disableOtherFields ? disabledCellClass : ""}>
+                              <div className="flex gap-1">
+                                {hasChanges && !disableOtherFields && (
+                                  <Button size="sm" variant="default" onClick={(e) => {
+                                    e.stopPropagation();
+                                    saveDocumentChanges(item.id);
+                                  }}>
+                                    <Save className="h-3 w-3" />
+                                  </Button>
+                                )}
+                                {!disableOtherFields && (
+                                  <Button 
+                                    size="sm" 
+                                    variant="ghost"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const d = getDocument(item.id);
+                                      if (d?.id) {
+                                        setAlertDialog({
+                                          docId: d.id,
+                                          itemName: item.name,
+                                          startDate: getDocValue(item.id, 'start_date'),
+                                          endDate: getDocValue(item.id, 'end_date'),
+                                        });
+                                      } else {
+                                        toast.error("Guarda primero los cambios del documento");
+                                      }
+                                    }}
+                                  >
+                                    <Bell className="h-3 w-3" />
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
         );
       })}
 
