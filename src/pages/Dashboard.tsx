@@ -79,9 +79,7 @@ const Dashboard = () => {
 
       <main className="max-w-12xl mx-auto px-0.5 sm:px-6 lg:px-8 py-8 space-y-6">
         <DashboardStats />
-        <div className="max-w-7xl mx-auto">
-          <SuppliersModule />
-        </div>
+        <SuppliersModule />
       </main>
     </div>;
 };
