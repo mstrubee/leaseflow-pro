@@ -6,8 +6,10 @@ interface PatentStatusBadgeProps {
   size?: "sm" | "default";
 }
 
+const DEFAULT_CONFIG = { label: 'Desconocido', bgColor: 'bg-gray-100', textColor: 'text-gray-800' };
+
 export function PatentStatusBadge({ status, size = "default" }: PatentStatusBadgeProps) {
-  const config = STATUS_CONFIG[status];
+  const config = STATUS_CONFIG[status] || DEFAULT_CONFIG;
   
   return (
     <Badge 
