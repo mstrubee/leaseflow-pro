@@ -39,7 +39,6 @@ export function PatentsList({
     return overdueCount * 10 + pendingCount;
   };
   const priorityOrder: PatentPriority[] = ['priority_1', 'priority_2', 'priority_3', 'vigente'];
-  
   const filteredAndSorted = useMemo(() => {
     let result = [...contracts];
     const today = new Date();
@@ -59,7 +58,7 @@ export function PatentsList({
           const hasOverdue = docs.some(d => d.status === 'pendiente' && d.end_date && new Date(d.end_date) < today);
           const priority = c.contract_patents?.priority || 'priority_3';
           const hasPending = docs.some(d => d.status === 'pendiente');
-          return hasOverdue || (priority === 'priority_1' && hasPending);
+          return hasOverdue || priority === 'priority_1' && hasPending;
         });
       } else if (cardFilter === 'pending') {
         result = result.filter(c => (c.patent_documents || []).some(d => d.status === 'pendiente'));
@@ -121,26 +120,25 @@ export function PatentsList({
     };
     return filter ? labels[filter] || filter : '';
   };
-
-  const { isOpen, setIsOpen } = useSingleCollapsible("patents-list-priorities", false);
-
+  const {
+    isOpen,
+    setIsOpen
+  } = useSingleCollapsible("patents-list-priorities", false);
   return <Card>
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <CardHeader className="flex flex-row items-center justify-between py-3">
           <CollapsibleTrigger asChild>
             <Button variant="ghost" className="flex items-center gap-2 p-0 h-auto hover:bg-transparent">
               {isOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-              <CardTitle className="text-lg">Prioridades</CardTitle>
+              <CardTitle className="text-lg">Locales</CardTitle>
             </Button>
           </CollapsibleTrigger>
-          {cardFilter && (
-            <Badge variant="secondary" className="gap-1 text-xs">
+          {cardFilter && <Badge variant="secondary" className="gap-1 text-xs">
               Filtro: {getCardFilterLabel(cardFilter)}
               <button onClick={onClearFilter} className="ml-1 hover:text-destructive">
                 <X className="h-3 w-3" />
               </button>
-            </Badge>
-          )}
+            </Badge>}
         </CardHeader>
         <CollapsibleContent>
           <CardContent className="space-y-1">
