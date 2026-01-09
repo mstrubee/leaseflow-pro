@@ -28,6 +28,41 @@ interface CategoryWithChildren extends SupplierCategory {
   children: CategoryWithChildren[];
 }
 
+// Isolated editable input component to prevent parent re-renders
+const EditableNameInput = ({ 
+  initialValue, 
+  onSave, 
+  onCancel 
+}: { 
+  initialValue: string; 
+  onSave: (value: string) => void; 
+  onCancel: () => void; 
+}) => {
+  const [value, setValue] = useState(initialValue);
+  
+  return (
+    <div className="flex items-center gap-1 flex-1">
+      <input
+        type="text"
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        className="h-7 flex-1 text-sm px-2 rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+        autoFocus
+        onKeyDown={e => {
+          if (e.key === "Enter") onSave(value);
+          if (e.key === "Escape") onCancel();
+        }}
+      />
+      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onSave(value)}>
+        <Check className="h-4 w-4 text-green-600" />
+      </Button>
+      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onCancel}>
+        <X className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+};
+
 // Color palette for hierarchy levels
 const LEVEL_COLORS = [
   { bg: "bg-primary/20", border: "border-primary/40", text: "text-primary" },
@@ -41,7 +76,6 @@ export const CategoryManager = () => {
   const [flatCategories, setFlatCategories] = useState<SupplierCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
   const [newName, setNewName] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [addingParentId, setAddingParentId] = useState<string | null>(null);
@@ -156,15 +190,15 @@ export const CategoryManager = () => {
     }
   };
 
-  const handleUpdate = async (id: string) => {
-    if (!editName.trim()) return;
+  const handleUpdate = async (id: string, newName: string) => {
+    if (!newName.trim()) return;
     
     const oldCat = flatCategories.find(c => c.id === id);
     if (!oldCat) return;
     
     // Optimistic update
     const updatedFlat = flatCategories.map(c => 
-      c.id === id ? { ...c, name: editName.trim() } : c
+      c.id === id ? { ...c, name: newName.trim() } : c
     );
     setFlatCategories(updatedFlat);
     setCategories(buildTree(updatedFlat));
@@ -173,7 +207,7 @@ export const CategoryManager = () => {
     try {
       const { error } = await supabase
         .from("supplier_categories")
-        .update({ name: editName.trim() })
+        .update({ name: newName.trim() })
         .eq("id", id);
       if (error) throw error;
       toast.success("Rubro actualizado");
@@ -437,25 +471,11 @@ export const CategoryManager = () => {
 
           {/* Name */}
           {editingId === cat.id ? (
-            <div className="flex items-center gap-1 flex-1">
-              <input
-                type="text"
-                value={editName}
-                onChange={e => setEditName(e.target.value)}
-                className="h-7 flex-1 text-sm px-2 rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
-                autoFocus
-                onKeyDown={e => {
-                  if (e.key === "Enter") handleUpdate(cat.id);
-                  if (e.key === "Escape") setEditingId(null);
-                }}
-              />
-              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleUpdate(cat.id)}>
-                <Check className="h-4 w-4 text-green-600" />
-              </Button>
-              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingId(null)}>
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
+            <EditableNameInput
+              initialValue={cat.name}
+              onSave={(newName) => handleUpdate(cat.id, newName)}
+              onCancel={() => setEditingId(null)}
+            />
           ) : (
             <>
               <span 
@@ -484,7 +504,7 @@ export const CategoryManager = () => {
                   size="icon"
                   variant="ghost"
                   className="h-6 w-6"
-                  onClick={() => { setEditingId(cat.id); setEditName(cat.name); }}
+                  onClick={() => setEditingId(cat.id)}
                   title="Editar"
                 >
                   <Pencil className="h-3 w-3" />
