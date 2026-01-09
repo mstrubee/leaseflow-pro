@@ -155,18 +155,18 @@ export const DashboardStats = () => {
       {/* Summary Cards - Stats */}
       {!isHidden("dashboard_stats") && (
         <SelectableElement elementId="dashboard_stats" label="Estadísticas de Contratos">
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-4">
             <Card 
               className="cursor-pointer hover:shadow-lg transition-shadow"
               onClick={() => handleCardClick()}
             >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total General</CardTitle>
-                <FileText className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats.totalContracts}</div>
-                <p className="text-xs text-muted-foreground">Contratos totales</p>
+              <CardContent className="flex items-center justify-between py-3 px-4">
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium">Total General</p>
+                  <div className="text-2xl font-bold">{stats.totalContracts}</div>
+                  <p className="text-[10px] text-muted-foreground">Contratos totales</p>
+                </div>
+                <FileText className="h-5 w-5 text-muted-foreground" />
               </CardContent>
             </Card>
 
@@ -174,29 +174,27 @@ export const DashboardStats = () => {
               className="border-green-500/20 bg-green-500/5 cursor-pointer hover:shadow-lg transition-shadow"
               onClick={() => handleCardClick("firmado")}
             >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-green-600">Vigentes</CardTitle>
-                <CheckCircle className="h-4 w-4 text-green-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-green-600">{stats.totalVigentes}</div>
-                <p className="text-xs text-muted-foreground">Contratos activos</p>
-                {stats.totalAtencionEspecial > 0 && (
-                  <div 
-                    className="mt-2 pt-2 border-t border-orange-200 cursor-pointer hover:bg-orange-100/50 -mx-2 px-2 rounded transition-colors"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate("/contracts?status=firmado&atencion_especial=true");
-                    }}
-                  >
-                    <div className="flex items-center gap-1.5">
+              <CardContent className="flex items-center justify-between py-3 px-4">
+                <div className="flex-1">
+                  <p className="text-xs text-muted-foreground font-medium text-green-600">Vigentes</p>
+                  <div className="text-2xl font-bold text-green-600">{stats.totalVigentes}</div>
+                  <p className="text-[10px] text-muted-foreground">Contratos activos</p>
+                  {stats.totalAtencionEspecial > 0 && (
+                    <div 
+                      className="mt-1 cursor-pointer hover:bg-orange-100/50 rounded transition-colors inline-flex items-center gap-1"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate("/contracts?status=firmado&atencion_especial=true");
+                      }}
+                    >
                       <AlertTriangle className="h-3 w-3 text-orange-500" />
-                      <span className="text-xs font-medium text-orange-600">
+                      <span className="text-[10px] font-medium text-orange-600">
                         Atención Especial: {stats.totalAtencionEspecial}
                       </span>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
+                <CheckCircle className="h-5 w-5 text-green-600" />
               </CardContent>
             </Card>
 
@@ -204,13 +202,13 @@ export const DashboardStats = () => {
               className="border-yellow-500/20 bg-yellow-500/5 cursor-pointer hover:shadow-lg transition-shadow"
               onClick={() => handleCardClick("en_negociacion")}
             >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-yellow-600">En Negociación</CardTitle>
-                <Clock className="h-4 w-4 text-yellow-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-yellow-600">{stats.totalNegociacion}</div>
-                <p className="text-xs text-muted-foreground">Pendientes de firma</p>
+              <CardContent className="flex items-center justify-between py-3 px-4">
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium text-yellow-600">En Negociación</p>
+                  <div className="text-2xl font-bold text-yellow-600">{stats.totalNegociacion}</div>
+                  <p className="text-[10px] text-muted-foreground">Pendientes de firma</p>
+                </div>
+                <Clock className="h-5 w-5 text-yellow-600" />
               </CardContent>
             </Card>
 
@@ -218,13 +216,13 @@ export const DashboardStats = () => {
               className="border-red-500/20 bg-red-500/5 cursor-pointer hover:shadow-lg transition-shadow"
               onClick={() => handleCardClick("vencido")}
             >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-red-600">Vencidos</CardTitle>
-                <AlertTriangle className="h-4 w-4 text-red-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-red-600">{stats.totalVencidos}</div>
-                <p className="text-xs text-muted-foreground">Requieren atención</p>
+              <CardContent className="flex items-center justify-between py-3 px-4">
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium text-red-600">Vencidos</p>
+                  <div className="text-2xl font-bold text-red-600">{stats.totalVencidos}</div>
+                  <p className="text-[10px] text-muted-foreground">Requieren atención</p>
+                </div>
+                <AlertTriangle className="h-5 w-5 text-red-600" />
               </CardContent>
             </Card>
           </div>
