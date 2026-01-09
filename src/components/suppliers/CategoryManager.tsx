@@ -237,24 +237,35 @@ export const CategoryManager = () => {
       const [removed] = reordered.splice(oldIndex, 1);
       reordered.splice(newIndex, 0, removed);
 
-      // Update display_order for all affected items
+      // Optimistic update - update state immediately
+      const updatedFlat = flatCategories.map(cat => {
+        const reorderedIndex = reordered.findIndex(r => r.id === cat.id);
+        if (reorderedIndex !== -1) {
+          return { ...cat, display_order: reorderedIndex + 1 };
+        }
+        return cat;
+      });
+      setFlatCategories(updatedFlat);
+      setCategories(buildTree(updatedFlat));
+
+      // Batch update in background
       try {
         const updates = reordered.map((cat, index) => ({
           id: cat.id,
           display_order: index + 1,
         }));
 
-        for (const update of updates) {
-          await supabase
-            .from("supplier_categories")
-            .update({ display_order: update.display_order })
-            .eq("id", update.id);
-        }
-
-        toast.success("Orden actualizado");
-        loadCategories();
+        await Promise.all(
+          updates.map(update =>
+            supabase
+              .from("supplier_categories")
+              .update({ display_order: update.display_order })
+              .eq("id", update.id)
+          )
+        );
       } catch (error) {
         toast.error("Error al reordenar");
+        loadCategories(); // Revert on error
       }
     } else {
       // Reparent: make dragged item a child of target
@@ -269,10 +280,20 @@ export const CategoryManager = () => {
         return;
       }
 
-      try {
-        const newSiblings = flatCategories.filter(c => c.parent_id === targetId);
-        const maxOrder = newSiblings.length > 0 ? Math.max(...newSiblings.map(s => s.display_order)) : 0;
+      const newSiblings = flatCategories.filter(c => c.parent_id === targetId);
+      const maxOrder = newSiblings.length > 0 ? Math.max(...newSiblings.map(s => s.display_order)) : 0;
 
+      // Optimistic update
+      const updatedFlat = flatCategories.map(cat => 
+        cat.id === draggedId 
+          ? { ...cat, parent_id: targetId, display_order: maxOrder + 1 }
+          : cat
+      );
+      setFlatCategories(updatedFlat);
+      setCategories(buildTree(updatedFlat));
+      setExpandedIds(prev => new Set([...prev, targetId]));
+
+      try {
         const { error } = await supabase
           .from("supplier_categories")
           .update({ parent_id: targetId, display_order: maxOrder + 1 })
@@ -280,11 +301,9 @@ export const CategoryManager = () => {
 
         if (error) throw error;
         toast.success(`"${draggedCat.name}" movido dentro de "${targetCat.name}"`);
-        // Expand target so the moved item is visible
-        setExpandedIds(prev => new Set([...prev, targetId]));
-        loadCategories();
       } catch (error) {
         toast.error("Error al mover rubro");
+        loadCategories(); // Revert on error
       }
     }
   };
@@ -356,11 +375,15 @@ export const CategoryManager = () => {
           {/* Name */}
           {editingId === cat.id ? (
             <div className="flex items-center gap-1 flex-1">
-              <Input
-                value={editName}
+              <input
+                type="text"
+                defaultValue={cat.name}
                 onChange={e => setEditName(e.target.value)}
-                className="h-7 flex-1 text-sm"
+                className="h-7 flex-1 text-sm px-2 rounded-md border border-input bg-background"
                 autoFocus
+                onFocus={e => {
+                  setEditName(e.target.value);
+                }}
                 onKeyDown={e => {
                   if (e.key === "Enter") handleUpdate(cat.id);
                   if (e.key === "Escape") setEditingId(null);
