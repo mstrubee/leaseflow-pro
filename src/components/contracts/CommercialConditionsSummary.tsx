@@ -177,8 +177,53 @@ export function CommercialConditionsSummary({
   const hasEscalations = version.rent_escalations && version.rent_escalations.length > 0;
   const guaranteeAmount = version.guarantee_multiplier ? version.guarantee_multiplier * version.regime_rent : null;
 
-  // Canon per m2
-  const canonPerM2 = superficieEdificadaLocal && superficieEdificadaLocal > 0 ? version.regime_rent / superficieEdificadaLocal : null;
+  // Calculate current rent based on escalations and current month
+  const currentRent = useMemo(() => {
+    if (!hasEscalations) {
+      return version.regime_rent;
+    }
+    
+    const escalations = version.rent_escalations || [];
+    
+    // Calculate current month
+    const startDate = version.effective_date
+      ? new Date(version.effective_date)
+      : signedDate
+        ? new Date(signedDate)
+        : null;
+    
+    if (!startDate) {
+      return version.regime_rent;
+    }
+    
+    const today = new Date();
+    const diffTime = today.getTime() - startDate.getTime();
+    const currentMonth = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44)) + 1;
+    
+    // Check grace period
+    const graceMonths = version.grace_months || 0;
+    if (currentMonth <= graceMonths) {
+      return 0;
+    }
+    
+    // Find the applicable escalation for current month
+    const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
+    
+    // Find the last escalation that starts at or before current month
+    let rent = version.initial_rent || version.regime_rent;
+    for (const esc of sortedEscalations) {
+      if (esc.month_number <= currentMonth) {
+        rent = esc.amount;
+      } else {
+        break;
+      }
+    }
+    
+    return rent;
+  }, [version, signedDate, hasEscalations]);
+
+  // Canon per m2 - use currentRent for escalated contracts
+  const canonPerM2 = superficieEdificadaLocal && superficieEdificadaLocal > 0 ? currentRent / superficieEdificadaLocal : null;
 
   // Gastos comunes calculation - based on methodology
   const gastosComunesMethodology = version.gastos_comunes_methodology || "uf_m2";
@@ -222,14 +267,14 @@ export function CommercialConditionsSummary({
     }
   }, [version, superficieEdificadaLocal, metrosLinealesFrente]);
 
-  // Fondo de promoción calculation
-  const fondoPromocionAmount = version.fondo_promocion_percentage ? version.fondo_promocion_percentage / 100 * version.regime_rent : null;
+  // Fondo de promoción calculation - use currentRent for escalated contracts
+  const fondoPromocionAmount = version.fondo_promocion_percentage ? version.fondo_promocion_percentage / 100 * currentRent : null;
 
   // Otros egresos
   const otrosEgresosAmount = version.otros_egresos_amount || 0;
 
-  // Total arriendo calculation (Canon + GGCC + FP + Otros)
-  const totalArriendo = version.regime_rent + (gastosComunesTotalUF || 0) + (fondoPromocionAmount || 0) + otrosEgresosAmount;
+  // Total arriendo calculation (Canon actual + GGCC + FP + Otros)
+  const totalArriendo = currentRent + (gastosComunesTotalUF || 0) + (fondoPromocionAmount || 0) + otrosEgresosAmount;
 
   // Format adjustment value based on type
   const formatAdjustmentValue = () => {
@@ -345,8 +390,8 @@ export function CommercialConditionsSummary({
             {/* Composición - siempre mostrar todos los componentes */}
             <div className="text-[10px] text-muted-foreground space-y-0.5 pt-1 border-t border-border/50">
               <div className="flex justify-between">
-                <span>Canon:</span>
-                <span>{formatPrimary(version.regime_rent)}</span>
+                <span>Canon{hasEscalations ? " actual" : ""}:</span>
+                <span>{formatPrimary(currentRent)}</span>
               </div>
               <div className="flex justify-between">
                 <span>GGCC:</span>
@@ -367,17 +412,17 @@ export function CommercialConditionsSummary({
             </div>
           </div>
 
-          {/* Canon en Régimen */}
+          {/* Canon actual o Canon en Régimen */}
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <DollarSign className="h-3 w-3" />
-              Canon en Régimen
+              {hasEscalations ? "Canon Actual" : "Canon en Régimen"}
             </div>
             <p className="text-sm font-semibold text-primary">
-              {formatPrimary(version.regime_rent)}
+              {formatPrimary(currentRent)}
             </p>
             <p className="text-xs text-muted-foreground">
-              {formatSecondary(version.regime_rent)}
+              {formatSecondary(currentRent)}
             </p>
             {canonPerM2 !== null && <p className="text-xs text-muted-foreground">
                 {displayCurrency === "CLP" ? `($${Math.round(canonPerM2).toLocaleString("es-CL")}/m²)` : `(${canonPerM2.toFixed(4)} UF/m²)`}

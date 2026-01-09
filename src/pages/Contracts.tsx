@@ -30,9 +30,17 @@ import { toast } from "sonner";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
+interface RentEscalation {
+  id: string;
+  month_number: number;
+  amount: number;
+}
+
 interface ContractVersion {
   id: string;
   regime_rent: number;
+  initial_rent?: number | null;
+  grace_months?: number | null;
   duration_months: number;
   is_current: boolean;
   effective_date: string | null;
@@ -59,6 +67,7 @@ interface ContractVersion {
   otros_egresos_description?: string | null;
 
   notice_ranges?: Array<{ start_month: number; end_month: number }>;
+  rent_escalations?: RentEscalation[];
 }
 
 interface TerminationNotice {
@@ -226,6 +235,8 @@ const Contracts = () => {
         contract_versions (
           id,
           regime_rent,
+          initial_rent,
+          grace_months,
           duration_months,
           is_current,
           effective_date,
@@ -244,7 +255,8 @@ const Contracts = () => {
           has_extended_gastos_comunes,
           otros_egresos_amount,
           otros_egresos_description,
-          notice_ranges:notice_ranges(start_month, end_month)
+          notice_ranges:notice_ranges(start_month, end_month),
+          rent_escalations:rent_escalations(id, month_number, amount)
         ),
         termination_notices (id, notice_type, notice_date, document_url)
       `)
