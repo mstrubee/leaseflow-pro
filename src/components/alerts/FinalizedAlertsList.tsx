@@ -1,16 +1,29 @@
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { CheckCircle, Trash2, Calendar, User, FileText } from "lucide-react";
+import { CheckCircle, Trash2, Calendar, User, FileText, ChevronDown, ChevronRight } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Button } from "@/components/ui/button";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface FinalizedAlert {
   id: string;
@@ -31,12 +44,18 @@ interface FinalizedAlertsListProps {
   contractId?: string;
   showAll?: boolean;
   defaultOpen?: boolean;
+  onRefresh?: () => void;
 }
 
-export function FinalizedAlertsList({ contractId, showAll = false, defaultOpen = false }: FinalizedAlertsListProps) {
+export function FinalizedAlertsList({ contractId, showAll = false, defaultOpen = false, onRefresh }: FinalizedAlertsListProps) {
+  const { toast } = useToast();
+  const { user } = useAuth();
   const [alerts, setAlerts] = useState<FinalizedAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [selectedAlerts, setSelectedAlerts] = useState<Set<string>>(new Set());
+  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
+  const [bulkDeleteConfirmation, setBulkDeleteConfirmation] = useState("");
 
   useEffect(() => {
     loadFinalizedAlerts();
@@ -85,10 +104,58 @@ export function FinalizedAlertsList({ contractId, showAll = false, defaultOpen =
       })) || [];
 
       setAlerts(alertsWithProfiles);
+      setSelectedAlerts(new Set());
     } catch (error) {
       console.error("Error loading finalized alerts:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleBulkPermanentDelete = async () => {
+    if (bulkDeleteConfirmation !== "ELIMINAR PERMANENTE" || selectedAlerts.size === 0) return;
+
+    try {
+      const { error } = await supabase
+        .from("alerts")
+        .delete()
+        .in("id", Array.from(selectedAlerts));
+
+      if (error) throw error;
+
+      setAlerts(prev => prev.filter(alert => !selectedAlerts.has(alert.id)));
+      toast({ title: `${selectedAlerts.size} alertas eliminadas permanentemente` });
+      setSelectedAlerts(new Set());
+      onRefresh?.();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setShowBulkDeleteDialog(false);
+      setBulkDeleteConfirmation("");
+    }
+  };
+
+  const toggleSelectAlert = (alertId: string) => {
+    setSelectedAlerts(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(alertId)) {
+        newSet.delete(alertId);
+      } else {
+        newSet.add(alertId);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedAlerts.size === alerts.length) {
+      setSelectedAlerts(new Set());
+    } else {
+      setSelectedAlerts(new Set(alerts.map(a => a.id)));
     }
   };
 
@@ -118,62 +185,127 @@ export function FinalizedAlertsList({ contractId, showAll = false, defaultOpen =
     return null;
   }
 
-  const alertItems = alerts.map((alert) => {
-    const isCompleted = !!alert.completed_at;
-    const finalizedAt = isCompleted ? alert.completed_at : alert.deleted_at;
-    const finalizedBy = isCompleted ? alert.completed_by_profile : alert.deleted_by_profile;
-
-    return (
-      <div
-        key={alert.id}
-        className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border/50"
-      >
-        <div className="flex items-center gap-3">
-          {isCompleted ? (
-            <CheckCircle className="h-4 w-4 text-green-500" />
-          ) : (
-            <Trash2 className="h-4 w-4 text-muted-foreground" />
-          )}
-          <div>
-            <p className="text-sm font-medium">{alert.title}</p>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-              <Badge variant="outline" className="text-xs">
-                {getAlertTypeLabel(alert.alert_type)}
-              </Badge>
-              <span className="flex items-center gap-1">
-                <Calendar className="h-3 w-3" />
-                {format(new Date(alert.due_date), "dd/MM/yyyy", { locale: es })}
-              </span>
-              {showAll && alert.contracts?.name && (
-                <span className="flex items-center gap-1">
-                  <FileText className="h-3 w-3" />
-                  {alert.contracts.name}
-                </span>
-              )}
-            </div>
+  const alertItems = (
+    <>
+      {/* Bulk Actions Bar */}
+      {alerts.length > 0 && (
+        <div className="flex items-center justify-between mb-4 p-3 bg-muted/50 rounded-lg">
+          <div className="flex items-center gap-3">
+            <Checkbox
+              checked={selectedAlerts.size === alerts.length && alerts.length > 0}
+              onCheckedChange={toggleSelectAll}
+            />
+            <span className="text-sm text-muted-foreground">
+              {selectedAlerts.size > 0 
+                ? `${selectedAlerts.size} seleccionadas` 
+                : "Seleccionar todas"}
+            </span>
           </div>
-        </div>
-        <div className="text-right text-xs text-muted-foreground">
-          <Badge variant={isCompleted ? "default" : "secondary"} className="mb-1">
-            {isCompleted ? "Cumplida" : "Eliminada"}
-          </Badge>
-          {finalizedAt && (
-            <p>{format(new Date(finalizedAt), "dd/MM/yyyy HH:mm", { locale: es })}</p>
-          )}
-          {finalizedBy && (
-            <p className="flex items-center gap-1 justify-end">
-              <User className="h-3 w-3" />
-              {finalizedBy.full_name || finalizedBy.email}
-            </p>
+          {selectedAlerts.size > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setShowBulkDeleteDialog(true)}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Eliminar permanentemente ({selectedAlerts.size})
+            </Button>
           )}
         </div>
+      )}
+
+      <div className="space-y-2">
+        {alerts.map((alert) => {
+          const isCompleted = !!alert.completed_at;
+          const finalizedAt = isCompleted ? alert.completed_at : alert.deleted_at;
+          const finalizedBy = isCompleted ? alert.completed_by_profile : alert.deleted_by_profile;
+
+          return (
+            <div
+              key={alert.id}
+              className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border/50"
+            >
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  checked={selectedAlerts.has(alert.id)}
+                  onCheckedChange={() => toggleSelectAlert(alert.id)}
+                />
+                {isCompleted ? (
+                  <CheckCircle className="h-4 w-4 text-green-500" />
+                ) : (
+                  <Trash2 className="h-4 w-4 text-muted-foreground" />
+                )}
+                <div>
+                  <p className="text-sm font-medium">{alert.title}</p>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                    <Badge variant="outline" className="text-xs">
+                      {getAlertTypeLabel(alert.alert_type)}
+                    </Badge>
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-3 w-3" />
+                      {format(new Date(alert.due_date), "dd/MM/yyyy", { locale: es })}
+                    </span>
+                    {showAll && alert.contracts?.name && (
+                      <span className="flex items-center gap-1">
+                        <FileText className="h-3 w-3" />
+                        {alert.contracts.name}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="text-right text-xs text-muted-foreground">
+                <Badge variant={isCompleted ? "default" : "secondary"} className="mb-1">
+                  {isCompleted ? "Cumplida" : "Eliminada"}
+                </Badge>
+                {finalizedAt && (
+                  <p>{format(new Date(finalizedAt), "dd/MM/yyyy HH:mm", { locale: es })}</p>
+                )}
+                {finalizedBy && (
+                  <p className="flex items-center gap-1 justify-end">
+                    <User className="h-3 w-3" />
+                    {finalizedBy.full_name || finalizedBy.email}
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
-    );
-  });
+
+      {/* Bulk Delete Dialog */}
+      <AlertDialog open={showBulkDeleteDialog} onOpenChange={() => { setShowBulkDeleteDialog(false); setBulkDeleteConfirmation(""); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar permanentemente {selectedAlerts.size} alertas?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-4">
+              <p className="text-destructive font-medium">⚠️ Esta acción es irreversible. Las alertas se eliminarán permanentemente de la base de datos.</p>
+              <p>Para confirmar, escribe <strong>ELIMINAR PERMANENTE</strong> en el campo de abajo.</p>
+              <Input
+                value={bulkDeleteConfirmation}
+                onChange={(e) => setBulkDeleteConfirmation(e.target.value)}
+                placeholder="Escribe ELIMINAR PERMANENTE para confirmar"
+              />
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleBulkPermanentDelete} 
+              className="bg-destructive text-destructive-foreground"
+              disabled={bulkDeleteConfirmation !== "ELIMINAR PERMANENTE"}
+            >
+              Eliminar permanentemente
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
 
   // When showing all in dashboard, render without collapsible
   if (showAll && defaultOpen) {
-    return <div className="space-y-2">{alertItems}</div>;
+    return alertItems;
   }
 
   return (
