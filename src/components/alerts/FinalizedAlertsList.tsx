@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { CheckCircle, Trash2, Calendar, User, FileText, ChevronDown, ChevronRight } from "lucide-react";
 import {
@@ -243,7 +243,7 @@ export function FinalizedAlertsList({ contractId, showAll = false, defaultOpen =
                     </Badge>
                     <span className="flex items-center gap-1">
                       <Calendar className="h-3 w-3" />
-                      {format(new Date(alert.due_date), "dd/MM/yyyy", { locale: es })}
+                      {format(parseISO(alert.due_date), "dd/MM/yyyy", { locale: es })}
                     </span>
                     {showAll && alert.contracts?.name && (
                       <span className="flex items-center gap-1">

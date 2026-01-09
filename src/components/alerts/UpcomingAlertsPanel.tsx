@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Bell, ChevronDown, ChevronUp, Search, ArrowUpDown, Filter } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { format, differenceInDays } from "date-fns";
+import { format, differenceInDays, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
 interface AlertWithDetails {
@@ -81,7 +81,7 @@ export function UpcomingAlertsPanel() {
       return "priority";
     }
     
-    const daysUntilDue = differenceInDays(new Date(alert.due_date), new Date());
+    const daysUntilDue = differenceInDays(parseISO(alert.due_date), new Date());
     const hasBeenSent = alert.last_sent_at !== null;
 
     if (hasBeenSent && daysUntilDue < 15) {
@@ -308,7 +308,7 @@ export function UpcomingAlertsPanel() {
                 {filteredAndSortedAlerts.map((alert) => {
                   const status = getAlertStatus(alert);
                   const daysUntilDue = differenceInDays(
-                    new Date(alert.due_date),
+                    parseISO(alert.due_date),
                     new Date()
                   );
                   const region = alert.contracts?.contract_addresses?.[0]?.region;
@@ -340,7 +340,7 @@ export function UpcomingAlertsPanel() {
                       {/* Date */}
                       <div className="text-right flex-shrink-0">
                         <p className="text-sm font-medium">
-                          {format(new Date(alert.due_date), "dd MMM yyyy", {
+                          {format(parseISO(alert.due_date), "dd MMM yyyy", {
                             locale: es,
                           })}
                         </p>
