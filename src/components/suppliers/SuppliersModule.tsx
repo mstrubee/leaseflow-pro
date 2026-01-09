@@ -63,9 +63,9 @@ export const SuppliersModule = () => {
       <SelectableElement elementId="suppliers.module" label="Módulo de Proveedores">
         <Card>
           <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-            <CardHeader className="pb-3">
-              <CollapsibleTrigger asChild>
-                <div className="flex items-center justify-between cursor-pointer">
+            <CardHeader className="pb-3 w-full">
+              <CollapsibleTrigger asChild className="w-full">
+                <div className="flex items-center justify-between cursor-pointer w-full">
                   <div className="flex items-center gap-2">
                     {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                     <Building2 className="h-5 w-5 text-muted-foreground" />
