@@ -61,6 +61,13 @@ interface ContractVersion {
   gastos_comunes_tope?: number | null;
   gastos_comunes_tope_type?: string | null;
 
+  // Periodic adjustments
+  has_periodic_adjustments?: boolean | null;
+  adjustment_type?: string | null;
+  adjustment_value?: number | null;
+  first_adjustment_month?: number | null;
+  adjustment_periodicity_months?: number | null;
+
   // Other items
   fondo_promocion_percentage: number | null;
   otros_egresos_amount?: number | null;
@@ -255,6 +262,11 @@ const Contracts = () => {
           has_extended_gastos_comunes,
           otros_egresos_amount,
           otros_egresos_description,
+          has_periodic_adjustments,
+          adjustment_type,
+          adjustment_value,
+          first_adjustment_month,
+          adjustment_periodicity_months,
           notice_ranges:notice_ranges(start_month, end_month),
           rent_escalations:rent_escalations(id, month_number, amount)
         ),
