@@ -498,14 +498,15 @@ export const uploadContracts = async (rows: ContractRow[]): Promise<UploadResult
             .from('contract_addresses')
             .update(addressData)
             .eq('id', existingAddress.id);
-        } else if (row.calle && row.numero && row.comuna && row.region) {
-          // Create new address only if all required fields are present
+        } else if (row.comuna && row.region) {
+          // Create new address even if street/number are missing (store empty strings)
           await supabase.from('contract_addresses').insert({
             contract_id: contractId,
-            street: row.calle,
-            number: row.numero,
+            street: row.calle || '',
+            number: row.numero || '',
             commune: getCorrectCommuneName(row.region, row.comuna),
             region: getCorrectRegionName(row.region),
+            country: 'Chile',
             rol_sii: row.rol_sii || null,
           });
         }
