@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useSingleCollapsible } from "@/hooks/useCollapsibleState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -121,7 +122,7 @@ export function PatentsList({
     return filter ? labels[filter] || filter : '';
   };
 
-  const [isOpen, setIsOpen] = useState(true);
+  const { isOpen, setIsOpen } = useSingleCollapsible("patents-list-priorities", false);
 
   return <Card>
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
