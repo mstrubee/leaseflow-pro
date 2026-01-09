@@ -18,6 +18,7 @@ import { BudgetDashboard } from "@/components/budget/BudgetDashboard";
 import { GanttModule } from "@/components/gantt/GanttModule";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { TerminationNoticesSection } from "@/components/contracts/TerminationNoticesSection";
+import { AlertsReturnButton } from "@/components/alerts/AlertsReturnButton";
 import { CollapsibleSection } from "@/components/contracts/CollapsibleSection";
 import { SelectableElement } from "@/components/admin/SelectableElement";
 import { useContractSections, SectionKey } from "@/hooks/useContractSections";
@@ -1271,6 +1272,8 @@ const ContractDetail = () => {
         </DndContext>
       </main>
 
+      {/* Floating return button when coming from alerts */}
+      <AlertsReturnButton />
     </div>;
 };
 export default ContractDetail;

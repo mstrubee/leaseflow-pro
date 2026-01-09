@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Trash2, Bell, Mail, MessageSquare, Calendar, RefreshCw, Send, Clock, Pencil } from "lucide-react";
+import { Trash2, Bell, Mail, MessageSquare, Calendar, RefreshCw, Send, Clock, Pencil, FileText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -26,6 +26,7 @@ import {
   DialogContent,
 } from "@/components/ui/dialog";
 import { AlertForm, AlertData } from "./AlertForm";
+import { useAlertsNavigation } from "./AlertsReturnButton";
 
 interface Alert {
   id: string;
@@ -59,6 +60,7 @@ interface AlertsListProps {
 export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyActive = true }: AlertsListProps) {
   const { toast } = useToast();
   const { user } = useAuth();
+  const { navigateToContractFromAlerts } = useAlertsNavigation();
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteAlertId, setDeleteAlertId] = useState<string | null>(null);
@@ -410,38 +412,52 @@ export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyAct
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleEditClick(alert)}
-                    title="Editar alerta"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
+                <div className="flex flex-col items-end gap-2">
+                  <div className="flex items-center gap-2">
+                    {alert.contract_id && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => navigateToContractFromAlerts(alert.contract_id!)}
+                        title="Ver condiciones del contrato"
+                      >
+                        <FileText className="h-4 w-4 mr-1" />
+                        Ver contrato
+                      </Button>
+                    )}
 
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleTestSend(alert.id)}
-                    disabled={sendingTest === alert.id || !alert.is_active}
-                    title="Enviar email de prueba"
-                  >
-                    <Send className={`h-4 w-4 ${sendingTest === alert.id ? "animate-pulse" : ""}`} />
-                  </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleEditClick(alert)}
+                      title="Editar alerta"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
 
-                  <Switch
-                    checked={alert.is_active}
-                    onCheckedChange={(checked) => handleToggleActive(alert.id, checked)}
-                  />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleTestSend(alert.id)}
+                      disabled={sendingTest === alert.id || !alert.is_active}
+                      title="Enviar email de prueba"
+                    >
+                      <Send className={`h-4 w-4 ${sendingTest === alert.id ? "animate-pulse" : ""}`} />
+                    </Button>
 
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setDeleteAlertId(alert.id)}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+                    <Switch
+                      checked={alert.is_active}
+                      onCheckedChange={(checked) => handleToggleActive(alert.id, checked)}
+                    />
+
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setDeleteAlertId(alert.id)}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>
