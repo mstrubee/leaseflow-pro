@@ -160,15 +160,17 @@ export function CompactEscalationChart({
       const noticeMonths = parseInt(noticeValue) || 0;
       const noticeMonth = durationMonths - noticeMonths;
       const noticeDate = addMonths(startDate, noticeMonth);
-      return { month: noticeMonth, date: noticeDate, label: `${noticeValue} meses antes` };
+      return { month: noticeMonth, date: noticeDate, label: `${noticeValue} meses antes`, deadlineMonth: noticeMonth };
     } else if (noticeType === "fecha" && noticeValue) {
       const noticeDate = new Date(noticeValue);
       const diffTime = noticeDate.getTime() - startDate.getTime();
       const noticeMonth = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44)) + 1;
-      return { month: Math.max(1, Math.min(noticeMonth, durationMonths)), date: noticeDate, label: "fecha fija" };
+      return { month: Math.max(1, Math.min(noticeMonth, durationMonths)), date: noticeDate, label: "fecha fija", deadlineMonth: noticeMonth };
     } else if (noticeType === "rangos" && noticeRanges.length > 0) {
       const sortedRanges = [...noticeRanges].sort((a, b) => a.start_month - b.start_month);
-      return { ranges: sortedRanges };
+      // The deadline is the last end_month of the ranges
+      const lastRange = sortedRanges[sortedRanges.length - 1];
+      return { ranges: sortedRanges, deadlineMonth: lastRange?.end_month };
     }
     return null;
   }, [effectiveDate, noticeType, noticeValue, noticeRanges, durationMonths]);
@@ -268,17 +270,35 @@ export function CompactEscalationChart({
               />
             ])}
             
-            {/* Single notice line for meses/fecha type */}
+            {/* Single notice deadline line for meses/fecha type - prominently dotted */}
             {noticeMonthInfo && 'month' in noticeMonthInfo && (
               <ReferenceLine 
                 x={noticeMonthInfo.month} 
-                stroke="hsl(var(--warning))" 
-                strokeWidth={2}
-                strokeDasharray="4 4"
+                stroke="#f59e0b"
+                strokeWidth={3}
+                strokeDasharray="8 4"
                 label={{ 
-                  value: `Aviso`, 
-                  fontSize: 10, 
-                  fill: "hsl(var(--warning))",
+                  value: `Límite Aviso`, 
+                  fontSize: 11, 
+                  fontWeight: 600,
+                  fill: "#f59e0b",
+                  position: "insideTopRight"
+                }}
+              />
+            )}
+            
+            {/* Deadline line for ranges type */}
+            {noticeMonthInfo && 'ranges' in noticeMonthInfo && noticeMonthInfo.deadlineMonth && (
+              <ReferenceLine 
+                x={noticeMonthInfo.deadlineMonth} 
+                stroke="#f59e0b"
+                strokeWidth={3}
+                strokeDasharray="8 4"
+                label={{ 
+                  value: `Límite`, 
+                  fontSize: 11, 
+                  fontWeight: 600,
+                  fill: "#f59e0b",
                   position: "insideTopRight"
                 }}
               />
