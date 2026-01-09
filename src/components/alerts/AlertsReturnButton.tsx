@@ -30,28 +30,36 @@ export function AlertsReturnButton() {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    // Check if we came from alerts
+    // Check if we came from alerts - check sessionStorage first
     const storedUrl = sessionStorage.getItem(ALERTS_RETURN_KEY);
     const fromAlerts = (location.state as any)?.fromAlerts;
     
-    if (storedUrl && (fromAlerts || storedUrl)) {
+    console.log("AlertsReturnButton check:", { storedUrl, fromAlerts, pathname: location.pathname });
+    
+    // Show button if there's a stored URL (we're on a contract page coming from alerts)
+    if (storedUrl) {
       setReturnUrl(storedUrl);
       setIsVisible(true);
     } else {
       setIsVisible(false);
     }
-  }, [location]);
+  }, [location.pathname, location.state]);
 
   const handleReturn = () => {
+    console.log("handleReturn called, returnUrl:", returnUrl);
     if (returnUrl) {
+      const url = returnUrl;
       sessionStorage.removeItem(ALERTS_RETURN_KEY);
-      navigate(returnUrl);
+      setIsVisible(false);
+      setReturnUrl(null);
+      navigate(url);
     }
   };
 
   const handleClose = () => {
     sessionStorage.removeItem(ALERTS_RETURN_KEY);
     setIsVisible(false);
+    setReturnUrl(null);
   };
 
   return (
