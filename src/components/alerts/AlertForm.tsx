@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CalendarIcon, Bell, Mail, MessageSquare, Save, X } from "lucide-react";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -37,15 +37,28 @@ const DAYS_BEFORE_OPTIONS = [
   { value: 0, label: "El mismo día" },
 ];
 
+export interface AlertData {
+  id: string;
+  title: string;
+  message: string | null;
+  alert_type: string;
+  due_date: string;
+  channels: string[];
+  days_before: number[];
+  repeat_every_days: number | null;
+  contract_id: string | null;
+}
+
 interface AlertFormProps {
   contractId?: string;
   contractName?: string;
   initialDueDate?: Date;
+  editingAlert?: AlertData | null;
   onSuccess?: () => void;
   onCancel?: () => void;
 }
 
-export function AlertForm({ contractId, contractName, initialDueDate, onSuccess, onCancel }: AlertFormProps) {
+export function AlertForm({ contractId, contractName, initialDueDate, editingAlert, onSuccess, onCancel }: AlertFormProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   
@@ -57,6 +70,20 @@ export function AlertForm({ contractId, contractName, initialDueDate, onSuccess,
   const [daysBefore, setDaysBefore] = useState<number[]>([30, 7, 1]);
   const [repeatEveryDays, setRepeatEveryDays] = useState<number | null>(null);
   const [enableRepeat, setEnableRepeat] = useState(false);
+
+  // Load editing alert data
+  useEffect(() => {
+    if (editingAlert) {
+      setTitle(editingAlert.title);
+      setMessage(editingAlert.message || "");
+      setAlertType(editingAlert.alert_type);
+      setDueDate(parseISO(editingAlert.due_date));
+      setChannels(editingAlert.channels);
+      setDaysBefore(editingAlert.days_before);
+      setRepeatEveryDays(editingAlert.repeat_every_days);
+      setEnableRepeat(!!editingAlert.repeat_every_days);
+    }
+  }, [editingAlert]);
 
   const handleChannelToggle = (channel: string) => {
     setChannels(prev => 
@@ -91,7 +118,7 @@ export function AlertForm({ contractId, contractName, initialDueDate, onSuccess,
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
-      const { error } = await supabase.from("alerts").insert([{
+      const alertData = {
         title,
         message: message || null,
         alert_type: alertType as "contract_expiration" | "contract_renewal" | "early_termination_notice" | "inspection" | "maintenance" | "license" | "permit" | "certificate" | "other",
@@ -99,25 +126,45 @@ export function AlertForm({ contractId, contractName, initialDueDate, onSuccess,
         channels: channels as ("email" | "whatsapp")[],
         days_before: daysBefore,
         repeat_every_days: enableRepeat ? repeatEveryDays : null,
-        contract_id: contractId || null,
-        item_type: contractId ? "contract" : null,
-        created_by: user?.id,
+        contract_id: editingAlert?.contract_id || contractId || null,
+        item_type: (editingAlert?.contract_id || contractId) ? "contract" : null,
         is_active: true,
-      }]);
+      };
 
-      if (error) throw error;
+      if (editingAlert) {
+        // Update existing alert
+        const { error } = await supabase
+          .from("alerts")
+          .update(alertData)
+          .eq("id", editingAlert.id);
 
-      toast({
-        title: "Alerta creada",
-        description: "El recordatorio se ha configurado correctamente",
-      });
+        if (error) throw error;
+
+        toast({
+          title: "Alerta actualizada",
+          description: "El recordatorio se ha modificado correctamente",
+        });
+      } else {
+        // Create new alert
+        const { error } = await supabase.from("alerts").insert([{
+          ...alertData,
+          created_by: user?.id,
+        }]);
+
+        if (error) throw error;
+
+        toast({
+          title: "Alerta creada",
+          description: "El recordatorio se ha configurado correctamente",
+        });
+      }
 
       onSuccess?.();
     } catch (error: any) {
-      console.error("Error creating alert:", error);
+      console.error("Error saving alert:", error);
       toast({
         title: "Error",
-        description: error.message || "No se pudo crear la alerta",
+        description: error.message || "No se pudo guardar la alerta",
         variant: "destructive",
       });
     } finally {
@@ -130,7 +177,7 @@ export function AlertForm({ contractId, contractName, initialDueDate, onSuccess,
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Bell className="h-5 w-5" />
-          Configurar Alerta
+          {editingAlert ? "Editar Alerta" : "Configurar Alerta"}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -283,7 +330,7 @@ export function AlertForm({ contractId, contractName, initialDueDate, onSuccess,
             )}
             <Button type="submit" disabled={loading}>
               <Save className="h-4 w-4 mr-2" />
-              {loading ? "Guardando..." : "Guardar alerta"}
+              {loading ? "Guardando..." : (editingAlert ? "Actualizar alerta" : "Guardar alerta")}
             </Button>
           </div>
         </form>

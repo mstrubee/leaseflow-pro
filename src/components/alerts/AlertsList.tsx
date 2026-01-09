@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
-import { Trash2, Bell, Mail, MessageSquare, Calendar, RefreshCw, Send, Clock, CheckCircle } from "lucide-react";
+import { Trash2, Bell, Mail, MessageSquare, Calendar, RefreshCw, Send, Clock, Pencil } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -20,6 +20,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+} from "@/components/ui/dialog";
+import { AlertForm, AlertData } from "./AlertForm";
 
 interface Alert {
   id: string;
@@ -58,7 +63,7 @@ export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyAct
   const [deleteAlertId, setDeleteAlertId] = useState<string | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [sendingTest, setSendingTest] = useState<string | null>(null);
-  const [completingAlert, setCompletingAlert] = useState<string | null>(null);
+  const [editingAlert, setEditingAlert] = useState<AlertData | null>(null);
 
   const loadAlerts = async () => {
     setLoading(true);
@@ -126,34 +131,6 @@ export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyAct
     }
   };
 
-  const handleComplete = async (alertId: string) => {
-    setCompletingAlert(alertId);
-    try {
-      const { error } = await supabase
-        .from("alerts")
-        .update({
-          completed_at: new Date().toISOString(),
-          completed_by: user?.id,
-          is_active: false,
-        })
-        .eq("id", alertId);
-
-      if (error) throw error;
-
-      setAlerts(prev => prev.filter(alert => alert.id !== alertId));
-      toast({ title: "Alerta marcada como cumplida" });
-      onRefresh?.();
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setCompletingAlert(null);
-    }
-  };
-
   const handleDelete = async () => {
     if (!deleteAlertId || deleteConfirmation !== "ELIMINAR") return;
 
@@ -206,6 +183,26 @@ export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyAct
     } finally {
       setSendingTest(null);
     }
+  };
+
+  const handleEditClick = (alert: Alert) => {
+    setEditingAlert({
+      id: alert.id,
+      title: alert.title,
+      message: alert.message,
+      alert_type: alert.alert_type,
+      due_date: alert.due_date,
+      channels: alert.channels,
+      days_before: alert.days_before,
+      repeat_every_days: alert.repeat_every_days,
+      contract_id: alert.contract_id,
+    });
+  };
+
+  const handleEditSuccess = () => {
+    setEditingAlert(null);
+    loadAlerts();
+    onRefresh?.();
   };
 
   const getDaysUntilDue = (dueDate: string) => {
@@ -327,6 +324,15 @@ export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyAct
                   <Button
                     variant="ghost"
                     size="icon"
+                    onClick={() => handleEditClick(alert)}
+                    title="Editar alerta"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => handleTestSend(alert.id)}
                     disabled={sendingTest === alert.id || !alert.is_active}
                     title="Enviar email de prueba"
@@ -352,6 +358,17 @@ export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyAct
           </Card>
         ))}
       </div>
+
+      {/* Edit Alert Dialog */}
+      <Dialog open={!!editingAlert} onOpenChange={(open) => !open && setEditingAlert(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <AlertForm
+            editingAlert={editingAlert}
+            onSuccess={handleEditSuccess}
+            onCancel={() => setEditingAlert(null)}
+          />
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!deleteAlertId} onOpenChange={() => { setDeleteAlertId(null); setDeleteConfirmation(""); }}>
         <AlertDialogContent>
