@@ -17,6 +17,7 @@ import { CompanySelect } from "@/components/contracts/CompanySelect";
 import { CustomFieldsManager } from "@/components/contracts/CustomFieldsManager";
 import { useCustomFieldValues } from "@/hooks/useCustomFieldValues";
 import { RegionCommuneSelect } from "@/components/contracts/RegionCommuneSelect";
+import { MultipleNoticesSection, NoticeEntry } from "@/components/contracts/MultipleNoticesSection";
 
 const NewContract = () => {
   const navigate = useNavigate();
@@ -54,6 +55,7 @@ const NewContract = () => {
   const [noticeValue, setNoticeValue] = useState("");
   const [noticeRanges, setNoticeRanges] = useState<Array<{ start_month: number; end_month: number }>>([]);
   const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">("unilateral_gp");
+  const [multipleNotices, setMultipleNotices] = useState<NoticeEntry[]>([]);
   const [escalations, setEscalations] = useState<Escalation[]>([]);
   const [fechaInicio, setFechaInicio] = useState("");
   const [signedDate, setSignedDate] = useState("");
@@ -220,6 +222,23 @@ const NewContract = () => {
             );
 
           if (rangesError) throw rangesError;
+        }
+
+        // Create multiple notices if any
+        if (multipleNotices.length > 0) {
+          const { error: noticesError } = await supabase
+            .from("version_notices")
+            .insert(
+              multipleNotices.map((n) => ({
+                version_id: version.id,
+                notice_type: n.notice_type,
+                notice_value: n.notice_value,
+                notice_bilaterality: n.notice_bilaterality,
+                description: n.description || null,
+              }))
+            );
+
+          if (noticesError) throw noticesError;
         }
       }
       // Create escalations if any
@@ -1148,6 +1167,15 @@ const NewContract = () => {
                   )}
                 </div>
               )}
+
+              {/* Multiple Notices Section */}
+              <div className="mt-6 pt-6 border-t border-border">
+                <MultipleNoticesSection
+                  notices={multipleNotices}
+                  onChange={setMultipleNotices}
+                  durationMonths={parseInt(duration) || undefined}
+                />
+              </div>
             </CardContent>
           </Card>
 

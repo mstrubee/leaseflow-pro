@@ -19,6 +19,7 @@ import { CompanySelect } from "@/components/contracts/CompanySelect";
 import { EditableSectionWrapper } from "@/components/contracts/EditableSectionWrapper";
 import { CustomFieldsManager } from "@/components/contracts/CustomFieldsManager";
 import { useCustomFieldValues } from "@/hooks/useCustomFieldValues";
+import { MultipleNoticesSection, NoticeEntry } from "@/components/contracts/MultipleNoticesSection";
 import {
   DndContext,
   closestCenter,
@@ -95,6 +96,7 @@ const EditContract = () => {
   const [noticeRanges, setNoticeRanges] = useState<Array<{ id?: string; start_month: number; end_month: number }>>([]);
   const [escalations, setEscalations] = useState<Array<{ id?: string; month_number: number; amount: number }>>([]);
   const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">("unilateral_gp");
+  const [multipleNotices, setMultipleNotices] = useState<NoticeEntry[]>([]);
   
   // Guarantee and periodic adjustments
   const [guaranteeMultiplier, setGuaranteeMultiplier] = useState("");
@@ -304,6 +306,23 @@ const EditContract = () => {
         // Load otros egresos
         setOtrosEgresosAmount((version as any).otros_egresos_amount?.toString() || "");
         setOtrosEgresosDescription((version as any).otros_egresos_description || "");
+
+        // Load multiple notices
+        const { data: versionNotices } = await supabase
+          .from("version_notices")
+          .select("*")
+          .eq("version_id", version.id)
+          .order("created_at");
+        
+        if (versionNotices && versionNotices.length > 0) {
+          setMultipleNotices(versionNotices.map((n: any) => ({
+            id: n.id,
+            notice_type: n.notice_type as "meses" | "fecha",
+            notice_value: n.notice_value,
+            notice_bilaterality: n.notice_bilaterality as "unilateral_gp" | "bilateral",
+            description: n.description || "",
+          })));
+        }
       }
     } catch (error: any) {
       toast({
@@ -571,6 +590,32 @@ const EditContract = () => {
           .from("notice_ranges")
           .delete()
           .eq("version_id", currentVersionId);
+      }
+
+      // Handle multiple notices
+      if (currentVersionId) {
+        // Delete existing notices for this version
+        await supabase
+          .from("version_notices")
+          .delete()
+          .eq("version_id", currentVersionId);
+
+        // Insert new notices
+        if (multipleNotices.length > 0) {
+          const { error: noticesError } = await supabase
+            .from("version_notices")
+            .insert(
+              multipleNotices.map((n) => ({
+                version_id: currentVersionId,
+                notice_type: n.notice_type,
+                notice_value: n.notice_value,
+                notice_bilaterality: n.notice_bilaterality,
+                description: n.description || null,
+              }))
+            );
+
+          if (noticesError) throw noticesError;
+        }
       }
 
       // Generate termination notice alert
@@ -1814,6 +1859,18 @@ const EditContract = () => {
                                     )}
                                   </div>
                                 )}
+
+                                {/* Multiple Notices Section */}
+                                <div className="mt-6 pt-6 border-t border-border">
+                                  <MultipleNoticesSection
+                                    notices={multipleNotices}
+                                    onChange={(notices) => {
+                                      setMultipleNotices(notices);
+                                      setHasUnsavedChanges(true);
+                                    }}
+                                    durationMonths={parseInt(duration) || undefined}
+                                  />
+                                </div>
                               </>
                             );
                           default:

@@ -2836,6 +2836,44 @@ export type Database = {
         }
         Relationships: []
       }
+      version_notices: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          notice_bilaterality: string | null
+          notice_type: string
+          notice_value: string
+          version_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          notice_bilaterality?: string | null
+          notice_type: string
+          notice_value: string
+          version_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          notice_bilaterality?: string | null
+          notice_type?: string
+          notice_value?: string
+          version_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "version_notices_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "contract_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       cloud_storage_connections_public: {
