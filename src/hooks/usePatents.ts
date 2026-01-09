@@ -41,6 +41,7 @@ export function usePatents() {
             status,
             patente_status,
             contract_addresses (region, commune),
+            contract_companies (companies (name)),
             contract_patents (id, contract_id, priority, priority_changed_at, priority_changed_by),
             patent_documents (
               id, contract_id, checklist_item_id, status, status_changed_at,
