@@ -14,6 +14,7 @@ interface TerminationNotice {
   id: string;
   notice_type: string;
   notice_date: string;
+  required_exit_date: string | null;
   document_url: string | null;
 }
 
@@ -322,17 +323,24 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
             
             // Si hay un aviso de término anticipado, calcular la fecha de término efectivo
             const hasTerminationNotice = contract.termination_notices && contract.termination_notices.length > 0;
-            const terminationNotice = hasTerminationNotice ? contract.termination_notices[0] : null;
+            const terminationNotice = hasTerminationNotice 
+              ? contract.termination_notices.find(n => n.required_exit_date) || contract.termination_notices[0]
+              : null;
             let endDate = originalEndDate;
             
-            if (terminationNotice && currentVersion) {
-              const noticeDate = parseISO(terminationNotice.notice_date);
-              // El término efectivo es la fecha del aviso + los meses de aviso requeridos
-              const noticeMonths = currentVersion.notice_type === "meses" 
-                ? parseInt(currentVersion.notice_value) || 0 
-                : 0;
-              if (noticeMonths > 0) {
-                endDate = addMonths(noticeDate, noticeMonths);
+            if (terminationNotice) {
+              // Si hay fecha de salida requerida, usarla directamente
+              if (terminationNotice.required_exit_date) {
+                endDate = parseISO(terminationNotice.required_exit_date);
+              } else if (currentVersion) {
+                // Fallback: calcular basado en fecha de aviso + meses de aviso
+                const noticeDate = parseISO(terminationNotice.notice_date);
+                const noticeMonths = currentVersion.notice_type === "meses" 
+                  ? parseInt(currentVersion.notice_value) || 0 
+                  : 0;
+                if (noticeMonths > 0) {
+                  endDate = addMonths(noticeDate, noticeMonths);
+                }
               }
             }
 

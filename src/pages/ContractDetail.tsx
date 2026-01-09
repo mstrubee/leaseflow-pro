@@ -108,6 +108,7 @@ interface Contract {
     id: string;
     notice_type: string;
     notice_date: string;
+    required_exit_date: string | null;
     document_url: string | null;
     storage_provider: string | null;
     issuer_name: string | null;
