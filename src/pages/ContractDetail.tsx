@@ -612,9 +612,9 @@ const ContractDetail = () => {
   return <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <Button variant="ghost" onClick={() => navigate("/contracts")} className="gap-2 mb-2">
+          <Button variant="ghost" onClick={() => navigate(-1)} className="gap-2 mb-2">
             <ArrowLeft className="h-4 w-4" />
-            Volver al Listado de Contratos
+            Volver
           </Button>
           <div className="flex items-start justify-between">
             <div className="flex flex-col">
