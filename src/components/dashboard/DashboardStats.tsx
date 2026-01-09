@@ -232,7 +232,7 @@ export const DashboardStats = () => {
                   )}
                   {stats.totalTerminationNotices > 0 && (
                     <div 
-                      className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer hover:bg-red-100/50 rounded transition-colors inline-flex items-center gap-1 border-2 border-red-500 px-2 py-1 bg-red-50"
+                      className="absolute right-3 bottom-2 cursor-pointer hover:bg-red-100/50 rounded transition-colors inline-flex items-center gap-1 border-2 border-red-500 px-2 py-1 bg-red-50"
                       onClick={(e) => {
                         e.stopPropagation();
                         navigate("/alerts");
