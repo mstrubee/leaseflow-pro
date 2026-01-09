@@ -46,7 +46,15 @@ export function PatentsModule() {
 
   const handleCardFilterClick = (filter: string) => {
     setCardFilter(prev => prev === filter ? null : filter);
-    setActiveTab('list');
+    
+    // Cards related to documentation alerts go to alerts tab, others to list tab
+    const alertsFilters = ['critical', 'overdue'];
+    if (alertsFilters.includes(filter)) {
+      setActiveTab('alerts');
+    } else {
+      setActiveTab('list');
+    }
+    
     // Expand the list section when clicking a card
     setIsListOpen(true);
   };
