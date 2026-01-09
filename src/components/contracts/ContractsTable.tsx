@@ -48,6 +48,12 @@ interface ContractVersion {
   otros_egresos_amount?: number | null;
   otros_egresos_description?: string | null;
   rent_escalations?: RentEscalation[];
+  // Periodic adjustments
+  has_periodic_adjustments?: boolean | null;
+  adjustment_type?: string | null;
+  adjustment_value?: number | null;
+  first_adjustment_month?: number | null;
+  adjustment_periodicity_months?: number | null;
 }
 
 interface ContractCompany {
@@ -180,14 +186,13 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     return { isInsideRange: false, rangeEndDate: null };
   };
 
-  // Calculate current rent based on escalations and current month
-  const calculateCurrentRent = (version: ContractVersion, signedDate: string | null): { currentRent: number; hasEscalations: boolean } => {
+  // Calculate current rent based on escalations, periodic adjustments, and current month
+  const calculateCurrentRent = (version: ContractVersion, signedDate: string | null): { currentRent: number; hasEscalations: boolean; hasAdjustments: boolean } => {
     const escalations = version.rent_escalations || [];
     const hasEscalations = escalations.length > 0;
-    
-    if (!hasEscalations) {
-      return { currentRent: version.regime_rent, hasEscalations: false };
-    }
+    const hasAdjustments = version.has_periodic_adjustments && 
+      (version.adjustment_value || 0) > 0 && 
+      (version.first_adjustment_month || 0) > 0;
     
     // Calculate current month
     const startDate = version.effective_date
@@ -197,7 +202,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
         : null;
     
     if (!startDate) {
-      return { currentRent: version.regime_rent, hasEscalations: true };
+      return { currentRent: version.regime_rent, hasEscalations, hasAdjustments: !!hasAdjustments };
     }
     
     const today = new Date();
@@ -207,23 +212,55 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     // Check grace period
     const graceMonths = version.grace_months || 0;
     if (currentMonth <= graceMonths) {
-      return { currentRent: 0, hasEscalations: true };
+      return { currentRent: 0, hasEscalations, hasAdjustments: !!hasAdjustments };
     }
     
-    // Find the applicable escalation for current month
-    const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
+    // If no escalations and no adjustments, return regime rent
+    if (!hasEscalations && !hasAdjustments) {
+      return { currentRent: version.regime_rent, hasEscalations: false, hasAdjustments: false };
+    }
     
-    // Find the last escalation that starts at or before current month
-    let currentRent = version.initial_rent || version.regime_rent;
-    for (const esc of sortedEscalations) {
-      if (esc.month_number <= currentMonth) {
-        currentRent = esc.amount;
-      } else {
-        break;
+    // Start with base rent from escalations or regime rent
+    let currentRent = version.regime_rent;
+    
+    if (hasEscalations) {
+      // Find the applicable escalation for current month
+      const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
+      
+      currentRent = version.initial_rent || version.regime_rent;
+      for (const esc of sortedEscalations) {
+        if (esc.month_number <= currentMonth) {
+          currentRent = esc.amount;
+        } else {
+          break;
+        }
       }
     }
     
-    return { currentRent, hasEscalations: true };
+    // Apply periodic adjustments on top of base rent
+    if (hasAdjustments) {
+      const firstAdjMonth = version.first_adjustment_month || 0;
+      const periodicity = version.adjustment_periodicity_months || 12;
+      const adjValue = version.adjustment_value || 0;
+      const adjType = version.adjustment_type || "percentage";
+      
+      // Calculate how many adjustments have been applied
+      if (currentMonth >= firstAdjMonth) {
+        const monthsSinceFirst = currentMonth - firstAdjMonth;
+        const numAdjustments = Math.floor(monthsSinceFirst / periodicity) + 1;
+        
+        // Apply adjustments cumulatively
+        for (let i = 0; i < numAdjustments; i++) {
+          if (adjType === "percentage") {
+            currentRent = currentRent * (1 + adjValue / 100);
+          } else {
+            currentRent = currentRent + adjValue;
+          }
+        }
+      }
+    }
+    
+    return { currentRent, hasEscalations, hasAdjustments: !!hasAdjustments };
   };
 
   const getStatusBadge = (status: string) => {
@@ -380,8 +417,9 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                       gastosComunesTotal = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
                     }
                     
-                    // Calculate current rent (considering escalations)
-                    const { currentRent, hasEscalations } = calculateCurrentRent(currentVersion, contract.signed_date);
+                    // Calculate current rent (considering escalations and adjustments)
+                    const { currentRent, hasEscalations, hasAdjustments } = calculateCurrentRent(currentVersion, contract.signed_date);
+                    const showCurrentLabel = hasEscalations || hasAdjustments;
                     
                     // Fondo promoción - use currentRent for calculation
                     const fondoPromocionPct = currentVersion.fondo_promocion_percentage ?? 0;
@@ -395,7 +433,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                       <div className="flex flex-col items-center">
                         <span className="text-sm font-medium">{formatAmount(total, contract.display_currency)}</span>
                         <div className="text-[9px] text-muted-foreground whitespace-nowrap">
-                          <div>Canon{hasEscalations ? " actual" : ""}: {formatAmount(currentRent, contract.display_currency)}</div>
+                          <div>Canon{showCurrentLabel ? " actual" : ""}: {formatAmount(currentRent, contract.display_currency)}</div>
                           <div>GC: {formatAmount(gastosComunesTotal, contract.display_currency)}{methodology === "percentage" && currentVersion.gastos_comunes_tope && currentVersion.gastos_comunes_tope > 0 ? " (c/tope)" : ""}</div>
                           <div>F. Prom: {fondoPromocionPct > 0 ? formatAmount(fondoPromocion, contract.display_currency) : "-"}</div>
                           {otrosEgresos > 0 && <div>Otros: {formatAmount(otrosEgresos, contract.display_currency)}</div>}

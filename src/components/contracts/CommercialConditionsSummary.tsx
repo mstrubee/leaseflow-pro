@@ -175,16 +175,14 @@ export function CommercialConditionsSummary({
     });
   };
   const hasEscalations = version.rent_escalations && version.rent_escalations.length > 0;
+  const hasAdjustments = version.has_periodic_adjustments && 
+    (version.adjustment_value || 0) > 0 && 
+    (version.first_adjustment_month || 0) > 0;
+  const showCurrentLabel = hasEscalations || hasAdjustments;
   const guaranteeAmount = version.guarantee_multiplier ? version.guarantee_multiplier * version.regime_rent : null;
 
-  // Calculate current rent based on escalations and current month
+  // Calculate current rent based on escalations, periodic adjustments, and current month
   const currentRent = useMemo(() => {
-    if (!hasEscalations) {
-      return version.regime_rent;
-    }
-    
-    const escalations = version.rent_escalations || [];
-    
     // Calculate current month
     const startDate = version.effective_date
       ? new Date(version.effective_date)
@@ -206,21 +204,53 @@ export function CommercialConditionsSummary({
       return 0;
     }
     
-    // Find the applicable escalation for current month
-    const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
+    // If no escalations and no adjustments, return regime rent
+    if (!hasEscalations && !hasAdjustments) {
+      return version.regime_rent;
+    }
     
-    // Find the last escalation that starts at or before current month
-    let rent = version.initial_rent || version.regime_rent;
-    for (const esc of sortedEscalations) {
-      if (esc.month_number <= currentMonth) {
-        rent = esc.amount;
-      } else {
-        break;
+    // Start with base rent from escalations or regime rent
+    let rent = version.regime_rent;
+    
+    if (hasEscalations) {
+      const escalations = version.rent_escalations || [];
+      const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
+      
+      rent = version.initial_rent || version.regime_rent;
+      for (const esc of sortedEscalations) {
+        if (esc.month_number <= currentMonth) {
+          rent = esc.amount;
+        } else {
+          break;
+        }
+      }
+    }
+    
+    // Apply periodic adjustments on top of base rent
+    if (hasAdjustments) {
+      const firstAdjMonth = version.first_adjustment_month || 0;
+      const periodicity = version.adjustment_periodicity_months || 12;
+      const adjValue = version.adjustment_value || 0;
+      const adjType = version.adjustment_type || "percentage";
+      
+      // Calculate how many adjustments have been applied
+      if (currentMonth >= firstAdjMonth) {
+        const monthsSinceFirst = currentMonth - firstAdjMonth;
+        const numAdjustments = Math.floor(monthsSinceFirst / periodicity) + 1;
+        
+        // Apply adjustments cumulatively
+        for (let i = 0; i < numAdjustments; i++) {
+          if (adjType === "percentage") {
+            rent = rent * (1 + adjValue / 100);
+          } else {
+            rent = rent + adjValue;
+          }
+        }
       }
     }
     
     return rent;
-  }, [version, signedDate, hasEscalations]);
+  }, [version, signedDate, hasEscalations, hasAdjustments]);
 
   // Canon per m2 - use currentRent for escalated contracts
   const canonPerM2 = superficieEdificadaLocal && superficieEdificadaLocal > 0 ? currentRent / superficieEdificadaLocal : null;
@@ -390,7 +420,7 @@ export function CommercialConditionsSummary({
             {/* Composición - siempre mostrar todos los componentes */}
             <div className="text-[10px] text-muted-foreground space-y-0.5 pt-1 border-t border-border/50">
               <div className="flex justify-between">
-                <span>Canon{hasEscalations ? " actual" : ""}:</span>
+                <span>Canon{showCurrentLabel ? " actual" : ""}:</span>
                 <span>{formatPrimary(currentRent)}</span>
               </div>
               <div className="flex justify-between">
@@ -416,7 +446,7 @@ export function CommercialConditionsSummary({
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <DollarSign className="h-3 w-3" />
-              {hasEscalations ? "Canon Actual" : "Canon en Régimen"}
+              {showCurrentLabel ? "Canon Actual" : "Canon en Régimen"}
             </div>
             <p className="text-sm font-semibold text-primary">
               {formatPrimary(currentRent)}
