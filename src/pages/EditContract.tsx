@@ -1640,8 +1640,10 @@ const EditContract = () => {
 
                                     {adjustmentValue && regimeRent && firstAdjustmentMonth && adjustmentPeriodicityMonths && (
                                       <div className="bg-background/50 rounded p-3 space-y-2">
-                                        <p className="text-xs font-medium text-muted-foreground">Vista previa de reajustes:</p>
-                                        <div className="text-xs space-y-1">
+                                        <p className="text-xs font-medium text-muted-foreground">
+                                          Vista previa de reajustes (Duración: {duration} meses):
+                                        </p>
+                                        <div className="text-xs space-y-1 max-h-48 overflow-y-auto">
                                           {(() => {
                                             const baseRent = parseFloat(regimeRent);
                                             const adjValue = parseFloat(adjustmentValue);
@@ -1650,10 +1652,14 @@ const EditContract = () => {
                                             const durationMonths = parseInt(duration) || 120;
                                             const adjustments: { month: number; rent: number }[] = [];
                                             
+                                            // Add initial rent at month 1
+                                            adjustments.push({ month: 1, rent: baseRent });
+                                            
                                             let currentRent = baseRent;
                                             let month = firstMonth;
                                             
-                                            while (month <= durationMonths && adjustments.length < 5) {
+                                            // Calculate ALL adjustments until contract end
+                                            while (month <= durationMonths) {
                                               if (adjustmentType === "percentage") {
                                                 currentRent = currentRent * (1 + adjValue / 100);
                                               } else {
@@ -1663,19 +1669,27 @@ const EditContract = () => {
                                               month += periodicity;
                                             }
                                             
+                                            // Add final month if not already included
+                                            const lastAdjMonth = adjustments[adjustments.length - 1]?.month;
+                                            if (lastAdjMonth < durationMonths) {
+                                              adjustments.push({ month: durationMonths, rent: currentRent });
+                                            }
+                                            
                                             return adjustments.map((adj, idx) => (
-                                              <div key={idx} className="flex justify-between">
-                                                <span>Mes {adj.month}:</span>
+                                              <div key={idx} className="flex justify-between py-0.5">
+                                                <span className={adj.month === 1 ? "font-medium" : ""}>
+                                                  {adj.month === 1 ? "Inicio (Mes 1):" : `Mes ${adj.month}:`}
+                                                </span>
                                                 <span className="font-medium">{adj.rent.toFixed(2)} UF</span>
                                               </div>
                                             ));
                                           })()}
-                                          <p className="text-muted-foreground mt-2 italic">
-                                            {adjustmentType === "percentage" 
-                                              ? "Los reajustes se aplican sobre la renta ya reajustada (compuesto)"
-                                              : "Los reajustes se suman a la renta acumulada"}
-                                          </p>
                                         </div>
+                                        <p className="text-muted-foreground mt-2 italic text-xs">
+                                          {adjustmentType === "percentage" 
+                                            ? "Los reajustes se aplican sobre la renta ya reajustada (compuesto)"
+                                            : "Los reajustes se suman a la renta acumulada"}
+                                        </p>
                                       </div>
                                     )}
                                   </div>
