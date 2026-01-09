@@ -16,7 +16,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Trash2 } from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Plus, Trash2, ChevronDown } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -532,27 +537,32 @@ export const RentEscalations = ({
 
       {/* Add new escalation */}
       {!readOnly && (
-        <div className="space-y-3 pt-2">
-          <Label className="text-sm font-medium">Agregar escalón</Label>
-          <EscalationMonthInput
-            startMonth={newStartMonth}
-            endMonth={newEndMonth}
-            amount={newAmount}
-            onStartMonthChange={setNewStartMonth}
-            onEndMonthChange={setNewEndMonth}
-            onAmountChange={setNewAmount}
-            onAdd={handleAdd}
-            graceMonths={graceMonths}
-            durationMonths={durationMonths}
-            currency={currency}
-          />
-          <p className="text-xs text-muted-foreground">
-            {graceMonths > 0 
-              ? `Los primeros ${graceMonths} meses son de gracia. El mes ${graceMonths + 1} es el primer mes con pago.`
-              : "Indica el mes inicial, mes final y el canon para ese período."
-            }
-          </p>
-        </div>
+        <Collapsible defaultOpen={false} className="pt-2">
+          <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium hover:text-primary transition-colors group w-full">
+            <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
+            Agregar Escalonado
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-3 pt-3">
+            <EscalationMonthInput
+              startMonth={newStartMonth}
+              endMonth={newEndMonth}
+              amount={newAmount}
+              onStartMonthChange={setNewStartMonth}
+              onEndMonthChange={setNewEndMonth}
+              onAmountChange={setNewAmount}
+              onAdd={handleAdd}
+              graceMonths={graceMonths}
+              durationMonths={durationMonths}
+              currency={currency}
+            />
+            <p className="text-xs text-muted-foreground">
+              {graceMonths > 0 
+                ? `Los primeros ${graceMonths} meses son de gracia. El mes ${graceMonths + 1} es el primer mes con pago.`
+                : "Indica el mes inicial, mes final y el canon para ese período."
+              }
+            </p>
+          </CollapsibleContent>
+        </Collapsible>
       )}
 
       {/* Rent trend chart with real duration spacing */}
