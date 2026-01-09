@@ -9,7 +9,7 @@ import { Trash2, Bell, Mail, MessageSquare, Calendar, RefreshCw, Send, Clock, Pe
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { format, differenceInDays } from "date-fns";
+import { format, differenceInDays, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import {
   AlertDialog,
@@ -264,7 +264,7 @@ export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyAct
   };
 
   const getDaysUntilDue = (dueDate: string) => {
-    return differenceInDays(new Date(dueDate), new Date());
+    return differenceInDays(parseISO(dueDate), new Date());
   };
 
   const getUrgencyBadge = (dueDate: string) => {
@@ -379,7 +379,7 @@ export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyAct
                     <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Calendar className="h-4 w-4" />
-                        {format(new Date(alert.due_date), "PPP", { locale: es })}
+                        {format(parseISO(alert.due_date), "PPP", { locale: es })}
                       </span>
 
                       <span className="flex items-center gap-1">
