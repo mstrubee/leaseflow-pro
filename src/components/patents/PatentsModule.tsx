@@ -40,7 +40,7 @@ export function PatentsModule() {
   const [activeTab, setActiveTab] = useState<'list' | 'alerts'>('list');
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
   const [cardFilter, setCardFilter] = useState<string | null>(null);
-  const { isOpen: isListOpen, setIsOpen: setIsListOpen } = useSingleCollapsible('patents-list-collapsed', false);
+  const { isOpen: isListOpen, setIsOpen: setIsListOpen } = useSingleCollapsible('patents-list-open', true);
   const stats = getCriticalStats();
   const selectedContract = contracts.find(c => c.id === selectedContractId);
 
