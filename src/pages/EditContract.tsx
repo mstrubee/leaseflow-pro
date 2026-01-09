@@ -19,7 +19,7 @@ import { CompanySelect } from "@/components/contracts/CompanySelect";
 import { EditableSectionWrapper } from "@/components/contracts/EditableSectionWrapper";
 import { CustomFieldsManager } from "@/components/contracts/CustomFieldsManager";
 import { useCustomFieldValues } from "@/hooks/useCustomFieldValues";
-import { MultipleNoticesSection, NoticeEntry } from "@/components/contracts/MultipleNoticesSection";
+import { MultipleNoticesSection, NoticeEntry, createAlertsFromNotices } from "@/components/contracts/MultipleNoticesSection";
 import {
   DndContext,
   closestCenter,
@@ -615,6 +615,26 @@ const EditContract = () => {
             );
 
           if (noticesError) throw noticesError;
+        }
+
+        // Create alerts from notices that have create_alert enabled
+        const noticesToAlert = multipleNotices.filter(n => n.create_alert);
+        if (noticesToAlert.length > 0 && effectiveDate && duration) {
+          const alertResult = await createAlertsFromNotices(
+            supabase,
+            id!,
+            name,
+            noticesToAlert,
+            effectiveDate,
+            parseInt(duration)
+          );
+          
+          if (alertResult.alertsCreated > 0) {
+            console.log(`Created ${alertResult.alertsCreated} alerts from notices`);
+          }
+          if (alertResult.errors.length > 0) {
+            console.error("Alert creation errors:", alertResult.errors);
+          }
         }
       }
 
@@ -1873,6 +1893,8 @@ const EditContract = () => {
                                       setHasUnsavedChanges(true);
                                     }}
                                     durationMonths={parseInt(duration) || undefined}
+                                    signedDate={effectiveDate}
+                                    contractName={name}
                                   />
                                 </div>
                               </>

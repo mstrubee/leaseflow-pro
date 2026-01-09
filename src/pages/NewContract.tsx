@@ -17,7 +17,7 @@ import { CompanySelect } from "@/components/contracts/CompanySelect";
 import { CustomFieldsManager } from "@/components/contracts/CustomFieldsManager";
 import { useCustomFieldValues } from "@/hooks/useCustomFieldValues";
 import { RegionCommuneSelect } from "@/components/contracts/RegionCommuneSelect";
-import { MultipleNoticesSection, NoticeEntry } from "@/components/contracts/MultipleNoticesSection";
+import { MultipleNoticesSection, NoticeEntry, createAlertsFromNotices } from "@/components/contracts/MultipleNoticesSection";
 
 const NewContract = () => {
   const navigate = useNavigate();
@@ -239,6 +239,26 @@ const NewContract = () => {
             );
 
           if (noticesError) throw noticesError;
+
+          // Create alerts from notices that have create_alert enabled
+          const noticesToAlert = multipleNotices.filter(n => n.create_alert);
+          if (noticesToAlert.length > 0 && fechaInicio && duration) {
+            const alertResult = await createAlertsFromNotices(
+              supabase,
+              contract.id,
+              name,
+              noticesToAlert,
+              fechaInicio,
+              parseInt(duration)
+            );
+            
+            if (alertResult.alertsCreated > 0) {
+              console.log(`Created ${alertResult.alertsCreated} alerts from notices`);
+            }
+            if (alertResult.errors.length > 0) {
+              console.error("Alert creation errors:", alertResult.errors);
+            }
+          }
         }
       }
       // Create escalations if any
@@ -1164,6 +1184,8 @@ const NewContract = () => {
                   notices={multipleNotices}
                   onChange={setMultipleNotices}
                   durationMonths={parseInt(duration) || undefined}
+                  signedDate={fechaInicio}
+                  contractName={name}
                 />
               </div>
             </CardContent>
