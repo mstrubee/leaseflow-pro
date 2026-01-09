@@ -9,6 +9,16 @@ import { Plus, Trash2, Bell } from "lucide-react";
 import { addMonths, format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
+const DAYS_BEFORE_OPTIONS = [
+  { value: 60, label: "60 días antes" },
+  { value: 30, label: "30 días antes" },
+  { value: 15, label: "15 días antes" },
+  { value: 7, label: "7 días antes" },
+  { value: 3, label: "3 días antes" },
+  { value: 1, label: "1 día antes" },
+  { value: 0, label: "El mismo día" },
+];
+
 export interface NoticeEntry {
   id?: string;
   notice_type: "meses" | "fecha";
@@ -16,8 +26,10 @@ export interface NoticeEntry {
   notice_bilaterality: "unilateral_gp" | "bilateral";
   description?: string;
   create_alert?: boolean;
-  alert_days_before?: number;
-  alert_email?: string;
+  alert_days_before?: number[];
+  alert_channels?: string[];
+  alert_repeat_enabled?: boolean;
+  alert_repeat_days?: number;
 }
 
 interface MultipleNoticesSectionProps {
@@ -44,13 +56,15 @@ export function MultipleNoticesSection({
         notice_bilaterality: "unilateral_gp",
         description: "renovacion",
         create_alert: false,
-        alert_days_before: 7,
-        alert_email: "",
+        alert_days_before: [30, 7, 1],
+        alert_channels: ["email"],
+        alert_repeat_enabled: false,
+        alert_repeat_days: 7,
       },
     ]);
   };
 
-  const updateNotice = (index: number, field: keyof NoticeEntry, value: string | boolean | number) => {
+  const updateNotice = (index: number, field: keyof NoticeEntry, value: string | boolean | number | number[] | string[]) => {
     const newNotices = [...notices];
     newNotices[index] = { ...newNotices[index], [field]: value };
     onChange(newNotices);
@@ -251,36 +265,103 @@ export function MultipleNoticesSection({
                 </div>
 
                 {notice.create_alert && (
-                  <div className="mt-4 ml-6 space-y-4 p-3 bg-warning/5 border border-warning/20 rounded-lg">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor={`alert_days_${index}`}>Días antes para alertar</Label>
-                        <Input
-                          id={`alert_days_${index}`}
-                          type="number"
-                          min="1"
-                          max="365"
-                          value={notice.alert_days_before || 7}
-                          onChange={(e) => updateNotice(index, "alert_days_before", parseInt(e.target.value) || 7)}
-                          placeholder="7"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor={`alert_email_${index}`}>Email para notificaciones</Label>
-                        <Input
-                          id={`alert_email_${index}`}
-                          type="email"
-                          value={notice.alert_email || ""}
-                          onChange={(e) => updateNotice(index, "alert_email", e.target.value)}
-                          placeholder="correo@ejemplo.com"
-                        />
+                  <div className="mt-4 ml-6 space-y-4 p-4 bg-warning/5 border border-warning/20 rounded-lg">
+                    {/* Days before options */}
+                    <div className="space-y-2">
+                      <Label>Días de aviso previo *</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {DAYS_BEFORE_OPTIONS.map((option) => {
+                          const currentDays = notice.alert_days_before || [30, 7, 1];
+                          const isSelected = currentDays.includes(option.value);
+                          return (
+                            <Button
+                              key={option.value}
+                              type="button"
+                              variant={isSelected ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => {
+                                const newDays = isSelected
+                                  ? currentDays.filter((d) => d !== option.value)
+                                  : [...currentDays, option.value].sort((a, b) => b - a);
+                                updateNotice(index, "alert_days_before", newDays);
+                              }}
+                            >
+                              {option.label}
+                            </Button>
+                          );
+                        })}
                       </div>
                     </div>
+
+                    {/* Channels */}
+                    <div className="space-y-2">
+                      <Label>Canales de notificación *</Label>
+                      <div className="flex gap-4">
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`channel_email_${index}`}
+                            checked={(notice.alert_channels || ["email"]).includes("email")}
+                            onCheckedChange={(checked) => {
+                              const currentChannels = notice.alert_channels || ["email"];
+                              const newChannels = checked
+                                ? [...currentChannels, "email"]
+                                : currentChannels.filter((c) => c !== "email");
+                              updateNotice(index, "alert_channels", newChannels);
+                            }}
+                          />
+                          <Label htmlFor={`channel_email_${index}`} className="flex items-center gap-1 cursor-pointer">
+                            <Bell className="h-4 w-4" />
+                            Email
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-2 opacity-50">
+                          <Checkbox
+                            id={`channel_whatsapp_${index}`}
+                            disabled
+                          />
+                          <Label htmlFor={`channel_whatsapp_${index}`} className="flex items-center gap-1 cursor-pointer">
+                            WhatsApp (próximamente)
+                          </Label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Repeat option */}
+                    <div className="space-y-3 p-3 bg-muted/50 rounded-lg">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`repeat_${index}`}
+                          checked={notice.alert_repeat_enabled || false}
+                          onCheckedChange={(checked) => updateNotice(index, "alert_repeat_enabled", !!checked)}
+                        />
+                        <Label htmlFor={`repeat_${index}`} className="cursor-pointer">
+                          Repetir después del vencimiento
+                        </Label>
+                      </div>
+                      {notice.alert_repeat_enabled && (
+                        <div className="flex items-center gap-2 ml-6">
+                          <span className="text-sm text-muted-foreground">Repetir cada</span>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={365}
+                            value={notice.alert_repeat_days || 7}
+                            onChange={(e) => updateNotice(index, "alert_repeat_days", parseInt(e.target.value) || 7)}
+                            className="w-20"
+                          />
+                          <span className="text-sm text-muted-foreground">días hasta marcar como revisado</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Summary */}
                     {signedDate && durationMonths && (
-                      <p className="text-xs text-muted-foreground">
-                        La alerta "{getNoticeTypeLabel(notice.description)}{contractName ? `: ${contractName}` : ""}" 
-                        se enviará {notice.alert_days_before || 7} días antes de la fecha límite ({formatDeadlineDisplay(notice)})
-                      </p>
+                      <div className="pt-2 border-t border-border">
+                        <p className="text-xs text-muted-foreground">
+                          La alerta "{getNoticeTypeLabel(notice.description)}{contractName ? `: ${contractName}` : ""}" 
+                          se enviará {(notice.alert_days_before || [30, 7, 1]).sort((a, b) => b - a).map(d => d === 0 ? "el mismo día" : `${d} días antes`).join(", ")} de la fecha límite ({formatDeadlineDisplay(notice)})
+                        </p>
+                      </div>
                     )}
                   </div>
                 )}
@@ -344,8 +425,9 @@ export async function createAlertsFromNotices(
           alert_type: notice.description === "renovacion" ? "contract_renewal" : "early_termination_notice",
           alert_subtype: notice.description,
           due_date: deadlineDate,
-          days_before: [notice.alert_days_before || 7],
-          channels: ["email"],
+          days_before: notice.alert_days_before || [30, 7, 1],
+          channels: (notice.alert_channels || ["email"]) as ("email" | "whatsapp")[],
+          repeat_every_days: notice.alert_repeat_enabled ? (notice.alert_repeat_days || 7) : null,
           is_active: true,
           item_type: "notice",
         })
@@ -355,20 +437,6 @@ export async function createAlertsFromNotices(
       if (alertError) {
         errors.push(`Error al crear alerta para aviso: ${alertError.message}`);
         continue;
-      }
-
-      // Add recipient if email provided
-      if (alertData && notice.alert_email) {
-        const { error: recipientError } = await supabase
-          .from("alert_recipients")
-          .insert({
-            alert_id: alertData.id,
-            email: notice.alert_email,
-          });
-
-        if (recipientError) {
-          errors.push(`Error al agregar destinatario: ${recipientError.message}`);
-        }
       }
 
       alertsCreated++;
