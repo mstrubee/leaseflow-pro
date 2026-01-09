@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -121,13 +121,11 @@ interface CustomField {
 }
 
 const ContractDetail = () => {
-  const {
-    id
-  } = useParams();
+  const { id } = useParams();
   const navigate = useNavigate();
-  const {
-    toast
-  } = useToast();
+  const location = useLocation();
+  const backTo = (location.state as any)?.backTo as string | undefined;
+  const { toast } = useToast();
   const { isAdmin, roleLoaded } = useAuth();
   const { isHidden, loading: permissionsLoading } = useUserPermissions();
   const {
@@ -612,7 +610,7 @@ const ContractDetail = () => {
   return <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <Button variant="ghost" onClick={() => navigate('/contracts')} className="gap-2 mb-2">
+          <Button variant="ghost" onClick={() => navigate(backTo || "/contracts")} className="gap-2 mb-2">
             <ArrowLeft className="h-4 w-4" />
             Volver
           </Button>

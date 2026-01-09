@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -78,6 +78,7 @@ interface ContractsTableProps {
 
 export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateField, onRefresh }: ContractsTableProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { ufValue, convertUFToPesos } = useEconomicIndicators();
   const { isAdmin } = useAuth();
 
@@ -212,7 +213,11 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
               <TableRow
                 key={contract.id}
                 className="cursor-pointer hover:bg-muted/50 transition-colors"
-                onClick={() => navigate(`/contracts/${contract.id}`)}
+                onClick={() =>
+                  navigate(`/contracts/${contract.id}`, {
+                    state: { backTo: `${location.pathname}${location.search}` },
+                  })
+                }
               >
                 <TableCell>
                   <div className="flex items-center gap-2">
