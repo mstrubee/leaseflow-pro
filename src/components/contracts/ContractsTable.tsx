@@ -1,14 +1,25 @@
 import { useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Trash2, AlertTriangle, FileCheck, FilePlus } from "lucide-react";
+import { Trash2, AlertTriangle, FileCheck, FilePlus, Bell, FileWarning } from "lucide-react";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 import { addMonths, format, subMonths, parseISO, differenceInMonths, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
+
+interface ContractAlert {
+  id: string;
+  contract_id: string;
+  title: string;
+  alert_type: string;
+  due_date: string;
+  is_active: boolean;
+}
 
 interface TerminationNotice {
   id: string;
@@ -97,6 +108,39 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   const location = useLocation();
   const { ufValue, convertUFToPesos } = useEconomicIndicators();
   const { isAdmin } = useAuth();
+  const [contractAlerts, setContractAlerts] = useState<Record<string, ContractAlert[]>>({});
+
+  // Load alerts for all contracts
+  useEffect(() => {
+    const loadAlerts = async () => {
+      if (contracts.length === 0) return;
+      
+      const contractIds = contracts.map(c => c.id);
+      
+      const { data, error } = await supabase
+        .from('alerts')
+        .select('id, contract_id, title, alert_type, due_date, is_active')
+        .in('contract_id', contractIds)
+        .eq('is_active', true)
+        .is('completed_at', null)
+        .is('deleted_at', null);
+      
+      if (!error && data) {
+        // Group alerts by contract_id
+        const alertsByContract: Record<string, ContractAlert[]> = {};
+        data.forEach((alert) => {
+          if (!alertsByContract[alert.contract_id!]) {
+            alertsByContract[alert.contract_id!] = [];
+          }
+          alertsByContract[alert.contract_id!].push(alert as ContractAlert);
+        });
+        setContractAlerts(alertsByContract);
+      }
+    };
+    
+    loadAlerts();
+  }, [contracts]);
+
 
   const calculateEndDate = (contract: Contract): Date | null => {
     const currentVersion = contract.contract_versions?.find((v) => v.is_current);
@@ -344,6 +388,13 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
               }
             }
 
+            // Get alerts for this contract
+            const alerts = contractAlerts[contract.id] || [];
+            const pendingAlerts = alerts.filter(a => {
+              const dueDate = parseISO(a.due_date);
+              return dueDate <= new Date() || differenceInDays(dueDate, new Date()) <= 30;
+            });
+
             return (
               <TableRow
                 key={contract.id}
@@ -356,7 +407,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
               >
                 <TableCell>
                   <div className="flex items-center gap-2">
-                    <div>
+                    <div className="flex-1">
                       <div className="font-medium text-sm">{contract.name}</div>
                       {contract.contract_companies && contract.contract_companies.length > 0 && (
                         <div className="text-[10px] text-muted-foreground">
@@ -375,6 +426,20 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                           <Badge className="bg-orange-500 hover:bg-orange-600 text-white text-[10px] px-1 py-0 gap-0.5">
                             <AlertTriangle className="h-2.5 w-2.5" />
                             Atención Especial
+                          </Badge>
+                        )}
+                        {/* Termination notice indicator */}
+                        {hasTerminationNotice && (
+                          <Badge className="bg-red-600 hover:bg-red-700 text-white text-[10px] px-1 py-0 gap-0.5 border border-red-400">
+                            <FileWarning className="h-2.5 w-2.5" />
+                            Aviso Término
+                          </Badge>
+                        )}
+                        {/* Pending alerts indicator */}
+                        {pendingAlerts.length > 0 && (
+                          <Badge className="bg-amber-500 hover:bg-amber-600 text-white text-[10px] px-1 py-0 gap-0.5">
+                            <Bell className="h-2.5 w-2.5" />
+                            {pendingAlerts.length} Alerta{pendingAlerts.length > 1 ? 's' : ''}
                           </Badge>
                         )}
                       </div>
