@@ -4,7 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, ArrowUpDown, Eye, X } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Search, ArrowUpDown, Eye, X, ChevronDown, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ContractWithPatent, PatentPriority, PatentDocStatus, PRIORITY_CONFIG } from "./types";
 import { PatentPriorityBadge } from "./PatentPriorityBadge";
@@ -120,113 +121,124 @@ export function PatentsList({
     return filter ? labels[filter] || filter : '';
   };
 
+  const [isOpen, setIsOpen] = useState(true);
+
   return <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-lg">Prioridades</CardTitle>
-        {cardFilter && (
-          <Badge variant="secondary" className="gap-1 text-xs">
-            Filtro: {getCardFilterLabel(cardFilter)}
-            <button onClick={onClearFilter} className="ml-1 hover:text-destructive">
-              <X className="h-3 w-3" />
-            </button>
-          </Badge>
-        )}
-      </CardHeader>
-      <CardContent className="space-y-1">
-        {/* Filters */}
-        <div className="flex flex-wrap gap-3">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Buscar local..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
-          </div>
-          
-          <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Filtrar por prioridad" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas las prioridades</SelectItem>
-              {Object.entries(PRIORITY_CONFIG).map(([key, config]) => <SelectItem key={key} value={key}>{config.label}</SelectItem>)}
-            </SelectContent>
-          </Select>
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CardHeader className="flex flex-row items-center justify-between py-3">
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" className="flex items-center gap-2 p-0 h-auto hover:bg-transparent">
+              {isOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+              <CardTitle className="text-lg">Prioridades</CardTitle>
+            </Button>
+          </CollapsibleTrigger>
+          {cardFilter && (
+            <Badge variant="secondary" className="gap-1 text-xs">
+              Filtro: {getCardFilterLabel(cardFilter)}
+              <button onClick={onClearFilter} className="ml-1 hover:text-destructive">
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+        </CardHeader>
+        <CollapsibleContent>
+          <CardContent className="space-y-1">
+            {/* Filters */}
+            <div className="flex flex-wrap gap-3">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Buscar local..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
+              </div>
+              
+              <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filtrar por prioridad" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas las prioridades</SelectItem>
+                  {Object.entries(PRIORITY_CONFIG).map(([key, config]) => <SelectItem key={key} value={key}>{config.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
 
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Filtrar por estado" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los estados</SelectItem>
-              <SelectItem value="pendiente">Pendiente</SelectItem>
-              <SelectItem value="en_curso">En Curso</SelectItem>
-              <SelectItem value="ok">Ok</SelectItem>
-              <SelectItem value="nuevo_doc">Nuevo Doc</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filtrar por estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los estados</SelectItem>
+                  <SelectItem value="pendiente">Pendiente</SelectItem>
+                  <SelectItem value="en_curso">En Curso</SelectItem>
+                  <SelectItem value="ok">Ok</SelectItem>
+                  <SelectItem value="nuevo_doc">Nuevo Doc</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-        {/* Sort buttons */}
-        <div className="flex gap-2">
-          <Button variant={sortField === "priority" ? "default" : "outline"} size="sm" onClick={() => toggleSort("priority")} className="gap-1">
-            Prioridad
-            <ArrowUpDown className="h-3 w-3" />
-          </Button>
-          <Button variant={sortField === "name" ? "default" : "outline"} size="sm" onClick={() => toggleSort("name")} className="gap-1">
-            Nombre
-            <ArrowUpDown className="h-3 w-3" />
-          </Button>
-          <Button variant={sortField === "criticality" ? "default" : "outline"} size="sm" onClick={() => toggleSort("criticality")} className="gap-1">
-            Criticidad
-            <ArrowUpDown className="h-3 w-3" />
-          </Button>
-        </div>
+            {/* Sort buttons */}
+            <div className="flex gap-2">
+              <Button variant={sortField === "priority" ? "default" : "outline"} size="sm" onClick={() => toggleSort("priority")} className="gap-1">
+                Prioridad
+                <ArrowUpDown className="h-3 w-3" />
+              </Button>
+              <Button variant={sortField === "name" ? "default" : "outline"} size="sm" onClick={() => toggleSort("name")} className="gap-1">
+                Nombre
+                <ArrowUpDown className="h-3 w-3" />
+              </Button>
+              <Button variant={sortField === "criticality" ? "default" : "outline"} size="sm" onClick={() => toggleSort("criticality")} className="gap-1">
+                Criticidad
+                <ArrowUpDown className="h-3 w-3" />
+              </Button>
+            </div>
 
-        {/* Table */}
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Local</TableHead>
-              <TableHead>Región</TableHead>
-              <TableHead className="text-center">Prioridad</TableHead>
-              <TableHead className="text-center">Docs Pendientes</TableHead>
-              <TableHead className="text-center">Vencidos</TableHead>
-              <TableHead className="text-right">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredAndSorted.map(contract => {
-            const priority = contract.contract_patents?.priority || 'priority_3';
-            const docs = contract.patent_documents || [];
-            const pendingCount = docs.filter(d => d.status === 'pendiente').length;
-            const today = new Date();
-            const overdueCount = docs.filter(d => d.status === 'pendiente' && d.end_date && new Date(d.end_date) < today).length;
-            const region = contract.contract_addresses?.[0]?.region || 'Sin región';
-            return <TableRow key={contract.id}>
-                  <TableCell className="font-medium">{contract.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{region}</TableCell>
-                  <TableCell className="text-center">
-                    <PatentPriorityBadge priority={priority} />
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {pendingCount > 0 ? <span className="text-yellow-600 font-medium">{pendingCount}</span> : <span className="text-green-600">0</span>}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {overdueCount > 0 ? <span className="text-red-600 font-medium">{overdueCount}</span> : <span className="text-green-600">0</span>}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" onClick={() => onSelectContract(contract.id)}>
-                      <Eye className="h-4 w-4 mr-1" />
-                      Ver detalle
-                    </Button>
-                  </TableCell>
-                </TableRow>;
-          })}
-            {filteredAndSorted.length === 0 && <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                  No hay locales que coincidan con los filtros
-                </TableCell>
-              </TableRow>}
-          </TableBody>
-        </Table>
-      </CardContent>
+            {/* Table */}
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Local</TableHead>
+                  <TableHead>Región</TableHead>
+                  <TableHead className="text-center">Prioridad</TableHead>
+                  <TableHead className="text-center">Docs Pendientes</TableHead>
+                  <TableHead className="text-center">Vencidos</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredAndSorted.map(contract => {
+                const priority = contract.contract_patents?.priority || 'priority_3';
+                const docs = contract.patent_documents || [];
+                const pendingCount = docs.filter(d => d.status === 'pendiente').length;
+                const today = new Date();
+                const overdueCount = docs.filter(d => d.status === 'pendiente' && d.end_date && new Date(d.end_date) < today).length;
+                const region = contract.contract_addresses?.[0]?.region || 'Sin región';
+                return <TableRow key={contract.id}>
+                      <TableCell className="font-medium">{contract.name}</TableCell>
+                      <TableCell className="text-muted-foreground">{region}</TableCell>
+                      <TableCell className="text-center">
+                        <PatentPriorityBadge priority={priority} />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {pendingCount > 0 ? <span className="text-yellow-600 font-medium">{pendingCount}</span> : <span className="text-green-600">0</span>}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {overdueCount > 0 ? <span className="text-red-600 font-medium">{overdueCount}</span> : <span className="text-green-600">0</span>}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="sm" onClick={() => onSelectContract(contract.id)}>
+                          <Eye className="h-4 w-4 mr-1" />
+                          Ver detalle
+                        </Button>
+                      </TableCell>
+                    </TableRow>;
+              })}
+                {filteredAndSorted.length === 0 && <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                      No hay locales que coincidan con los filtros
+                    </TableCell>
+                  </TableRow>}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
     </Card>;
 }
