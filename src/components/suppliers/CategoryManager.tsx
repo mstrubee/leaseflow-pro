@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, CornerDownRight } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp } from "lucide-react";
 import { toast } from "sonner";
 import { SupplierCategory } from "./types";
 import { cn } from "@/lib/utils";
@@ -571,12 +571,30 @@ export const CategoryManager = () => {
           <FolderTree className="h-4 w-4 text-muted-foreground" />
           <h4 className="font-medium text-sm">Rubros y Sub-Rubros</h4>
         </div>
-        {!isAdding && (
-          <Button size="sm" variant="outline" onClick={() => { setIsAdding(true); setAddingParentId(null); }}>
-            <Plus className="h-4 w-4 mr-1" />
-            Nuevo Rubro
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setExpandedIds(new Set(flatCategories.map(c => c.id)))}
+            title="Expandir todo"
+          >
+            <ChevronsUpDown className="h-4 w-4" />
           </Button>
-        )}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setExpandedIds(new Set())}
+            title="Colapsar todo"
+          >
+            <ChevronsDownUp className="h-4 w-4" />
+          </Button>
+          {!isAdding && (
+            <Button size="sm" variant="outline" onClick={() => { setIsAdding(true); setAddingParentId(null); }}>
+              <Plus className="h-4 w-4 mr-1" />
+              Nuevo Rubro
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Add root category input */}
