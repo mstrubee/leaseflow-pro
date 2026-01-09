@@ -102,24 +102,52 @@ export const CategoryManager = () => {
 
   const handleAdd = async (parentId: string | null = null) => {
     if (!newName.trim()) return;
+    
+    const siblings = flatCategories.filter(c => c.parent_id === parentId);
+    const maxOrder = siblings.length > 0 ? Math.max(...siblings.map(s => s.display_order)) : 0;
+    const tempId = `temp-${Date.now()}`;
+    
+    // Optimistic update
+    const newCat: SupplierCategory = {
+      id: tempId,
+      name: newName.trim(),
+      display_order: maxOrder + 1,
+      parent_id: parentId,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      description: null,
+    };
+    
+    const updatedFlat = [...flatCategories, newCat];
+    setFlatCategories(updatedFlat);
+    setCategories(buildTree(updatedFlat));
+    setNewName("");
+    setIsAdding(false);
+    setAddingParentId(null);
+    
     try {
-      const siblings = flatCategories.filter(c => c.parent_id === parentId);
-      const maxOrder = siblings.length > 0 ? Math.max(...siblings.map(s => s.display_order)) : 0;
-      
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("supplier_categories")
         .insert({ 
-          name: newName.trim(), 
-          display_order: maxOrder + 1,
+          name: newCat.name, 
+          display_order: newCat.display_order,
           parent_id: parentId 
-        });
+        })
+        .select()
+        .single();
+      
       if (error) throw error;
+      
+      // Replace temp ID with real ID
+      const finalFlat = updatedFlat.map(c => c.id === tempId ? { ...c, id: data.id } : c);
+      setFlatCategories(finalFlat);
+      setCategories(buildTree(finalFlat));
       toast.success(parentId ? "Sub-rubro creado" : "Rubro creado");
-      setNewName("");
-      setIsAdding(false);
-      setAddingParentId(null);
-      loadCategories();
     } catch (error: any) {
+      // Revert on error
+      setFlatCategories(flatCategories);
+      setCategories(buildTree(flatCategories));
       if (error.code === "23505") {
         toast.error("Ya existe un rubro con ese nombre");
       } else {
@@ -130,6 +158,18 @@ export const CategoryManager = () => {
 
   const handleUpdate = async (id: string) => {
     if (!editName.trim()) return;
+    
+    const oldCat = flatCategories.find(c => c.id === id);
+    if (!oldCat) return;
+    
+    // Optimistic update
+    const updatedFlat = flatCategories.map(c => 
+      c.id === id ? { ...c, name: editName.trim() } : c
+    );
+    setFlatCategories(updatedFlat);
+    setCategories(buildTree(updatedFlat));
+    setEditingId(null);
+    
     try {
       const { error } = await supabase
         .from("supplier_categories")
@@ -137,9 +177,11 @@ export const CategoryManager = () => {
         .eq("id", id);
       if (error) throw error;
       toast.success("Rubro actualizado");
-      setEditingId(null);
-      loadCategories();
     } catch (error: any) {
+      // Revert on error
+      setFlatCategories(flatCategories);
+      setCategories(buildTree(flatCategories));
+      setEditingId(id);
       if (error.code === "23505") {
         toast.error("Ya existe un rubro con ese nombre");
       } else {
@@ -152,6 +194,16 @@ export const CategoryManager = () => {
     if (hasChildren) {
       if (!confirm("Este rubro tiene sub-rubros. ¿Eliminar todos?")) return;
     }
+    
+    // Get all IDs to remove (including descendants)
+    const idsToRemove = [id, ...getDescendants(id)];
+    const oldFlat = [...flatCategories];
+    
+    // Optimistic update
+    const updatedFlat = flatCategories.filter(c => !idsToRemove.includes(c.id));
+    setFlatCategories(updatedFlat);
+    setCategories(buildTree(updatedFlat));
+    
     try {
       const { error } = await supabase
         .from("supplier_categories")
@@ -159,21 +211,32 @@ export const CategoryManager = () => {
         .eq("id", id);
       if (error) throw error;
       toast.success("Rubro eliminado");
-      loadCategories();
     } catch (error) {
+      // Revert on error
+      setFlatCategories(oldFlat);
+      setCategories(buildTree(oldFlat));
       toast.error("No se puede eliminar, hay proveedores o líneas asociadas");
     }
   };
 
   const handleToggleActive = async (category: CategoryWithChildren) => {
+    // Optimistic update
+    const updatedFlat = flatCategories.map(c => 
+      c.id === category.id ? { ...c, is_active: !c.is_active } : c
+    );
+    setFlatCategories(updatedFlat);
+    setCategories(buildTree(updatedFlat));
+    
     try {
       const { error } = await supabase
         .from("supplier_categories")
         .update({ is_active: !category.is_active })
         .eq("id", category.id);
       if (error) throw error;
-      loadCategories();
     } catch (error) {
+      // Revert on error
+      setFlatCategories(flatCategories);
+      setCategories(buildTree(flatCategories));
       toast.error("Error al actualizar rubro");
     }
   };
