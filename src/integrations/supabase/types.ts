@@ -1846,6 +1846,140 @@ export type Database = {
           },
         ]
       }
+      opex_categories: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          display_order: number | null
+          id: string
+          is_active: boolean | null
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      opex_local_additional: {
+        Row: {
+          amount_uf: number
+          category_id: string
+          contract_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          notes: string | null
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          amount_uf?: number
+          category_id: string
+          contract_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          amount_uf?: number
+          category_id?: string
+          contract_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          updated_at?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opex_local_additional_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "opex_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "opex_local_additional_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      opex_master_budget: {
+        Row: {
+          amount_uf: number
+          category_id: string
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          is_closed: boolean | null
+          notes: string | null
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          amount_uf?: number
+          category_id: string
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_closed?: boolean | null
+          notes?: string | null
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          amount_uf?: number
+          category_id?: string
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_closed?: boolean | null
+          notes?: string | null
+          updated_at?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "opex_master_budget_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "opex_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patent_checklist_items: {
         Row: {
           created_at: string
@@ -2302,6 +2436,9 @@ export type Database = {
           amount_clp: number | null
           amount_uf: number
           attachment_url: string | null
+          budget_classification:
+            | Database["public"]["Enums"]["budget_classification"]
+            | null
           budget_id: string | null
           budget_line_id: string | null
           contract_id: string
@@ -2312,6 +2449,7 @@ export type Database = {
           drive_file_id: string | null
           id: string
           input_currency: string | null
+          opex_category_id: string | null
           order_date: string
           order_number: string
           status: string
@@ -2326,6 +2464,9 @@ export type Database = {
           amount_clp?: number | null
           amount_uf?: number
           attachment_url?: string | null
+          budget_classification?:
+            | Database["public"]["Enums"]["budget_classification"]
+            | null
           budget_id?: string | null
           budget_line_id?: string | null
           contract_id: string
@@ -2336,6 +2477,7 @@ export type Database = {
           drive_file_id?: string | null
           id?: string
           input_currency?: string | null
+          opex_category_id?: string | null
           order_date?: string
           order_number: string
           status?: string
@@ -2350,6 +2492,9 @@ export type Database = {
           amount_clp?: number | null
           amount_uf?: number
           attachment_url?: string | null
+          budget_classification?:
+            | Database["public"]["Enums"]["budget_classification"]
+            | null
           budget_id?: string | null
           budget_line_id?: string | null
           contract_id?: string
@@ -2360,6 +2505,7 @@ export type Database = {
           drive_file_id?: string | null
           id?: string
           input_currency?: string | null
+          opex_category_id?: string | null
           order_date?: string
           order_number?: string
           status?: string
@@ -2390,6 +2536,13 @@ export type Database = {
             columns: ["contract_id"]
             isOneToOne: false
             referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_opex_category_id_fkey"
+            columns: ["opex_category_id"]
+            isOneToOne: false
+            referencedRelation: "opex_categories"
             referencedColumns: ["id"]
           },
           {
@@ -2970,6 +3123,7 @@ export type Database = {
         | "certificate"
         | "other"
       app_role: "admin" | "user"
+      budget_classification: "CAPEX" | "OPEX"
       contract_status: "en_negociacion" | "firmado" | "vencido"
       document_type:
         | "borrador"
@@ -3128,6 +3282,7 @@ export const Constants = {
         "other",
       ],
       app_role: ["admin", "user"],
+      budget_classification: ["CAPEX", "OPEX"],
       contract_status: ["en_negociacion", "firmado", "vencido"],
       document_type: [
         "borrador",
