@@ -42,6 +42,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { OpexExcelUpload } from "@/components/opex/OpexExcelUpload";
 import { MasterBudgetTable } from "@/components/opex/MasterBudgetTable";
+import { useOpexNavigation } from "@/components/opex/OpexReturnButton";
 import {
   BarChart,
   Bar,
@@ -147,6 +148,7 @@ const OpexDashboard = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading, isAdmin } = useAuth();
   const { ufValue, loading: ufLoading } = useEconomicIndicators();
+  const { navigateToContractFromOpex } = useOpexNavigation();
 
   const [categories, setCategories] = useState<OpexCategory[]>([]);
   const [masterBudgets, setMasterBudgets] = useState<MasterBudget[]>([]);
@@ -863,7 +865,7 @@ const OpexDashboard = () => {
                                       size="sm"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        navigate(`/contracts/${summary.contract_id}`);
+                                        navigateToContractFromOpex(summary.contract_id);
                                       }}
                                     >
                                       Ver Local
