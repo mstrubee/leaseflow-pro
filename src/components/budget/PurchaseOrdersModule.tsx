@@ -82,7 +82,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     order_date: `${initialYear ?? new Date().getFullYear()}-01-01`,
     amount: "",
     currency: "UF" as "UF" | "CLP",
-    budget_type: "inversion_inicial" as "inversion_inicial" | "capex",
+    budget_type: "inversion_inicial" as "inversion_inicial" | "opex",
     budget_line_id: "",
     attachment_url: "",
     attachment_name: "",
@@ -94,7 +94,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     order_date: "",
     amount: "",
     currency: "UF" as "UF" | "CLP",
-    budget_type: "inversion_inicial" as "inversion_inicial" | "capex",
+    budget_type: "inversion_inicial" as "inversion_inicial" | "opex",
     budget_line_id: "",
     attachment_url: "",
     attachment_name: "",
@@ -313,7 +313,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
   };
 
   const getBudgetTypeLabel = (type: string) => {
-    return type === "inversion_inicial" ? "Inversión Inicial" : "Capex";
+    return type === "inversion_inicial" ? "Inversión Inicial" : "Opex";
   };
 
   const getBudgetTypeForOrder = (order: PurchaseOrder) => {
@@ -376,7 +376,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       order_date: order.order_date,
       amount: order.amount_uf.toString(),
       currency: "UF",
-      budget_type: (budget?.budget_type || "inversion_inicial") as "inversion_inicial" | "capex",
+      budget_type: (budget?.budget_type || "inversion_inicial") as "inversion_inicial" | "opex",
       budget_line_id: order.budget_line_id || "",
       attachment_url: order.attachment_url || "",
       attachment_name: order.attachment_url ? "Archivo adjunto" : "",
@@ -693,7 +693,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
               <SelectContent>
                 <SelectItem value="all">Todos los tipos</SelectItem>
                 <SelectItem value="inversión inicial">Inversión Inicial</SelectItem>
-                <SelectItem value="capex">Capex</SelectItem>
+                <SelectItem value="opex">Opex</SelectItem>
               </SelectContent>
             </Select>
             <Input
@@ -846,14 +846,14 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
               <Label>Tipo de Presupuesto</Label>
               <Select 
                 value={newOrder.budget_type} 
-                onValueChange={(v) => setNewOrder({ ...newOrder, budget_type: v as "inversion_inicial" | "capex", budget_line_id: "" })}
+                onValueChange={(v) => setNewOrder({ ...newOrder, budget_type: v as "inversion_inicial" | "opex", budget_line_id: "" })}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="inversion_inicial">Inversión Inicial</SelectItem>
-                  <SelectItem value="capex">Capex</SelectItem>
+                  <SelectItem value="opex">Opex</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1007,14 +1007,14 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
               <Label>Tipo de Presupuesto</Label>
               <Select 
                 value={editFormData.budget_type} 
-                onValueChange={(v) => setEditFormData({ ...editFormData, budget_type: v as "inversion_inicial" | "capex", budget_line_id: "" })}
+                onValueChange={(v) => setEditFormData({ ...editFormData, budget_type: v as "inversion_inicial" | "opex", budget_line_id: "" })}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="inversion_inicial">Inversión Inicial</SelectItem>
-                  <SelectItem value="capex">Capex</SelectItem>
+                  <SelectItem value="opex">Opex</SelectItem>
                 </SelectContent>
               </Select>
             </div>

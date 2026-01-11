@@ -37,14 +37,14 @@ interface BudgetTypeTotals {
 
 interface CarryoverData {
   inversion: number;
-  capex: number;
+  opex: number;
   total: number;
 }
 
 interface YearBudgetInfo {
   hasBudgets: boolean;
   inversionClosed: boolean;
-  capexClosed: boolean;
+  opexClosed: boolean;
   allClosed: boolean;
 }
 
@@ -58,11 +58,11 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
   });
   const [availableYears, setAvailableYears] = useState<number[]>([]);
   const [inversionSummary, setInversionSummary] = useState<BudgetSummary>({ budget: 0, authorized: 0, unauthorized: 0 });
-  const [capexSummary, setCapexSummary] = useState<BudgetSummary>({ budget: 0, authorized: 0, unauthorized: 0 });
+  const [opexSummary, setOpexSummary] = useState<BudgetSummary>({ budget: 0, authorized: 0, unauthorized: 0 });
   const [inversionTotals, setInversionTotals] = useState<BudgetTypeTotals>({ oc: 0, invoices: 0 });
-  const [capexTotals, setCapexTotals] = useState<BudgetTypeTotals>({ oc: 0, invoices: 0 });
-  const [carryover, setCarryover] = useState<CarryoverData>({ inversion: 0, capex: 0, total: 0 });
-  const [yearBudgetInfo, setYearBudgetInfo] = useState<YearBudgetInfo>({ hasBudgets: false, inversionClosed: false, capexClosed: false, allClosed: false });
+  const [opexTotals, setOpexTotals] = useState<BudgetTypeTotals>({ oc: 0, invoices: 0 });
+  const [carryover, setCarryover] = useState<CarryoverData>({ inversion: 0, opex: 0, total: 0 });
+  const [yearBudgetInfo, setYearBudgetInfo] = useState<YearBudgetInfo>({ hasBudgets: false, inversionClosed: false, opexClosed: false, allClosed: false });
   
   // Dialog states
   const [showNewYearDialog, setShowNewYearDialog] = useState(false);
@@ -73,9 +73,9 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
   // New year form state
   const [newYear, setNewYear] = useState(new Date().getFullYear());
   const [inversionAmount, setInversionAmount] = useState("");
-  const [capexAmount, setCapexAmount] = useState("");
+  const [opexAmount, setOpexAmount] = useState("");
   const [inversionTemplateId, setInversionTemplateId] = useState("");
-  const [capexTemplateId, setCapexTemplateId] = useState("");
+  const [opexTemplateId, setOpexTemplateId] = useState("");
   const [closeCurrentYearOnCreate, setCloseCurrentYearOnCreate] = useState(false);
   const [previousYearPendingOCs, setPreviousYearPendingOCs] = useState<{
     count: number;
@@ -150,13 +150,13 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
         .eq("year", selectedYear);
 
       const invBudget = budgets?.find(b => b.budget_type === "inversion_inicial");
-      const capBudget = budgets?.find(b => b.budget_type === "capex");
+      const opxBudget = budgets?.find(b => b.budget_type === "opex");
 
       setYearBudgetInfo({
         hasBudgets: (budgets?.length || 0) > 0,
         inversionClosed: invBudget?.is_closed || false,
-        capexClosed: capBudget?.is_closed || false,
-        allClosed: (invBudget?.is_closed || false) && (capBudget?.is_closed || false),
+        opexClosed: opxBudget?.is_closed || false,
+        allClosed: (invBudget?.is_closed || false) && (opxBudget?.is_closed || false),
       });
     } catch (error) {
       console.error("Error loading year budget info:", error);
@@ -168,16 +168,16 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
     const invSummary = await loadBudgetTypeSummary(contractId, "inversion_inicial", selectedYear);
     setInversionSummary(invSummary);
 
-    // Cargar resumen de CAPEX
-    const capSummary = await loadBudgetTypeSummary(contractId, "capex", selectedYear);
-    setCapexSummary(capSummary);
+    // Cargar resumen de OPEX
+    const opxSummary = await loadBudgetTypeSummary(contractId, "opex", selectedYear);
+    setOpexSummary(opxSummary);
 
     // Get OC and invoice totals by budget type
     const invTotals = await loadBudgetTypeTotals(contractId, "inversion_inicial", selectedYear);
     setInversionTotals(invTotals);
 
-    const capTotals = await loadBudgetTypeTotals(contractId, "capex", selectedYear);
-    setCapexTotals(capTotals);
+    const opxTotals = await loadBudgetTypeTotals(contractId, "opex", selectedYear);
+    setOpexTotals(opxTotals);
   };
 
   const loadCarryover = async () => {
@@ -195,14 +195,14 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
         .filter(c => c.budget_type === "inversion_inicial")
         .reduce((acc, c) => acc + (c.amount_uf || 0), 0);
 
-      const capexCarryover = (data || [])
-        .filter(c => c.budget_type === "capex")
+      const opexCarryover = (data || [])
+        .filter(c => c.budget_type === "opex")
         .reduce((acc, c) => acc + (c.amount_uf || 0), 0);
 
       setCarryover({
         inversion: inversionCarryover,
-        capex: capexCarryover,
-        total: inversionCarryover + capexCarryover,
+        opex: opexCarryover,
+        total: inversionCarryover + opexCarryover,
       });
     } catch (error) {
       console.error("Error loading carryover:", error);
@@ -352,7 +352,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
 
   // Handle new year creation
   const handleCreateNewYear = async () => {
-    if (!inversionTemplateId && !capexTemplateId) {
+    if (!inversionTemplateId && !opexTemplateId) {
       toast({ variant: "destructive", title: "Error", description: "Debe seleccionar al menos una plantilla" });
       return;
     }
@@ -376,21 +376,21 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
         await applyBudgetTemplate(inversionTemplateId, invBudget.id);
       }
 
-      // Create CAPEX budget if template selected
-      if (capexTemplateId && capexTemplateId !== "none") {
-        const { data: capBudget, error: capError } = await supabase
+      // Create OPEX budget if template selected
+      if (opexTemplateId && opexTemplateId !== "none") {
+        const { data: opxBudget, error: opxError } = await supabase
           .from("contract_budgets")
           .insert({
             contract_id: contractId,
             year: newYear,
-            budget_type: "capex",
-            amount_uf: parseFloat(capexAmount) || 0,
+            budget_type: "opex",
+            amount_uf: parseFloat(opexAmount) || 0,
           })
           .select()
           .single();
 
-        if (capError) throw capError;
-        await applyBudgetTemplate(capexTemplateId, capBudget.id);
+        if (opxError) throw opxError;
+        await applyBudgetTemplate(opexTemplateId, opxBudget.id);
       }
 
       // Handle carryover if closing previous year
@@ -402,9 +402,9 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
       toast({ title: "Año creado", description: `Presupuestos para ${newYear} creados exitosamente` });
       setShowNewYearDialog(false);
       setInversionAmount("");
-      setCapexAmount("");
+      setOpexAmount("");
       setInversionTemplateId("");
-      setCapexTemplateId("");
+      setOpexTemplateId("");
       setCloseCurrentYearOnCreate(false);
       await loadAvailableYears();
       handleYearChange(newYear);
@@ -548,8 +548,8 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                 <span className="text-muted-foreground">Total Presupuesto:</span>
               </div>
               <div className="text-right">
-                <span className="font-medium">{formatUF(inversionSummary.authorized + capexSummary.authorized + carryover.total)}</span>
-                <span className="text-xs text-muted-foreground ml-1">({formatSecondary(inversionSummary.authorized + capexSummary.authorized + carryover.total)})</span>
+                <span className="font-medium">{formatUF(inversionSummary.authorized + opexSummary.authorized + carryover.total)}</span>
+                <span className="text-xs text-muted-foreground ml-1">({formatSecondary(inversionSummary.authorized + opexSummary.authorized + carryover.total)})</span>
               </div>
               
               {carryover.total > 0 && (
@@ -570,8 +570,8 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                 <span className="text-muted-foreground">Total OC:</span>
               </div>
               <div className="text-right">
-                <span className="font-medium">{formatUF(inversionTotals.oc + capexTotals.oc)}</span>
-                <span className="text-xs text-muted-foreground ml-1">({formatSecondary(inversionTotals.oc + capexTotals.oc)})</span>
+                <span className="font-medium">{formatUF(inversionTotals.oc + opexTotals.oc)}</span>
+                <span className="text-xs text-muted-foreground ml-1">({formatSecondary(inversionTotals.oc + opexTotals.oc)})</span>
               </div>
               
               <div className="flex items-center gap-1.5">
@@ -579,11 +579,11 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                 <span className="text-muted-foreground">Total Facturación:</span>
               </div>
               <div className="text-right">
-                <span className="font-medium">{formatUF(inversionTotals.invoices + capexTotals.invoices)}</span>
-                <span className="text-xs text-muted-foreground ml-1">({formatSecondary(inversionTotals.invoices + capexTotals.invoices)})</span>
+                <span className="font-medium">{formatUF(inversionTotals.invoices + opexTotals.invoices)}</span>
+                <span className="text-xs text-muted-foreground ml-1">({formatSecondary(inversionTotals.invoices + opexTotals.invoices)})</span>
               </div>
               
-              {(inversionSummary.unauthorized + capexSummary.unauthorized) > 0 && (
+              {(inversionSummary.unauthorized + opexSummary.unauthorized) > 0 && (
                 <>
                   <div className="flex items-center gap-1.5 border-t pt-2 col-span-2"></div>
                   <div className="flex items-center gap-1.5">
@@ -591,8 +591,8 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                     <span className="text-muted-foreground">Presup. No Autorizado:</span>
                   </div>
                   <div className="text-right">
-                    <span className="font-medium text-yellow-600">{formatUF(inversionSummary.unauthorized + capexSummary.unauthorized)}</span>
-                    <span className="text-xs text-muted-foreground ml-1">({formatSecondary(inversionSummary.unauthorized + capexSummary.unauthorized)})</span>
+                    <span className="font-medium text-yellow-600">{formatUF(inversionSummary.unauthorized + opexSummary.unauthorized)}</span>
+                    <span className="text-xs text-muted-foreground ml-1">({formatSecondary(inversionSummary.unauthorized + opexSummary.unauthorized)})</span>
                   </div>
                 </>
               )}
@@ -650,50 +650,50 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
           </CardContent>
         </Card>
 
-        {/* TOTAL CAPEX */}
+        {/* TOTAL OPEX */}
         <Card className="border-l-4 border-l-green-500">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <DollarSign className="h-4 w-4 text-green-500" />
-              TOTAL CAPEX {selectedYear}
+              TOTAL OPEX {selectedYear}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-lg font-bold">{formatUF(capexSummary.authorized)}</p>
-                <p className="text-xs text-muted-foreground">{formatSecondary(capexSummary.authorized)}</p>
+                <p className="text-lg font-bold">{formatUF(opexSummary.authorized)}</p>
+                <p className="text-xs text-muted-foreground">{formatSecondary(opexSummary.authorized)}</p>
               </div>
-              <BudgetSemaphore budget={capexSummary.authorized} consumed={capexTotals.oc} showLabel={false} size="md" />
+              <BudgetSemaphore budget={opexSummary.authorized} consumed={opexTotals.oc} showLabel={false} size="md" />
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm border-t pt-2">
               <div className="flex items-center gap-1.5">
                 <FileText className="h-3.5 w-3.5 text-orange-500" />
                 <span className="text-muted-foreground">OC:</span>
               </div>
-              <span className="font-medium text-right">{formatPrimary(capexTotals.oc)}</span>
+              <span className="font-medium text-right">{formatPrimary(opexTotals.oc)}</span>
               
               <div className="flex items-center gap-1.5">
                 <Receipt className="h-3.5 w-3.5 text-purple-500" />
                 <span className="text-muted-foreground">Facturación:</span>
               </div>
-              <span className="font-medium text-right">{formatPrimary(capexTotals.invoices)}</span>
+              <span className="font-medium text-right">{formatPrimary(opexTotals.invoices)}</span>
               
               <div className="flex items-center gap-1.5">
                 <DollarSign className="h-3.5 w-3.5 text-green-500" />
                 <span className="text-muted-foreground">Disponible:</span>
               </div>
-              <span className={`font-medium text-right ${capexTotals.oc > capexSummary.authorized ? "text-destructive" : "text-green-600"}`}>
-                {formatPrimary(capexSummary.authorized - capexTotals.oc)}
+              <span className={`font-medium text-right ${opexTotals.oc > opexSummary.authorized ? "text-destructive" : "text-green-600"}`}>
+                {formatPrimary(opexSummary.authorized - opexTotals.oc)}
               </span>
               
-              {capexSummary.unauthorized > 0 && (
+              {opexSummary.unauthorized > 0 && (
                 <>
                   <div className="flex items-center gap-1.5">
                     <AlertCircle className="h-3.5 w-3.5 text-yellow-500" />
                     <span className="text-muted-foreground">Presup. No Autorizado:</span>
                   </div>
-                  <span className="font-medium text-right text-yellow-600">{formatPrimary(capexSummary.unauthorized)}</span>
+                  <span className="font-medium text-right text-yellow-600">{formatPrimary(opexSummary.unauthorized)}</span>
                 </>
               )}
             </div>
@@ -707,8 +707,8 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
           <TabsTrigger value="inversion" className="data-[state=active]:bg-blue-100 data-[state=active]:text-blue-700">
             Inversión Inicial
           </TabsTrigger>
-          <TabsTrigger value="capex" className="data-[state=active]:bg-green-100 data-[state=active]:text-green-700">
-            CAPEX
+          <TabsTrigger value="opex" className="data-[state=active]:bg-green-100 data-[state=active]:text-green-700">
+            OPEX
           </TabsTrigger>
           <TabsTrigger value="oc">Órdenes de Compra</TabsTrigger>
         </TabsList>
@@ -723,14 +723,14 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
             onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
           />
         </TabsContent>
-        <TabsContent value="capex" className="mt-4">
+        <TabsContent value="opex" className="mt-4">
           <BudgetModule 
-            key={`cap-${selectedYear}-${refreshKey}`}
+            key={`opx-${selectedYear}-${refreshKey}`}
             contractId={contractId} 
-            budgetType="capex" 
-            title="CAPEX"
+            budgetType="opex" 
+            title="OPEX"
             selectedYear={selectedYear}
-            ocTotal={capexTotals.oc}
+            ocTotal={opexTotals.oc}
             onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
           />
         </TabsContent>
@@ -784,12 +784,12 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                 />
               </div>
               <div className="space-y-2">
-                <Label>CAPEX (UF)</Label>
+                <Label>OPEX (UF)</Label>
                 <Input
                   type="number"
                   step="0.01"
-                  value={capexAmount}
-                  onChange={(e) => setCapexAmount(e.target.value)}
+                  value={opexAmount}
+                  onChange={(e) => setOpexAmount(e.target.value)}
                   placeholder="0.00"
                 />
               </div>
@@ -803,10 +803,10 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                 label="Plantilla Inv. Inicial"
               />
               <BudgetTemplateSelector
-                budgetType="capex"
-                value={capexTemplateId}
-                onChange={setCapexTemplateId}
-                label="Plantilla CAPEX"
+                budgetType="opex"
+                value={opexTemplateId}
+                onChange={setOpexTemplateId}
+                label="Plantilla OPEX"
               />
             </div>
             
@@ -836,7 +836,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
             </Button>
             <Button 
               onClick={handleCreateNewYear} 
-              disabled={creatingYear || (!inversionTemplateId && !capexTemplateId)}
+              disabled={creatingYear || (!inversionTemplateId && !opexTemplateId)}
             >
               {creatingYear && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Crear
