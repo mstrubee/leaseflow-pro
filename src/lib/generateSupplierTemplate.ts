@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { validateExcelFile, withParseTimeout } from '@/lib/excelFileValidation';
 
 export const generateSupplierTemplate = () => {
   const workbook = XLSX.utils.book_new();
@@ -110,7 +111,13 @@ export interface ParsedSupplier {
 }
 
 export const parseSupplierExcel = async (file: File): Promise<{ suppliers: ParsedSupplier[]; errors: string[] }> => {
-  return new Promise((resolve, reject) => {
+  // Validate file before parsing (security measure)
+  const validation = validateExcelFile(file);
+  if (!validation.valid) {
+    throw new Error(validation.error);
+  }
+
+  const parsePromise = new Promise<{ suppliers: ParsedSupplier[]; errors: string[] }>((resolve, reject) => {
     const reader = new FileReader();
     
     reader.onload = (e) => {
@@ -212,4 +219,7 @@ export const parseSupplierExcel = async (file: File): Promise<{ suppliers: Parse
     reader.onerror = () => reject(new Error("Error reading file"));
     reader.readAsArrayBuffer(file);
   });
+
+  // Wrap with timeout protection against ReDoS attacks
+  return withParseTimeout(parsePromise, 30000);
 };

@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import { supabase } from '@/integrations/supabase/client';
 import { CHILE_DEMOGRAPHICS } from '@/data/chileRegionsData';
+import { validateExcelFile, withParseTimeout } from '@/lib/excelFileValidation';
 
 export interface ContractRow {
   rowNumber: number;
@@ -256,7 +257,13 @@ const getCorrectCommuneName = (region: string, comuna: string): string => {
 };
 
 export const parseExcelFile = async (file: File): Promise<ContractRow[]> => {
-  return new Promise((resolve, reject) => {
+  // Validate file before parsing (security measure)
+  const validation = validateExcelFile(file);
+  if (!validation.valid) {
+    throw new Error(validation.error);
+  }
+
+  const parsePromise = new Promise<ContractRow[]>((resolve, reject) => {
     const reader = new FileReader();
     
     reader.onload = (e) => {
@@ -301,6 +308,9 @@ export const parseExcelFile = async (file: File): Promise<ContractRow[]> => {
     reader.onerror = () => reject(new Error('Error al leer el archivo'));
     reader.readAsArrayBuffer(file);
   });
+
+  // Wrap with timeout protection against ReDoS attacks
+  return withParseTimeout(parsePromise, 30000);
 };
 
 export const validateRows = async (rows: ContractRow[]): Promise<ValidationResult> => {

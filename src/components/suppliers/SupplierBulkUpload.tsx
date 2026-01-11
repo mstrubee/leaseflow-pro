@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Upload, Download, FileSpreadsheet, CheckCircle2, XCircle, AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { generateSupplierTemplate, parseSupplierExcel, ParsedSupplier } from "@/lib/generateSupplierTemplate";
+import { validateExcelFile } from "@/lib/excelFileValidation";
 
 interface SupplierBulkUploadProps {
   onComplete: () => void;
@@ -29,9 +30,10 @@ export const SupplierBulkUpload = ({ onComplete, onCancel }: SupplierBulkUploadP
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
 
-    // Validate file type
-    if (!selectedFile.name.endsWith('.xlsx') && !selectedFile.name.endsWith('.xls')) {
-      toast.error("Solo se permiten archivos Excel (.xlsx, .xls)");
+    // Validate file using security validation
+    const validation = validateExcelFile(selectedFile);
+    if (!validation.valid) {
+      toast.error(validation.error || "Archivo no válido");
       return;
     }
 
