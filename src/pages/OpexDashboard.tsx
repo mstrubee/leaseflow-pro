@@ -18,6 +18,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { useSingleCollapsible } from "@/hooks/useCollapsibleState";
 import {
   Table,
   TableBody,
@@ -164,6 +165,9 @@ const OpexDashboard = () => {
 
   // Collapse state per contract
   const [expandedContracts, setExpandedContracts] = useState<Set<string>>(new Set());
+  
+  // Collapsible state for OPEX por Local section
+  const { isOpen: isLocalSectionOpen, toggle: toggleLocalSection } = useSingleCollapsible("opex-local-section", false);
 
   const availableYears = useMemo(() => {
     const years = new Set<number>();
@@ -706,223 +710,229 @@ const OpexDashboard = () => {
           </Card>
         )}
 
-        {/* Filters */}
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex flex-wrap gap-3 items-center">
-              <div className="relative flex-1 min-w-[200px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar por local..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-
-              <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Empresa" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todas las empresas</SelectItem>
-                  {companies.map((company) => (
-                    <SelectItem key={company.id} value={company.id}>
-                      {company.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={contractFilter} onValueChange={setContractFilter}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Locales" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos los locales</SelectItem>
-                  {contracts
-                    .filter((c) => companyFilter === "todos" || c.company_id === companyFilter)
-                    .map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-[160px]">
-                  <SelectValue placeholder="Categoría" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todas las categorías</SelectItem>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              {hasActiveFilters && (
-                <Button variant="ghost" size="sm" onClick={clearFilters}>
-                  <X className="h-4 w-4 mr-1" />
-                  Limpiar
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Contract OPEX Details */}
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          </div>
-        ) : contractSummaries.length === 0 ? (
+        {/* OPEX por Local Section - Collapsible */}
+        <Collapsible open={isLocalSectionOpen} onOpenChange={toggleLocalSection}>
           <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              No se encontraron datos OPEX para los filtros seleccionados
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {contractSummaries.map((summary) => {
-              const isExpanded = expandedContracts.has(summary.contract_id);
-              const usagePercent =
-                summary.total_budget > 0
-                  ? (summary.total_consumed / summary.total_budget) * 100
-                  : 0;
+            <CollapsibleTrigger asChild>
+              <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
+                <div className="flex items-center gap-3">
+                  {isLocalSectionOpen ? (
+                    <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                  )}
+                  <CardTitle className="text-lg">OPEX por Local</CardTitle>
+                  <Badge variant="secondary">{contractSummaries.length} locales</Badge>
+                </div>
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="pt-0 space-y-4">
+                {/* Filters */}
+                <div className="flex flex-wrap gap-3 items-center p-4 bg-muted/30 rounded-lg">
+                  <div className="relative flex-1 min-w-[200px]">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar por local..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
 
-              return (
-                <Collapsible
-                  key={summary.contract_id}
-                  open={isExpanded}
-                  onOpenChange={() => toggleContract(summary.contract_id)}
-                >
-                  <Card>
-                    <CollapsibleTrigger asChild>
-                      <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            {isExpanded ? (
-                              <ChevronDown className="h-5 w-5 text-muted-foreground" />
-                            ) : (
-                              <ChevronRight className="h-5 w-5 text-muted-foreground" />
-                            )}
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <CardTitle className="text-base">{summary.contract_name}</CardTitle>
-                                <Badge 
-                                  variant="outline" 
-                                  style={{ 
-                                    backgroundColor: getCompanyColor(summary.company_id) + "20",
-                                    borderColor: getCompanyColor(summary.company_id),
-                                    color: getCompanyColor(summary.company_id)
-                                  }}
-                                >
-                                  {summary.company_name}
-                                </Badge>
-                              </div>
-                              <div className="flex items-center gap-4 mt-1">
-                                <span className="text-sm text-muted-foreground">
-                                  Presupuesto: {Math.abs(summary.total_budget).toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
-                                </span>
-                                <span className="text-sm text-orange-600">
-                                  Consumido: {Math.abs(summary.total_consumed).toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
-                                </span>
-                                <span className={`text-sm ${summary.total_available < 0 ? "text-destructive" : "text-green-600"}`}>
-                                  Disponible: {Math.abs(summary.total_available).toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-4">
-                            <div className="w-32">
-                              <Progress value={Math.min(usagePercent, 100)} className="h-2" />
-                              <span className="text-xs text-muted-foreground">{usagePercent.toFixed(0)}% usado</span>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigate(`/contracts/${summary.contract_id}`);
-                              }}
-                            >
-                              Ver Local
-                            </Button>
-                          </div>
-                        </div>
-                      </CardHeader>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <CardContent className="pt-0">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Categoría</TableHead>
-                              <TableHead className="text-right">Master (UF)</TableHead>
-                              <TableHead className="text-right">Adicional (UF)</TableHead>
-                              <TableHead className="text-right">Total (UF)</TableHead>
-                              <TableHead className="text-right">Consumido (UF)</TableHead>
-                              <TableHead className="text-right">Disponible (UF)</TableHead>
-                              <TableHead className="w-[150px]">Uso</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {summary.categories.map((cat) => {
-                              const total = cat.master_budget + cat.additional_budget;
-                              const catUsage = total > 0 ? (cat.consumed / total) * 100 : 0;
+                  <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="Empresa" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todas las empresas</SelectItem>
+                      {companies.map((company) => (
+                        <SelectItem key={company.id} value={company.id}>
+                          {company.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
 
-                              return (
-                                <TableRow key={cat.category_id}>
-                                  <TableCell className="font-medium">
-                                    {cat.category_name}
-                                    {cat.additional_budget > 0 && (
-                                      <Badge variant="outline" className="ml-2 text-xs">
-                                        +Adicional
-                                      </Badge>
+                  <Select value={contractFilter} onValueChange={setContractFilter}>
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="Locales" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos los locales</SelectItem>
+                      {contracts
+                        .filter((c) => companyFilter === "todos" || c.company_id === companyFilter)
+                        .map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue placeholder="Categoría" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todas las categorías</SelectItem>
+                      {categories.map((cat) => (
+                        <SelectItem key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {hasActiveFilters && (
+                    <Button variant="ghost" size="sm" onClick={clearFilters}>
+                      <X className="h-4 w-4 mr-1" />
+                      Limpiar
+                    </Button>
+                  )}
+                </div>
+
+                {/* Contract OPEX Details */}
+                {loading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  </div>
+                ) : contractSummaries.length === 0 ? (
+                  <div className="py-12 text-center text-muted-foreground">
+                    No se encontraron datos OPEX para los filtros seleccionados
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {contractSummaries.map((summary) => {
+                      const isExpanded = expandedContracts.has(summary.contract_id);
+                      const usagePercent =
+                        summary.total_budget > 0
+                          ? (summary.total_consumed / summary.total_budget) * 100
+                          : 0;
+
+                      return (
+                        <Collapsible
+                          key={summary.contract_id}
+                          open={isExpanded}
+                          onOpenChange={() => toggleContract(summary.contract_id)}
+                        >
+                          <Card className="border-l-4" style={{ borderLeftColor: getCompanyColor(summary.company_id) }}>
+                            <CollapsibleTrigger asChild>
+                              <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    {isExpanded ? (
+                                      <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                                    ) : (
+                                      <ChevronRight className="h-5 w-5 text-muted-foreground" />
                                     )}
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                    {cat.master_budget.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-                                  </TableCell>
-                                  <TableCell className="text-right text-blue-600">
-                                    {cat.additional_budget > 0
-                                      ? cat.additional_budget.toLocaleString("es-CL", { minimumFractionDigits: 2 })
-                                      : "-"}
-                                  </TableCell>
-                                  <TableCell className="text-right font-medium">
-                                    {total.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-                                  </TableCell>
-                                  <TableCell className="text-right text-orange-600">
-                                    {cat.consumed.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-                                  </TableCell>
-                                  <TableCell className={`text-right ${cat.available < 0 ? "text-destructive" : "text-green-600"}`}>
-                                    {cat.available.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-                                  </TableCell>
-                                  <TableCell>
-                                    <div className="flex items-center gap-2">
-                                      <Progress value={Math.min(catUsage, 100)} className="h-2 flex-1" />
-                                      <span className="text-xs text-muted-foreground w-10 text-right">
-                                        {catUsage.toFixed(0)}%
-                                      </span>
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <CardTitle className="text-base">{summary.contract_name}</CardTitle>
+                                        <Badge 
+                                          variant="outline" 
+                                          style={{ 
+                                            backgroundColor: getCompanyColor(summary.company_id) + "20",
+                                            borderColor: getCompanyColor(summary.company_id),
+                                            color: getCompanyColor(summary.company_id)
+                                          }}
+                                        >
+                                          {summary.company_name}
+                                        </Badge>
+                                      </div>
+                                      <div className="flex items-center gap-4 mt-1">
+                                        <span className="text-sm text-muted-foreground">
+                                          Presupuesto: {Math.abs(summary.total_budget).toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                                        </span>
+                                        <span className="text-sm text-orange-600">
+                                          Consumido: {Math.abs(summary.total_consumed).toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                                        </span>
+                                        <span className={`text-sm ${summary.total_available < 0 ? "text-destructive" : "text-green-600"}`}>
+                                          Disponible: {Math.abs(summary.total_available).toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                                        </span>
+                                      </div>
                                     </div>
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
-                          </TableBody>
-                        </Table>
-                      </CardContent>
-                    </CollapsibleContent>
-                  </Card>
-                </Collapsible>
-              );
-            })}
-          </div>
-        )}
+                                  </div>
+                                  <div className="flex items-center gap-4">
+                                    <div className="w-32">
+                                      <Progress value={Math.min(usagePercent, 100)} className="h-2" />
+                                      <span className="text-xs text-muted-foreground">{usagePercent.toFixed(0)}% usado</span>
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        navigate(`/contracts/${summary.contract_id}`);
+                                      }}
+                                    >
+                                      Ver Local
+                                    </Button>
+                                  </div>
+                                </div>
+                              </CardHeader>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent>
+                              <CardContent className="pt-0">
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Categoría</TableHead>
+                                      <TableHead className="text-right">Presupuesto Maestro</TableHead>
+                                      <TableHead className="text-right">Adicional Local</TableHead>
+                                      <TableHead className="text-right">Total Presupuesto</TableHead>
+                                      <TableHead className="text-right">Consumido</TableHead>
+                                      <TableHead className="text-right">Disponible</TableHead>
+                                      <TableHead className="w-32">Uso</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {summary.categories.map((cat) => {
+                                      const totalBudget = cat.master_budget + cat.additional_budget;
+                                      const catUsage = totalBudget > 0 ? (cat.consumed / totalBudget) * 100 : 0;
+                                      return (
+                                        <TableRow key={cat.category_id}>
+                                          <TableCell className="font-medium">{cat.category_name}</TableCell>
+                                          <TableCell className="text-right">
+                                            {Math.abs(cat.master_budget).toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                                          </TableCell>
+                                          <TableCell className="text-right">
+                                            {Math.abs(cat.additional_budget).toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                                          </TableCell>
+                                          <TableCell className="text-right font-medium">
+                                            {Math.abs(totalBudget).toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                                          </TableCell>
+                                          <TableCell className="text-right text-orange-600">
+                                            {Math.abs(cat.consumed).toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                                          </TableCell>
+                                          <TableCell className={`text-right ${cat.available < 0 ? "text-destructive" : "text-green-600"}`}>
+                                            {Math.abs(cat.available).toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                                          </TableCell>
+                                          <TableCell>
+                                            <div className="flex items-center gap-2">
+                                              <Progress value={Math.min(catUsage, 100)} className="h-2 flex-1" />
+                                              <span className="text-xs text-muted-foreground w-10 text-right">
+                                                {catUsage.toFixed(0)}%
+                                              </span>
+                                            </div>
+                                          </TableCell>
+                                        </TableRow>
+                                      );
+                                    })}
+                                  </TableBody>
+                                </Table>
+                              </CardContent>
+                            </CollapsibleContent>
+                          </Card>
+                        </Collapsible>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
       </main>
     </div>
   );
