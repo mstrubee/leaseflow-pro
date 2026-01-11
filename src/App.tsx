@@ -16,6 +16,8 @@ import Contracts from "./pages/Contracts";
 import DeletedContracts from "./pages/DeletedContracts";
 import AlertsDashboard from "./pages/AlertsDashboard";
 import BulkContractUpload from "./pages/BulkContractUpload";
+import PurchaseOrdersDashboard from "./pages/PurchaseOrdersDashboard";
+import OpexDashboard from "./pages/OpexDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -41,6 +43,8 @@ const App = () => (
               <Route path="/deleted" element={<DeletedContracts />} />
               <Route path="/alerts" element={<AlertsDashboard />} />
               <Route path="/patents" element={<Index />} />
+              <Route path="/purchase-orders" element={<PurchaseOrdersDashboard />} />
+              <Route path="/opex" element={<OpexDashboard />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
