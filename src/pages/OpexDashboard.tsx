@@ -181,16 +181,21 @@ const OpexDashboard = () => {
       } = await supabase.from("companies").select("id, name").order("name");
       setCompanies(companiesData || []);
 
-      // Load contracts with company info - only active contracts (status = 'firmado')
+      // Load contracts with company info from contract_companies - only active contracts (status = 'firmado')
       const {
         data: contractsData
-      } = await supabase.from("contracts").select("id, name, company_id, status, companies(name)").is("deleted_at", null).eq("status", "firmado").order("name");
-      const processedContracts = (contractsData || []).map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        company_id: c.company_id,
-        company_name: c.companies?.name || "Sin empresa"
-      }));
+      } = await supabase.from("contracts").select("id, name, status, contract_companies(company_id, companies(id, name))").is("deleted_at", null).eq("status", "firmado").order("name");
+      const processedContracts = (contractsData || []).map((c: any) => {
+        // Get company from contract_companies relation
+        const companyRelation = c.contract_companies?.[0];
+        const companyData = companyRelation?.companies;
+        return {
+          id: c.id,
+          name: c.name,
+          company_id: companyData?.id || null,
+          company_name: companyData?.name || "Sin empresa"
+        };
+      });
       setContracts(processedContracts);
 
       // Load master budgets for selected year
