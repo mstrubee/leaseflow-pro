@@ -38,6 +38,9 @@ import {
   PlusCircle,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
+import { OpexExcelUpload } from "@/components/opex/OpexExcelUpload";
+import { MasterBudgetTable } from "@/components/opex/MasterBudgetTable";
 
 interface OpexCategory {
   id: string;
@@ -50,6 +53,19 @@ interface MasterBudget {
   year: number;
   category_id: string;
   amount_uf: number;
+  amount_clp: number;
+  month_01_clp: number;
+  month_02_clp: number;
+  month_03_clp: number;
+  month_04_clp: number;
+  month_05_clp: number;
+  month_06_clp: number;
+  month_07_clp: number;
+  month_08_clp: number;
+  month_09_clp: number;
+  month_10_clp: number;
+  month_11_clp: number;
+  month_12_clp: number;
   category_name?: string;
 }
 
@@ -70,6 +86,7 @@ interface OpexConsumption {
   category_id: string;
   category_name: string;
   consumed_uf: number;
+  consumed_clp: number;
 }
 
 interface ContractOpexSummary {
@@ -91,6 +108,7 @@ interface ContractOpexSummary {
 const OpexDashboard = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading, isAdmin } = useAuth();
+  const { ufValue, loading: ufLoading } = useEconomicIndicators();
 
   const [categories, setCategories] = useState<OpexCategory[]>([]);
   const [masterBudgets, setMasterBudgets] = useState<MasterBudget[]>([]);
@@ -199,15 +217,18 @@ const OpexDashboard = () => {
       filteredOrders.forEach((o: any) => {
         const key = `${o.contract_id}-${o.opex_category_id}`;
         const existing = consumptionMap.get(key);
+        const amountUf = o.amount_uf || 0;
         if (existing) {
-          existing.consumed_uf += o.amount_uf || 0;
+          existing.consumed_uf += amountUf;
+          existing.consumed_clp += amountUf * (ufValue || 0);
         } else {
           consumptionMap.set(key, {
             contract_id: o.contract_id,
             contract_name: o.contracts?.name || "Sin contrato",
             category_id: o.opex_category_id,
             category_name: o.opex_categories?.name || "Sin categoría",
-            consumed_uf: o.amount_uf || 0,
+            consumed_uf: amountUf,
+            consumed_clp: amountUf * (ufValue || 0),
           });
         }
       });
@@ -286,19 +307,31 @@ const OpexDashboard = () => {
     return summaries.filter((s) => s.categories.length > 0 || categoryFilter === "todos");
   }, [contracts, categories, masterBudgets, localAdditionals, consumptions, searchTerm, contractFilter, categoryFilter]);
 
-  // Calculate totals
+  // Calculate totals - now in CLP as primary
   const globalTotals = useMemo(() => {
-    const totalMasterBudget = masterBudgets.reduce((sum, m) => sum + m.amount_uf, 0);
-    const totalAdditional = localAdditionals.reduce((sum, a) => sum + a.amount_uf, 0);
-    const totalConsumed = consumptions.reduce((sum, c) => sum + c.consumed_uf, 0);
+    const totalMasterBudgetCLP = masterBudgets.reduce((sum, m) => sum + (m.amount_clp || 0), 0);
+    const totalMasterBudgetUF = masterBudgets.reduce((sum, m) => sum + (m.amount_uf || 0), 0);
+    const totalAdditionalUF = localAdditionals.reduce((sum, a) => sum + (a.amount_uf || 0), 0);
+    const totalAdditionalCLP = totalAdditionalUF * (ufValue || 0);
+    const totalConsumedUF = consumptions.reduce((sum, c) => sum + c.consumed_uf, 0);
+    const totalConsumedCLP = consumptions.reduce((sum, c) => sum + c.consumed_clp, 0);
+    
+    const totalBudgetCLP = totalMasterBudgetCLP + totalAdditionalCLP;
+    const totalBudgetUF = totalMasterBudgetUF + totalAdditionalUF;
+    
     return {
-      budget: totalMasterBudget + totalAdditional,
-      consumed: totalConsumed,
-      available: totalMasterBudget + totalAdditional - totalConsumed,
-      masterBudget: totalMasterBudget,
-      additional: totalAdditional,
+      budgetCLP: totalBudgetCLP,
+      budgetUF: totalBudgetUF,
+      consumedCLP: totalConsumedCLP,
+      consumedUF: totalConsumedUF,
+      availableCLP: totalBudgetCLP - totalConsumedCLP,
+      availableUF: totalBudgetUF - totalConsumedUF,
+      masterBudgetCLP: totalMasterBudgetCLP,
+      masterBudgetUF: totalMasterBudgetUF,
+      additionalCLP: totalAdditionalCLP,
+      additionalUF: totalAdditionalUF,
     };
-  }, [masterBudgets, localAdditionals, consumptions]);
+  }, [masterBudgets, localAdditionals, consumptions, ufValue]);
 
   const toggleContract = (contractId: string) => {
     setExpandedContracts((prev) => {
@@ -366,6 +399,13 @@ const OpexDashboard = () => {
                   ))}
                 </SelectContent>
               </Select>
+              {isAdmin && (
+                <OpexExcelUpload
+                  year={parseInt(yearFilter)}
+                  ufValue={ufValue}
+                  onSuccess={loadData}
+                />
+              )}
               <Button variant="outline" size="sm" onClick={expandAll}>
                 <ChevronsUpDown className="h-4 w-4 mr-1" />
                 Expandir Todo
@@ -379,7 +419,7 @@ const OpexDashboard = () => {
       </header>
 
       <main className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Summary Cards */}
+        {/* Summary Cards - Now in CLP with UF as secondary */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardHeader className="pb-2">
@@ -390,7 +430,10 @@ const OpexDashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {globalTotals.masterBudget.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                $ {Math.round(globalTotals.masterBudgetCLP).toLocaleString("es-CL")}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                ≈ {globalTotals.masterBudgetUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
               </div>
             </CardContent>
           </Card>
@@ -403,7 +446,10 @@ const OpexDashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {globalTotals.additional.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                $ {Math.round(globalTotals.additionalCLP).toLocaleString("es-CL")}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                ≈ {globalTotals.additionalUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
               </div>
             </CardContent>
           </Card>
@@ -416,10 +462,13 @@ const OpexDashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-orange-600">
-                {globalTotals.consumed.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                $ {Math.round(globalTotals.consumedCLP).toLocaleString("es-CL")}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                ≈ {globalTotals.consumedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
               </div>
               <Progress
-                value={globalTotals.budget > 0 ? (globalTotals.consumed / globalTotals.budget) * 100 : 0}
+                value={globalTotals.budgetCLP > 0 ? (globalTotals.consumedCLP / globalTotals.budgetCLP) * 100 : 0}
                 className="mt-2 h-2"
               />
             </CardContent>
@@ -431,65 +480,60 @@ const OpexDashboard = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className={`text-2xl font-bold ${globalTotals.available < 0 ? "text-destructive" : "text-green-600"}`}>
-                {globalTotals.available.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+              <div className={`text-2xl font-bold ${globalTotals.availableCLP < 0 ? "text-destructive" : "text-green-600"}`}>
+                $ {Math.round(globalTotals.availableCLP).toLocaleString("es-CL")}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                ≈ {globalTotals.availableUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Master Budget by Category */}
+        {/* Master Budget by Category - New collapsible months table */}
         {isAdmin && (
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-lg">Presupuesto Master por Categoría</CardTitle>
+              {ufValue > 0 && (
+                <span className="text-sm text-muted-foreground">
+                  Valor UF: $ {ufValue.toLocaleString("es-CL")}
+                </span>
+              )}
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Categoría</TableHead>
-                    <TableHead className="text-right">Presupuesto (UF)</TableHead>
-                    <TableHead className="text-right">Consumido (UF)</TableHead>
-                    <TableHead className="text-right">Disponible (UF)</TableHead>
-                    <TableHead className="w-[200px]">Uso</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {categories.map((category) => {
-                    const master = masterBudgets.find((m) => m.category_id === category.id);
-                    const budget = master?.amount_uf || 0;
-                    const consumed = consumptions
-                      .filter((c) => c.category_id === category.id)
-                      .reduce((sum, c) => sum + c.consumed_uf, 0);
-                    const available = budget - consumed;
-                    const usagePercent = budget > 0 ? (consumed / budget) * 100 : 0;
-
-                    return (
-                      <TableRow key={category.id}>
-                        <TableCell className="font-medium">{category.name}</TableCell>
-                        <TableCell className="text-right">
-                          {budget.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-                        </TableCell>
-                        <TableCell className="text-right text-orange-600">
-                          {consumed.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-                        </TableCell>
-                        <TableCell className={`text-right ${available < 0 ? "text-destructive" : "text-green-600"}`}>
-                          {available.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Progress value={Math.min(usagePercent, 100)} className="h-2 flex-1" />
-                            <span className="text-xs text-muted-foreground w-12 text-right">
-                              {usagePercent.toFixed(0)}%
-                            </span>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+              <MasterBudgetTable
+                data={masterBudgets.map((m) => {
+                  const consumed = consumptions
+                    .filter((c) => c.category_id === m.category_id)
+                    .reduce((sum, c) => sum + c.consumed_clp, 0);
+                  
+                  return {
+                    id: m.id,
+                    category_id: m.category_id,
+                    category_name: m.category_name || "Sin categoría",
+                    amount_clp: m.amount_clp || 0,
+                    amount_uf: m.amount_uf || 0,
+                    months: [
+                      m.month_01_clp || 0,
+                      m.month_02_clp || 0,
+                      m.month_03_clp || 0,
+                      m.month_04_clp || 0,
+                      m.month_05_clp || 0,
+                      m.month_06_clp || 0,
+                      m.month_07_clp || 0,
+                      m.month_08_clp || 0,
+                      m.month_09_clp || 0,
+                      m.month_10_clp || 0,
+                      m.month_11_clp || 0,
+                      m.month_12_clp || 0,
+                    ],
+                    consumed_clp: consumed,
+                    consumed_uf: ufValue > 0 ? consumed / ufValue : 0,
+                  };
+                })}
+                ufValue={ufValue}
+              />
             </CardContent>
           </Card>
         )}
