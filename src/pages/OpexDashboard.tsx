@@ -205,11 +205,12 @@ const OpexDashboard = () => {
         .order("name");
       setCompanies(companiesData || []);
 
-      // Load contracts with company info
+      // Load contracts with company info - only active contracts (status = 'firmado')
       const { data: contractsData } = await supabase
         .from("contracts")
-        .select("id, name, company_id, companies(name)")
+        .select("id, name, company_id, status, companies(name)")
         .is("deleted_at", null)
+        .eq("status", "firmado")
         .order("name");
       
       const processedContracts = (contractsData || []).map((c: any) => ({
@@ -393,23 +394,38 @@ const OpexDashboard = () => {
 
   // Prepare chart data - grouped by local, colored by company
   const chartData = useMemo(() => {
-    return contractSummaries.map((summary) => ({
-      name: summary.contract_name.length > 15 
-        ? summary.contract_name.substring(0, 15) + "..." 
-        : summary.contract_name,
-      fullName: summary.contract_name,
-      presupuesto: Math.abs(summary.total_budget),
-      consumido: Math.abs(summary.total_consumed),
-      disponible: Math.abs(summary.total_available),
-      company_id: summary.company_id,
-      company_name: summary.company_name,
-    }));
+    return contractSummaries
+      .filter((s) => s.total_budget > 0 || s.total_consumed > 0) // Only show locals with data
+      .map((summary) => ({
+        name: summary.contract_name,
+        presupuesto: Math.abs(summary.total_budget),
+        consumido: Math.abs(summary.total_consumed),
+        disponible: Math.abs(summary.total_available),
+        company_id: summary.company_id,
+        company_name: summary.company_name,
+      }));
   }, [contractSummaries]);
+
+  // Get unique companies in the chart for legend
+  const chartCompanies = useMemo(() => {
+    const uniqueCompanies = new Map<string, string>();
+    chartData.forEach((d) => {
+      const key = d.company_id || "sin-empresa";
+      if (!uniqueCompanies.has(key)) {
+        uniqueCompanies.set(key, d.company_name);
+      }
+    });
+    return Array.from(uniqueCompanies.entries()).map(([id, name]) => ({
+      id: id === "sin-empresa" ? null : id,
+      name,
+    }));
+  }, [chartData]);
 
   // Get color for company
   const getCompanyColor = (companyId: string | null) => {
-    if (!companyId) return COMPANY_COLORS[COMPANY_COLORS.length - 1];
+    if (!companyId) return "#94a3b8"; // gray for "Sin empresa"
     const index = companies.findIndex((c) => c.id === companyId);
+    if (index === -1) return "#94a3b8";
     return COMPANY_COLORS[index % COMPANY_COLORS.length];
   };
 
@@ -623,13 +639,13 @@ const OpexDashboard = () => {
         {chartData.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Presupuesto por Local</CardTitle>
-              <div className="flex flex-wrap gap-2 mt-2">
-                {companies.map((company, index) => (
-                  <div key={company.id} className="flex items-center gap-1.5 text-xs">
+              <CardTitle className="text-lg">Presupuesto por Local (Contratos Vigentes)</CardTitle>
+              <div className="flex flex-wrap gap-3 mt-2">
+                {chartCompanies.map((company) => (
+                  <div key={company.id || "sin-empresa"} className="flex items-center gap-1.5 text-xs">
                     <div
                       className="w-3 h-3 rounded"
-                      style={{ backgroundColor: COMPANY_COLORS[index % COMPANY_COLORS.length] }}
+                      style={{ backgroundColor: getCompanyColor(company.id) }}
                     />
                     <span>{company.name}</span>
                   </div>
@@ -637,32 +653,39 @@ const OpexDashboard = () => {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="h-[400px]">
+              <div style={{ height: Math.max(400, chartData.length * 45) }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} layout="vertical" margin={{ left: 20, right: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <BarChart 
+                    data={chartData} 
+                    layout="vertical" 
+                    margin={{ left: 10, right: 30, top: 10, bottom: 10 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" horizontal={false} />
                     <XAxis
                       type="number"
-                      tickFormatter={(value) => `${(value / 1000).toFixed(0)}k UF`}
+                      tickFormatter={(value) => value >= 1000 ? `${(value / 1000).toFixed(0)}k` : value.toFixed(0)}
                       className="text-xs"
+                      unit=" UF"
                     />
                     <YAxis
                       type="category"
                       dataKey="name"
-                      width={120}
-                      className="text-xs"
+                      width={180}
+                      tick={{ fontSize: 11 }}
+                      tickLine={false}
+                      axisLine={false}
                     />
                     <Tooltip
                       formatter={(value: number, name: string) => [
                         `${value.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF`,
                         name === "presupuesto" ? "Presupuesto" : name === "consumido" ? "Consumido" : "Disponible",
                       ]}
-                      labelFormatter={(_, payload) => {
+                      labelFormatter={(label, payload) => {
                         if (payload && payload.length > 0) {
                           const data = payload[0].payload;
-                          return `${data.fullName} (${data.company_name})`;
+                          return `${data.name} (${data.company_name})`;
                         }
-                        return "";
+                        return label;
                       }}
                       contentStyle={{
                         backgroundColor: "hsl(var(--card))",
@@ -670,7 +693,6 @@ const OpexDashboard = () => {
                         borderRadius: "8px",
                       }}
                     />
-                    <Legend />
                     <Bar dataKey="presupuesto" name="Presupuesto" radius={[0, 4, 4, 0]}>
                       {chartData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={getCompanyColor(entry.company_id)} />
