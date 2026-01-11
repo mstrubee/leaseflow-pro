@@ -357,6 +357,31 @@ export const OpexExcelUpload = ({ year, ufValue, onSuccess }: OpexExcelUploadPro
                         </TableCell>
                       </TableRow>
                     ))}
+                    {/* Monthly Totals Row */}
+                    {parsedData.length > 0 && (
+                      <TableRow className="bg-muted/50 font-bold border-t-2">
+                        <TableCell className="sticky left-0 bg-muted/50 z-10 font-bold">
+                          TOTAL MENSUAL
+                        </TableCell>
+                        {MONTH_NAMES.map((_, i) => {
+                          const monthTotal = parsedData
+                            .filter(r => r.isValid)
+                            .reduce((sum, r) => sum + (r.months[i] || 0), 0);
+                          return (
+                            <TableCell key={i} className="text-right text-xs whitespace-nowrap font-bold">
+                              {formatCLP(monthTotal)}
+                            </TableCell>
+                          );
+                        })}
+                        <TableCell className="text-right font-bold">
+                          {formatCLP(parsedData.filter(r => r.isValid).reduce((s, r) => s + r.total, 0))}
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground font-bold">
+                          {formatUF(parsedData.filter(r => r.isValid).reduce((s, r) => s + r.total, 0))}
+                        </TableCell>
+                        <TableCell></TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>
