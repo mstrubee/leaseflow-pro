@@ -1932,6 +1932,7 @@ export type Database = {
       }
       opex_master_budget: {
         Row: {
+          amount_clp: number | null
           amount_uf: number
           category_id: string
           closed_at: string | null
@@ -1940,11 +1941,25 @@ export type Database = {
           created_by: string | null
           id: string
           is_closed: boolean | null
+          month_01_clp: number | null
+          month_02_clp: number | null
+          month_03_clp: number | null
+          month_04_clp: number | null
+          month_05_clp: number | null
+          month_06_clp: number | null
+          month_07_clp: number | null
+          month_08_clp: number | null
+          month_09_clp: number | null
+          month_10_clp: number | null
+          month_11_clp: number | null
+          month_12_clp: number | null
           notes: string | null
+          uf_value_at_entry: number | null
           updated_at: string
           year: number
         }
         Insert: {
+          amount_clp?: number | null
           amount_uf?: number
           category_id: string
           closed_at?: string | null
@@ -1953,11 +1968,25 @@ export type Database = {
           created_by?: string | null
           id?: string
           is_closed?: boolean | null
+          month_01_clp?: number | null
+          month_02_clp?: number | null
+          month_03_clp?: number | null
+          month_04_clp?: number | null
+          month_05_clp?: number | null
+          month_06_clp?: number | null
+          month_07_clp?: number | null
+          month_08_clp?: number | null
+          month_09_clp?: number | null
+          month_10_clp?: number | null
+          month_11_clp?: number | null
+          month_12_clp?: number | null
           notes?: string | null
+          uf_value_at_entry?: number | null
           updated_at?: string
           year: number
         }
         Update: {
+          amount_clp?: number | null
           amount_uf?: number
           category_id?: string
           closed_at?: string | null
@@ -1966,7 +1995,20 @@ export type Database = {
           created_by?: string | null
           id?: string
           is_closed?: boolean | null
+          month_01_clp?: number | null
+          month_02_clp?: number | null
+          month_03_clp?: number | null
+          month_04_clp?: number | null
+          month_05_clp?: number | null
+          month_06_clp?: number | null
+          month_07_clp?: number | null
+          month_08_clp?: number | null
+          month_09_clp?: number | null
+          month_10_clp?: number | null
+          month_11_clp?: number | null
+          month_12_clp?: number | null
           notes?: string | null
+          uf_value_at_entry?: number | null
           updated_at?: string
           year?: number
         }
