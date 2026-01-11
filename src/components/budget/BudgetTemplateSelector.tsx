@@ -12,7 +12,7 @@ interface BudgetTemplate {
 }
 
 interface BudgetTemplateSelectorProps {
-  budgetType: "inversion_inicial" | "capex";
+  budgetType: "inversion_inicial" | "opex";
   value: string;
   onChange: (templateId: string) => void;
   label?: string;
@@ -83,7 +83,7 @@ export const BudgetTemplateSelector = ({
       </Select>
       {!hasTemplates && (
         <p className="text-xs text-destructive">
-          No hay plantillas de {budgetType === "inversion_inicial" ? "Inversión Inicial" : "CAPEX"} disponibles. 
+          No hay plantillas de {budgetType === "inversion_inicial" ? "Inversión Inicial" : "OPEX"} disponibles. 
           Solicite al administrador crear una plantilla.
         </p>
       )}

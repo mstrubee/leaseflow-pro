@@ -28,7 +28,7 @@ interface Budget {
 
 interface BudgetModuleProps {
   contractId: string;
-  budgetType: "inversion_inicial" | "capex";
+  budgetType: "inversion_inicial" | "opex";
   title: string;
   selectedYear: number;
   ocTotal?: number;

@@ -16,7 +16,7 @@ interface BudgetTemplate {
   id: string;
   name: string;
   description: string | null;
-  budget_type: "inversion_inicial" | "capex";
+  budget_type: "inversion_inicial" | "opex";
   is_active: boolean;
   created_at: string;
 }
@@ -27,13 +27,13 @@ export const BudgetTemplateManager = () => {
   const [selectedTemplate, setSelectedTemplate] = useState<BudgetTemplate | null>(null);
   const [lines, setLines] = useState<TemplateLine[]>([]);
   const [loadingLines, setLoadingLines] = useState(false);
-  const [activeTab, setActiveTab] = useState<"inversion_inicial" | "capex">("inversion_inicial");
+  const [activeTab, setActiveTab] = useState<"inversion_inicial" | "opex">("inversion_inicial");
   
   // New template dialog
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
-  const [newType, setNewType] = useState<"inversion_inicial" | "capex">("inversion_inicial");
+  const [newType, setNewType] = useState<"inversion_inicial" | "opex">("inversion_inicial");
   const [creating, setCreating] = useState(false);
   
   // Edit template dialog
@@ -382,7 +382,7 @@ export const BudgetTemplateManager = () => {
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
           <TabsList className="mb-4">
             <TabsTrigger value="inversion_inicial">Inversión Inicial</TabsTrigger>
-            <TabsTrigger value="capex">CAPEX</TabsTrigger>
+            <TabsTrigger value="opex">OPEX</TabsTrigger>
           </TabsList>
 
           <TabsContent value={activeTab} className="space-y-4">
@@ -390,7 +390,7 @@ export const BudgetTemplateManager = () => {
               {/* Lista de plantillas - más estrecha */}
               <div className="space-y-2">
                 <h4 className="font-medium text-sm text-muted-foreground mb-2">
-                  Plantillas de {activeTab === "inversion_inicial" ? "Inversión Inicial" : "CAPEX"}
+                  Plantillas de {activeTab === "inversion_inicial" ? "Inversión Inicial" : "OPEX"}
                 </h4>
                 {filteredTemplates.length === 0 ? (
                   <p className="text-sm text-muted-foreground py-4 text-center">
@@ -494,7 +494,7 @@ export const BudgetTemplateManager = () => {
           <DialogHeader>
             <DialogTitle>Nueva Plantilla de Presupuesto</DialogTitle>
             <DialogDescription>
-              Crea una estructura predefinida para {newType === "inversion_inicial" ? "Inversión Inicial" : "CAPEX"}
+              Crea una estructura predefinida para {newType === "inversion_inicial" ? "Inversión Inicial" : "OPEX"}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -522,7 +522,7 @@ export const BudgetTemplateManager = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="inversion_inicial">Inversión Inicial</SelectItem>
-                  <SelectItem value="capex">CAPEX</SelectItem>
+                  <SelectItem value="opex">OPEX</SelectItem>
                 </SelectContent>
               </Select>
             </div>
