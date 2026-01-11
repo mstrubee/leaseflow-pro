@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Plus, LogOut, Shield, Trash2, Bell, Upload } from "lucide-react";
+import { Plus, LogOut, Shield, Trash2, Bell, Upload, ShoppingCart, Wallet } from "lucide-react";
 import { DashboardStats } from "@/components/dashboard/DashboardStats";
 import { SuppliersModule } from "@/components/suppliers/SuppliersModule";
 import { useAuth } from "@/hooks/useAuth";
@@ -42,6 +42,14 @@ const Dashboard = () => {
               </div>
             </div>
             <div className="flex items-center gap-3">
+              <Button variant="outline" onClick={() => navigate("/purchase-orders")} className="gap-2">
+                <ShoppingCart className="h-4 w-4" />
+                Órdenes de Compra
+              </Button>
+              <Button variant="outline" onClick={() => navigate("/opex")} className="gap-2">
+                <Wallet className="h-4 w-4" />
+                OPEX
+              </Button>
               {isAdmin && <>
                   <Button variant="outline" onClick={() => navigate("/alerts")} className="gap-2">
                     <Bell className="h-4 w-4" />
