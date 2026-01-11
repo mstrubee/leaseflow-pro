@@ -349,17 +349,59 @@ const OpexDashboard = () => {
   }, [masterBudgets, localAdditionals, consumptions, ufValue]);
 
   // Prepare chart data - grouped by local, colored by company
+  // Show all contracts that have budget, even if no consumption yet
   const chartData = useMemo(() => {
-    return contractSummaries.filter(s => s.total_budget > 0 || s.total_consumed > 0) // Only show locals with data
-    .map(summary => ({
-      name: summary.contract_name,
-      presupuesto: Math.abs(summary.total_budget),
-      consumido: Math.abs(summary.total_consumed),
-      disponible: Math.abs(summary.total_available),
-      company_id: summary.company_id,
-      company_name: summary.company_name
-    }));
-  }, [contractSummaries]);
+    // Use all contracts with their budget info, applying filters
+    const allContractsWithBudget: {
+      name: string;
+      presupuesto: number;
+      consumido: number;
+      disponible: number;
+      company_id: string | null;
+      company_name: string;
+    }[] = [];
+
+    contracts.forEach(contract => {
+      // Apply company filter
+      if (companyFilter !== "todos" && contract.company_id !== companyFilter) return;
+      
+      // Apply contract filter
+      if (contractFilter !== "todos" && contract.id !== contractFilter) return;
+      
+      // Calculate budget and consumption for this contract
+      let totalBudget = 0;
+      let totalConsumed = 0;
+
+      categories.forEach(category => {
+        // Apply category filter
+        if (categoryFilter !== "todos" && category.id !== categoryFilter) return;
+
+        const masterBudget = masterBudgets.find(m => m.category_id === category.id);
+        const masterAmount = masterBudget?.amount_uf || 0;
+        const additional = localAdditionals.find(a => a.contract_id === contract.id && a.category_id === category.id);
+        const additionalAmount = additional?.amount_uf || 0;
+        const consumption = consumptions.find(c => c.contract_id === contract.id && c.category_id === category.id);
+        const consumedAmount = consumption?.consumed_uf || 0;
+
+        totalBudget += masterAmount + additionalAmount;
+        totalConsumed += consumedAmount;
+      });
+
+      // Include if there's any budget (even if no consumption)
+      if (totalBudget > 0 || totalConsumed > 0) {
+        allContractsWithBudget.push({
+          name: contract.name,
+          presupuesto: Math.abs(totalBudget),
+          consumido: Math.abs(totalConsumed),
+          disponible: Math.abs(totalBudget - totalConsumed),
+          company_id: contract.company_id,
+          company_name: contract.company_name || "Sin empresa"
+        });
+      }
+    });
+
+    return allContractsWithBudget;
+  }, [contracts, categories, masterBudgets, localAdditionals, consumptions, companyFilter, contractFilter, categoryFilter]);
 
   // Get unique companies in the chart for legend
   const chartCompanies = useMemo(() => {
@@ -564,7 +606,7 @@ const OpexDashboard = () => {
           </Collapsible>}
         {chartData.length > 0 && <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Presupuesto por Local (Contratos Vigentes)</CardTitle>
+              <CardTitle className="text-lg">Consumo por Local (Contratos Vigentes)</CardTitle>
               <div className="flex flex-wrap gap-3 mt-2">
                 {chartCompanies.map(company => <div key={company.id || "sin-empresa"} className="flex items-center gap-1.5 text-xs">
                     <div className="w-3 h-3 rounded" style={{
@@ -572,6 +614,49 @@ const OpexDashboard = () => {
               }} />
                     <span>{company.name}</span>
                   </div>)}
+              </div>
+              {/* Chart Filters */}
+              <div className="flex flex-wrap gap-3 items-center mt-4 p-3 bg-muted/30 rounded-lg">
+                <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue placeholder="Empresa" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Empresas</SelectItem>
+                    {companies.map(company => <SelectItem key={company.id} value={company.id}>
+                        {company.name}
+                      </SelectItem>)}
+                  </SelectContent>
+                </Select>
+
+                <Select value={contractFilter} onValueChange={setContractFilter}>
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue placeholder="Local" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Locales</SelectItem>
+                    {contracts.filter(c => companyFilter === "todos" || c.company_id === companyFilter).map(c => <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>)}
+                  </SelectContent>
+                </Select>
+
+                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue placeholder="Categoría" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Categorías</SelectItem>
+                    {categories.map(cat => <SelectItem key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </SelectItem>)}
+                  </SelectContent>
+                </Select>
+
+                {hasActiveFilters && <Button variant="ghost" size="sm" onClick={clearFilters}>
+                    <X className="h-4 w-4 mr-1" />
+                    Limpiar
+                  </Button>}
               </div>
             </CardHeader>
             <CardContent>
@@ -593,16 +678,16 @@ const OpexDashboard = () => {
                     <Tooltip formatter={(value: number, name: string) => [`${value.toLocaleString("es-CL", {
                   minimumFractionDigits: 2
                 })} UF`, name === "presupuesto" ? "Presupuesto" : name === "consumido" ? "Consumido" : "Disponible"]} labelFormatter={(label, payload) => {
-                  if (payload && payload.length > 0) {
-                    const data = payload[0].payload;
-                    return `${data.name} (${data.company_name})`;
-                  }
-                  return label;
-                }} contentStyle={{
-                  backgroundColor: "hsl(var(--card))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "8px"
-                }} />
+                      if (payload && payload.length > 0) {
+                        const data = payload[0].payload;
+                        return `${data.name} (${data.company_name})`;
+                      }
+                      return label;
+                    }} contentStyle={{
+                      backgroundColor: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "8px"
+                    }} />
                     <Bar dataKey="presupuesto" name="Presupuesto" radius={[0, 4, 4, 0]}>
                       {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={getCompanyColor(entry.company_id)} />)}
                     </Bar>
@@ -639,7 +724,7 @@ const OpexDashboard = () => {
                       <SelectValue placeholder="Empresa" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="todos">Todas las empresas</SelectItem>
+                      <SelectItem value="todos">Empresas</SelectItem>
                       {companies.map(company => <SelectItem key={company.id} value={company.id}>
                           {company.name}
                         </SelectItem>)}
@@ -651,7 +736,7 @@ const OpexDashboard = () => {
                       <SelectValue placeholder="Locales" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="todos">Todos los locales</SelectItem>
+                      <SelectItem value="todos">Locales</SelectItem>
                       {contracts.filter(c => companyFilter === "todos" || c.company_id === companyFilter).map(c => <SelectItem key={c.id} value={c.id}>
                             {c.name}
                           </SelectItem>)}
@@ -663,7 +748,7 @@ const OpexDashboard = () => {
                       <SelectValue placeholder="Categoría" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="todos">Todas las categorías</SelectItem>
+                      <SelectItem value="todos">Categorías</SelectItem>
                       {categories.map(cat => <SelectItem key={cat.id} value={cat.id}>
                           {cat.name}
                         </SelectItem>)}
