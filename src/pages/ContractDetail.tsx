@@ -19,6 +19,7 @@ import { GanttModule } from "@/components/gantt/GanttModule";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { TerminationNoticesSection } from "@/components/contracts/TerminationNoticesSection";
 import { AlertsReturnButton } from "@/components/alerts/AlertsReturnButton";
+import { OpexReturnButton } from "@/components/opex/OpexReturnButton";
 import { CollapsibleSection } from "@/components/contracts/CollapsibleSection";
 import { SelectableElement } from "@/components/admin/SelectableElement";
 import { useContractSections, SectionKey } from "@/hooks/useContractSections";
@@ -1274,6 +1275,9 @@ const ContractDetail = () => {
 
       {/* Floating return button when coming from alerts */}
       <AlertsReturnButton />
+      
+      {/* Floating return button when coming from OPEX */}
+      <OpexReturnButton />
     </div>;
 };
 export default ContractDetail;
