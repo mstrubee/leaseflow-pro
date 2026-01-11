@@ -63,11 +63,11 @@ export const MasterBudgetTable = ({ data, ufValue }: MasterBudgetTableProps) => 
   };
 
   const formatCLP = (value: number) => {
-    return `$ ${Math.round(value).toLocaleString("es-CL")}`;
+    return `$ ${Math.round(Math.abs(value)).toLocaleString("es-CL")}`;
   };
 
   const formatUF = (value: number) => {
-    return `${value.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
+    return `${Math.abs(value).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
   };
 
   const convertToUF = (clp: number) => {

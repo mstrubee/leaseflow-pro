@@ -219,20 +219,20 @@ export const OpexExcelUpload = ({ year, ufValue, onSuccess }: OpexExcelUploadPro
         const budgetData = {
           year,
           category_id: categoryId,
-          amount_clp: row.total,
-          amount_uf: ufValue > 0 ? row.total / ufValue : 0,
-          month_01_clp: row.months[0],
-          month_02_clp: row.months[1],
-          month_03_clp: row.months[2],
-          month_04_clp: row.months[3],
-          month_05_clp: row.months[4],
-          month_06_clp: row.months[5],
-          month_07_clp: row.months[6],
-          month_08_clp: row.months[7],
-          month_09_clp: row.months[8],
-          month_10_clp: row.months[9],
-          month_11_clp: row.months[10],
-          month_12_clp: row.months[11],
+          amount_clp: Math.abs(row.total),
+          amount_uf: ufValue > 0 ? Math.abs(row.total) / ufValue : 0,
+          month_01_clp: Math.abs(row.months[0]),
+          month_02_clp: Math.abs(row.months[1]),
+          month_03_clp: Math.abs(row.months[2]),
+          month_04_clp: Math.abs(row.months[3]),
+          month_05_clp: Math.abs(row.months[4]),
+          month_06_clp: Math.abs(row.months[5]),
+          month_07_clp: Math.abs(row.months[6]),
+          month_08_clp: Math.abs(row.months[7]),
+          month_09_clp: Math.abs(row.months[8]),
+          month_10_clp: Math.abs(row.months[9]),
+          month_11_clp: Math.abs(row.months[10]),
+          month_12_clp: Math.abs(row.months[11]),
           uf_value_at_entry: ufValue,
         };
 
@@ -265,12 +265,12 @@ export const OpexExcelUpload = ({ year, ufValue, onSuccess }: OpexExcelUploadPro
   };
 
   const formatCLP = (value: number) => {
-    return `$ ${Math.round(value).toLocaleString("es-CL")}`;
+    return `$ ${Math.round(Math.abs(value)).toLocaleString("es-CL")}`;
   };
 
   const formatUF = (value: number) => {
     if (ufValue <= 0) return "-";
-    const uf = value / ufValue;
+    const uf = Math.abs(value) / ufValue;
     return `${uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
   };
 
