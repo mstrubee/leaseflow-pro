@@ -170,6 +170,9 @@ const OpexDashboard = () => {
   
   // Collapsible state for OPEX por Local section
   const { isOpen: isLocalSectionOpen, toggle: toggleLocalSection } = useSingleCollapsible("opex-local-section", false);
+  
+  // Collapsible state for OPEX por Categoría section
+  const { isOpen: isCategorySectionOpen, toggle: toggleCategorySection } = useSingleCollapsible("opex-category-section", false);
 
   const availableYears = useMemo(() => {
     const years = new Set<number>();
@@ -593,55 +596,69 @@ const OpexDashboard = () => {
           </Card>
         </div>
 
-        {/* Master Budget by Category - New collapsible months table */}
+        {/* OPEX por Categoría - Collapsible */}
         {isAdmin && (
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-lg">Presupuesto Master por Categoría</CardTitle>
-              {ufValue > 0 && (
-                <span className="text-sm text-muted-foreground">
-                  Valor UF: $ {ufValue.toLocaleString("es-CL")}
-                </span>
-              )}
-            </CardHeader>
-            <CardContent>
-              <MasterBudgetTable
-                data={masterBudgets.map((m) => {
-                  const consumed = consumptions
-                    .filter((c) => c.category_id === m.category_id)
-                    .reduce((sum, c) => sum + Math.abs(c.consumed_clp), 0);
-                  
-                  return {
-                    id: m.id,
-                    category_id: m.category_id,
-                    category_name: m.category_name || "Sin categoría",
-                    amount_clp: Math.abs(m.amount_clp || 0),
-                    amount_uf: Math.abs(m.amount_uf || 0),
-                    months: [
-                      Math.abs(m.month_01_clp || 0),
-                      Math.abs(m.month_02_clp || 0),
-                      Math.abs(m.month_03_clp || 0),
-                      Math.abs(m.month_04_clp || 0),
-                      Math.abs(m.month_05_clp || 0),
-                      Math.abs(m.month_06_clp || 0),
-                      Math.abs(m.month_07_clp || 0),
-                      Math.abs(m.month_08_clp || 0),
-                      Math.abs(m.month_09_clp || 0),
-                      Math.abs(m.month_10_clp || 0),
-                      Math.abs(m.month_11_clp || 0),
-                      Math.abs(m.month_12_clp || 0),
-                    ],
-                    consumed_clp: consumed,
-                    consumed_uf: ufValue > 0 ? consumed / ufValue : 0,
-                  };
-                })}
-                ufValue={ufValue}
-              />
-            </CardContent>
-          </Card>
+          <Collapsible open={isCategorySectionOpen} onOpenChange={toggleCategorySection}>
+            <Card>
+              <CollapsibleTrigger asChild>
+                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {isCategorySectionOpen ? (
+                        <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                      )}
+                      <CardTitle className="text-lg">OPEX por Categoría</CardTitle>
+                      <Badge variant="secondary">{masterBudgets.length} categorías</Badge>
+                    </div>
+                    {ufValue > 0 && (
+                      <span className="text-sm text-muted-foreground">
+                        Valor UF: $ {ufValue.toLocaleString("es-CL")}
+                      </span>
+                    )}
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="pt-0">
+                  <MasterBudgetTable
+                    data={masterBudgets.map((m) => {
+                      const consumed = consumptions
+                        .filter((c) => c.category_id === m.category_id)
+                        .reduce((sum, c) => sum + Math.abs(c.consumed_clp), 0);
+                      
+                      return {
+                        id: m.id,
+                        category_id: m.category_id,
+                        category_name: m.category_name || "Sin categoría",
+                        amount_clp: Math.abs(m.amount_clp || 0),
+                        amount_uf: Math.abs(m.amount_uf || 0),
+                        months: [
+                          Math.abs(m.month_01_clp || 0),
+                          Math.abs(m.month_02_clp || 0),
+                          Math.abs(m.month_03_clp || 0),
+                          Math.abs(m.month_04_clp || 0),
+                          Math.abs(m.month_05_clp || 0),
+                          Math.abs(m.month_06_clp || 0),
+                          Math.abs(m.month_07_clp || 0),
+                          Math.abs(m.month_08_clp || 0),
+                          Math.abs(m.month_09_clp || 0),
+                          Math.abs(m.month_10_clp || 0),
+                          Math.abs(m.month_11_clp || 0),
+                          Math.abs(m.month_12_clp || 0),
+                        ],
+                        consumed_clp: consumed,
+                        consumed_uf: ufValue > 0 ? consumed / ufValue : 0,
+                      };
+                    })}
+                    ufValue={ufValue}
+                  />
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
         )}
-
-        {/* Bar Chart by Local */}
         {chartData.length > 0 && (
           <Card>
             <CardHeader>
