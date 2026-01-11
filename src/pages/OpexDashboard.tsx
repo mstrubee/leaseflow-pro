@@ -41,6 +41,17 @@ import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { OpexExcelUpload } from "@/components/opex/OpexExcelUpload";
 import { MasterBudgetTable } from "@/components/opex/MasterBudgetTable";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
 
 interface OpexCategory {
   id: string;
@@ -89,9 +100,23 @@ interface OpexConsumption {
   consumed_clp: number;
 }
 
+interface Company {
+  id: string;
+  name: string;
+}
+
+interface Contract {
+  id: string;
+  name: string;
+  company_id: string | null;
+  company_name?: string;
+}
+
 interface ContractOpexSummary {
   contract_id: string;
   contract_name: string;
+  company_id: string | null;
+  company_name: string;
   categories: {
     category_id: string;
     category_name: string;
@@ -105,6 +130,18 @@ interface ContractOpexSummary {
   total_available: number;
 }
 
+// Colors for companies in chart
+const COMPANY_COLORS = [
+  "#3b82f6", // blue
+  "#10b981", // green
+  "#f59e0b", // amber
+  "#ef4444", // red
+  "#8b5cf6", // violet
+  "#ec4899", // pink
+  "#06b6d4", // cyan
+  "#f97316", // orange
+];
+
 const OpexDashboard = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading, isAdmin } = useAuth();
@@ -114,13 +151,15 @@ const OpexDashboard = () => {
   const [masterBudgets, setMasterBudgets] = useState<MasterBudget[]>([]);
   const [localAdditionals, setLocalAdditionals] = useState<LocalAdditional[]>([]);
   const [consumptions, setConsumptions] = useState<OpexConsumption[]>([]);
-  const [contracts, setContracts] = useState<{ id: string; name: string }[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
   const [contractFilter, setContractFilter] = useState("todos");
   const [categoryFilter, setCategoryFilter] = useState("todos");
+  const [companyFilter, setCompanyFilter] = useState("todos");
   const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
 
   // Collapse state per contract
@@ -159,13 +198,27 @@ const OpexDashboard = () => {
         .order("display_order");
       setCategories(categoriesData || []);
 
-      // Load contracts
+      // Load companies
+      const { data: companiesData } = await supabase
+        .from("companies")
+        .select("id, name")
+        .order("name");
+      setCompanies(companiesData || []);
+
+      // Load contracts with company info
       const { data: contractsData } = await supabase
         .from("contracts")
-        .select("id, name")
+        .select("id, name, company_id, companies(name)")
         .is("deleted_at", null)
         .order("name");
-      setContracts(contractsData || []);
+      
+      const processedContracts = (contractsData || []).map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        company_id: c.company_id,
+        company_name: c.companies?.name || "Sin empresa",
+      }));
+      setContracts(processedContracts);
 
       // Load master budgets for selected year
       const { data: masterData } = await supabase
@@ -248,6 +301,9 @@ const OpexDashboard = () => {
       // Apply contract filter
       if (contractFilter !== "todos" && contract.id !== contractFilter) return;
 
+      // Apply company filter
+      if (companyFilter !== "todos" && contract.company_id !== companyFilter) return;
+
       // Apply search filter
       if (searchTerm && !contract.name.toLowerCase().includes(searchTerm.toLowerCase())) return;
 
@@ -296,6 +352,8 @@ const OpexDashboard = () => {
         summaries.push({
           contract_id: contract.id,
           contract_name: contract.name,
+          company_id: contract.company_id,
+          company_name: contract.company_name || "Sin empresa",
           categories: contractCategories,
           total_budget: totalBudget,
           total_consumed: totalConsumed,
@@ -305,16 +363,16 @@ const OpexDashboard = () => {
     });
 
     return summaries.filter((s) => s.categories.length > 0 || categoryFilter === "todos");
-  }, [contracts, categories, masterBudgets, localAdditionals, consumptions, searchTerm, contractFilter, categoryFilter]);
+  }, [contracts, categories, masterBudgets, localAdditionals, consumptions, searchTerm, contractFilter, categoryFilter, companyFilter]);
 
-  // Calculate totals - now in CLP as primary
+  // Calculate totals - now in CLP as primary (use absolute values)
   const globalTotals = useMemo(() => {
-    const totalMasterBudgetCLP = masterBudgets.reduce((sum, m) => sum + (m.amount_clp || 0), 0);
-    const totalMasterBudgetUF = masterBudgets.reduce((sum, m) => sum + (m.amount_uf || 0), 0);
-    const totalAdditionalUF = localAdditionals.reduce((sum, a) => sum + (a.amount_uf || 0), 0);
+    const totalMasterBudgetCLP = masterBudgets.reduce((sum, m) => sum + Math.abs(m.amount_clp || 0), 0);
+    const totalMasterBudgetUF = masterBudgets.reduce((sum, m) => sum + Math.abs(m.amount_uf || 0), 0);
+    const totalAdditionalUF = localAdditionals.reduce((sum, a) => sum + Math.abs(a.amount_uf || 0), 0);
     const totalAdditionalCLP = totalAdditionalUF * (ufValue || 0);
-    const totalConsumedUF = consumptions.reduce((sum, c) => sum + c.consumed_uf, 0);
-    const totalConsumedCLP = consumptions.reduce((sum, c) => sum + c.consumed_clp, 0);
+    const totalConsumedUF = consumptions.reduce((sum, c) => sum + Math.abs(c.consumed_uf), 0);
+    const totalConsumedCLP = consumptions.reduce((sum, c) => sum + Math.abs(c.consumed_clp), 0);
     
     const totalBudgetCLP = totalMasterBudgetCLP + totalAdditionalCLP;
     const totalBudgetUF = totalMasterBudgetUF + totalAdditionalUF;
@@ -332,6 +390,28 @@ const OpexDashboard = () => {
       additionalUF: totalAdditionalUF,
     };
   }, [masterBudgets, localAdditionals, consumptions, ufValue]);
+
+  // Prepare chart data - grouped by local, colored by company
+  const chartData = useMemo(() => {
+    return contractSummaries.map((summary) => ({
+      name: summary.contract_name.length > 15 
+        ? summary.contract_name.substring(0, 15) + "..." 
+        : summary.contract_name,
+      fullName: summary.contract_name,
+      presupuesto: Math.abs(summary.total_budget),
+      consumido: Math.abs(summary.total_consumed),
+      disponible: Math.abs(summary.total_available),
+      company_id: summary.company_id,
+      company_name: summary.company_name,
+    }));
+  }, [contractSummaries]);
+
+  // Get color for company
+  const getCompanyColor = (companyId: string | null) => {
+    if (!companyId) return COMPANY_COLORS[COMPANY_COLORS.length - 1];
+    const index = companies.findIndex((c) => c.id === companyId);
+    return COMPANY_COLORS[index % COMPANY_COLORS.length];
+  };
 
   const toggleContract = (contractId: string) => {
     setExpandedContracts((prev) => {
@@ -357,10 +437,11 @@ const OpexDashboard = () => {
     setSearchTerm("");
     setContractFilter("todos");
     setCategoryFilter("todos");
+    setCompanyFilter("todos");
   };
 
   const hasActiveFilters =
-    searchTerm || contractFilter !== "todos" || categoryFilter !== "todos";
+    searchTerm || contractFilter !== "todos" || categoryFilter !== "todos" || companyFilter !== "todos";
 
   if (authLoading) {
     return (
@@ -506,27 +587,27 @@ const OpexDashboard = () => {
                 data={masterBudgets.map((m) => {
                   const consumed = consumptions
                     .filter((c) => c.category_id === m.category_id)
-                    .reduce((sum, c) => sum + c.consumed_clp, 0);
+                    .reduce((sum, c) => sum + Math.abs(c.consumed_clp), 0);
                   
                   return {
                     id: m.id,
                     category_id: m.category_id,
                     category_name: m.category_name || "Sin categoría",
-                    amount_clp: m.amount_clp || 0,
-                    amount_uf: m.amount_uf || 0,
+                    amount_clp: Math.abs(m.amount_clp || 0),
+                    amount_uf: Math.abs(m.amount_uf || 0),
                     months: [
-                      m.month_01_clp || 0,
-                      m.month_02_clp || 0,
-                      m.month_03_clp || 0,
-                      m.month_04_clp || 0,
-                      m.month_05_clp || 0,
-                      m.month_06_clp || 0,
-                      m.month_07_clp || 0,
-                      m.month_08_clp || 0,
-                      m.month_09_clp || 0,
-                      m.month_10_clp || 0,
-                      m.month_11_clp || 0,
-                      m.month_12_clp || 0,
+                      Math.abs(m.month_01_clp || 0),
+                      Math.abs(m.month_02_clp || 0),
+                      Math.abs(m.month_03_clp || 0),
+                      Math.abs(m.month_04_clp || 0),
+                      Math.abs(m.month_05_clp || 0),
+                      Math.abs(m.month_06_clp || 0),
+                      Math.abs(m.month_07_clp || 0),
+                      Math.abs(m.month_08_clp || 0),
+                      Math.abs(m.month_09_clp || 0),
+                      Math.abs(m.month_10_clp || 0),
+                      Math.abs(m.month_11_clp || 0),
+                      Math.abs(m.month_12_clp || 0),
                     ],
                     consumed_clp: consumed,
                     consumed_uf: ufValue > 0 ? consumed / ufValue : 0,
@@ -534,6 +615,71 @@ const OpexDashboard = () => {
                 })}
                 ufValue={ufValue}
               />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Bar Chart by Local */}
+        {chartData.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Presupuesto por Local</CardTitle>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {companies.map((company, index) => (
+                  <div key={company.id} className="flex items-center gap-1.5 text-xs">
+                    <div
+                      className="w-3 h-3 rounded"
+                      style={{ backgroundColor: COMPANY_COLORS[index % COMPANY_COLORS.length] }}
+                    />
+                    <span>{company.name}</span>
+                  </div>
+                ))}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[400px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData} layout="vertical" margin={{ left: 20, right: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis
+                      type="number"
+                      tickFormatter={(value) => `${(value / 1000).toFixed(0)}k UF`}
+                      className="text-xs"
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      width={120}
+                      className="text-xs"
+                    />
+                    <Tooltip
+                      formatter={(value: number, name: string) => [
+                        `${value.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF`,
+                        name === "presupuesto" ? "Presupuesto" : name === "consumido" ? "Consumido" : "Disponible",
+                      ]}
+                      labelFormatter={(_, payload) => {
+                        if (payload && payload.length > 0) {
+                          const data = payload[0].payload;
+                          return `${data.fullName} (${data.company_name})`;
+                        }
+                        return "";
+                      }}
+                      contentStyle={{
+                        backgroundColor: "hsl(var(--card))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: "8px",
+                      }}
+                    />
+                    <Legend />
+                    <Bar dataKey="presupuesto" name="Presupuesto" radius={[0, 4, 4, 0]}>
+                      {chartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={getCompanyColor(entry.company_id)} />
+                      ))}
+                    </Bar>
+                    <Bar dataKey="consumido" name="Consumido" fill="#f97316" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </CardContent>
           </Card>
         )}
@@ -552,17 +698,33 @@ const OpexDashboard = () => {
                 />
               </div>
 
+              <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Empresa" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todas las empresas</SelectItem>
+                  {companies.map((company) => (
+                    <SelectItem key={company.id} value={company.id}>
+                      {company.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
               <Select value={contractFilter} onValueChange={setContractFilter}>
                 <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Local" />
+                  <SelectValue placeholder="Locales" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos los locales</SelectItem>
-                  {contracts.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
+                  {contracts
+                    .filter((c) => companyFilter === "todos" || c.company_id === companyFilter)
+                    .map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
 
@@ -627,16 +789,28 @@ const OpexDashboard = () => {
                               <ChevronRight className="h-5 w-5 text-muted-foreground" />
                             )}
                             <div className="flex-1">
-                              <CardTitle className="text-base">{summary.contract_name}</CardTitle>
+                              <div className="flex items-center gap-2">
+                                <CardTitle className="text-base">{summary.contract_name}</CardTitle>
+                                <Badge 
+                                  variant="outline" 
+                                  style={{ 
+                                    backgroundColor: getCompanyColor(summary.company_id) + "20",
+                                    borderColor: getCompanyColor(summary.company_id),
+                                    color: getCompanyColor(summary.company_id)
+                                  }}
+                                >
+                                  {summary.company_name}
+                                </Badge>
+                              </div>
                               <div className="flex items-center gap-4 mt-1">
                                 <span className="text-sm text-muted-foreground">
-                                  Presupuesto: {summary.total_budget.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                                  Presupuesto: {Math.abs(summary.total_budget).toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
                                 </span>
                                 <span className="text-sm text-orange-600">
-                                  Consumido: {summary.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                                  Consumido: {Math.abs(summary.total_consumed).toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
                                 </span>
                                 <span className={`text-sm ${summary.total_available < 0 ? "text-destructive" : "text-green-600"}`}>
-                                  Disponible: {summary.total_available.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                                  Disponible: {Math.abs(summary.total_available).toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
                                 </span>
                               </div>
                             </div>
