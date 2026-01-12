@@ -10,6 +10,7 @@ import { X, Plus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Supplier, SupplierFormData } from "./types";
 import { CategorySelect } from "./CategorySelect";
+import { OpexCategoryMultiSelect } from "./OpexCategoryMultiSelect";
 
 interface SupplierFormProps {
   supplier?: Supplier | null;
@@ -32,6 +33,7 @@ export const SupplierForm = ({ supplier, onSave, onCancel }: SupplierFormProps) 
     phone: "",
     emails: [""],
     category_id: "",
+    opex_category_ids: [],
     is_generic: false,
   });
   const [newEmail, setNewEmail] = useState("");
@@ -51,6 +53,12 @@ export const SupplierForm = ({ supplier, onSave, onCancel }: SupplierFormProps) 
       .select("email")
       .eq("supplier_id", supplier.id);
 
+    // Load OPEX categories
+    const { data: opexCategories } = await supabase
+      .from("supplier_opex_categories")
+      .select("opex_category_id")
+      .eq("supplier_id", supplier.id);
+
     setFormData({
       name: supplier.name || "",
       rut: supplier.rut || "",
@@ -64,6 +72,7 @@ export const SupplierForm = ({ supplier, onSave, onCancel }: SupplierFormProps) 
       phone: supplier.phone || "",
       emails: emails?.map(e => e.email) || [""],
       category_id: supplier.category_id || "",
+      opex_category_ids: opexCategories?.map(c => c.opex_category_id) || [],
       is_generic: supplier.is_generic || false,
     });
   };
@@ -172,6 +181,17 @@ export const SupplierForm = ({ supplier, onSave, onCancel }: SupplierFormProps) 
             supplier_id: supplierId,
             email: email.trim(),
             is_primary: idx === 0,
+          }))
+        );
+      }
+
+      // Update OPEX categories
+      await supabase.from("supplier_opex_categories").delete().eq("supplier_id", supplierId);
+      if (formData.opex_category_ids.length > 0) {
+        await supabase.from("supplier_opex_categories").insert(
+          formData.opex_category_ids.map((opex_category_id) => ({
+            supplier_id: supplierId,
+            opex_category_id,
           }))
         );
       }
@@ -344,6 +364,20 @@ export const SupplierForm = ({ supplier, onSave, onCancel }: SupplierFormProps) 
         />
         <p className="text-xs text-muted-foreground">
           Puedes seleccionar cualquier nivel de la jerarquía de rubros
+        </p>
+      </div>
+
+      {/* OPEX Categories */}
+      <div className="space-y-4">
+        <h4 className="font-medium text-sm border-b pb-2">Categorías OPEX (opcional)</h4>
+        <OpexCategoryMultiSelect
+          value={formData.opex_category_ids}
+          onChange={(opex_category_ids) => setFormData(prev => ({ ...prev, opex_category_ids }))}
+          supplierCategoryId={formData.category_id || null}
+        />
+        <p className="text-xs text-muted-foreground">
+          Asigna categorías OPEX para que el proveedor aparezca como opción al crear órdenes de compra.
+          Las categorías sugeridas se basan en el rubro seleccionado.
         </p>
       </div>
 

@@ -40,6 +40,13 @@ export interface Supplier {
   emails?: SupplierEmail[];
 }
 
+export interface SupplierOpexCategory {
+  id: string;
+  supplier_id: string;
+  opex_category_id: string;
+  created_at: string;
+}
+
 export interface SupplierFormData {
   name: string;
   rut: string;
@@ -53,5 +60,6 @@ export interface SupplierFormData {
   phone: string;
   emails: string[];
   category_id: string;
+  opex_category_ids: string[];
   is_generic: boolean;
 }
