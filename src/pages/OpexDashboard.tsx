@@ -16,7 +16,8 @@ import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { OpexExcelUpload } from "@/components/opex/OpexExcelUpload";
 import { MasterBudgetTable } from "@/components/opex/MasterBudgetTable";
 import { useOpexNavigation } from "@/components/opex/OpexReturnButton";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 interface OpexCategory {
   id: string;
   name: string;
@@ -350,7 +351,7 @@ const OpexDashboard = () => {
     };
   }, [masterBudgets, localAdditionals, consumptions, ufValue]);
 
-  // Build chart data: stacked bars by category showing consumption per local
+  // Build chart data: pie chart showing consumption by local (only locals with consumption)
   const chartData = useMemo(() => {
     interface ChartDataItem {
       contract_id: string;
@@ -358,24 +359,35 @@ const OpexDashboard = () => {
       total_budget: number;
       total_consumed: number;
       percent_consumed: number;
-      [key: string]: string | number; // Dynamic category keys
+      percent_of_total: number;
+      categories: { id: string; name: string; consumed: number; percent: number }[];
     }
 
     const data: ChartDataItem[] = [];
+    let grandTotalConsumed = 0;
 
+    // First pass: calculate grand total
     contracts.forEach(contract => {
-      // Apply company filter
       if (companyFilter !== "todos" && contract.company_id !== companyFilter) return;
+      if (contractFilter !== "todos" && contract.id !== contractFilter) return;
       
-      // Apply contract filter
+      categories.forEach(category => {
+        if (categoryFilter !== "todos" && category.id !== categoryFilter) return;
+        const consumption = consumptions.find(c => c.contract_id === contract.id && c.category_id === category.id);
+        grandTotalConsumed += Math.abs(consumption?.consumed_uf || 0);
+      });
+    });
+
+    // Second pass: build data with percentages
+    contracts.forEach(contract => {
+      if (companyFilter !== "todos" && contract.company_id !== companyFilter) return;
       if (contractFilter !== "todos" && contract.id !== contractFilter) return;
       
       let totalBudget = 0;
       let totalConsumed = 0;
-      const categoryConsumptions: Record<string, number> = {};
+      const categoryDetails: { id: string; name: string; consumed: number; percent: number }[] = [];
 
       categories.forEach(category => {
-        // Apply category filter
         if (categoryFilter !== "todos" && category.id !== categoryFilter) return;
 
         const masterBudget = masterBudgets.find(m => m.category_id === category.id);
@@ -388,15 +400,25 @@ const OpexDashboard = () => {
         totalBudget += masterAmount + additionalAmount;
         totalConsumed += consumedAmount;
         
-        // Store consumption by category name for stacking
         if (consumedAmount > 0) {
-          categoryConsumptions[category.name] = consumedAmount;
+          categoryDetails.push({
+            id: category.id,
+            name: category.name,
+            consumed: consumedAmount,
+            percent: 0 // Will be calculated after
+          });
         }
       });
 
-      // Include if there's any budget or consumption
-      if (totalBudget > 0 || totalConsumed > 0) {
+      // Only include locals that have consumption
+      if (totalConsumed > 0) {
         const percentConsumed = totalBudget > 0 ? (totalConsumed / totalBudget) * 100 : 0;
+        const percentOfTotal = grandTotalConsumed > 0 ? (totalConsumed / grandTotalConsumed) * 100 : 0;
+        
+        // Calculate percent for each category relative to local's total consumption
+        categoryDetails.forEach(cat => {
+          cat.percent = totalConsumed > 0 ? (cat.consumed / totalConsumed) * 100 : 0;
+        });
         
         data.push({
           contract_id: contract.id,
@@ -404,27 +426,16 @@ const OpexDashboard = () => {
           total_budget: totalBudget,
           total_consumed: totalConsumed,
           percent_consumed: percentConsumed,
-          ...categoryConsumptions
+          percent_of_total: percentOfTotal,
+          categories: categoryDetails
         });
       }
     });
 
-    return data;
+    // Sort by consumption descending
+    return data.sort((a, b) => b.total_consumed - a.total_consumed);
   }, [contracts, categories, masterBudgets, localAdditionals, consumptions, companyFilter, contractFilter, categoryFilter]);
 
-  // Get categories that have consumption data for the legend
-  const categoriesWithData = useMemo(() => {
-    const catSet = new Set<string>();
-    chartData.forEach(item => {
-      categories.forEach(cat => {
-        const value = item[cat.name];
-        if (typeof value === 'number' && value > 0) {
-          catSet.add(cat.name);
-        }
-      });
-    });
-    return categories.filter(c => catSet.has(c.name));
-  }, [chartData, categories]);
 
   // Get color for category
   const getCategoryColor = (categoryName: string) => {
@@ -441,11 +452,14 @@ const OpexDashboard = () => {
     return CATEGORY_COLORS[index % CATEGORY_COLORS.length];
   };
 
-  // Handle bar click to navigate to local
-  const handleBarClick = (data: any) => {
-    if (data && data.contract_id) {
-      navigateToContractFromOpex(data.contract_id);
-    }
+  // Handle viewing local
+  const handleViewLocal = (contractId: string) => {
+    navigateToContractFromOpex(contractId);
+  };
+
+  // Handle viewing category across locals
+  const handleViewCategory = (categoryId: string) => {
+    setCategoryFilter(categoryId);
   };
   const toggleContract = (contractId: string) => {
     setExpandedContracts(prev => {
@@ -629,22 +643,6 @@ const OpexDashboard = () => {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Consumo OPEX por Local</CardTitle>
-            {/* Category Legend */}
-            <div className="flex flex-wrap gap-3 mt-2">
-              {categoriesWithData.length > 0 ? (
-                categoriesWithData.map(cat => (
-                  <div key={cat.id} className="flex items-center gap-1.5 text-xs">
-                    <div 
-                      className="w-3 h-3 rounded" 
-                      style={{ backgroundColor: getCategoryColor(cat.name) }} 
-                    />
-                    <span>{cat.name}</span>
-                  </div>
-                ))
-              ) : (
-                <span className="text-xs text-muted-foreground">Sin consumo registrado - el gráfico mostrará los locales con presupuesto disponible</span>
-              )}
-            </div>
 
             {/* Chart Filters */}
             <div className="flex flex-wrap gap-3 items-center mt-4 p-3 bg-muted/30 rounded-lg">
@@ -703,95 +701,146 @@ const OpexDashboard = () => {
           <CardContent>
             {chartData.length === 0 ? (
               <div className="py-12 text-center text-muted-foreground">
-                No hay datos de presupuesto para los filtros seleccionados.
+                No hay consumo OPEX registrado para los filtros seleccionados.
               </div>
             ) : (
-              <div style={{ height: Math.max(400, chartData.length * 50) }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart 
-                    data={chartData} 
-                    layout="vertical" 
-                    margin={{ left: 10, right: 80, top: 10, bottom: 10 }}
-                    barGap={1}
-                    barCategoryGap={4}
-                    onClick={(data) => {
-                      if (data && data.activePayload && data.activePayload[0]) {
-                        handleBarClick(data.activePayload[0].payload);
-                      }
-                    }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" horizontal={false} />
-                    <XAxis 
-                      type="number" 
-                      tickFormatter={value => value >= 1000 ? `${(value / 1000).toFixed(0)}k` : value.toFixed(0)} 
-                      className="text-xs" 
-                      unit=" UF" 
-                    />
-                    <YAxis 
-                      type="category" 
-                      dataKey="name" 
-                      width={180} 
-                      tick={{ fontSize: 11, cursor: 'pointer' }} 
-                      tickLine={false} 
-                      axisLine={false}
-                    />
-                    <Tooltip 
-                      formatter={(value: number, name: string) => {
-                        const formattedValue = `${value.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF`;
-                        return [formattedValue, name];
-                      }}
-                      labelFormatter={(label, payload) => {
-                        if (payload && payload.length > 0) {
-                          const data = payload[0].payload;
-                          const percentText = data.percent_consumed > 0 
-                            ? ` - ${data.percent_consumed.toFixed(1)}% del presupuesto consumido`
-                            : ' - Sin consumo';
-                          return `${data.name}${percentText}`;
-                        }
-                        return String(label);
-                      }}
-                      contentStyle={{
-                        backgroundColor: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px"
-                      }}
-                    />
-                    <Legend 
-                      verticalAlign="top" 
-                      height={36}
-                      wrapperStyle={{ paddingBottom: '10px' }}
-                    />
-                    {/* Stacked bars by category */}
-                    {categories.map((cat, index) => (
-                      <Bar 
-                        key={cat.id}
-                        dataKey={cat.name}
-                        name={cat.name}
-                        stackId="consumption"
-                        fill={getCategoryColor(cat.name)}
-                        radius={index === categories.length - 1 ? [0, 4, 4, 0] : [0, 0, 0, 0]}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Pie Chart */}
+                <div className="h-[400px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={chartData}
+                        dataKey="total_consumed"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={150}
+                        innerRadius={60}
+                        paddingAngle={1}
+                        onClick={(data) => {
+                          if (data && data.contract_id) {
+                            handleViewLocal(data.contract_id);
+                          }
+                        }}
                         style={{ cursor: 'pointer' }}
+                      >
+                        {chartData.map((entry, index) => (
+                          <Cell 
+                            key={`cell-${index}`} 
+                            fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
+                            stroke="hsl(var(--background))"
+                            strokeWidth={2}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length > 0) {
+                            const data = payload[0].payload;
+                            return (
+                              <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
+                                <p className="font-semibold text-foreground mb-2">{data.name}</p>
+                                <p className="text-sm text-muted-foreground">
+                                  Consumido: <span className="font-medium text-foreground">{data.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF</span>
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  % del presupuesto: <span className="font-medium text-foreground">{data.percent_consumed.toFixed(1)}%</span>
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  % del total OPEX: <span className="font-medium text-foreground">{data.percent_of_total.toFixed(1)}%</span>
+                                </p>
+                                {data.categories && data.categories.length > 0 && (
+                                  <div className="mt-2 pt-2 border-t border-border">
+                                    <p className="text-xs font-medium text-muted-foreground mb-1">Por categoría:</p>
+                                    {data.categories.slice(0, 5).map((cat: any) => (
+                                      <div key={cat.id} className="flex items-center gap-2 text-xs">
+                                        <div 
+                                          className="w-2 h-2 rounded-full" 
+                                          style={{ backgroundColor: getCategoryColor(cat.name) }}
+                                        />
+                                        <span>{cat.name}: {cat.consumed.toLocaleString("es-CL", { minimumFractionDigits: 1 })} UF ({cat.percent.toFixed(0)}%)</span>
+                                      </div>
+                                    ))}
+                                    {data.categories.length > 5 && (
+                                      <span className="text-xs text-muted-foreground">+{data.categories.length - 5} más</span>
+                                    )}
+                                  </div>
+                                )}
+                                <p className="text-xs text-muted-foreground mt-2 italic">Click para opciones</p>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
                       />
-                    ))}
-                  </BarChart>
-                </ResponsiveContainer>
-                {/* Percentage labels */}
-                <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                  {chartData.filter(d => d.total_consumed > 0).slice(0, 10).map(d => (
-                    <Badge 
-                      key={String(d.contract_id)} 
-                      variant="outline" 
-                      className="cursor-pointer hover:bg-muted"
-                      onClick={() => handleBarClick(d)}
-                    >
-                      {d.name}: {Number(d.percent_consumed).toFixed(0)}% consumido
-                    </Badge>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Legend & Details */}
+                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                  <p className="text-sm font-medium text-muted-foreground">
+                    {chartData.length} locales con consumo
+                  </p>
+                  {chartData.map((item, index) => (
+                    <Popover key={item.contract_id}>
+                      <PopoverTrigger asChild>
+                        <div 
+                          className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                        >
+                          <div 
+                            className="w-4 h-4 rounded-full flex-shrink-0" 
+                            style={{ backgroundColor: CATEGORY_COLORS[index % CATEGORY_COLORS.length] }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{item.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {item.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 1 })} UF 
+                              ({item.percent_of_total.toFixed(1)}% del total)
+                            </p>
+                          </div>
+                          <Badge variant={item.percent_consumed > 80 ? "destructive" : item.percent_consumed > 50 ? "secondary" : "outline"}>
+                            {item.percent_consumed.toFixed(0)}%
+                          </Badge>
+                        </div>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-56 p-2" align="end">
+                        <div className="space-y-1">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="w-full justify-start"
+                            onClick={() => handleViewLocal(item.contract_id)}
+                          >
+                            Ver local
+                          </Button>
+                          {item.categories.length > 0 && (
+                            <>
+                              <div className="py-1 px-2 text-xs font-medium text-muted-foreground">
+                                Ver categoría en otros locales:
+                              </div>
+                              {item.categories.slice(0, 4).map(cat => (
+                                <Button 
+                                  key={cat.id}
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="w-full justify-start text-xs"
+                                  onClick={() => handleViewCategory(cat.id)}
+                                >
+                                  <div 
+                                    className="w-2 h-2 rounded-full mr-2" 
+                                    style={{ backgroundColor: getCategoryColor(cat.name) }}
+                                  />
+                                  {cat.name}
+                                </Button>
+                              ))}
+                            </>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   ))}
-                  {chartData.filter(d => d.total_consumed > 0).length > 10 && (
-                    <span className="text-muted-foreground">
-                      +{chartData.filter(d => d.total_consumed > 0).length - 10} más
-                    </span>
-                  )}
                 </div>
               </div>
             )}
