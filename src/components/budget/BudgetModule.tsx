@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Lock, AlertTriangle, RefreshCw } from "lucide-react";
+import { OpexConsumptionPieChart } from "./OpexConsumptionPieChart";
 import { useToast } from "@/hooks/use-toast";
 import { BudgetLineTree, BudgetLine, calculateAuthorizedTotal, calculateUnauthorizedTotal, getUnauthorizedLines, getAllDescendantIds, hasDescendants } from "./BudgetLineTree";
 import { BudgetSemaphore } from "./BudgetSemaphore";
@@ -639,19 +640,12 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
               readOnly={isClosed}
             />
           </>
+        ) : budgetType === "opex" ? (
+          <OpexConsumptionPieChart contractId={contractId} year={selectedYear} />
         ) : (
           <div className="text-center py-8 text-muted-foreground">
-            {budgetType === "opex" ? (
-              <>
-                <p>No hay consumo OPEX registrado para el año {selectedYear}</p>
-                <p className="text-sm mt-2">El presupuesto OPEX se gestiona desde el Dashboard OPEX.</p>
-              </>
-            ) : (
-              <>
-                <p>No hay presupuesto de {title.toLowerCase()} para el año {selectedYear}</p>
-                <p className="text-sm mt-2">Use "+ Nuevo Año CAPEX" para crear un presupuesto.</p>
-              </>
-            )}
+            <p>No hay presupuesto de {title.toLowerCase()} para el año {selectedYear}</p>
+            <p className="text-sm mt-2">Use "+ Nuevo Año CAPEX" para crear un presupuesto.</p>
           </div>
         )}
       </CardContent>
