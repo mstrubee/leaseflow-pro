@@ -30,6 +30,7 @@ interface PurchaseOrder {
   status: string;
   budget_id: string | null;
   budget_line_id: string | null;
+  opex_category_id: string | null;
   deleted_at: string | null;
   deleted_by: string | null;
 }
@@ -322,20 +323,17 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
   // Calculate consumed OPEX budget for a category
   const getOpexConsumedForCategory = (opexCategoryId: string) => {
     return orders
-      .filter(order => {
-        // Check if order has opex_category_id directly or via budget
-        const budget = budgets.find(b => b.id === order.budget_id);
-        return budget?.budget_type === "opex" && (order as any).opex_category_id === opexCategoryId;
-      })
+      .filter(order => order.opex_category_id === opexCategoryId)
       .reduce((sum, order) => sum + order.amount_uf, 0);
   };
 
-  // Get available OPEX budget for a category
+  // Get available OPEX budget for a category (always positive or 0)
   const getAvailableOpexForCategory = (opexCategoryId: string) => {
     const budgetEntry = opexMasterBudget.find(b => b.category_id === opexCategoryId);
     if (!budgetEntry) return 0;
     const consumed = getOpexConsumedForCategory(opexCategoryId);
-    return budgetEntry.amount_uf - consumed;
+    const available = budgetEntry.amount_uf - consumed;
+    return Math.max(0, available); // Always return positive or 0
   };
 
   // Validate OPEX amount against category budget
@@ -348,25 +346,21 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     
     // Calculate consumed excluding the current order being edited
     const consumed = orders
-      .filter(order => {
-        const budget = budgets.find(b => b.id === order.budget_id);
-        return budget?.budget_type === "opex" && 
-               (order as any).opex_category_id === opexCategoryId && 
-               order.id !== excludeOrderId;
-      })
+      .filter(order => order.opex_category_id === opexCategoryId && order.id !== excludeOrderId)
       .reduce((sum, order) => sum + order.amount_uf, 0);
     
     const available = budgetEntry.amount_uf - consumed;
+    const displayAvailable = Math.max(0, available);
     
     if (amount > available) {
       return { 
         valid: false, 
-        message: `Excede OPEX Disponible. Disponible: ${formatUF(available)}`,
-        available
+        message: `Excede OPEX Disponible. Disponible: ${formatUF(displayAvailable)}`,
+        available: displayAvailable
       };
     }
     
-    return { valid: true, message: "", available };
+    return { valid: true, message: "", available: displayAvailable };
   };
 
   // Check if category is "Otros"
