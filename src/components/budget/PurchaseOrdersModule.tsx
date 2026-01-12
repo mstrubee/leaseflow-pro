@@ -52,10 +52,17 @@ interface BudgetLine {
   status: string;
 }
 
+interface OpexCategory {
+  id: string;
+  name: string;
+  display_order: number;
+}
+
 export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: PurchaseOrdersModuleProps) => {
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
+  const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
   const [orderInvoiceData, setOrderInvoiceData] = useState<Record<string, { totalInvoiced: number; totalCreditNotes: number }>>({});
   const selectedYear = initialYear ?? new Date().getFullYear();
 
@@ -84,6 +91,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     currency: "UF" as "UF" | "CLP",
     budget_type: "capex" as "capex" | "opex",
     budget_line_id: "",
+    opex_category_id: "",
     attachment_url: "",
     attachment_name: "",
   });
@@ -107,6 +115,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     loadOrders();
     loadBudgets();
     loadBudgetLines();
+    loadOpexCategories();
   }, [contractId, selectedYear]);
 
   const loadOrders = async () => {
@@ -202,6 +211,21 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     }
   };
 
+  const loadOpexCategories = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("opex_categories")
+        .select("id, name, display_order")
+        .eq("is_active", true)
+        .order("display_order", { ascending: true });
+
+      if (error) throw error;
+      setOpexCategories(data || []);
+    } catch (error) {
+      console.error("Error loading OPEX categories:", error);
+    }
+  };
+
   // Get authorized budget lines for selected budget type
   const getAuthorizedLinesForBudgetType = (budgetType: string) => {
     const budget = budgets.find(b => b.budget_type === budgetType);
@@ -272,6 +296,12 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       // Find budget for selected type and year
       const budget = budgets.find(b => b.budget_type === newOrder.budget_type);
       const selectedLine = budgetLines.find(l => l.id === newOrder.budget_line_id);
+      const selectedOpexCategory = opexCategories.find(c => c.id === newOrder.opex_category_id);
+      
+      // Description: use line name for CAPEX, category name for OPEX
+      const description = newOrder.budget_type === "capex" 
+        ? selectedLine?.name || null 
+        : selectedOpexCategory?.name || null;
 
       const { error } = await supabase.from("purchase_orders").insert({
         contract_id: contractId,
@@ -282,10 +312,11 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         amount_clp: amountCLP,
         input_currency: newOrder.currency,
         uf_value_at_entry: ufValue,
-        description: selectedLine?.name || null,
+        description: description,
         year: selectedYear,
         budget_id: budget?.id || null,
-        budget_line_id: newOrder.budget_line_id || null,
+        budget_line_id: newOrder.budget_type === "capex" ? (newOrder.budget_line_id || null) : null,
+        opex_category_id: newOrder.budget_type === "opex" ? (newOrder.opex_category_id || null) : null,
         attachment_url: newOrder.attachment_url || null,
       });
 
@@ -301,6 +332,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         currency: "UF", 
         budget_type: "capex",
         budget_line_id: "",
+        opex_category_id: "",
         attachment_url: "",
         attachment_name: "",
       });
@@ -846,7 +878,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
               <Label>Tipo de Presupuesto</Label>
               <Select 
                 value={newOrder.budget_type} 
-                onValueChange={(v) => setNewOrder({ ...newOrder, budget_type: v as "capex" | "opex", budget_line_id: "" })}
+                onValueChange={(v) => setNewOrder({ ...newOrder, budget_type: v as "capex" | "opex", budget_line_id: "", opex_category_id: "" })}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -857,40 +889,64 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Línea de Presupuesto (Descripción) *</Label>
-              <Select 
-                value={newOrder.budget_line_id} 
-                onValueChange={(v) => setNewOrder({ ...newOrder, budget_line_id: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccione una línea autorizada" />
-                </SelectTrigger>
-                <SelectContent>
-                  {getAuthorizedLinesForBudgetType(newOrder.budget_type).map((line) => {
-                    const available = getAvailableBudgetForLine(line.id);
-                    return (
-                      <SelectItem key={line.id} value={line.id}>
-                        <div className="flex items-center justify-between w-full gap-4">
-                          <span>{line.name}</span>
-                          <span className="text-xs text-muted-foreground">
-                            (Disponible: {formatUF(available)})
-                          </span>
-                        </div>
+            {newOrder.budget_type === "capex" ? (
+              <div className="space-y-2">
+                <Label>Línea de Presupuesto CAPEX *</Label>
+                <Select 
+                  value={newOrder.budget_line_id} 
+                  onValueChange={(v) => setNewOrder({ ...newOrder, budget_line_id: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccione una línea autorizada" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {getAuthorizedLinesForBudgetType("capex").map((line) => {
+                      const available = getAvailableBudgetForLine(line.id);
+                      return (
+                        <SelectItem key={line.id} value={line.id}>
+                          <div className="flex items-center justify-between w-full gap-4">
+                            <span>{line.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              (Disponible: {formatUF(available)})
+                            </span>
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+                {getAuthorizedLinesForBudgetType("capex").length === 0 && (
+                  <p className="text-xs text-amber-600">No hay líneas autorizadas para CAPEX</p>
+                )}
+                {newOrder.budget_line_id && (
+                  <p className="text-xs text-muted-foreground">
+                    Presupuesto disponible: {formatUF(getAvailableBudgetForLine(newOrder.budget_line_id))}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Categoría OPEX *</Label>
+                <Select 
+                  value={newOrder.opex_category_id} 
+                  onValueChange={(v) => setNewOrder({ ...newOrder, opex_category_id: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccione una categoría OPEX" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {opexCategories.map((category) => (
+                      <SelectItem key={category.id} value={category.id}>
+                        {category.name}
                       </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-              {getAuthorizedLinesForBudgetType(newOrder.budget_type).length === 0 && (
-                <p className="text-xs text-amber-600">No hay líneas autorizadas para este tipo de presupuesto</p>
-              )}
-              {newOrder.budget_line_id && (
-                <p className="text-xs text-muted-foreground">
-                  Presupuesto disponible: {formatUF(getAvailableBudgetForLine(newOrder.budget_line_id))}
-                </p>
-              )}
-            </div>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {opexCategories.length === 0 && (
+                  <p className="text-xs text-amber-600">No hay categorías OPEX configuradas</p>
+                )}
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Proveedor</Label>
               <Input value={newOrder.supplier_name} onChange={(e) => setNewOrder({ ...newOrder, supplier_name: e.target.value })} />
