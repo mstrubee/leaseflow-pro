@@ -41,15 +41,17 @@ import { es } from "date-fns/locale";
 
 interface PurchaseOrder {
   id: string;
-  oc_number: string;
+  order_number: string;
   description: string | null;
   amount_uf: number;
   status: string;
   budget_classification: string | null;
   created_at: string;
+  order_date: string;
   contract_id: string;
   budget_line_id: string | null;
   opex_category_id: string | null;
+  supplier_name: string | null;
   contract_name?: string;
   budget_line_name?: string;
   opex_category_name?: string;
@@ -123,15 +125,17 @@ const PurchaseOrdersDashboard = () => {
         .from("purchase_orders")
         .select(`
           id,
-          oc_number,
+          order_number,
           description,
           amount_uf,
           status,
           budget_classification,
           created_at,
+          order_date,
           contract_id,
           budget_line_id,
           opex_category_id,
+          supplier_name,
           contracts!inner(name),
           budget_lines(name),
           opex_categories(name),
@@ -166,9 +170,10 @@ const PurchaseOrdersDashboard = () => {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(
         (o) =>
-          o.oc_number?.toLowerCase().includes(term) ||
+          o.order_number?.toLowerCase().includes(term) ||
           o.description?.toLowerCase().includes(term) ||
-          o.contract_name?.toLowerCase().includes(term)
+          o.contract_name?.toLowerCase().includes(term) ||
+          o.supplier_name?.toLowerCase().includes(term)
       );
     }
 
@@ -512,7 +517,7 @@ const PurchaseOrdersDashboard = () => {
                                 <TableCell className="font-medium">
                                   <div className="flex items-center gap-2">
                                     <FileText className="h-4 w-4 text-muted-foreground" />
-                                    {order.oc_number}
+                                    {order.order_number}
                                   </div>
                                 </TableCell>
                                 <TableCell className="max-w-[200px] truncate">
