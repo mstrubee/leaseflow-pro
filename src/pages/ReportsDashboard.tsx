@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ArrowLeft, FileText, Building2, CheckCircle2, AlertTriangle, Clock, XCircle, FileCheck } from "lucide-react";
+import { ArrowLeft, FileText, Building2, CheckCircle2, AlertTriangle, Clock, XCircle, FileCheck, ExternalLink, ChevronDown, ChevronRight, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { 
@@ -14,9 +14,10 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, ChevronRight } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import { PRIORITY_CONFIG, PatentPriority } from "@/components/patents/types";
+import { useSingleCollapsible } from "@/hooks/useCollapsibleState";
+import { useReportsNavigation } from "@/components/reports/ReportsReturnButton";
 
 interface ContractPatentData {
   id: string;
@@ -54,14 +55,28 @@ interface CompanyStats {
   okDocs: number;
 }
 
+interface ChartFilter {
+  type: "patente_status" | "priority";
+  value: string;
+  label: string;
+}
+
 const ReportsDashboard = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
+  const { navigateToContractFromReports } = useReportsNavigation();
   const [contracts, setContracts] = useState<ContractPatentData[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [patentStatuses, setPatentStatuses] = useState<PatentStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
+  const [chartFilter, setChartFilter] = useState<ChartFilter | null>(null);
+  
+  // Collapsible state for main section
+  const { isOpen: isPatentSectionOpen, setIsOpen: setPatentSectionOpen } = useSingleCollapsible(
+    "reports-patent-section",
+    true
+  );
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -233,12 +248,29 @@ const ReportsDashboard = () => {
       .sort((a, b) => b.totalContracts - a.totalContracts);
   }, [contracts, companies]);
 
+  // Filter contracts based on chart selection
+  const filteredContracts = useMemo(() => {
+    if (!chartFilter) return [];
+    
+    return contracts.filter(contract => {
+      if (chartFilter.type === "patente_status") {
+        const status = contract.patente_status || "sin_asignar";
+        return status === chartFilter.value || 
+          (chartFilter.value === "sin_asignar" && !contract.patente_status);
+      } else if (chartFilter.type === "priority") {
+        const priority = contract.contract_patents?.priority || "sin_asignar";
+        return priority === chartFilter.value;
+      }
+      return false;
+    });
+  }, [contracts, chartFilter]);
+
   // Chart data for patente status
   const patenteStatusChartData = useMemo(() => [
-    { name: "Definitiva", value: generalStats.definitiveCount, color: "hsl(142, 71%, 45%)" },
-    { name: "Provisoria", value: generalStats.provisionalCount, color: "hsl(48, 96%, 53%)" },
-    { name: "Sin Patente", value: generalStats.noPatentCount, color: "hsl(0, 84%, 60%)" },
-    { name: "Sin Asignar", value: generalStats.totalContracts - generalStats.definitiveCount - generalStats.provisionalCount - generalStats.noPatentCount, color: "hsl(220, 9%, 46%)" },
+    { name: "Definitiva", value: generalStats.definitiveCount, color: "hsl(142, 71%, 45%)", filterValue: "definitiva" },
+    { name: "Provisoria", value: generalStats.provisionalCount, color: "hsl(48, 96%, 53%)", filterValue: "provisoria" },
+    { name: "Sin Patente", value: generalStats.noPatentCount, color: "hsl(0, 84%, 60%)", filterValue: "sin_patente" },
+    { name: "Sin Asignar", value: generalStats.totalContracts - generalStats.definitiveCount - generalStats.provisionalCount - generalStats.noPatentCount, color: "hsl(220, 9%, 46%)", filterValue: "sin_asignar" },
   ].filter(d => d.value > 0), [generalStats]);
 
   // Chart data for priority
@@ -249,6 +281,7 @@ const ReportsDashboard = () => {
         name: key === "sin_asignar" ? "Sin Asignar" : PRIORITY_CONFIG[key as PatentPriority]?.label || key,
         value,
         color: key === "sin_asignar" ? "hsl(220, 9%, 46%)" : PRIORITY_CONFIG[key as PatentPriority]?.color || "hsl(220, 9%, 46%)",
+        filterValue: key,
       }))
   , [generalStats]);
 
@@ -272,6 +305,34 @@ const ReportsDashboard = () => {
       sin_asignar: "Sin Asignar",
     };
     return statusMap[status] || status;
+  };
+
+  const handlePatenteStatusClick = (data: any) => {
+    if (data && data.filterValue) {
+      setChartFilter({
+        type: "patente_status",
+        value: data.filterValue,
+        label: data.name,
+      });
+    }
+  };
+
+  const handlePriorityClick = (data: any) => {
+    if (data && data.filterValue) {
+      setChartFilter({
+        type: "priority",
+        value: data.filterValue,
+        label: data.name,
+      });
+    }
+  };
+
+  const handleNavigateToPatent = (contractId: string) => {
+    navigateToContractFromReports(contractId, "patentes");
+  };
+
+  const clearFilter = () => {
+    setChartFilter(null);
   };
 
   if (authLoading || loading) {
@@ -305,249 +366,392 @@ const ReportsDashboard = () => {
       </header>
 
       <main className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        {/* Reporte de Estado de Patentes */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileCheck className="h-5 w-5" />
-              Estado General de Patentes
-            </CardTitle>
-            <CardDescription>
-              Resumen del estado de patentes para todos los contratos firmados
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Summary Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-              <Card className="bg-muted/50">
-                <CardContent className="p-4">
-                  <div className="text-2xl font-bold">{generalStats.totalContracts}</div>
-                  <div className="text-sm text-muted-foreground">Total Locales</div>
-                </CardContent>
-              </Card>
-              <Card className="bg-green-50 dark:bg-green-950/30">
-                <CardContent className="p-4">
-                  <div className="text-2xl font-bold text-green-700 dark:text-green-400">{generalStats.definitiveCount}</div>
-                  <div className="text-sm text-muted-foreground">Definitiva</div>
-                </CardContent>
-              </Card>
-              <Card className="bg-yellow-50 dark:bg-yellow-950/30">
-                <CardContent className="p-4">
-                  <div className="text-2xl font-bold text-yellow-700 dark:text-yellow-400">{generalStats.provisionalCount}</div>
-                  <div className="text-sm text-muted-foreground">Provisoria</div>
-                </CardContent>
-              </Card>
-              <Card className="bg-red-50 dark:bg-red-950/30">
-                <CardContent className="p-4">
-                  <div className="text-2xl font-bold text-red-700 dark:text-red-400">{generalStats.noPatentCount}</div>
-                  <div className="text-sm text-muted-foreground">Sin Patente</div>
-                </CardContent>
-              </Card>
-              <Card className="bg-green-50 dark:bg-green-950/30">
-                <CardContent className="p-4">
-                  <div className="text-2xl font-bold text-green-700 dark:text-green-400 flex items-center gap-1">
-                    <CheckCircle2 className="h-5 w-5" />
-                    {generalStats.okDocs}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Docs OK</div>
-                </CardContent>
-              </Card>
-              <Card className="bg-orange-50 dark:bg-orange-950/30">
-                <CardContent className="p-4">
-                  <div className="text-2xl font-bold text-orange-700 dark:text-orange-400 flex items-center gap-1">
-                    <Clock className="h-5 w-5" />
-                    {generalStats.pendingDocs}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Pendientes</div>
-                </CardContent>
-              </Card>
-              <Card className="bg-red-50 dark:bg-red-950/30">
-                <CardContent className="p-4">
-                  <div className="text-2xl font-bold text-red-700 dark:text-red-400 flex items-center gap-1">
-                    <AlertTriangle className="h-5 w-5" />
-                    {generalStats.overdueDocs}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Vencidos</div>
-                </CardContent>
-              </Card>
-            </div>
+        {/* Reporte de Estado de Patentes - Collapsible */}
+        <Collapsible open={isPatentSectionOpen} onOpenChange={setPatentSectionOpen}>
+          <Card>
+            <CardHeader className="cursor-pointer" onClick={() => setPatentSectionOpen(!isPatentSectionOpen)}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileCheck className="h-5 w-5" />
+                    Estado General de Patentes
+                  </CardTitle>
+                  <CardDescription>
+                    Resumen del estado de patentes para todos los contratos firmados
+                  </CardDescription>
+                </div>
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm">
+                    {isPatentSectionOpen ? (
+                      <ChevronDown className="h-5 w-5" />
+                    ) : (
+                      <ChevronRight className="h-5 w-5" />
+                    )}
+                  </Button>
+                </CollapsibleTrigger>
+              </div>
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent className="space-y-6">
+                {/* Summary Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+                  <Card className="bg-muted/50">
+                    <CardContent className="p-4">
+                      <div className="text-2xl font-bold">{generalStats.totalContracts}</div>
+                      <div className="text-sm text-muted-foreground">Total Locales</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-green-50 dark:bg-green-950/30">
+                    <CardContent className="p-4">
+                      <div className="text-2xl font-bold text-green-700 dark:text-green-400">{generalStats.definitiveCount}</div>
+                      <div className="text-sm text-muted-foreground">Definitiva</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-yellow-50 dark:bg-yellow-950/30">
+                    <CardContent className="p-4">
+                      <div className="text-2xl font-bold text-yellow-700 dark:text-yellow-400">{generalStats.provisionalCount}</div>
+                      <div className="text-sm text-muted-foreground">Provisoria</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-red-50 dark:bg-red-950/30">
+                    <CardContent className="p-4">
+                      <div className="text-2xl font-bold text-red-700 dark:text-red-400">{generalStats.noPatentCount}</div>
+                      <div className="text-sm text-muted-foreground">Sin Patente</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-green-50 dark:bg-green-950/30">
+                    <CardContent className="p-4">
+                      <div className="text-2xl font-bold text-green-700 dark:text-green-400 flex items-center gap-1">
+                        <CheckCircle2 className="h-5 w-5" />
+                        {generalStats.okDocs}
+                      </div>
+                      <div className="text-sm text-muted-foreground">Docs OK</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-orange-50 dark:bg-orange-950/30">
+                    <CardContent className="p-4">
+                      <div className="text-2xl font-bold text-orange-700 dark:text-orange-400 flex items-center gap-1">
+                        <Clock className="h-5 w-5" />
+                        {generalStats.pendingDocs}
+                      </div>
+                      <div className="text-sm text-muted-foreground">Pendientes</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-red-50 dark:bg-red-950/30">
+                    <CardContent className="p-4">
+                      <div className="text-2xl font-bold text-red-700 dark:text-red-400 flex items-center gap-1">
+                        <AlertTriangle className="h-5 w-5" />
+                        {generalStats.overdueDocs}
+                      </div>
+                      <div className="text-sm text-muted-foreground">Vencidos</div>
+                    </CardContent>
+                  </Card>
+                </div>
 
-            {/* Charts */}
-            <div className="grid md:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Por Estado de Patente</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-[250px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={patenteStatusChartData}
-                          dataKey="value"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={80}
-                          label={({ name, value }) => `${name}: ${value}`}
-                        >
-                          {patenteStatusChartData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                        <Legend />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                </CardContent>
-              </Card>
+                {/* Charts */}
+                <div className="grid md:grid-cols-2 gap-6">
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Por Estado de Patente</CardTitle>
+                      <CardDescription className="text-xs">Haz clic en el gráfico o leyenda para filtrar</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-[250px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={patenteStatusChartData}
+                              dataKey="value"
+                              nameKey="name"
+                              cx="50%"
+                              cy="50%"
+                              outerRadius={80}
+                              label={({ name, value }) => `${name}: ${value}`}
+                              onClick={handlePatenteStatusClick}
+                              style={{ cursor: "pointer" }}
+                            >
+                              {patenteStatusChartData.map((entry, index) => (
+                                <Cell 
+                                  key={`cell-${index}`} 
+                                  fill={entry.color}
+                                  stroke={chartFilter?.type === "patente_status" && chartFilter.value === entry.filterValue ? "hsl(var(--primary))" : undefined}
+                                  strokeWidth={chartFilter?.type === "patente_status" && chartFilter.value === entry.filterValue ? 3 : 1}
+                                />
+                              ))}
+                            </Pie>
+                            <Tooltip />
+                            <Legend 
+                              onClick={(e) => {
+                                const item = patenteStatusChartData.find(d => d.name === e.value);
+                                if (item) handlePatenteStatusClick(item);
+                              }}
+                              wrapperStyle={{ cursor: "pointer" }}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
 
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Por Prioridad</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-[250px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={priorityChartData}
-                          dataKey="value"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={80}
-                          label={({ name, value }) => `${name}: ${value}`}
-                        >
-                          {priorityChartData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                        <Legend />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Por Prioridad</CardTitle>
+                      <CardDescription className="text-xs">Haz clic en el gráfico o leyenda para filtrar</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-[250px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={priorityChartData}
+                              dataKey="value"
+                              nameKey="name"
+                              cx="50%"
+                              cy="50%"
+                              outerRadius={80}
+                              label={({ name, value }) => `${name}: ${value}`}
+                              onClick={handlePriorityClick}
+                              style={{ cursor: "pointer" }}
+                            >
+                              {priorityChartData.map((entry, index) => (
+                                <Cell 
+                                  key={`cell-${index}`} 
+                                  fill={entry.color}
+                                  stroke={chartFilter?.type === "priority" && chartFilter.value === entry.filterValue ? "hsl(var(--primary))" : undefined}
+                                  strokeWidth={chartFilter?.type === "priority" && chartFilter.value === entry.filterValue ? 3 : 1}
+                                />
+                              ))}
+                            </Pie>
+                            <Tooltip />
+                            <Legend 
+                              onClick={(e) => {
+                                const item = priorityChartData.find(d => d.name === e.value);
+                                if (item) handlePriorityClick(item);
+                              }}
+                              wrapperStyle={{ cursor: "pointer" }}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
 
-            {/* By Company Table */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Building2 className="h-4 w-4" />
-                  Desglose por Empresa
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[40px]"></TableHead>
-                      <TableHead>Empresa</TableHead>
-                      <TableHead className="text-center">Locales</TableHead>
-                      <TableHead className="text-center">Definitiva</TableHead>
-                      <TableHead className="text-center">Provisoria</TableHead>
-                      <TableHead className="text-center">Sin Patente</TableHead>
-                      <TableHead className="text-center">Docs OK</TableHead>
-                      <TableHead className="text-center">Pendientes</TableHead>
-                      <TableHead className="text-center">Vencidos</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {companyStats.map((stats) => (
-                      <Collapsible key={stats.companyId} asChild>
-                        <>
-                          <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => toggleCompany(stats.companyName)}>
-                            <TableCell>
-                              <CollapsibleTrigger asChild>
-                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                                  {expandedCompanies.has(stats.companyName) ? (
-                                    <ChevronDown className="h-4 w-4" />
-                                  ) : (
-                                    <ChevronRight className="h-4 w-4" />
-                                  )}
-                                </Button>
-                              </CollapsibleTrigger>
-                            </TableCell>
-                            <TableCell className="font-medium">{stats.companyName}</TableCell>
-                            <TableCell className="text-center">{stats.totalContracts}</TableCell>
-                            <TableCell className="text-center">
-                              <span className="px-2 py-1 rounded bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">
-                                {stats.byPatenteStatus.definitiva || 0}
-                              </span>
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <span className="px-2 py-1 rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300">
-                                {stats.byPatenteStatus.provisoria || 0}
-                              </span>
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <span className="px-2 py-1 rounded bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300">
-                                {stats.byPatenteStatus.sin_patente || 0}
-                              </span>
-                            </TableCell>
-                            <TableCell className="text-center text-green-600 dark:text-green-400">
-                              {stats.okDocs}
-                            </TableCell>
-                            <TableCell className="text-center text-orange-600 dark:text-orange-400">
-                              {stats.pendingDocs}
-                            </TableCell>
-                            <TableCell className="text-center text-red-600 dark:text-red-400 font-medium">
-                              {stats.overdueDocs > 0 && (
-                                <span className="flex items-center justify-center gap-1">
-                                  <AlertTriangle className="h-4 w-4" />
-                                  {stats.overdueDocs}
-                                </span>
-                              )}
-                              {stats.overdueDocs === 0 && "-"}
-                            </TableCell>
-                          </TableRow>
-                          {expandedCompanies.has(stats.companyName) && (
+                {/* Filtered Contracts List */}
+                {chartFilter && (
+                  <Card className="border-primary/50 bg-primary/5">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Building2 className="h-4 w-4" />
+                          Locales con: {chartFilter.label}
+                          <span className="text-muted-foreground font-normal">
+                            ({filteredContracts.length} {filteredContracts.length === 1 ? "local" : "locales"})
+                          </span>
+                        </CardTitle>
+                        <Button variant="ghost" size="sm" onClick={clearFilter}>
+                          <X className="h-4 w-4 mr-1" />
+                          Limpiar filtro
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="max-h-[400px] overflow-y-auto">
+                        <Table>
+                          <TableHeader>
                             <TableRow>
-                              <TableCell colSpan={9} className="bg-muted/30 p-4">
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                  <div>
-                                    <h4 className="text-sm font-medium mb-2">Por Estado de Patente</h4>
-                                    <ul className="space-y-1 text-sm">
-                                      {Object.entries(stats.byPatenteStatus).map(([status, count]) => (
-                                        <li key={status} className="flex justify-between">
-                                          <span>{getPatenteStatusLabel(status)}</span>
-                                          <span className="font-medium">{count}</span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                  <div>
-                                    <h4 className="text-sm font-medium mb-2">Por Prioridad</h4>
-                                    <ul className="space-y-1 text-sm">
-                                      {Object.entries(stats.byPriority).map(([priority, count]) => (
-                                        <li key={priority} className="flex justify-between">
-                                          <span>
-                                            {priority === "sin_asignar" 
-                                              ? "Sin Asignar" 
-                                              : PRIORITY_CONFIG[priority as PatentPriority]?.label || priority}
-                                          </span>
-                                          <span className="font-medium">{count}</span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                </div>
-                              </TableCell>
+                              <TableHead>Local</TableHead>
+                              <TableHead>Empresa</TableHead>
+                              <TableHead className="text-center">Estado Patente</TableHead>
+                              <TableHead className="text-center">Prioridad</TableHead>
+                              <TableHead className="text-center">Documentos</TableHead>
+                              <TableHead className="text-right">Acciones</TableHead>
                             </TableRow>
-                          )}
-                        </>
-                      </Collapsible>
-                    ))}
-                  </TableBody>
-                </Table>
+                          </TableHeader>
+                          <TableBody>
+                            {filteredContracts.map(contract => {
+                              const companyName = contract.contract_companies?.[0]?.companies?.name || "Sin Empresa";
+                              const priority = contract.contract_patents?.priority;
+                              const docsOk = contract.patent_documents?.filter(d => d.status === "ok").length || 0;
+                              const docsPending = contract.patent_documents?.filter(d => d.status === "pendiente").length || 0;
+                              const totalDocs = contract.patent_documents?.length || 0;
+                              
+                              return (
+                                <TableRow key={contract.id}>
+                                  <TableCell className="font-medium">{contract.name}</TableCell>
+                                  <TableCell className="text-muted-foreground">{companyName}</TableCell>
+                                  <TableCell className="text-center">
+                                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                      contract.patente_status === "definitiva" 
+                                        ? "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300"
+                                        : contract.patente_status === "provisoria"
+                                        ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300"
+                                        : contract.patente_status === "sin_patente"
+                                        ? "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300"
+                                        : "bg-muted text-muted-foreground"
+                                    }`}>
+                                      {getPatenteStatusLabel(contract.patente_status || "sin_asignar")}
+                                    </span>
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    {priority ? (
+                                      <span 
+                                        className="px-2 py-1 rounded text-xs font-medium"
+                                        style={{ 
+                                          backgroundColor: PRIORITY_CONFIG[priority]?.color + "20",
+                                          color: PRIORITY_CONFIG[priority]?.color
+                                        }}
+                                      >
+                                        {PRIORITY_CONFIG[priority]?.label}
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted-foreground text-xs">Sin asignar</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <div className="flex items-center justify-center gap-2 text-xs">
+                                      <span className="text-green-600">{docsOk} OK</span>
+                                      <span className="text-muted-foreground">/</span>
+                                      <span className="text-orange-600">{docsPending} Pend.</span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <Button 
+                                      variant="outline" 
+                                      size="sm"
+                                      onClick={() => handleNavigateToPatent(contract.id)}
+                                    >
+                                      <ExternalLink className="h-4 w-4 mr-1" />
+                                      Ver Patentes
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* By Company Table */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Building2 className="h-4 w-4" />
+                      Desglose por Empresa
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[40px]"></TableHead>
+                          <TableHead>Empresa</TableHead>
+                          <TableHead className="text-center">Locales</TableHead>
+                          <TableHead className="text-center">Definitiva</TableHead>
+                          <TableHead className="text-center">Provisoria</TableHead>
+                          <TableHead className="text-center">Sin Patente</TableHead>
+                          <TableHead className="text-center">Docs OK</TableHead>
+                          <TableHead className="text-center">Pendientes</TableHead>
+                          <TableHead className="text-center">Vencidos</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {companyStats.map((stats) => (
+                          <Collapsible key={stats.companyId} asChild>
+                            <>
+                              <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => toggleCompany(stats.companyName)}>
+                                <TableCell>
+                                  <CollapsibleTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                      {expandedCompanies.has(stats.companyName) ? (
+                                        <ChevronDown className="h-4 w-4" />
+                                      ) : (
+                                        <ChevronRight className="h-4 w-4" />
+                                      )}
+                                    </Button>
+                                  </CollapsibleTrigger>
+                                </TableCell>
+                                <TableCell className="font-medium">{stats.companyName}</TableCell>
+                                <TableCell className="text-center">{stats.totalContracts}</TableCell>
+                                <TableCell className="text-center">
+                                  <span className="px-2 py-1 rounded bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">
+                                    {stats.byPatenteStatus.definitiva || 0}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <span className="px-2 py-1 rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300">
+                                    {stats.byPatenteStatus.provisoria || 0}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <span className="px-2 py-1 rounded bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300">
+                                    {stats.byPatenteStatus.sin_patente || 0}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="text-center text-green-600 dark:text-green-400">
+                                  {stats.okDocs}
+                                </TableCell>
+                                <TableCell className="text-center text-orange-600 dark:text-orange-400">
+                                  {stats.pendingDocs}
+                                </TableCell>
+                                <TableCell className="text-center text-red-600 dark:text-red-400 font-medium">
+                                  {stats.overdueDocs > 0 && (
+                                    <span className="flex items-center justify-center gap-1">
+                                      <AlertTriangle className="h-4 w-4" />
+                                      {stats.overdueDocs}
+                                    </span>
+                                  )}
+                                  {stats.overdueDocs === 0 && "-"}
+                                </TableCell>
+                              </TableRow>
+                              {expandedCompanies.has(stats.companyName) && (
+                                <TableRow>
+                                  <TableCell colSpan={9} className="bg-muted/30 p-4">
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                      <div>
+                                        <h4 className="text-sm font-medium mb-2">Por Estado de Patente</h4>
+                                        <ul className="space-y-1 text-sm">
+                                          {Object.entries(stats.byPatenteStatus).map(([status, count]) => (
+                                            <li key={status} className="flex justify-between">
+                                              <span>{getPatenteStatusLabel(status)}</span>
+                                              <span className="font-medium">{count}</span>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                      <div>
+                                        <h4 className="text-sm font-medium mb-2">Por Prioridad</h4>
+                                        <ul className="space-y-1 text-sm">
+                                          {Object.entries(stats.byPriority).map(([priority, count]) => (
+                                            <li key={priority} className="flex justify-between">
+                                              <span>
+                                                {priority === "sin_asignar" 
+                                                  ? "Sin Asignar" 
+                                                  : PRIORITY_CONFIG[priority as PatentPriority]?.label || priority}
+                                              </span>
+                                              <span className="font-medium">{count}</span>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </>
+                          </Collapsible>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
               </CardContent>
-            </Card>
-          </CardContent>
-        </Card>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
       </main>
     </div>
   );
