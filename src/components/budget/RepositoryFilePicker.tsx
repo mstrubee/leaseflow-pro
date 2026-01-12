@@ -145,16 +145,16 @@ export const RepositoryFilePicker = ({
 
       if (uploadError) throw uploadError;
 
-      const { data: urlData } = supabase.storage
-        .from("repository-files")
-        .getPublicUrl(filePath);
+      // Store the storage path reference instead of public URL for security
+      // The path will be converted to a signed URL when accessed
+      const storagePath = `storage://repository-files/${filePath}`;
 
       const { data: newFile, error: dbError } = await supabase
         .from("repository_files")
         .insert({
           folder_id: currentFolder.id,
           name: file.name,
-          url: urlData.publicUrl,
+          url: storagePath,
           file_type: fileExt || null,
         })
         .select()

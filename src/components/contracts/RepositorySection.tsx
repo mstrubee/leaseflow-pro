@@ -19,7 +19,9 @@ import {
   AlertTriangle
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
 import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
+import { deleteFileFromStorage, isStorageUrl } from "@/lib/storageUtils";
 import {
   Dialog,
   DialogContent,
@@ -97,6 +99,7 @@ interface RepositorySectionProps {
 export const RepositorySection = ({ contractId, contractName, contractStatus = 'en_negociacion' }: RepositorySectionProps) => {
   const { toast } = useToast();
   const { isAdmin } = useAuth();
+  const { openFile } = useSecureFileAccess();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [folders, setFolders] = useState<RepositoryFolder[]>([]);
@@ -600,11 +603,9 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
 
         if (uploadError) throw uploadError;
 
-        const { data: urlData } = supabase.storage
-          .from("repository-files")
-          .getPublicUrl(filePath);
-
-        fileUrl = urlData.publicUrl;
+        // Store the storage path reference instead of public URL for security
+        // The path will be converted to a signed URL when accessed
+        fileUrl = `storage://repository-files/${filePath}`;
       }
 
       // Save file record to database
@@ -682,13 +683,9 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
         await supabase.functions.invoke('google-drive', {
           body: { action: 'deleteFile', driveFileId }
         });
-      } else {
-        // Delete from Supabase Storage
-        const urlParts = fileUrl.split('/repository-files/');
-        if (urlParts.length > 1) {
-          const storagePath = decodeURIComponent(urlParts[1]);
-          await supabase.storage.from("repository-files").remove([storagePath]);
-        }
+      } else if (isStorageUrl(fileUrl)) {
+        // Delete from Supabase Storage using utility
+        await deleteFileFromStorage(fileUrl);
       }
 
       // Delete from database
@@ -1222,7 +1219,7 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => window.open(file.url, "_blank")}
+                      onClick={() => openFile(file.url)}
                     >
                       <ExternalLink className="h-4 w-4" />
                     </Button>

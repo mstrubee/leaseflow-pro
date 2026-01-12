@@ -250,11 +250,11 @@ export const DocumentVersions = ({
 
       if (uploadError) throw uploadError;
 
-      const { data: urlData } = supabase.storage
-        .from("repository-files")
-        .getPublicUrl(filePath);
+      // Store the storage path reference instead of public URL for security
+      // The path will be converted to a signed URL when accessed
+      const storagePath = `storage://repository-files/${filePath}`;
 
-      await onAddDocument(urlData.publicUrl, `${suggestedFileName.trim()}.${ext}`);
+      await onAddDocument(storagePath, `${suggestedFileName.trim()}.${ext}`);
 
       toast({
         title: "Archivo subido",
@@ -267,7 +267,7 @@ export const DocumentVersions = ({
 
       // If user wants to import data, open the import modal
       if (shouldImportData) {
-        setUploadedDocumentUrl(urlData.publicUrl);
+        setUploadedDocumentUrl(storagePath);
         setImportModalOpen(true);
       }
     } catch (error: any) {
