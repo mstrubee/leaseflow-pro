@@ -2825,6 +2825,42 @@ export type Database = {
           },
         ]
       }
+      supplier_opex_categories: {
+        Row: {
+          created_at: string
+          id: string
+          opex_category_id: string
+          supplier_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          opex_category_id: string
+          supplier_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          opex_category_id?: string
+          supplier_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_opex_categories_opex_category_id_fkey"
+            columns: ["opex_category_id"]
+            isOneToOne: false
+            referencedRelation: "opex_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_opex_categories_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       supplier_products: {
         Row: {
           created_at: string

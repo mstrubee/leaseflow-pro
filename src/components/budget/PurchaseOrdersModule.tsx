@@ -66,6 +66,7 @@ interface Supplier {
   name: string;
   category_id: string | null;
   is_generic: boolean;
+  opex_category_ids?: string[];
 }
 
 interface OpexBudgetData {
@@ -250,13 +251,30 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
 
   const loadSuppliers = async () => {
     try {
-      const { data, error } = await supabase
+      // Load suppliers
+      const { data: suppliersData, error: suppliersError } = await supabase
         .from("suppliers")
         .select("id, name, category_id, is_generic")
         .order("name", { ascending: true });
 
-      if (error) throw error;
-      setSuppliers(data || []);
+      if (suppliersError) throw suppliersError;
+
+      // Load supplier-opex category relationships
+      const { data: opexRelations, error: relationsError } = await supabase
+        .from("supplier_opex_categories")
+        .select("supplier_id, opex_category_id");
+
+      if (relationsError) throw relationsError;
+
+      // Merge opex_category_ids into suppliers
+      const suppliersWithOpex = (suppliersData || []).map(supplier => ({
+        ...supplier,
+        opex_category_ids: (opexRelations || [])
+          .filter(rel => rel.supplier_id === supplier.id)
+          .map(rel => rel.opex_category_id)
+      }));
+
+      setSuppliers(suppliersWithOpex);
     } catch (error) {
       console.error("Error loading suppliers:", error);
     }
@@ -276,19 +294,19 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     }
   };
 
-  // Get suppliers for a specific OPEX category
+  // Get suppliers for a specific OPEX category - uses many-to-many relationship
   const getSuppliersForOpexCategory = (opexCategoryId: string) => {
     const category = opexCategories.find(c => c.id === opexCategoryId);
     if (!category) return [];
     
-    // If category is "Otros", return empty (user must create supplier)
-    if (category.name.toLowerCase() === "otros") {
-      return [];
-    }
-    
-    // Get suppliers that match the supplier_category_id or are generic
+    // Get suppliers that:
+    // 1. Have this opex_category_id in their opex_category_ids array
+    // 2. Are generic (available for all)
+    // 3. Have matching supplier_category_id (legacy support)
     return suppliers.filter(s => 
-      s.category_id === category.supplier_category_id || s.is_generic
+      s.is_generic ||
+      (s.opex_category_ids && s.opex_category_ids.includes(opexCategoryId)) ||
+      (category.supplier_category_id && s.category_id === category.supplier_category_id)
     );
   };
 
@@ -1126,72 +1144,90 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                 {newOrder.opex_category_id && (
                   <div className="space-y-2">
                     <Label>Proveedor *</Label>
-                    {isOtrosCategory(newOrder.opex_category_id) ? (
-                      <div className="space-y-2">
-                        <Input 
-                          value={newOrder.supplier_name} 
-                          onChange={(e) => setNewOrder({ ...newOrder, supplier_name: e.target.value })}
-                          placeholder="Ingrese nombre del proveedor"
-                        />
-                        <Button 
-                          type="button" 
-                          variant="outline" 
-                          size="sm"
-                          onClick={handleOpenCreateSupplier}
-                          className="w-full"
-                        >
-                          <Plus className="h-4 w-4 mr-2" />
-                          Crear Nuevo Proveedor
-                        </Button>
-                      </div>
-                    ) : (
-                      <>
-                        <Select 
-                          value={newOrder.supplier_id} 
-                          onValueChange={(v) => {
-                            const supplier = suppliers.find(s => s.id === v);
-                            setNewOrder({ ...newOrder, supplier_id: v, supplier_name: supplier?.name || "" });
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Seleccione un proveedor" />
-                          </SelectTrigger>
-                          <SelectContent>
+                    <Select 
+                      value={newOrder.supplier_id} 
+                      onValueChange={(v) => {
+                        if (v === "__create_new__") {
+                          handleOpenCreateSupplier();
+                          return;
+                        }
+                        const supplier = suppliers.find(s => s.id === v);
+                        setNewOrder({ ...newOrder, supplier_id: v, supplier_name: supplier?.name || "" });
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccione un proveedor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getSuppliersForOpexCategory(newOrder.opex_category_id).length > 0 && (
+                          <>
+                            <div className="px-2 py-1 text-xs font-medium text-muted-foreground bg-muted">
+                              Sugeridos para esta categoría
+                            </div>
                             {getSuppliersForOpexCategory(newOrder.opex_category_id).map((supplier) => (
                               <SelectItem key={supplier.id} value={supplier.id}>
                                 {supplier.name}
                                 {supplier.is_generic && <span className="text-xs text-muted-foreground ml-2">(Genérico)</span>}
                               </SelectItem>
                             ))}
-                          </SelectContent>
-                        </Select>
-                        {getSuppliersForOpexCategory(newOrder.opex_category_id).length === 0 && (
-                          <div className="space-y-2">
-                            <p className="text-xs text-amber-600">No hay proveedores para esta categoría</p>
-                            <Button 
-                              type="button" 
-                              variant="outline" 
-                              size="sm"
-                              onClick={handleOpenCreateSupplier}
-                              className="w-full"
-                            >
-                              <Plus className="h-4 w-4 mr-2" />
-                              Crear Nuevo Proveedor
-                            </Button>
-                          </div>
+                          </>
                         )}
-                      </>
-                    )}
+                        <div className="px-2 py-1 text-xs font-medium text-muted-foreground bg-muted">
+                          Todos los proveedores
+                        </div>
+                        {suppliers
+                          .filter(s => !getSuppliersForOpexCategory(newOrder.opex_category_id).some(suggested => suggested.id === s.id))
+                          .map((supplier) => (
+                            <SelectItem key={supplier.id} value={supplier.id}>
+                              {supplier.name}
+                            </SelectItem>
+                          ))}
+                        <SelectItem value="__create_new__" className="text-primary">
+                          <div className="flex items-center gap-2">
+                            <Plus className="h-4 w-4" />
+                            Crear Nuevo Proveedor
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
               </>
             )}
 
-            {/* Supplier for CAPEX */}
+            {/* Supplier for CAPEX - show all suppliers */}
             {newOrder.budget_type === "capex" && (
               <div className="space-y-2">
                 <Label>Proveedor</Label>
-                <Input value={newOrder.supplier_name} onChange={(e) => setNewOrder({ ...newOrder, supplier_name: e.target.value })} />
+                <Select 
+                  value={newOrder.supplier_id} 
+                  onValueChange={(v) => {
+                    if (v === "__create_new__") {
+                      handleOpenCreateSupplier();
+                      return;
+                    }
+                    const supplier = suppliers.find(s => s.id === v);
+                    setNewOrder({ ...newOrder, supplier_id: v, supplier_name: supplier?.name || "" });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccione un proveedor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {suppliers.map((supplier) => (
+                      <SelectItem key={supplier.id} value={supplier.id}>
+                        {supplier.name}
+                        {supplier.is_generic && <span className="text-xs text-muted-foreground ml-2">(Genérico)</span>}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="__create_new__" className="text-primary">
+                      <div className="flex items-center gap-2">
+                        <Plus className="h-4 w-4" />
+                        Crear Nuevo Proveedor
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             )}
             <div className="space-y-2">
