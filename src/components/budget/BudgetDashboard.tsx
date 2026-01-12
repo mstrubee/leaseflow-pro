@@ -73,9 +73,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
   // New year form state
   const [newYear, setNewYear] = useState(new Date().getFullYear());
   const [capexAmount, setCapexAmount] = useState("");
-  const [opexAmount, setOpexAmount] = useState("");
   const [capexTemplateId, setCapexTemplateId] = useState("");
-  const [opexTemplateId, setOpexTemplateId] = useState("");
   const [closeCurrentYearOnCreate, setCloseCurrentYearOnCreate] = useState(false);
   const [previousYearPendingOCs, setPreviousYearPendingOCs] = useState<{
     count: number;
@@ -350,48 +348,29 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
     setPreviousYearPendingOCs({ count, totalPending });
   };
 
-  // Handle new year creation
+  // Handle new year creation - Only CAPEX
   const handleCreateNewYear = async () => {
-    if (!capexTemplateId && !opexTemplateId) {
-      toast({ variant: "destructive", title: "Error", description: "Debe seleccionar al menos una plantilla" });
+    if (!capexTemplateId || capexTemplateId === "none") {
+      toast({ variant: "destructive", title: "Error", description: "Debe seleccionar una plantilla CAPEX" });
       return;
     }
 
     setCreatingYear(true);
     try {
-      // Create CAPEX budget if template selected
-      if (capexTemplateId && capexTemplateId !== "none") {
-        const { data: capBudget, error: capError } = await supabase
-          .from("contract_budgets")
-          .insert({
-            contract_id: contractId,
-            year: newYear,
-            budget_type: "capex",
-            amount_uf: parseFloat(capexAmount) || 0,
-          })
-          .select()
-          .single();
+      // Create CAPEX budget
+      const { data: capBudget, error: capError } = await supabase
+        .from("contract_budgets")
+        .insert({
+          contract_id: contractId,
+          year: newYear,
+          budget_type: "capex",
+          amount_uf: parseFloat(capexAmount) || 0,
+        })
+        .select()
+        .single();
 
-        if (capError) throw capError;
-        await applyBudgetTemplate(capexTemplateId, capBudget.id);
-      }
-
-      // Create OPEX budget if template selected
-      if (opexTemplateId && opexTemplateId !== "none") {
-        const { data: opxBudget, error: opxError } = await supabase
-          .from("contract_budgets")
-          .insert({
-            contract_id: contractId,
-            year: newYear,
-            budget_type: "opex",
-            amount_uf: parseFloat(opexAmount) || 0,
-          })
-          .select()
-          .single();
-
-        if (opxError) throw opxError;
-        await applyBudgetTemplate(opexTemplateId, opxBudget.id);
-      }
+      if (capError) throw capError;
+      await applyBudgetTemplate(capexTemplateId, capBudget.id);
 
       // Handle carryover if closing previous year
       if (closeCurrentYearOnCreate && previousYearPendingOCs.count > 0) {
@@ -399,12 +378,10 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
         // (Similar to what was in BudgetModule)
       }
 
-      toast({ title: "Año creado", description: `Presupuestos para ${newYear} creados exitosamente` });
+      toast({ title: "Año CAPEX creado", description: `Presupuesto CAPEX para ${newYear} creado exitosamente` });
       setShowNewYearDialog(false);
       setCapexAmount("");
-      setOpexAmount("");
       setCapexTemplateId("");
-      setOpexTemplateId("");
       setCloseCurrentYearOnCreate(false);
       await loadAvailableYears();
       handleYearChange(newYear);
@@ -527,7 +504,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
             setShowNewYearDialog(true);
           }}>
             <Plus className="h-4 w-4 mr-1" />
-            Nuevo Año
+            Nuevo Año CAPEX
           </Button>
         </div>
       </div>
@@ -650,52 +627,39 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
           </CardContent>
         </Card>
 
-        {/* TOTAL OPEX */}
+        {/* TOTAL OPEX - Resumen de consumo (sin disponible, OPEX no tiene asignación por local) */}
         <Card className="border-l-4 border-l-green-500">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <DollarSign className="h-4 w-4 text-green-500" />
-              TOTAL OPEX {selectedYear}
+              OPEX CONSUMIDO {selectedYear}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-lg font-bold">{formatUF(opexSummary.authorized)}</p>
-                <p className="text-xs text-muted-foreground">{formatSecondary(opexSummary.authorized)}</p>
+                <p className="text-lg font-bold">{formatUF(opexTotals.oc)}</p>
+                <p className="text-xs text-muted-foreground">{formatSecondary(opexTotals.oc)}</p>
               </div>
-              <BudgetSemaphore budget={opexSummary.authorized} consumed={opexTotals.oc} showLabel={false} size="md" />
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm border-t pt-2">
               <div className="flex items-center gap-1.5">
                 <FileText className="h-3.5 w-3.5 text-orange-500" />
-                <span className="text-muted-foreground">OC:</span>
+                <span className="text-muted-foreground">Total OC:</span>
               </div>
               <span className="font-medium text-right">{formatPrimary(opexTotals.oc)}</span>
               
               <div className="flex items-center gap-1.5">
                 <Receipt className="h-3.5 w-3.5 text-purple-500" />
-                <span className="text-muted-foreground">Facturación:</span>
+                <span className="text-muted-foreground">Total Facturación:</span>
               </div>
               <span className="font-medium text-right">{formatPrimary(opexTotals.invoices)}</span>
               
-              <div className="flex items-center gap-1.5">
-                <DollarSign className="h-3.5 w-3.5 text-green-500" />
-                <span className="text-muted-foreground">Disponible:</span>
+              <div className="col-span-2 pt-2 border-t">
+                <p className="text-xs text-muted-foreground italic">
+                  El presupuesto OPEX se gestiona desde el Dashboard OPEX. Aquí solo se muestra el consumo imputado a este local.
+                </p>
               </div>
-              <span className={`font-medium text-right ${opexTotals.oc > opexSummary.authorized ? "text-destructive" : "text-green-600"}`}>
-                {formatPrimary(opexSummary.authorized - opexTotals.oc)}
-              </span>
-              
-              {opexSummary.unauthorized > 0 && (
-                <>
-                  <div className="flex items-center gap-1.5">
-                    <AlertCircle className="h-3.5 w-3.5 text-yellow-500" />
-                    <span className="text-muted-foreground">Presup. No Autorizado:</span>
-                  </div>
-                  <span className="font-medium text-right text-yellow-600">{formatPrimary(opexSummary.unauthorized)}</span>
-                </>
-              )}
             </div>
           </CardContent>
         </Card>
@@ -749,13 +713,13 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
         </TabsContent>
       </Tabs>
 
-      {/* Dialog: Nuevo Año */}
+      {/* Dialog: Nuevo Año CAPEX */}
       <Dialog open={showNewYearDialog} onOpenChange={setShowNewYearDialog}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Nuevo Año Presupuestario</DialogTitle>
+            <DialogTitle>Nuevo Año CAPEX</DialogTitle>
             <DialogDescription>
-              Cree los presupuestos para un nuevo año fiscal.
+              Cree el presupuesto CAPEX para un nuevo año fiscal. El OPEX se gestiona desde el Dashboard OPEX.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -772,43 +736,23 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
               />
             </div>
             
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>CAPEX (UF)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={capexAmount}
-                  onChange={(e) => setCapexAmount(e.target.value)}
-                  placeholder="0.00"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>OPEX (UF)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={opexAmount}
-                  onChange={(e) => setOpexAmount(e.target.value)}
-                  placeholder="0.00"
-                />
-              </div>
+            <div className="space-y-2">
+              <Label>Monto CAPEX (UF)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={capexAmount}
+                onChange={(e) => setCapexAmount(e.target.value)}
+                placeholder="0.00"
+              />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <BudgetTemplateSelector
-                budgetType="capex"
-                value={capexTemplateId}
-                onChange={setCapexTemplateId}
-                label="Plantilla CAPEX"
-              />
-              <BudgetTemplateSelector
-                budgetType="opex"
-                value={opexTemplateId}
-                onChange={setOpexTemplateId}
-                label="Plantilla OPEX"
-              />
-            </div>
+            <BudgetTemplateSelector
+              budgetType="capex"
+              value={capexTemplateId}
+              onChange={setCapexTemplateId}
+              label="Plantilla CAPEX"
+            />
             
             {previousYearPendingOCs.count > 0 && (
               <div className="space-y-3 border-t pt-4">
@@ -836,10 +780,10 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
             </Button>
             <Button 
               onClick={handleCreateNewYear} 
-              disabled={creatingYear || (!capexTemplateId && !opexTemplateId)}
+              disabled={creatingYear || !capexTemplateId}
             >
               {creatingYear && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Crear
+              Crear CAPEX
             </Button>
           </DialogFooter>
         </DialogContent>
