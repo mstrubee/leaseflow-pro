@@ -36,7 +36,7 @@ import {
 type DurationUnit = "months" | "years";
 
 // Grace months input component with month/year selector
-const GraceMonthsInput = ({
+export const GraceMonthsInput = ({
   value,
   onChange,
   maxMonths,
