@@ -9,11 +9,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, FileText, ChevronDown, ChevronRight, AlertTriangle, Paperclip, ExternalLink, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Search, X, Pencil } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Loader2, Plus, FileText, ChevronDown, ChevronRight, AlertTriangle, Paperclip, ExternalLink, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Search, X, Pencil, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useBudgetContext } from "./BudgetContext";
 import { InvoiceList } from "./InvoiceList";
 import { RepositoryFilePicker } from "./RepositoryFilePicker";
+import { SupplierForm } from "@/components/suppliers/SupplierForm";
 import { cn } from "@/lib/utils";
 
 interface PurchaseOrder {
@@ -56,6 +58,19 @@ interface OpexCategory {
   id: string;
   name: string;
   display_order: number;
+  supplier_category_id: string | null;
+}
+
+interface Supplier {
+  id: string;
+  name: string;
+  category_id: string | null;
+  is_generic: boolean;
+}
+
+interface OpexBudgetData {
+  category_id: string;
+  amount_uf: number;
 }
 
 export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: PurchaseOrdersModuleProps) => {
@@ -63,6 +78,8 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
   const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [opexMasterBudget, setOpexMasterBudget] = useState<OpexBudgetData[]>([]);
   const [orderInvoiceData, setOrderInvoiceData] = useState<Record<string, { totalInvoiced: number; totalCreditNotes: number }>>({});
   const selectedYear = initialYear ?? new Date().getFullYear();
 
@@ -71,6 +88,8 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
   const [showEditFilePicker, setShowEditFilePicker] = useState(false);
+  const [showCreateSupplierDialog, setShowCreateSupplierDialog] = useState(false);
+  const [pendingOrderData, setPendingOrderData] = useState<typeof newOrder | null>(null);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [deleteOrder, setDeleteOrder] = useState<PurchaseOrder | null>(null);
   const [editOrder, setEditOrder] = useState<PurchaseOrder | null>(null);
@@ -86,6 +105,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
   const [newOrder, setNewOrder] = useState({
     order_number: "",
     supplier_name: "",
+    supplier_id: "",
     order_date: `${initialYear ?? new Date().getFullYear()}-01-01`,
     amount: "",
     currency: "UF" as "UF" | "CLP",
@@ -116,6 +136,8 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     loadBudgets();
     loadBudgetLines();
     loadOpexCategories();
+    loadSuppliers();
+    loadOpexMasterBudget();
   }, [contractId, selectedYear]);
 
   const loadOrders = async () => {
@@ -215,7 +237,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     try {
       const { data, error } = await supabase
         .from("opex_categories")
-        .select("id, name, display_order")
+        .select("id, name, display_order, supplier_category_id")
         .eq("is_active", true)
         .order("display_order", { ascending: true });
 
@@ -224,6 +246,132 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     } catch (error) {
       console.error("Error loading OPEX categories:", error);
     }
+  };
+
+  const loadSuppliers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("suppliers")
+        .select("id, name, category_id, is_generic")
+        .order("name", { ascending: true });
+
+      if (error) throw error;
+      setSuppliers(data || []);
+    } catch (error) {
+      console.error("Error loading suppliers:", error);
+    }
+  };
+
+  const loadOpexMasterBudget = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("opex_master_budget")
+        .select("category_id, amount_uf")
+        .eq("year", selectedYear);
+
+      if (error) throw error;
+      setOpexMasterBudget(data || []);
+    } catch (error) {
+      console.error("Error loading OPEX master budget:", error);
+    }
+  };
+
+  // Get suppliers for a specific OPEX category
+  const getSuppliersForOpexCategory = (opexCategoryId: string) => {
+    const category = opexCategories.find(c => c.id === opexCategoryId);
+    if (!category) return [];
+    
+    // If category is "Otros", return empty (user must create supplier)
+    if (category.name.toLowerCase() === "otros") {
+      return [];
+    }
+    
+    // Get suppliers that match the supplier_category_id or are generic
+    return suppliers.filter(s => 
+      s.category_id === category.supplier_category_id || s.is_generic
+    );
+  };
+
+  // Calculate consumed OPEX budget for a category
+  const getOpexConsumedForCategory = (opexCategoryId: string) => {
+    return orders
+      .filter(order => {
+        // Check if order has opex_category_id directly or via budget
+        const budget = budgets.find(b => b.id === order.budget_id);
+        return budget?.budget_type === "opex" && (order as any).opex_category_id === opexCategoryId;
+      })
+      .reduce((sum, order) => sum + order.amount_uf, 0);
+  };
+
+  // Get available OPEX budget for a category
+  const getAvailableOpexForCategory = (opexCategoryId: string) => {
+    const budgetEntry = opexMasterBudget.find(b => b.category_id === opexCategoryId);
+    if (!budgetEntry) return 0;
+    const consumed = getOpexConsumedForCategory(opexCategoryId);
+    return budgetEntry.amount_uf - consumed;
+  };
+
+  // Validate OPEX amount against category budget
+  const validateOpexAmount = (opexCategoryId: string, amount: number, excludeOrderId?: string) => {
+    const budgetEntry = opexMasterBudget.find(b => b.category_id === opexCategoryId);
+    if (!budgetEntry) {
+      // No budget defined for this category - allow (no limit)
+      return { valid: true, message: "", available: Infinity };
+    }
+    
+    // Calculate consumed excluding the current order being edited
+    const consumed = orders
+      .filter(order => {
+        const budget = budgets.find(b => b.id === order.budget_id);
+        return budget?.budget_type === "opex" && 
+               (order as any).opex_category_id === opexCategoryId && 
+               order.id !== excludeOrderId;
+      })
+      .reduce((sum, order) => sum + order.amount_uf, 0);
+    
+    const available = budgetEntry.amount_uf - consumed;
+    
+    if (amount > available) {
+      return { 
+        valid: false, 
+        message: `Excede OPEX Disponible. Disponible: ${formatUF(available)}`,
+        available
+      };
+    }
+    
+    return { valid: true, message: "", available };
+  };
+
+  // Check if category is "Otros"
+  const isOtrosCategory = (opexCategoryId: string) => {
+    const category = opexCategories.find(c => c.id === opexCategoryId);
+    return category?.name.toLowerCase() === "otros";
+  };
+
+  // Handle create supplier dialog
+  const handleOpenCreateSupplier = () => {
+    setPendingOrderData({ ...newOrder });
+    setShowNewDialog(false);
+    setShowCreateSupplierDialog(true);
+  };
+
+  const handleSupplierCreated = async () => {
+    await loadSuppliers();
+    setShowCreateSupplierDialog(false);
+    if (pendingOrderData) {
+      setNewOrder(pendingOrderData);
+      setShowNewDialog(true);
+    }
+    setPendingOrderData(null);
+  };
+
+  const handleCancelCreateSupplier = () => {
+    setShowCreateSupplierDialog(false);
+    if (pendingOrderData) {
+      setNewOrder(pendingOrderData);
+      setShowNewDialog(true);
+    }
+    setPendingOrderData(null);
   };
 
   // Get authorized budget lines for selected budget type
@@ -284,9 +432,18 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         amountUF = convertPesosToUF(inputAmount);
       }
 
-      // Validate against budget line
-      if (newOrder.budget_line_id) {
+      // Validate against budget line (CAPEX)
+      if (newOrder.budget_type === "capex" && newOrder.budget_line_id) {
         const validation = validateOCAmount(newOrder.budget_line_id, amountUF);
+        if (!validation.valid) {
+          setBudgetWarning(validation.message);
+          return;
+        }
+      }
+
+      // Validate against OPEX category budget
+      if (newOrder.budget_type === "opex" && newOrder.opex_category_id) {
+        const validation = validateOpexAmount(newOrder.opex_category_id, amountUF);
         if (!validation.valid) {
           setBudgetWarning(validation.message);
           return;
@@ -327,6 +484,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       setNewOrder({ 
         order_number: "", 
         supplier_name: "", 
+        supplier_id: "",
         order_date: `${selectedYear}-01-01`, 
         amount: "", 
         currency: "UF", 
@@ -925,32 +1083,117 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                 )}
               </div>
             ) : (
-              <div className="space-y-2">
-                <Label>Categoría OPEX *</Label>
-                <Select 
-                  value={newOrder.opex_category_id} 
-                  onValueChange={(v) => setNewOrder({ ...newOrder, opex_category_id: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccione una categoría OPEX" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {opexCategories.map((category) => (
-                      <SelectItem key={category.id} value={category.id}>
-                        {category.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {opexCategories.length === 0 && (
-                  <p className="text-xs text-amber-600">No hay categorías OPEX configuradas</p>
+              <>
+                <div className="space-y-2">
+                  <Label>Categoría OPEX *</Label>
+                  <Select 
+                    value={newOrder.opex_category_id} 
+                    onValueChange={(v) => setNewOrder({ ...newOrder, opex_category_id: v, supplier_id: "", supplier_name: "" })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccione una categoría OPEX" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {opexCategories.map((category) => {
+                        const available = getAvailableOpexForCategory(category.id);
+                        const budgetEntry = opexMasterBudget.find(b => b.category_id === category.id);
+                        return (
+                          <SelectItem key={category.id} value={category.id}>
+                            <div className="flex items-center justify-between w-full gap-4">
+                              <span>{category.name}</span>
+                              {budgetEntry && (
+                                <span className="text-xs text-muted-foreground">
+                                  (Disponible: {formatUF(available)})
+                                </span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  {opexCategories.length === 0 && (
+                    <p className="text-xs text-amber-600">No hay categorías OPEX configuradas</p>
+                  )}
+                  {newOrder.opex_category_id && (
+                    <p className="text-xs text-muted-foreground">
+                      Presupuesto disponible: {formatUF(getAvailableOpexForCategory(newOrder.opex_category_id))}
+                    </p>
+                  )}
+                </div>
+                
+                {/* Supplier selection for OPEX */}
+                {newOrder.opex_category_id && (
+                  <div className="space-y-2">
+                    <Label>Proveedor *</Label>
+                    {isOtrosCategory(newOrder.opex_category_id) ? (
+                      <div className="space-y-2">
+                        <Input 
+                          value={newOrder.supplier_name} 
+                          onChange={(e) => setNewOrder({ ...newOrder, supplier_name: e.target.value })}
+                          placeholder="Ingrese nombre del proveedor"
+                        />
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm"
+                          onClick={handleOpenCreateSupplier}
+                          className="w-full"
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Crear Nuevo Proveedor
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        <Select 
+                          value={newOrder.supplier_id} 
+                          onValueChange={(v) => {
+                            const supplier = suppliers.find(s => s.id === v);
+                            setNewOrder({ ...newOrder, supplier_id: v, supplier_name: supplier?.name || "" });
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleccione un proveedor" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {getSuppliersForOpexCategory(newOrder.opex_category_id).map((supplier) => (
+                              <SelectItem key={supplier.id} value={supplier.id}>
+                                {supplier.name}
+                                {supplier.is_generic && <span className="text-xs text-muted-foreground ml-2">(Genérico)</span>}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {getSuppliersForOpexCategory(newOrder.opex_category_id).length === 0 && (
+                          <div className="space-y-2">
+                            <p className="text-xs text-amber-600">No hay proveedores para esta categoría</p>
+                            <Button 
+                              type="button" 
+                              variant="outline" 
+                              size="sm"
+                              onClick={handleOpenCreateSupplier}
+                              className="w-full"
+                            >
+                              <Plus className="h-4 w-4 mr-2" />
+                              Crear Nuevo Proveedor
+                            </Button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                 )}
+              </>
+            )}
+
+            {/* Supplier for CAPEX */}
+            {newOrder.budget_type === "capex" && (
+              <div className="space-y-2">
+                <Label>Proveedor</Label>
+                <Input value={newOrder.supplier_name} onChange={(e) => setNewOrder({ ...newOrder, supplier_name: e.target.value })} />
               </div>
             )}
-            <div className="space-y-2">
-              <Label>Proveedor</Label>
-              <Input value={newOrder.supplier_name} onChange={(e) => setNewOrder({ ...newOrder, supplier_name: e.target.value })} />
-            </div>
             <div className="space-y-2">
               <Label>Monto</Label>
               <div className="flex gap-2">
@@ -1245,6 +1488,35 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Create Supplier Dialog */}
+      <Dialog open={showCreateSupplierDialog} onOpenChange={setShowCreateSupplierDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={handleCancelCreateSupplier}
+                className="p-0 h-auto"
+              >
+                <ArrowLeft className="h-4 w-4 mr-1" />
+                Volver
+              </Button>
+              Crear Nuevo Proveedor
+            </DialogTitle>
+            <DialogDescription>
+              Complete los datos del proveedor. Una vez creado, podrá seleccionarlo en la orden de compra.
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[70vh] pr-4">
+            <SupplierForm
+              onSave={handleSupplierCreated}
+              onCancel={handleCancelCreateSupplier}
+            />
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 };

@@ -1855,6 +1855,7 @@ export type Database = {
           id: string
           is_active: boolean | null
           name: string
+          supplier_category_id: string | null
           updated_at: string
         }
         Insert: {
@@ -1865,6 +1866,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           name: string
+          supplier_category_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -1875,9 +1877,18 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           name?: string
+          supplier_category_id?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "opex_categories_supplier_category_id_fkey"
+            columns: ["supplier_category_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_categories"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       opex_local_additional: {
         Row: {
