@@ -60,6 +60,8 @@ interface OpexConsumption {
   category_name: string;
   consumed_uf: number;
   consumed_clp: number;
+  invoiced_uf: number;
+  invoiced_clp: number;
 }
 interface Company {
   id: string;
@@ -222,16 +224,18 @@ const OpexDashboard = () => {
       }));
       setLocalAdditionals(processedAdditionals);
 
-      // Load consumption (OPEX purchase orders)
+      // Load consumption (OPEX purchase orders) with invoice data
       const {
         data: ordersData
       } = await supabase.from("purchase_orders").select(`
+          id,
           contract_id,
           amount_uf,
           opex_category_id,
           created_at,
           contracts!inner(name),
-          opex_categories(name)
+          opex_categories(name),
+          invoices(amount_uf, deleted_at)
         `).eq("budget_classification", "OPEX").is("deleted_at", null);
 
       // Filter by year based on created_at
@@ -246,9 +250,16 @@ const OpexDashboard = () => {
         const key = `${o.contract_id}-${o.opex_category_id}`;
         const existing = consumptionMap.get(key);
         const amountUf = o.amount_uf || 0;
+        // Calculate invoiced amount from non-deleted invoices
+        const invoicedUf = (o.invoices || [])
+          .filter((inv: any) => !inv.deleted_at)
+          .reduce((sum: number, inv: any) => sum + (inv.amount_uf || 0), 0);
+        
         if (existing) {
           existing.consumed_uf += amountUf;
           existing.consumed_clp += amountUf * (ufValue || 0);
+          existing.invoiced_uf += invoicedUf;
+          existing.invoiced_clp += invoicedUf * (ufValue || 0);
         } else {
           consumptionMap.set(key, {
             contract_id: o.contract_id,
@@ -256,7 +267,9 @@ const OpexDashboard = () => {
             category_id: o.opex_category_id,
             category_name: o.opex_categories?.name || "Sin categoría",
             consumed_uf: amountUf,
-            consumed_clp: amountUf * (ufValue || 0)
+            consumed_clp: amountUf * (ufValue || 0),
+            invoiced_uf: invoicedUf,
+            invoiced_clp: invoicedUf * (ufValue || 0)
           });
         }
       });
@@ -335,21 +348,71 @@ const OpexDashboard = () => {
     const totalAdditionalCLP = totalAdditionalUF * (ufValue || 0);
     const totalConsumedUF = consumptions.reduce((sum, c) => sum + Math.abs(c.consumed_uf), 0);
     const totalConsumedCLP = consumptions.reduce((sum, c) => sum + Math.abs(c.consumed_clp), 0);
+    const totalInvoicedUF = consumptions.reduce((sum, c) => sum + Math.abs(c.invoiced_uf), 0);
+    const totalInvoicedCLP = consumptions.reduce((sum, c) => sum + Math.abs(c.invoiced_clp), 0);
     const totalBudgetCLP = totalMasterBudgetCLP + totalAdditionalCLP;
     const totalBudgetUF = totalMasterBudgetUF + totalAdditionalUF;
+    const notInvoicedUF = totalConsumedUF - totalInvoicedUF;
+    const notInvoicedCLP = totalConsumedCLP - totalInvoicedCLP;
+    const availableUF = totalBudgetUF - totalConsumedUF;
+    const availableCLP = totalBudgetCLP - totalConsumedCLP;
     return {
       budgetCLP: totalBudgetCLP,
       budgetUF: totalBudgetUF,
       consumedCLP: totalConsumedCLP,
       consumedUF: totalConsumedUF,
-      availableCLP: totalBudgetCLP - totalConsumedCLP,
-      availableUF: totalBudgetUF - totalConsumedUF,
+      invoicedCLP: totalInvoicedCLP,
+      invoicedUF: totalInvoicedUF,
+      notInvoicedCLP: notInvoicedCLP,
+      notInvoicedUF: notInvoicedUF,
+      availableCLP: availableCLP,
+      availableUF: availableUF,
       masterBudgetCLP: totalMasterBudgetCLP,
       masterBudgetUF: totalMasterBudgetUF,
       additionalCLP: totalAdditionalCLP,
       additionalUF: totalAdditionalUF
     };
   }, [masterBudgets, localAdditionals, consumptions, ufValue]);
+
+  // Build chart data for OPEX by category
+  const categoryChartData = useMemo(() => {
+    interface CategoryChartItem {
+      category_id: string;
+      name: string;
+      total_consumed: number;
+      percent_of_total: number;
+    }
+
+    const data: CategoryChartItem[] = [];
+    const grandTotal = consumptions.reduce((sum, c) => sum + Math.abs(c.consumed_uf), 0);
+
+    categories.forEach(category => {
+      if (categoryFilter !== "todos" && category.id !== categoryFilter) return;
+      
+      let totalConsumed = 0;
+      consumptions.forEach(c => {
+        if (c.category_id === category.id) {
+          if (companyFilter !== "todos") {
+            const contract = contracts.find(con => con.id === c.contract_id);
+            if (contract?.company_id !== companyFilter) return;
+          }
+          if (contractFilter !== "todos" && c.contract_id !== contractFilter) return;
+          totalConsumed += Math.abs(c.consumed_uf);
+        }
+      });
+
+      if (totalConsumed > 0) {
+        data.push({
+          category_id: category.id,
+          name: category.name,
+          total_consumed: totalConsumed,
+          percent_of_total: grandTotal > 0 ? (totalConsumed / grandTotal) * 100 : 0
+        });
+      }
+    });
+
+    return data.sort((a, b) => b.total_consumed - a.total_consumed);
+  }, [categories, consumptions, contracts, companyFilter, contractFilter, categoryFilter]);
 
   // Build chart data: pie chart showing consumption by local (only locals with consumption)
   const chartData = useMemo(() => {
@@ -530,29 +593,61 @@ const OpexDashboard = () => {
       </header>
 
       <main className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Summary Cards - Now in CLP with UF as secondary */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {/* Summary Cards - Reorganized */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* OPEX Total Card - with breakdown */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">OPEX Total<Wallet className="h-4 w-4" />
-                Presupuesto Master
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <Wallet className="h-4 w-4" />
+                OPEX Total
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                $ {Math.round(globalTotals.masterBudgetCLP).toLocaleString("es-CL")}
+            <CardContent className="space-y-3">
+              <div>
+                <div className="text-2xl font-bold">
+                  $ {Math.round(globalTotals.budgetCLP).toLocaleString("es-CL")}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  ≈ {globalTotals.budgetUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                </div>
               </div>
-              <div className="text-sm text-muted-foreground">
-                ≈ {globalTotals.masterBudgetUF.toLocaleString("es-CL", {
-                minimumFractionDigits: 2
-              })} UF
+              <div className="pt-2 border-t border-border space-y-1.5">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Con OC</span>
+                  <span className="font-medium text-orange-600">
+                    {globalTotals.consumedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Facturado</span>
+                  <span className="font-medium text-blue-600">
+                    {globalTotals.invoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">No Facturado</span>
+                  <span className="font-medium text-amber-600">
+                    {globalTotals.notInvoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Disponible</span>
+                  <span className={`font-medium ${globalTotals.availableUF < 0 ? "text-destructive" : "text-green-600"}`}>
+                    {globalTotals.availableUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                  </span>
+                </div>
               </div>
+              <Progress value={globalTotals.budgetUF > 0 ? (globalTotals.consumedUF / globalTotals.budgetUF) * 100 : 0} className="h-2" />
             </CardContent>
           </Card>
+          
+          {/* OPEX Adicional Card */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">Opex Adicional<PlusCircle className="h-4 w-4" />
-                Adicionales
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <PlusCircle className="h-4 w-4" />
+                OPEX Adicional
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -560,45 +655,43 @@ const OpexDashboard = () => {
                 $ {Math.round(globalTotals.additionalCLP).toLocaleString("es-CL")}
               </div>
               <div className="text-sm text-muted-foreground">
-                ≈ {globalTotals.additionalUF.toLocaleString("es-CL", {
-                minimumFractionDigits: 2
-              })} UF
+                ≈ {globalTotals.additionalUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
               </div>
             </CardContent>
           </Card>
+
+          {/* Facturación Card */}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                 <TrendingUp className="h-4 w-4" />
-                Consumido
+                Estado Facturación
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-600">
-                $ {Math.round(globalTotals.consumedCLP).toLocaleString("es-CL")}
+            <CardContent className="space-y-3">
+              <div className="flex justify-between items-end">
+                <div>
+                  <div className="text-sm text-muted-foreground">Facturado</div>
+                  <div className="text-xl font-bold text-blue-600">
+                    {globalTotals.invoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm text-muted-foreground">No Facturado</div>
+                  <div className="text-xl font-bold text-amber-600">
+                    {globalTotals.notInvoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                  </div>
+                </div>
               </div>
-              <div className="text-sm text-muted-foreground">
-                ≈ {globalTotals.consumedUF.toLocaleString("es-CL", {
-                minimumFractionDigits: 2
-              })} UF
-              </div>
-              <Progress value={globalTotals.budgetCLP > 0 ? globalTotals.consumedCLP / globalTotals.budgetCLP * 100 : 0} className="mt-2 h-2" />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Disponible
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className={`text-2xl font-bold ${globalTotals.availableCLP < 0 ? "text-destructive" : "text-green-600"}`}>
-                $ {Math.round(globalTotals.availableCLP).toLocaleString("es-CL")}
-              </div>
-              <div className="text-sm text-muted-foreground">
-                ≈ {globalTotals.availableUF.toLocaleString("es-CL", {
-                minimumFractionDigits: 2
-              })} UF
+              <Progress 
+                value={globalTotals.consumedUF > 0 ? (globalTotals.invoicedUF / globalTotals.consumedUF) * 100 : 0} 
+                className="h-2" 
+              />
+              <div className="text-xs text-center text-muted-foreground">
+                {globalTotals.consumedUF > 0 
+                  ? `${((globalTotals.invoicedUF / globalTotals.consumedUF) * 100).toFixed(0)}% facturado del consumo`
+                  : "Sin consumo registrado"
+                }
               </div>
             </CardContent>
           </Card>
@@ -640,212 +733,225 @@ const OpexDashboard = () => {
               </CollapsibleContent>
             </Card>
           </Collapsible>}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Consumo OPEX por Local</CardTitle>
-
-            {/* Chart Filters */}
-            <div className="flex flex-wrap gap-3 items-center mt-4 p-3 bg-muted/30 rounded-lg">
-              <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                <SelectTrigger className="w-[160px]">
-                  <SelectValue placeholder="Empresa" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todas las empresas</SelectItem>
-                  {companies.map(company => (
-                    <SelectItem key={company.id} value={company.id}>
-                      {company.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={contractFilter} onValueChange={setContractFilter}>
-                <SelectTrigger className="w-[160px]">
-                  <SelectValue placeholder="Local" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos los locales</SelectItem>
-                  {contracts
-                    .filter(c => companyFilter === "todos" || c.company_id === companyFilter)
-                    .map(c => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                      </SelectItem>
+        {/* Two Charts: OPEX por Local and OPEX por Categoría */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* OPEX por Local Chart */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">OPEX por Local</CardTitle>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                  <SelectTrigger className="w-[140px] h-8 text-xs">
+                    <SelectValue placeholder="Empresa" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todas las empresas</SelectItem>
+                    {companies.map(company => (
+                      <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>
                     ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-[160px]">
-                  <SelectValue placeholder="Categoría" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todas las categorías</SelectItem>
-                  {categories.map(cat => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              {hasActiveFilters && (
-                <Button variant="ghost" size="sm" onClick={clearFilters}>
-                  <X className="h-4 w-4 mr-1" />
-                  Limpiar
-                </Button>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {chartData.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground">
-                No hay consumo OPEX registrado para los filtros seleccionados.
+                  </SelectContent>
+                </Select>
+                {hasActiveFilters && (
+                  <Button variant="ghost" size="sm" className="h-8" onClick={clearFilters}>
+                    <X className="h-3 w-3 mr-1" />
+                    Limpiar
+                  </Button>
+                )}
               </div>
-            ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Pie Chart */}
-                <div className="h-[400px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={chartData}
-                        dataKey="total_consumed"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={150}
-                        innerRadius={60}
-                        paddingAngle={1}
-                        onClick={(data) => {
-                          if (data && data.contract_id) {
-                            handleViewLocal(data.contract_id);
-                          }
-                        }}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        {chartData.map((entry, index) => (
-                          <Cell 
-                            key={`cell-${index}`} 
-                            fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
-                            stroke="hsl(var(--background))"
-                            strokeWidth={2}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip 
-                        content={({ active, payload }) => {
-                          if (active && payload && payload.length > 0) {
-                            const data = payload[0].payload;
-                            return (
-                              <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
-                                <p className="font-semibold text-foreground mb-2">{data.name}</p>
-                                <p className="text-sm text-muted-foreground">
-                                  Consumido: <span className="font-medium text-foreground">{data.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF</span>
-                                </p>
-                                <p className="text-sm text-muted-foreground">
-                                  % del presupuesto: <span className="font-medium text-foreground">{data.percent_consumed.toFixed(1)}%</span>
-                                </p>
-                                <p className="text-sm text-muted-foreground">
-                                  % del total OPEX: <span className="font-medium text-foreground">{data.percent_of_total.toFixed(1)}%</span>
-                                </p>
-                                {data.categories && data.categories.length > 0 && (
-                                  <div className="mt-2 pt-2 border-t border-border">
-                                    <p className="text-xs font-medium text-muted-foreground mb-1">Por categoría:</p>
-                                    {data.categories.slice(0, 5).map((cat: any) => (
-                                      <div key={cat.id} className="flex items-center gap-2 text-xs">
-                                        <div 
-                                          className="w-2 h-2 rounded-full" 
-                                          style={{ backgroundColor: getCategoryColor(cat.name) }}
-                                        />
-                                        <span>{cat.name}: {cat.consumed.toLocaleString("es-CL", { minimumFractionDigits: 1 })} UF ({cat.percent.toFixed(0)}%)</span>
-                                      </div>
-                                    ))}
-                                    {data.categories.length > 5 && (
-                                      <span className="text-xs text-muted-foreground">+{data.categories.length - 5} más</span>
-                                    )}
-                                  </div>
-                                )}
-                                <p className="text-xs text-muted-foreground mt-2 italic">Click para opciones</p>
-                              </div>
-                            );
-                          }
-                          return null;
-                        }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
+            </CardHeader>
+            <CardContent>
+              {chartData.length === 0 ? (
+                <div className="py-8 text-center text-muted-foreground text-sm">
+                  No hay consumo OPEX registrado.
                 </div>
-
-                {/* Legend & Details */}
-                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
-                  <p className="text-sm font-medium text-muted-foreground">
-                    {chartData.length} locales con consumo
-                  </p>
-                  {chartData.map((item, index) => (
-                    <Popover key={item.contract_id}>
-                      <PopoverTrigger asChild>
-                        <div 
-                          className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+              ) : (
+                <div className="space-y-4">
+                  <div className="h-[280px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={chartData}
+                          dataKey="total_consumed"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={100}
+                          innerRadius={50}
+                          paddingAngle={1}
+                          onClick={(data) => {
+                            if (data && data.contract_id) {
+                              handleViewLocal(data.contract_id);
+                            }
+                          }}
+                          style={{ cursor: 'pointer' }}
                         >
-                          <div 
-                            className="w-4 h-4 rounded-full flex-shrink-0" 
-                            style={{ backgroundColor: CATEGORY_COLORS[index % CATEGORY_COLORS.length] }}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{item.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {item.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 1 })} UF 
-                              ({item.percent_of_total.toFixed(1)}% del total)
-                            </p>
-                          </div>
-                          <Badge variant={item.percent_consumed > 80 ? "destructive" : item.percent_consumed > 50 ? "secondary" : "outline"}>
-                            {item.percent_consumed.toFixed(0)}%
-                          </Badge>
-                        </div>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-56 p-2" align="end">
-                        <div className="space-y-1">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="w-full justify-start"
-                            onClick={() => handleViewLocal(item.contract_id)}
-                          >
-                            Ver local
-                          </Button>
-                          {item.categories.length > 0 && (
-                            <>
-                              <div className="py-1 px-2 text-xs font-medium text-muted-foreground">
-                                Ver categoría en otros locales:
-                              </div>
-                              {item.categories.slice(0, 4).map(cat => (
-                                <Button 
-                                  key={cat.id}
-                                  variant="ghost" 
-                                  size="sm" 
-                                  className="w-full justify-start text-xs"
-                                  onClick={() => handleViewCategory(cat.id)}
-                                >
-                                  <div 
-                                    className="w-2 h-2 rounded-full mr-2" 
-                                    style={{ backgroundColor: getCategoryColor(cat.name) }}
-                                  />
-                                  {cat.name}
-                                </Button>
-                              ))}
-                            </>
-                          )}
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                  ))}
+                          {chartData.map((entry, index) => (
+                            <Cell 
+                              key={`cell-local-${index}`} 
+                              fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
+                              stroke="hsl(var(--background))"
+                              strokeWidth={2}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                          content={({ active, payload }) => {
+                            if (active && payload && payload.length > 0) {
+                              const data = payload[0].payload;
+                              return (
+                                <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
+                                  <p className="font-semibold text-foreground mb-2">{data.name}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    Consumido: <span className="font-medium text-foreground">{data.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF</span>
+                                  </p>
+                                  <p className="text-sm text-muted-foreground">
+                                    % del total: <span className="font-medium text-foreground">{data.percent_of_total.toFixed(1)}%</span>
+                                  </p>
+                                  <p className="text-xs text-muted-foreground mt-2 italic">Click para ver local</p>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="space-y-1.5 max-h-[180px] overflow-y-auto">
+                    {chartData.slice(0, 10).map((item, index) => (
+                      <div 
+                        key={item.contract_id}
+                        className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer transition-colors"
+                        onClick={() => handleViewLocal(item.contract_id)}
+                      >
+                        <div 
+                          className="w-3 h-3 rounded-full flex-shrink-0" 
+                          style={{ backgroundColor: CATEGORY_COLORS[index % CATEGORY_COLORS.length] }}
+                        />
+                        <span className="text-xs font-medium truncate flex-1">{item.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {item.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 1 })} UF
+                        </span>
+                        <Badge variant="outline" className="text-xs h-5">
+                          {item.percent_of_total.toFixed(0)}%
+                        </Badge>
+                      </div>
+                    ))}
+                    {chartData.length > 10 && (
+                      <p className="text-xs text-muted-foreground text-center pt-1">
+                        +{chartData.length - 10} locales más
+                      </p>
+                    )}
+                  </div>
                 </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* OPEX por Categoría Chart */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">OPEX por Categoría</CardTitle>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <Select value={contractFilter} onValueChange={setContractFilter}>
+                  <SelectTrigger className="w-[140px] h-8 text-xs">
+                    <SelectValue placeholder="Local" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos los locales</SelectItem>
+                    {contracts
+                      .filter(c => companyFilter === "todos" || c.company_id === companyFilter)
+                      .map(c => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardHeader>
+            <CardContent>
+              {categoryChartData.length === 0 ? (
+                <div className="py-8 text-center text-muted-foreground text-sm">
+                  No hay consumo OPEX registrado.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="h-[280px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={categoryChartData}
+                          dataKey="total_consumed"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={100}
+                          innerRadius={50}
+                          paddingAngle={1}
+                          onClick={(data) => {
+                            if (data && data.category_id) {
+                              handleViewCategory(data.category_id);
+                            }
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          {categoryChartData.map((entry, index) => (
+                            <Cell 
+                              key={`cell-cat-${index}`} 
+                              fill={getCategoryColor(entry.name)}
+                              stroke="hsl(var(--background))"
+                              strokeWidth={2}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                          content={({ active, payload }) => {
+                            if (active && payload && payload.length > 0) {
+                              const data = payload[0].payload;
+                              return (
+                                <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
+                                  <p className="font-semibold text-foreground mb-2">{data.name}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    Consumido: <span className="font-medium text-foreground">{data.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF</span>
+                                  </p>
+                                  <p className="text-sm text-muted-foreground">
+                                    % del total: <span className="font-medium text-foreground">{data.percent_of_total.toFixed(1)}%</span>
+                                  </p>
+                                  <p className="text-xs text-muted-foreground mt-2 italic">Click para filtrar por categoría</p>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="space-y-1.5 max-h-[180px] overflow-y-auto">
+                    {categoryChartData.map((item) => (
+                      <div 
+                        key={item.category_id}
+                        className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer transition-colors"
+                        onClick={() => handleViewCategory(item.category_id)}
+                      >
+                        <div 
+                          className="w-3 h-3 rounded-full flex-shrink-0" 
+                          style={{ backgroundColor: getCategoryColor(item.name) }}
+                        />
+                        <span className="text-xs font-medium truncate flex-1">{item.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {item.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 1 })} UF
+                        </span>
+                        <Badge variant="outline" className="text-xs h-5">
+                          {item.percent_of_total.toFixed(0)}%
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
         {/* OPEX por Local Section - Collapsible */}
         <Collapsible open={isLocalSectionOpen} onOpenChange={toggleLocalSection}>
