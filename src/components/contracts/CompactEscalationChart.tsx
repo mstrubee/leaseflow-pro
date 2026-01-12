@@ -233,7 +233,7 @@ export function CompactEscalationChart({
               labelFormatter={(label) => `Mes ${label}`}
             />
             
-            {/* Notice ranges as shaded areas with vertical lines at boundaries */}
+            {/* Notice ranges as shaded areas */}
             {noticeMonthInfo && 'ranges' in noticeMonthInfo && noticeMonthInfo.ranges?.map((range, idx) => (
               <ReferenceArea
                 key={`area-${idx}`}
@@ -245,7 +245,7 @@ export function CompactEscalationChart({
                 label={{
                   value: noticeMonthInfo.ranges && noticeMonthInfo.ranges.length > 1 
                     ? `Rango ${idx + 1}` 
-                    : "Rango Aviso",
+                    : "Rango Aviso Salida",
                   fontSize: 12,
                   fontWeight: 600,
                   fill: "hsl(var(--warning))",
@@ -253,6 +253,7 @@ export function CompactEscalationChart({
                 }}
               />
             ))}
+            {/* Vertical lines at range boundaries - start in warning, end in red (deadline) */}
             {noticeMonthInfo && 'ranges' in noticeMonthInfo && noticeMonthInfo.ranges?.flatMap((range, idx) => [
               <ReferenceLine
                 key={`start-${idx}`}
@@ -264,41 +265,31 @@ export function CompactEscalationChart({
               <ReferenceLine
                 key={`end-${idx}`}
                 x={range.end_month}
-                stroke="hsl(var(--warning))"
-                strokeWidth={2}
-                strokeDasharray="4 4"
+                stroke="hsl(var(--destructive))"
+                strokeWidth={3}
+                strokeDasharray="8 4"
+                label={{
+                  value: `Límite R${idx + 1}`,
+                  fontSize: 10,
+                  fontWeight: 600,
+                  fill: "hsl(var(--destructive))",
+                  position: "insideTopLeft"
+                }}
               />
             ])}
             
-            {/* Single notice deadline line for meses/fecha type - prominently dotted */}
+            {/* Single notice deadline line for meses/fecha type - red dotted line */}
             {noticeMonthInfo && 'month' in noticeMonthInfo && (
               <ReferenceLine 
                 x={noticeMonthInfo.month} 
-                stroke="#f59e0b"
+                stroke="hsl(var(--destructive))"
                 strokeWidth={3}
                 strokeDasharray="8 4"
                 label={{ 
                   value: `Límite Aviso`, 
                   fontSize: 11, 
                   fontWeight: 600,
-                  fill: "#f59e0b",
-                  position: "insideTopRight"
-                }}
-              />
-            )}
-            
-            {/* Deadline line for ranges type */}
-            {noticeMonthInfo && 'ranges' in noticeMonthInfo && noticeMonthInfo.deadlineMonth && (
-              <ReferenceLine 
-                x={noticeMonthInfo.deadlineMonth} 
-                stroke="#f59e0b"
-                strokeWidth={3}
-                strokeDasharray="8 4"
-                label={{ 
-                  value: `Límite`, 
-                  fontSize: 11, 
-                  fontWeight: 600,
-                  fill: "#f59e0b",
+                  fill: "hsl(var(--destructive))",
                   position: "insideTopRight"
                 }}
               />

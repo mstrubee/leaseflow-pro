@@ -133,20 +133,30 @@ export function CommercialConditionsSummary({
       noticeDate = subMonths(endDate, noticeMonths);
       noticeDateLabel = `${version.notice_value} meses antes`;
     } else if (version.notice_type === "rangos" && noticeRanges.length > 0) {
-      // Get the first non-expired range
+      // Get the first non-expired range (a range is only expired if today > end_month date)
       const today = new Date();
       const sortedRanges = [...noticeRanges].sort((a, b) => a.start_month - b.start_month);
+      
       for (const range of sortedRanges) {
         const rangeStartDate = addMonths(startDate, range.start_month - 1);
         const rangeEndDate = addMonths(startDate, range.end_month - 1);
-        if (rangeStartDate > today) {
+        
+        // Check if we're currently within this range
+        if (today >= rangeStartDate && today <= rangeEndDate) {
+          noticeDate = rangeStartDate;
+          noticeDateLabel = `En curso (vence ${format(rangeEndDate, "dd MMM yyyy", { locale: es })})`;
+          break;
+        }
+        // Check if this range is still in the future
+        else if (rangeStartDate > today) {
           noticeDate = rangeStartDate;
           noticeDateLabel = `${format(rangeStartDate, "dd MMM yyyy", { locale: es })} - ${format(rangeEndDate, "dd MMM yyyy", { locale: es })}`;
           break;
         }
+        // If we're past the end date, continue to check next range
       }
 
-      // If all ranges are expired, use the last one and mark as expired
+      // If all ranges are expired (today > end_month of all ranges), use the last one and mark as expired
       if (!noticeDate && sortedRanges.length > 0) {
         const lastRange = sortedRanges[sortedRanges.length - 1];
         const rangeStartDate = addMonths(startDate, lastRange.start_month - 1);
