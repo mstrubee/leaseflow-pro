@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, TrendingUp, DollarSign, FileText, Receipt, RotateCcw, AlertCircle, Plus, Trash2, Calendar, Lock } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, FileText, Receipt, RotateCcw, AlertCircle, Plus, Trash2, Calendar, Lock, Clock } from "lucide-react";
 import { BudgetProvider, useBudgetContext } from "./BudgetContext";
 import { BudgetModule } from "./BudgetModule";
 import { PurchaseOrdersModule } from "./PurchaseOrdersModule";
@@ -560,6 +560,15 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                 <span className="text-xs text-muted-foreground ml-1">({formatSecondary(capexTotals.invoices + opexTotals.invoices)})</span>
               </div>
               
+              <div className="flex items-center gap-1.5">
+                <Clock className="h-3.5 w-3.5 text-red-500" />
+                <span className="text-muted-foreground">Total No Facturado:</span>
+              </div>
+              <div className="text-right">
+                <span className="font-medium text-red-600">{formatUF((capexTotals.oc + opexTotals.oc) - (capexTotals.invoices + opexTotals.invoices))}</span>
+                <span className="text-xs text-muted-foreground ml-1">({formatSecondary((capexTotals.oc + opexTotals.oc) - (capexTotals.invoices + opexTotals.invoices))})</span>
+              </div>
+              
               {(capexSummary.unauthorized + opexSummary.unauthorized) > 0 && (
                 <>
                   <div className="flex items-center gap-1.5 border-t pt-2 col-span-2"></div>
@@ -605,6 +614,12 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                 <span className="text-muted-foreground">Facturación:</span>
               </div>
               <span className="font-medium text-right">{formatPrimary(capexTotals.invoices)}</span>
+              
+              <div className="flex items-center gap-1.5">
+                <Clock className="h-3.5 w-3.5 text-red-500" />
+                <span className="text-muted-foreground">No Facturado:</span>
+              </div>
+              <span className="font-medium text-right text-red-600">{formatPrimary(capexTotals.oc - capexTotals.invoices)}</span>
               
               <div className="flex items-center gap-1.5">
                 <DollarSign className="h-3.5 w-3.5 text-green-500" />
@@ -654,6 +669,12 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
                 <span className="text-muted-foreground">Total Facturación:</span>
               </div>
               <span className="font-medium text-right">{formatPrimary(opexTotals.invoices)}</span>
+              
+              <div className="flex items-center gap-1.5">
+                <Clock className="h-3.5 w-3.5 text-red-500" />
+                <span className="text-muted-foreground">Total No Facturado:</span>
+              </div>
+              <span className="font-medium text-right text-red-600">{formatPrimary(opexTotals.oc - opexTotals.invoices)}</span>
               
               <div className="col-span-2 pt-2 border-t">
                 <p className="text-xs text-muted-foreground italic">
