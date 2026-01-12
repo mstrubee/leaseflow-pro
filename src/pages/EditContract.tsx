@@ -10,7 +10,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Loader2, Plus, X, RotateCcw, ChevronsUpDown } from "lucide-react";
 import { RegionCommuneSelect } from "@/components/contracts/RegionCommuneSelect";
-import { RentEscalations, Escalation } from "@/components/contracts/RentEscalations";
+import { RentEscalations, Escalation, GraceMonthsInput } from "@/components/contracts/RentEscalations";
 import { CurrencyInput } from "@/components/contracts/CurrencyInput";
 import { DurationInput } from "@/components/contracts/DurationInput";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
@@ -1164,15 +1164,27 @@ const EditContract = () => {
                                 )}
 
                                 {!hasEscalation && (
-                                  <CurrencyInput
-                                    id="regimeRent"
-                                    label="Canon en Régimen"
-                                    value={regimeRent}
-                                    onChange={setRegimeRent}
-                                    currency={currency}
-                                    onCurrencyChange={setCurrency}
-                                    showCurrencySelector={false}
-                                  />
+                                  <>
+                                    <CurrencyInput
+                                      id="regimeRent"
+                                      label="Canon en Régimen"
+                                      value={regimeRent}
+                                      onChange={setRegimeRent}
+                                      currency={currency}
+                                      onCurrencyChange={setCurrency}
+                                      showCurrencySelector={false}
+                                    />
+                                    
+                                    {/* Meses de gracia sin escalonado */}
+                                    <div className="space-y-2">
+                                      <Label>Meses de Gracia</Label>
+                                      <GraceMonthsInput
+                                        value={graceMonths}
+                                        onChange={setGraceMonths}
+                                        maxMonths={parseInt(duration) || 12}
+                                      />
+                                    </div>
+                                  </>
                                 )}
                               </>
                             );
