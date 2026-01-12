@@ -13,9 +13,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ArrowLeft, Search, ChevronDown, ChevronRight, ChevronsUpDown, X, TrendingUp, Wallet, PlusCircle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
-import { OpexExcelUpload } from "@/components/opex/OpexExcelUpload";
 import { MasterBudgetTable } from "@/components/opex/MasterBudgetTable";
 import { useOpexNavigation } from "@/components/opex/OpexReturnButton";
+import { OpexCreateDialog } from "@/components/opex/OpexCreateDialog";
+import { OpexCategoryManager } from "@/components/opex/OpexCategoryManager";
+import { OpexCloseYear } from "@/components/opex/OpexCloseYear";
+import { OpexTemplateDownload } from "@/components/opex/OpexTemplateDownload";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 interface OpexCategory {
@@ -556,36 +559,51 @@ const OpexDashboard = () => {
   return <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-              <div>
-                <h1 className="text-2xl font-semibold text-foreground">OPEX</h1>
-                <p className="text-sm text-muted-foreground">
-                  Vista consolidada del presupuesto operacional
-                </p>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div>
+                  <h1 className="text-2xl font-semibold text-foreground">OPEX</h1>
+                  <p className="text-sm text-muted-foreground">
+                    Vista consolidada del presupuesto operacional
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={yearFilter} onValueChange={setYearFilter}>
+                  <SelectTrigger className="w-[120px]">
+                    <SelectValue placeholder="Año" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableYears.map(year => <SelectItem key={year} value={year.toString()}>
+                        {year}
+                      </SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Select value={yearFilter} onValueChange={setYearFilter}>
-                <SelectTrigger className="w-[120px]">
-                  <SelectValue placeholder="Año" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableYears.map(year => <SelectItem key={year} value={year.toString()}>
-                      {year}
-                    </SelectItem>)}
-                </SelectContent>
-              </Select>
-              {isAdmin && <OpexExcelUpload year={parseInt(yearFilter)} ufValue={ufValue} onSuccess={loadData} />}
+            <div className="flex items-center justify-end gap-2 flex-wrap">
+              {isAdmin && (
+                <>
+                  <OpexCreateDialog 
+                    currentYear={parseInt(yearFilter)} 
+                    ufValue={ufValue} 
+                    availableYears={availableYears}
+                    contracts={contracts}
+                    categories={categories}
+                    onSuccess={loadData} 
+                  />
+                  <OpexCategoryManager onCategoryChange={loadData} />
+                  <OpexCloseYear year={parseInt(yearFilter)} ufValue={ufValue} onSuccess={loadData} />
+                </>
+              )}
+              <OpexTemplateDownload year={parseInt(yearFilter)} />
               <Button variant="outline" size="sm" onClick={expandAll}>
                 <ChevronsUpDown className="h-4 w-4 mr-1" />
-                Expandir Todo
+                Expandir
               </Button>
               <Button variant="outline" size="sm" onClick={collapseAll}>
-                Colapsar Todo
+                Colapsar
               </Button>
             </div>
           </div>
