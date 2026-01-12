@@ -101,160 +101,151 @@ export function PatentsModule() {
   if (selectedContract) {
     return <PatentChecklist contract={selectedContract} sections={sections} items={items} emitters={emitters} itemEmitters={itemEmitters} statuses={statuses} onBack={() => setSelectedContractId(null)} onUpdatePriority={updatePriority} onUpdatePatenteStatus={updatePatenteStatus} onUpdateDocument={updateDocument} onUpdateDocumentStatus={updateDocumentStatus} />;
   }
-  return <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Patentes</h2>
-          <p className="text-muted-foreground">Patentes y Gestión de documentación para patentes comerciales y Recepciones Definitivas DOM</p>
-        </div>
-        {isAdmin && <Button variant="outline" className="gap-2" onClick={() => setAdminPanelOpen(true)}>
-            <Settings className="h-4 w-4" />
-            Administrar
-          </Button>}
-        
-        <PatentAdminPanel open={adminPanelOpen} onOpenChange={setAdminPanelOpen} sections={sections} items={items} emitters={emitters} onDataChange={loadData} />
-      </div>
+  return <Collapsible open={isListOpen} onOpenChange={setIsListOpen}>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between py-3">
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" className="flex items-center gap-2 p-0 h-auto hover:bg-transparent">
+              <ChevronDown className={`h-5 w-5 transition-transform duration-200 ${isListOpen ? '' : '-rotate-90'}`} />
+              <CardTitle className="text-lg">Patentes</CardTitle>
+            </Button>
+          </CollapsibleTrigger>
+          <div className="flex items-center gap-2">
+            {isAdmin && <Button variant="outline" size="sm" className="gap-2" onClick={() => setAdminPanelOpen(true)}>
+                <Settings className="h-4 w-4" />
+                Administrar
+              </Button>}
+          </div>
+          <PatentAdminPanel open={adminPanelOpen} onOpenChange={setAdminPanelOpen} sections={sections} items={items} emitters={emitters} onDataChange={loadData} />
+        </CardHeader>
+        <CollapsibleContent>
+          <CardContent className="space-y-4">
+            {/* Summary Cards */}
+            <div className="grid gap-2 md:grid-cols-4 lg:grid-cols-7">
+              <Card 
+                className={`cursor-pointer hover:shadow-md transition-shadow ${cardFilter === 'all' ? 'ring-2 ring-primary' : ''}`}
+                onClick={() => handleCardFilterClick('all')}
+              >
+                <CardContent className="p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">Total Locales</p>
+                    <p className="text-xl font-bold">{contracts.length}</p>
+                  </div>
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                </CardContent>
+              </Card>
 
-      {/* Summary Cards */}
-      <div className="grid gap-2 md:grid-cols-4 lg:grid-cols-7">
-        <Card 
-          className={`cursor-pointer hover:shadow-md transition-shadow ${cardFilter === 'all' ? 'ring-2 ring-primary' : ''}`}
-          onClick={() => handleCardFilterClick('all')}
-        >
-          <CardContent className="p-3 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Total Locales</p>
-              <p className="text-xl font-bold">{contracts.length}</p>
+              <Card 
+                className={`cursor-pointer hover:shadow-md transition-shadow border-green-200 bg-green-50 dark:bg-green-950/20 ${cardFilter === 'definitiva' ? 'ring-2 ring-green-500' : ''}`}
+                onClick={() => handleCardFilterClick('definitiva')}
+              >
+                <CardContent className="p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-green-700 dark:text-green-400">Patentes Definitivas</p>
+                    <p className="text-xl font-bold text-green-700 dark:text-green-400">
+                      {contracts.filter(c => c.patente_status === 'definitiva').length}
+                    </p>
+                  </div>
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                </CardContent>
+              </Card>
+
+              <Card 
+                className={`cursor-pointer hover:shadow-md transition-shadow border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20 ${cardFilter === 'provisoria' ? 'ring-2 ring-yellow-500' : ''}`}
+                onClick={() => handleCardFilterClick('provisoria')}
+              >
+                <CardContent className="p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-yellow-700 dark:text-yellow-400">Patentes Provisorias</p>
+                    <p className="text-xl font-bold text-yellow-700 dark:text-yellow-400">
+                      {contracts.filter(c => c.patente_status === 'provisoria').length}
+                    </p>
+                  </div>
+                  <FileText className="h-4 w-4 text-yellow-600" />
+                </CardContent>
+              </Card>
+
+              <Card 
+                className={`cursor-pointer hover:shadow-md transition-shadow border-gray-200 bg-gray-50 dark:bg-gray-950/20 ${cardFilter === 'sin_patente' ? 'ring-2 ring-gray-500' : ''}`}
+                onClick={() => handleCardFilterClick('sin_patente')}
+              >
+                <CardContent className="p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-gray-700 dark:text-gray-400">Sin Patente</p>
+                    <p className="text-xl font-bold text-gray-700 dark:text-gray-400">
+                      {contracts.filter(c => !c.patente_status || c.patente_status === 'sin_patente').length}
+                    </p>
+                  </div>
+                  <FileText className="h-4 w-4 text-gray-500" />
+                </CardContent>
+              </Card>
+
+              <Card 
+                className={`cursor-pointer hover:shadow-md transition-shadow border-red-200 bg-red-50 dark:bg-red-950/20 ${cardFilter === 'critical' ? 'ring-2 ring-red-500' : ''}`}
+                onClick={() => handleCardFilterClick('critical')}
+              >
+                <CardContent className="p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] text-red-500 dark:text-red-400 uppercase tracking-wide">Documentación</p>
+                    <p className="text-xs font-medium text-red-700 dark:text-red-400">Críticos</p>
+                    <p className="text-xl font-bold text-red-700 dark:text-red-400">{stats.criticalContracts}</p>
+                  </div>
+                  <AlertTriangle className="h-4 w-4 text-red-600" />
+                </CardContent>
+              </Card>
+
+              <Card 
+                className={`cursor-pointer hover:shadow-md transition-shadow ${cardFilter === 'pending' ? 'ring-2 ring-yellow-500' : ''}`}
+                onClick={() => handleCardFilterClick('pending')}
+              >
+                <CardContent className="p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] text-yellow-600 uppercase tracking-wide">Documentación</p>
+                    <p className="text-xs font-medium">Docs Pendientes</p>
+                    <p className="text-xl font-bold text-yellow-600">{stats.pendingCount}</p>
+                  </div>
+                  <FileText className="h-4 w-4 text-yellow-600" />
+                </CardContent>
+              </Card>
+
+              <Card 
+                className={`cursor-pointer hover:shadow-md transition-shadow border-red-200 bg-red-50 dark:bg-red-950/20 ${cardFilter === 'overdue' ? 'ring-2 ring-red-500' : ''}`}
+                onClick={() => handleCardFilterClick('overdue')}
+              >
+                <CardContent className="p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] text-red-500 dark:text-red-400 uppercase tracking-wide">Documentación</p>
+                    <p className="text-xs font-medium text-red-700 dark:text-red-400">Vencidos</p>
+                    <p className="text-xl font-bold text-red-700 dark:text-red-400">{stats.overdueCount}</p>
+                  </div>
+                  <AlertTriangle className="h-4 w-4 text-red-600" />
+                </CardContent>
+              </Card>
             </div>
-            <FileText className="h-4 w-4 text-muted-foreground" />
+
+            {/* Tabs for List and Alerts */}
+            <Tabs value={activeTab} onValueChange={v => setActiveTab(v as 'list' | 'alerts')}>
+              <TabsList>
+                <TabsTrigger value="list" className="gap-2">
+                  <FileText className="h-4 w-4" />
+                  Locales
+                </TabsTrigger>
+                <TabsTrigger value="alerts" className="gap-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  Alertas Críticas
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="list" className="mt-4">
+                <PatentsList contracts={contracts} onSelectContract={setSelectedContractId} cardFilter={cardFilter} onClearFilter={() => setCardFilter(null)} />
+              </TabsContent>
+
+              <TabsContent value="alerts" className="mt-4">
+                <CriticalAlertsDashboard contracts={contracts} items={items} sections={sections} onNavigateToDocument={handleNavigateToDocument} onStatusChange={handleStatusChangeFromAlerts} />
+              </TabsContent>
+            </Tabs>
           </CardContent>
-        </Card>
-
-        <Card 
-          className={`cursor-pointer hover:shadow-md transition-shadow border-green-200 bg-green-50 dark:bg-green-950/20 ${cardFilter === 'definitiva' ? 'ring-2 ring-green-500' : ''}`}
-          onClick={() => handleCardFilterClick('definitiva')}
-        >
-          <CardContent className="p-3 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-green-700 dark:text-green-400">Patentes Definitivas</p>
-              <p className="text-xl font-bold text-green-700 dark:text-green-400">
-                {contracts.filter(c => c.patente_status === 'definitiva').length}
-              </p>
-            </div>
-            <CheckCircle className="h-4 w-4 text-green-600" />
-          </CardContent>
-        </Card>
-
-        <Card 
-          className={`cursor-pointer hover:shadow-md transition-shadow border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20 ${cardFilter === 'provisoria' ? 'ring-2 ring-yellow-500' : ''}`}
-          onClick={() => handleCardFilterClick('provisoria')}
-        >
-          <CardContent className="p-3 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-yellow-700 dark:text-yellow-400">Patentes Provisorias</p>
-              <p className="text-xl font-bold text-yellow-700 dark:text-yellow-400">
-                {contracts.filter(c => c.patente_status === 'provisoria').length}
-              </p>
-            </div>
-            <FileText className="h-4 w-4 text-yellow-600" />
-          </CardContent>
-        </Card>
-
-        <Card 
-          className={`cursor-pointer hover:shadow-md transition-shadow border-gray-200 bg-gray-50 dark:bg-gray-950/20 ${cardFilter === 'sin_patente' ? 'ring-2 ring-gray-500' : ''}`}
-          onClick={() => handleCardFilterClick('sin_patente')}
-        >
-          <CardContent className="p-3 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-gray-700 dark:text-gray-400">Sin Patente</p>
-              <p className="text-xl font-bold text-gray-700 dark:text-gray-400">
-                {contracts.filter(c => !c.patente_status || c.patente_status === 'sin_patente').length}
-              </p>
-            </div>
-            <FileText className="h-4 w-4 text-gray-500" />
-          </CardContent>
-        </Card>
-
-        <Card 
-          className={`cursor-pointer hover:shadow-md transition-shadow border-red-200 bg-red-50 dark:bg-red-950/20 ${cardFilter === 'critical' ? 'ring-2 ring-red-500' : ''}`}
-          onClick={() => handleCardFilterClick('critical')}
-        >
-          <CardContent className="p-3 flex items-center justify-between">
-            <div>
-              <p className="text-[10px] text-red-500 dark:text-red-400 uppercase tracking-wide">Documentación</p>
-              <p className="text-xs font-medium text-red-700 dark:text-red-400">Críticos</p>
-              <p className="text-xl font-bold text-red-700 dark:text-red-400">{stats.criticalContracts}</p>
-            </div>
-            <AlertTriangle className="h-4 w-4 text-red-600" />
-          </CardContent>
-        </Card>
-
-        <Card 
-          className={`cursor-pointer hover:shadow-md transition-shadow ${cardFilter === 'pending' ? 'ring-2 ring-yellow-500' : ''}`}
-          onClick={() => handleCardFilterClick('pending')}
-        >
-          <CardContent className="p-3 flex items-center justify-between">
-            <div>
-              <p className="text-[10px] text-yellow-600 uppercase tracking-wide">Documentación</p>
-              <p className="text-xs font-medium">Docs Pendientes</p>
-              <p className="text-xl font-bold text-yellow-600">{stats.pendingCount}</p>
-            </div>
-            <FileText className="h-4 w-4 text-yellow-600" />
-          </CardContent>
-        </Card>
-
-        <Card 
-          className={`cursor-pointer hover:shadow-md transition-shadow border-red-200 bg-red-50 dark:bg-red-950/20 ${cardFilter === 'overdue' ? 'ring-2 ring-red-500' : ''}`}
-          onClick={() => handleCardFilterClick('overdue')}
-        >
-          <CardContent className="p-3 flex items-center justify-between">
-            <div>
-              <p className="text-[10px] text-red-500 dark:text-red-400 uppercase tracking-wide">Documentación</p>
-              <p className="text-xs font-medium text-red-700 dark:text-red-400">Vencidos</p>
-              <p className="text-xl font-bold text-red-700 dark:text-red-400">{stats.overdueCount}</p>
-            </div>
-            <AlertTriangle className="h-4 w-4 text-red-600" />
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Collapsible List Section */}
-      <Collapsible open={isListOpen} onOpenChange={setIsListOpen}>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between py-3">
-            <CollapsibleTrigger asChild>
-              <Button variant="ghost" className="flex items-center gap-2 p-0 h-auto hover:bg-transparent">
-                <ChevronDown className={`h-5 w-5 transition-transform duration-200 ${isListOpen ? '' : '-rotate-90'}`} />
-                <CardTitle className="text-lg">Listado de Locales</CardTitle>
-              </Button>
-            </CollapsibleTrigger>
-          </CardHeader>
-          <CollapsibleContent>
-            <CardContent className="pt-0">
-              <Tabs value={activeTab} onValueChange={v => setActiveTab(v as 'list' | 'alerts')}>
-                <TabsList>
-                  <TabsTrigger value="list" className="gap-2">
-                    <FileText className="h-4 w-4" />
-                    Locales
-                  </TabsTrigger>
-                  <TabsTrigger value="alerts" className="gap-2">
-                    <AlertTriangle className="h-4 w-4" />
-                    Alertas Críticas
-                  </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="list" className="mt-4">
-                  <PatentsList contracts={contracts} onSelectContract={setSelectedContractId} cardFilter={cardFilter} onClearFilter={() => setCardFilter(null)} />
-                </TabsContent>
-
-                <TabsContent value="alerts" className="mt-4">
-                  <CriticalAlertsDashboard contracts={contracts} items={items} sections={sections} onNavigateToDocument={handleNavigateToDocument} onStatusChange={handleStatusChangeFromAlerts} />
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </CollapsibleContent>
-        </Card>
-      </Collapsible>
-    </div>;
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>;
 }

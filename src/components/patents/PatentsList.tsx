@@ -269,6 +269,7 @@ export function PatentsList({
                 <TableRow>
                   <TableHead>Empresa</TableHead>
                   <TableHead>Local</TableHead>
+                  <TableHead>Dirección</TableHead>
                   <TableHead>Comuna</TableHead>
                   <TableHead>Región</TableHead>
                   <TableHead className="text-center">Prioridad</TableHead>
@@ -286,10 +287,15 @@ export function PatentsList({
                 const overdueCount = docs.filter(d => d.status === 'pendiente' && d.end_date && new Date(d.end_date) < today).length;
                 const region = contract.contract_addresses?.[0]?.region || 'Sin región';
                 const commune = contract.contract_addresses?.[0]?.commune || 'Sin comuna';
+                const address = contract.contract_addresses?.[0];
+                const fullAddress = address 
+                  ? `${address.street || ''}${address.number ? ' ' + address.number : ''}`.trim() || 'Sin dirección'
+                  : 'Sin dirección';
                 const companyName = getCompanyName(contract);
                 return <TableRow key={contract.id}>
                       <TableCell className="text-muted-foreground">{companyName}</TableCell>
                       <TableCell className="font-medium">{contract.name}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">{fullAddress}</TableCell>
                       <TableCell className="text-muted-foreground">{commune}</TableCell>
                       <TableCell className="text-muted-foreground">{region}</TableCell>
                       <TableCell className="text-center">
@@ -310,7 +316,7 @@ export function PatentsList({
                     </TableRow>;
               })}
                 {filteredAndSorted.length === 0 && <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                       No hay locales que coincidan con los filtros
                     </TableCell>
                   </TableRow>}
