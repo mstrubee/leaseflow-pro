@@ -387,13 +387,17 @@ const OpexDashboard = () => {
         totalConsumed += consumedAmount;
       });
 
+      // Budgets can be negative in the source data; compare using absolute values
+      const budgetAbs = Math.abs(totalBudget);
+      const consumedAbs = Math.abs(totalConsumed);
+
       // Include if there's any budget (even if no consumption)
-      if (totalBudget > 0 || totalConsumed > 0) {
+      if (budgetAbs > 0 || consumedAbs > 0) {
         allContractsWithBudget.push({
           name: contract.name,
-          presupuesto: Math.abs(totalBudget),
-          consumido: Math.abs(totalConsumed),
-          disponible: Math.abs(totalBudget - totalConsumed),
+          presupuesto: budgetAbs,
+          consumido: consumedAbs,
+          disponible: budgetAbs - consumedAbs,
           company_id: contract.company_id,
           company_name: contract.company_name || "Sin empresa"
         });
@@ -604,63 +608,66 @@ const OpexDashboard = () => {
               </CollapsibleContent>
             </Card>
           </Collapsible>}
-        {chartData.length > 0 && <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Consumo por Local (Contratos Vigentes)</CardTitle>
-              <div className="flex flex-wrap gap-3 mt-2">
-                {chartCompanies.map(company => <div key={company.id || "sin-empresa"} className="flex items-center gap-1.5 text-xs">
-                    <div className="w-3 h-3 rounded" style={{
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Consumo por Local (Contratos Vigentes)</CardTitle>
+            <div className="flex flex-wrap gap-3 mt-2">
+              {chartCompanies.map(company => <div key={company.id || "sin-empresa"} className="flex items-center gap-1.5 text-xs">
+                  <div className="w-3 h-3 rounded" style={{
                 backgroundColor: getCompanyColor(company.id)
               }} />
-                    <span>{company.name}</span>
-                  </div>)}
-              </div>
-              {/* Chart Filters */}
-              <div className="flex flex-wrap gap-3 items-center mt-4 p-3 bg-muted/30 rounded-lg">
-                <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                  <SelectTrigger className="w-[160px]">
-                    <SelectValue placeholder="Empresa" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todos">Empresas</SelectItem>
-                    {companies.map(company => <SelectItem key={company.id} value={company.id}>
-                        {company.name}
+                  <span>{company.name}</span>
+                </div>)}
+            </div>
+
+            {/* Chart Filters */}
+            <div className="flex flex-wrap gap-3 items-center mt-4 p-3 bg-muted/30 rounded-lg">
+              <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="Empresa" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todas</SelectItem>
+                  {companies.map(company => <SelectItem key={company.id} value={company.id}>
+                      {company.name}
+                    </SelectItem>)}
+                </SelectContent>
+              </Select>
+
+              <Select value={contractFilter} onValueChange={setContractFilter}>
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="Local" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos</SelectItem>
+                  {contracts.filter(c => companyFilter === "todos" || c.company_id === companyFilter).map(c => <SelectItem key={c.id} value={c.id}>
+                        {c.name}
                       </SelectItem>)}
-                  </SelectContent>
-                </Select>
+                </SelectContent>
+              </Select>
 
-                <Select value={contractFilter} onValueChange={setContractFilter}>
-                  <SelectTrigger className="w-[160px]">
-                    <SelectValue placeholder="Local" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todos">Locales</SelectItem>
-                    {contracts.filter(c => companyFilter === "todos" || c.company_id === companyFilter).map(c => <SelectItem key={c.id} value={c.id}>
-                          {c.name}
-                        </SelectItem>)}
-                  </SelectContent>
-                </Select>
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="Categoría" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todas</SelectItem>
+                  {categories.map(cat => <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </SelectItem>)}
+                </SelectContent>
+              </Select>
 
-                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                  <SelectTrigger className="w-[160px]">
-                    <SelectValue placeholder="Categoría" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todos">Categorías</SelectItem>
-                    {categories.map(cat => <SelectItem key={cat.id} value={cat.id}>
-                        {cat.name}
-                      </SelectItem>)}
-                  </SelectContent>
-                </Select>
-
-                {hasActiveFilters && <Button variant="ghost" size="sm" onClick={clearFilters}>
-                    <X className="h-4 w-4 mr-1" />
-                    Limpiar
-                  </Button>}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div style={{
+              {hasActiveFilters && <Button variant="ghost" size="sm" onClick={clearFilters}>
+                  <X className="h-4 w-4 mr-1" />
+                  Limpiar
+                </Button>}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {chartData.length === 0 ? <div className="py-12 text-center text-muted-foreground">
+                No hay datos de presupuesto para los filtros seleccionados.
+              </div> : <div style={{
             height: Math.max(400, chartData.length * 45)
           }}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -694,9 +701,9 @@ const OpexDashboard = () => {
                     <Bar dataKey="consumido" name="Consumido" fill="#f97316" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>}
+              </div>}
+          </CardContent>
+        </Card>
 
         {/* OPEX por Local Section - Collapsible */}
         <Collapsible open={isLocalSectionOpen} onOpenChange={toggleLocalSection}>
