@@ -28,6 +28,7 @@ interface BudgetSummary {
 interface BudgetDashboardProps {
   contractId: string;
   displayCurrency?: "UF" | "CLP";
+  initialTab?: string;
 }
 
 interface BudgetTypeTotals {
@@ -50,7 +51,7 @@ interface YearBudgetInfo {
 
 const STORAGE_KEY_PREFIX = "budget_selected_year_";
 
-const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
+const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps) => {
   const [loading, setLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}${contractId}`);
@@ -688,7 +689,7 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
       </div>
 
       {/* Budget Tabs - CADA TAB COMPLETAMENTE INDEPENDIENTE */}
-      <Tabs defaultValue="capex" className="w-full">
+      <Tabs defaultValue={initialTab === "purchase-orders" ? "oc" : "capex"} className="w-full">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="capex" className="data-[state=active]:bg-blue-100 data-[state=active]:text-blue-700">
             CAPEX
@@ -890,10 +891,10 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
   );
 };
 
-export const BudgetDashboard = ({ contractId, displayCurrency = "UF" }: BudgetDashboardProps) => {
+export const BudgetDashboard = ({ contractId, displayCurrency = "UF", initialTab }: BudgetDashboardProps) => {
   return (
     <BudgetProvider initialCurrency={displayCurrency}>
-      <BudgetDashboardContent contractId={contractId} />
+      <BudgetDashboardContent contractId={contractId} initialTab={initialTab} />
     </BudgetProvider>
   );
 };

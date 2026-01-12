@@ -127,6 +127,9 @@ const ContractDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const sectionParam = searchParams.get("section");
+  const returnToParam = searchParams.get("returnTo");
   const backTo = (location.state as any)?.backTo as string | undefined;
 
   const storedBackTo =
@@ -137,11 +140,14 @@ const ContractDetail = () => {
   const isValidBackTo = (v?: string | null) =>
     !!v && v.startsWith("/contracts") && !/^\/contracts\/[^/?#]+/.test(v);
 
-  const resolvedBackTo = isValidBackTo(backTo)
-    ? backTo
-    : isValidBackTo(storedBackTo)
-      ? storedBackTo!
-      : "/contracts";
+  // Check if coming from purchase-orders dashboard
+  const resolvedBackTo = returnToParam === "purchase-orders"
+    ? "/purchase-orders"
+    : isValidBackTo(backTo)
+      ? backTo
+      : isValidBackTo(storedBackTo)
+        ? storedBackTo!
+        : "/contracts";
 
   const { toast } = useToast();
   const { isAdmin, roleLoaded } = useAuth();
@@ -1199,7 +1205,7 @@ const ContractDetail = () => {
                         isDraggable={canReorder}
                         wrapperOnly
                       >
-                        <BudgetDashboard contractId={contract.id} displayCurrency={contract.display_currency || "UF"} />
+                        <BudgetDashboard contractId={contract.id} displayCurrency={contract.display_currency || "UF"} initialTab={sectionParam === "ordenes-compra" ? "purchase-orders" : undefined} />
                       </CollapsibleSection>
                     </SelectableElement>
                   );

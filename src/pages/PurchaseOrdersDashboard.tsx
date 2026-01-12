@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -26,6 +27,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   ArrowLeft,
   Search,
   ChevronDown,
@@ -34,10 +45,26 @@ import {
   X,
   FileText,
   Receipt,
+  Trash2,
+  ExternalLink,
+  ShoppingCart,
+  DollarSign,
+  FileCheck,
+  AlertCircle,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
+import { toast } from "sonner";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
+
+interface Invoice {
+  id: string;
+  invoice_number: string;
+  invoice_date: string;
+  amount_uf: number;
+  reception_status: string;
+}
 
 interface PurchaseOrder {
   id: string;
@@ -55,8 +82,10 @@ interface PurchaseOrder {
   contract_name?: string;
   budget_line_name?: string;
   opex_category_name?: string;
+  invoices: Invoice[];
   invoices_count?: number;
   invoices_total?: number;
+  year?: number;
 }
 
 interface Contract {
@@ -69,9 +98,31 @@ interface OpexCategory {
   name: string;
 }
 
+interface ChartData {
+  name: string;
+  value: number;
+  id: string;
+  color: string;
+}
+
+const COLORS = [
+  "hsl(var(--chart-1))",
+  "hsl(var(--chart-2))",
+  "hsl(var(--chart-3))",
+  "hsl(var(--chart-4))",
+  "hsl(var(--chart-5))",
+  "#8884d8",
+  "#82ca9d",
+  "#ffc658",
+  "#ff7300",
+  "#00C49F",
+  "#FFBB28",
+  "#FF8042",
+];
+
 const PurchaseOrdersDashboard = () => {
   const navigate = useNavigate();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isAdmin } = useAuth();
 
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -81,13 +132,37 @@ const PurchaseOrdersDashboard = () => {
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
   const [contractFilter, setContractFilter] = useState("todos");
-  const [dateFilter, setDateFilter] = useState("todos");
+  const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
   const [categoryFilter, setCategoryFilter] = useState("todos");
   const [classificationFilter, setClassificationFilter] = useState("todos");
   const [amountFilter, setAmountFilter] = useState("todos");
 
+  // Chart-based filters
+  const [chartContractFilter, setChartContractFilter] = useState<string | null>(null);
+  const [chartCategoryFilter, setChartCategoryFilter] = useState<string | null>(null);
+
   // Collapse state per contract
   const [expandedContracts, setExpandedContracts] = useState<Set<string>>(new Set());
+  const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+
+  // Selection for deletion
+  const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showConfirmDeleteDialog, setShowConfirmDeleteDialog] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // Available years
+  const availableYears = useMemo(() => {
+    const years = new Set<number>();
+    orders.forEach(o => {
+      if (o.year) years.add(o.year);
+    });
+    const currentYear = new Date().getFullYear();
+    years.add(currentYear);
+    years.add(currentYear - 1);
+    years.add(currentYear + 1);
+    return Array.from(years).sort((a, b) => b - a);
+  }, [orders]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -120,7 +195,7 @@ const PurchaseOrdersDashboard = () => {
         .order("display_order");
       setOpexCategories(categoriesData || []);
 
-      // Load purchase orders with related data
+      // Load purchase orders with related data and invoices
       const { data: ordersData } = await supabase
         .from("purchase_orders")
         .select(`
@@ -132,6 +207,7 @@ const PurchaseOrdersDashboard = () => {
           budget_classification,
           created_at,
           order_date,
+          year,
           contract_id,
           budget_line_id,
           opex_category_id,
@@ -139,19 +215,23 @@ const PurchaseOrdersDashboard = () => {
           contracts!inner(name),
           budget_lines(name),
           opex_categories(name),
-          invoices(id, amount_uf)
+          invoices(id, invoice_number, invoice_date, amount_uf, reception_status, deleted_at)
         `)
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
 
-      const processedOrders = (ordersData || []).map((order: any) => ({
-        ...order,
-        contract_name: order.contracts?.name || "Sin contrato",
-        budget_line_name: order.budget_lines?.name || null,
-        opex_category_name: order.opex_categories?.name || null,
-        invoices_count: order.invoices?.length || 0,
-        invoices_total: order.invoices?.reduce((sum: number, inv: any) => sum + (inv.amount_uf || 0), 0) || 0,
-      }));
+      const processedOrders = (ordersData || []).map((order: any) => {
+        const validInvoices = (order.invoices || []).filter((inv: any) => !inv.deleted_at);
+        return {
+          ...order,
+          contract_name: order.contracts?.name || "Sin contrato",
+          budget_line_name: order.budget_lines?.name || null,
+          opex_category_name: order.opex_categories?.name || null,
+          invoices: validInvoices,
+          invoices_count: validInvoices.length,
+          invoices_total: validInvoices.reduce((sum: number, inv: any) => sum + (inv.amount_uf || 0), 0),
+        };
+      });
 
       setOrders(processedOrders);
     } catch (error) {
@@ -161,11 +241,77 @@ const PurchaseOrdersDashboard = () => {
     }
   };
 
-  // Group orders by contract
-  const groupedOrders = useMemo(() => {
-    let filtered = orders;
+  // Chart data for contracts
+  const contractChartData = useMemo(() => {
+    const yearNum = parseInt(yearFilter);
+    const filtered = orders.filter(o => o.year === yearNum);
+    
+    const contractMap = new Map<string, { name: string; amount: number }>();
+    filtered.forEach(order => {
+      const existing = contractMap.get(order.contract_id) || { name: order.contract_name || "", amount: 0 };
+      existing.amount += order.amount_uf || 0;
+      contractMap.set(order.contract_id, existing);
+    });
 
-    // Apply filters
+    return Array.from(contractMap.entries())
+      .map(([id, data], index) => ({
+        id,
+        name: data.name,
+        value: data.amount,
+        color: COLORS[index % COLORS.length],
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+  }, [orders, yearFilter]);
+
+  // Chart data for categories
+  const categoryChartData = useMemo(() => {
+    const yearNum = parseInt(yearFilter);
+    const filtered = orders.filter(o => o.year === yearNum && o.opex_category_id);
+    
+    const categoryMap = new Map<string, { name: string; amount: number }>();
+    filtered.forEach(order => {
+      if (order.opex_category_id) {
+        const existing = categoryMap.get(order.opex_category_id) || { name: order.opex_category_name || "Sin categoría", amount: 0 };
+        existing.amount += order.amount_uf || 0;
+        categoryMap.set(order.opex_category_id, existing);
+      }
+    });
+
+    return Array.from(categoryMap.entries())
+      .map(([id, data], index) => ({
+        id,
+        name: data.name,
+        value: data.amount,
+        color: COLORS[index % COLORS.length],
+      }))
+      .sort((a, b) => b.value - a.value);
+  }, [orders, yearFilter]);
+
+  // Summary calculations
+  const summaryData = useMemo(() => {
+    const yearNum = parseInt(yearFilter);
+    let filtered = orders.filter(o => o.year === yearNum);
+
+    const totalOC = filtered.reduce((sum, o) => sum + (o.amount_uf || 0), 0);
+    const totalFacturado = filtered.reduce((sum, o) => sum + (o.invoices_total || 0), 0);
+    const sinFacturar = totalOC - totalFacturado;
+
+    return {
+      totalOC,
+      totalFacturado,
+      sinFacturar,
+      countOC: filtered.length,
+      countFacturas: filtered.reduce((sum, o) => sum + (o.invoices_count || 0), 0),
+    };
+  }, [orders, yearFilter]);
+
+  // Group orders by contract with all filters
+  const groupedOrders = useMemo(() => {
+    const yearNum = parseInt(yearFilter);
+    let filtered = orders.filter(o => o.year === yearNum);
+
+    // Apply search filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(
@@ -177,6 +323,7 @@ const PurchaseOrdersDashboard = () => {
       );
     }
 
+    // Apply dropdown filters
     if (contractFilter !== "todos") {
       filtered = filtered.filter((o) => o.contract_id === contractFilter);
     }
@@ -202,27 +349,13 @@ const PurchaseOrdersDashboard = () => {
       });
     }
 
-    if (dateFilter !== "todos") {
-      const now = new Date();
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth();
+    // Apply chart-based filters
+    if (chartContractFilter) {
+      filtered = filtered.filter((o) => o.contract_id === chartContractFilter);
+    }
 
-      filtered = filtered.filter((o) => {
-        const orderDate = parseISO(o.created_at);
-        const orderYear = orderDate.getFullYear();
-        const orderMonth = orderDate.getMonth();
-
-        switch (dateFilter) {
-          case "este_mes":
-            return orderYear === currentYear && orderMonth === currentMonth;
-          case "este_año":
-            return orderYear === currentYear;
-          case "año_anterior":
-            return orderYear === currentYear - 1;
-          default:
-            return true;
-        }
-      });
+    if (chartCategoryFilter) {
+      filtered = filtered.filter((o) => o.opex_category_id === chartCategoryFilter);
     }
 
     // Group by contract
@@ -238,7 +371,7 @@ const PurchaseOrdersDashboard = () => {
     });
 
     return Object.values(grouped).sort((a, b) => a.contract.name.localeCompare(b.contract.name));
-  }, [orders, searchTerm, contractFilter, dateFilter, categoryFilter, classificationFilter, amountFilter]);
+  }, [orders, searchTerm, contractFilter, yearFilter, categoryFilter, classificationFilter, amountFilter, chartContractFilter, chartCategoryFilter]);
 
   const toggleContract = (contractId: string) => {
     setExpandedContracts((prev) => {
@@ -252,30 +385,121 @@ const PurchaseOrdersDashboard = () => {
     });
   };
 
+  const toggleOrderInvoices = (orderId: string) => {
+    setExpandedOrders((prev) => {
+      const next = new Set(prev);
+      if (next.has(orderId)) {
+        next.delete(orderId);
+      } else {
+        next.add(orderId);
+      }
+      return next;
+    });
+  };
+
   const expandAll = () => {
     setExpandedContracts(new Set(groupedOrders.map((g) => g.contract.id)));
   };
 
   const collapseAll = () => {
     setExpandedContracts(new Set());
+    setExpandedOrders(new Set());
   };
 
   const clearFilters = () => {
     setSearchTerm("");
     setContractFilter("todos");
-    setDateFilter("todos");
     setCategoryFilter("todos");
     setClassificationFilter("todos");
     setAmountFilter("todos");
+    setChartContractFilter(null);
+    setChartCategoryFilter(null);
   };
 
   const hasActiveFilters =
     searchTerm ||
     contractFilter !== "todos" ||
-    dateFilter !== "todos" ||
     categoryFilter !== "todos" ||
     classificationFilter !== "todos" ||
-    amountFilter !== "todos";
+    amountFilter !== "todos" ||
+    chartContractFilter ||
+    chartCategoryFilter;
+
+  // Selection handlers
+  const toggleOrderSelection = (orderId: string) => {
+    setSelectedOrders((prev) => {
+      const next = new Set(prev);
+      if (next.has(orderId)) {
+        next.delete(orderId);
+      } else {
+        next.add(orderId);
+      }
+      return next;
+    });
+  };
+
+  const selectAllInGroup = (orders: PurchaseOrder[]) => {
+    setSelectedOrders((prev) => {
+      const next = new Set(prev);
+      orders.forEach((o) => next.add(o.id));
+      return next;
+    });
+  };
+
+  const deselectAllInGroup = (orders: PurchaseOrder[]) => {
+    setSelectedOrders((prev) => {
+      const next = new Set(prev);
+      orders.forEach((o) => next.delete(o.id));
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedOrders.size === 0) return;
+    
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("purchase_orders")
+        .update({ deleted_at: new Date().toISOString(), deleted_by: user?.id })
+        .in("id", Array.from(selectedOrders));
+
+      if (error) throw error;
+
+      toast.success(`${selectedOrders.size} OC eliminadas correctamente`);
+      setSelectedOrders(new Set());
+      setShowConfirmDeleteDialog(false);
+      setShowDeleteDialog(false);
+      loadData();
+    } catch (error) {
+      console.error("Error deleting orders:", error);
+      toast.error("Error al eliminar las órdenes");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleChartClick = (data: ChartData, type: "contract" | "category") => {
+    if (type === "contract") {
+      if (chartContractFilter === data.id) {
+        setChartContractFilter(null);
+      } else {
+        setChartContractFilter(data.id);
+        setChartCategoryFilter(null);
+      }
+    } else {
+      if (chartCategoryFilter === data.id) {
+        setChartCategoryFilter(null);
+      } else {
+        setChartCategoryFilter(data.id);
+        setChartContractFilter(null);
+      }
+    }
+  };
+
+  const formatUF = (value: number) => {
+    return `${value.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
+  };
 
   const totalOrders = groupedOrders.reduce((sum, g) => sum + g.orders.length, 0);
   const totalAmount = groupedOrders.reduce(
@@ -303,17 +527,27 @@ const PurchaseOrdersDashboard = () => {
               <div>
                 <h1 className="text-2xl font-semibold text-foreground">Órdenes de Compra</h1>
                 <p className="text-sm text-muted-foreground">
-                  Vista consolidada de todas las órdenes de compra
+                  Vista consolidada de todas las órdenes de compra y facturas
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {isAdmin && selectedOrders.size > 0 && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setShowDeleteDialog(true)}
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Eliminar ({selectedOrders.size})
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={expandAll}>
                 <ChevronsUpDown className="h-4 w-4 mr-1" />
-                Expandir Todo
+                Expandir
               </Button>
               <Button variant="outline" size="sm" onClick={collapseAll}>
-                Colapsar Todo
+                Colapsar
               </Button>
             </div>
           </div>
@@ -321,26 +555,69 @@ const PurchaseOrdersDashboard = () => {
       </header>
 
       <main className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        {/* Year Filter */}
+        <div className="flex items-center gap-4">
+          <span className="text-sm font-medium">Año:</span>
+          <Select value={yearFilter} onValueChange={setYearFilter}>
+            <SelectTrigger className="w-[120px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {availableYears.map((year) => (
+                <SelectItem key={year} value={year.toString()}>
+                  {year}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <ShoppingCart className="h-4 w-4" />
                 Total OC
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalOrders}</div>
+              <div className="text-2xl font-bold">{summaryData.countOC}</div>
+              <p className="text-xs text-muted-foreground">{formatUF(summaryData.totalOC)}</p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Monto Total (UF)
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <DollarSign className="h-4 w-4" />
+                Monto Total
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalAmount.toLocaleString("es-CL", { minimumFractionDigits: 2 })}</div>
+              <div className="text-2xl font-bold">{formatUF(summaryData.totalOC)}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <FileCheck className="h-4 w-4" />
+                Facturado
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{formatUF(summaryData.totalFacturado)}</div>
+              <p className="text-xs text-muted-foreground">{summaryData.countFacturas} facturas</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <AlertCircle className="h-4 w-4" />
+                Sin Facturar
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-amber-600">{formatUF(summaryData.sinFacturar)}</div>
             </CardContent>
           </Card>
           <Card>
@@ -355,6 +632,137 @@ const PurchaseOrdersDashboard = () => {
           </Card>
         </div>
 
+        {/* Interactive Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center justify-between">
+                <span>OC por Local</span>
+                {chartContractFilter && (
+                  <Button variant="ghost" size="sm" onClick={() => setChartContractFilter(null)}>
+                    <X className="h-4 w-4 mr-1" />
+                    Limpiar filtro
+                  </Button>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {contractChartData.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">Sin datos para el año {yearFilter}</p>
+              ) : (
+                <div className="h-[250px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={contractChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={80}
+                        paddingAngle={2}
+                        dataKey="value"
+                        nameKey="name"
+                        onClick={(data) => handleChartClick(data, "contract")}
+                        style={{ cursor: "pointer" }}
+                      >
+                        {contractChartData.map((entry, index) => (
+                          <Cell 
+                            key={`cell-${index}`} 
+                            fill={entry.color}
+                            opacity={chartContractFilter && chartContractFilter !== entry.id ? 0.3 : 1}
+                            stroke={chartContractFilter === entry.id ? "hsl(var(--primary))" : "transparent"}
+                            strokeWidth={2}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value: number) => formatUF(value)}
+                        contentStyle={{
+                          backgroundColor: "hsl(var(--popover))",
+                          border: "1px solid hsl(var(--border))",
+                          borderRadius: "8px",
+                        }}
+                      />
+                      <Legend
+                        layout="vertical"
+                        align="right"
+                        verticalAlign="middle"
+                        formatter={(value) => (
+                          <span className="text-xs">{value.length > 15 ? `${value.substring(0, 15)}...` : value}</span>
+                        )}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center justify-between">
+                <span>OC por Categoría OPEX</span>
+                {chartCategoryFilter && (
+                  <Button variant="ghost" size="sm" onClick={() => setChartCategoryFilter(null)}>
+                    <X className="h-4 w-4 mr-1" />
+                    Limpiar filtro
+                  </Button>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {categoryChartData.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">Sin datos OPEX para el año {yearFilter}</p>
+              ) : (
+                <div className="h-[250px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={categoryChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={80}
+                        paddingAngle={2}
+                        dataKey="value"
+                        nameKey="name"
+                        onClick={(data) => handleChartClick(data, "category")}
+                        style={{ cursor: "pointer" }}
+                      >
+                        {categoryChartData.map((entry, index) => (
+                          <Cell 
+                            key={`cell-${index}`} 
+                            fill={entry.color}
+                            opacity={chartCategoryFilter && chartCategoryFilter !== entry.id ? 0.3 : 1}
+                            stroke={chartCategoryFilter === entry.id ? "hsl(var(--primary))" : "transparent"}
+                            strokeWidth={2}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value: number) => formatUF(value)}
+                        contentStyle={{
+                          backgroundColor: "hsl(var(--popover))",
+                          border: "1px solid hsl(var(--border))",
+                          borderRadius: "8px",
+                        }}
+                      />
+                      <Legend
+                        layout="vertical"
+                        align="right"
+                        verticalAlign="middle"
+                        formatter={(value) => (
+                          <span className="text-xs">{value}</span>
+                        )}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
         {/* Filters */}
         <Card>
           <CardContent className="pt-4">
@@ -362,7 +770,7 @@ const PurchaseOrdersDashboard = () => {
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Buscar por OC, descripción o local..."
+                  placeholder="Buscar por OC, descripción, local o proveedor..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-9"
@@ -380,18 +788,6 @@ const PurchaseOrdersDashboard = () => {
                       {c.name}
                     </SelectItem>
                   ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={dateFilter} onValueChange={setDateFilter}>
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Fecha" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todas las fechas</SelectItem>
-                  <SelectItem value="este_mes">Este mes</SelectItem>
-                  <SelectItem value="este_año">Este año</SelectItem>
-                  <SelectItem value="año_anterior">Año anterior</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -440,6 +836,28 @@ const PurchaseOrdersDashboard = () => {
                 </Button>
               )}
             </div>
+            
+            {(chartContractFilter || chartCategoryFilter) && (
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Filtro del gráfico:</span>
+                {chartContractFilter && (
+                  <Badge variant="secondary">
+                    Local: {contracts.find(c => c.id === chartContractFilter)?.name}
+                    <button className="ml-1" onClick={() => setChartContractFilter(null)}>
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
+                {chartCategoryFilter && (
+                  <Badge variant="secondary">
+                    Categoría: {opexCategories.find(c => c.id === chartCategoryFilter)?.name}
+                    <button className="ml-1" onClick={() => setChartCategoryFilter(null)}>
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -451,7 +869,7 @@ const PurchaseOrdersDashboard = () => {
         ) : groupedOrders.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
-              No se encontraron órdenes de compra
+              No se encontraron órdenes de compra para el año {yearFilter}
             </CardContent>
           </Card>
         ) : (
@@ -459,6 +877,9 @@ const PurchaseOrdersDashboard = () => {
             {groupedOrders.map((group) => {
               const isExpanded = expandedContracts.has(group.contract.id);
               const groupTotal = group.orders.reduce((sum, o) => sum + (o.amount_uf || 0), 0);
+              const groupInvoiced = group.orders.reduce((sum, o) => sum + (o.invoices_total || 0), 0);
+              const allSelected = group.orders.every((o) => selectedOrders.has(o.id));
+              const someSelected = group.orders.some((o) => selectedOrders.has(o.id));
 
               return (
                 <Collapsible
@@ -479,30 +900,50 @@ const PurchaseOrdersDashboard = () => {
                             <div>
                               <CardTitle className="text-base">{group.contract.name}</CardTitle>
                               <p className="text-sm text-muted-foreground">
-                                {group.orders.length} OC · {groupTotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                                {group.orders.length} OC · Total: {formatUF(groupTotal)} · Facturado: {formatUF(groupInvoiced)}
                               </p>
                             </div>
                           </div>
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
                             onClick={(e) => {
                               e.stopPropagation();
-                              navigate(`/contracts/${group.contract.id}`);
+                              navigate(`/contracts/${group.contract.id}?section=ordenes-compra&returnTo=purchase-orders`);
                             }}
                           >
-                            Ver Local
+                            <ExternalLink className="h-4 w-4 mr-1" />
+                            Ver en Local
                           </Button>
                         </div>
                       </CardHeader>
                     </CollapsibleTrigger>
                     <CollapsibleContent>
                       <CardContent className="pt-0">
+                        {isAdmin && (
+                          <div className="mb-2 flex items-center gap-2">
+                            <Checkbox
+                              checked={allSelected}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  selectAllInGroup(group.orders);
+                                } else {
+                                  deselectAllInGroup(group.orders);
+                                }
+                              }}
+                            />
+                            <span className="text-sm text-muted-foreground">
+                              {someSelected ? `${group.orders.filter(o => selectedOrders.has(o.id)).length} seleccionadas` : "Seleccionar todas"}
+                            </span>
+                          </div>
+                        )}
                         <Table>
                           <TableHeader>
                             <TableRow>
+                              {isAdmin && <TableHead className="w-[40px]"></TableHead>}
                               <TableHead>Nº OC</TableHead>
                               <TableHead>Descripción</TableHead>
+                              <TableHead>Proveedor</TableHead>
                               <TableHead>Tipo</TableHead>
                               <TableHead>Categoría</TableHead>
                               <TableHead className="text-right">Monto (UF)</TableHead>
@@ -512,58 +953,131 @@ const PurchaseOrdersDashboard = () => {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {group.orders.map((order) => (
-                              <TableRow key={order.id}>
-                                <TableCell className="font-medium">
-                                  <div className="flex items-center gap-2">
-                                    <FileText className="h-4 w-4 text-muted-foreground" />
-                                    {order.order_number}
-                                  </div>
-                                </TableCell>
-                                <TableCell className="max-w-[200px] truncate">
-                                  {order.description || "-"}
-                                </TableCell>
-                                <TableCell>
-                                  {order.budget_classification ? (
-                                    <Badge
-                                      variant={order.budget_classification === "CAPEX" ? "default" : "secondary"}
-                                    >
-                                      {order.budget_classification}
-                                    </Badge>
-                                  ) : (
-                                    "-"
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  {order.opex_category_name || order.budget_line_name || "-"}
-                                </TableCell>
-                                <TableCell className="text-right font-medium">
-                                  {order.amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-                                </TableCell>
-                                <TableCell className="text-center">
-                                  <div className="flex items-center justify-center gap-1">
-                                    <Receipt className="h-3 w-3 text-muted-foreground" />
-                                    <span>{order.invoices_count}</span>
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  <Badge
-                                    variant={
-                                      order.status === "completada"
-                                        ? "default"
-                                        : order.status === "pendiente"
-                                        ? "secondary"
-                                        : "outline"
-                                    }
+                            {group.orders.map((order) => {
+                              const hasInvoices = order.invoices && order.invoices.length > 0;
+                              const isOrderExpanded = expandedOrders.has(order.id);
+
+                              return (
+                                <>
+                                  <TableRow 
+                                    key={order.id}
+                                    className={hasInvoices ? "cursor-pointer hover:bg-muted/30" : ""}
+                                    onClick={() => hasInvoices && toggleOrderInvoices(order.id)}
                                   >
-                                    {order.status}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="text-muted-foreground">
-                                  {format(parseISO(order.created_at), "dd MMM yyyy", { locale: es })}
-                                </TableCell>
-                              </TableRow>
-                            ))}
+                                    {isAdmin && (
+                                      <TableCell onClick={(e) => e.stopPropagation()}>
+                                        <Checkbox
+                                          checked={selectedOrders.has(order.id)}
+                                          onCheckedChange={() => toggleOrderSelection(order.id)}
+                                        />
+                                      </TableCell>
+                                    )}
+                                    <TableCell className="font-medium">
+                                      <div className="flex items-center gap-2">
+                                        <FileText className="h-4 w-4 text-muted-foreground" />
+                                        {order.order_number}
+                                        {hasInvoices && (
+                                          isOrderExpanded ? 
+                                            <ChevronDown className="h-3 w-3 text-muted-foreground" /> : 
+                                            <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                                        )}
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="max-w-[150px] truncate">
+                                      {order.description || "-"}
+                                    </TableCell>
+                                    <TableCell className="max-w-[120px] truncate">
+                                      {order.supplier_name || "-"}
+                                    </TableCell>
+                                    <TableCell>
+                                      {order.budget_classification ? (
+                                        <Badge
+                                          variant={order.budget_classification === "CAPEX" ? "default" : "secondary"}
+                                        >
+                                          {order.budget_classification}
+                                        </Badge>
+                                      ) : (
+                                        "-"
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      {order.opex_category_name || order.budget_line_name || "-"}
+                                    </TableCell>
+                                    <TableCell className="text-right font-medium">
+                                      {formatUF(order.amount_uf)}
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <div className="flex items-center justify-center gap-1">
+                                        <Receipt className="h-3 w-3 text-muted-foreground" />
+                                        <span>{order.invoices_count}</span>
+                                      </div>
+                                    </TableCell>
+                                    <TableCell>
+                                      <Badge
+                                        variant={
+                                          order.status === "completada"
+                                            ? "default"
+                                            : order.status === "pendiente"
+                                            ? "secondary"
+                                            : "outline"
+                                        }
+                                      >
+                                        {order.status}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground">
+                                      {order.order_date ? format(parseISO(order.order_date), "dd MMM yyyy", { locale: es }) : "-"}
+                                    </TableCell>
+                                  </TableRow>
+                                  {/* Invoices sub-table */}
+                                  {hasInvoices && isOrderExpanded && (
+                                    <TableRow className="bg-muted/20">
+                                      <TableCell colSpan={isAdmin ? 10 : 9} className="py-2 px-4">
+                                        <div className="pl-8">
+                                          <p className="text-xs font-medium text-muted-foreground mb-2">Facturas asociadas:</p>
+                                          <Table>
+                                            <TableHeader>
+                                              <TableRow>
+                                                <TableHead className="text-xs">Nº Factura</TableHead>
+                                                <TableHead className="text-xs">Fecha</TableHead>
+                                                <TableHead className="text-xs text-right">Monto (UF)</TableHead>
+                                                <TableHead className="text-xs">Estado</TableHead>
+                                              </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                              {order.invoices.map((invoice) => (
+                                                <TableRow key={invoice.id}>
+                                                  <TableCell className="text-sm py-1">
+                                                    <div className="flex items-center gap-2">
+                                                      <Receipt className="h-3 w-3 text-primary" />
+                                                      {invoice.invoice_number}
+                                                    </div>
+                                                  </TableCell>
+                                                  <TableCell className="text-sm py-1">
+                                                    {format(parseISO(invoice.invoice_date), "dd MMM yyyy", { locale: es })}
+                                                  </TableCell>
+                                                  <TableCell className="text-sm py-1 text-right font-medium">
+                                                    {formatUF(invoice.amount_uf)}
+                                                  </TableCell>
+                                                  <TableCell className="py-1">
+                                                    <Badge
+                                                      variant={invoice.reception_status === "recibida" ? "default" : "secondary"}
+                                                      className="text-xs"
+                                                    >
+                                                      {invoice.reception_status}
+                                                    </Badge>
+                                                  </TableCell>
+                                                </TableRow>
+                                              ))}
+                                            </TableBody>
+                                          </Table>
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  )}
+                                </>
+                              );
+                            })}
                           </TableBody>
                         </Table>
                       </CardContent>
@@ -575,6 +1089,57 @@ const PurchaseOrdersDashboard = () => {
           </div>
         )}
       </main>
+
+      {/* First Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar órdenes de compra?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Estás a punto de eliminar {selectedOrders.size} orden(es) de compra.
+              Esta acción marcará las OC como eliminadas y no serán visibles en los listados.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setShowDeleteDialog(false);
+                setShowConfirmDeleteDialog(true);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Continuar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Second Delete Confirmation Dialog */}
+      <AlertDialog open={showConfirmDeleteDialog} onOpenChange={setShowConfirmDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive">⚠️ Confirmar eliminación</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="font-semibold">Esta es una confirmación final.</span>
+              <br /><br />
+              Se eliminarán permanentemente {selectedOrders.size} orden(es) de compra.
+              <br /><br />
+              ¿Estás completamente seguro de que deseas continuar?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteSelected}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Eliminando..." : "Sí, eliminar definitivamente"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
