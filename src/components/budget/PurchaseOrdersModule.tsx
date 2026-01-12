@@ -103,11 +103,17 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   
+  // Get today's date in YYYY-MM-DD format
+  const getTodayDate = () => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  };
+
   const [newOrder, setNewOrder] = useState({
     order_number: "",
     supplier_name: "",
     supplier_id: "",
-    order_date: `${initialYear ?? new Date().getFullYear()}-01-01`,
+    order_date: getTodayDate(),
     amount: "",
     currency: "UF" as "UF" | "CLP",
     budget_type: "capex" as "capex" | "opex",
@@ -116,6 +122,9 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     attachment_url: "",
     attachment_name: "",
   });
+  
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
   
   const [editFormData, setEditFormData] = useState({
     order_number: "",
@@ -503,7 +512,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         order_number: "", 
         supplier_name: "", 
         supplier_id: "",
-        order_date: `${selectedYear}-01-01`, 
+        order_date: getTodayDate(), 
         amount: "", 
         currency: "UF", 
         budget_type: "capex",
@@ -1260,27 +1269,166 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
             </div>
             <div className="space-y-2">
               <Label>Archivo Adjunto</Label>
-              <div className="flex items-center gap-2">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => setShowFilePicker(true)}
-                  className="flex items-center gap-2"
-                >
-                  <Paperclip className="h-4 w-4" />
-                  {newOrder.attachment_name || "Seleccionar archivo"}
-                </Button>
-                {newOrder.attachment_url && (
-                  <Button
-                    type="button"
-                    variant="ghost"
+              <div className="flex flex-col gap-2">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  className="hidden"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    
+                    setUploadingFile(true);
+                    try {
+                      // Find or create the "OC y FACTURAS" folder and "OC" subfolder
+                      const { data: parentFolder } = await supabase
+                        .from("repository_folders")
+                        .select("id")
+                        .eq("contract_id", contractId)
+                        .eq("name", "OC y FACTURAS")
+                        .is("parent_id", null)
+                        .maybeSingle();
+
+                      let ocFolderId: string | null = null;
+                      
+                      if (parentFolder) {
+                        const { data: ocFolder } = await supabase
+                          .from("repository_folders")
+                          .select("id")
+                          .eq("contract_id", contractId)
+                          .eq("name", "OC")
+                          .eq("parent_id", parentFolder.id)
+                          .maybeSingle();
+                        
+                        if (ocFolder) {
+                          ocFolderId = ocFolder.id;
+                        } else {
+                          // Create OC subfolder
+                          const { data: newOcFolder } = await supabase
+                            .from("repository_folders")
+                            .insert({
+                              contract_id: contractId,
+                              name: "OC",
+                              parent_id: parentFolder.id,
+                            })
+                            .select("id")
+                            .single();
+                          ocFolderId = newOcFolder?.id || null;
+                        }
+                      } else {
+                        // Create "OC y FACTURAS" folder and "OC" subfolder
+                        const { data: newParentFolder } = await supabase
+                          .from("repository_folders")
+                          .insert({
+                            contract_id: contractId,
+                            name: "OC y FACTURAS",
+                            parent_id: null,
+                          })
+                          .select("id")
+                          .single();
+                        
+                        if (newParentFolder) {
+                          const { data: newOcFolder } = await supabase
+                            .from("repository_folders")
+                            .insert({
+                              contract_id: contractId,
+                              name: "OC",
+                              parent_id: newParentFolder.id,
+                            })
+                            .select("id")
+                            .single();
+                          ocFolderId = newOcFolder?.id || null;
+                        }
+                      }
+
+                      // Generate suggested filename: yyyy.mm.dd_OC#xxxxxxx_Detalle
+                      const date = new Date(newOrder.order_date || new Date());
+                      const yyyy = date.getFullYear();
+                      const mm = String(date.getMonth() + 1).padStart(2, '0');
+                      const dd = String(date.getDate()).padStart(2, '0');
+                      const orderNum = newOrder.order_number || 'XXXXXXX';
+                      const ext = file.name.split('.').pop() || 'pdf';
+                      const suggestedName = `${yyyy}.${mm}.${dd}_OC#${orderNum}_Detalle.${ext}`;
+
+                      // Upload to Supabase storage
+                      const filePath = `contracts/${contractId}/oc/${Date.now()}_${suggestedName}`;
+                      const { error: uploadError } = await supabase.storage
+                        .from("repository-files")
+                        .upload(filePath, file);
+
+                      if (uploadError) throw uploadError;
+
+                      // Get public URL
+                      const { data: urlData } = supabase.storage
+                        .from("repository-files")
+                        .getPublicUrl(filePath);
+
+                      // Create file record in repository_files
+                      if (ocFolderId) {
+                        await supabase.from("repository_files").insert({
+                          folder_id: ocFolderId,
+                          name: suggestedName,
+                          url: `storage://repository-files/${filePath}`,
+                        });
+                      }
+
+                      setNewOrder({ 
+                        ...newOrder, 
+                        attachment_url: urlData.publicUrl, 
+                        attachment_name: suggestedName 
+                      });
+                      
+                      toast({ title: "Archivo subido", description: `${suggestedName} se guardó en OC y FACTURAS/OC` });
+                    } catch (error: any) {
+                      console.error("Error uploading file:", error);
+                      toast({ variant: "destructive", title: "Error", description: error.message || "Error al subir archivo" });
+                    } finally {
+                      setUploadingFile(false);
+                      if (fileInputRef.current) fileInputRef.current.value = '';
+                    }
+                  }}
+                />
+                <div className="flex items-center gap-2">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
                     size="sm"
-                    onClick={() => window.open(newOrder.attachment_url, "_blank")}
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingFile}
+                    className="flex items-center gap-2"
                   >
-                    <ExternalLink className="h-4 w-4" />
+                    {uploadingFile ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Paperclip className="h-4 w-4" />
+                    )}
+                    {uploadingFile ? "Subiendo..." : (newOrder.attachment_name || "Seleccionar archivo del PC")}
                   </Button>
-                )}
+                  {newOrder.attachment_url && (
+                    <>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => window.open(newOrder.attachment_url, "_blank")}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setNewOrder({ ...newOrder, attachment_url: "", attachment_name: "" })}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  El archivo se guardará en la carpeta OC y FACTURAS/OC del repositorio
+                </p>
               </div>
             </div>
 
@@ -1297,7 +1445,11 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
             <Button variant="outline" onClick={() => { setShowNewDialog(false); setBudgetWarning(null); }}>Cancelar</Button>
             <Button 
               onClick={handleCreateOrder}
-              disabled={!newOrder.budget_line_id || !newOrder.order_number}
+              disabled={
+                !newOrder.order_number || 
+                (newOrder.budget_type === "capex" && !newOrder.budget_line_id) ||
+                (newOrder.budget_type === "opex" && !newOrder.opex_category_id)
+              }
             >
               Crear
             </Button>
@@ -1305,15 +1457,6 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         </DialogContent>
       </Dialog>
 
-      <RepositoryFilePicker
-        open={showFilePicker}
-        onOpenChange={setShowFilePicker}
-        contractId={contractId}
-        title="Seleccionar Archivo de OC"
-        onFileSelect={(file) => {
-          setNewOrder({ ...newOrder, attachment_url: file.url, attachment_name: file.name });
-        }}
-      />
 
       {/* Edit Order Dialog */}
       <Dialog open={showEditDialog} onOpenChange={(open) => { setShowEditDialog(open); if (!open) setBudgetWarning(null); }}>
