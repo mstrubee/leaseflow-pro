@@ -328,15 +328,18 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
   };
 
   // Get available OPEX budget for a category (always positive or 0)
+  // Note: opex_master_budget stores amounts as negative (expenses), so we use absolute value
   const getAvailableOpexForCategory = (opexCategoryId: string) => {
     const budgetEntry = opexMasterBudget.find(b => b.category_id === opexCategoryId);
     if (!budgetEntry) return 0;
+    const budgetAmount = Math.abs(budgetEntry.amount_uf); // Convert negative to positive
     const consumed = getOpexConsumedForCategory(opexCategoryId);
-    const available = budgetEntry.amount_uf - consumed;
+    const available = budgetAmount - consumed;
     return Math.max(0, available); // Always return positive or 0
   };
 
   // Validate OPEX amount against category budget
+  // Note: opex_master_budget stores amounts as negative (expenses), so we use absolute value
   const validateOpexAmount = (opexCategoryId: string, amount: number, excludeOrderId?: string) => {
     const budgetEntry = opexMasterBudget.find(b => b.category_id === opexCategoryId);
     if (!budgetEntry) {
@@ -344,12 +347,14 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       return { valid: true, message: "", available: Infinity };
     }
     
+    const budgetAmount = Math.abs(budgetEntry.amount_uf); // Convert negative to positive
+    
     // Calculate consumed excluding the current order being edited
     const consumed = orders
       .filter(order => order.opex_category_id === opexCategoryId && order.id !== excludeOrderId)
       .reduce((sum, order) => sum + order.amount_uf, 0);
     
-    const available = budgetEntry.amount_uf - consumed;
+    const available = budgetAmount - consumed;
     const displayAvailable = Math.max(0, available);
     
     if (amount > available) {
