@@ -5,6 +5,7 @@ import { Plus, LogOut, Shield, Trash2, Bell, Upload, ShoppingCart, Wallet, FileT
 import { DashboardStats } from "@/components/dashboard/DashboardStats";
 import { SuppliersModule } from "@/components/suppliers/SuppliersModule";
 import { useAuth } from "@/hooks/useAuth";
+import { ReportsReturnButton } from "@/components/reports/ReportsReturnButton";
 import logosHeader from "@/assets/logos-header.png";
 
 const Dashboard = () => {
@@ -103,6 +104,9 @@ const Dashboard = () => {
         <DashboardStats />
         <SuppliersModule />
       </main>
+
+      {/* Floating return button when coming from Reports */}
+      <ReportsReturnButton />
     </div>;
 };
 export default Dashboard;

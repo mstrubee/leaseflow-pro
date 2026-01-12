@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ArrowLeft, FileText, Building2, CheckCircle2, AlertTriangle, Clock, XCircle, FileCheck, ExternalLink, ChevronDown, ChevronRight, X } from "lucide-react";
@@ -17,7 +17,6 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import { PRIORITY_CONFIG, PatentPriority } from "@/components/patents/types";
 import { useSingleCollapsible } from "@/hooks/useCollapsibleState";
-import { useReportsNavigation } from "@/components/reports/ReportsReturnButton";
 
 interface ContractPatentData {
   id: string;
@@ -56,15 +55,15 @@ interface CompanyStats {
 }
 
 interface ChartFilter {
-  type: "patente_status" | "priority";
+  type: "patente_status" | "priority" | "card";
   value: string;
   label: string;
 }
 
 const ReportsDashboard = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, loading: authLoading } = useAuth();
-  const { navigateToContractFromReports } = useReportsNavigation();
   const [contracts, setContracts] = useState<ContractPatentData[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [patentStatuses, setPatentStatuses] = useState<PatentStatus[]>([]);
@@ -248,9 +247,11 @@ const ReportsDashboard = () => {
       .sort((a, b) => b.totalContracts - a.totalContracts);
   }, [contracts, companies]);
 
-  // Filter contracts based on chart selection
+  // Filter contracts based on chart or card selection
   const filteredContracts = useMemo(() => {
     if (!chartFilter) return [];
+    
+    const today = new Date();
     
     return contracts.filter(contract => {
       if (chartFilter.type === "patente_status") {
@@ -260,6 +261,27 @@ const ReportsDashboard = () => {
       } else if (chartFilter.type === "priority") {
         const priority = contract.contract_patents?.priority || "sin_asignar";
         return priority === chartFilter.value;
+      } else if (chartFilter.type === "card") {
+        switch (chartFilter.value) {
+          case "all":
+            return true;
+          case "definitiva":
+            return contract.patente_status === "definitiva";
+          case "provisoria":
+            return contract.patente_status === "provisoria";
+          case "sin_patente":
+            return !contract.patente_status || contract.patente_status === "sin_patente";
+          case "docs_ok":
+            return (contract.patent_documents || []).some(d => d.status === "ok");
+          case "pending":
+            return (contract.patent_documents || []).some(d => d.status === "pendiente");
+          case "overdue":
+            return (contract.patent_documents || []).some(d => 
+              d.status === "pendiente" && d.end_date && new Date(d.end_date) < today
+            );
+          default:
+            return false;
+        }
       }
       return false;
     });
@@ -328,7 +350,23 @@ const ReportsDashboard = () => {
   };
 
   const handleNavigateToPatent = (contractId: string) => {
-    navigateToContractFromReports(contractId, "patentes");
+    // Store return URL and navigate to Dashboard with patent module focused on this contract
+    sessionStorage.setItem("reports_return_url", location.pathname + location.search);
+    navigate(`/?contractId=${contractId}`);
+  };
+
+  // Handle card clicks for filtering
+  const handleCardClick = (filterType: string, label: string) => {
+    if (chartFilter?.type === "card" && chartFilter.value === filterType) {
+      // Clear filter if clicking same card
+      setChartFilter(null);
+    } else {
+      setChartFilter({
+        type: "card",
+        value: filterType,
+        label,
+      });
+    }
   };
 
   const clearFilter = () => {
@@ -395,31 +433,56 @@ const ReportsDashboard = () => {
               <CardContent className="space-y-6">
                 {/* Summary Cards */}
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-                  <Card className="bg-muted/50">
+                  <Card 
+                    className={`cursor-pointer hover:shadow-md transition-shadow bg-muted/50 ${
+                      chartFilter?.type === "card" && chartFilter.value === "all" ? "ring-2 ring-primary" : ""
+                    }`}
+                    onClick={() => handleCardClick("all", "Total Locales")}
+                  >
                     <CardContent className="p-4">
                       <div className="text-2xl font-bold">{generalStats.totalContracts}</div>
                       <div className="text-sm text-muted-foreground">Total Locales</div>
                     </CardContent>
                   </Card>
-                  <Card className="bg-green-50 dark:bg-green-950/30">
+                  <Card 
+                    className={`cursor-pointer hover:shadow-md transition-shadow bg-green-50 dark:bg-green-950/30 ${
+                      chartFilter?.type === "card" && chartFilter.value === "definitiva" ? "ring-2 ring-green-500" : ""
+                    }`}
+                    onClick={() => handleCardClick("definitiva", "Definitiva")}
+                  >
                     <CardContent className="p-4">
                       <div className="text-2xl font-bold text-green-700 dark:text-green-400">{generalStats.definitiveCount}</div>
                       <div className="text-sm text-muted-foreground">Definitiva</div>
                     </CardContent>
                   </Card>
-                  <Card className="bg-yellow-50 dark:bg-yellow-950/30">
+                  <Card 
+                    className={`cursor-pointer hover:shadow-md transition-shadow bg-yellow-50 dark:bg-yellow-950/30 ${
+                      chartFilter?.type === "card" && chartFilter.value === "provisoria" ? "ring-2 ring-yellow-500" : ""
+                    }`}
+                    onClick={() => handleCardClick("provisoria", "Provisoria")}
+                  >
                     <CardContent className="p-4">
                       <div className="text-2xl font-bold text-yellow-700 dark:text-yellow-400">{generalStats.provisionalCount}</div>
                       <div className="text-sm text-muted-foreground">Provisoria</div>
                     </CardContent>
                   </Card>
-                  <Card className="bg-red-50 dark:bg-red-950/30">
+                  <Card 
+                    className={`cursor-pointer hover:shadow-md transition-shadow bg-red-50 dark:bg-red-950/30 ${
+                      chartFilter?.type === "card" && chartFilter.value === "sin_patente" ? "ring-2 ring-red-500" : ""
+                    }`}
+                    onClick={() => handleCardClick("sin_patente", "Sin Patente")}
+                  >
                     <CardContent className="p-4">
                       <div className="text-2xl font-bold text-red-700 dark:text-red-400">{generalStats.noPatentCount}</div>
                       <div className="text-sm text-muted-foreground">Sin Patente</div>
                     </CardContent>
                   </Card>
-                  <Card className="bg-green-50 dark:bg-green-950/30">
+                  <Card 
+                    className={`cursor-pointer hover:shadow-md transition-shadow bg-green-50 dark:bg-green-950/30 ${
+                      chartFilter?.type === "card" && chartFilter.value === "docs_ok" ? "ring-2 ring-green-500" : ""
+                    }`}
+                    onClick={() => handleCardClick("docs_ok", "Docs OK")}
+                  >
                     <CardContent className="p-4">
                       <div className="text-2xl font-bold text-green-700 dark:text-green-400 flex items-center gap-1">
                         <CheckCircle2 className="h-5 w-5" />
@@ -428,7 +491,12 @@ const ReportsDashboard = () => {
                       <div className="text-sm text-muted-foreground">Docs OK</div>
                     </CardContent>
                   </Card>
-                  <Card className="bg-orange-50 dark:bg-orange-950/30">
+                  <Card 
+                    className={`cursor-pointer hover:shadow-md transition-shadow bg-orange-50 dark:bg-orange-950/30 ${
+                      chartFilter?.type === "card" && chartFilter.value === "pending" ? "ring-2 ring-orange-500" : ""
+                    }`}
+                    onClick={() => handleCardClick("pending", "Pendientes")}
+                  >
                     <CardContent className="p-4">
                       <div className="text-2xl font-bold text-orange-700 dark:text-orange-400 flex items-center gap-1">
                         <Clock className="h-5 w-5" />
@@ -437,7 +505,12 @@ const ReportsDashboard = () => {
                       <div className="text-sm text-muted-foreground">Pendientes</div>
                     </CardContent>
                   </Card>
-                  <Card className="bg-red-50 dark:bg-red-950/30">
+                  <Card 
+                    className={`cursor-pointer hover:shadow-md transition-shadow bg-red-50 dark:bg-red-950/30 ${
+                      chartFilter?.type === "card" && chartFilter.value === "overdue" ? "ring-2 ring-red-500" : ""
+                    }`}
+                    onClick={() => handleCardClick("overdue", "Vencidos")}
+                  >
                     <CardContent className="p-4">
                       <div className="text-2xl font-bold text-red-700 dark:text-red-400 flex items-center gap-1">
                         <AlertTriangle className="h-5 w-5" />
