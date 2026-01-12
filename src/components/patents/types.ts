@@ -94,7 +94,7 @@ export interface ContractWithPatent {
   status: string;
   patente_status: string;
   contract_patents?: ContractPatent;
-  contract_addresses?: Array<{ region: string; commune: string }>;
+  contract_addresses?: Array<{ region: string; commune: string; street?: string; number?: string }>;
   patent_documents?: PatentDocument[];
 }
 

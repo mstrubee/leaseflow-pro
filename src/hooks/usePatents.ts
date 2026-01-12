@@ -40,7 +40,7 @@ export function usePatents() {
             name,
             status,
             patente_status,
-            contract_addresses (region, commune),
+            contract_addresses (region, commune, street, number),
             contract_companies (companies (name)),
             contract_patents (id, contract_id, priority, priority_changed_at, priority_changed_by),
             patent_documents (
