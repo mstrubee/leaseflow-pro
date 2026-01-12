@@ -135,6 +135,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     currency: "UF" as "UF" | "CLP",
     budget_type: "capex" as "capex" | "opex",
     budget_line_id: "",
+    opex_category_id: "",
     attachment_url: "",
     attachment_name: "",
   });
@@ -501,6 +502,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         budget_line_id: newOrder.budget_type === "capex" ? (newOrder.budget_line_id || null) : null,
         opex_category_id: newOrder.budget_type === "opex" ? (newOrder.opex_category_id || null) : null,
         attachment_url: newOrder.attachment_url || null,
+        budget_classification: newOrder.budget_type === "capex" ? "CAPEX" : "OPEX",
       });
 
       if (error) throw error;
@@ -594,6 +596,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       currency: "UF",
       budget_type: (budget?.budget_type || "capex") as "capex" | "opex",
       budget_line_id: order.budget_line_id || "",
+      opex_category_id: order.opex_category_id || "",
       attachment_url: order.attachment_url || "",
       attachment_name: order.attachment_url ? "Archivo adjunto" : "",
     });
@@ -629,6 +632,12 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       const budget = budgets.find(b => b.budget_type === editFormData.budget_type);
       const selectedLine = budgetLines.find(l => l.id === editFormData.budget_line_id);
 
+      // Update description based on budget type
+      const selectedOpexCategory = opexCategories.find(c => c.id === editFormData.opex_category_id);
+      const description = editFormData.budget_type === "capex" 
+        ? selectedLine?.name || null 
+        : selectedOpexCategory?.name || null;
+
       const { error } = await supabase
         .from("purchase_orders")
         .update({
@@ -639,10 +648,12 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
           amount_clp: amountCLP,
           input_currency: editFormData.currency,
           uf_value_at_entry: ufValue,
-          description: selectedLine?.name || null,
+          description: description,
           budget_id: budget?.id || null,
-          budget_line_id: editFormData.budget_line_id || null,
+          budget_line_id: editFormData.budget_type === "capex" ? (editFormData.budget_line_id || null) : null,
+          opex_category_id: editFormData.budget_type === "opex" ? (editFormData.opex_category_id || null) : null,
           attachment_url: editFormData.attachment_url || null,
+          budget_classification: editFormData.budget_type === "capex" ? "CAPEX" : "OPEX",
         })
         .eq("id", editOrder.id);
 
