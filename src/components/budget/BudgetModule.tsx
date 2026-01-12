@@ -641,8 +641,17 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
           </>
         ) : (
           <div className="text-center py-8 text-muted-foreground">
-            <p>No hay presupuesto de {title.toLowerCase()} para el año {selectedYear}</p>
-            <p className="text-sm mt-2">Use "+ Nuevo Año" para crear un presupuesto.</p>
+            {budgetType === "opex" ? (
+              <>
+                <p>No hay consumo OPEX registrado para el año {selectedYear}</p>
+                <p className="text-sm mt-2">El presupuesto OPEX se gestiona desde el Dashboard OPEX.</p>
+              </>
+            ) : (
+              <>
+                <p>No hay presupuesto de {title.toLowerCase()} para el año {selectedYear}</p>
+                <p className="text-sm mt-2">Use "+ Nuevo Año CAPEX" para crear un presupuesto.</p>
+              </>
+            )}
           </div>
         )}
       </CardContent>
