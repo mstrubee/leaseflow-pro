@@ -208,26 +208,17 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
   };
 
   const loadBudgetTypeTotals = async (contractId: string, budgetType: string, year: number): Promise<BudgetTypeTotals> => {
-    // Get budget ID for this type and year
-    const { data: budget } = await supabase
-      .from("contract_budgets")
-      .select("id")
-      .eq("contract_id", contractId)
-      .eq("budget_type", budgetType)
-      .eq("year", year)
-      .maybeSingle();
-
-    if (!budget) {
-      return { oc: 0, invoices: 0 };
-    }
-
-    // Get OC totals for this budget
+    // Get OC totals using budget_classification instead of budget_id
+    // This is because OPEX OCs may not have a budget_id but have opex_category_id instead
+    const budgetClassification = budgetType === "capex" ? "CAPEX" : "OPEX";
+    
     const { data: orders } = await supabase
       .from("purchase_orders")
       .select("id, amount_uf")
       .eq("contract_id", contractId)
-      .eq("budget_id", budget.id)
-      .eq("year", year);
+      .eq("budget_classification", budgetClassification as "CAPEX" | "OPEX")
+      .eq("year", year)
+      .is("deleted_at", null);
 
     const ocTotal = (orders || []).reduce((acc, o) => acc + (o.amount_uf || 0), 0);
 
@@ -238,9 +229,19 @@ const BudgetDashboardContent = ({ contractId }: BudgetDashboardProps) => {
       const { data: invoices } = await supabase
         .from("invoices")
         .select("amount_uf")
-        .in("purchase_order_id", orderIds);
+        .in("purchase_order_id", orderIds)
+        .is("deleted_at", null);
+
+      // Get credit notes to subtract from invoices
+      const { data: creditNotes } = await supabase
+        .from("credit_notes")
+        .select("amount_uf")
+        .in("purchase_order_id", orderIds)
+        .is("deleted_at", null);
 
       invoicesTotal = (invoices || []).reduce((acc, i) => acc + (i.amount_uf || 0), 0);
+      const creditNotesTotal = (creditNotes || []).reduce((acc, cn) => acc + (cn.amount_uf || 0), 0);
+      invoicesTotal = invoicesTotal - creditNotesTotal;
     }
 
     return { oc: ocTotal, invoices: invoicesTotal };
