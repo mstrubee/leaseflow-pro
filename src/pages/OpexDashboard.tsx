@@ -697,7 +697,246 @@ const OpexDashboard = () => {
           </Card>
         </div>
 
-        {/* OPEX por Categoría - Collapsible */}
+        {/* Charts Section with unified filters */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Consumo OPEX</CardTitle>
+            {/* Unified Filters */}
+            <div className="flex flex-wrap gap-3 items-center mt-3 p-3 bg-muted/30 rounded-lg">
+              <div className="relative flex-1 min-w-[180px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input 
+                  placeholder="Buscar por local..." 
+                  value={searchTerm} 
+                  onChange={e => setSearchTerm(e.target.value)} 
+                  className="pl-9 h-9" 
+                />
+              </div>
+              <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                <SelectTrigger className="w-[160px] h-9">
+                  <SelectValue placeholder="Empresas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todas las empresas</SelectItem>
+                  {companies.map(company => (
+                    <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={contractFilter} onValueChange={setContractFilter}>
+                <SelectTrigger className="w-[160px] h-9">
+                  <SelectValue placeholder="Locales" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos los locales</SelectItem>
+                  {contracts
+                    .filter(c => companyFilter === "todos" || c.company_id === companyFilter)
+                    .map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="w-[160px] h-9">
+                  <SelectValue placeholder="Categorías" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todas las categorías</SelectItem>
+                  {categories.map(cat => (
+                    <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {hasActiveFilters && (
+                <Button variant="ghost" size="sm" className="h-9" onClick={clearFilters}>
+                  <X className="h-4 w-4 mr-1" />
+                  Limpiar
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {/* Two Charts: OPEX por Local and OPEX por Categoría */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* OPEX por Local Chart */}
+              <div className="space-y-4">
+                <h3 className="text-base font-semibold text-foreground">Por Local</h3>
+                {chartData.length === 0 ? (
+                  <div className="py-8 text-center text-muted-foreground text-sm">
+                    No hay consumo OPEX registrado.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="h-[280px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={chartData}
+                            dataKey="total_consumed"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={100}
+                            innerRadius={50}
+                            paddingAngle={1}
+                            onClick={(data) => {
+                              if (data && data.contract_id) {
+                                handleViewLocal(data.contract_id);
+                              }
+                            }}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            {chartData.map((entry, index) => (
+                              <Cell 
+                                key={`cell-local-${index}`} 
+                                fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
+                                stroke="hsl(var(--background))"
+                                strokeWidth={2}
+                              />
+                            ))}
+                          </Pie>
+                          <Tooltip 
+                            content={({ active, payload }) => {
+                              if (active && payload && payload.length > 0) {
+                                const data = payload[0].payload;
+                                return (
+                                  <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
+                                    <p className="font-semibold text-foreground mb-2">{data.name}</p>
+                                    <p className="text-sm text-muted-foreground">
+                                      Consumido: <span className="font-medium text-foreground">{data.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF</span>
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                      % del total: <span className="font-medium text-foreground">{data.percent_of_total.toFixed(1)}%</span>
+                                    </p>
+                                    <p className="text-xs text-muted-foreground mt-2 italic">Click para ver local</p>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="space-y-1.5 max-h-[180px] overflow-y-auto">
+                      {chartData.slice(0, 10).map((item, index) => (
+                        <div 
+                          key={item.contract_id}
+                          className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer transition-colors"
+                          onClick={() => handleViewLocal(item.contract_id)}
+                        >
+                          <div 
+                            className="w-3 h-3 rounded-full flex-shrink-0" 
+                            style={{ backgroundColor: CATEGORY_COLORS[index % CATEGORY_COLORS.length] }}
+                          />
+                          <span className="text-xs font-medium truncate flex-1">{item.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {item.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 1 })} UF
+                          </span>
+                          <Badge variant="outline" className="text-xs h-5">
+                            {item.percent_of_total.toFixed(0)}%
+                          </Badge>
+                        </div>
+                      ))}
+                      {chartData.length > 10 && (
+                        <p className="text-xs text-muted-foreground text-center pt-1">
+                          +{chartData.length - 10} locales más
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* OPEX por Categoría Chart */}
+              <div className="space-y-4">
+                <h3 className="text-base font-semibold text-foreground">Por Categoría</h3>
+                {categoryChartData.length === 0 ? (
+                  <div className="py-8 text-center text-muted-foreground text-sm">
+                    No hay consumo OPEX registrado.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="h-[280px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={categoryChartData}
+                            dataKey="total_consumed"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={100}
+                            innerRadius={50}
+                            paddingAngle={1}
+                            onClick={(data) => {
+                              if (data && data.category_id) {
+                                handleViewCategory(data.category_id);
+                              }
+                            }}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            {categoryChartData.map((entry, index) => (
+                              <Cell 
+                                key={`cell-cat-${index}`} 
+                                fill={getCategoryColor(entry.name)}
+                                stroke="hsl(var(--background))"
+                                strokeWidth={2}
+                              />
+                            ))}
+                          </Pie>
+                          <Tooltip 
+                            content={({ active, payload }) => {
+                              if (active && payload && payload.length > 0) {
+                                const data = payload[0].payload;
+                                return (
+                                  <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
+                                    <p className="font-semibold text-foreground mb-2">{data.name}</p>
+                                    <p className="text-sm text-muted-foreground">
+                                      Consumido: <span className="font-medium text-foreground">{data.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF</span>
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                      % del total: <span className="font-medium text-foreground">{data.percent_of_total.toFixed(1)}%</span>
+                                    </p>
+                                    <p className="text-xs text-muted-foreground mt-2 italic">Click para filtrar por categoría</p>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="space-y-1.5 max-h-[180px] overflow-y-auto">
+                      {categoryChartData.map((item) => (
+                        <div 
+                          key={item.category_id}
+                          className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer transition-colors"
+                          onClick={() => handleViewCategory(item.category_id)}
+                        >
+                          <div 
+                            className="w-3 h-3 rounded-full flex-shrink-0" 
+                            style={{ backgroundColor: getCategoryColor(item.name) }}
+                          />
+                          <span className="text-xs font-medium truncate flex-1">{item.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {item.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 1 })} UF
+                          </span>
+                          <Badge variant="outline" className="text-xs h-5">
+                            {item.percent_of_total.toFixed(0)}%
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Presupuesto OPEX por Categoría - Collapsible (Admin only) */}
         {isAdmin && <Collapsible open={isCategorySectionOpen} onOpenChange={toggleCategorySection}>
             <Card>
               <CollapsibleTrigger asChild>
@@ -705,7 +944,7 @@ const OpexDashboard = () => {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       {isCategorySectionOpen ? <ChevronDown className="h-5 w-5 text-muted-foreground" /> : <ChevronRight className="h-5 w-5 text-muted-foreground" />}
-                      <CardTitle className="text-lg">OPEX por Categoría</CardTitle>
+                      <CardTitle className="text-lg">Presupuesto Maestro por Categoría</CardTitle>
                       <Badge variant="secondary">{masterBudgets.length} categorías</Badge>
                     </div>
                     {ufValue > 0 && <span className="text-sm text-muted-foreground">
@@ -733,250 +972,31 @@ const OpexDashboard = () => {
               </CollapsibleContent>
             </Card>
           </Collapsible>}
-        {/* Two Charts: OPEX por Local and OPEX por Categoría */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* OPEX por Local Chart */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">OPEX por Local</CardTitle>
-              <div className="flex flex-wrap gap-2 mt-2">
-                <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                  <SelectTrigger className="w-[140px] h-8 text-xs">
-                    <SelectValue placeholder="Empresa" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todos">Todas las empresas</SelectItem>
-                    {companies.map(company => (
-                      <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {hasActiveFilters && (
-                  <Button variant="ghost" size="sm" className="h-8" onClick={clearFilters}>
-                    <X className="h-3 w-3 mr-1" />
-                    Limpiar
-                  </Button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {chartData.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground text-sm">
-                  No hay consumo OPEX registrado.
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="h-[280px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={chartData}
-                          dataKey="total_consumed"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={100}
-                          innerRadius={50}
-                          paddingAngle={1}
-                          onClick={(data) => {
-                            if (data && data.contract_id) {
-                              handleViewLocal(data.contract_id);
-                            }
-                          }}
-                          style={{ cursor: 'pointer' }}
-                        >
-                          {chartData.map((entry, index) => (
-                            <Cell 
-                              key={`cell-local-${index}`} 
-                              fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
-                              stroke="hsl(var(--background))"
-                              strokeWidth={2}
-                            />
-                          ))}
-                        </Pie>
-                        <Tooltip 
-                          content={({ active, payload }) => {
-                            if (active && payload && payload.length > 0) {
-                              const data = payload[0].payload;
-                              return (
-                                <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
-                                  <p className="font-semibold text-foreground mb-2">{data.name}</p>
-                                  <p className="text-sm text-muted-foreground">
-                                    Consumido: <span className="font-medium text-foreground">{data.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF</span>
-                                  </p>
-                                  <p className="text-sm text-muted-foreground">
-                                    % del total: <span className="font-medium text-foreground">{data.percent_of_total.toFixed(1)}%</span>
-                                  </p>
-                                  <p className="text-xs text-muted-foreground mt-2 italic">Click para ver local</p>
-                                </div>
-                              );
-                            }
-                            return null;
-                          }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="space-y-1.5 max-h-[180px] overflow-y-auto">
-                    {chartData.slice(0, 10).map((item, index) => (
-                      <div 
-                        key={item.contract_id}
-                        className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer transition-colors"
-                        onClick={() => handleViewLocal(item.contract_id)}
-                      >
-                        <div 
-                          className="w-3 h-3 rounded-full flex-shrink-0" 
-                          style={{ backgroundColor: CATEGORY_COLORS[index % CATEGORY_COLORS.length] }}
-                        />
-                        <span className="text-xs font-medium truncate flex-1">{item.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {item.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 1 })} UF
-                        </span>
-                        <Badge variant="outline" className="text-xs h-5">
-                          {item.percent_of_total.toFixed(0)}%
-                        </Badge>
-                      </div>
-                    ))}
-                    {chartData.length > 10 && (
-                      <p className="text-xs text-muted-foreground text-center pt-1">
-                        +{chartData.length - 10} locales más
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
 
-          {/* OPEX por Categoría Chart */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">OPEX por Categoría</CardTitle>
-              <div className="flex flex-wrap gap-2 mt-2">
-                <Select value={contractFilter} onValueChange={setContractFilter}>
-                  <SelectTrigger className="w-[140px] h-8 text-xs">
-                    <SelectValue placeholder="Local" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todos">Todos los locales</SelectItem>
-                    {contracts
-                      .filter(c => companyFilter === "todos" || c.company_id === companyFilter)
-                      .map(c => (
-                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {categoryChartData.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground text-sm">
-                  No hay consumo OPEX registrado.
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="h-[280px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={categoryChartData}
-                          dataKey="total_consumed"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={100}
-                          innerRadius={50}
-                          paddingAngle={1}
-                          onClick={(data) => {
-                            if (data && data.category_id) {
-                              handleViewCategory(data.category_id);
-                            }
-                          }}
-                          style={{ cursor: 'pointer' }}
-                        >
-                          {categoryChartData.map((entry, index) => (
-                            <Cell 
-                              key={`cell-cat-${index}`} 
-                              fill={getCategoryColor(entry.name)}
-                              stroke="hsl(var(--background))"
-                              strokeWidth={2}
-                            />
-                          ))}
-                        </Pie>
-                        <Tooltip 
-                          content={({ active, payload }) => {
-                            if (active && payload && payload.length > 0) {
-                              const data = payload[0].payload;
-                              return (
-                                <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
-                                  <p className="font-semibold text-foreground mb-2">{data.name}</p>
-                                  <p className="text-sm text-muted-foreground">
-                                    Consumido: <span className="font-medium text-foreground">{data.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF</span>
-                                  </p>
-                                  <p className="text-sm text-muted-foreground">
-                                    % del total: <span className="font-medium text-foreground">{data.percent_of_total.toFixed(1)}%</span>
-                                  </p>
-                                  <p className="text-xs text-muted-foreground mt-2 italic">Click para filtrar por categoría</p>
-                                </div>
-                              );
-                            }
-                            return null;
-                          }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="space-y-1.5 max-h-[180px] overflow-y-auto">
-                    {categoryChartData.map((item) => (
-                      <div 
-                        key={item.category_id}
-                        className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer transition-colors"
-                        onClick={() => handleViewCategory(item.category_id)}
-                      >
-                        <div 
-                          className="w-3 h-3 rounded-full flex-shrink-0" 
-                          style={{ backgroundColor: getCategoryColor(item.name) }}
-                        />
-                        <span className="text-xs font-medium truncate flex-1">{item.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {item.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 1 })} UF
-                        </span>
-                        <Badge variant="outline" className="text-xs h-5">
-                          {item.percent_of_total.toFixed(0)}%
-                        </Badge>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* OPEX por Local Section - Collapsible */}
+        {/* Detalle OPEX por Local Section - Collapsible */}
         <Collapsible open={isLocalSectionOpen} onOpenChange={toggleLocalSection}>
           <Card>
             <CollapsibleTrigger asChild>
               <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
                 <div className="flex items-center gap-3">
                   {isLocalSectionOpen ? <ChevronDown className="h-5 w-5 text-muted-foreground" /> : <ChevronRight className="h-5 w-5 text-muted-foreground" />}
-                  <CardTitle className="text-lg">OPEX por Local</CardTitle>
+                  <CardTitle className="text-lg">Detalle OPEX por Local</CardTitle>
                   <Badge variant="secondary">{contractSummaries.length} locales</Badge>
                 </div>
               </CardHeader>
             </CollapsibleTrigger>
             <CollapsibleContent>
               <CardContent className="pt-0 space-y-4">
-                {/* Filters */}
+                {/* Filters - Same as charts */}
                 <div className="flex flex-wrap gap-3 items-center p-4 bg-muted/30 rounded-lg">
-                  <div className="relative flex-1 min-w-[200px]">
+                  <div className="relative flex-1 min-w-[180px]">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Buscar por local..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-9" />
+                    <Input placeholder="Buscar por local..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-9 h-9" />
                   </div>
 
                   <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                    <SelectTrigger className="w-[180px]">
-                      <SelectValue placeholder="Empresa" />
+                    <SelectTrigger className="w-[160px] h-9">
+                      <SelectValue placeholder="Empresas" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="todos">Todas las empresas</SelectItem>
@@ -987,8 +1007,8 @@ const OpexDashboard = () => {
                   </Select>
 
                   <Select value={contractFilter} onValueChange={setContractFilter}>
-                    <SelectTrigger className="w-[180px]">
-                      <SelectValue placeholder="Local" />
+                    <SelectTrigger className="w-[160px] h-9">
+                      <SelectValue placeholder="Locales" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="todos">Todos los locales</SelectItem>
@@ -999,8 +1019,8 @@ const OpexDashboard = () => {
                   </Select>
 
                   <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                    <SelectTrigger className="w-[160px]">
-                      <SelectValue placeholder="Categoría" />
+                    <SelectTrigger className="w-[160px] h-9">
+                      <SelectValue placeholder="Categorías" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="todos">Todas las categorías</SelectItem>
