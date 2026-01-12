@@ -1275,12 +1275,12 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                     
                     setUploadingFile(true);
                     try {
-                      // Find or create the "OC y FACTURAS" folder and "OC" subfolder
+                      // Find or create the "facturasyOC" folder and "OC" subfolder
                       const { data: parentFolder } = await supabase
                         .from("repository_folders")
                         .select("id")
                         .eq("contract_id", contractId)
-                        .eq("name", "OC y FACTURAS")
+                        .eq("name", "facturasyOC")
                         .is("parent_id", null)
                         .maybeSingle();
 
@@ -1311,12 +1311,12 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                           ocFolderId = newOcFolder?.id || null;
                         }
                       } else {
-                        // Create "OC y FACTURAS" folder and "OC" subfolder
+                        // Create "facturasyOC" folder and "OC" subfolder
                         const { data: newParentFolder } = await supabase
                           .from("repository_folders")
                           .insert({
                             contract_id: contractId,
-                            name: "OC y FACTURAS",
+                            name: "facturasyOC",
                             parent_id: null,
                           })
                           .select("id")
@@ -1373,7 +1373,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                         attachment_name: suggestedName 
                       });
                       
-                      toast({ title: "Archivo subido", description: `${suggestedName} se guardó en OC y FACTURAS/OC` });
+                      toast({ title: "Archivo subido", description: `${suggestedName} se guardó en facturasyOC/OC` });
                     } catch (error: any) {
                       console.error("Error uploading file:", error);
                       toast({ variant: "destructive", title: "Error", description: error.message || "Error al subir archivo" });
@@ -1421,7 +1421,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  El archivo se guardará en la carpeta OC y FACTURAS/OC del repositorio
+                  El archivo se guardará en la carpeta facturasyOC/OC del repositorio
                 </p>
               </div>
             </div>
