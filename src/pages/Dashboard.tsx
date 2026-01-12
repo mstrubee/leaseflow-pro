@@ -33,7 +33,8 @@ const Dashboard = () => {
   return <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="items-center justify-between flex flex-row">
+          <div className="flex flex-col gap-4">
+            {/* Primera fila: Logo y título */}
             <div className="flex items-center gap-6">
               <img src={logosHeader} alt="AutoPlanet Agroplanet" className="h-[62px] object-contain" />
               <div>
@@ -41,45 +42,54 @@ const Dashboard = () => {
                 <p className="text-sm text-muted-foreground mt-1">Desarrollo Negocios y Administración Inmobiliaria</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <Button variant="outline" onClick={() => navigate("/purchase-orders")} className="gap-2">
-                <ShoppingCart className="h-4 w-4" />
-                Órdenes de Compra
-              </Button>
-              <Button variant="outline" onClick={() => navigate("/opex")} className="gap-2">
-                <Wallet className="h-4 w-4" />
-                OPEX
-              </Button>
-              {isAdmin && <>
-                  <Button variant="outline" onClick={() => navigate("/alerts")} className="gap-2">
-                    <Bell className="h-4 w-4" />
-                    Alertas
-                  </Button>
-                  <Button variant="outline" onClick={() => navigate("/deleted")} className="gap-2">
-                    <Trash2 className="h-4 w-4" />
-                    Eliminados
-                  </Button>
-                  <Button variant="outline" onClick={() => navigate("/admin")} className="gap-2">
-                    <Shield className="h-4 w-4" />
-                    Admin
-                  </Button>
-                </>}
-              {isAdmin && (
-                <>
-                  <Button variant="outline" onClick={() => navigate("/contracts/bulk-upload")} className="gap-2">
-                    <Upload className="h-4 w-4" />
-                    Carga Masiva
-                  </Button>
-                  <Button onClick={() => navigate("/contracts/new")} className="gap-2">
-                    <Plus className="h-4 w-4" />
-                    Nuevo Contrato
-                  </Button>
-                </>
-              )}
-              <Button variant="outline" onClick={handleLogout} className="gap-2">
-                <LogOut className="h-4 w-4" />
-                Salir
-              </Button>
+            {/* Segunda fila: Botones organizados */}
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {/* Línea 1: Navegación principal */}
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => navigate("/purchase-orders")} className="gap-2">
+                  <ShoppingCart className="h-4 w-4" />
+                  Órdenes de Compra
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => navigate("/opex")} className="gap-2">
+                  <Wallet className="h-4 w-4" />
+                  OPEX
+                </Button>
+                {isAdmin && (
+                  <>
+                    <Button variant="outline" size="sm" onClick={() => navigate("/alerts")} className="gap-2">
+                      <Bell className="h-4 w-4" />
+                      Alertas
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => navigate("/deleted")} className="gap-2">
+                      <Trash2 className="h-4 w-4" />
+                      Eliminados
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => navigate("/admin")} className="gap-2">
+                      <Shield className="h-4 w-4" />
+                      Admin
+                    </Button>
+                  </>
+                )}
+              </div>
+              {/* Línea 2: Acciones */}
+              <div className="flex items-center gap-2">
+                {isAdmin && (
+                  <>
+                    <Button variant="outline" size="sm" onClick={() => navigate("/contracts/bulk-upload")} className="gap-2">
+                      <Upload className="h-4 w-4" />
+                      Carga Masiva
+                    </Button>
+                    <Button size="sm" onClick={() => navigate("/contracts/new")} className="gap-2">
+                      <Plus className="h-4 w-4" />
+                      Nuevo Contrato
+                    </Button>
+                  </>
+                )}
+                <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2">
+                  <LogOut className="h-4 w-4" />
+                  Salir
+                </Button>
+              </div>
             </div>
           </div>
         </div>
