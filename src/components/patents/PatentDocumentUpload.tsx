@@ -62,11 +62,11 @@ export function PatentDocumentUpload({
 
       if (error) throw error;
 
-      const { data: urlData } = supabase.storage
-        .from('repository-files')
-        .getPublicUrl(fileName);
+      // Store the storage path reference instead of public URL for security
+      // The path will be converted to a signed URL when accessed
+      const storagePath = `storage://repository-files/${fileName}`;
 
-      onSave(urlData.publicUrl, selectedFolder || undefined);
+      onSave(storagePath, selectedFolder || undefined);
       toast.success("Archivo subido correctamente");
       onOpenChange(false);
     } catch (error) {

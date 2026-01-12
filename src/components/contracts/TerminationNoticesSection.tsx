@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
+import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
 import { 
   Plus, 
   Trash2, 
@@ -50,6 +51,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
+import { deleteFileFromStorage, isStorageUrl } from "@/lib/storageUtils";
 import { useAuth } from "@/hooks/useAuth";
 
 interface TerminationNotice {
@@ -87,6 +89,7 @@ const DAYS_BEFORE_OPTIONS = [
 export function TerminationNoticesSection({ contractId, contractName, notices, onRefresh }: TerminationNoticesSectionProps) {
   const { toast } = useToast();
   const { isAdmin } = useAuth();
+  const { openFile } = useSecureFileAccess();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Form state
@@ -144,11 +147,9 @@ export function TerminationNoticesSection({ contractId, contractName, notices, o
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from("repository-files")
-        .getPublicUrl(filePath);
-
-      return publicUrl;
+      // Store the storage path reference instead of public URL for security
+      // The path will be converted to a signed URL when accessed
+      return `storage://repository-files/${filePath}`;
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -382,11 +383,9 @@ export function TerminationNoticesSection({ contractId, contractName, notices, o
       // Get notice to delete file if exists
       const notice = notices.find(n => n.id === noticeId);
       if (notice?.document_url && notice.storage_provider === "supabase") {
-        const urlParts = notice.document_url.split("/repository-files/");
-        if (urlParts[1]) {
-          await supabase.storage
-            .from("repository-files")
-            .remove([decodeURIComponent(urlParts[1])]);
+        // Handle both new storage:// format and legacy public URL format
+        if (isStorageUrl(notice.document_url)) {
+          await deleteFileFromStorage(notice.document_url);
         }
       }
 
@@ -542,7 +541,7 @@ export function TerminationNoticesSection({ contractId, contractName, notices, o
                     )}
                     {editingNotice?.document_url && !selectedFile && (
                       <p className="text-xs text-muted-foreground">
-                        Documento actual: <a href={editingNotice.document_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Ver documento</a>
+                        Documento actual: <button type="button" onClick={() => openFile(editingNotice.document_url)} className="text-primary hover:underline">Ver documento</button>
                       </p>
                     )}
                   </div>
@@ -672,15 +671,14 @@ export function TerminationNoticesSection({ contractId, contractName, notices, o
                         </div>
                       )}
                       {notice.document_url && (
-                        <a
-                          href={notice.document_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => openFile(notice.document_url)}
                           className="text-xs text-primary hover:underline flex items-center gap-1"
                         >
                           <ExternalLink className="h-3 w-3" />
                           Ver documento
-                        </a>
+                        </button>
                       )}
                     </div>
                   </div>
