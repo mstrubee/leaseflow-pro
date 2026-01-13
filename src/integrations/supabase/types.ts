@@ -2891,6 +2891,208 @@ export type Database = {
           },
         ]
       }
+      renegotiation_draft_escalations: {
+        Row: {
+          amount: number
+          created_at: string
+          draft_id: string
+          id: string
+          month_number: number
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          draft_id: string
+          id?: string
+          month_number: number
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          draft_id?: string
+          id?: string
+          month_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "renegotiation_draft_escalations_draft_id_fkey"
+            columns: ["draft_id"]
+            isOneToOne: false
+            referencedRelation: "renegotiation_drafts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      renegotiation_draft_notice_ranges: {
+        Row: {
+          created_at: string
+          draft_id: string
+          end_month: number
+          id: string
+          start_month: number
+        }
+        Insert: {
+          created_at?: string
+          draft_id: string
+          end_month: number
+          id?: string
+          start_month: number
+        }
+        Update: {
+          created_at?: string
+          draft_id?: string
+          end_month?: number
+          id?: string
+          start_month?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "renegotiation_draft_notice_ranges_draft_id_fkey"
+            columns: ["draft_id"]
+            isOneToOne: false
+            referencedRelation: "renegotiation_drafts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      renegotiation_drafts: {
+        Row: {
+          adicional_administracion_percentage: number | null
+          adjustment_periodicity_months: number | null
+          adjustment_type: string | null
+          adjustment_value: number | null
+          contract_id: string
+          created_at: string
+          created_by: string | null
+          duration_months: number
+          effective_date: string | null
+          effective_from_signature: boolean | null
+          first_adjustment_month: number | null
+          fondo_promocion_percentage: number | null
+          gastos_comunes_methodology: string | null
+          gastos_comunes_percentage: number | null
+          gastos_comunes_prorrata_kwh_clima: number | null
+          gastos_comunes_tope: number | null
+          gastos_comunes_tope_type: string | null
+          gastos_comunes_total_centro: number | null
+          gastos_comunes_uf_m2: number | null
+          gastos_comunes_uf_ml_frente: number | null
+          grace_months: number | null
+          guarantee_multiplier: number | null
+          has_extended_gastos_comunes: boolean | null
+          has_periodic_adjustments: boolean | null
+          id: string
+          initial_rent: number | null
+          name: string
+          notice_bilaterality: string | null
+          notice_type: string
+          notice_value: string
+          otros_egresos_amount: number | null
+          otros_egresos_description: string | null
+          regime_rent: number
+          source_draft_id: string | null
+          source_type: string | null
+          status: string | null
+          updated_at: string
+          variable_rent_percentage: number | null
+        }
+        Insert: {
+          adicional_administracion_percentage?: number | null
+          adjustment_periodicity_months?: number | null
+          adjustment_type?: string | null
+          adjustment_value?: number | null
+          contract_id: string
+          created_at?: string
+          created_by?: string | null
+          duration_months: number
+          effective_date?: string | null
+          effective_from_signature?: boolean | null
+          first_adjustment_month?: number | null
+          fondo_promocion_percentage?: number | null
+          gastos_comunes_methodology?: string | null
+          gastos_comunes_percentage?: number | null
+          gastos_comunes_prorrata_kwh_clima?: number | null
+          gastos_comunes_tope?: number | null
+          gastos_comunes_tope_type?: string | null
+          gastos_comunes_total_centro?: number | null
+          gastos_comunes_uf_m2?: number | null
+          gastos_comunes_uf_ml_frente?: number | null
+          grace_months?: number | null
+          guarantee_multiplier?: number | null
+          has_extended_gastos_comunes?: boolean | null
+          has_periodic_adjustments?: boolean | null
+          id?: string
+          initial_rent?: number | null
+          name: string
+          notice_bilaterality?: string | null
+          notice_type?: string
+          notice_value: string
+          otros_egresos_amount?: number | null
+          otros_egresos_description?: string | null
+          regime_rent: number
+          source_draft_id?: string | null
+          source_type?: string | null
+          status?: string | null
+          updated_at?: string
+          variable_rent_percentage?: number | null
+        }
+        Update: {
+          adicional_administracion_percentage?: number | null
+          adjustment_periodicity_months?: number | null
+          adjustment_type?: string | null
+          adjustment_value?: number | null
+          contract_id?: string
+          created_at?: string
+          created_by?: string | null
+          duration_months?: number
+          effective_date?: string | null
+          effective_from_signature?: boolean | null
+          first_adjustment_month?: number | null
+          fondo_promocion_percentage?: number | null
+          gastos_comunes_methodology?: string | null
+          gastos_comunes_percentage?: number | null
+          gastos_comunes_prorrata_kwh_clima?: number | null
+          gastos_comunes_tope?: number | null
+          gastos_comunes_tope_type?: string | null
+          gastos_comunes_total_centro?: number | null
+          gastos_comunes_uf_m2?: number | null
+          gastos_comunes_uf_ml_frente?: number | null
+          grace_months?: number | null
+          guarantee_multiplier?: number | null
+          has_extended_gastos_comunes?: boolean | null
+          has_periodic_adjustments?: boolean | null
+          id?: string
+          initial_rent?: number | null
+          name?: string
+          notice_bilaterality?: string | null
+          notice_type?: string
+          notice_value?: string
+          otros_egresos_amount?: number | null
+          otros_egresos_description?: string | null
+          regime_rent?: number
+          source_draft_id?: string | null
+          source_type?: string | null
+          status?: string | null
+          updated_at?: string
+          variable_rent_percentage?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "renegotiation_drafts_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "renegotiation_drafts_source_draft_id_fkey"
+            columns: ["source_draft_id"]
+            isOneToOne: false
+            referencedRelation: "renegotiation_drafts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rent_escalations: {
         Row: {
           amount: number
