@@ -94,6 +94,7 @@ export function RenegotiationDraftsPanel({
     updateDraft,
     deleteDraft,
     updateDraftEscalations,
+    updateDraftNoticeRanges,
     acceptDraft,
   } = useRenegotiationDrafts(contractId);
 
@@ -155,13 +156,18 @@ export function RenegotiationDraftsPanel({
     setShowEditForm(true);
   };
 
-  const handleSaveDraft = async (data: Partial<RenegotiationDraft>, escalations: Array<{ month_number: number; amount: number }>) => {
+  const handleSaveDraft = async (
+    data: Partial<RenegotiationDraft>, 
+    escalations: Array<{ month_number: number; amount: number }>,
+    noticeRanges: Array<{ start_month: number; end_month: number }>
+  ) => {
     if (!editingDraft) return;
 
     setSaving(true);
     try {
       await updateDraft(editingDraft.id, data);
       await updateDraftEscalations(editingDraft.id, escalations);
+      await updateDraftNoticeRanges(editingDraft.id, noticeRanges);
       setShowEditForm(false);
       setEditingDraft(null);
     } catch (error) {

@@ -223,6 +223,27 @@ export function useRenegotiationDrafts(contractId: string) {
             }))
           );
         }
+        // Copy notice ranges from source draft
+        if (sourceDraft?.notice_ranges?.length) {
+          await supabase.from("renegotiation_draft_notice_ranges").insert(
+            sourceDraft.notice_ranges.map((r: any) => ({
+              draft_id: data.id,
+              start_month: r.start_month,
+              end_month: r.end_month,
+            }))
+          );
+        }
+      }
+
+      // Copy notice ranges if from current version
+      if (input.source_type === "current" && currentVersion?.notice_ranges?.length > 0) {
+        await supabase.from("renegotiation_draft_notice_ranges").insert(
+          currentVersion.notice_ranges.map((r: any) => ({
+            draft_id: data.id,
+            start_month: r.start_month,
+            end_month: r.end_month,
+          }))
+        );
       }
 
       toast.success("Borrador creado exitosamente");
@@ -293,6 +314,35 @@ export function useRenegotiationDrafts(contractId: string) {
       await loadDrafts();
     } catch (error) {
       console.error("Error updating escalations:", error);
+      throw error;
+    }
+  };
+
+  const updateDraftNoticeRanges = async (draftId: string, ranges: Array<{ start_month: number; end_month: number }>) => {
+    try {
+      // Delete existing notice ranges
+      await supabase
+        .from("renegotiation_draft_notice_ranges")
+        .delete()
+        .eq("draft_id", draftId);
+
+      // Insert new ranges
+      if (ranges.length > 0) {
+        const { error } = await supabase
+          .from("renegotiation_draft_notice_ranges")
+          .insert(
+            ranges.map(r => ({
+              draft_id: draftId,
+              start_month: r.start_month,
+              end_month: r.end_month,
+            }))
+          );
+        if (error) throw error;
+      }
+
+      await loadDrafts();
+    } catch (error) {
+      console.error("Error updating notice ranges:", error);
       throw error;
     }
   };
@@ -373,6 +423,17 @@ export function useRenegotiationDrafts(contractId: string) {
         );
       }
 
+      // Copy notice ranges to new version
+      if (draft.notice_ranges && draft.notice_ranges.length > 0) {
+        await supabase.from("notice_ranges").insert(
+          draft.notice_ranges.map((r: DraftNoticeRange) => ({
+            version_id: newVersion.id,
+            start_month: r.start_month,
+            end_month: r.end_month,
+          }))
+        );
+      }
+
       // Mark draft as accepted
       await supabase
         .from("renegotiation_drafts")
@@ -403,6 +464,7 @@ export function useRenegotiationDrafts(contractId: string) {
     updateDraft,
     deleteDraft,
     updateDraftEscalations,
+    updateDraftNoticeRanges,
     acceptDraft,
   };
 }
