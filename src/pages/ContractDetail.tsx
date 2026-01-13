@@ -917,9 +917,9 @@ const ContractDetail = () => {
                   );
                 }
 
-                // Renegotiation Drafts Panel - only for signed contracts without active renegotiation
+                // Renegotiation Drafts Panel - always visible for signed contracts
                 case "renegotiation": {
-                  if (!isSigned || hasActiveRenegotiation || !currentVersion) return null;
+                  if (!isSigned || !currentVersion) return null;
                   return (
                     <CollapsibleSection
                       key={sectionKey}

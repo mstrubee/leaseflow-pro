@@ -334,7 +334,7 @@ export function CommercialConditionsSummary({
             <DollarSign className="h-4 w-4" />
             Condiciones Comerciales
           </CardTitle>
-          {showRenegotiationButton && contractId && !hasActiveRenegotiation && <RenegotiationDialog contractId={contractId} currentVersion={{
+          {showRenegotiationButton && contractId && <RenegotiationDialog contractId={contractId} currentVersion={{
           id: version.id,
           version_number: version.version_number,
           initial_rent: version.initial_rent,
