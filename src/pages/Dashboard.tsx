@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Plus, LogOut, Shield, Trash2, Bell, Upload, ShoppingCart, Wallet, FileText } from "lucide-react";
+import { Plus, LogOut, Shield, Trash2, Bell, Upload, ShoppingCart, Wallet, FileText, BarChart3 } from "lucide-react";
 import { DashboardStats } from "@/components/dashboard/DashboardStats";
 import { SuppliersModule } from "@/components/suppliers/SuppliersModule";
 import { useAuth } from "@/hooks/useAuth";
@@ -58,6 +58,10 @@ const Dashboard = () => {
                 <Button variant="outline" size="sm" onClick={() => navigate("/reports")} className="gap-2">
                   <FileText className="h-4 w-4" />
                   Informes
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => navigate("/kpi")} className="gap-2">
+                  <BarChart3 className="h-4 w-4" />
+                  KPI
                 </Button>
                 {isAdmin && (
                   <>
