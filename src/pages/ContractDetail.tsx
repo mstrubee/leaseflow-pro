@@ -920,51 +920,58 @@ const ContractDetail = () => {
                 // Renegotiation Drafts Panel - always visible for signed contracts
                 case "renegotiation": {
                   if (!isSigned || !currentVersion) return null;
+                  const permId = sectionPermissionMap[sectionKey];
+                  if (isHidden(permId)) return null;
                   return (
-                    <CollapsibleSection
+                    <SelectableElement
                       key={sectionKey}
-                      id={sectionKey}
-                      title="Renegociación"
-                      icon={<RefreshCw className="h-5 w-5" />}
-                      isCollapsed={isCollapsed(sectionKey)}
-                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
-                      isDraggable={canReorder}
-                      wrapperOnly
+                      elementId={permId}
+                      label="Renegociación"
                     >
-                      <Card className="p-6">
-                        <RenegotiationDraftsPanel
-                          contractId={contract.id}
-                          currentVersion={{
-                            id: currentVersion.id,
-                            version_number: currentVersion.version_number,
-                            initial_rent: currentVersion.initial_rent,
-                            regime_rent: currentVersion.regime_rent,
-                            variable_rent_percentage: currentVersion.variable_rent_percentage,
-                            duration_months: currentVersion.duration_months,
-                            notice_type: currentVersion.notice_type,
-                            notice_value: currentVersion.notice_value,
-                            effective_date: currentVersion.effective_date,
-                            guarantee_multiplier: currentVersion.guarantee_multiplier,
-                            has_periodic_adjustments: currentVersion.has_periodic_adjustments,
-                            first_adjustment_month: currentVersion.first_adjustment_month,
-                            adjustment_periodicity_months: currentVersion.adjustment_periodicity_months,
-                            adjustment_type: (currentVersion as any).adjustment_type,
-                            adjustment_value: (currentVersion as any).adjustment_value,
-                            gastos_comunes_methodology: (currentVersion as any).gastos_comunes_methodology,
-                            gastos_comunes_uf_m2: (currentVersion as any).gastos_comunes_uf_m2,
-                            gastos_comunes_percentage: (currentVersion as any).gastos_comunes_percentage,
-                            gastos_comunes_total_centro: (currentVersion as any).gastos_comunes_total_centro,
-                            fondo_promocion_percentage: (currentVersion as any).fondo_promocion_percentage,
-                            grace_months: (currentVersion as any).grace_months,
-                            notice_bilaterality: (currentVersion as any).notice_bilaterality,
-                            otros_egresos_amount: (currentVersion as any).otros_egresos_amount,
-                            otros_egresos_description: (currentVersion as any).otros_egresos_description,
-                            rent_escalations: currentVersion.rent_escalations || [],
-                          }}
-                          onSuccess={loadContract}
-                        />
-                      </Card>
-                    </CollapsibleSection>
+                      <CollapsibleSection
+                        id={sectionKey}
+                        title="Renegociación"
+                        icon={<RefreshCw className="h-5 w-5" />}
+                        isCollapsed={isCollapsed(sectionKey)}
+                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                        isDraggable={canReorder}
+                        wrapperOnly
+                      >
+                        <Card className="p-6">
+                          <RenegotiationDraftsPanel
+                            contractId={contract.id}
+                            currentVersion={{
+                              id: currentVersion.id,
+                              version_number: currentVersion.version_number,
+                              initial_rent: currentVersion.initial_rent,
+                              regime_rent: currentVersion.regime_rent,
+                              variable_rent_percentage: currentVersion.variable_rent_percentage,
+                              duration_months: currentVersion.duration_months,
+                              notice_type: currentVersion.notice_type,
+                              notice_value: currentVersion.notice_value,
+                              effective_date: currentVersion.effective_date,
+                              guarantee_multiplier: currentVersion.guarantee_multiplier,
+                              has_periodic_adjustments: currentVersion.has_periodic_adjustments,
+                              first_adjustment_month: currentVersion.first_adjustment_month,
+                              adjustment_periodicity_months: currentVersion.adjustment_periodicity_months,
+                              adjustment_type: (currentVersion as any).adjustment_type,
+                              adjustment_value: (currentVersion as any).adjustment_value,
+                              gastos_comunes_methodology: (currentVersion as any).gastos_comunes_methodology,
+                              gastos_comunes_uf_m2: (currentVersion as any).gastos_comunes_uf_m2,
+                              gastos_comunes_percentage: (currentVersion as any).gastos_comunes_percentage,
+                              gastos_comunes_total_centro: (currentVersion as any).gastos_comunes_total_centro,
+                              fondo_promocion_percentage: (currentVersion as any).fondo_promocion_percentage,
+                              grace_months: (currentVersion as any).grace_months,
+                              notice_bilaterality: (currentVersion as any).notice_bilaterality,
+                              otros_egresos_amount: (currentVersion as any).otros_egresos_amount,
+                              otros_egresos_description: (currentVersion as any).otros_egresos_description,
+                              rent_escalations: currentVersion.rent_escalations || [],
+                            }}
+                            onSuccess={loadContract}
+                          />
+                        </Card>
+                      </CollapsibleSection>
+                    </SelectableElement>
                   );
                 }
 
