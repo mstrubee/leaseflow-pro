@@ -1814,6 +1814,290 @@ export type Database = {
           },
         ]
       }
+      kpi_audit_log: {
+        Row: {
+          action: string
+          changed_at: string
+          changed_by: string | null
+          entity_id: string
+          entity_type: string
+          id: string
+          new_values: Json | null
+          old_values: Json | null
+        }
+        Insert: {
+          action: string
+          changed_at?: string
+          changed_by?: string | null
+          entity_id: string
+          entity_type: string
+          id?: string
+          new_values?: Json | null
+          old_values?: Json | null
+        }
+        Update: {
+          action?: string
+          changed_at?: string
+          changed_by?: string | null
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          new_values?: Json | null
+          old_values?: Json | null
+        }
+        Relationships: []
+      }
+      kpi_categories: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          display_order: number | null
+          id: string
+          is_active: boolean | null
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      kpi_formula_versions: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          formula: string
+          formula_variables: Json | null
+          id: string
+          kpi_id: string
+          version_number: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          formula: string
+          formula_variables?: Json | null
+          id?: string
+          kpi_id: string
+          version_number: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          formula?: string
+          formula_variables?: Json | null
+          id?: string
+          kpi_id?: string
+          version_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kpi_formula_versions_kpi_id_fkey"
+            columns: ["kpi_id"]
+            isOneToOne: false
+            referencedRelation: "kpis"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kpi_frequencies: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean | null
+          months_interval: number
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          months_interval?: number
+          name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          months_interval?: number
+          name?: string
+        }
+        Relationships: []
+      }
+      kpi_goal_types: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+        }
+        Relationships: []
+      }
+      kpi_measurements: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          kpi_id: string
+          notes: string | null
+          period_end: string
+          period_start: string
+          value: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kpi_id: string
+          notes?: string | null
+          period_end: string
+          period_start: string
+          value: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kpi_id?: string
+          notes?: string | null
+          period_end?: string
+          period_start?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kpi_measurements_kpi_id_fkey"
+            columns: ["kpi_id"]
+            isOneToOne: false
+            referencedRelation: "kpis"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kpis: {
+        Row: {
+          category_id: string
+          created_at: string
+          created_by: string | null
+          data_source: string | null
+          description: string | null
+          display_order: number | null
+          formula: string | null
+          formula_variables: Json | null
+          frequency_id: string | null
+          goal_type_id: string | null
+          goal_value: number | null
+          id: string
+          is_active: boolean | null
+          name: string
+          responsible_user_id: string | null
+          threshold_green: number | null
+          threshold_red: number | null
+          threshold_yellow: number | null
+          unit: string | null
+          updated_at: string
+        }
+        Insert: {
+          category_id: string
+          created_at?: string
+          created_by?: string | null
+          data_source?: string | null
+          description?: string | null
+          display_order?: number | null
+          formula?: string | null
+          formula_variables?: Json | null
+          frequency_id?: string | null
+          goal_type_id?: string | null
+          goal_value?: number | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          responsible_user_id?: string | null
+          threshold_green?: number | null
+          threshold_red?: number | null
+          threshold_yellow?: number | null
+          unit?: string | null
+          updated_at?: string
+        }
+        Update: {
+          category_id?: string
+          created_at?: string
+          created_by?: string | null
+          data_source?: string | null
+          description?: string | null
+          display_order?: number | null
+          formula?: string | null
+          formula_variables?: Json | null
+          frequency_id?: string | null
+          goal_type_id?: string | null
+          goal_value?: number | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          responsible_user_id?: string | null
+          threshold_green?: number | null
+          threshold_red?: number | null
+          threshold_yellow?: number | null
+          unit?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kpis_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "kpi_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kpis_frequency_id_fkey"
+            columns: ["frequency_id"]
+            isOneToOne: false
+            referencedRelation: "kpi_frequencies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kpis_goal_type_id_fkey"
+            columns: ["goal_type_id"]
+            isOneToOne: false
+            referencedRelation: "kpi_goal_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notice_ranges: {
         Row: {
           created_at: string
