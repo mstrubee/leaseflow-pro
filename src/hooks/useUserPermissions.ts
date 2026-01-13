@@ -80,8 +80,9 @@ export const useUserPermissions = () => {
     // Check if there are any contract section permissions
     const contractSectionIds = [
       "contract_address", "contract_contact", "contract_commercial", 
-      "contract_surfaces", "contract_documents", "contract_repository",
-      "contract_budget", "contract_gantt", "contract_alerts", "contract_patents"
+      "contract_renegotiation", "contract_surfaces", "contract_documents", 
+      "contract_repository", "contract_budget", "contract_gantt", 
+      "contract_alerts", "contract_patents"
     ];
     
     // Dashboard section IDs
