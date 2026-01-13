@@ -6,6 +6,7 @@ export type SectionKey =
   | "address"
   | "contact"
   | "commercial"
+  | "renegotiation"
   | "surfaces"
   | "documentVersions"
   | "repository"
@@ -23,6 +24,7 @@ const DEFAULT_ORDER: SectionKey[] = [
   "address",
   "contact",
   "commercial",
+  "renegotiation",
   "surfaces",
   "documentVersions",
   "repository",

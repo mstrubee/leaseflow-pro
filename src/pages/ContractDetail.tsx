@@ -4,12 +4,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, History, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, FileCheck, AlertCircle } from "lucide-react";
+import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, History, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, FileCheck, AlertCircle, RefreshCw } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { DocumentVersions, DocumentVersion } from "@/components/contracts/DocumentVersions";
 import { EscalationDialog, Escalation } from "@/components/contracts/EscalationDialog";
 import { RenegotiationDialog } from "@/components/contracts/RenegotiationDialog";
+import { RenegotiationDraftsPanel } from "@/components/contracts/RenegotiationDraftsPanel";
 import { RepositorySection } from "@/components/contracts/RepositorySection";
 import { CommercialConditionsSummary } from "@/components/contracts/CommercialConditionsSummary";
 import { ContractSurfacesSection } from "@/components/contracts/ContractSurfacesSection";
@@ -169,6 +170,7 @@ const ContractDetail = () => {
     address: "contract_address",
     contact: "contract_contact",
     commercial: "contract_commercial",
+    renegotiation: "contract_renegotiation",
     surfaces: "contract_surfaces",
     documentVersions: "contract_documents",
     repository: "contract_repository",
@@ -915,6 +917,56 @@ const ContractDetail = () => {
                   );
                 }
 
+                // Renegotiation Drafts Panel - only for signed contracts without active renegotiation
+                case "renegotiation": {
+                  if (!isSigned || hasActiveRenegotiation || !currentVersion) return null;
+                  return (
+                    <CollapsibleSection
+                      key={sectionKey}
+                      id={sectionKey}
+                      title="Renegociación"
+                      icon={<RefreshCw className="h-5 w-5" />}
+                      isCollapsed={isCollapsed(sectionKey)}
+                      onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                      isDraggable={canReorder}
+                      wrapperOnly
+                    >
+                      <Card className="p-6">
+                        <RenegotiationDraftsPanel
+                          contractId={contract.id}
+                          currentVersion={{
+                            id: currentVersion.id,
+                            version_number: currentVersion.version_number,
+                            initial_rent: currentVersion.initial_rent,
+                            regime_rent: currentVersion.regime_rent,
+                            variable_rent_percentage: currentVersion.variable_rent_percentage,
+                            duration_months: currentVersion.duration_months,
+                            notice_type: currentVersion.notice_type,
+                            notice_value: currentVersion.notice_value,
+                            effective_date: currentVersion.effective_date,
+                            guarantee_multiplier: currentVersion.guarantee_multiplier,
+                            has_periodic_adjustments: currentVersion.has_periodic_adjustments,
+                            first_adjustment_month: currentVersion.first_adjustment_month,
+                            adjustment_periodicity_months: currentVersion.adjustment_periodicity_months,
+                            adjustment_type: (currentVersion as any).adjustment_type,
+                            adjustment_value: (currentVersion as any).adjustment_value,
+                            gastos_comunes_methodology: (currentVersion as any).gastos_comunes_methodology,
+                            gastos_comunes_uf_m2: (currentVersion as any).gastos_comunes_uf_m2,
+                            gastos_comunes_percentage: (currentVersion as any).gastos_comunes_percentage,
+                            gastos_comunes_total_centro: (currentVersion as any).gastos_comunes_total_centro,
+                            fondo_promocion_percentage: (currentVersion as any).fondo_promocion_percentage,
+                            grace_months: (currentVersion as any).grace_months,
+                            notice_bilaterality: (currentVersion as any).notice_bilaterality,
+                            otros_egresos_amount: (currentVersion as any).otros_egresos_amount,
+                            otros_egresos_description: (currentVersion as any).otros_egresos_description,
+                            rent_escalations: currentVersion.rent_escalations || [],
+                          }}
+                          onSuccess={loadContract}
+                        />
+                      </Card>
+                    </CollapsibleSection>
+                  );
+                }
 
                 case "surfaces": {
                   const permId = sectionPermissionMap[sectionKey];
