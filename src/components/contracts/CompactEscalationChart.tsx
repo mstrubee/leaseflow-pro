@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, ReferenceLine, ReferenceArea, CartesianGrid } from "recharts";
+import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, ReferenceLine, ReferenceArea, CartesianGrid, LabelList } from "recharts";
 import { addMonths, format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
@@ -302,7 +302,22 @@ export function CompactEscalationChart({
               strokeWidth={2}
               dot={{ r: 4, fill: "hsl(var(--primary))", stroke: "hsl(var(--background))", strokeWidth: 2 }}
               activeDot={{ r: 6, fill: "hsl(var(--primary))" }}
-            />
+            >
+              <LabelList 
+                dataKey="rent" 
+                position="top" 
+                offset={8}
+                formatter={(value: number) => displayCurrency === "CLP" 
+                  ? `$${Math.round(value / 1000)}k` 
+                  : `${value.toLocaleString("es-CL", { maximumFractionDigits: 1 })}`
+                }
+                style={{ 
+                  fontSize: 10, 
+                  fontWeight: 600,
+                  fill: "hsl(var(--primary))"
+                }}
+              />
+            </Line>
             
             {/* Regime rent reference line */}
             <ReferenceLine 
