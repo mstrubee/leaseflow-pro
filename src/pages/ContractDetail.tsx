@@ -954,6 +954,8 @@ const ContractDetail = () => {
                             otros_egresos_amount: (displayVersion as any).otros_egresos_amount,
                             otros_egresos_description: (displayVersion as any).otros_egresos_description,
                             notice_bilaterality: (displayVersion as any).notice_bilaterality,
+                            regime_rent_is_uf_m2: (displayVersion as any).regime_rent_is_uf_m2,
+                            initial_rent_is_uf_m2: (displayVersion as any).initial_rent_is_uf_m2,
                             rent_escalations: displayVersion.rent_escalations || [],
                           }}
                           signedDate={contract.signed_date}

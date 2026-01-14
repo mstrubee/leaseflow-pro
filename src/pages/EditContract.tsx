@@ -307,6 +307,9 @@ const EditContract = () => {
         // Load otros egresos
         setOtrosEgresosAmount((version as any).otros_egresos_amount?.toString() || "");
         setOtrosEgresosDescription((version as any).otros_egresos_description || "");
+        
+        // Load UF/m² mode for regime rent
+        setIsRegimeRentUfM2((version as any).regime_rent_is_uf_m2 || false);
 
         // Load multiple notices
         const { data: versionNotices } = await supabase
@@ -484,6 +487,7 @@ const EditContract = () => {
             grace_months: graceMonths || 0,
             otros_egresos_amount: otrosEgresosAmount ? parseFloat(otrosEgresosAmount) : null,
             otros_egresos_description: otrosEgresosDescription || null,
+            regime_rent_is_uf_m2: isRegimeRentUfM2,
           } as any)
           .eq("id", versionId);
 
@@ -523,6 +527,7 @@ const EditContract = () => {
             notice_bilaterality: noticeBilaterality,
             otros_egresos_amount: otrosEgresosAmount ? parseFloat(otrosEgresosAmount) : null,
             otros_egresos_description: otrosEgresosDescription || null,
+            regime_rent_is_uf_m2: isRegimeRentUfM2,
           } as any)
           .select()
           .single();

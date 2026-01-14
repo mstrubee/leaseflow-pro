@@ -996,6 +996,7 @@ export type Database = {
           has_periodic_adjustments: boolean | null
           id: string
           initial_rent: number | null
+          initial_rent_is_uf_m2: boolean | null
           is_current: boolean
           is_renegotiation: boolean
           notice_bilaterality: string | null
@@ -1004,6 +1005,7 @@ export type Database = {
           otros_egresos_amount: number | null
           otros_egresos_description: string | null
           regime_rent: number
+          regime_rent_is_uf_m2: boolean | null
           variable_rent_percentage: number | null
           version_number: number
         }
@@ -1032,6 +1034,7 @@ export type Database = {
           has_periodic_adjustments?: boolean | null
           id?: string
           initial_rent?: number | null
+          initial_rent_is_uf_m2?: boolean | null
           is_current?: boolean
           is_renegotiation?: boolean
           notice_bilaterality?: string | null
@@ -1040,6 +1043,7 @@ export type Database = {
           otros_egresos_amount?: number | null
           otros_egresos_description?: string | null
           regime_rent: number
+          regime_rent_is_uf_m2?: boolean | null
           variable_rent_percentage?: number | null
           version_number: number
         }
@@ -1068,6 +1072,7 @@ export type Database = {
           has_periodic_adjustments?: boolean | null
           id?: string
           initial_rent?: number | null
+          initial_rent_is_uf_m2?: boolean | null
           is_current?: boolean
           is_renegotiation?: boolean
           notice_bilaterality?: string | null
@@ -1076,6 +1081,7 @@ export type Database = {
           otros_egresos_amount?: number | null
           otros_egresos_description?: string | null
           regime_rent?: number
+          regime_rent_is_uf_m2?: boolean | null
           variable_rent_percentage?: number | null
           version_number?: number
         }
