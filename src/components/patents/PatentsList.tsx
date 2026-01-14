@@ -25,13 +25,15 @@ interface PatentsListProps {
 type SortField = "priority" | "name" | "criticality";
 type SortOrder = "asc" | "desc";
 
-// Helper to get company name from contract
-const getCompanyName = (contract: ContractWithPatent): string => {
+// Helper to get company names from contract
+const getCompanyNames = (contract: ContractWithPatent): string[] => {
   const companies = (contract as any).contract_companies as ContractCompany[] | undefined;
-  if (companies && companies.length > 0 && companies[0].companies?.name) {
-    return companies[0].companies.name;
+  if (companies && companies.length > 0) {
+    return companies
+      .map(c => c.companies?.name)
+      .filter((name): name is string => !!name);
   }
-  return 'Sin empresa';
+  return [];
 };
 
 export function PatentsList({
@@ -54,10 +56,8 @@ export function PatentsList({
     const communes = new Set<string>();
     
     contracts.forEach(contract => {
-      const companyName = getCompanyName(contract);
-      if (companyName !== 'Sin empresa') {
-        companies.add(companyName);
-      }
+      const names = getCompanyNames(contract);
+      names.forEach(name => companies.add(name));
       const commune = contract.contract_addresses?.[0]?.commune;
       if (commune) {
         communes.add(commune);
@@ -126,7 +126,7 @@ export function PatentsList({
 
     // Filter by company
     if (companyFilter !== "all") {
-      result = result.filter(c => getCompanyName(c) === companyFilter);
+      result = result.filter(c => getCompanyNames(c).includes(companyFilter));
     }
 
     // Filter by commune
@@ -291,9 +291,19 @@ export function PatentsList({
                 const fullAddress = address 
                   ? `${address.street || ''}${address.number ? ' ' + address.number : ''}`.trim() || 'Sin dirección'
                   : 'Sin dirección';
-                const companyName = getCompanyName(contract);
+                const companyNames = getCompanyNames(contract);
                 return <TableRow key={contract.id}>
-                      <TableCell className="text-muted-foreground">{companyName}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {companyNames.length > 0 ? (
+                          <div className="flex flex-col">
+                            {companyNames.map((name, idx) => (
+                              <span key={idx}>{name}</span>
+                            ))}
+                          </div>
+                        ) : (
+                          'Sin empresa'
+                        )}
+                      </TableCell>
                       <TableCell className="font-medium">{contract.name}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">{fullAddress}</TableCell>
                       <TableCell className="text-muted-foreground">{commune}</TableCell>
