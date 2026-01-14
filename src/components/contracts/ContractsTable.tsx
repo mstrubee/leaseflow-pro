@@ -87,7 +87,7 @@ interface Contract {
   requires_special_attention: boolean | null;
   special_attention_reason: string | null;
   contract_companies?: ContractCompany[];
-  contract_addresses: Array<{ region: string; commune: string }>;
+  contract_addresses: Array<{ region: string; commune: string; street?: string; number?: string }>;
   contract_versions: ContractVersion[];
   superficie_edificada_local: number | null;
   superficie_terreno: number | null;
@@ -447,7 +447,14 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   </div>
                 </TableCell>
                 <TableCell>
-                  <span className="text-sm text-muted-foreground">{address ? `${address.commune}` : "-"}</span>
+                  <div className="flex flex-col">
+                    <span className="text-sm text-muted-foreground">{address ? `${address.commune}` : "-"}</span>
+                    {address && (address.street || address.number) && (
+                      <span className="text-xs text-muted-foreground/70">
+                        {[address.street, address.number].filter(Boolean).join(" ")}
+                      </span>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell className="text-center min-w-[140px]">
                   {currentVersion ? (() => {
