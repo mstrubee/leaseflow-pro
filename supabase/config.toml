@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.process-patent-alerts]
 verify_jwt = false
+
+[functions.summarize-text]
+verify_jwt = false
