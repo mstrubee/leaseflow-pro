@@ -473,9 +473,16 @@ export function CommercialConditionsSummary({
             <p className="text-lg font-bold text-primary">
               {formatPrimary(totalArriendo)}
             </p>
-            <p className="text-xs text-muted-foreground">
-              {formatSecondary(totalArriendo)}
-            </p>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>{formatSecondary(totalArriendo)}</span>
+              {superficieEdificadaLocal && superficieEdificadaLocal > 0 && (
+                <span>
+                  ({displayCurrency === "CLP" 
+                    ? `$${Math.round(totalArriendo / superficieEdificadaLocal).toLocaleString("es-CL")}/m²` 
+                    : `${(totalArriendo / superficieEdificadaLocal).toFixed(4)} UF/m²`})
+                </span>
+              )}
+            </div>
             {/* Composición - siempre mostrar todos los componentes */}
             <div className="text-[10px] text-muted-foreground space-y-0.5 pt-1 border-t border-border/50">
               <div className="flex justify-between">
