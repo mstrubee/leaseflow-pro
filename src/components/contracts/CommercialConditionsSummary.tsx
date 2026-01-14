@@ -45,6 +45,8 @@ interface ContractVersion {
   notice_bilaterality?: string | null;
   otros_egresos_amount?: number | null;
   otros_egresos_description?: string | null;
+  regime_rent_is_uf_m2?: boolean | null;
+  initial_rent_is_uf_m2?: boolean | null;
   rent_escalations: Escalation[];
 }
 interface CommercialConditionsSummaryProps {
@@ -187,7 +189,18 @@ export function CommercialConditionsSummary({
     (version.adjustment_value || 0) > 0 && 
     (version.first_adjustment_month || 0) > 0;
   const showCurrentLabel = hasEscalations || hasAdjustments;
-  const guaranteeAmount = version.guarantee_multiplier ? version.guarantee_multiplier * version.regime_rent : null;
+  
+  // Calculate actual rents considering UF/m² mode
+  const actualRegimeRent = version.regime_rent_is_uf_m2 && superficieEdificadaLocal 
+    ? version.regime_rent * superficieEdificadaLocal 
+    : version.regime_rent;
+  const actualInitialRent = version.initial_rent 
+    ? (version.initial_rent_is_uf_m2 && superficieEdificadaLocal 
+        ? version.initial_rent * superficieEdificadaLocal 
+        : version.initial_rent)
+    : null;
+  
+  const guaranteeAmount = version.guarantee_multiplier ? version.guarantee_multiplier * actualRegimeRent : null;
 
   // Calculate current rent based on escalations, periodic adjustments, and current month
   const currentRent = useMemo(() => {
@@ -199,7 +212,7 @@ export function CommercialConditionsSummary({
         : null;
     
     if (!startDate) {
-      return version.regime_rent;
+      return actualRegimeRent;
     }
     
     const today = new Date();
@@ -212,19 +225,19 @@ export function CommercialConditionsSummary({
       return 0;
     }
     
-    // If no escalations and no adjustments, return regime rent
+    // If no escalations and no adjustments, return actual regime rent
     if (!hasEscalations && !hasAdjustments) {
-      return version.regime_rent;
+      return actualRegimeRent;
     }
     
     // Start with base rent from escalations or regime rent
-    let rent = version.regime_rent;
+    let rent = actualRegimeRent;
     
     if (hasEscalations) {
       const escalations = version.rent_escalations || [];
       const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
       
-      rent = version.initial_rent || version.regime_rent;
+      rent = actualInitialRent || actualRegimeRent;
       for (const esc of sortedEscalations) {
         if (esc.month_number <= currentMonth) {
           rent = esc.amount;
@@ -258,7 +271,7 @@ export function CommercialConditionsSummary({
     }
     
     return rent;
-  }, [version, signedDate, hasEscalations, hasAdjustments]);
+  }, [version, signedDate, hasEscalations, hasAdjustments, actualRegimeRent, actualInitialRent]);
 
   // Canon per m2 - use currentRent for escalated contracts
   const canonPerM2 = superficieEdificadaLocal && superficieEdificadaLocal > 0 ? currentRent / superficieEdificadaLocal : null;
@@ -298,12 +311,12 @@ export function CommercialConditionsSummary({
       const gastosM2 = version.gastos_comunes_uf_m2 && superficieEdificadaLocal ? version.gastos_comunes_uf_m2 * superficieEdificadaLocal : 0;
       const gastosMlFrente = hasExtended && version.gastos_comunes_uf_ml_frente && metrosLinealesFrente ? version.gastos_comunes_uf_ml_frente * metrosLinealesFrente : 0;
       const gastosKwhClima = hasExtended ? version.gastos_comunes_prorrata_kwh_clima || 0 : 0;
-      const adicionalAdminAmount = hasExtended && version.adicional_administracion_percentage ? version.adicional_administracion_percentage / 100 * version.regime_rent : 0;
+      const adicionalAdminAmount = hasExtended && version.adicional_administracion_percentage ? version.adicional_administracion_percentage / 100 * actualRegimeRent : 0;
       
       const total = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdminAmount;
       return total > 0 ? total : null;
     }
-  }, [version, superficieEdificadaLocal, metrosLinealesFrente]);
+  }, [version, superficieEdificadaLocal, metrosLinealesFrente, actualRegimeRent]);
 
   // Fondo de promoción calculation - use currentRent for escalated contracts
   const fondoPromocionAmount = version.fondo_promocion_percentage ? version.fondo_promocion_percentage / 100 * currentRent : null;
