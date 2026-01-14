@@ -24,6 +24,7 @@ export interface TextareaWithAIProps extends Omit<TextareaProps, "onChange"> {
   downloadFileName?: string;
   confirmButtonLabel?: string;
   showOriginalInPreview?: boolean;
+  label?: string;
 }
 
 const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps>(
@@ -38,6 +39,7 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
       downloadFileName = "resumen-ia",
       confirmButtonLabel = "Usar este resumen",
       showOriginalInPreview = true,
+      label,
       className,
       ...props
     },
@@ -87,36 +89,22 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
       : 0;
 
     return (
-      <div className="space-y-2">
-        <Textarea
-          ref={ref}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          maxLength={maxLength}
-          className={cn(isOverLimit && "border-destructive", className)}
-          {...props}
-        />
-        <div className="flex items-center justify-between gap-2">
-          {showCharCount && maxLength ? (
-            <span
-              className={cn(
-                "text-xs text-muted-foreground",
-                isOverLimit && "text-destructive"
-              )}
-            >
-              {charCount}/{maxLength} caracteres
-            </span>
+      <div className="space-y-1.5">
+        {/* Header row: Label + AI Button */}
+        <div className="flex items-center justify-between">
+          {label ? (
+            <label className="text-sm font-medium text-foreground">{label}</label>
           ) : (
             <span />
           )}
           {enableAI && (
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={handleSummarize}
               disabled={isLoading || charCount < 30}
-              className="gap-1.5"
+              className="gap-1.5 h-7 px-2 text-xs text-primary hover:text-primary hover:bg-primary/10"
             >
               {isLoading ? (
                 <>
@@ -132,6 +120,28 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
             </Button>
           )}
         </div>
+
+        {/* Textarea */}
+        <Textarea
+          ref={ref}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          maxLength={maxLength}
+          className={cn(isOverLimit && "border-destructive", className)}
+          {...props}
+        />
+
+        {/* Character count */}
+        {showCharCount && maxLength && (
+          <span
+            className={cn(
+              "text-xs text-muted-foreground",
+              isOverLimit && "text-destructive"
+            )}
+          >
+            {charCount}/{maxLength} caracteres
+          </span>
+        )}
 
         <Dialog open={showPreviewDialog} onOpenChange={setShowPreviewDialog}>
           <DialogContent className="sm:max-w-lg">
