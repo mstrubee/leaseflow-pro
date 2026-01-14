@@ -41,7 +41,7 @@ export const CurrencyInput = ({
   const formatUF = (amount: number) => {
     return `UF ${amount.toLocaleString("es-CL", {
       minimumFractionDigits: 2,
-      maximumFractionDigits: 3
+      maximumFractionDigits: 2
     })}`
   };
   const formatCLP = (amount: number) => {
