@@ -54,6 +54,7 @@ export interface ContractPatent {
   priority: PatentPriority;
   priority_changed_at?: string;
   priority_changed_by?: string;
+  comments?: string;
 }
 
 export interface PatentDocument {

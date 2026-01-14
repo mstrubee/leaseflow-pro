@@ -42,7 +42,7 @@ export function usePatents() {
             patente_status,
             contract_addresses (region, commune, street, number),
             contract_companies (companies (name)),
-            contract_patents (id, contract_id, priority, priority_changed_at, priority_changed_by),
+            contract_patents (id, contract_id, priority, priority_changed_at, priority_changed_by, comments),
             patent_documents (
               id, contract_id, checklist_item_id, status, status_changed_at,
               emitter_id, responsible, start_date, deadline_days, end_date,
@@ -144,6 +144,45 @@ export function usePatents() {
     setContracts(prev => prev.map(c => {
       if (c.id !== contractId) return c;
       return { ...c, patente_status: patenteStatus };
+    }));
+  };
+
+  const updateComments = async (contractId: string, comments: string) => {
+    const { data: existing } = await supabase
+      .from("contract_patents")
+      .select("id")
+      .eq("contract_id", contractId)
+      .single();
+
+    const now = new Date().toISOString();
+
+    if (existing) {
+      await supabase
+        .from("contract_patents")
+        .update({
+          comments,
+          updated_at: now,
+        })
+        .eq("id", existing.id);
+    } else {
+      await supabase
+        .from("contract_patents")
+        .insert({
+          contract_id: contractId,
+          priority: 'priority_3',
+          comments,
+        });
+    }
+
+    // Update local state
+    setContracts(prev => prev.map(c => {
+      if (c.id !== contractId) return c;
+      return {
+        ...c,
+        contract_patents: c.contract_patents 
+          ? { ...c.contract_patents, comments }
+          : { id: '', contract_id: contractId, priority: 'priority_3', comments }
+      };
     }));
   };
 
@@ -321,6 +360,7 @@ export function usePatents() {
     loadData,
     updatePriority,
     updatePatenteStatus,
+    updateComments,
     updateDocumentStatus,
     updateDocument,
     getCriticalStats,
