@@ -42,7 +42,7 @@ export const EconomicIndicators = () => {
 
   const formatCurrency = (value: number, currency: "CLP" | "UF" = "CLP") => {
     if (currency === "UF") {
-      return `UF ${value.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })}`;
+      return `UF ${value.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
     return new Intl.NumberFormat("es-CL", {
       style: "currency",

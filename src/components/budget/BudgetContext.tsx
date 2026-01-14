@@ -26,7 +26,7 @@ export const BudgetProvider = ({ children, initialCurrency = "UF" }: BudgetProvi
   const [displayCurrency, setDisplayCurrency] = useState<"UF" | "CLP">(initialCurrency);
 
   const formatUF = (amount: number) => {
-    return `UF ${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })}`;
+    return `UF ${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const formatCLP = (amount: number) => {

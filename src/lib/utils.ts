@@ -6,13 +6,14 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 // Maximum decimal places for display throughout the system
-export const MAX_DECIMALS = 3;
+export const MAX_DECIMALS_UF = 2; // For UF display
+export const MAX_DECIMALS_UF_M2 = 3; // For UF/m² display and inputs
 
-// Format UF values with up to 3 decimals
+// Format UF values with up to 2 decimals (for display)
 export function formatUF(amount: number, includePrefix = true): string {
   const formatted = amount.toLocaleString("es-CL", {
     minimumFractionDigits: 2,
-    maximumFractionDigits: MAX_DECIMALS,
+    maximumFractionDigits: MAX_DECIMALS_UF,
   });
   return includePrefix ? `UF ${formatted}` : formatted;
 }
@@ -26,15 +27,18 @@ export function formatCLP(amount: number): string {
   }).format(amount);
 }
 
-// Format generic number with up to 3 decimals
+// Format generic number with up to 2 decimals
 export function formatNumber(amount: number, minDecimals = 2): string {
   return amount.toLocaleString("es-CL", {
     minimumFractionDigits: minDecimals,
-    maximumFractionDigits: MAX_DECIMALS,
+    maximumFractionDigits: MAX_DECIMALS_UF,
   });
 }
 
 // Format UF/m² values with up to 3 decimals
 export function formatUfM2(amount: number): string {
-  return `${formatNumber(amount, 2)} UF/m²`;
+  return `${amount.toLocaleString("es-CL", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: MAX_DECIMALS_UF_M2,
+  })} UF/m²`;
 }

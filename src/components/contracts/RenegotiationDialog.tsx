@@ -204,7 +204,7 @@ export const RenegotiationDialog = ({
     if (displayCurrency === "CLP") {
       return `$${Math.round(amount).toLocaleString("es-CL")}`;
     }
-    return `${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF`;
+    return `${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
   };
 
   const addEscalation = () => {

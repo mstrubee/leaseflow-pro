@@ -89,21 +89,19 @@ export function CommercialConditionsSummary({
     }
     return `${amount.toLocaleString("es-CL", {
       minimumFractionDigits: 2,
-      maximumFractionDigits: 3
+      maximumFractionDigits: 2
     })} UF`;
   };
 
   // Secondary format shows the conversion (illustrative only)
   const formatSecondary = (amount: number) => {
     if (displayCurrency === "CLP" && ufValue > 0) {
-      // Amount is in CLP, convert to UF for illustrative display
       const uf = amount / ufValue;
       return `${uf.toLocaleString("es-CL", {
         minimumFractionDigits: 2,
-        maximumFractionDigits: 3
+        maximumFractionDigits: 2
       })} UF`;
     } else if (displayCurrency === "UF" && ufValue > 0) {
-      // Amount is in UF, convert to CLP for illustrative display
       const clp = convertUFToPesos(amount);
       return clp > 0 ? `$${Math.round(clp).toLocaleString("es-CL")}` : "";
     }
