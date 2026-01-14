@@ -2,15 +2,17 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Trash2, AlertTriangle, FileCheck, FilePlus, Bell, FileWarning } from "lucide-react";
+import { Trash2, AlertTriangle, FileCheck, FilePlus, Bell, FileWarning, DollarSign, Check, X } from "lucide-react";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { addMonths, format, subMonths, parseISO, differenceInMonths, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
+import { toast } from "sonner";
 
 interface ContractAlert {
   id: string;
@@ -86,6 +88,8 @@ interface Contract {
   display_currency: string | null;
   requires_special_attention: boolean | null;
   special_attention_reason: string | null;
+  negotiation_subcategory?: string | null;
+  venta_estimada?: number | null;
   contract_companies?: ContractCompany[];
   contract_addresses: Array<{ region: string; commune: string; street?: string; number?: string }>;
   contract_versions: ContractVersion[];
@@ -109,6 +113,49 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   const { ufValue, convertUFToPesos } = useEconomicIndicators();
   const { isAdmin } = useAuth();
   const [contractAlerts, setContractAlerts] = useState<Record<string, ContractAlert[]>>({});
+  const [editingVenta, setEditingVenta] = useState<string | null>(null);
+  const [ventaValue, setVentaValue] = useState<string>("");
+
+  const isNegociacionView = !isFirmadoView && contracts.some(c => c.status === 'en_negociacion');
+
+  const handleSaveVenta = async (e: React.MouseEvent, contractId: string) => {
+    e.stopPropagation();
+    const numValue = ventaValue ? parseFloat(ventaValue.replace(/\./g, '').replace(',', '.')) : null;
+    
+    const { error } = await supabase
+      .from('contracts')
+      .update({ venta_estimada: numValue })
+      .eq('id', contractId);
+
+    if (error) {
+      toast.error('Error al guardar la venta estimada');
+    } else {
+      toast.success('Venta estimada guardada');
+      onRefresh();
+    }
+    setEditingVenta(null);
+    setVentaValue("");
+  };
+
+  const handleCancelVenta = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingVenta(null);
+    setVentaValue("");
+  };
+
+  const handleSubcategoryChange = async (e: React.MouseEvent, contractId: string, value: string) => {
+    e.stopPropagation();
+    const { error } = await supabase
+      .from('contracts')
+      .update({ negotiation_subcategory: value })
+      .eq('id', contractId);
+
+    if (error) {
+      toast.error('Error al actualizar la categoría');
+    } else {
+      onRefresh();
+    }
+  };
 
   // Load alerts for all contracts
   useEffect(() => {
@@ -343,6 +390,12 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
           <TableRow className="bg-muted/50">
             <TableHead className="font-semibold">Contrato</TableHead>
             <TableHead className="font-semibold">Ubicación</TableHead>
+            {isNegociacionView && (
+              <>
+                <TableHead className="font-semibold text-center">Categoría</TableHead>
+                <TableHead className="font-semibold text-center">Venta Est.</TableHead>
+              </>
+            )}
             <TableHead className="font-semibold text-center min-w-[140px]"><div className="leading-tight">Costo<br/>Arriendo</div></TableHead>
             <TableHead className="font-semibold text-center">Duración</TableHead>
             {isFirmadoView && (
@@ -456,6 +509,62 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                     )}
                   </div>
                 </TableCell>
+                {isNegociacionView && (
+                  <>
+                    <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                      <Select 
+                        value={contract.negotiation_subcategory || 'negociacion_contrato'} 
+                        onValueChange={(value) => {
+                          const fakeEvent = { stopPropagation: () => {} } as React.MouseEvent;
+                          handleSubcategoryChange(fakeEvent, contract.id, value);
+                        }}
+                      >
+                        <SelectTrigger className="h-7 text-xs w-[140px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="negociacion_contrato" className="text-xs">Negociación Contrato</SelectItem>
+                          <SelectItem value="ubicacion_preliminar" className="text-xs">Ubicación Preliminar</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                      {editingVenta === contract.id ? (
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="text"
+                            value={ventaValue}
+                            onChange={(e) => setVentaValue(e.target.value)}
+                            placeholder="0"
+                            className="h-7 w-24 text-xs"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={(e) => handleSaveVenta(e, contract.id)}>
+                            <Check className="h-3 w-3 text-green-600" />
+                          </Button>
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={handleCancelVenta}>
+                            <X className="h-3 w-3 text-red-600" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <button
+                          className="flex items-center gap-1 text-xs hover:bg-muted/50 px-2 py-1 rounded"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingVenta(contract.id);
+                            setVentaValue(contract.venta_estimada ? contract.venta_estimada.toLocaleString('es-CL') : "");
+                          }}
+                        >
+                          <DollarSign className="h-3 w-3 text-muted-foreground" />
+                          {contract.venta_estimada 
+                            ? `$${contract.venta_estimada.toLocaleString('es-CL')}`
+                            : <span className="text-muted-foreground italic">Agregar</span>
+                          }
+                        </button>
+                      )}
+                    </TableCell>
+                  </>
+                )}
                 <TableCell className="text-center min-w-[140px]">
                   {currentVersion ? (() => {
                     const superficie = contract.superficie_edificada_local || 0;

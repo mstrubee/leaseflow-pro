@@ -22,7 +22,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, ArrowLeft, Trash2, ArrowUpDown, X, Cloud, Loader2, ExternalLink, AlertTriangle } from "lucide-react";
+import { Search, ArrowLeft, Trash2, ArrowUpDown, X, Cloud, Loader2, ExternalLink, AlertTriangle, Download } from "lucide-react";
+import { generateNegotiationReportPDF } from "@/components/contracts/NegotiationReportPDF";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { ContractsTable } from "@/components/contracts/ContractsTable";
 import { useAuth } from "@/hooks/useAuth";
@@ -103,8 +104,10 @@ interface Contract {
   display_currency: string | null;
   requires_special_attention: boolean | null;
   special_attention_reason: string | null;
+  negotiation_subcategory: string | null;
+  venta_estimada: number | null;
   contract_companies: ContractCompany[];
-  contract_addresses: Array<{ region: string; commune: string }>;
+  contract_addresses: Array<{ region: string; commune: string; street?: string; number?: string }>;
   contract_versions: ContractVersion[];
   superficie_edificada_local: number | null;
   superficie_terreno: number | null;
@@ -150,8 +153,11 @@ const Contracts = () => {
   const costoArriendoFilter = searchParams.get("costo") || "todos";
   const companyFilter = searchParams.get("company") || "todos";
   const atencionEspecialFilter = searchParams.get("atencion_especial") === "true" ? "si" : (searchParams.get("atencion_especial") === "false" ? "no" : "todos");
+  const negotiationSubcategoryFilter = searchParams.get("subcategory") || "todos";
   const sortField = (searchParams.get("sort") as SortField) || null;
   const sortDirection = (searchParams.get("dir") as SortDirection) || "asc";
+
+  const setNegotiationSubcategoryFilter = (value: string) => updateFilter("subcategory", value);
 
   // Helper to update a single filter in URL
   const updateFilter = (key: string, value: string) => {
@@ -228,7 +234,7 @@ const Contracts = () => {
 
   useEffect(() => {
     filterAndSortContracts();
-  }, [searchTerm, statusFilter, contracts, operationFilter, obraFilter, patenteFilter, proyectoFilter, ubicacionFilter, costoArriendoFilter, companyFilter, atencionEspecialFilter, sortField, sortDirection]);
+  }, [searchTerm, statusFilter, contracts, operationFilter, obraFilter, patenteFilter, proyectoFilter, ubicacionFilter, costoArriendoFilter, companyFilter, atencionEspecialFilter, negotiationSubcategoryFilter, sortField, sortDirection]);
 
   const loadContracts = async () => {
     const { data } = await supabase
@@ -459,6 +465,13 @@ const Contracts = () => {
       });
     }
 
+    // Negotiation subcategory filter (only for en_negociacion)
+    if (negotiationSubcategoryFilter !== "todos" && statusFilter === "en_negociacion") {
+      filtered = filtered.filter((contract) => 
+        (contract as any).negotiation_subcategory === negotiationSubcategoryFilter
+      );
+    }
+
         // Sorting
         if (sortField) {
           filtered = [...filtered].sort((a, b) => {
@@ -518,7 +531,11 @@ const Contracts = () => {
     setSearchParams(newParams, { replace: true });
   };
 
-  const hasActiveFilters = operationFilter !== "todos" || obraFilter !== "todos" || patenteFilter !== "todos" || proyectoFilter !== "todos" || ubicacionFilter !== "todos" || costoArriendoFilter !== "todos" || companyFilter !== "todos" || atencionEspecialFilter !== "todos" || sortField !== null;
+  const hasActiveFilters = operationFilter !== "todos" || obraFilter !== "todos" || patenteFilter !== "todos" || proyectoFilter !== "todos" || ubicacionFilter !== "todos" || costoArriendoFilter !== "todos" || companyFilter !== "todos" || atencionEspecialFilter !== "todos" || negotiationSubcategoryFilter !== "todos" || sortField !== null;
+
+  const handleDownloadNegotiationReport = () => {
+    generateNegotiationReportPDF(filteredContracts as any, negotiationSubcategoryFilter);
+  };
 
   // Get unique communes for ubicacion filter
   const uniqueCommunes = [...new Set(contracts.flatMap(c => c.contract_addresses?.map(a => a.commune) || []))].filter(Boolean).sort();
@@ -657,6 +674,7 @@ const Contracts = () => {
   }
 
   const isFirmadoView = statusFilter === "firmado";
+  const isNegociacionView = statusFilter === "en_negociacion";
   const showAdvancedFilters = statusFilter === "firmado" || statusFilter === "todos";
 
   return (
@@ -675,24 +693,36 @@ const Contracts = () => {
                 </p>
               </div>
             </div>
-            <Button
-              variant="outline"
-              onClick={handleSyncAllToDrive}
-              disabled={isSyncing}
-              className="gap-2"
-            >
-              {isSyncing ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Sincronizando...
-                </>
-              ) : (
-                <>
-                  <Cloud className="h-4 w-4" />
-                  Sincronizar con Drive
-                </>
+            <div className="flex items-center gap-2">
+              {isNegociacionView && (
+                <Button
+                  variant="outline"
+                  onClick={handleDownloadNegotiationReport}
+                  className="gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Descargar Informe
+                </Button>
               )}
-            </Button>
+              <Button
+                variant="outline"
+                onClick={handleSyncAllToDrive}
+                disabled={isSyncing}
+                className="gap-2"
+              >
+                {isSyncing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Sincronizando...
+                  </>
+                ) : (
+                  <>
+                    <Cloud className="h-4 w-4" />
+                    Sincronizar con Drive
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -710,6 +740,23 @@ const Contracts = () => {
                 className="pl-10"
               />
             </div>
+
+            {/* Negotiation Subcategory Filter - Only for en_negociacion */}
+            {isNegociacionView && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-medium text-muted-foreground">Categoría</span>
+                <Select value={negotiationSubcategoryFilter} onValueChange={setNegotiationSubcategoryFilter}>
+                  <SelectTrigger className="h-8 text-xs w-[180px]">
+                    <SelectValue placeholder="Todas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos" className="text-xs">Todas las categorías</SelectItem>
+                    <SelectItem value="negociacion_contrato" className="text-xs">Negociación Contrato</SelectItem>
+                    <SelectItem value="ubicacion_preliminar" className="text-xs">Ubicación Preliminar</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Company Filter - Available for all views */}
             {companies.length > 0 && (
