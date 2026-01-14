@@ -152,18 +152,30 @@ const EditContract = () => {
     }
   };
 
-  const sectionTitles: Record<EditSectionKey, string> = {
-    dates: "Fechas",
-    currency: "Moneda",
-    escalation: "Canon Arriendo",
-    variableRent: "Arriendo Variable",
-    guarantee: "Garantía",
-    gastosComunes: "Gastos Comunes",
-    fondoPromocion: "Fondo de Promoción",
-    otrosArrendamientos: "Otros Arrendamientos",
-    periodicAdjustments: "Reajustes Periódicos",
-    duration: "Duración",
-    noticeType: "Avisos",
+  const getSectionTitle = (key: EditSectionKey): string => {
+    const baseTitles: Record<EditSectionKey, string> = {
+      dates: "Fechas",
+      currency: "Moneda",
+      escalation: "Canon Arriendo",
+      variableRent: "Arriendo Variable",
+      guarantee: "Garantía",
+      gastosComunes: "Gastos Comunes",
+      fondoPromocion: "Fondo de Promoción",
+      otrosArrendamientos: "Otros Arrendamientos",
+      periodicAdjustments: "Reajustes Periódicos",
+      duration: "Duración",
+      noticeType: "Avisos",
+    };
+    
+    // Add UF/m² indicator for sections that use it
+    if (key === "escalation" && isRegimeRentUfM2) {
+      return `${baseTitles[key]} (UF/m²)`;
+    }
+    if (key === "guarantee" && isRegimeRentUfM2) {
+      return `${baseTitles[key]} (basado en UF/m²)`;
+    }
+    
+    return baseTitles[key];
   };
 
   useEffect(() => {
@@ -1930,7 +1942,7 @@ const EditContract = () => {
                         <EditableSectionWrapper
                           key={section.key}
                           id={section.key}
-                          title={sectionTitles[section.key]}
+                          title={getSectionTitle(section.key)}
                           isCollapsed={isCollapsed(section.key)}
                           onToggleCollapse={() => toggleCollapsed(section.key)}
                           isDraggable={canReorder}
