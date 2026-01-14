@@ -938,6 +938,7 @@ export type Database = {
           contract_id: string
           created_at: string
           id: string
+          next_actions: string | null
           priority: Database["public"]["Enums"]["patent_priority"]
           priority_changed_at: string | null
           priority_changed_by: string | null
@@ -948,6 +949,7 @@ export type Database = {
           contract_id: string
           created_at?: string
           id?: string
+          next_actions?: string | null
           priority?: Database["public"]["Enums"]["patent_priority"]
           priority_changed_at?: string | null
           priority_changed_by?: string | null
@@ -958,6 +960,7 @@ export type Database = {
           contract_id?: string
           created_at?: string
           id?: string
+          next_actions?: string | null
           priority?: Database["public"]["Enums"]["patent_priority"]
           priority_changed_at?: string | null
           priority_changed_by?: string | null

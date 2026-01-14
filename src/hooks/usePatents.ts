@@ -42,7 +42,7 @@ export function usePatents() {
             patente_status,
             contract_addresses (region, commune, street, number),
             contract_companies (companies (name)),
-            contract_patents (id, contract_id, priority, priority_changed_at, priority_changed_by, comments),
+            contract_patents (id, contract_id, priority, priority_changed_at, priority_changed_by, comments, next_actions),
             patent_documents (
               id, contract_id, checklist_item_id, status, status_changed_at,
               emitter_id, responsible, start_date, deadline_days, end_date,
@@ -147,7 +147,7 @@ export function usePatents() {
     }));
   };
 
-  const updateComments = async (contractId: string, comments: string) => {
+  const updateComments = async (contractId: string, comments: string, nextActions: string) => {
     const { data: existing } = await supabase
       .from("contract_patents")
       .select("id")
@@ -161,6 +161,7 @@ export function usePatents() {
         .from("contract_patents")
         .update({
           comments,
+          next_actions: nextActions,
           updated_at: now,
         })
         .eq("id", existing.id);
@@ -171,6 +172,7 @@ export function usePatents() {
           contract_id: contractId,
           priority: 'priority_3',
           comments,
+          next_actions: nextActions,
         });
     }
 
@@ -180,8 +182,8 @@ export function usePatents() {
       return {
         ...c,
         contract_patents: c.contract_patents 
-          ? { ...c.contract_patents, comments }
-          : { id: '', contract_id: contractId, priority: 'priority_3', comments }
+          ? { ...c.contract_patents, comments, next_actions: nextActions }
+          : { id: '', contract_id: contractId, priority: 'priority_3', comments, next_actions: nextActions }
       };
     }));
   };
