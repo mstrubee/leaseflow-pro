@@ -256,9 +256,9 @@ const EditContract = () => {
       if (version) {
         setVersionId(version.id);
         setEffectiveDate(version.effective_date || "");
-        // hasEscalation is true if there are escalations, grace months, or initial_rent differs from regime_rent
+        // hasEscalation is true ONLY if there are actual escalations or initial_rent differs from regime_rent
+        // Grace months do NOT indicate escalation - they can exist with fixed rent too
         const hasEscalationsData = (version.rent_escalations && version.rent_escalations.length > 0) ||
-          ((version as any).grace_months && (version as any).grace_months > 0) ||
           (version.initial_rent !== null && version.initial_rent !== version.regime_rent);
         setHasEscalation(hasEscalationsData);
         setGraceMonths((version as any).grace_months || 0);
