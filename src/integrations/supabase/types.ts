@@ -2009,6 +2009,7 @@ export type Database = {
       }
       kpis: {
         Row: {
+          assigned_user_id: string | null
           category_id: string
           created_at: string
           created_by: string | null
@@ -2023,6 +2024,7 @@ export type Database = {
           id: string
           is_active: boolean | null
           name: string
+          parent_kpi_id: string | null
           responsible_user_id: string | null
           threshold_green: number | null
           threshold_red: number | null
@@ -2031,6 +2033,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          assigned_user_id?: string | null
           category_id: string
           created_at?: string
           created_by?: string | null
@@ -2045,6 +2048,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           name: string
+          parent_kpi_id?: string | null
           responsible_user_id?: string | null
           threshold_green?: number | null
           threshold_red?: number | null
@@ -2053,6 +2057,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          assigned_user_id?: string | null
           category_id?: string
           created_at?: string
           created_by?: string | null
@@ -2067,6 +2072,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           name?: string
+          parent_kpi_id?: string | null
           responsible_user_id?: string | null
           threshold_green?: number | null
           threshold_red?: number | null
@@ -2094,6 +2100,13 @@ export type Database = {
             columns: ["goal_type_id"]
             isOneToOne: false
             referencedRelation: "kpi_goal_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kpis_parent_kpi_id_fkey"
+            columns: ["parent_kpi_id"]
+            isOneToOne: false
+            referencedRelation: "kpis"
             referencedColumns: ["id"]
           },
         ]
