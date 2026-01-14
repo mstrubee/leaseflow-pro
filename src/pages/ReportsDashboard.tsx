@@ -1244,61 +1244,65 @@ const ReportsDashboard = () => {
                           </CardDescription>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <Button 
-                                variant="outline" 
-                                size="sm"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <Settings2 className="h-3 w-3 mr-1" />
-                                Columnas PDF
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-56" align="end">
-                              <div className="space-y-3">
-                                <h4 className="font-medium text-sm">Columnas del PDF</h4>
-                                <div className="space-y-2">
-                                  {availablePdfColumns.map((col) => (
-                                    <div key={col.key} className="flex items-center space-x-2">
-                                      <Checkbox
-                                        id={`pdf-col-${col.key}`}
-                                        checked={selectedPdfColumns.includes(col.key)}
-                                        onCheckedChange={(checked) => {
-                                          if (checked) {
-                                            setSelectedPdfColumns(prev => [...prev, col.key]);
-                                          } else {
-                                            setSelectedPdfColumns(prev => prev.filter(k => k !== col.key));
-                                          }
-                                        }}
-                                      />
-                                      <Label 
-                                        htmlFor={`pdf-col-${col.key}`}
-                                        className="text-sm cursor-pointer"
-                                      >
-                                        {col.label}
-                                      </Label>
-                                    </div>
-                                  ))}
+                          <div className="flex items-center border rounded-md overflow-hidden">
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  className="rounded-none border-r"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <Settings2 className="h-3 w-3 mr-1" />
+                                  Columnas
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-56" align="end">
+                                <div className="space-y-3">
+                                  <h4 className="font-medium text-sm">Columnas del PDF</h4>
+                                  <div className="space-y-2">
+                                    {availablePdfColumns.map((col) => (
+                                      <div key={col.key} className="flex items-center space-x-2">
+                                        <Checkbox
+                                          id={`pdf-col-${col.key}`}
+                                          checked={selectedPdfColumns.includes(col.key)}
+                                          onCheckedChange={(checked) => {
+                                            if (checked) {
+                                              setSelectedPdfColumns(prev => [...prev, col.key]);
+                                            } else {
+                                              setSelectedPdfColumns(prev => prev.filter(k => k !== col.key));
+                                            }
+                                          }}
+                                        />
+                                        <Label 
+                                          htmlFor={`pdf-col-${col.key}`}
+                                          className="text-sm cursor-pointer"
+                                        >
+                                          {col.label}
+                                        </Label>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">
+                                    {selectedPdfColumns.length} columnas seleccionadas
+                                  </p>
                                 </div>
-                                <p className="text-xs text-muted-foreground">
-                                  {selectedPdfColumns.length} columnas seleccionadas
-                                </p>
-                              </div>
-                            </PopoverContent>
-                          </Popover>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            disabled={selectedPdfColumns.length === 0}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              exportSinPatentePDF();
-                            }}
-                          >
-                            <Download className="h-3 w-3 mr-1" />
-                            PDF
-                          </Button>
+                              </PopoverContent>
+                            </Popover>
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              className="rounded-none"
+                              disabled={selectedPdfColumns.length === 0}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                exportSinPatentePDF();
+                              }}
+                            >
+                              <Download className="h-3 w-3 mr-1" />
+                              PDF
+                            </Button>
+                          </div>
                           <Select value={sinPatenteStatusFilter} onValueChange={setSinPatenteStatusFilter}>
                             <SelectTrigger className="w-[180px] h-8">
                               <Filter className="h-3 w-3 mr-2" />
