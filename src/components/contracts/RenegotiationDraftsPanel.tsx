@@ -84,12 +84,14 @@ interface CurrentVersion {
 
 interface RenegotiationDraftsPanelProps {
   contractId: string;
+  contractName?: string;
   currentVersion: CurrentVersion;
   onSuccess: () => void;
 }
 
 export function RenegotiationDraftsPanel({
   contractId,
+  contractName = "Contrato",
   currentVersion,
   onSuccess,
 }: RenegotiationDraftsPanelProps) {
@@ -520,6 +522,7 @@ export function RenegotiationDraftsPanel({
         open={showCompareDialog}
         onOpenChange={setShowCompareDialog}
         items={getCompareItems()}
+        contractName={contractName}
       />
 
       {/* Delete Confirmation */}

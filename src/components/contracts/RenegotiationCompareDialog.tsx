@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -6,13 +6,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowRight, TrendingUp, TrendingDown, Minus, CheckCircle2 } from "lucide-react";
+import { ArrowRight, TrendingUp, TrendingDown, Minus, CheckCircle2, Download } from "lucide-react";
 import { RenegotiationDraft } from "@/hooks/useRenegotiationDrafts";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 interface CompareItem {
-  type: "current" | "draft";
+  type: "current" | "draft" | "version";
   id: string;
   name: string;
   data: any;
@@ -23,12 +26,14 @@ interface RenegotiationCompareDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   items: CompareItem[];
+  contractName?: string;
 }
 
 export function RenegotiationCompareDialog({
   open,
   onOpenChange,
   items,
+  contractName = "Contrato",
 }: RenegotiationCompareDialogProps) {
   const formatCurrency = (amount: number | null | undefined) => {
     if (amount === null || amount === undefined) return "-";
@@ -74,6 +79,20 @@ export function RenegotiationCompareDialog({
     );
   };
 
+  const getChangeText = (current: number | null | undefined, proposed: number | null | undefined): string => {
+    if (current === null || current === undefined || proposed === null || proposed === undefined) {
+      return "";
+    }
+    if (proposed > current) {
+      const percentChange = ((proposed - current) / current * 100).toFixed(1);
+      return ` (+${percentChange}%)`;
+    } else if (proposed < current) {
+      const percentChange = ((current - proposed) / current * 100).toFixed(1);
+      return ` (-${percentChange}%)`;
+    }
+    return "";
+  };
+
   const fields = [
     { key: "initial_rent", label: "Canon Inicial", format: formatCurrency },
     { key: "regime_rent", label: "Canon Régimen", format: formatCurrency },
@@ -92,11 +111,117 @@ export function RenegotiationCompareDialog({
 
   const baseItem = items[0];
 
+  const handleDownloadPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    // Title
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Comparación de Condiciones Comerciales`, pageWidth / 2, 20, { align: "center" });
+    
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "normal");
+    doc.text(contractName, pageWidth / 2, 28, { align: "center" });
+    
+    doc.setFontSize(10);
+    doc.text(`Fecha: ${new Date().toLocaleDateString("es-CL")}`, pageWidth / 2, 35, { align: "center" });
+
+    // Build table data
+    const headers = ["Campo", ...items.map(item => {
+      const typeLabel = item.type === "current" ? "(Actual) " : item.type === "version" ? "(Versión) " : "(Borrador) ";
+      return typeLabel + item.name;
+    })];
+
+    const tableData: string[][] = [];
+
+    // Add field rows
+    fields.forEach((field) => {
+      const row = [field.label];
+      items.forEach((item, index) => {
+        const value = item.data[field.key];
+        let formatted = String(field.format(value, item));
+        if (index > 0 && typeof value === "number" && typeof baseItem.data[field.key] === "number") {
+          formatted += getChangeText(baseItem.data[field.key], value);
+        }
+        row.push(formatted);
+      });
+      tableData.push(row);
+    });
+
+    // Add escalations row
+    const escalationsRow = ["Escalonamientos"];
+    items.forEach((item) => {
+      if (item.escalations && item.escalations.length > 0) {
+        const escalationText = item.escalations
+          .map((esc) => `Mes ${esc.month_number}: ${formatCurrency(esc.amount)}`)
+          .join("\n");
+        escalationsRow.push(escalationText);
+      } else {
+        escalationsRow.push("Sin escalonamientos");
+      }
+    });
+    tableData.push(escalationsRow);
+
+    // Add periodic adjustments row
+    const adjustmentsRow = ["Ajustes Periódicos"];
+    items.forEach((item) => {
+      if (item.data.has_periodic_adjustments) {
+        const adjustmentText = [
+          `Inicio: Mes ${item.data.first_adjustment_month}`,
+          `Cada: ${item.data.adjustment_periodicity_months} meses`,
+          `Valor: ${item.data.adjustment_type === "percentage" 
+            ? `${item.data.adjustment_value}%` 
+            : formatCurrency(item.data.adjustment_value)}`
+        ].join("\n");
+        adjustmentsRow.push(adjustmentText);
+      } else {
+        adjustmentsRow.push("Sin ajustes");
+      }
+    });
+    tableData.push(adjustmentsRow);
+
+    // Generate table
+    autoTable(doc, {
+      head: [headers],
+      body: tableData,
+      startY: 42,
+      styles: {
+        fontSize: 9,
+        cellPadding: 3,
+      },
+      headStyles: {
+        fillColor: [59, 130, 246],
+        textColor: 255,
+        fontStyle: "bold",
+      },
+      columnStyles: {
+        0: { fontStyle: "bold", cellWidth: 40 },
+      },
+      alternateRowStyles: {
+        fillColor: [245, 247, 250],
+      },
+    });
+
+    // Save PDF
+    const fileName = `Comparacion_${contractName.replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}.pdf`;
+    doc.save(fileName);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-6xl max-h-[90vh]">
-        <DialogHeader>
+        <DialogHeader className="flex flex-row items-center justify-between">
           <DialogTitle>Comparar Condiciones</DialogTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadPDF}
+            className="gap-2"
+          >
+            <Download className="h-4 w-4" />
+            Descargar PDF
+          </Button>
         </DialogHeader>
 
         <ScrollArea className="max-h-[70vh]">
@@ -109,6 +234,9 @@ export function RenegotiationCompareDialog({
                   <CardTitle className="text-sm flex items-center gap-2">
                     {item.type === "current" && (
                       <Badge variant="default" className="text-xs">Actual</Badge>
+                    )}
+                    {item.type === "version" && (
+                      <Badge variant="secondary" className="text-xs">Versión</Badge>
                     )}
                     {item.name}
                   </CardTitle>

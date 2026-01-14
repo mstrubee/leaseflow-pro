@@ -381,6 +381,7 @@ export function VersionHistoryPanel({
         open={showCompareDialog}
         onOpenChange={setShowCompareDialog}
         items={getCompareItems()}
+        contractName={contractName}
       />
 
       {/* Delete Confirmation 1 */}

@@ -994,6 +994,7 @@ const ContractDetail = () => {
                         <Card className="p-6">
                           <RenegotiationDraftsPanel
                             contractId={contract.id}
+                            contractName={contract.name}
                             currentVersion={{
                               id: currentVersion.id,
                               version_number: currentVersion.version_number,
