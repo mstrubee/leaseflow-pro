@@ -1246,13 +1246,13 @@ const EditContract = () => {
                                   <span className="text-sm text-muted-foreground">=</span>
                                   <span className="text-sm font-medium">
                                     {guaranteeMultiplier && regimeRent
-                                      ? (parseFloat(guaranteeMultiplier) * parseFloat(regimeRent)).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                      ? (parseFloat(guaranteeMultiplier) * parseFloat(regimeRent)).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })
                                       : "0"} {currency}
                                   </span>
                                 </div>
                                 {currency === "CLP" && ufValue > 0 && guaranteeMultiplier && regimeRent && (
                                   <p className="text-xs text-muted-foreground">
-                                    ≈ {(parseFloat(guaranteeMultiplier) * convertPesosToUF(parseFloat(regimeRent))).toFixed(2)} UF
+                                    ≈ {(parseFloat(guaranteeMultiplier) * convertPesosToUF(parseFloat(regimeRent))).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF
                                   </p>
                                 )}
                                 {currency === "UF" && ufValue > 0 && guaranteeMultiplier && regimeRent && (

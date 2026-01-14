@@ -89,7 +89,7 @@ export function CommercialConditionsSummary({
     }
     return `${amount.toLocaleString("es-CL", {
       minimumFractionDigits: 2,
-      maximumFractionDigits: 2
+      maximumFractionDigits: 3
     })} UF`;
   };
 
@@ -100,7 +100,7 @@ export function CommercialConditionsSummary({
       const uf = amount / ufValue;
       return `${uf.toLocaleString("es-CL", {
         minimumFractionDigits: 2,
-        maximumFractionDigits: 2
+        maximumFractionDigits: 3
       })} UF`;
     } else if (displayCurrency === "UF" && ufValue > 0) {
       // Amount is in UF, convert to CLP for illustrative display
@@ -479,7 +479,7 @@ export function CommercialConditionsSummary({
                 <span>
                   ({displayCurrency === "CLP" 
                     ? `$${Math.round(totalArriendo / superficieEdificadaLocal).toLocaleString("es-CL")}/m²` 
-                    : `${(totalArriendo / superficieEdificadaLocal).toFixed(4)} UF/m²`})
+                    : `${(totalArriendo / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²`})
                 </span>
               )}
             </div>
@@ -524,7 +524,7 @@ export function CommercialConditionsSummary({
               {formatSecondary(currentRent)}
             </p>
             {canonPerM2 !== null && <p className="text-xs text-muted-foreground">
-                {displayCurrency === "CLP" ? `($${Math.round(canonPerM2).toLocaleString("es-CL")}/m²)` : `(${canonPerM2.toFixed(4)} UF/m²)`}
+                {displayCurrency === "CLP" ? `($${Math.round(canonPerM2).toLocaleString("es-CL")}/m²)` : `(${canonPerM2.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)`}
               </p>}
           </div>
 

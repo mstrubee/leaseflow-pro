@@ -636,7 +636,7 @@ const NewContract = () => {
                   <span className="text-sm text-muted-foreground">=</span>
                   <span className="text-sm font-medium">
                     {guaranteeMultiplier && regimeRent
-                      ? (parseFloat(guaranteeMultiplier) * parseFloat(regimeRent)).toFixed(2)
+                      ? (parseFloat(guaranteeMultiplier) * parseFloat(regimeRent)).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })
                       : "0"} UF
                   </span>
                 </div>
@@ -765,7 +765,7 @@ const NewContract = () => {
                               <div>• Prorrata KWH Clima: {gastosComunesProrratKwhClima} UF (fijo)</div>
                             )}
                             {parseFloat(adicionalAdministracionPercentage) > 0 && regimeRent && (
-                              <div>• Adic. Admin ({adicionalAdministracionPercentage}%): {((parseFloat(regimeRent) || 0) * (parseFloat(adicionalAdministracionPercentage) / 100)).toFixed(2)} UF</div>
+                              <div>• Adic. Admin ({adicionalAdministracionPercentage}%): {((parseFloat(regimeRent) || 0) * (parseFloat(adicionalAdministracionPercentage) / 100)).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF</div>
                             )}
                           </div>
                         )}
@@ -782,7 +782,7 @@ const NewContract = () => {
                       <Input
                         id="gastosComunesTotalCentroNew"
                         type="number"
-                        step="0.01"
+                        step="0.001"
                         min="0"
                         placeholder="Ej: 10000"
                         value={gastosComunesTotalCentro}
@@ -798,7 +798,7 @@ const NewContract = () => {
                       <Input
                         id="gastosComunesPercentageNew"
                         type="number"
-                        step="0.01"
+                        step="0.001"
                         min="0"
                         max="100"
                         placeholder="Ej: 2.5"
@@ -833,7 +833,7 @@ const NewContract = () => {
                       <Input
                         id="gastosComunesTopeNew"
                         type="number"
-                        step="0.01"
+                        step="0.001"
                         min="0"
                         placeholder={gastosComunesTopeType === "fixed" ? "Ej: 150 UF/mes" : "Ej: 0.15 UF/m²"}
                         value={gastosComunesTope}
@@ -861,21 +861,21 @@ const NewContract = () => {
                             <div className="space-y-1 mt-2">
                               <div className="flex justify-between text-sm">
                                 <span className="text-muted-foreground">Cálculo:</span>
-                                <span className="font-medium">{calculatedAmount.toFixed(2)} UF</span>
+                                <span className="font-medium">{calculatedAmount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF</span>
                               </div>
                               {isTopApplied && (
                                 <div className="flex justify-between text-sm text-amber-600">
                                   <span>Tope aplicado:</span>
-                                  <span className="font-medium">-{(calculatedAmount - tope).toFixed(2)} UF</span>
+                                  <span className="font-medium">-{(calculatedAmount - tope).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF</span>
                                 </div>
                               )}
                               <div className="flex justify-between text-sm border-t pt-1 mt-1">
                                 <span className="text-muted-foreground font-medium">Total:</span>
-                                <span className="font-semibold">{finalAmount.toFixed(2)} UF</span>
+                                <span className="font-semibold">{finalAmount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF</span>
                               </div>
                               <div className="text-[10px] text-muted-foreground mt-2">
-                                {totalCentro.toLocaleString("es-CL")} UF × {percentage}% = {calculatedAmount.toFixed(2)} UF
-                                {isTopApplied && <span className="text-amber-600 ml-2">(tope: {tope.toFixed(2)} UF)</span>}
+                                {totalCentro.toLocaleString("es-CL")} UF × {percentage}% = {calculatedAmount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF
+                                {isTopApplied && <span className="text-amber-600 ml-2">(tope: {tope.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF)</span>}
                               </div>
                             </div>
                           );
@@ -1029,7 +1029,7 @@ const NewContract = () => {
                           return adjustments.map((adj, idx) => (
                             <div key={idx} className="flex justify-between">
                               <span>Mes {adj.month}:</span>
-                              <span className="font-medium">{adj.rent.toFixed(2)} UF</span>
+                              <span className="font-medium">{adj.rent.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF</span>
                             </div>
                           ));
                         })()}
