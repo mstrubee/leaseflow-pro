@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -82,6 +83,9 @@ export function PatentChecklist({
   // Bulk selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [bulkStatusDialogOpen, setBulkStatusDialogOpen] = useState(false);
+  
+  // Unsaved changes confirmation dialog
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
   
   // Upload and alert dialogs
   const [uploadDialog, setUploadDialog] = useState<{ itemId: string; itemName: string } | null>(null);
@@ -266,6 +270,26 @@ export function PatentChecklist({
   const hasCommentsChanged = comments !== (contract.contract_patents?.comments || '') || 
                               nextActions !== (contract.contract_patents?.next_actions || '');
 
+  // Handle back with unsaved changes check
+  const handleBack = () => {
+    if (hasCommentsChanged) {
+      setShowUnsavedDialog(true);
+    } else {
+      onBack();
+    }
+  };
+
+  const handleConfirmLeave = () => {
+    setShowUnsavedDialog(false);
+    onBack();
+  };
+
+  const handleSaveAndLeave = async () => {
+    await handleSaveComments();
+    setShowUnsavedDialog(false);
+    onBack();
+  };
+
   const handleStatusChange = async (itemId: string, status: PatentDocStatus) => {
     if (!user) return;
     try {
@@ -335,7 +359,7 @@ export function PatentChecklist({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={onBack}>
+          <Button variant="ghost" onClick={handleBack}>
             <ArrowLeft className="h-4 w-4 mr-2" />
             Volver
           </Button>
@@ -874,6 +898,26 @@ export function PatentChecklist({
           endDate={alertDialog.endDate}
         />
       )}
+
+      {/* Unsaved changes confirmation dialog */}
+      <AlertDialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cambios sin guardar</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tiene comentarios o acciones sin guardar. ¿Desea guardar los cambios antes de salir?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleConfirmLeave}>
+              Salir sin guardar
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleSaveAndLeave}>
+              Guardar y salir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
