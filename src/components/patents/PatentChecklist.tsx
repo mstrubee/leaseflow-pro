@@ -390,8 +390,13 @@ export function PatentChecklist({
           </Button>
           <div>
             <h2 className="text-xl font-semibold">{contract.name}</h2>
+            {contract.contract_companies && contract.contract_companies.length > 0 && (
+              <p className="text-sm font-medium text-foreground">
+                {contract.contract_companies.map((cc: any) => cc.companies?.name).filter(Boolean).join(', ')}
+              </p>
+            )}
             <p className="text-sm text-muted-foreground">
-              {contract.contract_addresses?.[0]?.region} - {contract.contract_addresses?.[0]?.commune}
+              {contract.contract_addresses?.[0]?.street} {contract.contract_addresses?.[0]?.number}, {contract.contract_addresses?.[0]?.commune}
             </p>
           </div>
         </div>
