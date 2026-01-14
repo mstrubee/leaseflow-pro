@@ -795,23 +795,39 @@ export function PatentChecklist({
                                 </PopoverContent>
                               </Popover>
                             </TableCell>
-                            <TableCell className={disableOtherFields ? disabledCellClass : ""}>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8"
-                                disabled={disableOtherFields}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setUploadDialog({ itemId: item.id, itemName: item.name });
-                                }}
-                              >
-                                {getDocValue(item.id, 'document_url') ? (
+                            <TableCell>
+                              {isOk && getDocValue(item.id, 'document_url') ? (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 text-primary hover:text-primary/80"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const url = getDocValue(item.id, 'document_url') as string;
+                                    window.open(url, '_blank');
+                                  }}
+                                  title="Ver archivo"
+                                >
                                   <FileText className="h-3 w-3" />
-                                ) : (
-                                  <Upload className="h-3 w-3" />
-                                )}
-                              </Button>
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className={`h-8 ${disableOtherFields ? disabledCellClass : ""}`}
+                                  disabled={disableOtherFields}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setUploadDialog({ itemId: item.id, itemName: item.name });
+                                  }}
+                                >
+                                  {getDocValue(item.id, 'document_url') ? (
+                                    <FileText className="h-3 w-3" />
+                                  ) : (
+                                    <Upload className="h-3 w-3" />
+                                  )}
+                                </Button>
+                              )}
                             </TableCell>
                             <TableCell className={disableOtherFields ? disabledCellClass : ""}>
                               <Input
