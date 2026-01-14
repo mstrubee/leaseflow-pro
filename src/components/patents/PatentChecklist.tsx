@@ -807,34 +807,55 @@ export function PatentChecklist({
                               </Popover>
                             </TableCell>
                             <TableCell>
-                              {getDocValue(item.id, 'document_url') ? (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 text-primary hover:text-primary/80"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const url = getDocValue(item.id, 'document_url') as string;
-                                    window.open(url, '_blank');
-                                  }}
-                                  title="Ver archivo"
-                                >
-                                  <FileText className="h-3 w-3" />
-                                </Button>
-                              ) : (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className={`h-8 ${disableOtherFields ? disabledCellClass : ""}`}
-                                  disabled={disableOtherFields}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setUploadDialog({ itemId: item.id, itemName: item.name });
-                                  }}
-                                >
-                                  <Upload className="h-3 w-3" />
-                                </Button>
-                              )}
+                              <div className="flex items-center gap-1">
+                                {getDocValue(item.id, 'document_url') && (() => {
+                                  const urls = (getDocValue(item.id, 'document_url') as string).split('|||').filter(Boolean);
+                                  return urls.length > 1 ? (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 text-primary hover:text-primary/80"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setUploadDialog({ itemId: item.id, itemName: item.name });
+                                      }}
+                                      title={`${urls.length} archivos - click para ver`}
+                                    >
+                                      <FileText className="h-3 w-3" />
+                                      <span className="ml-1 text-xs">{urls.length}</span>
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 text-primary hover:text-primary/80"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        window.open(urls[0], '_blank');
+                                      }}
+                                      title="Ver archivo"
+                                    >
+                                      <FileText className="h-3 w-3" />
+                                    </Button>
+                                  );
+                                })()}
+                                {/* Always show upload button when status is "ok" or when there's no document */}
+                                {(status === "ok" || !getDocValue(item.id, 'document_url')) && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className={`h-8 ${status !== "ok" && disableOtherFields ? disabledCellClass : ""}`}
+                                    disabled={status !== "ok" && disableOtherFields}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setUploadDialog({ itemId: item.id, itemName: item.name });
+                                    }}
+                                    title={getDocValue(item.id, 'document_url') ? "Agregar otro archivo" : "Subir archivo"}
+                                  >
+                                    <Upload className="h-3 w-3" />
+                                  </Button>
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell className={disableOtherFields ? disabledCellClass : ""}>
                               <Input
