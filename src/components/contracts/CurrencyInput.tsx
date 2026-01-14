@@ -37,7 +37,9 @@ export const CurrencyInput = ({
     convertUFToPesos,
     loading
   } = useEconomicIndicators();
-  const numericValue = parseFloat(value) || 0;
+  // Normalize decimal separator: replace comma with period for parsing
+  const normalizedValue = value.replace(",", ".");
+  const numericValue = parseFloat(normalizedValue) || 0;
   // UF values displayed with max 2 decimals, UF/m² values with max 3 decimals
   const formatUF = (amount: number, isUfM2: boolean = false) => {
     const decimals = isUfM2 ? 3 : 2;
@@ -70,7 +72,31 @@ export const CurrencyInput = ({
               <SelectItem value="uf_m2">UF/m²</SelectItem>
             </SelectContent>
           </Select>}
-        <Input id={id} type="number" step="0.001" value={value} onChange={e => onChange(e.target.value)} onFocus={e => e.target.select()} required={required} className="w-28" placeholder="0" />
+        <Input 
+          id={id} 
+          type="text" 
+          inputMode="decimal"
+          step="0.001" 
+          value={value} 
+          onChange={e => {
+            // Allow digits, period, and comma as decimal separators
+            const val = e.target.value.replace(/[^0-9.,]/g, "");
+            onChange(val);
+          }} 
+          onBlur={e => {
+            // On blur, normalize to use period and format properly
+            const normalized = e.target.value.replace(",", ".");
+            const num = parseFloat(normalized);
+            if (!isNaN(num)) {
+              // Keep the value with proper decimal precision (3 for UF/m²)
+              onChange(num.toString());
+            }
+          }}
+          onFocus={e => e.target.select()} 
+          required={required} 
+          className="w-28" 
+          placeholder="0" 
+        />
         {isUfM2Mode && <span className="flex items-center text-sm text-muted-foreground whitespace-nowrap">UF/m²</span>}
         {showCurrencySelector && !isUfM2Mode && <Select value={currency} onValueChange={v => onCurrencyChange(v as "UF" | "CLP")}>
             <SelectTrigger className="w-20">
