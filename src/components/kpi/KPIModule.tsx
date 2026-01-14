@@ -63,13 +63,25 @@ export function KPIModule() {
     setIsKPIFormOpen(true);
   };
 
+  const handleCreateSubKPI = (parentKPI: KPI) => {
+    // Create a new KPI with parent reference
+    setEditingKPI({
+      ...parentKPI,
+      id: '', // Will be new
+      name: `${parentKPI.name} - Sub`,
+      parent_kpi_id: parentKPI.id,
+      description: `Sub-KPI de ${parentKPI.name}`,
+    } as KPI);
+    setIsKPIFormOpen(true);
+  };
+
   const handleEditKPI = (kpi: KPI) => {
     setEditingKPI(kpi);
     setIsKPIFormOpen(true);
   };
 
   const handleSaveKPI = async (data: Partial<KPI>) => {
-    if (editingKPI) {
+    if (editingKPI && editingKPI.id) {
       await updateKPI(editingKPI.id, data);
     } else {
       await createKPI(data);
@@ -134,6 +146,7 @@ export function KPIModule() {
             onEditKPI={handleEditKPI}
             onDeleteKPI={deleteKPI}
             onViewMeasurements={handleViewMeasurements}
+            onCreateSubKPI={handleCreateSubKPI}
           />
         </TabsContent>
 

@@ -74,6 +74,8 @@ export function KPIForm({
         responsible_user_id: kpi.responsible_user_id,
         data_source: kpi.data_source || "",
         is_active: kpi.is_active,
+        parent_kpi_id: kpi.parent_kpi_id,
+        assigned_user_id: kpi.assigned_user_id,
       });
     } else {
       setFormData({
@@ -92,9 +94,13 @@ export function KPIForm({
         responsible_user_id: null,
         data_source: "",
         is_active: true,
+        parent_kpi_id: null,
+        assigned_user_id: null,
       });
     }
   }, [kpi, categories, goalTypes, frequencies]);
+
+  const isSubKPI = !!formData.parent_kpi_id;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,7 +121,14 @@ export function KPIForm({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{kpi ? "Editar KPI" : "Nuevo KPI"}</DialogTitle>
+          <DialogTitle>
+            {kpi?.id ? "Editar KPI" : isSubKPI ? "Nuevo Sub-KPI" : "Nuevo KPI"}
+          </DialogTitle>
+          {isSubKPI && (
+            <p className="text-sm text-muted-foreground">
+              Este Sub-KPI estará vinculado al KPI principal y puede asignarse a un usuario específico.
+            </p>
+          )}
         </DialogHeader>
 
         <form onSubmit={handleSubmit}>
@@ -230,6 +243,32 @@ export function KPIForm({
                   </Select>
                 </div>
               </div>
+
+              {isSubKPI && (
+                <div className="grid grid-cols-2 gap-4 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <div className="space-y-2">
+                    <Label htmlFor="assigned_user">Usuario Asignado (Sub-KPI)</Label>
+                    <Select
+                      value={formData.assigned_user_id || ""}
+                      onValueChange={(value) => updateField("assigned_user_id" as any, value || null)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Asignar a usuario" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {users.map((user) => (
+                          <SelectItem key={user.id} value={user.id}>
+                            {user.full_name || user.email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Este usuario será responsable de alcanzar la meta de este Sub-KPI
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">

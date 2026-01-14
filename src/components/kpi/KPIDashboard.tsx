@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
-import { TrendingUp, TrendingDown, Minus, Target, Activity, AlertTriangle, CheckCircle } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
+import { TrendingUp, TrendingDown, Minus, Target, Activity, AlertTriangle, CheckCircle, Download } from "lucide-react";
 import { KPI, KPICategory, KPIMeasurement } from "@/hooks/useKPI";
+import { generateDashboardPDF } from "./KPIPDFExport";
 
 interface KPIDashboardProps {
   kpis: KPI[];
@@ -109,10 +110,14 @@ export function KPIDashboard({
     }
   };
 
+  const handleDownloadPDF = () => {
+    generateDashboardPDF(kpiWithLatestValue, categories, summaryStats);
+  };
+
   return (
     <div className="space-y-6">
-      {/* Filters */}
-      <div className="flex gap-4">
+      {/* Filters and Actions */}
+      <div className="flex gap-4 items-center justify-between">
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
           <SelectTrigger className="w-64">
             <SelectValue placeholder="Categoría" />
@@ -126,6 +131,10 @@ export function KPIDashboard({
             ))}
           </SelectContent>
         </Select>
+        <Button variant="outline" onClick={handleDownloadPDF} className="gap-2">
+          <Download className="h-4 w-4" />
+          Descargar PDF
+        </Button>
       </div>
 
       {/* Summary Cards */}

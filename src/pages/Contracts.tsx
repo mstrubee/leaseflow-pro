@@ -239,7 +239,7 @@ const Contracts = () => {
           company_id,
           companies (id, name)
         ),
-        contract_addresses (region, commune),
+        contract_addresses (region, commune, street, number),
         contract_versions (
           id,
           regime_rent,

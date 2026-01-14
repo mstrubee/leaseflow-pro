@@ -46,6 +46,9 @@ export interface KPI {
   display_order: number;
   created_at: string;
   updated_at: string;
+  // Sub-KPI support
+  parent_kpi_id: string | null;
+  assigned_user_id: string | null;
   // Joined fields
   category?: KPICategory;
   goal_type?: KPIGoalType;
@@ -205,6 +208,8 @@ export function useKPI() {
         is_active: data.is_active,
         display_order: data.display_order,
         created_by: user?.id,
+        parent_kpi_id: data.parent_kpi_id || null,
+        assigned_user_id: data.assigned_user_id || null,
       };
       const { data: newKPI, error } = await supabase
         .from("kpis")
