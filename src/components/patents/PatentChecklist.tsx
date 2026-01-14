@@ -2,8 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { AISummaryAction } from "@/components/ui/ai-summary-action";
+import { TextareaWithAI } from "@/components/ui/textarea-with-ai";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -482,52 +481,34 @@ export function PatentChecklist({
       {/* Comments and Next Actions Section */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
-          <CardHeader className="py-3">
-            <CardTitle className="text-base font-medium">Comentarios y Observaciones</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="space-y-2">
-              <Textarea
-                value={comments}
-                onChange={(e) => {
-                  if (e.target.value.length <= 500) {
-                    setComments(e.target.value);
-                  }
-                }}
-                placeholder="Escriba sus comentarios u observaciones aquí..."
-                className="resize-none text-left font-mono text-sm"
-                rows={5}
-                style={{ lineHeight: '1.5' }}
-              />
-              <span className="text-xs text-muted-foreground">
-                {comments.length}/500 caracteres
-              </span>
-            </div>
+          <CardContent className="pt-4">
+            <TextareaWithAI
+              label="Comentarios y Observaciones"
+              value={comments}
+              onChange={setComments}
+              maxLength={500}
+              placeholder="Escriba sus comentarios u observaciones aquí..."
+              className="resize-none text-left font-mono text-sm"
+              rows={5}
+              style={{ lineHeight: '1.5' }}
+              downloadFileName="comentarios-patente"
+            />
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="py-3">
-            <CardTitle className="text-base font-medium">Próximas Acciones</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="space-y-2">
-              <Textarea
-                value={nextActions}
-                onChange={(e) => {
-                  if (e.target.value.length <= 500) {
-                    setNextActions(e.target.value);
-                  }
-                }}
-                placeholder="Escriba las próximas acciones aquí..."
-                className="resize-none text-left font-mono text-sm"
-                rows={5}
-                style={{ lineHeight: '1.5' }}
-              />
-              <span className="text-xs text-muted-foreground">
-                {nextActions.length}/500 caracteres
-              </span>
-            </div>
+          <CardContent className="pt-4">
+            <TextareaWithAI
+              label="Próximas Acciones"
+              value={nextActions}
+              onChange={setNextActions}
+              maxLength={500}
+              placeholder="Escriba las próximas acciones aquí..."
+              className="resize-none text-left font-mono text-sm"
+              rows={5}
+              style={{ lineHeight: '1.5' }}
+              downloadFileName="proximas-acciones-patente"
+            />
           </CardContent>
         </Card>
       </div>
