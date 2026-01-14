@@ -796,7 +796,7 @@ export function PatentChecklist({
                               </Popover>
                             </TableCell>
                             <TableCell>
-                              {isOk && getDocValue(item.id, 'document_url') ? (
+                              {getDocValue(item.id, 'document_url') ? (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -821,11 +821,7 @@ export function PatentChecklist({
                                     setUploadDialog({ itemId: item.id, itemName: item.name });
                                   }}
                                 >
-                                  {getDocValue(item.id, 'document_url') ? (
-                                    <FileText className="h-3 w-3" />
-                                  ) : (
-                                    <Upload className="h-3 w-3" />
-                                  )}
+                                  <Upload className="h-3 w-3" />
                                 </Button>
                               )}
                             </TableCell>
