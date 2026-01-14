@@ -2,7 +2,10 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ArrowLeft, FileText, Building2, CheckCircle2, AlertTriangle, Clock, XCircle, FileCheck, ExternalLink, ChevronDown, ChevronUp, ChevronRight, X, Download, Filter, MessageSquare, ArrowUpDown } from "lucide-react";
+import { ArrowLeft, FileText, Building2, CheckCircle2, AlertTriangle, Clock, XCircle, FileCheck, ExternalLink, ChevronDown, ChevronUp, ChevronRight, X, Download, Filter, MessageSquare, ArrowUpDown, Settings2, Check } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { 
@@ -98,6 +101,21 @@ const ReportsDashboard = () => {
   // Sorting for "Sin Patente" section
   const [sinPatenteSortField, setSinPatenteSortField] = useState<"empresa" | "prioridad" | null>(null);
   const [sinPatenteSortOrder, setSinPatenteSortOrder] = useState<"asc" | "desc">("asc");
+  
+  // Column selection for PDF export
+  const [showPdfColumnSelector, setShowPdfColumnSelector] = useState(false);
+  const [selectedPdfColumns, setSelectedPdfColumns] = useState<string[]>([
+    "local", "empresa", "direccion", "prioridad", "comentarios", "proximas_acciones"
+  ]);
+  
+  const availablePdfColumns = [
+    { key: "local", label: "Local" },
+    { key: "empresa", label: "Empresa" },
+    { key: "direccion", label: "Dirección" },
+    { key: "prioridad", label: "Prioridad" },
+    { key: "comentarios", label: "Comentarios" },
+    { key: "proximas_acciones", label: "Próximas Acciones" },
+  ];
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -453,7 +471,7 @@ const ReportsDashboard = () => {
     }
   };
 
-  // Export PDF function for Sin Patente section (respects current filter and sort)
+  // Export PDF function for Sin Patente section (respects current filter, sort, and column selection)
   const exportSinPatentePDF = async () => {
     const doc = new jsPDF({ orientation: 'landscape' });
     const today = new Date().toLocaleDateString('es-CL');
@@ -499,36 +517,68 @@ const ReportsDashboard = () => {
       doc.setTextColor(0);
       doc.text('No hay locales sin patente con los filtros seleccionados.', 14, 55);
     } else {
-      const sinPatenteData = sinPatenteContracts.map(c => {
-        const companies = c.contract_companies?.map(cc => cc.companies?.name).filter(Boolean).join(', ') || 'Sin Empresa';
-        const address = c.contract_addresses?.[0];
-        const fullAddress = address 
-          ? (address.street || '') + ' ' + (address.number || '') + ', ' + (address.commune || '')
-          : 'Sin direccion';
-        const priority = c.contract_patents?.priority 
-          ? PRIORITY_CONFIG[c.contract_patents.priority]?.label || 'Sin Asignar'
-          : 'Sin Asignar';
-        const comments = c.contract_patents?.comments || '-';
-        const nextActions = c.contract_patents?.next_actions || '-';
-        
-        return [c.name, companies, fullAddress.trim(), priority, comments, nextActions];
+      // Build headers and data based on selected columns
+      const columnMapping: Record<string, { header: string; getValue: (c: ContractPatentData) => string; width: number | 'auto' }> = {
+        local: {
+          header: 'Local',
+          getValue: (c) => c.name,
+          width: 35,
+        },
+        empresa: {
+          header: 'Empresa',
+          getValue: (c) => c.contract_companies?.map(cc => cc.companies?.name).filter(Boolean).join(', ') || 'Sin Empresa',
+          width: 35,
+        },
+        direccion: {
+          header: 'Direccion',
+          getValue: (c) => {
+            const address = c.contract_addresses?.[0];
+            return address 
+              ? ((address.street || '') + ' ' + (address.number || '') + ', ' + (address.commune || '')).trim()
+              : 'Sin direccion';
+          },
+          width: 40,
+        },
+        prioridad: {
+          header: 'Prioridad',
+          getValue: (c) => c.contract_patents?.priority 
+            ? PRIORITY_CONFIG[c.contract_patents.priority]?.label || 'Sin Asignar'
+            : 'Sin Asignar',
+          width: 25,
+        },
+        comentarios: {
+          header: 'Comentarios',
+          getValue: (c) => c.contract_patents?.comments || '-',
+          width: 'auto' as const,
+        },
+        proximas_acciones: {
+          header: 'Proximas Acciones',
+          getValue: (c) => c.contract_patents?.next_actions || '-',
+          width: 'auto' as const,
+        },
+      };
+      
+      // Filter only selected columns
+      const activeColumns = selectedPdfColumns.filter(key => columnMapping[key]);
+      const headers = activeColumns.map(key => columnMapping[key].header);
+      const sinPatenteData = sinPatenteContracts.map(c => 
+        activeColumns.map(key => columnMapping[key].getValue(c))
+      );
+      
+      // Build column styles
+      const columnStyles: Record<number, { cellWidth: number | 'auto' }> = {};
+      activeColumns.forEach((key, index) => {
+        columnStyles[index] = { cellWidth: columnMapping[key].width };
       });
       
       autoTable(doc, {
         startY: 46,
-        head: [['Local', 'Empresa', 'Direccion', 'Prioridad', 'Comentarios', 'Proximas Acciones']],
+        head: [headers],
         body: sinPatenteData,
         theme: 'grid',
         headStyles: { fillColor: [220, 38, 38] },
         margin: { left: 14, right: 14 },
-        columnStyles: {
-          0: { cellWidth: 35 },
-          1: { cellWidth: 35 },
-          2: { cellWidth: 40 },
-          3: { cellWidth: 25 },
-          4: { cellWidth: 'auto' },
-          5: { cellWidth: 'auto' },
-        },
+        columnStyles,
         styles: { 
           fontSize: 8,
           cellPadding: 3,
@@ -1194,9 +1244,53 @@ const ReportsDashboard = () => {
                           </CardDescription>
                         </div>
                         <div className="flex items-center gap-2">
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Settings2 className="h-3 w-3 mr-1" />
+                                Columnas PDF
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-56" align="end">
+                              <div className="space-y-3">
+                                <h4 className="font-medium text-sm">Columnas del PDF</h4>
+                                <div className="space-y-2">
+                                  {availablePdfColumns.map((col) => (
+                                    <div key={col.key} className="flex items-center space-x-2">
+                                      <Checkbox
+                                        id={`pdf-col-${col.key}`}
+                                        checked={selectedPdfColumns.includes(col.key)}
+                                        onCheckedChange={(checked) => {
+                                          if (checked) {
+                                            setSelectedPdfColumns(prev => [...prev, col.key]);
+                                          } else {
+                                            setSelectedPdfColumns(prev => prev.filter(k => k !== col.key));
+                                          }
+                                        }}
+                                      />
+                                      <Label 
+                                        htmlFor={`pdf-col-${col.key}`}
+                                        className="text-sm cursor-pointer"
+                                      >
+                                        {col.label}
+                                      </Label>
+                                    </div>
+                                  ))}
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  {selectedPdfColumns.length} columnas seleccionadas
+                                </p>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
                           <Button 
                             variant="outline" 
                             size="sm"
+                            disabled={selectedPdfColumns.length === 0}
                             onClick={(e) => {
                               e.stopPropagation();
                               exportSinPatentePDF();
