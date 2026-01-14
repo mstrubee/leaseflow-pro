@@ -966,6 +966,26 @@ const ContractDetail = () => {
                           onRenegotiationSuccess={loadContract}
                           displayCurrency={contract.display_currency}
                         />
+                        {isNegotiating && currentVersion && (
+                          <Card className="p-4 mt-6">
+                            <div className="flex items-center justify-between">
+                              <p className="text-sm text-muted-foreground">Gestionar condiciones comerciales</p>
+                              <div className="flex items-center gap-2">
+                                <EscalationDialog
+                                  escalations={currentVersion.rent_escalations?.map((e) => ({
+                                    id: e.id,
+                                    month_number: e.month_number,
+                                    amount: e.amount,
+                                  })) || []}
+                                  initialRent={currentVersion.initial_rent || currentVersion.regime_rent}
+                                  regimeRent={currentVersion.regime_rent}
+                                  durationMonths={currentVersion.duration_months}
+                                  onSave={handleSaveEscalations}
+                                />
+                              </div>
+                            </div>
+                          </Card>
+                        )}
                       </CollapsibleSection>
                     </SelectableElement>
                   );
@@ -1082,26 +1102,6 @@ const ContractDetail = () => {
                         isDraggable={canReorder}
                         wrapperOnly
                       >
-                        {isNegotiating && currentVersion && (
-                          <Card className="p-4 mb-6">
-                            <div className="flex items-center justify-between">
-                              <p className="text-sm text-muted-foreground">Gestionar condiciones comerciales</p>
-                              <div className="flex items-center gap-2">
-                                <EscalationDialog
-                                  escalations={currentVersion.rent_escalations?.map((e) => ({
-                                    id: e.id,
-                                    month_number: e.month_number,
-                                    amount: e.amount,
-                                  })) || []}
-                                  initialRent={currentVersion.initial_rent || currentVersion.regime_rent}
-                                  regimeRent={currentVersion.regime_rent}
-                                  durationMonths={currentVersion.duration_months}
-                                  onSave={handleSaveEscalations}
-                                />
-                              </div>
-                            </div>
-                          </Card>
-                        )}
                         {hasActiveRenegotiation && (
                           <Card className="p-4 border-amber-500/30 bg-amber-500/5 mb-6">
                             <p className="text-sm text-amber-700 dark:text-amber-400">
