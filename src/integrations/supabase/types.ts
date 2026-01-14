@@ -1100,6 +1100,7 @@ export type Database = {
           is_expired_but_operating: boolean | null
           metros_lineales_frente: number | null
           name: string
+          negotiation_subcategory: string | null
           num_estacionamientos: number | null
           obra_status: string | null
           operation_status: string | null
@@ -1118,6 +1119,7 @@ export type Database = {
           superficie_showroom: number | null
           superficie_terreno: number | null
           updated_at: string
+          venta_estimada: number | null
         }
         Insert: {
           company_id?: string | null
@@ -1129,6 +1131,7 @@ export type Database = {
           is_expired_but_operating?: boolean | null
           metros_lineales_frente?: number | null
           name: string
+          negotiation_subcategory?: string | null
           num_estacionamientos?: number | null
           obra_status?: string | null
           operation_status?: string | null
@@ -1147,6 +1150,7 @@ export type Database = {
           superficie_showroom?: number | null
           superficie_terreno?: number | null
           updated_at?: string
+          venta_estimada?: number | null
         }
         Update: {
           company_id?: string | null
@@ -1158,6 +1162,7 @@ export type Database = {
           is_expired_but_operating?: boolean | null
           metros_lineales_frente?: number | null
           name?: string
+          negotiation_subcategory?: string | null
           num_estacionamientos?: number | null
           obra_status?: string | null
           operation_status?: string | null
@@ -1176,6 +1181,7 @@ export type Database = {
           superficie_showroom?: number | null
           superficie_terreno?: number | null
           updated_at?: string
+          venta_estimada?: number | null
         }
         Relationships: [
           {
