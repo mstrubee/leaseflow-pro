@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,6 +74,8 @@ export function PatentChecklist({
   // Local state for document edits
   const [editingDoc, setEditingDoc] = useState<string | null>(null);
   const [docEdits, setDocEdits] = useState<Record<string, Partial<PatentDocument>>>({});
+  const [savingItems, setSavingItems] = useState<Set<string>>(new Set());
+  const saveTimeoutsRef = useRef<Record<string, NodeJS.Timeout>>({});
   
   // Comments and next actions state
   const [comments, setComments] = useState(contract.contract_patents?.comments || '');
@@ -300,6 +302,29 @@ export function PatentChecklist({
     }
   };
 
+  // Auto-save function with debounce
+  const autoSaveDocument = useCallback(async (itemId: string, updates: Partial<PatentDocument>) => {
+    if (Object.keys(updates).length === 0) return;
+    
+    setSavingItems(prev => new Set(prev).add(itemId));
+    try {
+      await onUpdateDocument(contract.id, itemId, updates);
+      setDocEdits(prev => {
+        const newEdits = { ...prev };
+        delete newEdits[itemId];
+        return newEdits;
+      });
+    } catch (error) {
+      toast.error("Error al guardar");
+    } finally {
+      setSavingItems(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(itemId);
+        return newSet;
+      });
+    }
+  }, [contract.id, onUpdateDocument]);
+
   const handleDocumentFieldChange = (itemId: string, field: keyof PatentDocument, value: any) => {
     const currentEdits = docEdits[itemId] || {};
     const doc = getDocument(itemId);
@@ -317,7 +342,25 @@ export function PatentChecklist({
     }
 
     setDocEdits(prev => ({ ...prev, [itemId]: updates }));
+
+    // Clear existing timeout for this item
+    if (saveTimeoutsRef.current[itemId]) {
+      clearTimeout(saveTimeoutsRef.current[itemId]);
+    }
+
+    // Set new timeout for auto-save (800ms debounce)
+    saveTimeoutsRef.current[itemId] = setTimeout(() => {
+      autoSaveDocument(itemId, updates);
+      delete saveTimeoutsRef.current[itemId];
+    }, 800);
   };
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(saveTimeoutsRef.current).forEach(clearTimeout);
+    };
+  }, []);
 
   // Convenience function for date changes
   const handleDateChange = (itemId: string, field: 'start_date' | 'end_date', value: string) => {
@@ -327,24 +370,6 @@ export function PatentChecklist({
   // Convenience function for deadline days changes
   const handleDeadlineDaysChange = (itemId: string, days: number) => {
     handleDocumentFieldChange(itemId, 'deadline_days', days > 0 ? days : null);
-  };
-
-  const saveDocumentChanges = async (itemId: string) => {
-    const edits = docEdits[itemId];
-    if (!edits) return;
-
-    try {
-      await onUpdateDocument(contract.id, itemId, edits);
-      setDocEdits(prev => {
-        const newEdits = { ...prev };
-        delete newEdits[itemId];
-        return newEdits;
-      });
-      setEditingDoc(null);
-      toast.success("Cambios guardados");
-    } catch (error) {
-      toast.error("Error al guardar");
-    }
   };
 
   const getDocValue = (itemId: string, field: keyof PatentDocument): any => {
@@ -655,8 +680,7 @@ export function PatentChecklist({
                       {(itemsBySection[section.id] || []).map(item => {
                         const doc = getDocument(item.id);
                         const status = getDocValue(item.id, 'status') as PatentDocStatus || 'pendiente';
-                        const isEditing = editingDoc === item.id;
-                        const hasChanges = !!docEdits[item.id];
+                        const isSaving = savingItems.has(item.id);
 
                         // Determine which fields to disable based on status
                         const isNoAplica = status === 'no_aplica';
@@ -836,14 +860,9 @@ export function PatentChecklist({
                               />
                             </TableCell>
                             <TableCell className={disableOtherFields ? disabledCellClass : ""}>
-                              <div className="flex gap-1">
-                                {hasChanges && !disableOtherFields && (
-                                  <Button size="sm" variant="default" onClick={(e) => {
-                                    e.stopPropagation();
-                                    saveDocumentChanges(item.id);
-                                  }}>
-                                    <Save className="h-3 w-3" />
-                                  </Button>
+                              <div className="flex gap-1 items-center">
+                                {savingItems.has(item.id) && (
+                                  <span className="text-xs text-muted-foreground animate-pulse">Guardando...</span>
                                 )}
                                 {!disableOtherFields && (
                                   <Button 
@@ -860,7 +879,7 @@ export function PatentChecklist({
                                           endDate: getDocValue(item.id, 'end_date'),
                                         });
                                       } else {
-                                        toast.error("Guarda primero los cambios del documento");
+                                        toast.error("Primero debe existir un documento para crear alertas");
                                       }
                                     }}
                                   >
@@ -892,9 +911,9 @@ export function PatentChecklist({
           itemId={uploadDialog.itemId}
           itemName={uploadDialog.itemName}
           currentUrl={getDocValue(uploadDialog.itemId, 'document_url') as string}
-          onSave={(url) => {
-            handleDocumentFieldChange(uploadDialog.itemId, 'document_url', url);
-            saveDocumentChanges(uploadDialog.itemId);
+          onSave={async (url) => {
+            // Save document URL immediately (no debounce for file uploads)
+            await onUpdateDocument(contract.id, uploadDialog.itemId, { document_url: url });
           }}
         />
       )}
