@@ -12,6 +12,11 @@ interface CurrencyInputProps {
   onCurrencyChange: (currency: "UF" | "CLP") => void;
   required?: boolean;
   showCurrencySelector?: boolean;
+  // New props for UF/m² mode
+  showUfM2Mode?: boolean;
+  isUfM2Mode?: boolean;
+  onUfM2ModeChange?: (isUfM2: boolean) => void;
+  superficieM2?: number;
 }
 
 export const CurrencyInput = ({
@@ -23,6 +28,10 @@ export const CurrencyInput = ({
   onCurrencyChange,
   required = false,
   showCurrencySelector = true,
+  showUfM2Mode = false,
+  isUfM2Mode = false,
+  onUfM2ModeChange,
+  superficieM2 = 0,
 }: CurrencyInputProps) => {
   const { ufValue, convertPesosToUF, convertUFToPesos, loading } = useEconomicIndicators();
 
@@ -44,14 +53,34 @@ export const CurrencyInput = ({
     ? convertPesosToUF(numericValue)
     : convertUFToPesos(numericValue);
 
+  // Calculate total or UF/m² based on mode
+  const calculatedTotal = isUfM2Mode && superficieM2 > 0 ? numericValue * superficieM2 : 0;
+  const calculatedUfM2 = !isUfM2Mode && superficieM2 > 0 && numericValue > 0 ? numericValue / superficieM2 : 0;
+
   return (
     <div className="space-y-2">
-      <Label htmlFor={id}>{label} {required && "*"}</Label>
+      <div className="flex items-center justify-between">
+        <Label htmlFor={id}>{label} {required && "*"}</Label>
+        {showUfM2Mode && superficieM2 > 0 && (
+          <Select 
+            value={isUfM2Mode ? "uf_m2" : "fixed"} 
+            onValueChange={(v) => onUfM2ModeChange?.(v === "uf_m2")}
+          >
+            <SelectTrigger className="w-28 h-7 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="fixed">Monto Fijo</SelectItem>
+              <SelectItem value="uf_m2">UF/m²</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+      </div>
       <div className="flex gap-2">
         <Input
           id={id}
           type="number"
-          step={currency === "UF" ? "0.01" : "1"}
+          step={currency === "UF" || isUfM2Mode ? "0.01" : "1"}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onFocus={(e) => e.target.select()}
@@ -70,12 +99,39 @@ export const CurrencyInput = ({
             </SelectContent>
           </Select>
         )}
+        {isUfM2Mode && (
+          <span className="flex items-center text-sm text-muted-foreground whitespace-nowrap">UF/m²</span>
+        )}
       </div>
-      {!loading && ufValue > 0 && numericValue > 0 && (
-        <p className="text-xs text-muted-foreground">
-          Equivalente: {currency === "CLP" ? formatUF(equivalentValue) : formatCLP(equivalentValue)}
-        </p>
-      )}
+      
+      {/* Show equivalences */}
+      <div className="space-y-0.5">
+        {!loading && ufValue > 0 && numericValue > 0 && !isUfM2Mode && (
+          <p className="text-xs text-muted-foreground">
+            Equivalente: {currency === "CLP" ? formatUF(equivalentValue) : formatCLP(equivalentValue)}
+          </p>
+        )}
+        
+        {/* UF/m² mode: show calculated total */}
+        {isUfM2Mode && superficieM2 > 0 && numericValue > 0 && (
+          <p className="text-xs text-muted-foreground">
+            Canon Total: {formatUF(calculatedTotal)} ({superficieM2.toLocaleString("es-CL")} m² × {numericValue.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF/m²)
+          </p>
+        )}
+        
+        {/* Fixed mode: show UF/m² equivalent */}
+        {!isUfM2Mode && showUfM2Mode && superficieM2 > 0 && numericValue > 0 && currency === "UF" && (
+          <p className="text-xs text-muted-foreground">
+            Equivale a: {calculatedUfM2.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} UF/m²
+          </p>
+        )}
+        
+        {showUfM2Mode && superficieM2 === 0 && (
+          <p className="text-xs text-amber-600">
+            Superficie no definida. Ingrese datos de superficie para habilitar cálculo UF/m².
+          </p>
+        )}
+      </div>
     </div>
   );
 };

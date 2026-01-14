@@ -89,6 +89,7 @@ const EditContract = () => {
   const [graceMonths, setGraceMonths] = useState(0);
   const [initialRent, setInitialRent] = useState("");
   const [regimeRent, setRegimeRent] = useState("");
+  const [isRegimeRentUfM2, setIsRegimeRentUfM2] = useState(false);
   const [variableRentPercentage, setVariableRentPercentage] = useState("");
   const [duration, setDuration] = useState("");
   const [noticeType, setNoticeType] = useState<"fecha" | "meses" | "rangos">("meses");
@@ -1173,6 +1174,10 @@ const EditContract = () => {
                                       currency={currency}
                                       onCurrencyChange={setCurrency}
                                       showCurrencySelector={false}
+                                      showUfM2Mode={true}
+                                      isUfM2Mode={isRegimeRentUfM2}
+                                      onUfM2ModeChange={setIsRegimeRentUfM2}
+                                      superficieM2={superficieEdificadaLocal}
                                     />
                                     
                                     {/* Meses de gracia sin escalonado */}
