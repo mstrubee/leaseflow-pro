@@ -934,6 +934,7 @@ export type Database = {
       }
       contract_patents: {
         Row: {
+          comments: string | null
           contract_id: string
           created_at: string
           id: string
@@ -943,6 +944,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          comments?: string | null
           contract_id: string
           created_at?: string
           id?: string
@@ -952,6 +954,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          comments?: string | null
           contract_id?: string
           created_at?: string
           id?: string

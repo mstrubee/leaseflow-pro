@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -34,6 +34,8 @@ import { PatentAlertDialog } from "./PatentAlertDialog";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 interface PatentChecklistProps {
   contract: ContractWithPatent;
   sections: PatentChecklistSection[];
@@ -44,6 +46,7 @@ interface PatentChecklistProps {
   onBack: () => void;
   onUpdatePriority: (contractId: string, priority: PatentPriority, userId: string) => Promise<void>;
   onUpdatePatenteStatus: (contractId: string, patenteStatus: string) => Promise<void>;
+  onUpdateComments: (contractId: string, comments: string) => Promise<void>;
   onUpdateDocument: (contractId: string, itemId: string, data: Partial<PatentDocument>) => Promise<void>;
   onUpdateDocumentStatus: (contractId: string, itemId: string, status: PatentDocStatus, userId: string) => Promise<void>;
 }
@@ -58,6 +61,7 @@ export function PatentChecklist({
   onBack,
   onUpdatePriority,
   onUpdatePatenteStatus,
+  onUpdateComments,
   onUpdateDocument,
   onUpdateDocumentStatus,
 }: PatentChecklistProps) {
@@ -69,6 +73,10 @@ export function PatentChecklist({
   // Local state for document edits
   const [editingDoc, setEditingDoc] = useState<string | null>(null);
   const [docEdits, setDocEdits] = useState<Record<string, Partial<PatentDocument>>>({});
+  
+  // Comments state
+  const [comments, setComments] = useState(contract.contract_patents?.comments || '');
+  const [savingComments, setSavingComments] = useState(false);
   
   // Bulk selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -242,6 +250,18 @@ export function PatentChecklist({
     }
   };
 
+  const handleSaveComments = async () => {
+    try {
+      setSavingComments(true);
+      await onUpdateComments(contract.id, comments);
+      toast.success("Comentarios guardados");
+    } catch (error) {
+      toast.error("Error al guardar comentarios");
+    } finally {
+      setSavingComments(false);
+    }
+  };
+
   const handleStatusChange = async (itemId: string, status: PatentDocStatus) => {
     if (!user) return;
     try {
@@ -404,6 +424,46 @@ export function PatentChecklist({
           </Select>
         </div>
       </div>
+
+      {/* Comments Section */}
+      <Card>
+        <CardHeader className="py-3">
+          <CardTitle className="text-base font-medium">Comentarios y Observaciones</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="space-y-2">
+            <Textarea
+              value={comments}
+              onChange={(e) => {
+                if (e.target.value.length <= 250) {
+                  setComments(e.target.value);
+                }
+              }}
+              placeholder="Escriba sus comentarios u observaciones aquí..."
+              className="resize-none text-left font-mono text-sm"
+              rows={5}
+              style={{ 
+                width: '100%',
+                maxWidth: '50ch',
+                lineHeight: '1.5'
+              }}
+            />
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">
+                {comments.length}/250 caracteres
+              </span>
+              <Button 
+                size="sm" 
+                onClick={handleSaveComments}
+                disabled={savingComments || comments === (contract.contract_patents?.comments || '')}
+              >
+                <Save className="h-4 w-4 mr-1" />
+                {savingComments ? 'Guardando...' : 'Guardar'}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Floating Bulk actions bar - fixed at bottom */}
       {selectedItems.size > 0 && (
