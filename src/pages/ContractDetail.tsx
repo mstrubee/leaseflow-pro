@@ -958,14 +958,21 @@ const ContractDetail = () => {
                               adjustment_value: (currentVersion as any).adjustment_value,
                               gastos_comunes_methodology: (currentVersion as any).gastos_comunes_methodology,
                               gastos_comunes_uf_m2: (currentVersion as any).gastos_comunes_uf_m2,
+                              gastos_comunes_uf_ml_frente: (currentVersion as any).gastos_comunes_uf_ml_frente,
+                              gastos_comunes_prorrata_kwh_clima: (currentVersion as any).gastos_comunes_prorrata_kwh_clima,
                               gastos_comunes_percentage: (currentVersion as any).gastos_comunes_percentage,
                               gastos_comunes_total_centro: (currentVersion as any).gastos_comunes_total_centro,
+                              gastos_comunes_tope: (currentVersion as any).gastos_comunes_tope,
+                              gastos_comunes_tope_type: (currentVersion as any).gastos_comunes_tope_type,
+                              has_extended_gastos_comunes: (currentVersion as any).has_extended_gastos_comunes,
+                              adicional_administracion_percentage: (currentVersion as any).adicional_administracion_percentage,
                               fondo_promocion_percentage: (currentVersion as any).fondo_promocion_percentage,
                               grace_months: (currentVersion as any).grace_months,
                               notice_bilaterality: (currentVersion as any).notice_bilaterality,
                               otros_egresos_amount: (currentVersion as any).otros_egresos_amount,
                               otros_egresos_description: (currentVersion as any).otros_egresos_description,
                               rent_escalations: currentVersion.rent_escalations || [],
+                              notice_ranges: currentVersion.notice_ranges || [],
                             }}
                             onSuccess={loadContract}
                           />
