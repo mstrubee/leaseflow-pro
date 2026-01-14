@@ -2,7 +2,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
-
 interface CurrencyInputProps {
   id: string;
   label: string;
@@ -18,7 +17,6 @@ interface CurrencyInputProps {
   onUfM2ModeChange?: (isUfM2: boolean) => void;
   superficieM2?: number;
 }
-
 export const CurrencyInput = ({
   id,
   label,
@@ -31,41 +29,37 @@ export const CurrencyInput = ({
   showUfM2Mode = false,
   isUfM2Mode = false,
   onUfM2ModeChange,
-  superficieM2 = 0,
+  superficieM2 = 0
 }: CurrencyInputProps) => {
-  const { ufValue, convertPesosToUF, convertUFToPesos, loading } = useEconomicIndicators();
-
+  const {
+    ufValue,
+    convertPesosToUF,
+    convertUFToPesos,
+    loading
+  } = useEconomicIndicators();
   const numericValue = parseFloat(value) || 0;
-  
   const formatUF = (amount: number) => {
-    return `UF ${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `UF ${amount.toLocaleString("es-CL", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })}`;
   };
-
   const formatCLP = (amount: number) => {
     return new Intl.NumberFormat("es-CL", {
       style: "currency",
       currency: "CLP",
-      maximumFractionDigits: 0,
+      maximumFractionDigits: 0
     }).format(amount);
   };
-
-  const equivalentValue = currency === "CLP" 
-    ? convertPesosToUF(numericValue)
-    : convertUFToPesos(numericValue);
+  const equivalentValue = currency === "CLP" ? convertPesosToUF(numericValue) : convertUFToPesos(numericValue);
 
   // Calculate total or UF/m² based on mode
   const calculatedTotal = isUfM2Mode && superficieM2 > 0 ? numericValue * superficieM2 : 0;
   const calculatedUfM2 = !isUfM2Mode && superficieM2 > 0 && numericValue > 0 ? numericValue / superficieM2 : 0;
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
+  return <div className="space-y-2">
+      <div className="flex items-left justify">
         <Label htmlFor={id}>{label} {required && "*"}</Label>
-        {showUfM2Mode && superficieM2 > 0 && (
-          <Select 
-            value={isUfM2Mode ? "uf_m2" : "fixed"} 
-            onValueChange={(v) => onUfM2ModeChange?.(v === "uf_m2")}
-          >
+        {showUfM2Mode && superficieM2 > 0 && <Select value={isUfM2Mode ? "uf_m2" : "fixed"} onValueChange={v => onUfM2ModeChange?.(v === "uf_m2")}>
             <SelectTrigger className="w-28 h-7 text-xs">
               <SelectValue />
             </SelectTrigger>
@@ -73,23 +67,11 @@ export const CurrencyInput = ({
               <SelectItem value="fixed">Monto Fijo</SelectItem>
               <SelectItem value="uf_m2">UF/m²</SelectItem>
             </SelectContent>
-          </Select>
-        )}
+          </Select>}
       </div>
       <div className="flex gap-2">
-        <Input
-          id={id}
-          type="number"
-          step={currency === "UF" || isUfM2Mode ? "0.01" : "1"}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onFocus={(e) => e.target.select()}
-          required={required}
-          className="flex-1"
-          placeholder="0"
-        />
-        {showCurrencySelector && (
-          <Select value={currency} onValueChange={(v) => onCurrencyChange(v as "UF" | "CLP")}>
+        <Input id={id} type="number" step={currency === "UF" || isUfM2Mode ? "0.01" : "1"} value={value} onChange={e => onChange(e.target.value)} onFocus={e => e.target.select()} required={required} className="flex-1" placeholder="0" />
+        {showCurrencySelector && <Select value={currency} onValueChange={v => onCurrencyChange(v as "UF" | "CLP")}>
             <SelectTrigger className="w-24">
               <SelectValue />
             </SelectTrigger>
@@ -97,41 +79,35 @@ export const CurrencyInput = ({
               <SelectItem value="UF">UF</SelectItem>
               <SelectItem value="CLP">CLP</SelectItem>
             </SelectContent>
-          </Select>
-        )}
-        {isUfM2Mode && (
-          <span className="flex items-center text-sm text-muted-foreground whitespace-nowrap">UF/m²</span>
-        )}
+          </Select>}
+        {isUfM2Mode && <span className="flex items-center text-sm text-muted-foreground whitespace-nowrap">UF/m²</span>}
       </div>
       
       {/* Show equivalences */}
       <div className="space-y-0.5">
-        {!loading && ufValue > 0 && numericValue > 0 && !isUfM2Mode && (
-          <p className="text-xs text-muted-foreground">
+        {!loading && ufValue > 0 && numericValue > 0 && !isUfM2Mode && <p className="text-xs text-muted-foreground">
             Equivalente: {currency === "CLP" ? formatUF(equivalentValue) : formatCLP(equivalentValue)}
-          </p>
-        )}
+          </p>}
         
         {/* UF/m² mode: show calculated total */}
-        {isUfM2Mode && superficieM2 > 0 && numericValue > 0 && (
-          <p className="text-xs text-muted-foreground">
-            Canon Total: {formatUF(calculatedTotal)} ({superficieM2.toLocaleString("es-CL")} m² × {numericValue.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF/m²)
-          </p>
-        )}
+        {isUfM2Mode && superficieM2 > 0 && numericValue > 0 && <p className="text-xs text-muted-foreground">
+            Canon Total: {formatUF(calculatedTotal)} ({superficieM2.toLocaleString("es-CL")} m² × {numericValue.toLocaleString("es-CL", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        })} UF/m²)
+          </p>}
         
         {/* Fixed mode: show UF/m² equivalent */}
-        {!isUfM2Mode && showUfM2Mode && superficieM2 > 0 && numericValue > 0 && currency === "UF" && (
-          <p className="text-xs text-muted-foreground">
-            Equivale a: {calculatedUfM2.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} UF/m²
-          </p>
-        )}
+        {!isUfM2Mode && showUfM2Mode && superficieM2 > 0 && numericValue > 0 && currency === "UF" && <p className="text-xs text-muted-foreground">
+            Equivale a: {calculatedUfM2.toLocaleString("es-CL", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 4
+        })} UF/m²
+          </p>}
         
-        {showUfM2Mode && superficieM2 === 0 && (
-          <p className="text-xs text-amber-600">
+        {showUfM2Mode && superficieM2 === 0 && <p className="text-xs text-amber-600">
             Superficie no definida. Ingrese datos de superficie para habilitar cálculo UF/m².
-          </p>
-        )}
+          </p>}
       </div>
-    </div>
-  );
+    </div>;
 };
