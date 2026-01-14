@@ -908,7 +908,6 @@ const ContractDetail = () => {
                           noticeRanges={displayVersion.notice_ranges || []}
                           contractId={contract.id}
                           showRenegotiationButton={isSigned}
-                          hasActiveRenegotiation={hasActiveRenegotiation}
                           onRenegotiationSuccess={loadContract}
                           displayCurrency={contract.display_currency}
                         />
