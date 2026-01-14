@@ -41,8 +41,8 @@ export const CurrencyInput = ({
   const formatUF = (amount: number) => {
     return `UF ${amount.toLocaleString("es-CL", {
       minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })}`;
+      maximumFractionDigits: 3
+    })}`
   };
   const formatCLP = (amount: number) => {
     return new Intl.NumberFormat("es-CL", {
@@ -68,7 +68,7 @@ export const CurrencyInput = ({
               <SelectItem value="uf_m2">UF/m²</SelectItem>
             </SelectContent>
           </Select>}
-        <Input id={id} type="number" step={currency === "UF" || isUfM2Mode ? "0.01" : "1"} value={value} onChange={e => onChange(e.target.value)} onFocus={e => e.target.select()} required={required} className="w-28" placeholder="0" />
+        <Input id={id} type="number" step={currency === "UF" || isUfM2Mode ? "0.001" : "1"} value={value} onChange={e => onChange(e.target.value)} onFocus={e => e.target.select()} required={required} className="w-28" placeholder="0" />
         {isUfM2Mode && <span className="flex items-center text-sm text-muted-foreground whitespace-nowrap">UF/m²</span>}
         {showCurrencySelector && !isUfM2Mode && <Select value={currency} onValueChange={v => onCurrencyChange(v as "UF" | "CLP")}>
             <SelectTrigger className="w-20">
@@ -91,7 +91,7 @@ export const CurrencyInput = ({
         {isUfM2Mode && superficieM2 > 0 && numericValue > 0 && <p className="text-xs text-muted-foreground">
             Canon Total: {formatUF(calculatedTotal)} ({superficieM2.toLocaleString("es-CL")} m² × {numericValue.toLocaleString("es-CL", {
           minimumFractionDigits: 2,
-          maximumFractionDigits: 2
+          maximumFractionDigits: 3
         })} UF/m²)
           </p>}
         
@@ -99,7 +99,7 @@ export const CurrencyInput = ({
         {!isUfM2Mode && showUfM2Mode && superficieM2 > 0 && numericValue > 0 && currency === "UF" && <p className="text-xs text-muted-foreground">
             Equivale a: {calculatedUfM2.toLocaleString("es-CL", {
           minimumFractionDigits: 2,
-          maximumFractionDigits: 4
+          maximumFractionDigits: 3
         })} UF/m²
           </p>}
         
