@@ -136,12 +136,17 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
     setSurfaces(newData);
   };
 
-  const fields: { key: keyof SurfaceData; label: string; unit: string; calculated?: boolean }[] = [
+  // Primera fila: 5 columnas
+  const fieldsRow1: { key: keyof SurfaceData; label: string; unit: string; calculated?: boolean }[] = [
     { key: "superficie_terreno", label: "Terreno", unit: "m²" },
     { key: "superficie_showroom", label: "Showroom", unit: "m²" },
     { key: "superficie_bodega_backoffice", label: "Bodega & Backoffice", unit: "m²" },
     { key: "superficie_edificada_local", label: "Edificada Local", unit: "m²", calculated: true },
     { key: "superficie_mezanina_altillo", label: "Mezanina / Altillo", unit: "m²" },
+  ];
+
+  // Segunda fila: 4 columnas
+  const fieldsRow2: { key: keyof SurfaceData; label: string; unit: string; calculated?: boolean }[] = [
     { key: "superficie_segundo_nivel", label: "Segundo Nivel", unit: "m²" },
     { key: "superficie_exterior_cubierto", label: "Exterior Cubierto", unit: "m²" },
     { key: "superficie_exterior_descubierto", label: "Exterior Descubierto", unit: "m²", calculated: true },
@@ -189,9 +194,10 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
           )}
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          {fields.map(({ key, label, unit, calculated }) => (
+      <CardContent className="space-y-4">
+        {/* Primera fila - 5 columnas */}
+        <div className="grid grid-cols-5 gap-4">
+          {fieldsRow1.map(({ key, label, unit, calculated }) => (
             <div key={key} className="space-y-1">
               <Label className="text-xs text-muted-foreground">{label}</Label>
               <div className="flex items-center gap-1">
@@ -211,67 +217,94 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
                     {(surfaces[key] as number) > 0 ? (surfaces[key] as number).toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : "-"}
                   </p>
                 )}
-                <span className="text-xs text-muted-foreground w-8">{unit}</span>
+                <span className="text-xs text-muted-foreground">{unit}</span>
               </div>
             </div>
           ))}
-          
-          {/* Metros Lineales Frente con Esquina */}
-          <div className="space-y-1 col-span-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-muted-foreground">Metros Lineales Frente</Label>
-              <div className="flex items-center gap-1">
-                <Checkbox
-                  checked={surfaces.es_esquina}
-                  onCheckedChange={(checked) => {
-                    if (isEditing) {
-                      setSurfaces({ ...surfaces, es_esquina: checked === true });
-                    }
-                  }}
-                  disabled={!isEditing}
-                  className="h-3.5 w-3.5"
-                />
-                <Label className="text-xs text-muted-foreground">Esquina</Label>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
+        </div>
+
+        {/* Segunda fila - 4 columnas */}
+        <div className="grid grid-cols-5 gap-4">
+          {fieldsRow2.map(({ key, label, unit, calculated }) => (
+            <div key={key} className="space-y-1">
+              <Label className="text-xs text-muted-foreground">{label}</Label>
               <div className="flex items-center gap-1">
                 {isEditing ? (
                   <Input
                     type="number"
                     step="0.01"
-                    value={surfaces.metros_lineales_frente === 0 ? "" : surfaces.metros_lineales_frente}
-                    onChange={(e) => handleChange("metros_lineales_frente", e.target.value)}
+                    value={surfaces[key] === 0 ? "" : surfaces[key] as number}
+                    onChange={(e) => handleChange(key, e.target.value)}
                     onFocus={(e) => e.target.select()}
+                    disabled={calculated}
+                    className={calculated ? "bg-muted" : ""}
                     placeholder="0"
                   />
                 ) : (
                   <p className="text-sm font-medium py-2">
-                    {surfaces.metros_lineales_frente > 0 ? surfaces.metros_lineales_frente.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : "-"}
+                    {(surfaces[key] as number) > 0 ? (surfaces[key] as number).toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : "-"}
                   </p>
                 )}
-                <span className="text-xs text-muted-foreground w-8">mL</span>
+                <span className="text-xs text-muted-foreground">{unit}</span>
               </div>
-              {surfaces.es_esquina && (
-                <div className="flex items-center gap-1">
-                  {isEditing ? (
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={surfaces.metros_lineales_frente_2 === 0 ? "" : surfaces.metros_lineales_frente_2}
-                      onChange={(e) => handleChange("metros_lineales_frente_2", e.target.value)}
-                      onFocus={(e) => e.target.select()}
-                      placeholder="2do frente"
-                    />
-                  ) : (
-                    <p className="text-sm font-medium py-2">
-                      {surfaces.metros_lineales_frente_2 > 0 ? surfaces.metros_lineales_frente_2.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : "-"}
-                    </p>
-                  )}
-                  <span className="text-xs text-muted-foreground w-8">mL</span>
-                </div>
-              )}
             </div>
+          ))}
+        </div>
+
+        {/* Tercera fila - Metros Lineales Frente */}
+        <div className="border-t pt-4">
+          <div className="flex items-center gap-8">
+            <Label className="text-xs text-muted-foreground">Metros Lineales Frente</Label>
+            {isEditing && (
+              <div className="flex items-center gap-1">
+                <Checkbox
+                  checked={surfaces.es_esquina}
+                  onCheckedChange={(checked) => setSurfaces({ ...surfaces, es_esquina: checked === true })}
+                  className="h-3.5 w-3.5"
+                />
+                <Label className="text-xs text-muted-foreground">Esquina</Label>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-6 mt-1">
+            <div className="flex items-center gap-1">
+              {isEditing ? (
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={surfaces.metros_lineales_frente === 0 ? "" : surfaces.metros_lineales_frente}
+                  onChange={(e) => handleChange("metros_lineales_frente", e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  placeholder="0"
+                  className="w-24"
+                />
+              ) : (
+                <p className="text-sm font-medium">
+                  {surfaces.metros_lineales_frente > 0 ? surfaces.metros_lineales_frente.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : "-"}
+                </p>
+              )}
+              <span className="text-xs text-muted-foreground">mL</span>
+            </div>
+            {surfaces.es_esquina && (
+              <div className="flex items-center gap-1">
+                {isEditing ? (
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={surfaces.metros_lineales_frente_2 === 0 ? "" : surfaces.metros_lineales_frente_2}
+                    onChange={(e) => handleChange("metros_lineales_frente_2", e.target.value)}
+                    onFocus={(e) => e.target.select()}
+                    placeholder="0"
+                    className="w-24"
+                  />
+                ) : (
+                  <p className="text-sm font-medium">
+                    {surfaces.metros_lineales_frente_2 > 0 ? surfaces.metros_lineales_frente_2.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : "-"}
+                  </p>
+                )}
+                <span className="text-xs text-muted-foreground">mL</span>
+              </div>
+            )}
           </div>
         </div>
       </CardContent>
