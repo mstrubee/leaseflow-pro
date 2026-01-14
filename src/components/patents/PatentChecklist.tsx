@@ -46,7 +46,7 @@ interface PatentChecklistProps {
   onBack: () => void;
   onUpdatePriority: (contractId: string, priority: PatentPriority, userId: string) => Promise<void>;
   onUpdatePatenteStatus: (contractId: string, patenteStatus: string) => Promise<void>;
-  onUpdateComments: (contractId: string, comments: string) => Promise<void>;
+  onUpdateComments: (contractId: string, comments: string, nextActions: string) => Promise<void>;
   onUpdateDocument: (contractId: string, itemId: string, data: Partial<PatentDocument>) => Promise<void>;
   onUpdateDocumentStatus: (contractId: string, itemId: string, status: PatentDocStatus, userId: string) => Promise<void>;
 }
@@ -74,8 +74,9 @@ export function PatentChecklist({
   const [editingDoc, setEditingDoc] = useState<string | null>(null);
   const [docEdits, setDocEdits] = useState<Record<string, Partial<PatentDocument>>>({});
   
-  // Comments state
+  // Comments and next actions state
   const [comments, setComments] = useState(contract.contract_patents?.comments || '');
+  const [nextActions, setNextActions] = useState(contract.contract_patents?.next_actions || '');
   const [savingComments, setSavingComments] = useState(false);
   
   // Bulk selection state
@@ -253,14 +254,17 @@ export function PatentChecklist({
   const handleSaveComments = async () => {
     try {
       setSavingComments(true);
-      await onUpdateComments(contract.id, comments);
-      toast.success("Comentarios guardados");
+      await onUpdateComments(contract.id, comments, nextActions);
+      toast.success("Guardado correctamente");
     } catch (error) {
-      toast.error("Error al guardar comentarios");
+      toast.error("Error al guardar");
     } finally {
       setSavingComments(false);
     }
   };
+
+  const hasCommentsChanged = comments !== (contract.contract_patents?.comments || '') || 
+                              nextActions !== (contract.contract_patents?.next_actions || '');
 
   const handleStatusChange = async (itemId: string, status: PatentDocStatus) => {
     if (!user) return;
@@ -425,45 +429,71 @@ export function PatentChecklist({
         </div>
       </div>
 
-      {/* Comments Section */}
-      <Card>
-        <CardHeader className="py-3">
-          <CardTitle className="text-base font-medium">Comentarios y Observaciones</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <div className="space-y-2">
-            <Textarea
-              value={comments}
-              onChange={(e) => {
-                if (e.target.value.length <= 250) {
-                  setComments(e.target.value);
-                }
-              }}
-              placeholder="Escriba sus comentarios u observaciones aquí..."
-              className="resize-none text-left font-mono text-sm"
-              rows={5}
-              style={{ 
-                width: '100%',
-                maxWidth: '50ch',
-                lineHeight: '1.5'
-              }}
-            />
-            <div className="flex items-center justify-between">
+      {/* Comments and Next Actions Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="py-3">
+            <CardTitle className="text-base font-medium">Comentarios y Observaciones</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-2">
+              <Textarea
+                value={comments}
+                onChange={(e) => {
+                  if (e.target.value.length <= 500) {
+                    setComments(e.target.value);
+                  }
+                }}
+                placeholder="Escriba sus comentarios u observaciones aquí..."
+                className="resize-none text-left font-mono text-sm"
+                rows={5}
+                style={{ lineHeight: '1.5' }}
+              />
               <span className="text-xs text-muted-foreground">
-                {comments.length}/250 caracteres
+                {comments.length}/500 caracteres
               </span>
-              <Button 
-                size="sm" 
-                onClick={handleSaveComments}
-                disabled={savingComments || comments === (contract.contract_patents?.comments || '')}
-              >
-                <Save className="h-4 w-4 mr-1" />
-                {savingComments ? 'Guardando...' : 'Guardar'}
-              </Button>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="py-3">
+            <CardTitle className="text-base font-medium">Próximas Acciones</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-2">
+              <Textarea
+                value={nextActions}
+                onChange={(e) => {
+                  if (e.target.value.length <= 500) {
+                    setNextActions(e.target.value);
+                  }
+                }}
+                placeholder="Escriba las próximas acciones aquí..."
+                className="resize-none text-left font-mono text-sm"
+                rows={5}
+                style={{ lineHeight: '1.5' }}
+              />
+              <span className="text-xs text-muted-foreground">
+                {nextActions.length}/500 caracteres
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Save button for both textareas */}
+      {hasCommentsChanged && (
+        <div className="flex justify-end">
+          <Button 
+            onClick={handleSaveComments}
+            disabled={savingComments}
+          >
+            <Save className="h-4 w-4 mr-2" />
+            {savingComments ? 'Guardando...' : 'Guardar Comentarios'}
+          </Button>
+        </div>
+      )}
 
       {/* Floating Bulk actions bar - fixed at bottom */}
       {selectedItems.size > 0 && (
