@@ -511,7 +511,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 </TableCell>
                 {isNegociacionView && (
                   <>
-                    <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="text-center min-w-[130px]" onClick={(e) => e.stopPropagation()}>
                       <Select 
                         value={contract.negotiation_subcategory || 'negociacion_contrato'} 
                         onValueChange={(value) => {
@@ -519,12 +519,28 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                           handleSubcategoryChange(fakeEvent, contract.id, value);
                         }}
                       >
-                        <SelectTrigger className="h-7 text-xs w-[140px]">
+                        <SelectTrigger 
+                          className={`h-7 text-xs w-[120px] font-medium ${
+                            contract.negotiation_subcategory === 'ubicacion_preliminar' 
+                              ? 'bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200' 
+                              : 'bg-green-100 text-green-800 border-green-300 hover:bg-green-200'
+                          }`}
+                        >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="negociacion_contrato" className="text-xs">Negociación Contrato</SelectItem>
-                          <SelectItem value="ubicacion_preliminar" className="text-xs">Ubicación Preliminar</SelectItem>
+                          <SelectItem value="negociacion_contrato" className="text-xs">
+                            <span className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                              Rev. Contrato
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="ubicacion_preliminar" className="text-xs">
+                            <span className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+                              Preliminar
+                            </span>
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </TableCell>
