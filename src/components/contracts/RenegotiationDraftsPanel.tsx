@@ -65,14 +65,21 @@ interface CurrentVersion {
   adjustment_value?: number | null;
   gastos_comunes_methodology?: string | null;
   gastos_comunes_uf_m2?: number | null;
+  gastos_comunes_uf_ml_frente?: number | null;
+  gastos_comunes_prorrata_kwh_clima?: number | null;
   gastos_comunes_percentage?: number | null;
   gastos_comunes_total_centro?: number | null;
+  gastos_comunes_tope?: number | null;
+  gastos_comunes_tope_type?: string | null;
+  has_extended_gastos_comunes?: boolean | null;
+  adicional_administracion_percentage?: number | null;
   fondo_promocion_percentage?: number | null;
   grace_months?: number | null;
   notice_bilaterality?: string | null;
   otros_egresos_amount?: number | null;
   otros_egresos_description?: string | null;
   rent_escalations?: Array<{ id: string; month_number: number; amount: number }>;
+  notice_ranges?: Array<{ start_month: number; end_month: number }>;
 }
 
 interface RenegotiationDraftsPanelProps {

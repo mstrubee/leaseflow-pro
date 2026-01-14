@@ -137,6 +137,7 @@ export function RenegotiationDraftForm({
       setGastosComunesTotalCentro(draft.gastos_comunes_total_centro?.toString() || "");
       setGastosComunesTope((draft as any).gastos_comunes_tope?.toString() || "");
       setGastosComunesTopeType((draft as any).gastos_comunes_tope_type || "fixed");
+      setHasExtendedGastosComunes((draft as any).has_extended_gastos_comunes || false);
       setAdicionalAdministracionPercentage((draft as any).adicional_administracion_percentage?.toString() || "");
       
       setFondoPromocionPercentage(draft.fondo_promocion_percentage?.toString() || "");
@@ -212,8 +213,14 @@ export function RenegotiationDraftForm({
       adjustment_periodicity_months: hasPeriodicAdjustments && adjustmentPeriodicity ? parseInt(adjustmentPeriodicity) : null,
       gastos_comunes_methodology: gastosComunesMethodology,
       gastos_comunes_uf_m2: gastosComunesMethodology === "uf_m2" && gastosComunesUfM2 ? parseFloat(gastosComunesUfM2) : null,
+      gastos_comunes_uf_ml_frente: hasExtendedGastosComunes && gastosComunesUfMlFrente ? parseFloat(gastosComunesUfMlFrente) : null,
+      gastos_comunes_prorrata_kwh_clima: hasExtendedGastosComunes && gastosComunesProrratKwhClima ? parseFloat(gastosComunesProrratKwhClima) : null,
       gastos_comunes_percentage: gastosComunesMethodology === "percentage" && gastosComunesPercentage ? parseFloat(gastosComunesPercentage) : null,
       gastos_comunes_total_centro: gastosComunesMethodology === "percentage" && gastosComunesTotalCentro ? parseFloat(gastosComunesTotalCentro) : null,
+      gastos_comunes_tope: gastosComunesTope ? parseFloat(gastosComunesTope) : null,
+      gastos_comunes_tope_type: gastosComunesTopeType,
+      has_extended_gastos_comunes: hasExtendedGastosComunes,
+      adicional_administracion_percentage: hasExtendedGastosComunes && adicionalAdministracionPercentage ? parseFloat(adicionalAdministracionPercentage) : null,
       fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
       otros_egresos_amount: otrosEgresosAmount ? parseFloat(otrosEgresosAmount) : null,
       otros_egresos_description: otrosEgresosDescription || null,
