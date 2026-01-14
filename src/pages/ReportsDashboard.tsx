@@ -20,6 +20,7 @@ import { useSingleCollapsible } from "@/hooks/useCollapsibleState";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import logosHeader from "@/assets/logos-header.png";
 
 interface ContractPatentData {
   id: string;
@@ -453,55 +454,69 @@ const ReportsDashboard = () => {
   };
 
   // Export PDF function for Sin Patente section (respects current filter and sort)
-  const exportSinPatentePDF = () => {
+  const exportSinPatentePDF = async () => {
     const doc = new jsPDF({ orientation: 'landscape' });
     const today = new Date().toLocaleDateString('es-CL');
     
+    // Add logo
+    try {
+      const logoImg = new Image();
+      logoImg.src = logosHeader;
+      await new Promise((resolve, reject) => {
+        logoImg.onload = resolve;
+        logoImg.onerror = reject;
+      });
+      doc.addImage(logoImg, 'PNG', 14, 10, 50, 20);
+    } catch (error) {
+      console.log('Error loading logo:', error);
+    }
+    
     // Title
     doc.setFontSize(18);
-    doc.text('Detalle: Locales Sin Patente', 14, 20);
+    doc.text('Detalle: Locales Sin Patente', 70, 20);
     doc.setFontSize(10);
     doc.setTextColor(100);
     
-    // Show current filter and sort in PDF
-    let subtitle = `Generado: ${today}`;
+    // Show current filter and sort in PDF - using plain text
+    let subtitleParts: string[] = [];
+    subtitleParts.push('Generado: ' + today);
     if (sinPatenteStatusFilter !== "all") {
       const filterLabel = sinPatenteStatusFilter === "sin_asignar" 
         ? "Sin Asignar" 
         : PRIORITY_CONFIG[sinPatenteStatusFilter as PatentPriority]?.label || sinPatenteStatusFilter;
-      subtitle += ` | Filtro: ${filterLabel}`;
+      subtitleParts.push('Filtro: ' + filterLabel);
     }
     if (sinPatenteSortField) {
       const sortLabel = sinPatenteSortField === "empresa" ? "Empresa" : "Prioridad";
-      const orderLabel = sinPatenteSortOrder === "asc" ? "↑" : "↓";
-      subtitle += ` | Ordenado por: ${sortLabel} ${orderLabel}`;
+      const orderLabel = sinPatenteSortOrder === "asc" ? "Ascendente" : "Descendente";
+      subtitleParts.push('Ordenado por: ' + sortLabel + ' (' + orderLabel + ')');
     }
-    doc.text(subtitle, 14, 28);
-    doc.text(`Total: ${sinPatenteContracts.length} locales`, 14, 34);
+    doc.text(subtitleParts.join(' | '), 70, 28);
+    doc.text('Total: ' + sinPatenteContracts.length + ' locales', 14, 40);
     
     if (sinPatenteContracts.length === 0) {
       doc.setFontSize(12);
       doc.setTextColor(0);
-      doc.text('No hay locales sin patente con los filtros seleccionados.', 14, 50);
+      doc.text('No hay locales sin patente con los filtros seleccionados.', 14, 55);
     } else {
       const sinPatenteData = sinPatenteContracts.map(c => {
         const companies = c.contract_companies?.map(cc => cc.companies?.name).filter(Boolean).join(', ') || 'Sin Empresa';
         const address = c.contract_addresses?.[0];
         const fullAddress = address 
-          ? `${address.street || ''} ${address.number || ''}, ${address.commune || ''}`.trim()
-          : 'Sin dirección';
+          ? (address.street || '') + ' ' + (address.number || '') + ', ' + (address.commune || '')
+          : 'Sin direccion';
         const priority = c.contract_patents?.priority 
           ? PRIORITY_CONFIG[c.contract_patents.priority]?.label || 'Sin Asignar'
           : 'Sin Asignar';
         const comments = c.contract_patents?.comments || '-';
         const nextActions = c.contract_patents?.next_actions || '-';
         
-        return [c.name, companies, fullAddress, priority, comments, nextActions];
+        return [c.name, companies, fullAddress.trim(), priority, comments, nextActions];
       });
       
       autoTable(doc, {
-        startY: 40,
-        head: [['Local', 'Empresa', 'Dirección', 'Prioridad', 'Comentarios', 'Próximas Acciones']],
+        startY: 46,
+        head: [['Local', 'Empresa', 'Direccion', 'Prioridad', 'Comentarios', 'Proximas Acciones']],
         body: sinPatenteData,
         theme: 'grid',
         headStyles: { fillColor: [220, 38, 38] },
@@ -511,13 +526,13 @@ const ReportsDashboard = () => {
           1: { cellWidth: 35 },
           2: { cellWidth: 40 },
           3: { cellWidth: 25 },
-          4: { cellWidth: 'auto' }, // Full width for comments
-          5: { cellWidth: 'auto' }, // Full width for actions
+          4: { cellWidth: 'auto' },
+          5: { cellWidth: 'auto' },
         },
         styles: { 
           fontSize: 8,
           cellPadding: 3,
-          overflow: 'linebreak', // Wrap text instead of truncating
+          overflow: 'linebreak',
         },
         bodyStyles: {
           valign: 'top',
@@ -525,25 +540,38 @@ const ReportsDashboard = () => {
       });
     }
     
-    doc.save(`locales-sin-patente-${today.replace(/\//g, '-')}.pdf`);
+    doc.save('locales-sin-patente-' + today.replace(/\//g, '-') + '.pdf');
   };
 
   // Export PDF function for general report
-  const exportToPDF = () => {
+  const exportToPDF = async () => {
     const doc = new jsPDF({ orientation: 'landscape' });
     const today = new Date().toLocaleDateString('es-CL');
     
+    // Add logo
+    try {
+      const logoImg = new Image();
+      logoImg.src = logosHeader;
+      await new Promise((resolve, reject) => {
+        logoImg.onload = resolve;
+        logoImg.onerror = reject;
+      });
+      doc.addImage(logoImg, 'PNG', 14, 10, 50, 20);
+    } catch (error) {
+      console.log('Error loading logo:', error);
+    }
+    
     // Title
     doc.setFontSize(18);
-    doc.text('Estado General de Patentes', 14, 20);
+    doc.text('Estado General de Patentes', 70, 20);
     doc.setFontSize(10);
     doc.setTextColor(100);
-    doc.text(`Generado: ${today}`, 14, 28);
+    doc.text('Generado: ' + today, 70, 28);
     
     // Summary stats
     doc.setFontSize(12);
     doc.setTextColor(0);
-    doc.text('Resumen General', 14, 40);
+    doc.text('Resumen General', 14, 45);
     
     const summaryData = [
       ['Total Locales', generalStats.totalContracts.toString()],
@@ -556,7 +584,7 @@ const ReportsDashboard = () => {
     ];
     
     autoTable(doc, {
-      startY: 45,
+      startY: 50,
       head: [['Indicador', 'Valor']],
       body: summaryData,
       theme: 'grid',
@@ -566,7 +594,7 @@ const ReportsDashboard = () => {
     });
     
     // Company breakdown table
-    const companyTableY = (doc as any).lastAutoTable?.finalY + 15 || 100;
+    const companyTableY = (doc as any).lastAutoTable?.finalY + 15 || 105;
     doc.text('Desglose por Empresa', 14, companyTableY);
     
     const companyData = companyStats.map(s => [
@@ -592,44 +620,59 @@ const ReportsDashboard = () => {
     // "Sin Patente" details - new page (uses current filter and sort)
     if (sinPatenteContracts.length > 0) {
       doc.addPage();
+      
+      // Add logo to second page
+      try {
+        const logoImg = new Image();
+        logoImg.src = logosHeader;
+        await new Promise((resolve, reject) => {
+          logoImg.onload = resolve;
+          logoImg.onerror = reject;
+        });
+        doc.addImage(logoImg, 'PNG', 14, 10, 50, 20);
+      } catch (error) {
+        console.log('Error loading logo:', error);
+      }
+      
       doc.setFontSize(14);
-      doc.text('Detalle: Locales Sin Patente', 14, 20);
+      doc.text('Detalle: Locales Sin Patente', 70, 20);
       
       doc.setFontSize(10);
       doc.setTextColor(100);
-      let detailSubtitle = `Total: ${sinPatenteContracts.length} locales`;
+      let detailSubtitleParts: string[] = [];
+      detailSubtitleParts.push('Total: ' + sinPatenteContracts.length + ' locales');
       if (sinPatenteStatusFilter !== "all") {
         const filterLabel = sinPatenteStatusFilter === "sin_asignar" 
           ? "Sin Asignar" 
           : PRIORITY_CONFIG[sinPatenteStatusFilter as PatentPriority]?.label || sinPatenteStatusFilter;
-        detailSubtitle += ` | Filtro: ${filterLabel}`;
+        detailSubtitleParts.push('Filtro: ' + filterLabel);
       }
       if (sinPatenteSortField) {
         const sortLabel = sinPatenteSortField === "empresa" ? "Empresa" : "Prioridad";
-        const orderLabel = sinPatenteSortOrder === "asc" ? "↑" : "↓";
-        detailSubtitle += ` | Ordenado por: ${sortLabel} ${orderLabel}`;
+        const orderLabel = sinPatenteSortOrder === "asc" ? "Ascendente" : "Descendente";
+        detailSubtitleParts.push('Ordenado por: ' + sortLabel + ' (' + orderLabel + ')');
       }
-      doc.text(detailSubtitle, 14, 28);
+      doc.text(detailSubtitleParts.join(' | '), 70, 28);
       doc.setTextColor(0);
       
       const sinPatenteData = sinPatenteContracts.map(c => {
         const companies = c.contract_companies?.map(cc => cc.companies?.name).filter(Boolean).join(', ') || 'Sin Empresa';
         const address = c.contract_addresses?.[0];
         const fullAddress = address 
-          ? `${address.street || ''} ${address.number || ''}, ${address.commune || ''}`.trim()
-          : 'Sin dirección';
+          ? (address.street || '') + ' ' + (address.number || '') + ', ' + (address.commune || '')
+          : 'Sin direccion';
         const priority = c.contract_patents?.priority 
           ? PRIORITY_CONFIG[c.contract_patents.priority]?.label || 'Sin Asignar'
           : 'Sin Asignar';
         const comments = c.contract_patents?.comments || '-';
         const nextActions = c.contract_patents?.next_actions || '-';
         
-        return [c.name, companies, fullAddress, priority, comments, nextActions];
+        return [c.name, companies, fullAddress.trim(), priority, comments, nextActions];
       });
       
       autoTable(doc, {
         startY: 35,
-        head: [['Local', 'Empresa', 'Dirección', 'Prioridad', 'Comentarios', 'Próximas Acciones']],
+        head: [['Local', 'Empresa', 'Direccion', 'Prioridad', 'Comentarios', 'Proximas Acciones']],
         body: sinPatenteData,
         theme: 'grid',
         headStyles: { fillColor: [220, 38, 38] },
@@ -639,13 +682,13 @@ const ReportsDashboard = () => {
           1: { cellWidth: 35 },
           2: { cellWidth: 40 },
           3: { cellWidth: 25 },
-          4: { cellWidth: 'auto' }, // Full width for comments
-          5: { cellWidth: 'auto' }, // Full width for actions
+          4: { cellWidth: 'auto' },
+          5: { cellWidth: 'auto' },
         },
         styles: { 
           fontSize: 8,
           cellPadding: 3,
-          overflow: 'linebreak', // Wrap text instead of truncating
+          overflow: 'linebreak',
         },
         bodyStyles: {
           valign: 'top',
@@ -653,7 +696,7 @@ const ReportsDashboard = () => {
       });
     }
     
-    doc.save(`estado-patentes-${today.replace(/\//g, '-')}.pdf`);
+    doc.save('estado-patentes-' + today.replace(/\//g, '-') + '.pdf');
   };
 
   if (authLoading || loading) {
