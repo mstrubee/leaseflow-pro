@@ -223,7 +223,7 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
           ))}
         </div>
 
-        {/* Segunda fila - 4 columnas */}
+        {/* Segunda fila - 5 columnas (4 campos + Metros Lineales) */}
         <div className="grid grid-cols-5 gap-4">
           {fieldsRow2.map(({ key, label, unit, calculated }) => (
             <div key={key} className="space-y-1">
@@ -249,62 +249,61 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
               </div>
             </div>
           ))}
-        </div>
 
-        {/* Tercera fila - Metros Lineales Frente */}
-        <div className="border-t pt-4">
-          <div className="flex items-center gap-8">
-            <Label className="text-xs text-muted-foreground">Metros Lineales Frente</Label>
-            {isEditing && (
-              <div className="flex items-center gap-1">
+          {/* Metros Lineales Frente/Esquina - 5ta columna */}
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground">
+                {surfaces.es_esquina ? "Metros Lineales Esquina" : "Metros Lineales Frente"}
+              </Label>
+              {isEditing && (
                 <Checkbox
                   checked={surfaces.es_esquina}
                   onCheckedChange={(checked) => setSurfaces({ ...surfaces, es_esquina: checked === true })}
                   className="h-3.5 w-3.5"
                 />
-                <Label className="text-xs text-muted-foreground">Esquina</Label>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-6 mt-1">
-            <div className="flex items-center gap-1">
-              {isEditing ? (
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={surfaces.metros_lineales_frente === 0 ? "" : surfaces.metros_lineales_frente}
-                  onChange={(e) => handleChange("metros_lineales_frente", e.target.value)}
-                  onFocus={(e) => e.target.select()}
-                  placeholder="0"
-                  className="w-24"
-                />
-              ) : (
-                <p className="text-sm font-medium">
-                  {surfaces.metros_lineales_frente > 0 ? surfaces.metros_lineales_frente.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : "-"}
-                </p>
               )}
-              <span className="text-xs text-muted-foreground">mL</span>
             </div>
-            {surfaces.es_esquina && (
+            <div className="flex items-center gap-3">
               <div className="flex items-center gap-1">
                 {isEditing ? (
                   <Input
                     type="number"
                     step="0.01"
-                    value={surfaces.metros_lineales_frente_2 === 0 ? "" : surfaces.metros_lineales_frente_2}
-                    onChange={(e) => handleChange("metros_lineales_frente_2", e.target.value)}
+                    value={surfaces.metros_lineales_frente === 0 ? "" : surfaces.metros_lineales_frente}
+                    onChange={(e) => handleChange("metros_lineales_frente", e.target.value)}
                     onFocus={(e) => e.target.select()}
                     placeholder="0"
-                    className="w-24"
+                    className="w-20"
                   />
                 ) : (
-                  <p className="text-sm font-medium">
-                    {surfaces.metros_lineales_frente_2 > 0 ? surfaces.metros_lineales_frente_2.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : "-"}
+                  <p className="text-sm font-medium py-2">
+                    {surfaces.metros_lineales_frente > 0 ? surfaces.metros_lineales_frente.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : "-"}
                   </p>
                 )}
                 <span className="text-xs text-muted-foreground">mL</span>
               </div>
-            )}
+              {surfaces.es_esquina && (
+                <div className="flex items-center gap-1">
+                  {isEditing ? (
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={surfaces.metros_lineales_frente_2 === 0 ? "" : surfaces.metros_lineales_frente_2}
+                      onChange={(e) => handleChange("metros_lineales_frente_2", e.target.value)}
+                      onFocus={(e) => e.target.select()}
+                      placeholder="0"
+                      className="w-20"
+                    />
+                  ) : (
+                    <p className="text-sm font-medium py-2">
+                      {surfaces.metros_lineales_frente_2 > 0 ? surfaces.metros_lineales_frente_2.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : "-"}
+                    </p>
+                  )}
+                  <span className="text-xs text-muted-foreground">mL</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </CardContent>
