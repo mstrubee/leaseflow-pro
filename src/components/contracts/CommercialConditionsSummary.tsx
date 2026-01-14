@@ -59,7 +59,6 @@ interface CommercialConditionsSummaryProps {
   }>;
   contractId?: string;
   showRenegotiationButton?: boolean;
-  hasActiveRenegotiation?: boolean;
   onRenegotiationSuccess?: () => void;
   displayCurrency?: "UF" | "CLP";
 }
@@ -72,7 +71,6 @@ export function CommercialConditionsSummary({
   noticeRanges = [],
   contractId,
   showRenegotiationButton = false,
-  hasActiveRenegotiation = false,
   onRenegotiationSuccess,
   displayCurrency = "UF"
 }: CommercialConditionsSummaryProps) {
@@ -373,7 +371,6 @@ export function CommercialConditionsSummary({
                 })),
                 notice_ranges: noticeRanges,
               }}
-              hasActiveRenegotiation={hasActiveRenegotiation}
               onSuccess={onRenegotiationSuccess || (() => {})}
               displayCurrency={displayCurrency}
             />

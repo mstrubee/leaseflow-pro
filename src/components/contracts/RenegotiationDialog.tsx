@@ -19,17 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { RefreshCw, Loader2, Trash2, ArrowRight, Plus, X } from "lucide-react";
+import { RefreshCw, Loader2, ArrowRight, Plus, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -96,8 +86,6 @@ interface CurrentVersion {
 interface RenegotiationDialogProps {
   contractId: string;
   currentVersion: CurrentVersion;
-  hasActiveRenegotiation?: boolean;
-  renegotiationVersionId?: string;
   onSuccess: () => void;
   displayCurrency?: "UF" | "CLP";
 }
@@ -115,19 +103,12 @@ const safeNumber = (value: string) => {
 export const RenegotiationDialog = ({
   contractId,
   currentVersion,
-  hasActiveRenegotiation = false,
-  renegotiationVersionId,
   onSuccess,
   displayCurrency = "UF",
 }: RenegotiationDialogProps) => {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showExtendDialog, setShowExtendDialog] = useState(false);
-
-  // Delete confirmation dialogs
-  const [showDeleteConfirm1, setShowDeleteConfirm1] = useState(false);
-  const [showDeleteConfirm2, setShowDeleteConfirm2] = useState(false);
-  const [deleting, setDeleting] = useState(false);
 
   const initialNoticeType = useMemo<"meses" | "fecha" | "rangos">(() => {
     const t = (currentVersion.notice_type || "meses").toString();
@@ -427,122 +408,6 @@ export const RenegotiationDialog = ({
     }
   };
 
-  const handleDeleteRenegotiation = async () => {
-    if (!renegotiationVersionId) return;
-
-    setDeleting(true);
-
-    try {
-      // Delete rent escalations for this version
-      await supabase.from("rent_escalations").delete().eq("version_id", renegotiationVersionId);
-
-      // Delete notice ranges for this version
-      await supabase.from("notice_ranges").delete().eq("version_id", renegotiationVersionId);
-
-      // Delete the renegotiation version
-      const { error: deleteError } = await supabase
-        .from("contract_versions")
-        .delete()
-        .eq("id", renegotiationVersionId);
-
-      if (deleteError) throw deleteError;
-
-      // Set the previous version as current
-      const { data: versions, error: fetchError } = await supabase
-        .from("contract_versions")
-        .select("id")
-        .eq("contract_id", contractId)
-        .order("version_number", { ascending: false })
-        .limit(1);
-
-      if (fetchError) throw fetchError;
-
-      if (versions && versions.length > 0) {
-        await supabase.from("contract_versions").update({ is_current: true }).eq("id", versions[0].id);
-      }
-
-      // Delete renegotiation draft documents
-      await supabase
-        .from("contract_documents")
-        .delete()
-        .eq("contract_id", contractId)
-        .in("document_type", ["borrador_r", "borrador_final_r"]);
-
-      toast.success("Renegociación eliminada");
-      setShowDeleteConfirm2(false);
-      onSuccess();
-    } catch (error: any) {
-      console.error("Error deleting renegotiation:", error);
-      toast.error("Error al eliminar la renegociación");
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  // If there's an active renegotiation, show delete button
-  if (hasActiveRenegotiation) {
-    return (
-      <>
-        <Button variant="destructive" className="gap-2" onClick={() => setShowDeleteConfirm1(true)}>
-          <Trash2 className="h-4 w-4" />
-          Eliminar Renegociación
-        </Button>
-
-        {/* First confirmation */}
-        <AlertDialog open={showDeleteConfirm1} onOpenChange={setShowDeleteConfirm1}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>¿Eliminar la renegociación?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Esta acción eliminará la renegociación en curso y todos sus documentos asociados.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => {
-                  setShowDeleteConfirm1(false);
-                  setShowDeleteConfirm2(true);
-                }}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                Continuar
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        {/* Second confirmation */}
-        <AlertDialog open={showDeleteConfirm2} onOpenChange={setShowDeleteConfirm2}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Confirmar Eliminación de Renegociación</AlertDialogTitle>
-              <AlertDialogDescription>
-                ¿Estás seguro? Esta acción no se puede deshacer. Se eliminarán todos los borradores de la renegociación.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleDeleteRenegotiation}
-                disabled={deleting}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                {deleting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Eliminando...
-                  </>
-                ) : (
-                  "Eliminar Definitivamente"
-                )}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </>
-    );
-  }
 
   return (
     <>
