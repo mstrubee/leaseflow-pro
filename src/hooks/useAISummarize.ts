@@ -41,11 +41,6 @@ export function useAISummarize() {
         return null;
       }
 
-      toast({
-        title: "Resumen generado",
-        description: "El texto ha sido resumido exitosamente",
-      });
-
       return data.summary;
     } catch (error) {
       console.error("Error summarizing:", error);
