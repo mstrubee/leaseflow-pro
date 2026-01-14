@@ -4,9 +4,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Ruler, Pencil, Check, X } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Ruler, Pencil, Check, X, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2 } from "lucide-react";
 
 interface SurfaceData {
   superficie_terreno: number;
@@ -19,6 +19,7 @@ interface SurfaceData {
   metros_lineales_frente: number;
   superficie_mezanina_altillo: number;
   superficie_segundo_nivel: number;
+  es_esquina: boolean;
 }
 
 interface ContractSurfacesSectionProps {
@@ -39,6 +40,7 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
     metros_lineales_frente: 0,
     superficie_mezanina_altillo: 0,
     superficie_segundo_nivel: 0,
+    es_esquina: false,
   });
   const [originalSurfaces, setOriginalSurfaces] = useState<SurfaceData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,7 +55,7 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
     try {
       const { data, error } = await supabase
         .from("contracts")
-        .select("superficie_terreno, superficie_edificada_local, superficie_showroom, superficie_bodega_backoffice, superficie_exterior_cubierto, superficie_exterior_descubierto, num_estacionamientos, metros_lineales_frente, superficie_mezanina_altillo, superficie_segundo_nivel")
+        .select("superficie_terreno, superficie_edificada_local, superficie_showroom, superficie_bodega_backoffice, superficie_exterior_cubierto, superficie_exterior_descubierto, num_estacionamientos, metros_lineales_frente, superficie_mezanina_altillo, superficie_segundo_nivel, es_esquina")
         .eq("id", contractId)
         .single();
 
@@ -70,6 +72,7 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
           metros_lineales_frente: data.metros_lineales_frente || 0,
           superficie_mezanina_altillo: (data as any).superficie_mezanina_altillo || 0,
           superficie_segundo_nivel: (data as any).superficie_segundo_nivel || 0,
+          es_esquina: (data as any).es_esquina || false,
         };
         setSurfaces(loadedSurfaces);
       }
@@ -130,7 +133,7 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
     setSurfaces(newData);
   };
 
-  const fields: { key: keyof SurfaceData; label: string; unit: string; calculated?: boolean }[] = [
+  const fields: { key: keyof SurfaceData; label: string; unit: string; calculated?: boolean; isBoolean?: boolean }[] = [
     { key: "superficie_terreno", label: "Terreno", unit: "m²" },
     { key: "superficie_showroom", label: "Showroom", unit: "m²" },
     { key: "superficie_bodega_backoffice", label: "Bodega & Backoffice", unit: "m²" },
@@ -194,7 +197,7 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
                   <Input
                     type="number"
                     step="0.01"
-                    value={surfaces[key] === 0 ? "" : surfaces[key]}
+                    value={surfaces[key] === 0 ? "" : surfaces[key] as number}
                     onChange={(e) => handleChange(key, e.target.value)}
                     onFocus={(e) => e.target.select()}
                     disabled={calculated}
@@ -203,13 +206,29 @@ export const ContractSurfacesSection = ({ contractId, readOnly = false, onSurfac
                   />
                 ) : (
                   <p className="text-sm font-medium py-2">
-                    {surfaces[key] > 0 ? surfaces[key].toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : "-"}
+                    {(surfaces[key] as number) > 0 ? (surfaces[key] as number).toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : "-"}
                   </p>
                 )}
                 <span className="text-xs text-muted-foreground w-8">{unit}</span>
               </div>
             </div>
           ))}
+          
+          {/* Esquina checkbox */}
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Esquina</Label>
+            <div className="flex items-center gap-2 py-2">
+              {isEditing ? (
+                <Checkbox
+                  checked={surfaces.es_esquina}
+                  onCheckedChange={(checked) => setSurfaces({ ...surfaces, es_esquina: checked === true })}
+                />
+              ) : (
+                <span className="text-sm font-medium">{surfaces.es_esquina ? "Sí" : "No"}</span>
+              )}
+              {isEditing && <span className="text-xs text-muted-foreground">2 frentes</span>}
+            </div>
+          </div>
         </div>
       </CardContent>
     </Card>

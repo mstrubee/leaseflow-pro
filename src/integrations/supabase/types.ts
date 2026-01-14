@@ -1096,6 +1096,7 @@ export type Database = {
           deleted_at: string | null
           display_currency: string | null
           drive_folder_id: string | null
+          es_esquina: boolean | null
           id: string
           is_expired_but_operating: boolean | null
           metros_lineales_frente: number | null
@@ -1127,6 +1128,7 @@ export type Database = {
           deleted_at?: string | null
           display_currency?: string | null
           drive_folder_id?: string | null
+          es_esquina?: boolean | null
           id?: string
           is_expired_but_operating?: boolean | null
           metros_lineales_frente?: number | null
@@ -1158,6 +1160,7 @@ export type Database = {
           deleted_at?: string | null
           display_currency?: string | null
           drive_folder_id?: string | null
+          es_esquina?: boolean | null
           id?: string
           is_expired_but_operating?: boolean | null
           metros_lineales_frente?: number | null
