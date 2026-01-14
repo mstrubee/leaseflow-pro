@@ -4,13 +4,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, History, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, FileCheck, AlertCircle, RefreshCw } from "lucide-react";
+import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, FileCheck, AlertCircle, RefreshCw } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { DocumentVersions, DocumentVersion } from "@/components/contracts/DocumentVersions";
 import { EscalationDialog, Escalation } from "@/components/contracts/EscalationDialog";
 import { RenegotiationDialog } from "@/components/contracts/RenegotiationDialog";
 import { RenegotiationDraftsPanel } from "@/components/contracts/RenegotiationDraftsPanel";
+import { VersionHistoryPanel } from "@/components/contracts/VersionHistoryPanel";
 import { RepositorySection } from "@/components/contracts/RepositorySection";
 import { CommercialConditionsSummary } from "@/components/contracts/CommercialConditionsSummary";
 import { ContractSurfacesSection } from "@/components/contracts/ContractSurfacesSection";
@@ -185,9 +186,6 @@ const ContractDetail = () => {
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
   const [signingContract, setSigningContract] = useState(false);
-  const [showDeleteConfirm1, setShowDeleteConfirm1] = useState(false);
-  const [showDeleteConfirm2, setShowDeleteConfirm2] = useState(false);
-  const [deletingRenegotiation, setDeletingRenegotiation] = useState(false);
 
   // DnD sensors
   const sensors = useSensors(
@@ -525,7 +523,6 @@ const ContractDetail = () => {
   };
   const handleDeleteRenegotiation = async (renegotiationVersionId: string) => {
     if (!contract) return;
-    setDeletingRenegotiation(true);
     try {
       // Delete rent escalations for this version
       await supabase.from("rent_escalations").delete().eq("version_id", renegotiationVersionId);
@@ -556,7 +553,6 @@ const ContractDetail = () => {
         title: "Renegociación eliminada",
         description: "La renegociación ha sido eliminada exitosamente"
       });
-      setShowDeleteConfirm2(false);
       loadContract();
     } catch (error: any) {
       toast({
@@ -564,8 +560,67 @@ const ContractDetail = () => {
         title: "Error",
         description: "No se pudo eliminar la renegociación"
       });
-    } finally {
-      setDeletingRenegotiation(false);
+    }
+  };
+
+  const handleAcceptRenegotiation = async (versionId: string, documentUrl: string) => {
+    if (!contract) return;
+    
+    try {
+      // Get the renegotiation version
+      const renegotiationVersion = contract.contract_versions?.find(v => v.id === versionId);
+      if (!renegotiationVersion) throw new Error("Versión de renegociación no encontrada");
+
+      // The renegotiation version becomes the new signed version
+      // Mark it as not a renegotiation anymore and set effective date
+      const { error: updateVersionError } = await supabase
+        .from("contract_versions")
+        .update({
+          is_renegotiation: false,
+          effective_date: new Date().toISOString().split('T')[0],
+        })
+        .eq("id", versionId);
+
+      if (updateVersionError) throw updateVersionError;
+
+      // Add the document as a signed renegotiation document
+      const { error: docError } = await supabase
+        .from("contract_documents")
+        .insert({
+          contract_id: contract.id,
+          version_id: versionId,
+          document_type: "borrador_r" as any,
+          url: documentUrl,
+        });
+
+      if (docError) throw docError;
+
+      // Delete any draft documents for renegotiation
+      await supabase
+        .from("contract_documents")
+        .delete()
+        .eq("contract_id", contract.id)
+        .in("document_type", ["borrador_r", "borrador_final_r"])
+        .neq("url", documentUrl);
+
+      // Delete renegotiation drafts
+      await supabase
+        .from("renegotiation_drafts")
+        .delete()
+        .eq("contract_id", contract.id);
+
+      toast({
+        title: "Renegociación aceptada",
+        description: "Las condiciones comerciales han sido actualizadas. El documento ha sido subido como borrador de renegociación.",
+      });
+      
+      loadContract();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo aceptar la renegociación: " + error.message,
+      });
     }
   };
   const getStatusBadge = (status: string) => {
@@ -1054,124 +1109,35 @@ const ContractDetail = () => {
                           </Card>
                         )}
                         {allVersions.length > 1 && (
-                          <Card className="mb-6">
-                            <CardHeader>
-                              <CardTitle className="flex items-center gap-2">
-                                <History className="h-5 w-5" />
-                                Historial de Versiones
-                              </CardTitle>
-                              <CardDescription>
-                                Este contrato tiene {allVersions.length} versiones. Haz clic en una renegociación para editarla.
-                              </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                              <div className="space-y-3">
-                                {allVersions.map((version) => (
-                                  <div
-                                    key={version.id}
-                                    className={`p-4 rounded-lg border transition-colors ${
-                                      version.is_current ? "border-primary bg-primary/5" : "border-border bg-muted/30"
-                                    } ${version.is_renegotiation && version.is_current ? "cursor-pointer hover:bg-primary/10" : ""}`}
-                                    onClick={() => {
-                                      if (version.is_renegotiation && version.is_current) {
-                                        navigate(`/contracts/${contract.id}/edit`);
-                                      }
-                                    }}
-                                  >
-                                    <div className="flex items-start justify-between">
-                                      <div className="space-y-1">
-                                        <div className="flex items-center gap-2">
-                                          <span className="font-semibold">Versión {version.version_number}</span>
-                                          {version.is_current && <Badge variant="default">Actual</Badge>}
-                                          {version.is_renegotiation && <Badge variant="secondary">Renegociación</Badge>}
-                                        </div>
-                                        <div className="text-sm text-muted-foreground">
-                                          Canon: {formatCurrency(version.regime_rent)} · {version.duration_months} meses
-                                          {version.variable_rent_percentage && ` · Variable: ${version.variable_rent_percentage}%`}
-                                        </div>
-                                        {version.effective_date && (
-                                          <div className="text-sm text-muted-foreground">
-                                            Vigente desde: {formatDate(version.effective_date)}
-                                          </div>
-                                        )}
-                                        {version.is_renegotiation && version.is_current && (
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="text-destructive hover:text-destructive hover:bg-destructive/10 gap-1 mt-2"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setShowDeleteConfirm1(true);
-                                            }}
-                                          >
-                                            <Trash2 className="h-3 w-3" />
-                                            Eliminar Renegociación
-                                          </Button>
-                                        )}
-                                      </div>
-                                      <div className="text-xs text-muted-foreground">
-                                        {formatDate(version.created_at)}
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </CardContent>
-                          </Card>
+                          <VersionHistoryPanel
+                            contractId={contract.id}
+                            contractName={contract.name}
+                            versions={allVersions.map(v => ({
+                              ...v,
+                              gastos_comunes_methodology: (v as any).gastos_comunes_methodology,
+                              gastos_comunes_uf_m2: (v as any).gastos_comunes_uf_m2,
+                              gastos_comunes_uf_ml_frente: (v as any).gastos_comunes_uf_ml_frente,
+                              gastos_comunes_prorrata_kwh_clima: (v as any).gastos_comunes_prorrata_kwh_clima,
+                              gastos_comunes_percentage: (v as any).gastos_comunes_percentage,
+                              gastos_comunes_total_centro: (v as any).gastos_comunes_total_centro,
+                              gastos_comunes_tope: (v as any).gastos_comunes_tope,
+                              gastos_comunes_tope_type: (v as any).gastos_comunes_tope_type,
+                              has_extended_gastos_comunes: (v as any).has_extended_gastos_comunes,
+                              adicional_administracion_percentage: (v as any).adicional_administracion_percentage,
+                              fondo_promocion_percentage: (v as any).fondo_promocion_percentage,
+                              grace_months: (v as any).grace_months,
+                              notice_bilaterality: (v as any).notice_bilaterality,
+                              otros_egresos_amount: (v as any).otros_egresos_amount,
+                              otros_egresos_description: (v as any).otros_egresos_description,
+                              adjustment_type: (v as any).adjustment_type,
+                              adjustment_value: (v as any).adjustment_value,
+                            }))}
+                            signedVersionId={lastSignedVersion?.id || null}
+                            onDeleteRenegotiation={handleDeleteRenegotiation}
+                            onAcceptRenegotiation={handleAcceptRenegotiation}
+                            onRefresh={loadContract}
+                          />
                         )}
-                        <AlertDialog open={showDeleteConfirm1} onOpenChange={setShowDeleteConfirm1}>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>¿Eliminar la renegociación?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Esta acción eliminará la renegociación en curso y todos sus documentos asociados.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => {
-                                  setShowDeleteConfirm1(false);
-                                  setShowDeleteConfirm2(true);
-                                }}
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              >
-                                Continuar
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                        <AlertDialog open={showDeleteConfirm2} onOpenChange={setShowDeleteConfirm2}>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Confirmar Eliminación de Renegociación</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                ¿Estás seguro? Esta acción no se puede deshacer. Se eliminarán todos los borradores de la renegociación.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel disabled={deletingRenegotiation}>Cancelar</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => {
-                                  if (currentRenegotiation) {
-                                    handleDeleteRenegotiation(currentRenegotiation.id);
-                                  }
-                                }}
-                                disabled={deletingRenegotiation}
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              >
-                                {deletingRenegotiation ? (
-                                  <>
-                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    Eliminando...
-                                  </>
-                                ) : (
-                                  "Eliminar Definitivamente"
-                                )}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
                         <DocumentVersions
                           documents={documents.map((d) => ({
                             id: d.id,
