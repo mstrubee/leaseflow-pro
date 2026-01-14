@@ -36,44 +36,59 @@ export function PatentDocumentUpload({
   const [selectedFolder, setSelectedFolder] = useState<string>("");
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Validate file before upload
-    const validation = validateFile(file);
-    if (!validation.isValid) {
-      toast.error(validation.error);
-      if (e.target) {
-        e.target.value = "";
-      }
-      return;
-    }
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
     setUploading(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const sanitizedName = sanitizeFileName(file.name);
-      const folderPath = selectedFolder || `${contractId}/${itemId}`;
-      const fileName = `${folderPath}/${Date.now()}_${sanitizedName}`;
+      const uploadedUrls: string[] = [];
+      
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        // Validate file before upload
+        const validation = validateFile(file);
+        if (!validation.isValid) {
+          toast.error(`${file.name}: ${validation.error}`);
+          continue;
+        }
 
-      const { data, error } = await supabase.storage
-        .from('repository-files')
-        .upload(fileName, file, { upsert: true });
+        const sanitizedName = sanitizeFileName(file.name);
+        const folderPath = selectedFolder || `${contractId}/${itemId}`;
+        const fileName = `${folderPath}/${Date.now()}_${i}_${sanitizedName}`;
 
-      if (error) throw error;
+        const { data, error } = await supabase.storage
+          .from('repository-files')
+          .upload(fileName, file, { upsert: true });
 
-      // Store the storage path reference instead of public URL for security
-      // The path will be converted to a signed URL when accessed
-      const storagePath = `storage://repository-files/${fileName}`;
+        if (error) {
+          console.error(`Error uploading ${file.name}:`, error);
+          toast.error(`Error al subir ${file.name}`);
+          continue;
+        }
 
-      onSave(storagePath, selectedFolder || undefined);
-      toast.success("Archivo subido correctamente");
-      onOpenChange(false);
+        // Store the storage path reference instead of public URL for security
+        const storagePath = `storage://repository-files/${fileName}`;
+        uploadedUrls.push(storagePath);
+      }
+
+      if (uploadedUrls.length > 0) {
+        // If there's a currentUrl, append to it; otherwise use the new URLs
+        const existingUrls = currentUrl ? currentUrl.split('|||').filter(Boolean) : [];
+        const allUrls = [...existingUrls, ...uploadedUrls].join('|||');
+        
+        onSave(allUrls, selectedFolder || undefined);
+        toast.success(`${uploadedUrls.length} archivo(s) subido(s) correctamente`);
+        onOpenChange(false);
+      }
     } catch (error) {
-      console.error("Error uploading file:", error);
-      toast.error("Error al subir archivo");
+      console.error("Error uploading files:", error);
+      toast.error("Error al subir archivos");
     } finally {
       setUploading(false);
+      if (e.target) {
+        e.target.value = "";
+      }
     }
   };
 
@@ -101,20 +116,39 @@ export function PatentDocumentUpload({
         </DialogHeader>
 
         {currentUrl && (
-          <div className="p-3 bg-muted rounded-lg flex items-center justify-between">
-            <div className="flex items-center gap-2 overflow-hidden">
-              <File className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-              <span className="text-sm truncate">{currentUrl.split('/').pop()}</span>
-            </div>
-            <div className="flex gap-1">
-              <Button size="icon" variant="ghost" asChild>
-                <a href={currentUrl} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="h-4 w-4" />
-                </a>
-              </Button>
-              <Button size="icon" variant="ghost" className="text-destructive" onClick={handleRemoveDocument}>
-                <X className="h-4 w-4" />
-              </Button>
+          <div className="space-y-2">
+            <Label className="text-sm text-muted-foreground">Archivos existentes:</Label>
+            <div className="space-y-2 max-h-32 overflow-y-auto">
+              {currentUrl.split('|||').filter(Boolean).map((url, index) => (
+                <div key={index} className="p-2 bg-muted rounded-lg flex items-center justify-between">
+                  <div className="flex items-center gap-2 overflow-hidden flex-1">
+                    <File className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <span className="text-sm truncate">{url.split('/').pop()}</span>
+                  </div>
+                  <div className="flex gap-1 flex-shrink-0">
+                    <Button size="icon" variant="ghost" className="h-7 w-7" asChild>
+                      <a href={url} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </Button>
+                    <Button 
+                      size="icon" 
+                      variant="ghost" 
+                      className="h-7 w-7 text-destructive" 
+                      onClick={() => {
+                        const urls = currentUrl.split('|||').filter(Boolean);
+                        urls.splice(index, 1);
+                        onSave(urls.join('|||'));
+                        if (urls.length === 0) {
+                          toast.success("Documento eliminado");
+                        }
+                      }}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -149,6 +183,7 @@ export function PatentDocumentUpload({
                 onChange={handleFileUpload}
                 disabled={uploading}
                 accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
+                multiple
               />
               <Label
                 htmlFor="file-upload"
@@ -156,10 +191,10 @@ export function PatentDocumentUpload({
               >
                 <Upload className="h-8 w-8 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">
-                  {uploading ? "Subiendo..." : "Haz clic o arrastra un archivo"}
+                  {uploading ? "Subiendo..." : "Haz clic o arrastra archivos"}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  PDF, Word, Excel, imágenes
+                  PDF, Word, Excel, imágenes (múltiples archivos permitidos)
                 </span>
               </Label>
             </div>
