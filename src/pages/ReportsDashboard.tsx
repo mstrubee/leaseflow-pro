@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ArrowLeft, FileText, Building2, CheckCircle2, AlertTriangle, Clock, XCircle, FileCheck, ExternalLink, ChevronDown, ChevronUp, ChevronRight, X, Download, Filter, MessageSquare } from "lucide-react";
+import { ArrowLeft, FileText, Building2, CheckCircle2, AlertTriangle, Clock, XCircle, FileCheck, ExternalLink, ChevronDown, ChevronUp, ChevronRight, X, Download, Filter, MessageSquare, ArrowUpDown } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { 
@@ -93,6 +93,10 @@ const ReportsDashboard = () => {
   
   // Filter for "Sin Patente" section
   const [sinPatenteStatusFilter, setSinPatenteStatusFilter] = useState<string>("all");
+  
+  // Sorting for "Sin Patente" section
+  const [sinPatenteSortField, setSinPatenteSortField] = useState<"empresa" | "prioridad" | null>(null);
+  const [sinPatenteSortOrder, setSinPatenteSortOrder] = useState<"asc" | "desc">("asc");
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -391,24 +395,140 @@ const ReportsDashboard = () => {
     setChartFilter(null);
   };
 
-  // Get "Sin Patente" contracts with optional priority filter
+  // Get "Sin Patente" contracts with optional priority filter and sorting
   const sinPatenteContracts = useMemo(() => {
-    const sinPatente = contracts.filter(c => 
+    let sinPatente = contracts.filter(c => 
       !c.patente_status || c.patente_status === "sin_patente"
     );
     
-    if (sinPatenteStatusFilter === "all") return sinPatente;
+    // Apply priority filter
+    if (sinPatenteStatusFilter !== "all") {
+      sinPatente = sinPatente.filter(c => {
+        const priority = c.contract_patents?.priority;
+        if (sinPatenteStatusFilter === "sin_asignar") {
+          return !priority;
+        }
+        return priority === sinPatenteStatusFilter;
+      });
+    }
     
-    return sinPatente.filter(c => {
-      const priority = c.contract_patents?.priority;
-      if (sinPatenteStatusFilter === "sin_asignar") {
-        return !priority;
-      }
-      return priority === sinPatenteStatusFilter;
-    });
-  }, [contracts, sinPatenteStatusFilter]);
+    // Apply sorting
+    if (sinPatenteSortField) {
+      sinPatente.sort((a, b) => {
+        let valA: string;
+        let valB: string;
+        
+        if (sinPatenteSortField === "empresa") {
+          valA = a.contract_companies?.map(cc => cc.companies?.name).filter(Boolean).join(', ') || "ZZZ";
+          valB = b.contract_companies?.map(cc => cc.companies?.name).filter(Boolean).join(', ') || "ZZZ";
+        } else {
+          // priority order: priority_1 < priority_2 < priority_3 < vigente < sin_asignar
+          const priorityOrder: Record<string, number> = {
+            priority_1: 1,
+            priority_2: 2,
+            priority_3: 3,
+            vigente: 4,
+            sin_asignar: 5,
+          };
+          valA = String(priorityOrder[a.contract_patents?.priority || "sin_asignar"] || 5);
+          valB = String(priorityOrder[b.contract_patents?.priority || "sin_asignar"] || 5);
+        }
+        
+        const comparison = valA.localeCompare(valB);
+        return sinPatenteSortOrder === "asc" ? comparison : -comparison;
+      });
+    }
+    
+    return sinPatente;
+  }, [contracts, sinPatenteStatusFilter, sinPatenteSortField, sinPatenteSortOrder]);
 
-  // Export PDF function
+  // Toggle sort for sin patente table
+  const handleSinPatenteSort = (field: "empresa" | "prioridad") => {
+    if (sinPatenteSortField === field) {
+      setSinPatenteSortOrder(prev => prev === "asc" ? "desc" : "asc");
+    } else {
+      setSinPatenteSortField(field);
+      setSinPatenteSortOrder("asc");
+    }
+  };
+
+  // Export PDF function for Sin Patente section (respects current filter and sort)
+  const exportSinPatentePDF = () => {
+    const doc = new jsPDF({ orientation: 'landscape' });
+    const today = new Date().toLocaleDateString('es-CL');
+    
+    // Title
+    doc.setFontSize(18);
+    doc.text('Detalle: Locales Sin Patente', 14, 20);
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    
+    // Show current filter and sort in PDF
+    let subtitle = `Generado: ${today}`;
+    if (sinPatenteStatusFilter !== "all") {
+      const filterLabel = sinPatenteStatusFilter === "sin_asignar" 
+        ? "Sin Asignar" 
+        : PRIORITY_CONFIG[sinPatenteStatusFilter as PatentPriority]?.label || sinPatenteStatusFilter;
+      subtitle += ` | Filtro: ${filterLabel}`;
+    }
+    if (sinPatenteSortField) {
+      const sortLabel = sinPatenteSortField === "empresa" ? "Empresa" : "Prioridad";
+      const orderLabel = sinPatenteSortOrder === "asc" ? "↑" : "↓";
+      subtitle += ` | Ordenado por: ${sortLabel} ${orderLabel}`;
+    }
+    doc.text(subtitle, 14, 28);
+    doc.text(`Total: ${sinPatenteContracts.length} locales`, 14, 34);
+    
+    if (sinPatenteContracts.length === 0) {
+      doc.setFontSize(12);
+      doc.setTextColor(0);
+      doc.text('No hay locales sin patente con los filtros seleccionados.', 14, 50);
+    } else {
+      const sinPatenteData = sinPatenteContracts.map(c => {
+        const companies = c.contract_companies?.map(cc => cc.companies?.name).filter(Boolean).join(', ') || 'Sin Empresa';
+        const address = c.contract_addresses?.[0];
+        const fullAddress = address 
+          ? `${address.street || ''} ${address.number || ''}, ${address.commune || ''}`.trim()
+          : 'Sin dirección';
+        const priority = c.contract_patents?.priority 
+          ? PRIORITY_CONFIG[c.contract_patents.priority]?.label || 'Sin Asignar'
+          : 'Sin Asignar';
+        const comments = c.contract_patents?.comments || '-';
+        const nextActions = c.contract_patents?.next_actions || '-';
+        
+        return [c.name, companies, fullAddress, priority, comments, nextActions];
+      });
+      
+      autoTable(doc, {
+        startY: 40,
+        head: [['Local', 'Empresa', 'Dirección', 'Prioridad', 'Comentarios', 'Próximas Acciones']],
+        body: sinPatenteData,
+        theme: 'grid',
+        headStyles: { fillColor: [220, 38, 38] },
+        margin: { left: 14, right: 14 },
+        columnStyles: {
+          0: { cellWidth: 35 },
+          1: { cellWidth: 35 },
+          2: { cellWidth: 40 },
+          3: { cellWidth: 25 },
+          4: { cellWidth: 'auto' }, // Full width for comments
+          5: { cellWidth: 'auto' }, // Full width for actions
+        },
+        styles: { 
+          fontSize: 8,
+          cellPadding: 3,
+          overflow: 'linebreak', // Wrap text instead of truncating
+        },
+        bodyStyles: {
+          valign: 'top',
+        },
+      });
+    }
+    
+    doc.save(`locales-sin-patente-${today.replace(/\//g, '-')}.pdf`);
+  };
+
+  // Export PDF function for general report
   const exportToPDF = () => {
     const doc = new jsPDF({ orientation: 'landscape' });
     const today = new Date().toLocaleDateString('es-CL');
@@ -469,11 +589,28 @@ const ReportsDashboard = () => {
       margin: { left: 14 },
     });
     
-    // "Sin Patente" details - new page
+    // "Sin Patente" details - new page (uses current filter and sort)
     if (sinPatenteContracts.length > 0) {
       doc.addPage();
       doc.setFontSize(14);
       doc.text('Detalle: Locales Sin Patente', 14, 20);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(100);
+      let detailSubtitle = `Total: ${sinPatenteContracts.length} locales`;
+      if (sinPatenteStatusFilter !== "all") {
+        const filterLabel = sinPatenteStatusFilter === "sin_asignar" 
+          ? "Sin Asignar" 
+          : PRIORITY_CONFIG[sinPatenteStatusFilter as PatentPriority]?.label || sinPatenteStatusFilter;
+        detailSubtitle += ` | Filtro: ${filterLabel}`;
+      }
+      if (sinPatenteSortField) {
+        const sortLabel = sinPatenteSortField === "empresa" ? "Empresa" : "Prioridad";
+        const orderLabel = sinPatenteSortOrder === "asc" ? "↑" : "↓";
+        detailSubtitle += ` | Ordenado por: ${sortLabel} ${orderLabel}`;
+      }
+      doc.text(detailSubtitle, 14, 28);
+      doc.setTextColor(0);
       
       const sinPatenteData = sinPatenteContracts.map(c => {
         const companies = c.contract_companies?.map(cc => cc.companies?.name).filter(Boolean).join(', ') || 'Sin Empresa';
@@ -491,17 +628,28 @@ const ReportsDashboard = () => {
       });
       
       autoTable(doc, {
-        startY: 25,
+        startY: 35,
         head: [['Local', 'Empresa', 'Dirección', 'Prioridad', 'Comentarios', 'Próximas Acciones']],
         body: sinPatenteData,
         theme: 'grid',
         headStyles: { fillColor: [220, 38, 38] },
-        margin: { left: 14 },
+        margin: { left: 14, right: 14 },
         columnStyles: {
-          4: { cellWidth: 50 },
-          5: { cellWidth: 50 },
+          0: { cellWidth: 35 },
+          1: { cellWidth: 35 },
+          2: { cellWidth: 40 },
+          3: { cellWidth: 25 },
+          4: { cellWidth: 'auto' }, // Full width for comments
+          5: { cellWidth: 'auto' }, // Full width for actions
         },
-        styles: { fontSize: 8 },
+        styles: { 
+          fontSize: 8,
+          cellPadding: 3,
+          overflow: 'linebreak', // Wrap text instead of truncating
+        },
+        bodyStyles: {
+          valign: 'top',
+        },
       });
     }
     
@@ -1003,6 +1151,17 @@ const ReportsDashboard = () => {
                           </CardDescription>
                         </div>
                         <div className="flex items-center gap-2">
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              exportSinPatentePDF();
+                            }}
+                          >
+                            <Download className="h-3 w-3 mr-1" />
+                            PDF
+                          </Button>
                           <Select value={sinPatenteStatusFilter} onValueChange={setSinPatenteStatusFilter}>
                             <SelectTrigger className="w-[180px] h-8">
                               <Filter className="h-3 w-3 mr-2" />
@@ -1049,9 +1208,29 @@ const ReportsDashboard = () => {
                               <TableHeader>
                                 <TableRow>
                                   <TableHead className="w-[180px]">Local</TableHead>
-                                  <TableHead className="w-[150px]">Empresa</TableHead>
+                                  <TableHead className="w-[150px]">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-auto p-0 font-medium hover:bg-transparent"
+                                      onClick={() => handleSinPatenteSort("empresa")}
+                                    >
+                                      Empresa
+                                      <ArrowUpDown className={`ml-1 h-3 w-3 ${sinPatenteSortField === "empresa" ? "text-primary" : "text-muted-foreground"}`} />
+                                    </Button>
+                                  </TableHead>
                                   <TableHead className="w-[180px]">Dirección</TableHead>
-                                  <TableHead className="text-center w-[100px]">Prioridad</TableHead>
+                                  <TableHead className="text-center w-[100px]">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-auto p-0 font-medium hover:bg-transparent"
+                                      onClick={() => handleSinPatenteSort("prioridad")}
+                                    >
+                                      Prioridad
+                                      <ArrowUpDown className={`ml-1 h-3 w-3 ${sinPatenteSortField === "prioridad" ? "text-primary" : "text-muted-foreground"}`} />
+                                    </Button>
+                                  </TableHead>
                                   <TableHead>Comentarios</TableHead>
                                   <TableHead>Próximas Acciones</TableHead>
                                   <TableHead className="text-right w-[100px]">Acciones</TableHead>
