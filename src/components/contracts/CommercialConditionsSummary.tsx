@@ -188,13 +188,13 @@ export function CommercialConditionsSummary({
     (version.first_adjustment_month || 0) > 0;
   const showCurrentLabel = hasEscalations || hasAdjustments;
   
-  // Calculate actual rents considering UF/m² mode
+  // Calculate actual rents considering UF/m² mode - use full precision (3 decimals) for intermediate calculations
   const actualRegimeRent = version.regime_rent_is_uf_m2 && superficieEdificadaLocal 
-    ? version.regime_rent * superficieEdificadaLocal 
+    ? parseFloat((version.regime_rent * superficieEdificadaLocal).toFixed(3))
     : version.regime_rent;
   const actualInitialRent = version.initial_rent 
     ? (version.initial_rent_is_uf_m2 && superficieEdificadaLocal 
-        ? version.initial_rent * superficieEdificadaLocal 
+        ? parseFloat((version.initial_rent * superficieEdificadaLocal).toFixed(3))
         : version.initial_rent)
     : null;
   
@@ -521,9 +521,18 @@ export function CommercialConditionsSummary({
             <p className="text-xs text-muted-foreground">
               {formatSecondary(currentRent)}
             </p>
-            {canonPerM2 !== null && <p className="text-xs text-muted-foreground">
+            {/* Show UF/m² breakdown when user entered value in UF/m² mode */}
+            {version.regime_rent_is_uf_m2 && superficieEdificadaLocal && (
+              <p className="text-xs text-muted-foreground">
+                ({superficieEdificadaLocal.toLocaleString("es-CL", { maximumFractionDigits: 2 })} m² × {version.regime_rent.toLocaleString("es-CL", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} UF/m²)
+              </p>
+            )}
+            {/* Show calculated UF/m² when NOT in UF/m² mode */}
+            {!version.regime_rent_is_uf_m2 && canonPerM2 !== null && (
+              <p className="text-xs text-muted-foreground">
                 {displayCurrency === "CLP" ? `($${Math.round(canonPerM2).toLocaleString("es-CL")}/m²)` : `(${canonPerM2.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)`}
-              </p>}
+              </p>
+            )}
           </div>
 
           {/* % Variable */}
