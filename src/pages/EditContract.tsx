@@ -1156,6 +1156,24 @@ const EditContract = () => {
                                       currency={currency}
                                       onCurrencyChange={setCurrency}
                                       showCurrencySelector={false}
+                                      showUfM2Mode={true}
+                                      isUfM2Mode={isRegimeRentUfM2}
+                                      onUfM2ModeChange={setIsRegimeRentUfM2}
+                                      superficieM2={superficieEdificadaLocal}
+                                    />
+                                    
+                                    <CurrencyInput
+                                      id="regimeRentEscalation"
+                                      label="Canon en Régimen"
+                                      value={regimeRent}
+                                      onChange={setRegimeRent}
+                                      currency={currency}
+                                      onCurrencyChange={setCurrency}
+                                      showCurrencySelector={false}
+                                      showUfM2Mode={true}
+                                      isUfM2Mode={isRegimeRentUfM2}
+                                      onUfM2ModeChange={setIsRegimeRentUfM2}
+                                      superficieM2={superficieEdificadaLocal}
                                     />
                                     
                                     {duration && (
@@ -1175,6 +1193,8 @@ const EditContract = () => {
                                           adjustmentValue={parseFloat(adjustmentValue) || 0}
                                           firstAdjustmentMonth={parseInt(firstAdjustmentMonth) || 0}
                                           adjustmentPeriodicityMonths={parseInt(adjustmentPeriodicityMonths) || 0}
+                                          isUfM2Mode={isRegimeRentUfM2}
+                                          superficieM2={superficieEdificadaLocal}
                                         />
                                       </div>
                                     )}

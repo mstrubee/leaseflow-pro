@@ -38,10 +38,12 @@ export const CurrencyInput = ({
     loading
   } = useEconomicIndicators();
   const numericValue = parseFloat(value) || 0;
-  const formatUF = (amount: number) => {
+  // UF values displayed with max 2 decimals, UF/m² values with max 3 decimals
+  const formatUF = (amount: number, isUfM2: boolean = false) => {
+    const decimals = isUfM2 ? 3 : 2;
     return `UF ${amount.toLocaleString("es-CL", {
       minimumFractionDigits: 2,
-      maximumFractionDigits: 2
+      maximumFractionDigits: decimals
     })}`
   };
   const formatCLP = (amount: number) => {
@@ -68,7 +70,7 @@ export const CurrencyInput = ({
               <SelectItem value="uf_m2">UF/m²</SelectItem>
             </SelectContent>
           </Select>}
-        <Input id={id} type="number" step={currency === "UF" || isUfM2Mode ? "0.001" : "1"} value={value} onChange={e => onChange(e.target.value)} onFocus={e => e.target.select()} required={required} className="w-28" placeholder="0" />
+        <Input id={id} type="number" step="0.001" value={value} onChange={e => onChange(e.target.value)} onFocus={e => e.target.select()} required={required} className="w-28" placeholder="0" />
         {isUfM2Mode && <span className="flex items-center text-sm text-muted-foreground whitespace-nowrap">UF/m²</span>}
         {showCurrencySelector && !isUfM2Mode && <Select value={currency} onValueChange={v => onCurrencyChange(v as "UF" | "CLP")}>
             <SelectTrigger className="w-20">
@@ -84,12 +86,12 @@ export const CurrencyInput = ({
       {/* Show equivalences */}
       <div className="space-y-0.5">
         {!loading && ufValue > 0 && numericValue > 0 && !isUfM2Mode && <p className="text-xs text-muted-foreground">
-            Equivalente: {currency === "CLP" ? formatUF(equivalentValue) : formatCLP(equivalentValue)}
+            Equivalente: {currency === "CLP" ? formatUF(equivalentValue, false) : formatCLP(equivalentValue)}
           </p>}
         
-        {/* UF/m² mode: show calculated total */}
+        {/* UF/m² mode: show calculated total - UF total with 2 decimals, UF/m² with 3 decimals */}
         {isUfM2Mode && superficieM2 > 0 && numericValue > 0 && <p className="text-xs text-muted-foreground">
-            Canon Total: {formatUF(calculatedTotal)} ({superficieM2.toLocaleString("es-CL")} m² × {numericValue.toLocaleString("es-CL", {
+            Canon Total: {formatUF(calculatedTotal, false)} ({superficieM2.toLocaleString("es-CL")} m² × {numericValue.toLocaleString("es-CL", {
           minimumFractionDigits: 2,
           maximumFractionDigits: 3
         })} UF/m²)

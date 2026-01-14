@@ -219,7 +219,7 @@ const EscalationMonthInput = ({
             value={amount}
             onChange={(e) => onAmountChange(e.target.value)}
             min={0}
-            step={currency === "UF" ? "0.01" : "1"}
+            step="0.001"
           />
         </div>
         <Button
@@ -258,6 +258,8 @@ interface RentEscalationsProps {
   adjustmentValue?: number;
   firstAdjustmentMonth?: number;
   adjustmentPeriodicityMonths?: number;
+  isUfM2Mode?: boolean;
+  superficieM2?: number;
 }
 
 interface CustomDotProps {
@@ -304,6 +306,8 @@ export const RentEscalations = ({
   adjustmentValue = 0,
   firstAdjustmentMonth = 0,
   adjustmentPeriodicityMonths = 0,
+  isUfM2Mode = false,
+  superficieM2 = 0,
 }: RentEscalationsProps) => {
   const [newStartMonth, setNewStartMonth] = useState("");
   const [newEndMonth, setNewEndMonth] = useState("");
@@ -315,14 +319,26 @@ export const RentEscalations = ({
   const [editEndMonth, setEditEndMonth] = useState<number | null>(null);
   const [editAmount, setEditAmount] = useState("");
 
-  const formatCurrency = (amount: number) => {
+  // Format currency: UF values with 2 decimals, UF/m² values with 3 decimals
+  const formatCurrency = (amount: number, forceUfM2: boolean = false) => {
     if (currency === "UF") {
-      return `UF ${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const decimals = (isUfM2Mode || forceUfM2) ? 3 : 2;
+      const suffix = isUfM2Mode ? " UF/m²" : "";
+      return `${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: decimals })}${suffix}`;
     }
     return new Intl.NumberFormat("es-CL", {
       style: "currency",
       currency: "CLP",
     }).format(amount);
+  };
+
+  // Format total when in UF/m² mode
+  const formatTotal = (amount: number) => {
+    if (isUfM2Mode && superficieM2 > 0) {
+      const total = amount * superficieM2;
+      return `UF ${total.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+    return `UF ${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const handleAdd = () => {
@@ -505,6 +521,11 @@ export const RentEscalations = ({
                     <span className="font-semibold text-primary">
                       {formatCurrency(escalation.amount)}
                     </span>
+                    {isUfM2Mode && superficieM2 > 0 && (
+                      <span className="text-muted-foreground ml-2">
+                        (Total: {formatTotal(escalation.amount)})
+                      </span>
+                    )}
                   </div>
                 </div>
                 {!readOnly && (
