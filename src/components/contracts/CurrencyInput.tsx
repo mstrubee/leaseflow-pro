@@ -57,10 +57,10 @@ export const CurrencyInput = ({
   const calculatedTotal = isUfM2Mode && superficieM2 > 0 ? numericValue * superficieM2 : 0;
   const calculatedUfM2 = !isUfM2Mode && superficieM2 > 0 && numericValue > 0 ? numericValue / superficieM2 : 0;
   return <div className="space-y-2">
-      <div className="flex items-left justify">
-        <Label htmlFor={id}>{label} {required && "*"}</Label>
+      <Label htmlFor={id}>{label} {required && "*"}</Label>
+      <div className="flex items-center gap-2">
         {showUfM2Mode && superficieM2 > 0 && <Select value={isUfM2Mode ? "uf_m2" : "fixed"} onValueChange={v => onUfM2ModeChange?.(v === "uf_m2")}>
-            <SelectTrigger className="w-28 h-7 text-xs">
+            <SelectTrigger className="w-24 h-9 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -68,11 +68,10 @@ export const CurrencyInput = ({
               <SelectItem value="uf_m2">UF/m²</SelectItem>
             </SelectContent>
           </Select>}
-      </div>
-      <div className="flex gap-2">
-        <Input id={id} type="number" step={currency === "UF" || isUfM2Mode ? "0.01" : "1"} value={value} onChange={e => onChange(e.target.value)} onFocus={e => e.target.select()} required={required} className="flex-1" placeholder="0" />
-        {showCurrencySelector && <Select value={currency} onValueChange={v => onCurrencyChange(v as "UF" | "CLP")}>
-            <SelectTrigger className="w-24">
+        <Input id={id} type="number" step={currency === "UF" || isUfM2Mode ? "0.01" : "1"} value={value} onChange={e => onChange(e.target.value)} onFocus={e => e.target.select()} required={required} className="w-28" placeholder="0" />
+        {isUfM2Mode && <span className="flex items-center text-sm text-muted-foreground whitespace-nowrap">UF/m²</span>}
+        {showCurrencySelector && !isUfM2Mode && <Select value={currency} onValueChange={v => onCurrencyChange(v as "UF" | "CLP")}>
+            <SelectTrigger className="w-20">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -80,7 +79,6 @@ export const CurrencyInput = ({
               <SelectItem value="CLP">CLP</SelectItem>
             </SelectContent>
           </Select>}
-        {isUfM2Mode && <span className="flex items-center text-sm text-muted-foreground whitespace-nowrap">UF/m²</span>}
       </div>
       
       {/* Show equivalences */}
