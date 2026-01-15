@@ -641,7 +641,7 @@ const NewContract = () => {
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Monto de Garantía de Arriendo
+                  Monto de Garantía de Arriendo. Si el canon está en UF/m², el monto final se calculará al definir la superficie.
                 </p>
               </div>
 

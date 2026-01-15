@@ -1261,27 +1261,48 @@ const EditContract = () => {
                                   />
                                   <span className="text-sm text-muted-foreground">×</span>
                                   <span className="text-sm text-muted-foreground">
-                                    {regimeRent || "0"} {currency}
+                                    {regimeRent || "0"} {currency}{isRegimeRentUfM2 ? "/m²" : ""}
+                                    {isRegimeRentUfM2 && superficieEdificadaLocal ? ` × ${superficieEdificadaLocal} m²` : ""}
                                   </span>
                                   <span className="text-sm text-muted-foreground">=</span>
                                   <span className="text-sm font-medium">
-                                    {guaranteeMultiplier && regimeRent
-                                      ? (parseFloat(guaranteeMultiplier) * parseFloat(regimeRent)).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                                      : "0"} {currency}
+                                    {(() => {
+                                      if (!guaranteeMultiplier || !regimeRent) return `0 ${currency}`;
+                                      const baseRent = parseFloat(regimeRent);
+                                      const actualRent = isRegimeRentUfM2 && superficieEdificadaLocal 
+                                        ? baseRent * superficieEdificadaLocal 
+                                        : baseRent;
+                                      const total = parseFloat(guaranteeMultiplier) * actualRent;
+                                      return `${total.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+                                    })()}
                                   </span>
                                 </div>
                                 {currency === "CLP" && ufValue > 0 && guaranteeMultiplier && regimeRent && (
                                   <p className="text-xs text-muted-foreground">
-                                    ≈ {(parseFloat(guaranteeMultiplier) * convertPesosToUF(parseFloat(regimeRent))).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
+                                    {(() => {
+                                      const baseRent = parseFloat(regimeRent);
+                                      const actualRent = isRegimeRentUfM2 && superficieEdificadaLocal 
+                                        ? baseRent * superficieEdificadaLocal 
+                                        : baseRent;
+                                      const total = parseFloat(guaranteeMultiplier) * convertPesosToUF(actualRent);
+                                      return `≈ ${total.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
+                                    })()}
                                   </p>
                                 )}
                                 {currency === "UF" && ufValue > 0 && guaranteeMultiplier && regimeRent && (
                                   <p className="text-xs text-muted-foreground">
-                                    ≈ ${Math.round(parseFloat(guaranteeMultiplier) * parseFloat(regimeRent) * ufValue).toLocaleString("es-CL")}
+                                    {(() => {
+                                      const baseRent = parseFloat(regimeRent);
+                                      const actualRent = isRegimeRentUfM2 && superficieEdificadaLocal 
+                                        ? baseRent * superficieEdificadaLocal 
+                                        : baseRent;
+                                      const total = Math.round(parseFloat(guaranteeMultiplier) * actualRent * ufValue);
+                                      return `≈ $${total.toLocaleString("es-CL")}`;
+                                    })()}
                                   </p>
                                 )}
                                 <p className="text-xs text-muted-foreground">
-                                  Monto de Garantía de Arriendo
+                                  Monto de Garantía de Arriendo{isRegimeRentUfM2 ? " (calculado sobre arriendo total)" : ""}
                                 </p>
                               </div>
                             );
