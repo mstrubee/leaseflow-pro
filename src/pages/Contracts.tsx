@@ -110,6 +110,7 @@ interface Contract {
   special_attention_reason: string | null;
   negotiation_subcategory: string | null;
   venta_estimada: number | null;
+  clasificacion?: string | null;
   contract_companies: ContractCompany[];
   contract_addresses: Array<{ region: string; commune: string; street?: string; number?: string }>;
   contract_versions: ContractVersion[];
@@ -624,6 +625,12 @@ const Contracts = () => {
             const catA = getCategoria(a);
             const catB = getCategoria(b);
             comparison = catA.localeCompare(catB, "es");
+            break;
+          }
+          case "clasificacion": {
+            const clasifA = (a.clasificacion || "").toLowerCase();
+            const clasifB = (b.clasificacion || "").toLowerCase();
+            comparison = clasifA.localeCompare(clasifB, "es");
             break;
           }
           case "venta_estimada": {
