@@ -7,6 +7,7 @@ export type EditSectionKey =
   | "escalation"
   | "variableRent"
   | "guarantee"
+  | "entryExpenses"
   | "gastosComunes"
   | "fondoPromocion"
   | "otrosArrendamientos"
@@ -26,6 +27,7 @@ const DEFAULT_ORDER: EditSectionKey[] = [
   "escalation",
   "variableRent",
   "guarantee",
+  "entryExpenses",
   "gastosComunes",
   "fondoPromocion",
   "otrosArrendamientos",

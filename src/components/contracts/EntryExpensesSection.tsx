@@ -36,9 +36,10 @@ interface EntryExpensesSectionProps {
   contractId: string;
   displayCurrency?: "UF" | "CLP";
   readOnly?: boolean;
+  embedded?: boolean; // When true, renders without Card wrapper
 }
 
-export function EntryExpensesSection({ contractId, displayCurrency = "UF", readOnly = false }: EntryExpensesSectionProps) {
+export function EntryExpensesSection({ contractId, displayCurrency = "UF", readOnly = false, embedded = false }: EntryExpensesSectionProps) {
   const { toast } = useToast();
   const { isAdmin } = useAuth();
   const { ufValue, convertUFToPesos, convertPesosToUF } = useEconomicIndicators();
@@ -209,29 +210,23 @@ export function EntryExpensesSection({ contractId, displayCurrency = "UF", readO
 
   const canEdit = isAdmin && !readOnly;
 
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Receipt className="h-4 w-4" />
-            Gastos de Entrada
-          </CardTitle>
-          {canEdit && !isAdding && !editingId && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsAdding(true)}
-            >
-              <Plus className="h-3.5 w-3.5 mr-1" />
-              Agregar
-            </Button>
-          )}
+  const content = (
+    <div className="space-y-3">
+      {/* Add button for embedded mode */}
+      {embedded && canEdit && !isAdding && !editingId && (
+        <div className="flex justify-end">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsAdding(true)}
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            Agregar
+          </Button>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {/* Form for adding/editing */}
-        {(isAdding || editingId) && canEdit && (
+      )}
+      {/* Form for adding/editing */}
+      {(isAdding || editingId) && canEdit && (
           <div className="border rounded-lg p-3 bg-muted/30 space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -384,8 +379,35 @@ export function EntryExpensesSection({ contractId, displayCurrency = "UF", readO
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
-        </AlertDialog>
-      </CardContent>
+      </AlertDialog>
+    </div>
+  );
+
+  if (embedded) {
+    return content;
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Receipt className="h-4 w-4" />
+            Gastos de Entrada
+          </CardTitle>
+          {canEdit && !isAdding && !editingId && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsAdding(true)}
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              Agregar
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>{content}</CardContent>
     </Card>
   );
 }
