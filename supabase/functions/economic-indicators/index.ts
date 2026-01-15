@@ -30,18 +30,33 @@ serve(async (req) => {
     const currentYear = today.getFullYear();
     const lastYear = currentYear - 1;
 
+    // Helper function to safely fetch and parse JSON
+    const safeFetch = async (url: string): Promise<any> => {
+      const response = await fetch(url);
+      const text = await response.text();
+      
+      // Check if response is HTML (error page) instead of JSON
+      if (text.trim().startsWith('<')) {
+        console.error(`API returned HTML instead of JSON for ${url}:`, text.substring(0, 200));
+        throw new Error(`API returned HTML error page for ${url}`);
+      }
+      
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        console.error(`Failed to parse JSON from ${url}:`, text.substring(0, 200));
+        throw new Error(`Invalid JSON response from ${url}`);
+      }
+    };
+
     // Fetch UF values from mindicador.cl API
-    const ufResponse = await fetch('https://mindicador.cl/api/uf');
-    const ufData = await ufResponse.json();
+    const ufData = await safeFetch('https://mindicador.cl/api/uf');
     
     // Fetch USD values for current year and last year to get full history
-    const [dollarCurrentYearRes, dollarLastYearRes] = await Promise.all([
-      fetch(`https://mindicador.cl/api/dolar/${currentYear}`),
-      fetch(`https://mindicador.cl/api/dolar/${lastYear}`)
+    const [dollarCurrentYear, dollarLastYear] = await Promise.all([
+      safeFetch(`https://mindicador.cl/api/dolar/${currentYear}`),
+      safeFetch(`https://mindicador.cl/api/dolar/${lastYear}`)
     ]);
-    
-    const dollarCurrentYear = await dollarCurrentYearRes.json();
-    const dollarLastYear = await dollarLastYearRes.json();
 
     console.log(`Fetched ${dollarCurrentYear.serie?.length || 0} records for ${currentYear}`);
     console.log(`Fetched ${dollarLastYear.serie?.length || 0} records for ${lastYear}`);
