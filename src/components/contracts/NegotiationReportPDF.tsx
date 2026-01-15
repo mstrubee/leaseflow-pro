@@ -5,6 +5,7 @@ import { es } from 'date-fns/locale';
 
 interface ContractVersion {
   regime_rent: number;
+  regime_rent_is_uf_m2?: boolean | null;
   initial_rent?: number | null;
   duration_months: number;
   is_current: boolean;
@@ -103,6 +104,39 @@ export const generateNegotiationReportPDF = (
       ? `${address.commune}${address.street ? `, ${address.street} ${address.number || ''}` : ''}`
       : '-';
 
+    // Calculate rent - multiply by superficie if UF/m2
+    let rentText = '-';
+    if (currentVersion) {
+      const superficie = contract.superficie_edificada_local || 0;
+      const isRentUfM2 = currentVersion.regime_rent_is_uf_m2 === true;
+      const rentAmount = isRentUfM2 ? currentVersion.regime_rent * superficie : currentVersion.regime_rent;
+      if (isRentUfM2 && superficie > 0) {
+        rentText = `${rentAmount.toLocaleString('es-CL', { minimumFractionDigits: 2 })} UF\n(${currentVersion.regime_rent.toLocaleString('es-CL', { minimumFractionDigits: 2 })} UF/m²)`;
+      } else {
+        rentText = `${rentAmount.toLocaleString('es-CL', { minimumFractionDigits: 2 })} UF`;
+      }
+    }
+
+    // Calculate venta estimada with range and per m2
+    let ventaText = '-';
+    if (contract.venta_estimada) {
+      const ventaMin = contract.venta_estimada;
+      const ventaMax = (contract as any).venta_estimada_max || ventaMin;
+      const superficie = contract.superficie_edificada_local || 0;
+      const ventaMinMM = (ventaMin / 1000000).toFixed(0);
+      const ventaMaxMM = (ventaMax / 1000000).toFixed(0);
+      ventaText = ventaMin === ventaMax 
+        ? `$${ventaMinMM} MM` 
+        : `$${ventaMinMM} - $${ventaMaxMM} MM`;
+      if (superficie > 0) {
+        const ventaM2Min = Math.round(ventaMin / superficie);
+        const ventaM2Max = Math.round(ventaMax / superficie);
+        ventaText += ventaM2Min === ventaM2Max 
+          ? `\n($${ventaM2Min.toLocaleString('es-CL')}/m²)` 
+          : `\n($${ventaM2Min.toLocaleString('es-CL')} - $${ventaM2Max.toLocaleString('es-CL')}/m²)`;
+      }
+    }
+
     return [
       contract.name,
       companies,
@@ -111,15 +145,11 @@ export const generateNegotiationReportPDF = (
       contract.superficie_edificada_local 
         ? `${contract.superficie_edificada_local.toLocaleString('es-CL')} m²` 
         : '-',
-      currentVersion 
-        ? `${currentVersion.regime_rent.toLocaleString('es-CL', { minimumFractionDigits: 2 })} UF` 
-        : '-',
+      rentText,
       currentVersion 
         ? `${currentVersion.duration_months} meses` 
         : '-',
-      contract.venta_estimada 
-        ? `$${contract.venta_estimada.toLocaleString('es-CL')}` 
-        : '-',
+      ventaText,
     ];
   });
 
@@ -142,7 +172,7 @@ export const generateNegotiationReportPDF = (
       cellPadding: 2,
     },
     headStyles: {
-      fillColor: [59, 130, 246],
+      fillColor: [220, 38, 38],
       textColor: 255,
       fontStyle: 'bold',
       halign: 'center',
