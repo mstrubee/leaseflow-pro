@@ -163,10 +163,14 @@ const Contracts = () => {
 
   const setNegotiationSubcategoryFilter = (value: string) => updateFilter("subcategory", value);
 
+  // NOTE: using window.location.search avoids stale `searchParams` closures
+  // when users change multiple filters one after another.
+  const getFreshParams = () => new URLSearchParams(window.location.search);
+
   // Helper to update a single filter in URL
   const updateFilter = (key: string, value: string) => {
-    const newParams = new URLSearchParams(searchParams);
-    if (value === "todos" || value === "" || value === null) {
+    const newParams = getFreshParams();
+    if (value === "todos" || value === "" || (value as any) === null) {
       newParams.delete(key);
     } else {
       newParams.set(key, value);
@@ -183,7 +187,7 @@ const Contracts = () => {
   const setCostoArriendoFilter = (value: string) => updateFilter("costo", value);
   const setCompanyFilter = (value: string) => updateFilter("company", value);
   const setAtencionEspecialFilter = (value: string) => {
-    const newParams = new URLSearchParams(searchParams);
+    const newParams = getFreshParams();
     if (value === "si") {
       newParams.set("atencion_especial", "true");
     } else if (value === "no") {
@@ -195,7 +199,7 @@ const Contracts = () => {
   };
 
   const setSortField = (field: ContractSortField) => {
-    const newParams = new URLSearchParams(searchParams);
+    const newParams = getFreshParams();
     if (field === null) {
       newParams.delete("sort");
       newParams.delete("dir");
@@ -206,7 +210,7 @@ const Contracts = () => {
   };
 
   const setSortDirection = (dir: SortDirection) => {
-    const newParams = new URLSearchParams(searchParams);
+    const newParams = getFreshParams();
     if (dir === "asc") {
       newParams.delete("dir");
     } else {
@@ -651,7 +655,7 @@ const Contracts = () => {
   };
 
   const handleSort = (field: ContractSortField) => {
-    const newParams = new URLSearchParams(searchParams);
+    const newParams = new URLSearchParams(window.location.search);
     if (sortField === field) {
       if (sortDirection === "asc") {
         newParams.set("dir", "desc");
@@ -669,7 +673,7 @@ const Contracts = () => {
   const clearFilters = () => {
     // Clear all filter params but keep status if present
     const newParams = new URLSearchParams();
-    const status = searchParams.get("status");
+    const status = new URLSearchParams(window.location.search).get("status");
     if (status) {
       newParams.set("status", status);
     }
