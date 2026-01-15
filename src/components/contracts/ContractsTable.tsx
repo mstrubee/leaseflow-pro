@@ -40,7 +40,9 @@ interface RentEscalation {
 interface ContractVersion {
   id?: string;
   regime_rent: number;
+  regime_rent_is_uf_m2?: boolean | null;
   initial_rent?: number | null;
+  initial_rent_is_uf_m2?: boolean | null;
   grace_months?: number | null;
   duration_months: number;
   is_current: boolean;
@@ -315,12 +317,16 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   };
 
   // Calculate current rent based on escalations, periodic adjustments, and current month
-  const calculateCurrentRent = (version: ContractVersion, signedDate: string | null): { currentRent: number; hasEscalations: boolean; hasAdjustments: boolean } => {
+  // superficie parameter is used when rent is in UF/m²
+  const calculateCurrentRent = (version: ContractVersion, signedDate: string | null, superficie: number = 0): { currentRent: number; hasEscalations: boolean; hasAdjustments: boolean } => {
     const escalations = version.rent_escalations || [];
     const hasEscalations = escalations.length > 0;
     const hasAdjustments = version.has_periodic_adjustments && 
       (version.adjustment_value || 0) > 0 && 
       (version.first_adjustment_month || 0) > 0;
+    
+    const isRentUfM2 = version.regime_rent_is_uf_m2 ?? false;
+    const isInitialRentUfM2 = version.initial_rent_is_uf_m2 ?? false;
     
     // Calculate current month
     const startDate = version.effective_date
@@ -329,8 +335,11 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
         ? parseISO(signedDate)
         : null;
     
+    // Get base regime rent (considering UF/m²)
+    const baseRegimeRent = isRentUfM2 ? version.regime_rent * superficie : version.regime_rent;
+    
     if (!startDate) {
-      return { currentRent: version.regime_rent, hasEscalations, hasAdjustments: !!hasAdjustments };
+      return { currentRent: baseRegimeRent, hasEscalations, hasAdjustments: !!hasAdjustments };
     }
     
     const today = new Date();
@@ -345,19 +354,25 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     
     // If no escalations and no adjustments, return regime rent
     if (!hasEscalations && !hasAdjustments) {
-      return { currentRent: version.regime_rent, hasEscalations: false, hasAdjustments: false };
+      return { currentRent: baseRegimeRent, hasEscalations: false, hasAdjustments: false };
     }
     
     // Start with base rent from escalations or regime rent
-    let currentRent = version.regime_rent;
+    let currentRent = baseRegimeRent;
     
     if (hasEscalations) {
       // Find the applicable escalation for current month
       const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
       
-      currentRent = version.initial_rent || version.regime_rent;
+      // Initial rent (considering UF/m²)
+      const baseInitialRent = version.initial_rent 
+        ? (isInitialRentUfM2 ? version.initial_rent * superficie : version.initial_rent)
+        : baseRegimeRent;
+      
+      currentRent = baseInitialRent;
       for (const esc of sortedEscalations) {
         if (esc.month_number <= currentMonth) {
+          // Escalation amounts are already in absolute values (not UF/m²)
           currentRent = esc.amount;
         } else {
           break;
@@ -778,8 +793,8 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                       gastosComunesTotal = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
                     }
                     
-                    // Calculate current rent (considering escalations and adjustments)
-                    const { currentRent, hasEscalations, hasAdjustments } = calculateCurrentRent(currentVersion, contract.signed_date);
+                    // Calculate current rent (considering escalations, adjustments, and UF/m²)
+                    const { currentRent, hasEscalations, hasAdjustments } = calculateCurrentRent(currentVersion, contract.signed_date, superficie);
                     const showCurrentLabel = hasEscalations || hasAdjustments;
                     
                     // Fondo promoción - use currentRent for calculation
