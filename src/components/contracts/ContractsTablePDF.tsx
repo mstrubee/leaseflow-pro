@@ -204,7 +204,11 @@ export const generateContractsListPDF = async (
             const superficie = contract.superficie_edificada_local || 0;
             const isRentUfM2 = currentVersion.regime_rent_is_uf_m2 === true;
             const rentAmount = isRentUfM2 ? currentVersion.regime_rent * superficie : currentVersion.regime_rent;
-            rowData.push(`${rentAmount.toLocaleString('es-CL', { minimumFractionDigits: 2 })} UF`);
+            if (isRentUfM2 && superficie > 0) {
+              rowData.push(`${rentAmount.toLocaleString('es-CL', { minimumFractionDigits: 2 })} UF\n(${currentVersion.regime_rent.toLocaleString('es-CL', { minimumFractionDigits: 2 })} UF/m²)`);
+            } else {
+              rowData.push(`${rentAmount.toLocaleString('es-CL', { minimumFractionDigits: 2 })} UF`);
+            }
           } else {
             rowData.push('-');
           }
@@ -228,9 +232,26 @@ export const generateContractsListPDF = async (
           rowData.push(origenLabels[contract.origen || ''] || '-');
           break;
         case "venta_estimada":
-          rowData.push(contract.venta_estimada
-            ? `$${contract.venta_estimada.toLocaleString('es-CL')}`
-            : '-');
+          if (contract.venta_estimada) {
+            const ventaMin = contract.venta_estimada;
+            const ventaMax = (contract as any).venta_estimada_max || ventaMin;
+            const superficie = contract.superficie_edificada_local || 0;
+            const ventaMinMM = (ventaMin / 1000000).toFixed(0);
+            const ventaMaxMM = (ventaMax / 1000000).toFixed(0);
+            let text = ventaMin === ventaMax 
+              ? `$${ventaMinMM} MM` 
+              : `$${ventaMinMM} - $${ventaMaxMM} MM`;
+            if (superficie > 0) {
+              const ventaM2Min = Math.round(ventaMin / superficie);
+              const ventaM2Max = Math.round(ventaMax / superficie);
+              text += ventaM2Min === ventaM2Max 
+                ? `\n($${ventaM2Min.toLocaleString('es-CL')}/m²)` 
+                : `\n($${ventaM2Min.toLocaleString('es-CL')} - $${ventaM2Max.toLocaleString('es-CL')}/m²)`;
+            }
+            rowData.push(text);
+          } else {
+            rowData.push('-');
+          }
           break;
         default:
           rowData.push('-');
@@ -261,7 +282,7 @@ export const generateContractsListPDF = async (
     body: tableData,
     theme: 'grid',
     headStyles: { 
-      fillColor: [59, 130, 246],
+      fillColor: [220, 38, 38],
       textColor: 255,
       fontStyle: 'bold',
       halign: 'center'

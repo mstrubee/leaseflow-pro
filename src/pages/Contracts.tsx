@@ -161,8 +161,6 @@ const Contracts = () => {
   const sortField = (searchParams.get("sort") as ContractSortField) || null;
   const sortDirection = (searchParams.get("dir") as SortDirection) || "asc";
 
-  const setNegotiationSubcategoryFilter = (value: string) => updateFilter("subcategory", value);
-
   // NOTE: using window.location.search avoids stale `searchParams` closures
   // when users change multiple filters one after another.
   const getFreshParams = () => new URLSearchParams(window.location.search);
@@ -177,6 +175,8 @@ const Contracts = () => {
     }
     setSearchParams(newParams, { replace: true });
   };
+
+  const setNegotiationSubcategoryFilter = (value: string) => updateFilter("subcategory", value);
 
   const setSearchTerm = (value: string) => updateFilter("search", value);
   const setOperationFilter = (value: string) => updateFilter("operation", value);
