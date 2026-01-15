@@ -90,6 +90,7 @@ interface Contract {
   special_attention_reason: string | null;
   negotiation_subcategory?: string | null;
   venta_estimada?: number | null;
+  venta_estimada_max?: number | null;
   contract_companies?: ContractCompany[];
   contract_addresses: Array<{ region: string; commune: string; street?: string; number?: string }>;
   contract_versions: ContractVersion[];
@@ -114,17 +115,22 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   const { isAdmin } = useAuth();
   const [contractAlerts, setContractAlerts] = useState<Record<string, ContractAlert[]>>({});
   const [editingVenta, setEditingVenta] = useState<string | null>(null);
-  const [ventaValue, setVentaValue] = useState<string>("");
+  const [ventaMinValue, setVentaMinValue] = useState<string>("");
+  const [ventaMaxValue, setVentaMaxValue] = useState<string>("");
 
   const isNegociacionView = !isFirmadoView && contracts.some(c => c.status === 'en_negociacion');
 
   const handleSaveVenta = async (e: React.MouseEvent, contractId: string) => {
     e.stopPropagation();
-    const numValue = ventaValue ? parseFloat(ventaValue.replace(/\./g, '').replace(',', '.')) : null;
+    const minValue = ventaMinValue ? parseFloat(ventaMinValue.replace(/\./g, '').replace(',', '.')) : null;
+    const maxValue = ventaMaxValue ? parseFloat(ventaMaxValue.replace(/\./g, '').replace(',', '.')) : null;
     
     const { error } = await supabase
       .from('contracts')
-      .update({ venta_estimada: numValue })
+      .update({ 
+        venta_estimada: minValue,
+        venta_estimada_max: maxValue 
+      })
       .eq('id', contractId);
 
     if (error) {
@@ -134,13 +140,15 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
       onRefresh();
     }
     setEditingVenta(null);
-    setVentaValue("");
+    setVentaMinValue("");
+    setVentaMaxValue("");
   };
 
   const handleCancelVenta = (e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingVenta(null);
-    setVentaValue("");
+    setVentaMinValue("");
+    setVentaMaxValue("");
   };
 
   const handleSubcategoryChange = async (e: React.MouseEvent, contractId: string, value: string) => {
@@ -549,10 +557,19 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                         <div className="flex items-center gap-1">
                           <Input
                             type="text"
-                            value={ventaValue}
-                            onChange={(e) => setVentaValue(e.target.value)}
-                            placeholder="0"
-                            className="h-7 w-24 text-xs"
+                            value={ventaMinValue}
+                            onChange={(e) => setVentaMinValue(e.target.value)}
+                            placeholder="Min"
+                            className="h-7 w-16 text-xs"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <span className="text-xs text-muted-foreground">-</span>
+                          <Input
+                            type="text"
+                            value={ventaMaxValue}
+                            onChange={(e) => setVentaMaxValue(e.target.value)}
+                            placeholder="Max"
+                            className="h-7 w-16 text-xs"
                             onClick={(e) => e.stopPropagation()}
                           />
                           <Button size="icon" variant="ghost" className="h-6 w-6" onClick={(e) => handleSaveVenta(e, contract.id)}>
@@ -568,7 +585,8 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                           onClick={(e) => {
                             e.stopPropagation();
                             setEditingVenta(contract.id);
-                            setVentaValue(contract.venta_estimada ? contract.venta_estimada.toLocaleString('es-CL') : "");
+                            setVentaMinValue(contract.venta_estimada ? contract.venta_estimada.toLocaleString('es-CL') : "");
+                            setVentaMaxValue(contract.venta_estimada_max ? contract.venta_estimada_max.toLocaleString('es-CL') : "");
                           }}
                         >
                           {contract.venta_estimada ? (
@@ -576,15 +594,33 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                               <div className="flex items-center gap-1">
                                 <DollarSign className="h-3 w-3 text-muted-foreground" />
                                 <span className="font-medium">
-                                  {(contract.venta_estimada / 1000000).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} MM$
+                                  {(contract.venta_estimada / 1000000).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                  {contract.venta_estimada_max && `-${(contract.venta_estimada_max / 1000000).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`} MM$
                                 </span>
                               </div>
                               {ufValue > 0 && (
                                 <div className="text-[10px] text-muted-foreground">
-                                  {convertPesosToUF(contract.venta_estimada).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} UF
-                                  {contract.superficie_edificada_local && contract.superficie_edificada_local > 0 && (
-                                    <span> · {(convertPesosToUF(contract.venta_estimada) / contract.superficie_edificada_local).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} UF/m²</span>
-                                  )}
+                                  {(() => {
+                                    const minUF = convertPesosToUF(contract.venta_estimada);
+                                    const maxUF = contract.venta_estimada_max ? convertPesosToUF(contract.venta_estimada_max) : null;
+                                    const superficie = contract.superficie_edificada_local || 0;
+                                    
+                                    const minUFStr = minUF.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+                                    const maxUFStr = maxUF ? `-${maxUF.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '';
+                                    
+                                    let ufM2Str = '';
+                                    if (superficie > 0) {
+                                      const minUFM2 = minUF / superficie;
+                                      const maxUFM2 = maxUF ? maxUF / superficie : null;
+                                      ufM2Str = ` · ${minUFM2.toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`;
+                                      if (maxUFM2) {
+                                        ufM2Str += `-${maxUFM2.toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`;
+                                      }
+                                      ufM2Str += ' UF/m²';
+                                    }
+                                    
+                                    return `${minUFStr}${maxUFStr} UF${ufM2Str}`;
+                                  })()}
                                 </div>
                               )}
                             </>

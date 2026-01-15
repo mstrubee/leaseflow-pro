@@ -1134,6 +1134,7 @@ export type Database = {
           superficie_terreno: number | null
           updated_at: string
           venta_estimada: number | null
+          venta_estimada_max: number | null
         }
         Insert: {
           company_id?: string | null
@@ -1167,6 +1168,7 @@ export type Database = {
           superficie_terreno?: number | null
           updated_at?: string
           venta_estimada?: number | null
+          venta_estimada_max?: number | null
         }
         Update: {
           company_id?: string | null
@@ -1200,6 +1202,7 @@ export type Database = {
           superficie_terreno?: number | null
           updated_at?: string
           venta_estimada?: number | null
+          venta_estimada_max?: number | null
         }
         Relationships: [
           {
