@@ -44,7 +44,21 @@ export function useEditContractSections() {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       try {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored) as SectionConfig[];
+        // Ensure all expected keys exist (handle new keys added after localStorage was saved)
+        const storedKeys = new Set(parsed.map(s => s.key));
+        const missingKeys = DEFAULT_ORDER.filter(k => !storedKeys.has(k));
+        if (missingKeys.length > 0) {
+          // Add missing sections to the end
+          const maxOrder = Math.max(...parsed.map(s => s.order), -1);
+          const newSections = missingKeys.map((key, idx) => ({
+            key,
+            order: maxOrder + 1 + idx,
+            collapsed: false,
+          }));
+          return [...parsed, ...newSections];
+        }
+        return parsed;
       } catch {
         return DEFAULT_ORDER.map((key, index) => ({
           key,
