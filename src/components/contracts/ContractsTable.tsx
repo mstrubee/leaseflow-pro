@@ -318,7 +318,8 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
 
   // Calculate current rent based on escalations, periodic adjustments, and current month
   // superficie parameter is used when rent is in UF/m²
-  const calculateCurrentRent = (version: ContractVersion, signedDate: string | null, superficie: number = 0): { currentRent: number; hasEscalations: boolean; hasAdjustments: boolean } => {
+  // For contracts that haven't started yet (future start date), returns regime rent
+  const calculateCurrentRent = (version: ContractVersion, signedDate: string | null, superficie: number = 0): { currentRent: number; hasEscalations: boolean; hasAdjustments: boolean; isContractNotStarted: boolean } => {
     const escalations = version.rent_escalations || [];
     const hasEscalations = escalations.length > 0;
     const hasAdjustments = version.has_periodic_adjustments && 
@@ -339,22 +340,29 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     const baseRegimeRent = isRentUfM2 ? version.regime_rent * superficie : version.regime_rent;
     
     if (!startDate) {
-      return { currentRent: baseRegimeRent, hasEscalations, hasAdjustments: !!hasAdjustments };
+      return { currentRent: baseRegimeRent, hasEscalations, hasAdjustments: !!hasAdjustments, isContractNotStarted: true };
     }
     
     const today = new Date();
     const diffTime = today.getTime() - startDate.getTime();
     const currentMonth = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44)) + 1;
     
-    // Check grace period
+    // Check if contract hasn't started yet (future start date)
+    const isContractNotStarted = currentMonth < 1;
+    if (isContractNotStarted) {
+      // For contracts that haven't started, return regime rent (projected)
+      return { currentRent: baseRegimeRent, hasEscalations, hasAdjustments: !!hasAdjustments, isContractNotStarted: true };
+    }
+    
+    // Check grace period - only for active contracts (currentMonth >= 1)
     const graceMonths = version.grace_months || 0;
     if (currentMonth <= graceMonths) {
-      return { currentRent: 0, hasEscalations, hasAdjustments: !!hasAdjustments };
+      return { currentRent: 0, hasEscalations, hasAdjustments: !!hasAdjustments, isContractNotStarted: false };
     }
     
     // If no escalations and no adjustments, return regime rent
     if (!hasEscalations && !hasAdjustments) {
-      return { currentRent: baseRegimeRent, hasEscalations: false, hasAdjustments: false };
+      return { currentRent: baseRegimeRent, hasEscalations: false, hasAdjustments: false, isContractNotStarted: false };
     }
     
     // Start with base rent from escalations or regime rent
@@ -372,8 +380,9 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
       currentRent = baseInitialRent;
       for (const esc of sortedEscalations) {
         if (esc.month_number <= currentMonth) {
-          // Escalation amounts are already in absolute values (not UF/m²)
-          currentRent = esc.amount;
+          // Escalation amounts: if stored in UF/m² mode, multiply by superficie
+          const escalationAmount = isRentUfM2 ? esc.amount * superficie : esc.amount;
+          currentRent = escalationAmount;
         } else {
           break;
         }
@@ -403,7 +412,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
       }
     }
     
-    return { currentRent, hasEscalations, hasAdjustments: !!hasAdjustments };
+    return { currentRent, hasEscalations, hasAdjustments: !!hasAdjustments, isContractNotStarted: false };
   };
 
   const getStatusBadge = (status: string) => {
@@ -794,8 +803,9 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                     }
                     
                     // Calculate current rent (considering escalations, adjustments, and UF/m²)
-                    const { currentRent, hasEscalations, hasAdjustments } = calculateCurrentRent(currentVersion, contract.signed_date, superficie);
-                    const showCurrentLabel = hasEscalations || hasAdjustments;
+                    const { currentRent, hasEscalations, hasAdjustments, isContractNotStarted } = calculateCurrentRent(currentVersion, contract.signed_date, superficie);
+                    // For contracts not started, always show "Canon" (regime rent), not "Canon actual"
+                    const showCurrentLabel = !isContractNotStarted && (hasEscalations || hasAdjustments);
                     
                     // Fondo promoción - use currentRent for calculation
                     const fondoPromocionPct = currentVersion.fondo_promocion_percentage ?? 0;
