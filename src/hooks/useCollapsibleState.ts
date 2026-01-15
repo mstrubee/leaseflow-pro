@@ -1,64 +1,60 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useUserPreferences } from "./useUserPreferences";
 
 /**
- * Hook to manage collapsible state with localStorage persistence.
+ * Hook to manage collapsible state with Supabase persistence (falls back to localStorage).
  * Sections load collapsed by default unless the user has previously expanded them.
  * 
- * @param storageKey - Unique key to store the state in localStorage
+ * @param storageKey - Unique key to store the state
  * @param defaultExpanded - Optional array of IDs that should be expanded by default (first time only)
  */
 export const useCollapsibleState = (
   storageKey: string,
   defaultExpanded: string[] = []
 ) => {
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
-    try {
-      const stored = localStorage.getItem(storageKey);
-      if (stored) {
-        return new Set(JSON.parse(stored));
-      }
-    } catch (e) {
-      console.error("Error reading collapsible state from localStorage:", e);
-    }
-    return new Set(defaultExpanded);
+  const { value: expandedArray, setValue: setExpandedArray, loading } = useUserPreferences<string[]>({
+    preferenceKey: `collapsible_${storageKey}`,
+    defaultValue: defaultExpanded,
+    localStorageKey: storageKey,
   });
 
-  // Persist to localStorage whenever expandedIds changes
-  useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(Array.from(expandedIds)));
-    } catch (e) {
-      console.error("Error saving collapsible state to localStorage:", e);
-    }
-  }, [expandedIds, storageKey]);
+  const expandedIds = useMemo(() => new Set(expandedArray), [expandedArray]);
+
+  const setExpandedIds = useCallback((newSet: Set<string>) => {
+    setExpandedArray(Array.from(newSet));
+  }, [setExpandedArray]);
 
   const toggle = useCallback((id: string) => {
-    setExpandedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
+    setExpandedArray((prev) => {
+      const set = new Set(prev);
+      if (set.has(id)) {
+        set.delete(id);
       } else {
-        next.add(id);
+        set.add(id);
       }
-      return next;
+      return Array.from(set);
     });
-  }, []);
+  }, [setExpandedArray]);
 
   const expandAll = useCallback((ids: string[]) => {
-    setExpandedIds(new Set(ids));
-  }, []);
+    setExpandedArray(ids);
+  }, [setExpandedArray]);
 
   const collapseAll = useCallback(() => {
-    setExpandedIds(new Set());
-  }, []);
+    setExpandedArray([]);
+  }, [setExpandedArray]);
 
   const isExpanded = useCallback((id: string) => {
     return expandedIds.has(id);
   }, [expandedIds]);
 
   const expand = useCallback((id: string) => {
-    setExpandedIds(prev => new Set([...prev, id]));
-  }, []);
+    setExpandedArray((prev) => {
+      const set = new Set(prev);
+      set.add(id);
+      return Array.from(set);
+    });
+  }, [setExpandedArray]);
 
   return {
     expandedIds,
@@ -68,6 +64,7 @@ export const useCollapsibleState = (
     collapseAll,
     isExpanded,
     expand,
+    loading,
   };
 };
 
@@ -79,29 +76,15 @@ export const useSingleCollapsible = (
   storageKey: string,
   defaultOpen: boolean = false
 ) => {
-  const [isOpen, setIsOpen] = useState(() => {
-    try {
-      const stored = localStorage.getItem(storageKey);
-      if (stored !== null) {
-        return stored === "true";
-      }
-    } catch (e) {
-      console.error("Error reading collapsible state from localStorage:", e);
-    }
-    return defaultOpen;
+  const { value: isOpen, setValue: setIsOpen, loading } = useUserPreferences<boolean>({
+    preferenceKey: `single_collapsible_${storageKey}`,
+    defaultValue: defaultOpen,
+    localStorageKey: storageKey,
   });
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, String(isOpen));
-    } catch (e) {
-      console.error("Error saving collapsible state to localStorage:", e);
-    }
-  }, [isOpen, storageKey]);
-
   const toggle = useCallback(() => {
-    setIsOpen(prev => !prev);
-  }, []);
+    setIsOpen((prev) => !prev);
+  }, [setIsOpen]);
 
-  return { isOpen, setIsOpen, toggle };
+  return { isOpen, setIsOpen, toggle, loading };
 };

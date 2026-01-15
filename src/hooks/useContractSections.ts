@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useCallback, useMemo } from "react";
 import { useAuth } from "./useAuth";
+import { useUserPreferences } from "./useUserPreferences";
 
 export type SectionKey =
   | "address"
@@ -35,37 +35,42 @@ const DEFAULT_ORDER: SectionKey[] = [
 
 const STORAGE_KEY = "contract_detail_sections";
 
+const getDefaultSections = (): SectionConfig[] => 
+  DEFAULT_ORDER.map((key, index) => ({
+    key,
+    order: index,
+    collapsed: false,
+  }));
+
 export function useContractSections() {
-  const { user, isAdmin } = useAuth();
-  const [sections, setSections] = useState<SectionConfig[]>(() => {
-    // Initialize from localStorage
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        return JSON.parse(stored);
-      } catch {
-        return DEFAULT_ORDER.map((key, index) => ({
-          key,
-          order: index,
-          collapsed: false,
-        }));
-      }
-    }
-    return DEFAULT_ORDER.map((key, index) => ({
-      key,
-      order: index,
-      collapsed: false,
-    }));
+  const { isAdmin } = useAuth();
+  
+  const { value: sections, setValue: setSections, loading } = useUserPreferences<SectionConfig[]>({
+    preferenceKey: STORAGE_KEY,
+    defaultValue: getDefaultSections(),
+    localStorageKey: STORAGE_KEY,
   });
 
-  // Persist to localStorage when sections change
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sections));
+  // Ensure all expected keys exist (handle new keys added after preferences were saved)
+  const normalizedSections = useMemo(() => {
+    const storedKeys = new Set(sections.map(s => s.key));
+    const missingKeys = DEFAULT_ORDER.filter(k => !storedKeys.has(k));
+    
+    if (missingKeys.length > 0) {
+      const maxOrder = Math.max(...sections.map(s => s.order), -1);
+      const newSections = missingKeys.map((key, idx) => ({
+        key,
+        order: maxOrder + 1 + idx,
+        collapsed: false,
+      }));
+      return [...sections, ...newSections];
+    }
+    return sections;
   }, [sections]);
 
   const getSortedSections = useCallback(() => {
-    return [...sections].sort((a, b) => a.order - b.order);
-  }, [sections]);
+    return [...normalizedSections].sort((a, b) => a.order - b.order);
+  }, [normalizedSections]);
 
   const reorderSections = useCallback((activeId: string, overId: string) => {
     setSections((prev) => {
@@ -78,13 +83,12 @@ export function useContractSections() {
       const [removed] = newSections.splice(oldIndex, 1);
       newSections.splice(newIndex, 0, removed);
 
-      // Update order values
       return newSections.map((section, index) => ({
         ...section,
         order: index,
       }));
     });
-  }, []);
+  }, [setSections]);
 
   const toggleCollapsed = useCallback((key: SectionKey) => {
     setSections((prev) =>
@@ -94,7 +98,7 @@ export function useContractSections() {
           : section
       )
     );
-  }, []);
+  }, [setSections]);
 
   const setCollapsed = useCallback((key: SectionKey, collapsed: boolean) => {
     setSections((prev) =>
@@ -102,36 +106,30 @@ export function useContractSections() {
         section.key === key ? { ...section, collapsed } : section
       )
     );
-  }, []);
+  }, [setSections]);
 
   const isCollapsed = useCallback(
     (key: SectionKey) => {
-      return sections.find((s) => s.key === key)?.collapsed ?? false;
+      return normalizedSections.find((s) => s.key === key)?.collapsed ?? false;
     },
-    [sections]
+    [normalizedSections]
   );
 
   const collapseAll = useCallback(() => {
     setSections((prev) =>
       prev.map((section) => ({ ...section, collapsed: true }))
     );
-  }, []);
+  }, [setSections]);
 
   const expandAll = useCallback(() => {
     setSections((prev) =>
       prev.map((section) => ({ ...section, collapsed: false }))
     );
-  }, []);
+  }, [setSections]);
 
   const resetToDefault = useCallback(() => {
-    setSections(
-      DEFAULT_ORDER.map((key, index) => ({
-        key,
-        order: index,
-        collapsed: false,
-      }))
-    );
-  }, []);
+    setSections(getDefaultSections());
+  }, [setSections]);
 
   return {
     sections: getSortedSections(),
@@ -143,5 +141,6 @@ export function useContractSections() {
     expandAll,
     resetToDefault,
     canReorder: isAdmin,
+    loading,
   };
 }
