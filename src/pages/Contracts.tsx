@@ -930,6 +930,22 @@ const Contracts = () => {
               </div>
             )}
 
+            {/* Ubicación Filter - Available for all views */}
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-medium text-muted-foreground">Ubicación</span>
+              <Select value={ubicacionFilter} onValueChange={setUbicacionFilter}>
+                <SelectTrigger className="h-8 text-xs w-[140px]">
+                  <SelectValue placeholder="Todas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos" className="text-xs">Todas</SelectItem>
+                  {uniqueCommunes.map((commune) => (
+                    <SelectItem key={commune} value={commune} className="text-xs">{commune}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Company Filter - Available for all views */}
             {companies.length > 0 && (
               <div className="flex flex-col gap-1">
