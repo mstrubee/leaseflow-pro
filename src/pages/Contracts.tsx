@@ -477,32 +477,165 @@ const Contracts = () => {
       );
     }
 
-        // Sorting
-        if (sortField) {
-          filtered = [...filtered].sort((a, b) => {
-            if (sortField === "name") {
-              const nameA = a.name?.toLowerCase() || "";
-              const nameB = b.name?.toLowerCase() || "";
-              const comparison = nameA.localeCompare(nameB, "es");
-              return sortDirection === "asc" ? comparison : -comparison;
+    // Sorting
+    if (sortField) {
+      filtered = [...filtered].sort((a, b) => {
+        let comparison = 0;
+
+        // Helper to get company name
+        const getCompanyName = (contract: Contract) => {
+          const companies = contract.contract_companies?.map(cc => cc.companies?.name).filter(Boolean) || [];
+          return companies.join(", ").toLowerCase();
+        };
+
+        // Helper to get ubicación
+        const getUbicacion = (contract: Contract) => {
+          const addr = contract.contract_addresses?.[0];
+          if (!addr) return "";
+          return `${addr.commune || ""}, ${addr.region || ""}`.toLowerCase();
+        };
+
+        // Helper to get costo arriendo
+        const getCostoArriendo = (contract: Contract) => {
+          const currentVersion = contract.contract_versions?.find((v) => v.is_current);
+          if (!currentVersion) return 0;
+          const superficie = contract.superficie_edificada_local || 0;
+          const metrosFrente = contract.metros_lineales_frente || 0;
+          const hasExtended = currentVersion.has_extended_gastos_comunes ?? false;
+          const methodology = currentVersion.gastos_comunes_methodology || "uf_m2";
+
+          let gastosComunes = 0;
+          if (methodology === "percentage") {
+            const totalCentro = currentVersion.gastos_comunes_total_centro || 0;
+            const percentage = currentVersion.gastos_comunes_percentage || 0;
+            const topeValue = currentVersion.gastos_comunes_tope;
+            const topeType = currentVersion.gastos_comunes_tope_type || "fixed";
+            const calculatedAmount = (totalCentro * percentage) / 100;
+            if (topeValue && topeValue > 0) {
+              const effectiveTope = topeType === "uf_m2" && superficie > 0 ? topeValue * superficie : topeValue;
+              gastosComunes = Math.min(calculatedAmount, effectiveTope);
+            } else {
+              gastosComunes = calculatedAmount;
             }
+          } else {
+            const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
+            const gastosMlFrente = hasExtended
+              ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente
+              : 0;
+            const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
+            const adicionalAdmin = hasExtended
+              ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100)
+              : 0;
+            gastosComunes = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
+          }
 
-            let valueA: Date | null = null;
-            let valueB: Date | null = null;
+          const fondoPromocion = currentVersion.regime_rent * ((currentVersion.fondo_promocion_percentage || 0) / 100);
+          const otrosEgresos = currentVersion.otros_egresos_amount || 0;
+          return currentVersion.regime_rent + gastosComunes + fondoPromocion + otrosEgresos;
+        };
 
-            if (sortField === "end_date") {
-              valueA = calculateEndDate(a);
-              valueB = calculateEndDate(b);
-            } else if (sortField === "notice_deadline") {
-              valueA = calculateNoticeDeadline(a);
-              valueB = calculateNoticeDeadline(b);
+        // Helper to get duration
+        const getDuracion = (contract: Contract) => {
+          const currentVersion = contract.contract_versions?.find((v) => v.is_current);
+          return currentVersion?.duration_months || 0;
+        };
+
+        // Helper to get aviso (notice value)
+        const getAviso = (contract: Contract) => {
+          const currentVersion = contract.contract_versions?.find((v) => v.is_current);
+          if (!currentVersion) return "";
+          return currentVersion.notice_value || "";
+        };
+
+        // Helper to get categoria
+        const getCategoria = (contract: Contract) => {
+          return (contract.negotiation_subcategory || "").toLowerCase();
+        };
+
+        // Helper to get venta estimada
+        const getVentaEstimada = (contract: Contract) => {
+          return contract.venta_estimada || 0;
+        };
+
+        switch (sortField) {
+          case "name": {
+            const nameA = a.name?.toLowerCase() || "";
+            const nameB = b.name?.toLowerCase() || "";
+            comparison = nameA.localeCompare(nameB, "es");
+            break;
+          }
+          case "empresa": {
+            const empresaA = getCompanyName(a);
+            const empresaB = getCompanyName(b);
+            comparison = empresaA.localeCompare(empresaB, "es");
+            break;
+          }
+          case "ubicacion": {
+            const ubicA = getUbicacion(a);
+            const ubicB = getUbicacion(b);
+            comparison = ubicA.localeCompare(ubicB, "es");
+            break;
+          }
+          case "costo_arriendo": {
+            const costoA = getCostoArriendo(a);
+            const costoB = getCostoArriendo(b);
+            comparison = costoA - costoB;
+            break;
+          }
+          case "duracion": {
+            const durA = getDuracion(a);
+            const durB = getDuracion(b);
+            comparison = durA - durB;
+            break;
+          }
+          case "termino":
+          case "end_date": {
+            const endA = calculateEndDate(a);
+            const endB = calculateEndDate(b);
+            if (!endA && !endB) comparison = 0;
+            else if (!endA) comparison = 1;
+            else if (!endB) comparison = -1;
+            else comparison = endA.getTime() - endB.getTime();
+            break;
+          }
+          case "aviso": {
+            const avisoA = getAviso(a);
+            const avisoB = getAviso(b);
+            // Try to compare as numbers first, fall back to string comparison
+            const numA = parseInt(avisoA);
+            const numB = parseInt(avisoB);
+            if (!isNaN(numA) && !isNaN(numB)) {
+              comparison = numA - numB;
+            } else {
+              comparison = avisoA.localeCompare(avisoB, "es");
             }
+            break;
+          }
+          case "notice_deadline": {
+            const noticeA = calculateNoticeDeadline(a);
+            const noticeB = calculateNoticeDeadline(b);
+            if (!noticeA && !noticeB) comparison = 0;
+            else if (!noticeA) comparison = 1;
+            else if (!noticeB) comparison = -1;
+            else comparison = noticeA.getTime() - noticeB.getTime();
+            break;
+          }
+          case "categoria": {
+            const catA = getCategoria(a);
+            const catB = getCategoria(b);
+            comparison = catA.localeCompare(catB, "es");
+            break;
+          }
+          case "venta_estimada": {
+            const ventaA = getVentaEstimada(a);
+            const ventaB = getVentaEstimada(b);
+            comparison = ventaA - ventaB;
+            break;
+          }
+          default:
+            comparison = 0;
+        }
 
-            if (!valueA && !valueB) return 0;
-            if (!valueA) return sortDirection === "asc" ? 1 : -1;
-            if (!valueB) return sortDirection === "asc" ? -1 : 1;
-
-        const comparison = valueA.getTime() - valueB.getTime();
         return sortDirection === "asc" ? comparison : -comparison;
       });
     }
