@@ -105,7 +105,7 @@ interface Contract {
   termination_notices?: TerminationNotice[];
 }
 
-export type ContractSortField = "name" | "empresa" | "ubicacion" | "costo_arriendo" | "duracion" | "termino" | "aviso" | "categoria" | "venta_estimada" | "end_date" | "notice_deadline" | null;
+export type ContractSortField = "name" | "empresa" | "ubicacion" | "costo_arriendo" | "duracion" | "termino" | "aviso" | "categoria" | "clasificacion" | "venta_estimada" | "end_date" | "notice_deadline" | null;
 
 interface ContractsTableProps {
   contracts: Contract[];
@@ -484,7 +484,14 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   onSort={handleSort}
                   align="center"
                 />
-                <TableHead className="font-semibold text-center">Clasificación</TableHead>
+                <SortableTableHead
+                  label="Clasificación"
+                  sortKey="clasificacion"
+                  currentSortKey={sortField || null}
+                  currentSortOrder={sortOrder || null}
+                  onSort={handleSort}
+                  align="center"
+                />
                 <TableHead className="font-semibold text-center">Origen</TableHead>
                 <SortableTableHead
                   label="Venta Est."
