@@ -691,7 +691,7 @@ const NewContract = () => {
                       <Input
                         id="gastosComunesUfM2New"
                         type="number"
-                        step="0.01"
+                        step="0.001"
                         min="0"
                         placeholder="Ej: 0.05"
                         value={gastosComunesUfM2}
@@ -709,7 +709,7 @@ const NewContract = () => {
                           <Input
                             id="gastosComunesUfMlFrenteNew"
                             type="number"
-                            step="0.01"
+                            step="0.001"
                             min="0"
                             placeholder="Ej: 0.10"
                             value={gastosComunesUfMlFrente}
@@ -725,7 +725,7 @@ const NewContract = () => {
                           <Input
                             id="gastosComunesProrratKwhClimaNew"
                             type="number"
-                            step="0.01"
+                            step="0.001"
                             min="0"
                             placeholder="Ej: 5.00"
                             value={gastosComunesProrratKwhClima}
@@ -741,7 +741,7 @@ const NewContract = () => {
                           <Input
                             id="adicionalAdministracionPercentageNew"
                             type="number"
-                            step="0.01"
+                            step="0.001"
                             min="0"
                             placeholder="Ej: 5"
                             value={adicionalAdministracionPercentage}

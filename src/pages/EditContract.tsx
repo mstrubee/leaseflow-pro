@@ -1440,7 +1440,7 @@ const EditContract = () => {
                                       <Input
                                         id="gastosComunesUfM2"
                                         type="number"
-                                        step="0.01"
+                                        step="0.001"
                                         min="0"
                                         placeholder="Ej: 0.05"
                                         value={gastosComunesUfM2}
@@ -1455,7 +1455,7 @@ const EditContract = () => {
                                           <Input
                                             id="gastosComunesUfMlFrente"
                                             type="number"
-                                            step="0.01"
+                                            step="0.001"
                                             min="0"
                                             placeholder="Ej: 0.10"
                                             value={gastosComunesUfMlFrente}
@@ -1468,7 +1468,7 @@ const EditContract = () => {
                                           <Input
                                             id="gastosComunesProrratKwhClima"
                                             type="number"
-                                            step="0.01"
+                                            step="0.001"
                                             min="0"
                                             placeholder="Ej: 5.00"
                                             value={gastosComunesProrratKwhClima}
@@ -1481,7 +1481,7 @@ const EditContract = () => {
                                           <Input
                                             id="adicionalAdministracionPercentage"
                                             type="number"
-                                            step="0.01"
+                                            step="0.001"
                                             min="0"
                                             placeholder="Ej: 5"
                                             value={adicionalAdministracionPercentage}
@@ -1539,7 +1539,7 @@ const EditContract = () => {
                                       <Input
                                         id="gastosComunesTotalCentro"
                                         type="number"
-                                        step="0.01"
+                                        step="0.001"
                                         min="0"
                                         placeholder="Ej: 10000"
                                         value={gastosComunesTotalCentro}
@@ -1558,7 +1558,7 @@ const EditContract = () => {
                                       <Input
                                         id="gastosComunesPercentage"
                                         type="number"
-                                        step="0.01"
+                                        step="0.001"
                                         min="0"
                                         max="100"
                                         placeholder="Ej: 2.5"
@@ -1599,7 +1599,7 @@ const EditContract = () => {
                                       <Input
                                         id="gastosComunesTope"
                                         type="number"
-                                        step="0.01"
+                                        step="0.001"
                                         min="0"
                                         placeholder={gastosComunesTopeType === "fixed" ? "Ej: 150 UF/mes" : "Ej: 0.15 UF/m²"}
                                         value={gastosComunesTope}
