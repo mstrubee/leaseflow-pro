@@ -393,11 +393,11 @@ const Contracts = () => {
       filtered = filtered.filter((contract) => (contract as any).proyecto_status === proyectoFilter);
     }
 
-    // Ubicación filter
+    // Ubicación filter - buscar en región O comuna
     if (ubicacionFilter !== "todos") {
       filtered = filtered.filter((contract) => {
         const address = contract.contract_addresses?.[0];
-        return address?.commune === ubicacionFilter;
+        return address?.region === ubicacionFilter || address?.commune === ubicacionFilter;
       });
     }
 
