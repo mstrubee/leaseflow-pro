@@ -1,12 +1,20 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { DollarSign, Calendar, Bell, TrendingUp, Percent, Shield, Building2, Megaphone, Users, Receipt } from "lucide-react";
+import { DollarSign, Calendar, Bell, TrendingUp, Percent, Shield, Building2, Megaphone, Users, Receipt, Wallet } from "lucide-react";
 import { CompactEscalationChart } from "./CompactEscalationChart";
 import { RenegotiationDialog } from "./RenegotiationDialog";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
+import { supabase } from "@/integrations/supabase/client";
+
+interface EntryExpense {
+  id: string;
+  name: string;
+  amount_uf: number;
+  description: string | null;
+}
 interface Escalation {
   id: string;
   month_number: number;
@@ -83,6 +91,30 @@ export function CommercialConditionsSummary({
     ufValue,
     convertUFToPesos
   } = useEconomicIndicators();
+
+  // Entry expenses state
+  const [entryExpenses, setEntryExpenses] = useState<EntryExpense[]>([]);
+  
+  useEffect(() => {
+    if (contractId) {
+      const loadEntryExpenses = async () => {
+        const { data, error } = await supabase
+          .from("entry_expenses")
+          .select("id, name, amount_uf, description")
+          .eq("contract_id", contractId)
+          .order("display_order", { ascending: true });
+        
+        if (!error && data) {
+          setEntryExpenses(data);
+        }
+      };
+      loadEntryExpenses();
+    }
+  }, [contractId]);
+
+  const entryExpensesTotal = useMemo(() => {
+    return entryExpenses.reduce((sum, e) => sum + e.amount_uf, 0);
+  }, [entryExpenses]);
 
   // Format functions based on display currency
   // Values are stored in the selected currency, so we display directly
@@ -665,6 +697,30 @@ export function CommercialConditionsSummary({
                   {version.otros_egresos_description}
                 </p>}
             </div>}
+
+          {/* Gastos de Entrada */}
+          {entryExpenses.length > 0 && (
+            <div className="space-y-1 col-span-2">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Wallet className="h-3 w-3" />
+                Gastos de Entrada
+              </div>
+              <p className="text-sm font-semibold text-primary">
+                {formatPrimary(entryExpensesTotal)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {formatSecondary(entryExpensesTotal)}
+              </p>
+              <div className="text-[10px] text-muted-foreground space-y-0.5 pt-1 border-t border-border/50">
+                {entryExpenses.map((expense) => (
+                  <div key={expense.id} className="flex justify-between">
+                    <span>{expense.name}{expense.description ? ` (${expense.description})` : ''}</span>
+                    <span>{formatPrimary(expense.amount_uf)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Escalonado - Compact Chart - Always show when we have dates */}

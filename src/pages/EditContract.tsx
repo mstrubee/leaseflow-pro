@@ -20,6 +20,7 @@ import { EditableSectionWrapper } from "@/components/contracts/EditableSectionWr
 import { CustomFieldsManager } from "@/components/contracts/CustomFieldsManager";
 import { useCustomFieldValues } from "@/hooks/useCustomFieldValues";
 import { MultipleNoticesSection, NoticeEntry, createAlertsFromNotices } from "@/components/contracts/MultipleNoticesSection";
+import { EntryExpensesSection } from "@/components/contracts/EntryExpensesSection";
 import {
   DndContext,
   closestCenter,
@@ -161,6 +162,7 @@ const EditContract = () => {
       escalation: "Canon Arriendo",
       variableRent: "Arriendo Variable",
       guarantee: "Garantía",
+      entryExpenses: "Gastos de Entrada",
       gastosComunes: "Gastos Comunes",
       fondoPromocion: "Fondo de Promoción",
       otrosArrendamientos: "Otros Arrendamientos",
@@ -1386,6 +1388,15 @@ const EditContract = () => {
                                 </p>
                               </div>
                             );
+                          case "entryExpenses":
+                            return id ? (
+                              <EntryExpensesSection 
+                                contractId={id} 
+                                displayCurrency={currency}
+                                readOnly={false}
+                                embedded={true}
+                              />
+                            ) : null;
                           case "gastosComunes":
                             return (
                               <div className="space-y-4">
