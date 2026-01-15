@@ -91,6 +91,8 @@ interface Contract {
   negotiation_subcategory?: string | null;
   venta_estimada?: number | null;
   venta_estimada_max?: number | null;
+  clasificacion?: string | null;
+  origen?: string | null;
   contract_companies?: ContractCompany[];
   contract_addresses: Array<{ region: string; commune: string; street?: string; number?: string }>;
   contract_versions: ContractVersion[];
@@ -160,6 +162,32 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
 
     if (error) {
       toast.error('Error al actualizar la categoría');
+    } else {
+      onRefresh();
+    }
+  };
+
+  const handleClasificacionChange = async (contractId: string, value: string) => {
+    const { error } = await supabase
+      .from('contracts')
+      .update({ clasificacion: value })
+      .eq('id', contractId);
+
+    if (error) {
+      toast.error('Error al actualizar la clasificación');
+    } else {
+      onRefresh();
+    }
+  };
+
+  const handleOrigenChange = async (contractId: string, value: string) => {
+    const { error } = await supabase
+      .from('contracts')
+      .update({ origen: value })
+      .eq('id', contractId);
+
+    if (error) {
+      toast.error('Error al actualizar el origen');
     } else {
       onRefresh();
     }
@@ -401,6 +429,8 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
             {isNegociacionView && (
               <>
                 <TableHead className="font-semibold text-center">Categoría</TableHead>
+                <TableHead className="font-semibold text-center">Clasificación</TableHead>
+                <TableHead className="font-semibold text-center">Origen</TableHead>
                 <TableHead className="font-semibold text-center">Venta Est.</TableHead>
               </>
             )}
@@ -547,6 +577,78 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                             <span className="flex items-center gap-2">
                               <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
                               Preliminar
+                            </span>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell className="text-center min-w-[110px]" onClick={(e) => e.stopPropagation()}>
+                      <Select 
+                        value={contract.clasificacion || ''} 
+                        onValueChange={(value) => handleClasificacionChange(contract.id, value)}
+                      >
+                        <SelectTrigger 
+                          className={`h-7 text-xs w-[100px] font-medium ${
+                            contract.clasificacion === 'nuevo' 
+                              ? 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200' 
+                              : contract.clasificacion === 'reemplazo'
+                                ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
+                                : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'
+                          }`}
+                        >
+                          <SelectValue placeholder="Seleccionar" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="nuevo" className="text-xs">
+                            <span className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                              Nuevo
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="reemplazo" className="text-xs">
+                            <span className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                              Reemplazo
+                            </span>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell className="text-center min-w-[120px]" onClick={(e) => e.stopPropagation()}>
+                      <Select 
+                        value={contract.origen || ''} 
+                        onValueChange={(value) => handleOrigenChange(contract.id, value)}
+                      >
+                        <SelectTrigger 
+                          className={`h-7 text-xs w-[110px] font-medium ${
+                            contract.origen === 'georesearch' 
+                              ? 'bg-cyan-100 text-cyan-800 border-cyan-300 hover:bg-cyan-200' 
+                              : contract.origen === 'broker'
+                                ? 'bg-orange-100 text-orange-800 border-orange-300 hover:bg-orange-200'
+                                : contract.origen === 'propio'
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200'
+                                  : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'
+                          }`}
+                        >
+                          <SelectValue placeholder="Seleccionar" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="georesearch" className="text-xs">
+                            <span className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-cyan-500"></span>
+                              Georesearch
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="broker" className="text-xs">
+                            <span className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                              Broker
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="propio" className="text-xs">
+                            <span className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                              Propio
                             </span>
                           </SelectItem>
                         </SelectContent>
