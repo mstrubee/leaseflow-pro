@@ -8,10 +8,24 @@ interface UseUserPreferencesOptions<T> {
   localStorageKey?: string; // For migration from localStorage
 }
 
+// Helper to check if error is a transient network error
+const isNetworkError = (error: unknown): boolean => {
+  if (!error) return false;
+  const message = (error as { message?: string })?.message || String(error);
+  return message.includes('Failed to fetch') || 
+         message.includes('NetworkError') ||
+         message.includes('network') ||
+         message.includes('ECONNREFUSED');
+};
+
+// Helper to delay execution
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 /**
  * Hook to manage user preferences stored in Supabase.
  * Falls back to localStorage if user is not authenticated.
  * Automatically migrates localStorage data to Supabase on first load.
+ * Includes retry logic and silent fallback for network errors.
  */
 export function useUserPreferences<T>({
   preferenceKey,
@@ -24,65 +38,125 @@ export function useUserPreferences<T>({
   const [initialized, setInitialized] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedRef = useRef<string>("");
+  const loadingPromiseRef = useRef<Promise<void> | null>(null);
+
+  // Fetch from Supabase with retry logic
+  const fetchFromSupabaseWithRetry = useCallback(async (
+    userId: string,
+    maxRetries = 2
+  ): Promise<{ data: T | null; success: boolean }> => {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const { data, error } = await supabase
+          .from("user_preferences")
+          .select("preference_value")
+          .eq("user_id", userId)
+          .eq("preference_key", preferenceKey)
+          .maybeSingle();
+
+        if (error) {
+          if (isNetworkError(error)) {
+            // Retry for network errors
+            if (attempt < maxRetries) {
+              await delay(300 * (attempt + 1)); // 300ms, 600ms
+              continue;
+            }
+            // Silent fallback after all retries
+            return { data: null, success: false };
+          }
+          // Log non-network errors
+          console.error("Error loading preferences:", error);
+          return { data: null, success: false };
+        }
+
+        return { 
+          data: data?.preference_value as T | null, 
+          success: true 
+        };
+      } catch (e) {
+        if (isNetworkError(e)) {
+          if (attempt < maxRetries) {
+            await delay(300 * (attempt + 1));
+            continue;
+          }
+          // Silent fallback
+          return { data: null, success: false };
+        }
+        console.error("Error fetching preferences:", e);
+        return { data: null, success: false };
+      }
+    }
+    return { data: null, success: false };
+  }, [preferenceKey]);
 
   // Load preferences from Supabase or localStorage
   const loadPreferences = useCallback(async () => {
     if (authLoading) return;
 
-    setLoading(true);
-    try {
-      if (user) {
-        // Try to load from Supabase
-        const { data, error } = await supabase
-          .from("user_preferences")
-          .select("preference_value")
-          .eq("user_id", user.id)
-          .eq("preference_key", preferenceKey)
-          .maybeSingle();
+    // Avoid duplicate simultaneous calls
+    if (loadingPromiseRef.current) {
+      return loadingPromiseRef.current;
+    }
 
-        if (error) {
-          console.error("Error loading preferences:", error);
-          // Fall back to localStorage
-          loadFromLocalStorage();
-          return;
-        }
+    const loadPromise = (async () => {
+      setLoading(true);
+      try {
+        if (user) {
+          // Try to load from Supabase with retry
+          const { data, success } = await fetchFromSupabaseWithRetry(user.id);
 
-        if (data?.preference_value) {
-          setValue(data.preference_value as T);
-          lastSavedRef.current = JSON.stringify(data.preference_value);
-        } else {
-          // No data in Supabase, try to migrate from localStorage
-          const localStorageKeyToUse = localStorageKey || preferenceKey;
-          const localData = localStorage.getItem(localStorageKeyToUse);
-          
-          if (localData) {
-            try {
-              const parsed = JSON.parse(localData) as T;
-              setValue(parsed);
-              // Migrate to Supabase
-              await saveToSupabase(parsed);
-              // Clear localStorage after successful migration
-              localStorage.removeItem(localStorageKeyToUse);
-            } catch (e) {
-              console.error("Error migrating from localStorage:", e);
+          if (!success) {
+            // Silent fallback to localStorage
+            loadFromLocalStorage();
+            return;
+          }
+
+          if (data !== null) {
+            setValue(data);
+            lastSavedRef.current = JSON.stringify(data);
+          } else {
+            // No data in Supabase, try to migrate from localStorage
+            const localStorageKeyToUse = localStorageKey || preferenceKey;
+            const localData = localStorage.getItem(localStorageKeyToUse);
+            
+            if (localData) {
+              try {
+                const parsed = JSON.parse(localData) as T;
+                setValue(parsed);
+                // Migrate to Supabase (don't await, let it happen in background)
+                saveToSupabase(parsed).then(() => {
+                  // Clear localStorage after successful migration
+                  localStorage.removeItem(localStorageKeyToUse);
+                }).catch(() => {
+                  // Silent failure for migration
+                });
+              } catch (e) {
+                console.error("Error parsing localStorage data:", e);
+                setValue(defaultValue);
+              }
+            } else {
               setValue(defaultValue);
             }
-          } else {
-            setValue(defaultValue);
           }
+        } else {
+          // Not authenticated, use localStorage
+          loadFromLocalStorage();
         }
-      } else {
-        // Not authenticated, use localStorage
+      } catch (e) {
+        if (!isNetworkError(e)) {
+          console.error("Error in loadPreferences:", e);
+        }
         loadFromLocalStorage();
+      } finally {
+        setLoading(false);
+        setInitialized(true);
       }
-    } catch (e) {
-      console.error("Error in loadPreferences:", e);
-      loadFromLocalStorage();
-    } finally {
-      setLoading(false);
-      setInitialized(true);
-    }
-  }, [user, authLoading, preferenceKey, localStorageKey, defaultValue]);
+    })();
+
+    loadingPromiseRef.current = loadPromise;
+    await loadPromise;
+    loadingPromiseRef.current = null;
+  }, [user, authLoading, preferenceKey, localStorageKey, defaultValue, fetchFromSupabaseWithRetry]);
 
   const loadFromLocalStorage = () => {
     const localStorageKeyToUse = localStorageKey || preferenceKey;
@@ -101,47 +175,73 @@ export function useUserPreferences<T>({
     }
   };
 
-  const saveToSupabase = async (data: T) => {
-    if (!user) return;
+  const saveToSupabase = async (data: T): Promise<boolean> => {
+    if (!user) return false;
 
-    // Check if record exists
-    const { data: existing } = await supabase
-      .from("user_preferences")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("preference_key", preferenceKey)
-      .maybeSingle();
-
-    let error;
-    const jsonValue = JSON.parse(JSON.stringify(data));
-    
-    if (existing) {
-      // Update existing record
-      const result = await supabase
+    try {
+      // Check if record exists
+      const { data: existing, error: fetchError } = await supabase
         .from("user_preferences")
-        .update({
-          preference_value: jsonValue,
-          updated_at: new Date().toISOString(),
-        })
+        .select("id")
         .eq("user_id", user.id)
-        .eq("preference_key", preferenceKey);
-      error = result.error;
-    } else {
-      // Insert new record
-      const result = await supabase
-        .from("user_preferences")
-        .insert([{
-          user_id: user.id,
-          preference_key: preferenceKey,
-          preference_value: jsonValue,
-        }]);
-      error = result.error;
-    }
+        .eq("preference_key", preferenceKey)
+        .maybeSingle();
 
-    if (error) {
-      console.error("Error saving preferences to Supabase:", error);
-    } else {
+      if (fetchError && !isNetworkError(fetchError)) {
+        console.error("Error checking existing preference:", fetchError);
+        return false;
+      }
+
+      if (fetchError && isNetworkError(fetchError)) {
+        // Silent failure for network errors, save to localStorage as backup
+        saveToLocalStorage(data);
+        return false;
+      }
+
+      const jsonValue = JSON.parse(JSON.stringify(data));
+      let error;
+
+      if (existing) {
+        // Update existing record
+        const result = await supabase
+          .from("user_preferences")
+          .update({
+            preference_value: jsonValue,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", user.id)
+          .eq("preference_key", preferenceKey);
+        error = result.error;
+      } else {
+        // Insert new record
+        const result = await supabase
+          .from("user_preferences")
+          .insert([{
+            user_id: user.id,
+            preference_key: preferenceKey,
+            preference_value: jsonValue,
+          }]);
+        error = result.error;
+      }
+
+      if (error) {
+        if (!isNetworkError(error)) {
+          console.error("Error saving preferences to Supabase:", error);
+        }
+        // Fallback to localStorage
+        saveToLocalStorage(data);
+        return false;
+      }
+
       lastSavedRef.current = JSON.stringify(data);
+      return true;
+    } catch (e) {
+      if (!isNetworkError(e)) {
+        console.error("Error in saveToSupabase:", e);
+      }
+      // Fallback to localStorage
+      saveToLocalStorage(data);
+      return false;
     }
   };
 
@@ -178,7 +278,7 @@ export function useUserPreferences<T>({
         }
       }, 500);
     },
-    [user, preferenceKey]
+    [user, preferenceKey, localStorageKey]
   );
 
   // Update value and trigger save
