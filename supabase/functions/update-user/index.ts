@@ -90,8 +90,8 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Log operation without sensitive user details
-    console.log('Processing user update operation');
+    // Generate error tracking ID for this operation
+    const operationId = crypto.randomUUID().slice(0, 8);
 
     // Update auth user
     const updateData: { email?: string; password?: string; user_metadata?: { full_name: string } } = {}
@@ -102,7 +102,7 @@ Deno.serve(async (req) => {
     if (Object.keys(updateData).length > 0) {
       const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(userId, updateData)
       if (updateError) {
-        console.error('Error updating auth user:', updateError)
+        console.error(`[${operationId}] Auth user update failed:`, updateError.message);
         return new Response(JSON.stringify({ error: updateError.message }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -122,7 +122,7 @@ Deno.serve(async (req) => {
         .eq('id', userId)
       
       if (profileError) {
-        console.error('Error updating profile:', profileError)
+        console.error(`[${operationId}] Profile update failed:`, profileError.message);
       }
     }
 
@@ -140,7 +140,7 @@ Deno.serve(async (req) => {
         .insert({ user_id: userId, role })
       
       if (roleError) {
-        console.error('Error updating role:', roleError)
+        console.error(`[${operationId}] Role update failed:`, roleError.message);
       }
     }
 
@@ -167,7 +167,7 @@ Deno.serve(async (req) => {
           .insert(permissionsToInsert)
 
         if (permError) {
-          console.error('Error updating permissions:', permError)
+          console.error(`[${operationId}] Permissions update failed:`, permError.message);
         }
       }
     }
@@ -181,9 +181,10 @@ Deno.serve(async (req) => {
     })
 
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error'
-    console.error('Error in update-user function:', message)
-    return new Response(JSON.stringify({ error: message }), {
+    const errorId = crypto.randomUUID().slice(0, 8);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[${errorId}] Update-user function error:`, message);
+    return new Response(JSON.stringify({ error: 'Operation failed', errorId }), {
       status: 500,
       headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
     })
