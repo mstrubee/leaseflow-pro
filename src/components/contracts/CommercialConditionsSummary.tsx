@@ -25,6 +25,9 @@ interface ContractVersion {
   notice_value: string;
   effective_date: string | null;
   guarantee_multiplier?: number | null;
+  guarantee_type?: string | null;
+  guarantee_fixed_amount?: number | null;
+  guarantee_fixed_currency?: string | null;
   has_periodic_adjustments?: boolean | null;
   first_adjustment_month?: number | null;
   adjustment_periodicity_months?: number | null;
@@ -198,7 +201,25 @@ export function CommercialConditionsSummary({
         : version.initial_rent)
     : null;
   
-  const guaranteeAmount = version.guarantee_multiplier ? version.guarantee_multiplier * actualRegimeRent : null;
+  // Calculate guarantee amount based on type
+  const guaranteeType = version.guarantee_type || 'multiplier';
+  const guaranteeAmount = useMemo(() => {
+    if (guaranteeType === 'multiplier' && version.guarantee_multiplier) {
+      return version.guarantee_multiplier * actualRegimeRent;
+    }
+    if ((guaranteeType === 'fixed_uf' || guaranteeType === 'fixed_clp') && version.guarantee_fixed_amount) {
+      // If fixed in CLP and display is UF, convert
+      if (version.guarantee_fixed_currency === 'CLP' && displayCurrency === 'UF' && ufValue > 0) {
+        return version.guarantee_fixed_amount / ufValue;
+      }
+      // If fixed in UF and display is CLP, convert
+      if (version.guarantee_fixed_currency === 'UF' && displayCurrency === 'CLP' && ufValue > 0) {
+        return version.guarantee_fixed_amount * ufValue;
+      }
+      return version.guarantee_fixed_amount;
+    }
+    return null;
+  }, [guaranteeType, version.guarantee_multiplier, version.guarantee_fixed_amount, version.guarantee_fixed_currency, actualRegimeRent, displayCurrency, ufValue]);
 
   // Calculate current rent based on escalations, periodic adjustments, and current month
   const currentRent = useMemo(() => {
@@ -551,8 +572,13 @@ export function CommercialConditionsSummary({
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Shield className="h-3 w-3" />
                 Garantía
-                {version.regime_rent_is_uf_m2 && (
+                {guaranteeType === 'multiplier' && version.regime_rent_is_uf_m2 && (
                   <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">UF/m²</Badge>
+                )}
+                {(guaranteeType === 'fixed_uf' || guaranteeType === 'fixed_clp') && (
+                  <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
+                    {version.guarantee_fixed_currency === 'CLP' ? '$' : 'UF'}
+                  </Badge>
                 )}
               </div>
               <p className="text-sm font-medium">
@@ -562,7 +588,10 @@ export function CommercialConditionsSummary({
                 {formatSecondary(guaranteeAmount)}
               </p>
               <p className="text-xs text-muted-foreground">
-                ({version.guarantee_multiplier}× canon)
+                {guaranteeType === 'multiplier' 
+                  ? `(${version.guarantee_multiplier}× canon)`
+                  : `(monto fijo en ${version.guarantee_fixed_currency})`
+                }
               </p>
             </div>}
 

@@ -14,6 +14,7 @@ import { RenegotiationDraftsPanel } from "@/components/contracts/RenegotiationDr
 import { VersionHistoryPanel } from "@/components/contracts/VersionHistoryPanel";
 import { RepositorySection } from "@/components/contracts/RepositorySection";
 import { CommercialConditionsSummary } from "@/components/contracts/CommercialConditionsSummary";
+import { EntryExpensesSection } from "@/components/contracts/EntryExpensesSection";
 import { ContractSurfacesSection } from "@/components/contracts/ContractSurfacesSection";
 import { ContractAlerts } from "@/components/alerts/ContractAlerts";
 import { BudgetDashboard } from "@/components/budget/BudgetDashboard";

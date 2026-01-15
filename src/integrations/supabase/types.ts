@@ -997,7 +997,10 @@ export type Database = {
           gastos_comunes_uf_m2: number | null
           gastos_comunes_uf_ml_frente: number | null
           grace_months: number | null
+          guarantee_fixed_amount: number | null
+          guarantee_fixed_currency: string | null
           guarantee_multiplier: number | null
+          guarantee_type: string | null
           has_extended_gastos_comunes: boolean | null
           has_periodic_adjustments: boolean | null
           id: string
@@ -1035,7 +1038,10 @@ export type Database = {
           gastos_comunes_uf_m2?: number | null
           gastos_comunes_uf_ml_frente?: number | null
           grace_months?: number | null
+          guarantee_fixed_amount?: number | null
+          guarantee_fixed_currency?: string | null
           guarantee_multiplier?: number | null
+          guarantee_type?: string | null
           has_extended_gastos_comunes?: boolean | null
           has_periodic_adjustments?: boolean | null
           id?: string
@@ -1073,7 +1079,10 @@ export type Database = {
           gastos_comunes_uf_m2?: number | null
           gastos_comunes_uf_ml_frente?: number | null
           grace_months?: number | null
+          guarantee_fixed_amount?: number | null
+          guarantee_fixed_currency?: string | null
           guarantee_multiplier?: number | null
+          guarantee_type?: string | null
           has_extended_gastos_comunes?: boolean | null
           has_periodic_adjustments?: boolean | null
           id?: string
@@ -1324,6 +1333,56 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      entry_expenses: {
+        Row: {
+          amount_clp: number | null
+          amount_uf: number
+          contract_id: string
+          created_at: string
+          created_by: string | null
+          currency: string
+          description: string | null
+          display_order: number | null
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          amount_clp?: number | null
+          amount_uf?: number
+          contract_id: string
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          amount_clp?: number | null
+          amount_uf?: number
+          contract_id?: string
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entry_expenses_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       finalized_contracts: {
         Row: {
