@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { DollarSign, Calendar, Bell, TrendingUp, Percent, Shield, Building2, Megaphone, Users, Receipt, Wallet } from "lucide-react";
+import { DollarSign, Calendar, Bell, TrendingUp, Percent, Shield, Building2, Megaphone, Users, Receipt, Wallet, ChevronDown, ChevronRight } from "lucide-react";
 import { CompactEscalationChart } from "./CompactEscalationChart";
 import { RenegotiationDialog } from "./RenegotiationDialog";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
@@ -94,6 +94,9 @@ export function CommercialConditionsSummary({
 
   // Entry expenses state
   const [entryExpenses, setEntryExpenses] = useState<EntryExpense[]>([]);
+  
+  // Collapsible state for Total Arriendo detail
+  const [totalArriendoExpanded, setTotalArriendoExpanded] = useState(false);
   
   useEffect(() => {
     if (contractId) {
@@ -534,29 +537,44 @@ export function CommercialConditionsSummary({
                 </span>
               )}
             </div>
-            {/* Composición - siempre mostrar todos los componentes */}
-            <div className="text-[10px] text-muted-foreground space-y-0.5 pt-1 border-t border-border/50">
-              <div className="flex justify-between">
-                <span>Canon{showCurrentLabel ? " actual" : ""}:</span>
-                <span>{formatPrimary(currentRent)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>GGCC:</span>
-                <span>{gastosComunesTotalUF ? formatPrimary(gastosComunesTotalUF) : "-"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>F. Prom:</span>
-                <span>{fondoPromocionAmount ? formatPrimary(fondoPromocionAmount) : "-"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Otros:</span>
-                <span>{otrosEgresosAmount > 0 ? formatPrimary(otrosEgresosAmount) : "-"}</span>
-              </div>
-              <div className="flex justify-between text-primary font-medium">
-                <span>Variable:</span>
-                <span>{version.variable_rent_percentage !== null && version.variable_rent_percentage > 0 ? `${version.variable_rent_percentage}%` : "-"}</span>
-              </div>
+            {/* Composición colapsable */}
+            <div 
+              className="flex items-center gap-1 cursor-pointer pt-1 border-t border-border/50 hover:text-foreground transition-colors"
+              onClick={() => setTotalArriendoExpanded(!totalArriendoExpanded)}
+            >
+              {totalArriendoExpanded ? (
+                <ChevronDown className="h-3 w-3 text-primary" />
+              ) : (
+                <ChevronRight className="h-3 w-3 text-muted-foreground" />
+              )}
+              <span className="text-[10px] text-muted-foreground">
+                {totalArriendoExpanded ? "Ocultar detalle" : "Ver detalle"}
+              </span>
             </div>
+            {totalArriendoExpanded && (
+              <div className="text-[10px] text-muted-foreground space-y-0.5 animate-in slide-in-from-top-1 duration-200">
+                <div className="flex justify-between">
+                  <span>Canon{showCurrentLabel ? " actual" : ""}:</span>
+                  <span>{formatPrimary(currentRent)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>GGCC:</span>
+                  <span>{gastosComunesTotalUF ? formatPrimary(gastosComunesTotalUF) : "-"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>F. Prom:</span>
+                  <span>{fondoPromocionAmount ? formatPrimary(fondoPromocionAmount) : "-"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Otros:</span>
+                  <span>{otrosEgresosAmount > 0 ? formatPrimary(otrosEgresosAmount) : "-"}</span>
+                </div>
+                <div className="flex justify-between text-primary font-medium">
+                  <span>Variable:</span>
+                  <span>{version.variable_rent_percentage !== null && version.variable_rent_percentage > 0 ? `${version.variable_rent_percentage}%` : "-"}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Canon actual o Canon en Régimen */}
