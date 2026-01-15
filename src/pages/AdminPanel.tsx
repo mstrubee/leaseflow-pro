@@ -18,6 +18,7 @@ import { BudgetTemplateManager } from "@/components/budget/BudgetTemplateManager
 import { GanttTemplateManager } from "@/components/gantt/GanttTemplateManager";
 import { StorageProviderSettings } from "@/components/admin/StorageProviderSettings";
 import { CompanyManager } from "@/components/admin/CompanyManager";
+import { StorageMonitor } from "@/components/admin/StorageMonitor";
 interface Profile {
   id: string;
   email: string;
@@ -840,6 +841,9 @@ const AdminPanel = () => {
 
         {/* Storage Provider Settings */}
         <StorageProviderSettings />
+
+        {/* Storage Monitor - Admin only */}
+        <StorageMonitor />
 
         {/* Edit Permissions Dialog */}
         <Dialog open={!!editingUserId} onOpenChange={(open) => !open && setEditingUserId(null)}>
