@@ -39,6 +39,8 @@ export function useUserPreferences<T>({
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedRef = useRef<string>("");
   const loadingPromiseRef = useRef<Promise<void> | null>(null);
+  // Track if user has interacted - prevents async load from overwriting user changes
+  const userHasInteractedRef = useRef(false);
 
   // Fetch from Supabase with retry logic
   const fetchFromSupabaseWithRetry = useCallback(async (
@@ -101,9 +103,21 @@ export function useUserPreferences<T>({
     const loadPromise = (async () => {
       setLoading(true);
       try {
+        // If user has already interacted, don't overwrite their changes
+        if (userHasInteractedRef.current) {
+          setLoading(false);
+          return;
+        }
+
         if (user) {
           // Try to load from Supabase with retry
           const { data, success } = await fetchFromSupabaseWithRetry(user.id);
+
+          // Check again after async operation - user might have interacted
+          if (userHasInteractedRef.current) {
+            setLoading(false);
+            return;
+          }
 
           if (!success) {
             // Silent fallback to localStorage
@@ -284,6 +298,9 @@ export function useUserPreferences<T>({
   // Update value and trigger save
   const updateValue = useCallback(
     (newValue: T | ((prev: T) => T)) => {
+      // Mark that user has interacted - prevents async load from overwriting
+      userHasInteractedRef.current = true;
+      
       setValue((prev) => {
         const next = typeof newValue === "function" 
           ? (newValue as (prev: T) => T)(prev) 
