@@ -8,6 +8,7 @@ import { addMonths, format, subMonths, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { supabase } from "@/integrations/supabase/client";
+import { useSingleCollapsible } from "@/hooks/useCollapsibleState";
 
 interface EntryExpense {
   id: string;
@@ -95,8 +96,11 @@ export function CommercialConditionsSummary({
   // Entry expenses state
   const [entryExpenses, setEntryExpenses] = useState<EntryExpense[]>([]);
   
-  // Collapsible state for Total Arriendo detail
-  const [totalArriendoExpanded, setTotalArriendoExpanded] = useState(false);
+  // Collapsible state for Total Arriendo detail - persisted
+  const { isOpen: totalArriendoExpanded, toggle: toggleTotalArriendoExpanded } = useSingleCollapsible(
+    `total_arriendo_expanded_${contractId || 'default'}`,
+    false
+  );
   
   useEffect(() => {
     if (contractId) {
@@ -224,7 +228,6 @@ export function CommercialConditionsSummary({
   const hasAdjustments = version.has_periodic_adjustments && 
     (version.adjustment_value || 0) > 0 && 
     (version.first_adjustment_month || 0) > 0;
-  const showCurrentLabel = hasEscalations || hasAdjustments;
   
   // Calculate actual rents considering UF/m² mode - use full precision (3 decimals) for intermediate calculations
   const actualRegimeRent = version.regime_rent_is_uf_m2 && superficieEdificadaLocal 
@@ -256,7 +259,22 @@ export function CommercialConditionsSummary({
     return null;
   }, [guaranteeType, version.guarantee_multiplier, version.guarantee_fixed_amount, version.guarantee_fixed_currency, actualRegimeRent, displayCurrency, ufValue]);
 
+  // Determine if contract has not started yet (in negotiation or future start date)
+  const isContractNotStarted = useMemo(() => {
+    const startDate = version.effective_date
+      ? new Date(version.effective_date)
+      : signedDate
+        ? new Date(signedDate)
+        : null;
+    
+    if (!startDate) return true;
+    
+    const today = new Date();
+    return today < startDate;
+  }, [version.effective_date, signedDate]);
+
   // Calculate current rent based on escalations, periodic adjustments, and current month
+  // For contracts not started yet, we use the regime rent (projected rent)
   const currentRent = useMemo(() => {
     // Calculate current month
     const startDate = version.effective_date
@@ -273,9 +291,14 @@ export function CommercialConditionsSummary({
     const diffTime = today.getTime() - startDate.getTime();
     const currentMonth = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44)) + 1;
     
-    // Check grace period
+    // For contracts that haven't started yet, return regime rent (projected)
+    if (currentMonth < 1) {
+      return actualRegimeRent;
+    }
+    
+    // Check grace period - only apply for active contracts
     const graceMonths = version.grace_months || 0;
-    if (currentMonth <= graceMonths) {
+    if (currentMonth <= graceMonths && currentMonth >= 1) {
       return 0;
     }
     
@@ -331,6 +354,9 @@ export function CommercialConditionsSummary({
     
     return rent;
   }, [version, signedDate, hasEscalations, hasAdjustments, actualRegimeRent, actualInitialRent, superficieEdificadaLocal]);
+
+  // For contracts not started, always show "Canon en Régimen", not "Canon Actual"
+  const showCurrentLabel = !isContractNotStarted && (hasEscalations || hasAdjustments);
 
   // Canon per m2 - use currentRent for escalated contracts
   const canonPerM2 = superficieEdificadaLocal && superficieEdificadaLocal > 0 ? currentRent / superficieEdificadaLocal : null;
@@ -540,7 +566,11 @@ export function CommercialConditionsSummary({
             {/* Composición colapsable */}
             <div 
               className="flex items-center gap-1 cursor-pointer pt-1 border-t border-border/50 hover:text-foreground transition-colors"
-              onClick={() => setTotalArriendoExpanded(!totalArriendoExpanded)}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleTotalArriendoExpanded();
+              }}
             >
               {totalArriendoExpanded ? (
                 <ChevronDown className="h-3 w-3 text-primary" />
