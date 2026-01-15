@@ -103,7 +103,7 @@ async function getAccessToken(credentials: ServiceAccountCredentials): Promise<s
   const tokenData = await tokenResponse.json();
   
   if (!tokenData.access_token) {
-    console.error("Token response:", tokenData);
+    console.error("Token exchange failed - check service account configuration");
     throw new Error("Failed to get access token from Google");
   }
   
@@ -149,9 +149,9 @@ async function createDriveFolder(accessToken: string, name: string, parentId?: s
   });
   
   if (!response.ok) {
-    const error = await response.text();
-    console.error("Error creating folder:", error);
-    throw new Error(`Failed to create folder: ${error}`);
+    const errorText = await response.text();
+    console.error("Folder creation failed:", response.status);
+    throw new Error(`Failed to create folder: ${response.status}`);
   }
   
   return await response.json();
@@ -188,9 +188,9 @@ async function getFolderByName(accessToken: string, name: string, parentId?: str
   );
   
   if (!response.ok) {
-    const error = await response.text();
-    console.error("Error searching folder:", error);
-    throw new Error(`Failed to search folder: ${error}`);
+    const errorText = await response.text();
+    console.error("Folder search failed:", response.status);
+    throw new Error(`Failed to search folder: ${response.status}`);
   }
   
   const data = await response.json();
@@ -248,9 +248,9 @@ async function uploadFileToDrive(
   );
   
   if (!response.ok) {
-    const error = await response.text();
-    console.error("Error uploading file:", error);
-    throw new Error(`Failed to upload file: ${error}`);
+    const errorText = await response.text();
+    console.error("File upload failed:", response.status);
+    throw new Error(`Failed to upload file: ${response.status}`);
   }
   
   return await response.json();
@@ -270,9 +270,9 @@ async function listFilesInFolder(accessToken: string, folderId: string): Promise
   );
   
   if (!response.ok) {
-    const error = await response.text();
-    console.error("Error listing files:", error);
-    throw new Error(`Failed to list files: ${error}`);
+    const errorText = await response.text();
+    console.error("File listing failed:", response.status);
+    throw new Error(`Failed to list files: ${response.status}`);
   }
   
   const data = await response.json();
@@ -289,9 +289,9 @@ async function deleteFile(accessToken: string, fileId: string): Promise<void> {
   });
   
   if (!response.ok && response.status !== 204) {
-    const error = await response.text();
-    console.error("Error deleting file:", error);
-    throw new Error(`Failed to delete file: ${error}`);
+    const errorText = await response.text();
+    console.error("File deletion failed:", response.status);
+    throw new Error(`Failed to delete file: ${response.status}`);
   }
 }
 
@@ -311,9 +311,9 @@ async function moveToFolder(accessToken: string, fileId: string, newParentId: st
   });
   
   if (!response.ok) {
-    const error = await response.text();
-    console.error("Error moving file:", error);
-    throw new Error(`Failed to move file: ${error}`);
+    const errorText = await response.text();
+    console.error("File move failed:", response.status);
+    throw new Error(`Failed to move file: ${response.status}`);
   }
 }
 
