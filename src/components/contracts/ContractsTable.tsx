@@ -13,6 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { addMonths, format, subMonths, parseISO, differenceInMonths, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
+import { SortableTableHead, SortOrder } from "./SortableTableHead";
 
 interface ContractAlert {
   id: string;
@@ -104,15 +105,20 @@ interface Contract {
   termination_notices?: TerminationNotice[];
 }
 
+export type ContractSortField = "name" | "empresa" | "ubicacion" | "costo_arriendo" | "duracion" | "termino" | "aviso" | "categoria" | "venta_estimada" | "end_date" | "notice_deadline" | null;
+
 interface ContractsTableProps {
   contracts: Contract[];
   isFirmadoView: boolean;
   onDelete: (e: React.MouseEvent, contract: Contract) => void;
   onUpdateField: (e: React.MouseEvent, contractId: string, field: string, value: string) => void;
   onRefresh: () => void;
+  sortField?: ContractSortField;
+  sortOrder?: SortOrder;
+  onSort?: (field: ContractSortField) => void;
 }
 
-export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateField, onRefresh }: ContractsTableProps) {
+export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateField, onRefresh, sortField, sortOrder, onSort }: ContractsTableProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { ufValue, convertUFToPesos, convertPesosToUF } = useEconomicIndicators();
@@ -443,27 +449,88 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     return format(date, "dd/MM/yy", { locale: es });
   };
 
+  const handleSort = (field: string) => {
+    if (onSort) {
+      onSort(field as ContractSortField);
+    }
+  };
+
   return (
     <div className="rounded-md border overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/50">
-            <TableHead className="font-semibold">Contrato</TableHead>
-            <TableHead className="font-semibold">Ubicación</TableHead>
+            <SortableTableHead
+              label="Contrato"
+              sortKey="name"
+              currentSortKey={sortField || null}
+              currentSortOrder={sortOrder || null}
+              onSort={handleSort}
+            />
+            <SortableTableHead
+              label="Ubicación"
+              sortKey="ubicacion"
+              currentSortKey={sortField || null}
+              currentSortOrder={sortOrder || null}
+              onSort={handleSort}
+            />
             {isNegociacionView && (
               <>
-                <TableHead className="font-semibold text-center">Categoría</TableHead>
+                <SortableTableHead
+                  label="Categoría"
+                  sortKey="categoria"
+                  currentSortKey={sortField || null}
+                  currentSortOrder={sortOrder || null}
+                  onSort={handleSort}
+                  align="center"
+                />
                 <TableHead className="font-semibold text-center">Clasificación</TableHead>
                 <TableHead className="font-semibold text-center">Origen</TableHead>
-                <TableHead className="font-semibold text-center">Venta Est.</TableHead>
+                <SortableTableHead
+                  label="Venta Est."
+                  sortKey="venta_estimada"
+                  currentSortKey={sortField || null}
+                  currentSortOrder={sortOrder || null}
+                  onSort={handleSort}
+                  align="center"
+                />
               </>
             )}
-            <TableHead className="font-semibold text-center min-w-[140px]"><div className="leading-tight">Costo<br/>Arriendo</div></TableHead>
-            <TableHead className="font-semibold text-center">Duración</TableHead>
+            <SortableTableHead
+              label={<div className="leading-tight">Costo<br/>Arriendo</div>}
+              sortKey="costo_arriendo"
+              currentSortKey={sortField || null}
+              currentSortOrder={sortOrder || null}
+              onSort={handleSort}
+              className="min-w-[140px]"
+              align="center"
+            />
+            <SortableTableHead
+              label="Duración"
+              sortKey="duracion"
+              currentSortKey={sortField || null}
+              currentSortOrder={sortOrder || null}
+              onSort={handleSort}
+              align="center"
+            />
             {isFirmadoView && (
               <>
-                <TableHead className="font-semibold text-center">Término</TableHead>
-                <TableHead className="font-semibold text-center">Aviso</TableHead>
+                <SortableTableHead
+                  label="Término"
+                  sortKey="termino"
+                  currentSortKey={sortField || null}
+                  currentSortOrder={sortOrder || null}
+                  onSort={handleSort}
+                  align="center"
+                />
+                <SortableTableHead
+                  label="Aviso"
+                  sortKey="aviso"
+                  currentSortKey={sortField || null}
+                  currentSortOrder={sortOrder || null}
+                  onSort={handleSort}
+                  align="center"
+                />
                 <TableHead className="font-semibold text-center">Estado</TableHead>
               </>
             )}

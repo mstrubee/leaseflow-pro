@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
@@ -23,9 +23,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Search, ArrowLeft, Trash2, ArrowUpDown, X, Cloud, Loader2, ExternalLink, AlertTriangle, Download } from "lucide-react";
-import { generateNegotiationReportPDF } from "@/components/contracts/NegotiationReportPDF";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
-import { ContractsTable } from "@/components/contracts/ContractsTable";
+import { ContractsTable, ContractSortField } from "@/components/contracts/ContractsTable";
+import { ColumnSelector } from "@/components/contracts/ColumnSelector";
+import { generateContractsListPDF, getAvailableColumns } from "@/components/contracts/ContractsTablePDF";
+import { SortOrder } from "@/components/contracts/SortableTableHead";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
@@ -122,7 +124,6 @@ interface Company {
   name: string;
 }
 
-type SortField = "end_date" | "notice_deadline" | "name" | null;
 type SortDirection = "asc" | "desc";
 
 const Contracts = () => {
@@ -156,7 +157,7 @@ const Contracts = () => {
   const companyFilter = searchParams.get("company") || "todos";
   const atencionEspecialFilter = searchParams.get("atencion_especial") === "true" ? "si" : (searchParams.get("atencion_especial") === "false" ? "no" : "todos");
   const negotiationSubcategoryFilter = searchParams.get("subcategory") || "todos";
-  const sortField = (searchParams.get("sort") as SortField) || null;
+  const sortField = (searchParams.get("sort") as ContractSortField) || null;
   const sortDirection = (searchParams.get("dir") as SortDirection) || "asc";
 
   const setNegotiationSubcategoryFilter = (value: string) => updateFilter("subcategory", value);
@@ -192,7 +193,7 @@ const Contracts = () => {
     setSearchParams(newParams, { replace: true });
   };
 
-  const setSortField = (field: SortField) => {
+  const setSortField = (field: ContractSortField) => {
     const newParams = new URLSearchParams(searchParams);
     if (field === null) {
       newParams.delete("sort");
@@ -509,7 +510,7 @@ const Contracts = () => {
     setFilteredContracts(filtered);
   };
 
-  const handleSort = (field: SortField) => {
+  const handleSort = (field: ContractSortField) => {
     const newParams = new URLSearchParams(searchParams);
     if (sortField === field) {
       if (sortDirection === "asc") {
@@ -537,8 +538,32 @@ const Contracts = () => {
 
   const hasActiveFilters = operationFilter !== "todos" || obraFilter !== "todos" || patenteFilter !== "todos" || proyectoFilter !== "todos" || ubicacionFilter !== "todos" || costoArriendoFilter !== "todos" || companyFilter !== "todos" || atencionEspecialFilter !== "todos" || negotiationSubcategoryFilter !== "todos" || sortField !== null;
 
-  const handleDownloadNegotiationReport = () => {
-    generateNegotiationReportPDF(filteredContracts as any, negotiationSubcategoryFilter);
+  // PDF export state
+  const availablePdfColumns = useMemo(() => {
+    const isFirmado = statusFilter === "firmado";
+    const isNego = statusFilter === "en_negociacion";
+    return getAvailableColumns(isFirmado, isNego);
+  }, [statusFilter]);
+  
+  const [selectedPdfColumns, setSelectedPdfColumns] = useState<string[]>([
+    "contrato", "empresa", "ubicacion", "costo_arriendo", "duracion"
+  ]);
+
+  const handleDownloadReport = async () => {
+    const isFirmado = statusFilter === "firmado";
+    const isNego = statusFilter === "en_negociacion";
+    const title = isNego 
+      ? "Contratos en Negociación" 
+      : isFirmado 
+        ? "Contratos Vigentes" 
+        : "Lista de Contratos";
+    await generateContractsListPDF(
+      filteredContracts as any, 
+      selectedPdfColumns, 
+      title, 
+      isFirmado, 
+      isNego
+    );
   };
 
   // Get unique communes for ubicacion filter
@@ -698,16 +723,19 @@ const Contracts = () => {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {isNegociacionView && (
-                <Button
-                  variant="outline"
-                  onClick={handleDownloadNegotiationReport}
-                  className="gap-2"
-                >
-                  <Download className="h-4 w-4" />
-                  Descargar Informe
-                </Button>
-              )}
+              <ColumnSelector
+                availableColumns={availablePdfColumns}
+                selectedColumns={selectedPdfColumns}
+                onSelectionChange={setSelectedPdfColumns}
+              />
+              <Button
+                variant="outline"
+                onClick={handleDownloadReport}
+                className="gap-2"
+              >
+                <Download className="h-4 w-4" />
+                Descargar PDF
+              </Button>
               <Button
                 variant="outline"
                 onClick={handleSyncAllToDrive}
@@ -960,6 +988,9 @@ const Contracts = () => {
             onDelete={handleDeleteClick}
             onUpdateField={updateContractField}
             onRefresh={loadContracts}
+            sortField={sortField}
+            sortOrder={sortDirection as SortOrder}
+            onSort={handleSort}
           />
         ) : (
           <Card className="p-12">
