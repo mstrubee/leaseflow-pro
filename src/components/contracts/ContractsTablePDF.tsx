@@ -200,9 +200,14 @@ export const generateContractsListPDF = async (
           rowData.push(address ? `${address.street || ''} ${address.number || ''}`.trim() || '-' : '-');
           break;
         case "costo_arriendo":
-          rowData.push(currentVersion
-            ? `${currentVersion.regime_rent.toLocaleString('es-CL', { minimumFractionDigits: 2 })} UF`
-            : '-');
+          if (currentVersion) {
+            const superficie = contract.superficie_edificada_local || 0;
+            const isRentUfM2 = currentVersion.regime_rent_is_uf_m2 === true;
+            const rentAmount = isRentUfM2 ? currentVersion.regime_rent * superficie : currentVersion.regime_rent;
+            rowData.push(`${rentAmount.toLocaleString('es-CL', { minimumFractionDigits: 2 })} UF`);
+          } else {
+            rowData.push('-');
+          }
           break;
         case "duracion":
           rowData.push(currentVersion ? `${currentVersion.duration_months} meses` : '-');
