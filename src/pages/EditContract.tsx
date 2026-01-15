@@ -100,7 +100,9 @@ const EditContract = () => {
   const [multipleNotices, setMultipleNotices] = useState<NoticeEntry[]>([]);
   
   // Guarantee and periodic adjustments
+  const [guaranteeType, setGuaranteeType] = useState<"multiplier" | "fixed_uf" | "fixed_clp">("multiplier");
   const [guaranteeMultiplier, setGuaranteeMultiplier] = useState("");
+  const [guaranteeFixedAmount, setGuaranteeFixedAmount] = useState("");
   const [hasPeriodicAdjustments, setHasPeriodicAdjustments] = useState(false);
   const [adjustmentType, setAdjustmentType] = useState<"percentage" | "fixed">("percentage");
   const [adjustmentValue, setAdjustmentValue] = useState("");
@@ -289,7 +291,9 @@ const EditContract = () => {
         }
         
         // Load guarantee and periodic adjustments
+        setGuaranteeType((version as any).guarantee_type || "multiplier");
         setGuaranteeMultiplier(version.guarantee_multiplier?.toString() || "");
+        setGuaranteeFixedAmount((version as any).guarantee_fixed_amount?.toString() || "");
         setHasPeriodicAdjustments(version.has_periodic_adjustments || false);
         setAdjustmentType((version as any).adjustment_type || "percentage");
         setAdjustmentValue((version as any).adjustment_value?.toString() || "");
@@ -478,7 +482,10 @@ const EditContract = () => {
             duration_months: parseInt(duration) || 12,
             notice_type: noticeType === "rangos" ? "rangos" as any : noticeType,
             notice_value: noticeType === "rangos" ? "" : (noticeValue || "3"),
-            guarantee_multiplier: guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
+            guarantee_multiplier: guaranteeType === 'multiplier' && guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
+            guarantee_type: guaranteeType,
+            guarantee_fixed_amount: (guaranteeType === 'fixed_uf' || guaranteeType === 'fixed_clp') && guaranteeFixedAmount ? parseFloat(guaranteeFixedAmount) : null,
+            guarantee_fixed_currency: guaranteeType === 'fixed_clp' ? 'CLP' : 'UF',
             has_periodic_adjustments: hasPeriodicAdjustments,
             adjustment_type: hasPeriodicAdjustments ? adjustmentType : null,
             adjustment_value: hasPeriodicAdjustments && adjustmentValue ? parseFloat(adjustmentValue) : null,
@@ -519,7 +526,10 @@ const EditContract = () => {
             duration_months: parseInt(duration) || 12,
             notice_type: (noticeType === "rangos" ? "rangos" : noticeType) as any,
             notice_value: noticeType === "rangos" ? "" : (noticeValue || "3"),
-            guarantee_multiplier: guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
+            guarantee_multiplier: guaranteeType === 'multiplier' && guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
+            guarantee_type: guaranteeType,
+            guarantee_fixed_amount: (guaranteeType === 'fixed_uf' || guaranteeType === 'fixed_clp') && guaranteeFixedAmount ? parseFloat(guaranteeFixedAmount) : null,
+            guarantee_fixed_currency: guaranteeType === 'fixed_clp' ? 'CLP' : 'UF',
             has_periodic_adjustments: hasPeriodicAdjustments,
             adjustment_type: hasPeriodicAdjustments ? adjustmentType : null,
             adjustment_value: hasPeriodicAdjustments && adjustmentValue ? parseFloat(adjustmentValue) : null,
@@ -1246,63 +1256,133 @@ const EditContract = () => {
                             );
                           case "guarantee":
                             return (
-                              <div className="space-y-2">
-                                <Label htmlFor="guaranteeMultiplier">Garantía (multiplicador del arriendo)</Label>
-                                <div className="flex items-center gap-4">
-                                  <Input
-                                    id="guaranteeMultiplier"
-                                    type="number"
-                                    step="0.5"
-                                    min="0"
-                                    placeholder="Ej: 2"
-                                    value={guaranteeMultiplier}
-                                    onChange={(e) => setGuaranteeMultiplier(e.target.value)}
-                                    className="w-24"
-                                  />
-                                  <span className="text-sm text-muted-foreground">×</span>
-                                  <span className="text-sm text-muted-foreground">
-                                    {regimeRent || "0"} {currency}{isRegimeRentUfM2 ? "/m²" : ""}
-                                    {isRegimeRentUfM2 && superficieEdificadaLocal ? ` × ${superficieEdificadaLocal} m²` : ""}
-                                  </span>
-                                  <span className="text-sm text-muted-foreground">=</span>
-                                  <span className="text-sm font-medium">
-                                    {(() => {
-                                      if (!guaranteeMultiplier || !regimeRent) return `0 ${currency}`;
-                                      const baseRent = parseFloat(regimeRent);
-                                      const actualRent = isRegimeRentUfM2 && superficieEdificadaLocal 
-                                        ? baseRent * superficieEdificadaLocal 
-                                        : baseRent;
-                                      const total = parseFloat(guaranteeMultiplier) * actualRent;
-                                      return `${total.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
-                                    })()}
-                                  </span>
+                              <div className="space-y-4">
+                                <div className="space-y-2">
+                                  <Label className="text-sm font-medium">Tipo de Garantía</Label>
+                                  <RadioGroup
+                                    value={guaranteeType}
+                                    onValueChange={(value) => {
+                                      setGuaranteeType(value as "multiplier" | "fixed_uf" | "fixed_clp");
+                                      setHasUnsavedChanges(true);
+                                    }}
+                                    className="flex flex-col gap-2"
+                                  >
+                                    <div className="flex items-center space-x-2">
+                                      <RadioGroupItem value="multiplier" id="guarantee_multiplier" />
+                                      <Label htmlFor="guarantee_multiplier" className="text-sm font-normal cursor-pointer">
+                                        Multiplicador del arriendo
+                                      </Label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                      <RadioGroupItem value="fixed_uf" id="guarantee_fixed_uf" />
+                                      <Label htmlFor="guarantee_fixed_uf" className="text-sm font-normal cursor-pointer">
+                                        Monto fijo en UF
+                                      </Label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                      <RadioGroupItem value="fixed_clp" id="guarantee_fixed_clp" />
+                                      <Label htmlFor="guarantee_fixed_clp" className="text-sm font-normal cursor-pointer">
+                                        Monto fijo en Pesos ($)
+                                      </Label>
+                                    </div>
+                                  </RadioGroup>
                                 </div>
-                                {currency === "CLP" && ufValue > 0 && guaranteeMultiplier && regimeRent && (
-                                  <p className="text-xs text-muted-foreground">
-                                    {(() => {
-                                      const baseRent = parseFloat(regimeRent);
-                                      const actualRent = isRegimeRentUfM2 && superficieEdificadaLocal 
-                                        ? baseRent * superficieEdificadaLocal 
-                                        : baseRent;
-                                      const total = parseFloat(guaranteeMultiplier) * convertPesosToUF(actualRent);
-                                      return `≈ ${total.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
-                                    })()}
-                                  </p>
+
+                                {guaranteeType === "multiplier" && (
+                                  <div className="space-y-2">
+                                    <Label htmlFor="guaranteeMultiplier">Multiplicador</Label>
+                                    <div className="flex items-center gap-4">
+                                      <Input
+                                        id="guaranteeMultiplier"
+                                        type="number"
+                                        step="0.5"
+                                        min="0"
+                                        placeholder="Ej: 2"
+                                        value={guaranteeMultiplier}
+                                        onChange={(e) => {
+                                          setGuaranteeMultiplier(e.target.value);
+                                          setHasUnsavedChanges(true);
+                                        }}
+                                        className="w-24"
+                                      />
+                                      <span className="text-sm text-muted-foreground">×</span>
+                                      <span className="text-sm text-muted-foreground">
+                                        {regimeRent || "0"} {currency}{isRegimeRentUfM2 ? "/m²" : ""}
+                                        {isRegimeRentUfM2 && superficieEdificadaLocal ? ` × ${superficieEdificadaLocal} m²` : ""}
+                                      </span>
+                                      <span className="text-sm text-muted-foreground">=</span>
+                                      <span className="text-sm font-medium">
+                                        {(() => {
+                                          if (!guaranteeMultiplier || !regimeRent) return `0 ${currency}`;
+                                          const baseRent = parseFloat(regimeRent);
+                                          const actualRent = isRegimeRentUfM2 && superficieEdificadaLocal 
+                                            ? baseRent * superficieEdificadaLocal 
+                                            : baseRent;
+                                          const total = parseFloat(guaranteeMultiplier) * actualRent;
+                                          return `${total.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+                                        })()}
+                                      </span>
+                                    </div>
+                                    {currency === "CLP" && ufValue > 0 && guaranteeMultiplier && regimeRent && (
+                                      <p className="text-xs text-muted-foreground">
+                                        {(() => {
+                                          const baseRent = parseFloat(regimeRent);
+                                          const actualRent = isRegimeRentUfM2 && superficieEdificadaLocal 
+                                            ? baseRent * superficieEdificadaLocal 
+                                            : baseRent;
+                                          const total = parseFloat(guaranteeMultiplier) * convertPesosToUF(actualRent);
+                                          return `≈ ${total.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
+                                        })()}
+                                      </p>
+                                    )}
+                                    {currency === "UF" && ufValue > 0 && guaranteeMultiplier && regimeRent && (
+                                      <p className="text-xs text-muted-foreground">
+                                        {(() => {
+                                          const baseRent = parseFloat(regimeRent);
+                                          const actualRent = isRegimeRentUfM2 && superficieEdificadaLocal 
+                                            ? baseRent * superficieEdificadaLocal 
+                                            : baseRent;
+                                          const total = Math.round(parseFloat(guaranteeMultiplier) * actualRent * ufValue);
+                                          return `≈ $${total.toLocaleString("es-CL")}`;
+                                        })()}
+                                      </p>
+                                    )}
+                                  </div>
                                 )}
-                                {currency === "UF" && ufValue > 0 && guaranteeMultiplier && regimeRent && (
-                                  <p className="text-xs text-muted-foreground">
-                                    {(() => {
-                                      const baseRent = parseFloat(regimeRent);
-                                      const actualRent = isRegimeRentUfM2 && superficieEdificadaLocal 
-                                        ? baseRent * superficieEdificadaLocal 
-                                        : baseRent;
-                                      const total = Math.round(parseFloat(guaranteeMultiplier) * actualRent * ufValue);
-                                      return `≈ $${total.toLocaleString("es-CL")}`;
-                                    })()}
-                                  </p>
+
+                                {(guaranteeType === "fixed_uf" || guaranteeType === "fixed_clp") && (
+                                  <div className="space-y-2">
+                                    <Label htmlFor="guaranteeFixedAmount">
+                                      Monto de Garantía ({guaranteeType === "fixed_clp" ? "$" : "UF"})
+                                    </Label>
+                                    <Input
+                                      id="guaranteeFixedAmount"
+                                      type="number"
+                                      step={guaranteeType === "fixed_clp" ? "1000" : "0.01"}
+                                      min="0"
+                                      placeholder={guaranteeType === "fixed_clp" ? "Ej: 5000000" : "Ej: 100"}
+                                      value={guaranteeFixedAmount}
+                                      onChange={(e) => {
+                                        setGuaranteeFixedAmount(e.target.value);
+                                        setHasUnsavedChanges(true);
+                                      }}
+                                      className="w-48"
+                                    />
+                                    {guaranteeType === "fixed_uf" && ufValue > 0 && guaranteeFixedAmount && (
+                                      <p className="text-xs text-muted-foreground">
+                                        ≈ ${Math.round(parseFloat(guaranteeFixedAmount) * ufValue).toLocaleString("es-CL")}
+                                      </p>
+                                    )}
+                                    {guaranteeType === "fixed_clp" && ufValue > 0 && guaranteeFixedAmount && (
+                                      <p className="text-xs text-muted-foreground">
+                                        ≈ {(parseFloat(guaranteeFixedAmount) / ufValue).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
+                                      </p>
+                                    )}
+                                  </div>
                                 )}
+
                                 <p className="text-xs text-muted-foreground">
-                                  Monto de Garantía de Arriendo{isRegimeRentUfM2 ? " (calculado sobre arriendo total)" : ""}
+                                  Monto de Garantía de Arriendo{isRegimeRentUfM2 && guaranteeType === "multiplier" ? " (calculado sobre arriendo total)" : ""}
                                 </p>
                               </div>
                             );
