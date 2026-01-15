@@ -40,7 +40,9 @@ interface RentEscalation {
 interface ContractVersion {
   id: string;
   regime_rent: number;
+  regime_rent_is_uf_m2?: boolean | null;
   initial_rent?: number | null;
+  initial_rent_is_uf_m2?: boolean | null;
   grace_months?: number | null;
   duration_months: number;
   is_current: boolean;
@@ -249,7 +251,9 @@ const Contracts = () => {
         contract_versions (
           id,
           regime_rent,
+          regime_rent_is_uf_m2,
           initial_rent,
+          initial_rent_is_uf_m2,
           grace_months,
           duration_months,
           is_current,
