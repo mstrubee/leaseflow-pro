@@ -1103,6 +1103,7 @@ export type Database = {
       }
       contracts: {
         Row: {
+          clasificacion: string | null
           company_id: string | null
           created_at: string
           deleted_at: string | null
@@ -1118,6 +1119,7 @@ export type Database = {
           num_estacionamientos: number | null
           obra_status: string | null
           operation_status: string | null
+          origen: string | null
           patente_status: string | null
           proyecto_status: string | null
           requires_special_attention: boolean | null
@@ -1137,6 +1139,7 @@ export type Database = {
           venta_estimada_max: number | null
         }
         Insert: {
+          clasificacion?: string | null
           company_id?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -1152,6 +1155,7 @@ export type Database = {
           num_estacionamientos?: number | null
           obra_status?: string | null
           operation_status?: string | null
+          origen?: string | null
           patente_status?: string | null
           proyecto_status?: string | null
           requires_special_attention?: boolean | null
@@ -1171,6 +1175,7 @@ export type Database = {
           venta_estimada_max?: number | null
         }
         Update: {
+          clasificacion?: string | null
           company_id?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -1186,6 +1191,7 @@ export type Database = {
           num_estacionamientos?: number | null
           obra_status?: string | null
           operation_status?: string | null
+          origen?: string | null
           patente_status?: string | null
           proyecto_status?: string | null
           requires_special_attention?: boolean | null
