@@ -110,7 +110,7 @@ interface ContractsTableProps {
 export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateField, onRefresh }: ContractsTableProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { ufValue, convertUFToPesos } = useEconomicIndicators();
+  const { ufValue, convertUFToPesos, convertPesosToUF } = useEconomicIndicators();
   const { isAdmin } = useAuth();
   const [contractAlerts, setContractAlerts] = useState<Record<string, ContractAlert[]>>({});
   const [editingVenta, setEditingVenta] = useState<string | null>(null);
@@ -564,18 +564,36 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                         </div>
                       ) : (
                         <button
-                          className="flex items-center gap-1 text-xs hover:bg-muted/50 px-2 py-1 rounded"
+                          className="flex flex-col items-center gap-0.5 text-xs hover:bg-muted/50 px-2 py-1 rounded"
                           onClick={(e) => {
                             e.stopPropagation();
                             setEditingVenta(contract.id);
                             setVentaValue(contract.venta_estimada ? contract.venta_estimada.toLocaleString('es-CL') : "");
                           }}
                         >
-                          <DollarSign className="h-3 w-3 text-muted-foreground" />
-                          {contract.venta_estimada 
-                            ? `$${contract.venta_estimada.toLocaleString('es-CL')}`
-                            : <span className="text-muted-foreground italic">Agregar</span>
-                          }
+                          {contract.venta_estimada ? (
+                            <>
+                              <div className="flex items-center gap-1">
+                                <DollarSign className="h-3 w-3 text-muted-foreground" />
+                                <span className="font-medium">
+                                  {(contract.venta_estimada / 1000000).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} MM$
+                                </span>
+                              </div>
+                              {ufValue > 0 && (
+                                <div className="text-[10px] text-muted-foreground">
+                                  {convertPesosToUF(contract.venta_estimada).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} UF
+                                  {contract.superficie_edificada_local && contract.superficie_edificada_local > 0 && (
+                                    <span> · {(convertPesosToUF(contract.venta_estimada) / contract.superficie_edificada_local).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} UF/m²</span>
+                                  )}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <DollarSign className="h-3 w-3 text-muted-foreground" />
+                              <span className="text-muted-foreground italic">Agregar</span>
+                            </div>
+                          )}
                         </button>
                       )}
                     </TableCell>
