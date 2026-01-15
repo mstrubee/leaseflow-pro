@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Loader2, Plus, X, RotateCcw, ChevronsUpDown } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, X, ChevronsUpDown } from "lucide-react";
 import { RegionCommuneSelect } from "@/components/contracts/RegionCommuneSelect";
 import { RentEscalations, Escalation, GraceMonthsInput } from "@/components/contracts/RentEscalations";
 import { CurrencyInput } from "@/components/contracts/CurrencyInput";
@@ -1036,16 +1036,6 @@ const EditContract = () => {
                       className="h-8 text-xs"
                     >
                       Expandir
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={resetToDefault}
-                      className="h-8 text-xs"
-                    >
-                      <RotateCcw className="h-3 w-3 mr-1" />
-                      Reset
                     </Button>
                   </div>
                 )}
