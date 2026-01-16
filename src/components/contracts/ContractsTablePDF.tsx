@@ -243,18 +243,20 @@ export const generateContractsListPDF = async (
               metrosLinealesFrente: metrosFrente,
             });
 
-            const fmt = (n: number) => n.toLocaleString('es-CL', { minimumFractionDigits: 2 });
-            const lines: string[] = [`${fmt(breakdown.total)} UF`];
+            // UF totals: 2 decimals max | UF/m²: 3 decimals max
+            const fmtUF = (n: number) => n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const fmtUFM2 = (n: number) => n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+            const lines: string[] = [`${fmtUF(breakdown.total)} UF`];
 
-            // If base is UF/m², keep that reference visible
+            // If base is UF/m², keep that reference visible (3 decimals)
             if (breakdown.regimeRentUfM2 != null && superficie > 0) {
-              lines.push(`(Canon ${fmt(breakdown.regimeRentUfM2)} UF/m²)`);
+              lines.push(`(Canon ${fmtUFM2(breakdown.regimeRentUfM2)} UF/m²)`);
             }
 
             const extras: string[] = [];
-            if (breakdown.ggcc > 0) extras.push(`GGCC ${fmt(breakdown.ggcc)}`);
-            if (breakdown.fondoPromocion > 0) extras.push(`FP ${fmt(breakdown.fondoPromocion)}`);
-            if (breakdown.otrosEgresos > 0) extras.push(`Otros ${fmt(breakdown.otrosEgresos)}`);
+            if (breakdown.ggcc > 0) extras.push(`GGCC ${fmtUF(breakdown.ggcc)}`);
+            if (breakdown.fondoPromocion > 0) extras.push(`FP ${fmtUF(breakdown.fondoPromocion)}`);
+            if (breakdown.otrosEgresos > 0) extras.push(`Otros ${fmtUF(breakdown.otrosEgresos)}`);
             if (extras.length > 0) {
               lines.push(`(${extras.join(' + ')})`);
             }
