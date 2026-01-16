@@ -291,17 +291,24 @@ export const DashboardStats = () => {
     let totalSucursales = 0;
     
     stats.byRegion.forEach((region) => {
-      const numComunas = Object.keys(region.communes).length;
+      // Only include regions with vigentes contracts (Autoplanet or Agroplanet)
       const autoplanet = region.vigentesAutoplanet;
       const agroplanet = region.vigentesAgroplanet;
       const sucursales = autoplanet + agroplanet;
       
-      totalComunas += numComunas;
+      if (sucursales === 0) return; // Skip regions with no vigentes
+      
+      // Count only communes that have vigentes contracts
+      const comunasConVigentes = Object.values(region.communes).filter(
+        (c) => c.vigentesAutoplanet > 0 || c.vigentesAgroplanet > 0
+      ).length;
+      
+      totalComunas += comunasConVigentes;
       totalAutoplanet += autoplanet;
       totalAgroplanet += agroplanet;
       totalSucursales += sucursales;
       
-      data.push([region.region, numComunas, autoplanet, agroplanet, sucursales]);
+      data.push([region.region, comunasConVigentes, autoplanet, agroplanet, sucursales]);
     });
     
     // Add totals row
