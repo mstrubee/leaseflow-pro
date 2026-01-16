@@ -50,29 +50,29 @@ export function ColumnWidthsManager({
         </DialogHeader>
         
         <div className="space-y-6 py-4 max-h-[400px] overflow-y-auto">
-          {visibleColumns.map((columnKey) => {
-            const config = DEFAULT_COLUMN_WIDTHS[columnKey];
-            if (!config) return null;
-            
-            const currentWidth = columnWidths[columnKey] ?? config.width;
-            
-            return (
-              <div key={columnKey} className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">{config.label}</Label>
-                  <span className="text-sm text-muted-foreground">{currentWidth}%</span>
+          {visibleColumns
+            .filter((columnKey) => DEFAULT_COLUMN_WIDTHS[columnKey])
+            .map((columnKey) => {
+              const config = DEFAULT_COLUMN_WIDTHS[columnKey];
+              const currentWidth = columnWidths?.[columnKey] ?? config.width;
+              
+              return (
+                <div key={columnKey} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">{config.label}</Label>
+                    <span className="text-sm text-muted-foreground">{currentWidth}%</span>
+                  </div>
+                  <Slider
+                    value={[currentWidth]}
+                    onValueChange={(values) => handleWidthChange(columnKey, values)}
+                    min={5}
+                    max={30}
+                    step={1}
+                    className="w-full"
+                  />
                 </div>
-                <Slider
-                  value={[currentWidth]}
-                  onValueChange={(values) => handleWidthChange(columnKey, values)}
-                  min={5}
-                  max={30}
-                  step={1}
-                  className="w-full"
-                />
-              </div>
-            );
-          })}
+              );
+            })}
         </div>
 
         <DialogFooter className="flex justify-between sm:justify-between">
