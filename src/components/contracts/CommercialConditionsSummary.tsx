@@ -611,7 +611,7 @@ export function CommercialConditionsSummary({
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <DollarSign className="h-3 w-3" />
-              {showCurrentLabel ? "Canon Actual" : "Canon en Régimen"}
+              {showCurrentLabel ? "Canon Actual" : "Canon de Arriendo"}
               {version.regime_rent_is_uf_m2 && (
                 <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">UF/m²</Badge>
               )}
