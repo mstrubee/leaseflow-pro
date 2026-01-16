@@ -26,6 +26,7 @@ import { Search, ArrowLeft, Trash2, ArrowUpDown, X, Cloud, Loader2, ExternalLink
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { ContractsTable, ContractSortField } from "@/components/contracts/ContractsTable";
 import { ColumnSelector } from "@/components/contracts/ColumnSelector";
+import { ContractRowSelector } from "@/components/contracts/ContractRowSelector";
 import { generateContractsListPDF, getAvailableColumns } from "@/components/contracts/ContractsTablePDF";
 import { SortOrder } from "@/components/contracts/SortableTableHead";
 import { useAuth } from "@/hooks/useAuth";
@@ -692,6 +693,9 @@ const Contracts = () => {
   const [selectedPdfColumns, setSelectedPdfColumns] = useState<string[]>([
     "contrato", "empresa", "ubicacion", "costo_arriendo", "duracion"
   ]);
+  
+  // PDF row exclusion state
+  const [excludedPdfContractIds, setExcludedPdfContractIds] = useState<string[]>([]);
 
   const handleDownloadReport = async () => {
     const isFirmado = statusFilter === "firmado";
@@ -701,8 +705,14 @@ const Contracts = () => {
       : isFirmado 
         ? "Contratos Vigentes" 
         : "Lista de Contratos";
+    
+    // Filter out excluded contracts
+    const contractsForPdf = filteredContracts.filter(
+      c => !excludedPdfContractIds.includes(c.id)
+    );
+    
     await generateContractsListPDF(
-      filteredContracts as any, 
+      contractsForPdf as any, 
       selectedPdfColumns, 
       title, 
       isFirmado, 
@@ -867,19 +877,28 @@ const Contracts = () => {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <ColumnSelector
-                availableColumns={availablePdfColumns}
-                selectedColumns={selectedPdfColumns}
-                onSelectionChange={setSelectedPdfColumns}
-              />
-              <Button
-                variant="outline"
-                onClick={handleDownloadReport}
-                className="gap-2"
-              >
-                <Download className="h-4 w-4" />
-                Descargar PDF
-              </Button>
+              {/* PDF Export Group */}
+              <div className="flex items-center gap-1 border rounded-md p-1 bg-muted/30">
+                <ColumnSelector
+                  availableColumns={availablePdfColumns}
+                  selectedColumns={selectedPdfColumns}
+                  onSelectionChange={setSelectedPdfColumns}
+                />
+                <ContractRowSelector
+                  contracts={filteredContracts.map(c => ({ id: c.id, name: c.name }))}
+                  excludedContractIds={excludedPdfContractIds}
+                  onExclusionChange={setExcludedPdfContractIds}
+                />
+                <Button
+                  variant="outline"
+                  onClick={handleDownloadReport}
+                  className="gap-2"
+                  size="sm"
+                >
+                  <Download className="h-4 w-4" />
+                  Descargar PDF
+                </Button>
+              </div>
               <Button
                 variant="outline"
                 onClick={handleSyncAllToDrive}
