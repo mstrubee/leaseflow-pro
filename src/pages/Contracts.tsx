@@ -28,8 +28,10 @@ import { ContractsTable, ContractSortField } from "@/components/contracts/Contra
 import { ColumnSelector } from "@/components/contracts/ColumnSelector";
 import { ContractRowSelector } from "@/components/contracts/ContractRowSelector";
 import { generateContractsListPDF, getAvailableColumns } from "@/components/contracts/ContractsTablePDF";
+import { ColumnWidthsManager } from "@/components/contracts/ColumnWidthsManager";
 import { SortOrder } from "@/components/contracts/SortableTableHead";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
+import { useContractColumnWidths, DEFAULT_COLUMN_WIDTHS } from "@/hooks/useContractColumnWidths";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
@@ -134,8 +136,9 @@ const Contracts = () => {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = searchParams.get("status") || "todos";
-  const { user, loading: authLoading, roleLoaded } = useAuth();
+  const { user, loading: authLoading, roleLoaded, isAdmin } = useAuth();
   const { ufValue } = useEconomicIndicators();
+  const { columnWidths, updateColumnWidth, resetToDefaults } = useContractColumnWidths();
 
   useEffect(() => {
     // Remember last contracts list URL so the detail "Volver" can restore filters even after refresh
@@ -902,6 +905,20 @@ const Contracts = () => {
                   Descargar PDF
                 </Button>
               </div>
+              {isAdmin && (
+                <ColumnWidthsManager
+                  columnWidths={columnWidths}
+                  onUpdateWidth={updateColumnWidth}
+                  onReset={resetToDefaults}
+                  visibleColumns={
+                    statusFilter === "en_negociacion"
+                      ? ["name", "ubicacion", "categoria", "clasificacion", "origen", "venta_estimada", "costo_arriendo", "duracion"]
+                      : statusFilter === "firmado"
+                        ? ["name", "ubicacion", "costo_arriendo", "duracion", "termino", "aviso", "estado"]
+                        : ["name", "ubicacion", "costo_arriendo", "duracion"]
+                  }
+                />
+              )}
               <Button
                 variant="outline"
                 onClick={handleSyncAllToDrive}
@@ -1173,6 +1190,7 @@ const Contracts = () => {
             sortField={sortField}
             sortOrder={sortDirection as SortOrder}
             onSort={handleSort}
+            columnWidths={columnWidths}
           />
         ) : (
           <Card className="p-12">
