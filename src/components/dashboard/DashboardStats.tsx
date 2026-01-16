@@ -23,6 +23,9 @@ interface RegionStats {
   region: string;
   total: number;
   vigentes: number;
+  vigentesAutoplanet: number;
+  vigentesAgroplanet: number;
+  vigentesGrupoPlanet: number;
   negociacion: number;
   vencidos: number;
 }
@@ -38,6 +41,9 @@ interface TerminationAlert {
 interface Stats {
   totalContracts: number;
   totalVigentes: number;
+  totalVigentesAutoplanet: number;
+  totalVigentesAgroplanet: number;
+  totalVigentesGrupoPlanet: number;
   totalNegociacion: number;
   totalVencidos: number;
   totalAtencionEspecial: number;
@@ -52,6 +58,9 @@ export const DashboardStats = () => {
   const [stats, setStats] = useState<Stats>({
     totalContracts: 0,
     totalVigentes: 0,
+    totalVigentesAutoplanet: 0,
+    totalVigentesAgroplanet: 0,
+    totalVigentesGrupoPlanet: 0,
     totalNegociacion: 0,
     totalVencidos: 0,
     totalAtencionEspecial: 0,
@@ -76,12 +85,18 @@ export const DashboardStats = () => {
           status,
           requires_special_attention,
           contract_addresses (region),
-          termination_notices (id, notice_type, required_exit_date, issuer_name)
+          termination_notices (id, notice_type, required_exit_date, issuer_name),
+          contract_companies (
+            company:companies (name)
+          )
         `)
         .is("deleted_at", null);
 
       const regionMap: Record<string, RegionStats> = {};
       let totalVigentes = 0;
+      let totalVigentesAutoplanet = 0;
+      let totalVigentesAgroplanet = 0;
+      let totalVigentesGrupoPlanet = 0;
       let totalNegociacion = 0;
       let totalVencidos = 0;
       let totalAtencionEspecial = 0;
@@ -89,12 +104,16 @@ export const DashboardStats = () => {
 
       contracts?.forEach((contract: any) => {
         const region = contract.contract_addresses?.[0]?.region || "Sin región";
+        const companyName = contract.contract_companies?.[0]?.company?.name?.toLowerCase() || "";
         
         if (!regionMap[region]) {
           regionMap[region] = {
             region,
             total: 0,
             vigentes: 0,
+            vigentesAutoplanet: 0,
+            vigentesAgroplanet: 0,
+            vigentesGrupoPlanet: 0,
             negociacion: 0,
             vencidos: 0,
           };
@@ -119,6 +138,19 @@ export const DashboardStats = () => {
           case "firmado":
             regionMap[region].vigentes++;
             totalVigentes++;
+            
+            // Categorize by company
+            if (companyName.includes("autoplanet")) {
+              regionMap[region].vigentesAutoplanet++;
+              totalVigentesAutoplanet++;
+            } else if (companyName.includes("agroplanet")) {
+              regionMap[region].vigentesAgroplanet++;
+              totalVigentesAgroplanet++;
+            } else if (companyName.includes("grupo planet") || companyName.includes("grupoplanet")) {
+              regionMap[region].vigentesGrupoPlanet++;
+              totalVigentesGrupoPlanet++;
+            }
+            
             if (contract.requires_special_attention) {
               totalAtencionEspecial++;
             }
@@ -146,6 +178,9 @@ export const DashboardStats = () => {
       setStats({
         totalContracts: contracts?.length || 0,
         totalVigentes,
+        totalVigentesAutoplanet,
+        totalVigentesAgroplanet,
+        totalVigentesGrupoPlanet,
         totalNegociacion,
         totalVencidos,
         totalAtencionEspecial,
@@ -301,6 +336,9 @@ export const DashboardStats = () => {
                         <TableHead>Región</TableHead>
                         <TableHead className="text-center">General</TableHead>
                         <TableHead className="text-center text-green-600">Vigentes</TableHead>
+                        <TableHead className="text-center text-green-700">Autoplanet</TableHead>
+                        <TableHead className="text-center text-green-500">Agroplanet</TableHead>
+                        <TableHead className="text-center text-green-400">Grupo Planet</TableHead>
                         <TableHead className="text-center text-yellow-600">Negociación</TableHead>
                         <TableHead className="text-center text-red-600">Vencidos</TableHead>
                       </TableRow>
@@ -326,6 +364,15 @@ export const DashboardStats = () => {
                           >
                             {row.vigentes}
                           </TableCell>
+                          <TableCell className="text-center text-green-700">
+                            {row.vigentesAutoplanet}
+                          </TableCell>
+                          <TableCell className="text-center text-green-500">
+                            {row.vigentesAgroplanet}
+                          </TableCell>
+                          <TableCell className="text-center text-green-400">
+                            {row.vigentesGrupoPlanet}
+                          </TableCell>
                           <TableCell 
                             className="text-center text-yellow-600 cursor-pointer hover:bg-yellow-100/50"
                             onClick={() => navigate(`/contracts?ubicacion=${encodeURIComponent(row.region)}&status=en_negociacion`)}
@@ -342,7 +389,7 @@ export const DashboardStats = () => {
                       ))}
                       {stats.byRegion.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                          <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                             No hay contratos registrados
                           </TableCell>
                         </TableRow>
