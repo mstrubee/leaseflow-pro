@@ -1,9 +1,10 @@
 import { useUserPreferences } from "./useUserPreferences";
+import type { CSSProperties } from "react";
 
 export interface ColumnWidth {
   key: string;
   label: string;
-  width: number; // percentage or pixels
+  width: number; // percentage
   minWidth?: number;
 }
 
@@ -26,31 +27,36 @@ export type ColumnWidthsConfig = Record<string, number>;
 
 const PREFERENCE_KEY = "contracts_column_widths";
 
+const getDefaultWidths = (): ColumnWidthsConfig =>
+  Object.fromEntries(Object.entries(DEFAULT_COLUMN_WIDTHS).map(([key, config]) => [key, config.width]));
+
 export function useContractColumnWidths() {
-  const { value: columnWidths, setValue: setColumnWidths, loading } = useUserPreferences<ColumnWidthsConfig>({
+  const {
+    value: columnWidthsRaw,
+    setValue: setColumnWidths,
+    loading,
+  } = useUserPreferences<ColumnWidthsConfig>({
     preferenceKey: PREFERENCE_KEY,
-    defaultValue: Object.fromEntries(
-      Object.entries(DEFAULT_COLUMN_WIDTHS).map(([key, config]) => [key, config.width])
-    ),
+    defaultValue: getDefaultWidths(),
     localStorageKey: PREFERENCE_KEY,
   });
 
+  const columnWidths: ColumnWidthsConfig =
+    columnWidthsRaw && typeof columnWidthsRaw === "object" ? columnWidthsRaw : getDefaultWidths();
+
   const updateColumnWidth = (columnKey: string, width: number) => {
-    const newWidths = { ...columnWidths, [columnKey]: width };
-    setColumnWidths(newWidths);
+    setColumnWidths({ ...columnWidths, [columnKey]: width });
   };
 
   const resetToDefaults = () => {
-    setColumnWidths(
-      Object.fromEntries(
-        Object.entries(DEFAULT_COLUMN_WIDTHS).map(([key, config]) => [key, config.width])
-      )
-    );
+    setColumnWidths(getDefaultWidths());
   };
 
-  const getColumnStyle = (columnKey: string): React.CSSProperties => {
-    const width = columnWidths[columnKey] ?? DEFAULT_COLUMN_WIDTHS[columnKey]?.width ?? 10;
+  const getColumnStyle = (columnKey: string): CSSProperties => {
+    const fallbackWidth = DEFAULT_COLUMN_WIDTHS[columnKey]?.width ?? 10;
+    const width = columnWidths?.[columnKey] ?? fallbackWidth;
     const minWidth = DEFAULT_COLUMN_WIDTHS[columnKey]?.minWidth ?? 80;
+
     return {
       width: `${width}%`,
       minWidth: `${minWidth}px`,
@@ -66,3 +72,4 @@ export function useContractColumnWidths() {
     loading,
   };
 }
+
