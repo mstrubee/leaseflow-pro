@@ -562,7 +562,7 @@ const NewContract = () => {
                         escalations={escalations}
                         onChange={setEscalations}
                         initialRent={parseFloat(initialRent) || 0}
-                        regimeRent={parseFloat(regimeRent) || 0}
+                        regimeRent={0}
                         durationMonths={parseInt(duration) || 12}
                         currency={currency}
                         graceMonths={graceMonths}
@@ -996,10 +996,10 @@ const NewContract = () => {
                   
                   <DurationInput
                     id="adjustmentPeriodicityMonthsNew"
-                    label="Periodicidad"
+                    label="Periodicidad (opcional)"
                     value={adjustmentPeriodicityMonths}
                     onChange={setAdjustmentPeriodicityMonths}
-                    description="Cada cuánto tiempo se aplica el reajuste"
+                    description="Cada cuánto tiempo se aplica el reajuste. Dejar vacío para un reajuste único."
                   />
                   {adjustmentValue && regimeRent && firstAdjustmentMonth && adjustmentPeriodicityMonths && (
                     <div className="bg-background/50 rounded p-3 space-y-2">
