@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, Fragment } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ChevronRight, Download } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -18,6 +18,18 @@ import { EconomicIndicators } from "./EconomicIndicators";
 import { PatentsModule } from "@/components/patents/PatentsModule";
 import { SelectableElement } from "@/components/admin/SelectableElement";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
+import * as XLSX from "xlsx";
+
+interface CommuneStats {
+  commune: string;
+  total: number;
+  vigentes: number;
+  vigentesAutoplanet: number;
+  vigentesAgroplanet: number;
+  vigentesGrupoPlanet: number;
+  negociacion: number;
+  vencidos: number;
+}
 
 interface RegionStats {
   region: string;
@@ -28,6 +40,7 @@ interface RegionStats {
   vigentesGrupoPlanet: number;
   negociacion: number;
   vencidos: number;
+  communes: Record<string, CommuneStats>;
 }
 
 interface TerminationAlert {
@@ -69,14 +82,27 @@ export const DashboardStats = () => {
     terminationAlerts: [],
   });
   const [statsLoading, setStatsLoading] = useState(true);
+  const [expandedRegions, setExpandedRegions] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadStats();
   }, []);
 
+  const toggleRegion = (region: string) => {
+    setExpandedRegions((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(region)) {
+        newSet.delete(region);
+      } else {
+        newSet.add(region);
+      }
+      return newSet;
+    });
+  };
+
   const loadStats = async () => {
     try {
-      // Load contracts for stats
+      // Load contracts for stats with commune info
       const { data: contracts } = await supabase
         .from("contracts")
         .select(`
@@ -84,7 +110,7 @@ export const DashboardStats = () => {
           name,
           status,
           requires_special_attention,
-          contract_addresses (region),
+          contract_addresses (region, commune),
           termination_notices (id, notice_type, required_exit_date, issuer_name),
           contract_companies (
             company:companies (name)
@@ -104,6 +130,7 @@ export const DashboardStats = () => {
 
       contracts?.forEach((contract: any) => {
         const region = contract.contract_addresses?.[0]?.region || "Sin región";
+        const commune = contract.contract_addresses?.[0]?.commune || "Sin comuna";
         const companyName = contract.contract_companies?.[0]?.company?.name?.toLowerCase() || "";
         
         if (!regionMap[region]) {
@@ -116,10 +143,26 @@ export const DashboardStats = () => {
             vigentesGrupoPlanet: 0,
             negociacion: 0,
             vencidos: 0,
+            communes: {},
+          };
+        }
+
+        // Initialize commune if not exists
+        if (!regionMap[region].communes[commune]) {
+          regionMap[region].communes[commune] = {
+            commune,
+            total: 0,
+            vigentes: 0,
+            vigentesAutoplanet: 0,
+            vigentesAgroplanet: 0,
+            vigentesGrupoPlanet: 0,
+            negociacion: 0,
+            vencidos: 0,
           };
         }
 
         regionMap[region].total++;
+        regionMap[region].communes[commune].total++;
 
         // Check for termination notices with exit dates
         const notices = contract.termination_notices || [];
@@ -137,17 +180,21 @@ export const DashboardStats = () => {
         switch (contract.status) {
           case "firmado":
             regionMap[region].vigentes++;
+            regionMap[region].communes[commune].vigentes++;
             totalVigentes++;
             
             // Categorize by company
             if (companyName.includes("autoplanet")) {
               regionMap[region].vigentesAutoplanet++;
+              regionMap[region].communes[commune].vigentesAutoplanet++;
               totalVigentesAutoplanet++;
             } else if (companyName.includes("agroplanet")) {
               regionMap[region].vigentesAgroplanet++;
+              regionMap[region].communes[commune].vigentesAgroplanet++;
               totalVigentesAgroplanet++;
             } else if (companyName.includes("grupo planet") || companyName.includes("grupoplanet")) {
               regionMap[region].vigentesGrupoPlanet++;
+              regionMap[region].communes[commune].vigentesGrupoPlanet++;
               totalVigentesGrupoPlanet++;
             }
             
@@ -157,10 +204,12 @@ export const DashboardStats = () => {
             break;
           case "en_negociacion":
             regionMap[region].negociacion++;
+            regionMap[region].communes[commune].negociacion++;
             totalNegociacion++;
             break;
           case "vencido":
             regionMap[region].vencidos++;
+            regionMap[region].communes[commune].vencidos++;
             totalVencidos++;
             break;
         }
@@ -199,6 +248,63 @@ export const DashboardStats = () => {
     } else {
       navigate("/contracts?status=todos");
     }
+  };
+
+  const downloadExcel = () => {
+    const workbook = XLSX.utils.book_new();
+    
+    // Create data array with headers
+    const data: (string | number)[][] = [
+      ["Región", "N° de comunas con presencia", "N° locales Autoplanet", "N° locales Agroplanet", "Total Sucursales"]
+    ];
+    
+    let totalComunas = 0;
+    let totalAutoplanet = 0;
+    let totalAgroplanet = 0;
+    let totalSucursales = 0;
+    
+    stats.byRegion.forEach((region) => {
+      const numComunas = Object.keys(region.communes).length;
+      const autoplanet = region.vigentesAutoplanet;
+      const agroplanet = region.vigentesAgroplanet;
+      const sucursales = autoplanet + agroplanet;
+      
+      totalComunas += numComunas;
+      totalAutoplanet += autoplanet;
+      totalAgroplanet += agroplanet;
+      totalSucursales += sucursales;
+      
+      data.push([region.region, numComunas, autoplanet, agroplanet, sucursales]);
+    });
+    
+    // Add totals row
+    data.push(["Totales", totalComunas, totalAutoplanet, totalAgroplanet, totalSucursales]);
+    
+    const worksheet = XLSX.utils.aoa_to_sheet(data);
+    
+    // Set column widths
+    worksheet["!cols"] = [
+      { wch: 30 },
+      { wch: 25 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 15 },
+    ];
+    
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Resumen por Región");
+    
+    // Generate and download
+    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([excelBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "resumen_contratos_por_region.xlsx";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Wait for permissions to load before showing content to prevent flickering
@@ -327,13 +433,17 @@ export const DashboardStats = () => {
                     <CardTitle className="text-lg">Contratos por Región</CardTitle>
                   </Button>
                 </CollapsibleTrigger>
+                <Button variant="outline" size="sm" onClick={downloadExcel} className="gap-2">
+                  <Download className="h-4 w-4" />
+                  Descargar Excel
+                </Button>
               </CardHeader>
               <CollapsibleContent>
                 <CardContent>
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Región</TableHead>
+                        <TableHead className="w-[200px]">Región</TableHead>
                         <TableHead className="text-center">General</TableHead>
                         <TableHead className="text-center text-green-600">Vigentes</TableHead>
                         <TableHead className="text-center text-green-700">Autoplanet</TableHead>
@@ -344,49 +454,105 @@ export const DashboardStats = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {stats.byRegion.map((row) => (
-                        <TableRow key={row.region}>
-                          <TableCell 
-                            className="font-medium cursor-pointer hover:text-primary hover:underline"
-                            onClick={() => navigate(`/contracts?ubicacion=${encodeURIComponent(row.region)}&status=todos`)}
-                          >
-                            {row.region}
-                          </TableCell>
-                          <TableCell 
-                            className="text-center cursor-pointer hover:bg-muted/50"
-                            onClick={() => navigate(`/contracts?ubicacion=${encodeURIComponent(row.region)}&status=todos`)}
-                          >
-                            {row.total}
-                          </TableCell>
-                          <TableCell 
-                            className="text-center text-green-600 cursor-pointer hover:bg-green-100/50"
-                            onClick={() => navigate(`/contracts?ubicacion=${encodeURIComponent(row.region)}&status=firmado`)}
-                          >
-                            {row.vigentes}
-                          </TableCell>
-                          <TableCell className="text-center text-green-700">
-                            {row.vigentesAutoplanet}
-                          </TableCell>
-                          <TableCell className="text-center text-green-500">
-                            {row.vigentesAgroplanet}
-                          </TableCell>
-                          <TableCell className="text-center text-green-400">
-                            {row.vigentesGrupoPlanet}
-                          </TableCell>
-                          <TableCell 
-                            className="text-center text-yellow-600 cursor-pointer hover:bg-yellow-100/50"
-                            onClick={() => navigate(`/contracts?ubicacion=${encodeURIComponent(row.region)}&status=en_negociacion`)}
-                          >
-                            {row.negociacion}
-                          </TableCell>
-                          <TableCell 
-                            className="text-center text-red-600 cursor-pointer hover:bg-red-100/50"
-                            onClick={() => navigate(`/contracts?ubicacion=${encodeURIComponent(row.region)}&status=vencido`)}
-                          >
-                            {row.vencidos}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {stats.byRegion.map((row) => {
+                        const isExpanded = expandedRegions.has(row.region);
+                        const communesList = Object.values(row.communes).sort((a, b) => 
+                          a.commune.localeCompare(b.commune)
+                        );
+                        const hasCommunes = communesList.length > 0;
+                        
+                        return (
+                          <Fragment key={row.region}>
+                            <TableRow className="hover:bg-muted/30">
+                              <TableCell className="font-medium">
+                                <div className="flex items-center gap-2">
+                                  {hasCommunes && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 w-6 p-0"
+                                      onClick={() => toggleRegion(row.region)}
+                                    >
+                                      {isExpanded ? (
+                                        <ChevronDown className="h-4 w-4" />
+                                      ) : (
+                                        <ChevronRight className="h-4 w-4" />
+                                      )}
+                                    </Button>
+                                  )}
+                                  <span 
+                                    className="cursor-pointer hover:text-primary hover:underline"
+                                    onClick={() => navigate(`/contracts?ubicacion=${encodeURIComponent(row.region)}&status=todos`)}
+                                  >
+                                    {row.region}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell 
+                                className="text-center cursor-pointer hover:bg-muted/50"
+                                onClick={() => navigate(`/contracts?ubicacion=${encodeURIComponent(row.region)}&status=todos`)}
+                              >
+                                {row.total}
+                              </TableCell>
+                              <TableCell 
+                                className="text-center text-green-600 cursor-pointer hover:bg-green-100/50"
+                                onClick={() => navigate(`/contracts?ubicacion=${encodeURIComponent(row.region)}&status=firmado`)}
+                              >
+                                {row.vigentes}
+                              </TableCell>
+                              <TableCell className="text-center text-green-700">
+                                {row.vigentesAutoplanet}
+                              </TableCell>
+                              <TableCell className="text-center text-green-500">
+                                {row.vigentesAgroplanet}
+                              </TableCell>
+                              <TableCell className="text-center text-green-400">
+                                {row.vigentesGrupoPlanet}
+                              </TableCell>
+                              <TableCell 
+                                className="text-center text-yellow-600 cursor-pointer hover:bg-yellow-100/50"
+                                onClick={() => navigate(`/contracts?ubicacion=${encodeURIComponent(row.region)}&status=en_negociacion`)}
+                              >
+                                {row.negociacion}
+                              </TableCell>
+                              <TableCell 
+                                className="text-center text-red-600 cursor-pointer hover:bg-red-100/50"
+                                onClick={() => navigate(`/contracts?ubicacion=${encodeURIComponent(row.region)}&status=vencido`)}
+                              >
+                                {row.vencidos}
+                              </TableCell>
+                            </TableRow>
+                            {isExpanded && communesList.map((commune) => (
+                              <TableRow key={`${row.region}-${commune.commune}`} className="bg-muted/20">
+                                <TableCell className="font-normal pl-12 text-muted-foreground">
+                                  {commune.commune}
+                                </TableCell>
+                                <TableCell className="text-center text-muted-foreground">
+                                  {commune.total}
+                                </TableCell>
+                                <TableCell className="text-center text-green-600/70">
+                                  {commune.vigentes}
+                                </TableCell>
+                                <TableCell className="text-center text-green-700/70">
+                                  {commune.vigentesAutoplanet}
+                                </TableCell>
+                                <TableCell className="text-center text-green-500/70">
+                                  {commune.vigentesAgroplanet}
+                                </TableCell>
+                                <TableCell className="text-center text-green-400/70">
+                                  {commune.vigentesGrupoPlanet}
+                                </TableCell>
+                                <TableCell className="text-center text-yellow-600/70">
+                                  {commune.negociacion}
+                                </TableCell>
+                                <TableCell className="text-center text-red-600/70">
+                                  {commune.vencidos}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </Fragment>
+                        );
+                      })}
                       {stats.byRegion.length === 0 && (
                         <TableRow>
                           <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
@@ -399,6 +565,9 @@ export const DashboardStats = () => {
                           <TableCell>Total</TableCell>
                           <TableCell className="text-center">{stats.totalContracts}</TableCell>
                           <TableCell className="text-center text-green-600">{stats.totalVigentes}</TableCell>
+                          <TableCell className="text-center text-green-700">{stats.totalVigentesAutoplanet}</TableCell>
+                          <TableCell className="text-center text-green-500">{stats.totalVigentesAgroplanet}</TableCell>
+                          <TableCell className="text-center text-green-400">{stats.totalVigentesGrupoPlanet}</TableCell>
                           <TableCell className="text-center text-yellow-600">{stats.totalNegociacion}</TableCell>
                           <TableCell className="text-center text-red-600">{stats.totalVencidos}</TableCell>
                         </TableRow>
