@@ -20,6 +20,33 @@ import { SelectableElement } from "@/components/admin/SelectableElement";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import * as XLSX from "xlsx";
 
+// Chilean regions ordered geographically from north to south
+const REGION_ORDER: string[] = [
+  "Arica y Parinacota",
+  "Tarapacá",
+  "Antofagasta",
+  "Atacama",
+  "Coquimbo",
+  "Valparaíso",
+  "Metropolitana de Santiago",
+  "O'Higgins",
+  "Maule",
+  "Ñuble",
+  "Biobío",
+  "La Araucanía",
+  "Los Ríos",
+  "Los Lagos",
+  "Aysén",
+  "Magallanes",
+];
+
+const getRegionSortIndex = (region: string): number => {
+  const index = REGION_ORDER.findIndex(
+    (r) => r.toLowerCase() === region.toLowerCase()
+  );
+  return index >= 0 ? index : 999; // Unknown regions go to the end
+};
+
 interface CommuneStats {
   commune: string;
   total: number;
@@ -216,7 +243,7 @@ export const DashboardStats = () => {
       });
 
       const byRegion = Object.values(regionMap).sort((a, b) => 
-        a.region.localeCompare(b.region)
+        getRegionSortIndex(a.region) - getRegionSortIndex(b.region)
       );
 
       // Sort termination alerts by date
