@@ -60,6 +60,7 @@ interface NegotiationContract {
   signed_date?: string | null;
   negotiation_subcategory: string | null;
   venta_estimada: number | null;
+  venta_estimada_max?: number | null;
   metros_lineales_frente?: number | null;
   contract_companies?: ContractCompany[];
   contract_addresses: ContractAddress[];
@@ -74,7 +75,8 @@ const subcategoryLabels: Record<string, string> = {
 
 export const generateNegotiationReportPDF = (
   contracts: NegotiationContract[],
-  subcategoryFilter: string
+  subcategoryFilter: string,
+  ufValue: number = 0
 ) => {
   const doc = new jsPDF({
     orientation: 'landscape',
@@ -170,24 +172,89 @@ export const generateNegotiationReportPDF = (
       rentText = lines.join('\n');
     }
 
-    // Calculate venta estimada with range and per m2
+    // Calculate venta estimada matching the table format exactly
     let ventaText = '-';
     if (contract.venta_estimada) {
       const ventaMin = contract.venta_estimada;
-      const ventaMax = (contract as any).venta_estimada_max || ventaMin;
+      const ventaMax = contract.venta_estimada_max || ventaMin;
       const superficie = contract.superficie_edificada_local || 0;
-      const ventaMinMM = (ventaMin / 1000000).toFixed(0);
-      const ventaMaxMM = (ventaMax / 1000000).toFixed(0);
-      ventaText = ventaMin === ventaMax 
-        ? `$${ventaMinMM} MM` 
-        : `$${ventaMinMM} - $${ventaMaxMM} MM`;
-      if (superficie > 0) {
-        const ventaM2Min = Math.round(ventaMin / superficie);
-        const ventaM2Max = Math.round(ventaMax / superficie);
-        ventaText += ventaM2Min === ventaM2Max 
-          ? `\n($${ventaM2Min.toLocaleString('es-CL')}/m²)` 
-          : `\n($${ventaM2Min.toLocaleString('es-CL')} - $${ventaM2Max.toLocaleString('es-CL')}/m²)`;
+      const lines: string[] = [];
+      
+      // Line 1: Range in MM$
+      const ventaMinMM = Math.round(ventaMin / 1000000);
+      const ventaMaxMM = Math.round(ventaMax / 1000000);
+      lines.push(ventaMin === ventaMax 
+        ? `${ventaMinMM} MM$` 
+        : `${ventaMinMM}-${ventaMaxMM} MM$`);
+      
+      // Line 2: Range in UF (if ufValue available)
+      if (ufValue > 0) {
+        const ventaMinUF = Math.round(ventaMin / ufValue);
+        const ventaMaxUF = Math.round(ventaMax / ufValue);
+        lines.push(ventaMinUF === ventaMaxUF 
+          ? `${ventaMinUF.toLocaleString('es-CL')} UF` 
+          : `${ventaMinUF.toLocaleString('es-CL')}-${ventaMaxUF.toLocaleString('es-CL')} UF`);
       }
+      
+      // Line 3: UF/m² (if superficie available)
+      if (superficie > 0 && ufValue > 0) {
+        const ventaMinUFm2 = (ventaMin / ufValue) / superficie;
+        const ventaMaxUFm2 = (ventaMax / ufValue) / superficie;
+        const fmtUFm2 = (n: number) => n.toFixed(1);
+        lines.push(ventaMinUFm2 === ventaMaxUFm2 
+          ? `${fmtUFm2(ventaMinUFm2)} UF/m²` 
+          : `${fmtUFm2(ventaMinUFm2)}-${fmtUFm2(ventaMaxUFm2)} UF/m²`);
+      }
+      
+      // Line 4: Arr/Vta ratio
+      if (ufValue > 0 && currentVersion) {
+        const hasExtended = currentVersion.has_extended_gastos_comunes ?? false;
+        const methodology = currentVersion.gastos_comunes_methodology || "uf_m2";
+        
+        // Calculate current rent
+        let currentRent = currentVersion.regime_rent || 0;
+        if (currentVersion.regime_rent_is_uf_m2 && superficie > 0) {
+          currentRent = currentVersion.regime_rent * superficie;
+        }
+        
+        // Calculate GGCC
+        let gastosComunesTotal = 0;
+        if (hasExtended) {
+          const ufM2 = currentVersion.gastos_comunes_uf_m2 || 0;
+          const ufMlFrente = currentVersion.gastos_comunes_uf_ml_frente || 0;
+          const prorrataPct = currentVersion.gastos_comunes_percentage || 0;
+          const centroTotal = currentVersion.gastos_comunes_total_centro || 0;
+          const metrosFrente = contract.metros_lineales_frente || 0;
+          
+          gastosComunesTotal = (ufM2 * superficie) + (ufMlFrente * metrosFrente) + (centroTotal * (prorrataPct / 100));
+        } else {
+          switch (methodology) {
+            case "uf_m2":
+              const ggccUfM2 = currentVersion.gastos_comunes_uf_m2 || 0;
+              gastosComunesTotal = ggccUfM2 * superficie;
+              break;
+            case "percentage":
+              const ggccPct = currentVersion.gastos_comunes_percentage || 0;
+              gastosComunesTotal = currentRent * (ggccPct / 100);
+              break;
+          }
+        }
+        
+        const fondoPromocionPct = currentVersion.fondo_promocion_percentage || 0;
+        const fondoPromocion = currentRent * (fondoPromocionPct / 100);
+        const otrosEgresos = currentVersion.otros_egresos_amount || 0;
+        
+        const arriendoTotalMensual = currentRent + gastosComunesTotal + fondoPromocion + otrosEgresos;
+        const ventaPromedio = ventaMax ? (ventaMin + ventaMax) / 2 : ventaMin;
+        const ventaPromedioEnUF = ventaPromedio / ufValue;
+        const ratioArrVta = ventaPromedioEnUF > 0 ? (arriendoTotalMensual / ventaPromedioEnUF) * 100 : 0;
+        
+        if (ratioArrVta > 0) {
+          lines.push(`Arr/Vta: ${ratioArrVta.toFixed(2)}%`);
+        }
+      }
+      
+      ventaText = lines.join('\n');
     }
 
     return [
