@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Trash2, AlertTriangle, FileCheck, FilePlus, Bell, FileWarning, DollarSign, Check, X } from "lucide-react";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
+import { useContractColumnWidths } from "@/hooks/useContractColumnWidths";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { addMonths, format, subMonths, parseISO, differenceInMonths, differenceInDays } from "date-fns";
@@ -116,17 +117,31 @@ interface ContractsTableProps {
   sortField?: ContractSortField;
   sortOrder?: SortOrder;
   onSort?: (field: ContractSortField) => void;
+  columnWidths?: Record<string, number>;
 }
 
-export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateField, onRefresh, sortField, sortOrder, onSort }: ContractsTableProps) {
+export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateField, onRefresh, sortField, sortOrder, onSort, columnWidths: externalColumnWidths }: ContractsTableProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { ufValue, convertUFToPesos, convertPesosToUF } = useEconomicIndicators();
+  const { columnWidths: defaultColumnWidths, getColumnStyle } = useContractColumnWidths();
   const { isAdmin } = useAuth();
   const [contractAlerts, setContractAlerts] = useState<Record<string, ContractAlert[]>>({});
   const [editingVenta, setEditingVenta] = useState<string | null>(null);
   const [ventaMinValue, setVentaMinValue] = useState<string>("");
   const [ventaMaxValue, setVentaMaxValue] = useState<string>("");
+  
+  // Use external column widths if provided, otherwise use defaults from hook
+  const columnWidths = externalColumnWidths || defaultColumnWidths;
+  
+  // Helper to get column style with width
+  const getColStyle = (columnKey: string): React.CSSProperties => {
+    if (externalColumnWidths) {
+      const width = externalColumnWidths[columnKey] ?? 10;
+      return { width: `${width}%`, minWidth: '80px' };
+    }
+    return getColumnStyle(columnKey);
+  };
 
   const isNegociacionView = !isFirmadoView && contracts.some(c => c.status === 'en_negociacion');
 
@@ -466,6 +481,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
               currentSortKey={sortField || null}
               currentSortOrder={sortOrder || null}
               onSort={handleSort}
+              style={getColStyle("name")}
             />
             <SortableTableHead
               label="Ubicación"
@@ -473,6 +489,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
               currentSortKey={sortField || null}
               currentSortOrder={sortOrder || null}
               onSort={handleSort}
+              style={getColStyle("ubicacion")}
             />
             {isNegociacionView && (
               <>
@@ -483,6 +500,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   currentSortOrder={sortOrder || null}
                   onSort={handleSort}
                   align="center"
+                  style={getColStyle("categoria")}
                 />
                 <SortableTableHead
                   label="Clasificación"
@@ -491,8 +509,9 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   currentSortOrder={sortOrder || null}
                   onSort={handleSort}
                   align="center"
+                  style={getColStyle("clasificacion")}
                 />
-                <TableHead className="font-semibold text-center">Origen</TableHead>
+                <TableHead className="font-semibold text-center" style={getColStyle("origen")}>Origen</TableHead>
                 <SortableTableHead
                   label="Venta Est."
                   sortKey="venta_estimada"
@@ -500,7 +519,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   currentSortOrder={sortOrder || null}
                   onSort={handleSort}
                   align="center"
-                  className="min-w-[180px]"
+                  style={getColStyle("venta_estimada")}
                 />
               </>
             )}
@@ -510,8 +529,8 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
               currentSortKey={sortField || null}
               currentSortOrder={sortOrder || null}
               onSort={handleSort}
-              className="min-w-[140px]"
               align="center"
+              style={getColStyle("costo_arriendo")}
             />
             <SortableTableHead
               label="Duración"
@@ -520,6 +539,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
               currentSortOrder={sortOrder || null}
               onSort={handleSort}
               align="center"
+              style={getColStyle("duracion")}
             />
             {isFirmadoView && (
               <>
@@ -530,6 +550,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   currentSortOrder={sortOrder || null}
                   onSort={handleSort}
                   align="center"
+                  style={getColStyle("termino")}
                 />
                 <SortableTableHead
                   label="Aviso"
@@ -538,8 +559,9 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   currentSortOrder={sortOrder || null}
                   onSort={handleSort}
                   align="center"
+                  style={getColStyle("aviso")}
                 />
-                <TableHead className="font-semibold text-center">Estado</TableHead>
+                <TableHead className="font-semibold text-center" style={getColStyle("estado")}>Estado</TableHead>
               </>
             )}
             {isAdmin && <TableHead className="w-[50px]"></TableHead>}

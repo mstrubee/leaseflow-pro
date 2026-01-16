@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { TableHead } from "@/components/ui/table";
 import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CSSProperties } from "react";
 
 export type SortOrder = "asc" | "desc" | null;
 
@@ -13,6 +14,7 @@ interface SortableTableHeadProps {
   onSort: (key: string) => void;
   className?: string;
   align?: "left" | "center" | "right";
+  style?: CSSProperties;
 }
 
 export function SortableTableHead({
@@ -23,13 +25,14 @@ export function SortableTableHead({
   onSort,
   className,
   align = "left",
+  style,
 }: SortableTableHeadProps) {
   const isActive = currentSortKey === sortKey;
   
   const alignClass = align === "center" ? "justify-center" : align === "right" ? "justify-end" : "justify-start";
 
   return (
-    <TableHead className={cn("font-semibold", className)}>
+    <TableHead className={cn("font-semibold", className)} style={style}>
       <Button
         variant="ghost"
         size="sm"
