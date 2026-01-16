@@ -500,6 +500,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   currentSortOrder={sortOrder || null}
                   onSort={handleSort}
                   align="center"
+                  className="min-w-[180px]"
                 />
               </>
             )}
@@ -752,7 +753,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                         </SelectContent>
                       </Select>
                     </TableCell>
-                    <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="text-center min-w-[180px]" onClick={(e) => e.stopPropagation()}>
                       {editingVenta === contract.id ? (
                         <div className="flex items-center gap-1">
                           <Input
@@ -790,45 +791,95 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                           }}
                         >
                           {contract.venta_estimada ? (
-                            <>
-                              <div className="flex items-center gap-1">
-                                <DollarSign className="h-3 w-3 text-muted-foreground" />
-                                <span className="font-medium">
-                                  {(contract.venta_estimada / 1000000).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                  {contract.venta_estimada_max && `-${(contract.venta_estimada_max / 1000000).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`} MM$
-                                </span>
-                              </div>
-                              {ufValue > 0 && (
-                                <div className="text-[10px] text-muted-foreground">
-                                  {(() => {
-                                    const minUF = convertPesosToUF(contract.venta_estimada);
-                                    const maxUF = contract.venta_estimada_max ? convertPesosToUF(contract.venta_estimada_max) : null;
-                                    const superficie = contract.superficie_edificada_local || 0;
-                                    
-                                    const minUFStr = minUF.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-                                    const maxUFStr = maxUF ? `-${maxUF.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '';
-                                    
-                                    let ufM2Str = '';
-                                    if (superficie > 0) {
-                                      const minUFM2 = minUF / superficie;
-                                      const maxUFM2 = maxUF ? maxUF / superficie : null;
-                                      ufM2Str = ` · ${minUFM2.toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`;
-                                      if (maxUFM2) {
-                                        ufM2Str += `-${maxUFM2.toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`;
-                                      }
-                                      ufM2Str += ' UF/m²';
-                                    }
-                                    
-                                    return `${minUFStr}${maxUFStr} UF${ufM2Str}`;
-                                  })()}
-                                </div>
-                              )}
-                            </>
+                            (() => {
+                              // Calculate cost arriendo for the ratio
+                              const currentVersion = contract.contract_versions?.find(v => v.is_current);
+                              const superficie = contract.superficie_edificada_local || 0;
+                              const metrosFrente = contract.metros_lineales_frente || 0;
+                              
+                              let costoArriendoAnual = 0;
+                              if (currentVersion) {
+                                const hasExtended = currentVersion.has_extended_gastos_comunes ?? false;
+                                const methodology = currentVersion.gastos_comunes_methodology || "uf_m2";
+                                
+                                // Gastos comunes
+                                let gastosComunesTotal = 0;
+                                if (methodology === "percentage") {
+                                  const totalCentro = currentVersion.gastos_comunes_total_centro || 0;
+                                  const percentage = currentVersion.gastos_comunes_percentage || 0;
+                                  const topeValue = currentVersion.gastos_comunes_tope;
+                                  const topeType = currentVersion.gastos_comunes_tope_type || "fixed";
+                                  const calculatedAmount = (totalCentro * percentage) / 100;
+                                  if (topeValue && topeValue > 0) {
+                                    const effectiveTope = topeType === "uf_m2" && superficie > 0 ? topeValue * superficie : topeValue;
+                                    gastosComunesTotal = Math.min(calculatedAmount, effectiveTope);
+                                  } else {
+                                    gastosComunesTotal = calculatedAmount;
+                                  }
+                                } else {
+                                  const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
+                                  const gastosMlFrente = hasExtended ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente : 0;
+                                  const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
+                                  const adicionalAdmin = hasExtended ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100) : 0;
+                                  gastosComunesTotal = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
+                                }
+                                
+                                // Calculate current rent
+                                const { currentRent } = calculateCurrentRent(currentVersion, contract.signed_date, superficie);
+                                const fondoPromocionPct = currentVersion.fondo_promocion_percentage ?? 0;
+                                const fondoPromocion = currentRent * (fondoPromocionPct / 100);
+                                const otrosEgresos = currentVersion.otros_egresos_amount || 0;
+                                
+                                const costoMensual = currentRent + gastosComunesTotal + fondoPromocion + otrosEgresos;
+                                costoArriendoAnual = costoMensual * 12; // Annual cost in UF
+                              }
+                              
+                              // Convert to pesos for ratio calculation
+                              const costoArriendoAnualPesos = ufValue > 0 ? costoArriendoAnual * ufValue : 0;
+                              const ventaPromedio = contract.venta_estimada_max 
+                                ? (contract.venta_estimada + contract.venta_estimada_max) / 2 
+                                : contract.venta_estimada;
+                              const ratioArrVta = ventaPromedio > 0 ? (costoArriendoAnualPesos / ventaPromedio) * 100 : 0;
+                              
+                              return (
+                                <>
+                                  <span className="font-medium">
+                                    {(contract.venta_estimada / 1000000).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                    {contract.venta_estimada_max && `-${(contract.venta_estimada_max / 1000000).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`} MM$
+                                  </span>
+                                  {ufValue > 0 && (
+                                    <div className="text-[10px] text-muted-foreground">
+                                      {(() => {
+                                        const minUF = convertPesosToUF(contract.venta_estimada);
+                                        const maxUF = contract.venta_estimada_max ? convertPesosToUF(contract.venta_estimada_max) : null;
+                                        const minUFStr = minUF.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+                                        const maxUFStr = maxUF ? `-${maxUF.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '';
+                                        
+                                        let ufM2Str = '';
+                                        if (superficie > 0) {
+                                          const minUFM2 = minUF / superficie;
+                                          const maxUFM2 = maxUF ? maxUF / superficie : null;
+                                          ufM2Str = ` · ${minUFM2.toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`;
+                                          if (maxUFM2) {
+                                            ufM2Str += `-${maxUFM2.toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`;
+                                          }
+                                          ufM2Str += ' UF/m²';
+                                        }
+                                        
+                                        return `${minUFStr}${maxUFStr} UF${ufM2Str}`;
+                                      })()}
+                                    </div>
+                                  )}
+                                  {ratioArrVta > 0 && (
+                                    <div className="text-[10px] font-medium text-amber-600">
+                                      Arr/Vta: {ratioArrVta.toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()
                           ) : (
-                            <div className="flex items-center gap-1">
-                              <DollarSign className="h-3 w-3 text-muted-foreground" />
-                              <span className="text-muted-foreground italic">Agregar</span>
-                            </div>
+                            <span className="text-muted-foreground italic">Agregar</span>
                           )}
                         </button>
                       )}
