@@ -30,6 +30,8 @@ interface CompactEscalationChartProps {
   noticeType?: string;
   noticeValue?: string;
   displayCurrency?: "UF" | "CLP";
+  isUfM2Mode?: boolean;
+  superficieM2?: number;
 }
 
 export function CompactEscalationChart({ 
@@ -48,6 +50,8 @@ export function CompactEscalationChart({
   noticeType = "meses",
   noticeValue = "",
   displayCurrency = "UF",
+  isUfM2Mode = false,
+  superficieM2 = 0,
 }: CompactEscalationChartProps) {
   const { ufValue } = useEconomicIndicators();
   
@@ -64,10 +68,13 @@ export function CompactEscalationChart({
     return null;
   }, [effectiveDate, durationMonths]);
 
-  const { chartData, summaryPoints } = useMemo(() => {
+  const { chartData, summaryPoints, showRegimeLine } = useMemo(() => {
     const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
     const data: { month: number; rent: number; isGrace?: boolean; isAdjustment?: boolean }[] = [];
     const summary: { month: number; rent: number; isRegime: boolean }[] = [];
+    
+    // Multiplier for converting UF/m² to total UF
+    const surfaceMultiplier = (isUfM2Mode && superficieM2 > 0) ? superficieM2 : 1;
     
     // Build a map of all rent change points
     const rentChangePoints = new Map<number, { rent: number; isGrace?: boolean; isAdjustment?: boolean }>();
@@ -82,37 +89,40 @@ export function CompactEscalationChart({
       }
     }
     
-    // Determine the starting rent after grace period
-    // NOTE: in this app, initialRent can be 0 when there are grace months; in that case,
-    // we must fall back to regimeRent to match the edit visualization.
+    // Determine the starting rent after grace period (convert to total if UF/m²)
     const month1Escalation = sortedEscalations.find(e => e.month_number === firstPayingMonth);
-    const startRent = month1Escalation?.amount || initialRent || regimeRent;
+    const rawStartRent = month1Escalation?.amount || initialRent || regimeRent;
+    const startRent = rawStartRent * surfaceMultiplier;
     rentChangePoints.set(firstPayingMonth, { rent: startRent });
     
-    // Add escalation points
+    // Add escalation points (convert to total if UF/m²)
     sortedEscalations.forEach(e => {
       if (e.month_number > firstPayingMonth) {
-        rentChangePoints.set(e.month_number, { rent: e.amount });
+        rentChangePoints.set(e.month_number, { rent: e.amount * surfaceMultiplier });
       }
     });
     
     // Add periodic adjustments
-    if (hasPeriodicAdjustments && adjustmentValue > 0 && firstAdjustmentMonth > 0 && adjustmentPeriodicityMonths > 0) {
-      let currentRent = regimeRent;
+    // Note: if no periodicity, apply just once
+    if (hasPeriodicAdjustments && adjustmentValue > 0 && firstAdjustmentMonth > 0) {
+      const baseRent = (regimeRent || initialRent || 0) * surfaceMultiplier;
+      let currentRent = baseRent;
       let month = firstAdjustmentMonth;
+      
+      const periodicity = adjustmentPeriodicityMonths > 0 ? adjustmentPeriodicityMonths : durationMonths + 1;
       
       while (month <= durationMonths) {
         if (adjustmentType === "percentage") {
           currentRent = currentRent * (1 + adjustmentValue / 100);
         } else {
-          currentRent = currentRent + adjustmentValue;
+          currentRent = currentRent + (adjustmentValue * surfaceMultiplier);
         }
         
         if (!rentChangePoints.has(month)) {
           rentChangePoints.set(month, { rent: currentRent, isAdjustment: true });
         }
         
-        month += adjustmentPeriodicityMonths;
+        month += periodicity;
       }
     }
     
@@ -121,7 +131,6 @@ export function CompactEscalationChart({
       .sort((a, b) => a[0] - b[0]);
     
     // Build data array with proper step visualization
-    // For stepAfter to work correctly, we need the data points at change months
     changePointsSorted.forEach(([month, value]) => {
       data.push({ month, ...value });
     });
@@ -137,18 +146,24 @@ export function CompactEscalationChart({
     // Sort final data
     data.sort((a, b) => a.month - b.month);
     
+    // Calculate total regime rent for reference line
+    const totalRegimeRent = regimeRent * surfaceMultiplier;
+    
+    // Only show regime line if regimeRent > 0 (not for escalation-only contracts)
+    const showRegime = regimeRent > 0;
+    
     // Build summary points - first few key points
     const sortedData = [...data].slice(0, 4);
     sortedData.forEach(d => {
       summary.push({ 
         month: d.month, 
         rent: d.rent, 
-        isRegime: Math.abs(d.rent - regimeRent) < 0.01
+        isRegime: showRegime && Math.abs(d.rent - totalRegimeRent) < 0.01
       });
     });
     
-    return { chartData: data, summaryPoints: summary };
-  }, [escalations, initialRent, regimeRent, durationMonths, graceMonths, hasPeriodicAdjustments, adjustmentType, adjustmentValue, firstAdjustmentMonth, adjustmentPeriodicityMonths]);
+    return { chartData: data, summaryPoints: summary, showRegimeLine: showRegime, totalRegimeRent };
+  }, [escalations, initialRent, regimeRent, durationMonths, graceMonths, hasPeriodicAdjustments, adjustmentType, adjustmentValue, firstAdjustmentMonth, adjustmentPeriodicityMonths, isUfM2Mode, superficieM2]);
 
   // Calculate notice month based on type
   const noticeMonthInfo = useMemo(() => {
@@ -319,13 +334,15 @@ export function CompactEscalationChart({
               />
             </Line>
             
-            {/* Regime rent reference line */}
-            <ReferenceLine 
-              y={regimeRent} 
-              stroke="hsl(var(--muted-foreground))" 
-              strokeDasharray="5 5"
-              label={{ value: "Régimen", fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-            />
+            {/* Regime rent reference line - only show if regime rent exists */}
+            {showRegimeLine && (
+              <ReferenceLine 
+                y={(isUfM2Mode && superficieM2 > 0) ? regimeRent * superficieM2 : regimeRent} 
+                stroke="hsl(var(--muted-foreground))" 
+                strokeDasharray="5 5"
+                label={{ value: "Régimen", fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+              />
+            )}
             
             {/* Current month red vertical line with month number */}
             {currentMonth && (

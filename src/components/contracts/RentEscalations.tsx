@@ -322,8 +322,8 @@ export const RentEscalations = ({
   // Format currency: UF values with 2 decimals, UF/m² values with 3 decimals
   const formatCurrency = (amount: number, forceUfM2: boolean = false) => {
     if (currency === "UF") {
-      const decimals = (isUfM2Mode || forceUfM2) ? 3 : 2;
-      const suffix = isUfM2Mode ? " UF/m²" : "";
+      const decimals = forceUfM2 ? 3 : 2;
+      const suffix = forceUfM2 ? " UF/m²" : " UF";
       return `${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: decimals })}${suffix}`;
     }
     return new Intl.NumberFormat("es-CL", {
@@ -332,7 +332,18 @@ export const RentEscalations = ({
     }).format(amount);
   };
 
-  // Format total when in UF/m² mode
+  // Format for chart tooltip - always show total values (already converted from UF/m²)
+  const formatChartValue = (amount: number) => {
+    if (currency === "UF") {
+      return `${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
+    }
+    return new Intl.NumberFormat("es-CL", {
+      style: "currency",
+      currency: "CLP",
+    }).format(amount);
+  };
+
+  // Format total when in UF/m² mode (for display in escalation list)
   const formatTotal = (amount: number) => {
     if (isUfM2Mode && superficieM2 > 0) {
       const total = amount * superficieM2;
@@ -416,11 +427,16 @@ export const RentEscalations = ({
   };
 
   // Generate chart data with real duration spacing including periodic adjustments
+  // IMPORTANT: When in UF/m² mode, the chart should display TOTAL rent (amount × superficie),
+  // not the UF/m² values, to show actual monthly cost
   const getChartData = () => {
     const data: { month: number; rent: number; isEditable: boolean; isGrace?: boolean; isAdjustment?: boolean }[] = [];
     const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
     
-    // Build a map of all rent changes
+    // Multiplier for converting UF/m² to total UF
+    const surfaceMultiplier = (isUfM2Mode && superficieM2 > 0) ? superficieM2 : 1;
+    
+    // Build a map of all rent changes (always store as TOTAL rent for display)
     const rentChanges = new Map<number, { rent: number; isEditable: boolean; isGrace?: boolean; isAdjustment?: boolean }>();
     
     // Add grace months at 0 rent
@@ -431,30 +447,36 @@ export const RentEscalations = ({
       }
     }
     
-    // Start with initial rent at first paying month
+    // Start with initial rent at first paying month (convert to total if UF/m²)
     const firstPayingMonth = graceMonths + 1;
     const month1Escalation = sortedEscalations.find(e => e.month_number === firstPayingMonth);
-    const startRent = month1Escalation?.amount || initialRent || regimeRent;
+    const rawStartRent = month1Escalation?.amount || initialRent || regimeRent;
+    const startRent = rawStartRent * surfaceMultiplier;
     rentChanges.set(firstPayingMonth, { rent: startRent, isEditable: !!month1Escalation });
     
-    // Add all defined escalation points
+    // Add all defined escalation points (convert to total if UF/m²)
     sortedEscalations.forEach((esc) => {
       if (esc.month_number > firstPayingMonth) {
-        rentChanges.set(esc.month_number, { rent: esc.amount, isEditable: true });
+        rentChanges.set(esc.month_number, { rent: esc.amount * surfaceMultiplier, isEditable: true });
       }
     });
     
     // Add periodic adjustments if enabled
-    if (hasPeriodicAdjustments && adjustmentValue > 0 && firstAdjustmentMonth > 0 && adjustmentPeriodicityMonths > 0) {
-      let currentRent = regimeRent;
+    // Note: periodic adjustments are applied on the regime rent which may not exist with escalations
+    if (hasPeriodicAdjustments && adjustmentValue > 0 && firstAdjustmentMonth > 0) {
+      const baseRent = (regimeRent || initialRent) * surfaceMultiplier;
+      let currentRent = baseRent;
       let month = firstAdjustmentMonth;
+      
+      // If no periodicity, apply just once at firstAdjustmentMonth
+      const periodicity = adjustmentPeriodicityMonths > 0 ? adjustmentPeriodicityMonths : durationMonths + 1;
       
       while (month <= durationMonths) {
         // Calculate adjusted rent
         if (adjustmentType === "percentage") {
           currentRent = currentRent * (1 + adjustmentValue / 100);
         } else {
-          currentRent = currentRent + adjustmentValue;
+          currentRent = currentRent + (adjustmentValue * surfaceMultiplier);
         }
         
         // Only add if not already defined by an escalation
@@ -462,7 +484,7 @@ export const RentEscalations = ({
           rentChanges.set(month, { rent: currentRent, isEditable: false, isAdjustment: true });
         }
         
-        month += adjustmentPeriodicityMonths;
+        month += periodicity;
       }
     }
     
@@ -470,7 +492,7 @@ export const RentEscalations = ({
     if (!rentChanges.has(durationMonths)) {
       // Get the last known rent
       const sortedMonths = Array.from(rentChanges.keys()).sort((a, b) => a - b);
-      const lastRent = sortedMonths.length > 0 ? rentChanges.get(sortedMonths[sortedMonths.length - 1])?.rent || regimeRent : regimeRent;
+      const lastRent = sortedMonths.length > 0 ? rentChanges.get(sortedMonths[sortedMonths.length - 1])?.rent || (regimeRent * surfaceMultiplier) : (regimeRent * surfaceMultiplier);
       rentChanges.set(durationMonths, { rent: lastRent, isEditable: false });
     }
     
@@ -615,7 +637,7 @@ export const RentEscalations = ({
                     let label = "Canon";
                     if (point?.isGrace) label = "Gracia";
                     if (point?.isAdjustment) label = "Reajuste";
-                    return [formatCurrency(value), label];
+                    return [formatChartValue(value), label];
                   }}
                   labelFormatter={(label) => `Mes ${label}`}
                 />
@@ -632,12 +654,15 @@ export const RentEscalations = ({
                   )}
                   activeDot={{ r: 6, fill: "hsl(var(--primary))" }}
                 />
-                <ReferenceLine 
-                  y={regimeRent} 
-                  stroke="hsl(var(--muted-foreground))" 
-                  strokeDasharray="5 5"
-                  label={{ value: "Régimen", fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-                />
+                {/* Regime rent reference line - only if regimeRent exists */}
+                {regimeRent > 0 && (
+                  <ReferenceLine 
+                    y={(isUfM2Mode && superficieM2 > 0) ? regimeRent * superficieM2 : regimeRent} 
+                    stroke="hsl(var(--muted-foreground))" 
+                    strokeDasharray="5 5"
+                    label={{ value: "Régimen", fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                  />
+                )}
                 {/* Current month red vertical line */}
                 {currentMonth && (
                   <ReferenceLine 

@@ -1164,27 +1164,13 @@ const EditContract = () => {
                                       superficieM2={superficieEdificadaLocal}
                                     />
                                     
-                                    <CurrencyInput
-                                      id="regimeRentEscalation"
-                                      label="Canon en Régimen"
-                                      value={regimeRent}
-                                      onChange={setRegimeRent}
-                                      currency={currency}
-                                      onCurrencyChange={setCurrency}
-                                      showCurrencySelector={false}
-                                      showUfM2Mode={true}
-                                      isUfM2Mode={isRegimeRentUfM2}
-                                      onUfM2ModeChange={setIsRegimeRentUfM2}
-                                      superficieM2={superficieEdificadaLocal}
-                                    />
-                                    
                                     {duration && (
                                       <div className="border border-border rounded-lg p-4 mt-4">
                                         <RentEscalations
                                           escalations={escalations}
                                           onChange={setEscalations}
                                           initialRent={parseFloat(initialRent) || 0}
-                                          regimeRent={parseFloat(regimeRent) || 0}
+                                          regimeRent={0}
                                           durationMonths={parseInt(duration) || 12}
                                           currency={currency}
                                           graceMonths={graceMonths}
@@ -1805,13 +1791,13 @@ const EditContract = () => {
                                     
                                     <DurationInput
                                       id="adjustmentPeriodicityMonths"
-                                      label="Periodicidad"
+                                      label="Periodicidad (opcional)"
                                       value={adjustmentPeriodicityMonths}
                                       onChange={(val) => {
                                         setAdjustmentPeriodicityMonths(val);
                                         setHasUnsavedChanges(true);
                                       }}
-                                      description="Cada cuánto tiempo se aplica el reajuste"
+                                      description="Cada cuánto tiempo se aplica el reajuste. Dejar vacío para un reajuste único."
                                     />
 
                                     {adjustmentValue && regimeRent && firstAdjustmentMonth && adjustmentPeriodicityMonths && (
