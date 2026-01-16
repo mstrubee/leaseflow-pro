@@ -797,7 +797,8 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                               const superficie = contract.superficie_edificada_local || 0;
                               const metrosFrente = contract.metros_lineales_frente || 0;
                               
-                              let costoArriendoAnual = 0;
+                              // Calculate arriendo total mensual for ratio
+                              let arriendoTotalMensual = 0;
                               if (currentVersion) {
                                 const hasExtended = currentVersion.has_extended_gastos_comunes ?? false;
                                 const methodology = currentVersion.gastos_comunes_methodology || "uf_m2";
@@ -830,16 +831,16 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                                 const fondoPromocion = currentRent * (fondoPromocionPct / 100);
                                 const otrosEgresos = currentVersion.otros_egresos_amount || 0;
                                 
-                                const costoMensual = currentRent + gastosComunesTotal + fondoPromocion + otrosEgresos;
-                                costoArriendoAnual = costoMensual * 12; // Annual cost in UF
+                                arriendoTotalMensual = currentRent + gastosComunesTotal + fondoPromocion + otrosEgresos;
                               }
                               
-                              // Convert to pesos for ratio calculation
-                              const costoArriendoAnualPesos = ufValue > 0 ? costoArriendoAnual * ufValue : 0;
+                              // Ratio = arriendoTotalUF / (promedioVentas / valorUF) * 100
+                              // Formula: arriendoTotal / ((promedioVentas) / UF) * 100
                               const ventaPromedio = contract.venta_estimada_max 
                                 ? (contract.venta_estimada + contract.venta_estimada_max) / 2 
                                 : contract.venta_estimada;
-                              const ratioArrVta = ventaPromedio > 0 ? (costoArriendoAnualPesos / ventaPromedio) * 100 : 0;
+                              const ventaPromedioEnUF = ufValue > 0 ? ventaPromedio / ufValue : 0;
+                              const ratioArrVta = ventaPromedioEnUF > 0 ? (arriendoTotalMensual / ventaPromedioEnUF) * 100 : 0;
                               
                               return (
                                 <>
