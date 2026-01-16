@@ -29,6 +29,7 @@ import { ColumnSelector } from "@/components/contracts/ColumnSelector";
 import { ContractRowSelector } from "@/components/contracts/ContractRowSelector";
 import { generateContractsListPDF, getAvailableColumns } from "@/components/contracts/ContractsTablePDF";
 import { SortOrder } from "@/components/contracts/SortableTableHead";
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
@@ -134,6 +135,7 @@ const Contracts = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = searchParams.get("status") || "todos";
   const { user, loading: authLoading, roleLoaded } = useAuth();
+  const { ufValue } = useEconomicIndicators();
 
   useEffect(() => {
     // Remember last contracts list URL so the detail "Volver" can restore filters even after refresh
@@ -716,7 +718,8 @@ const Contracts = () => {
       selectedPdfColumns, 
       title, 
       isFirmado, 
-      isNego
+      isNego,
+      ufValue
     );
   };
 
