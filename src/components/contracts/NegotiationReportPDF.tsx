@@ -2,11 +2,42 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { calculateTotalArriendoUF } from '@/lib/contractRent';
 
 interface ContractVersion {
+  // Base rent
   regime_rent: number;
   regime_rent_is_uf_m2?: boolean | null;
   initial_rent?: number | null;
+  initial_rent_is_uf_m2?: boolean | null;
+  effective_date?: string | null;
+  grace_months?: number | null;
+
+  // Escalations & adjustments
+  rent_escalations?: Array<{ month_number: number; amount: number }>;
+  has_periodic_adjustments?: boolean | null;
+  first_adjustment_month?: number | null;
+  adjustment_periodicity_months?: number | null;
+  adjustment_type?: string | null;
+  adjustment_value?: number | null;
+
+  // GGCC
+  gastos_comunes_methodology?: string | null;
+  gastos_comunes_percentage?: number | null;
+  gastos_comunes_total_centro?: number | null;
+  gastos_comunes_tope?: number | null;
+  gastos_comunes_tope_type?: string | null;
+  gastos_comunes_uf_m2?: number | null;
+  gastos_comunes_uf_ml_frente?: number | null;
+  gastos_comunes_prorrata_kwh_clima?: number | null;
+  adicional_administracion_percentage?: number | null;
+  has_extended_gastos_comunes?: boolean | null;
+
+  // FP + Otros
+  fondo_promocion_percentage?: number | null;
+  otros_egresos_amount?: number | null;
+
+  // Existing fields used in this file
   duration_months: number;
   is_current: boolean;
 }
@@ -26,8 +57,10 @@ interface ContractCompany {
 interface NegotiationContract {
   id: string;
   name: string;
+  signed_date?: string | null;
   negotiation_subcategory: string | null;
   venta_estimada: number | null;
+  metros_lineales_frente?: number | null;
   contract_companies?: ContractCompany[];
   contract_addresses: ContractAddress[];
   contract_versions: ContractVersion[];
@@ -104,17 +137,35 @@ export const generateNegotiationReportPDF = (
       ? `${address.commune}${address.street ? `, ${address.street} ${address.number || ''}` : ''}`
       : '-';
 
-    // Calculate rent - multiply by superficie if UF/m2
+    // Arriendo total (Canon + GGCC + Fondo Promoción + Otros)
     let rentText = '-';
     if (currentVersion) {
       const superficie = contract.superficie_edificada_local || 0;
-      const isRentUfM2 = currentVersion.regime_rent_is_uf_m2 === true;
-      const rentAmount = isRentUfM2 ? currentVersion.regime_rent * superficie : currentVersion.regime_rent;
-      if (isRentUfM2 && superficie > 0) {
-        rentText = `${rentAmount.toLocaleString('es-CL', { minimumFractionDigits: 2 })} UF\n(${currentVersion.regime_rent.toLocaleString('es-CL', { minimumFractionDigits: 2 })} UF/m²)`;
-      } else {
-        rentText = `${rentAmount.toLocaleString('es-CL', { minimumFractionDigits: 2 })} UF`;
+      const metrosFrente = contract.metros_lineales_frente || 0;
+
+      const breakdown = calculateTotalArriendoUF({
+        version: currentVersion,
+        signedDate: contract.signed_date ?? null,
+        superficie,
+        metrosLinealesFrente: metrosFrente,
+      });
+
+      const fmt = (n: number) => n.toLocaleString('es-CL', { minimumFractionDigits: 2 });
+      const lines: string[] = [`${fmt(breakdown.total)} UF`];
+
+      if (breakdown.regimeRentUfM2 != null && superficie > 0) {
+        lines.push(`(Canon ${fmt(breakdown.regimeRentUfM2)} UF/m²)`);
       }
+
+      const extras: string[] = [];
+      if (breakdown.ggcc > 0) extras.push(`GGCC ${fmt(breakdown.ggcc)}`);
+      if (breakdown.fondoPromocion > 0) extras.push(`FP ${fmt(breakdown.fondoPromocion)}`);
+      if (breakdown.otrosEgresos > 0) extras.push(`Otros ${fmt(breakdown.otrosEgresos)}`);
+      if (extras.length > 0) {
+        lines.push(`(${extras.join(' + ')})`);
+      }
+
+      rentText = lines.join('\n');
     }
 
     // Calculate venta estimada with range and per m2
@@ -162,7 +213,7 @@ export const generateNegotiationReportPDF = (
       'Categoría',
       'Ubicación',
       'Superficie',
-      'Canon',
+      'Arriendo Total',
       'Duración',
       'Venta Est.',
     ]],

@@ -3,13 +3,44 @@ import autoTable from "jspdf-autotable";
 import { format, addMonths, subMonths, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import logosHeader from "@/assets/logos-header.png";
+import { calculateTotalArriendoUF } from "@/lib/contractRent";
 
 interface ContractVersion {
+  // Base rent
   regime_rent: number;
   regime_rent_is_uf_m2?: boolean | null;
+  initial_rent?: number | null;
+  initial_rent_is_uf_m2?: boolean | null;
+  effective_date?: string | null;
+  grace_months?: number | null;
+
+  // Escalations & adjustments
+  rent_escalations?: Array<{ month_number: number; amount: number }>;
+  has_periodic_adjustments?: boolean | null;
+  first_adjustment_month?: number | null;
+  adjustment_periodicity_months?: number | null;
+  adjustment_type?: string | null;
+  adjustment_value?: number | null;
+
+  // GGCC
+  gastos_comunes_methodology?: string | null;
+  gastos_comunes_percentage?: number | null;
+  gastos_comunes_total_centro?: number | null;
+  gastos_comunes_tope?: number | null;
+  gastos_comunes_tope_type?: string | null;
+  gastos_comunes_uf_m2?: number | null;
+  gastos_comunes_uf_ml_frente?: number | null;
+  gastos_comunes_prorrata_kwh_clima?: number | null;
+  adicional_administracion_percentage?: number | null;
+  has_extended_gastos_comunes?: boolean | null;
+
+  // FP + Otros
+  fondo_promocion_percentage?: number | null;
+  otros_egresos_amount?: number | null;
+
+  // Existing fields used in this file
   duration_months: number;
   is_current: boolean;
-  effective_date: string | null;
   notice_type: string;
   notice_value: string;
   notice_ranges?: Array<{ start_month: number; end_month: number }>;
@@ -24,6 +55,7 @@ interface Contract {
   venta_estimada?: number | null;
   clasificacion?: string | null;
   origen?: string | null;
+  metros_lineales_frente?: number | null;
   contract_companies?: Array<{ companies: { name: string } | null }>;
   contract_addresses: Array<{ region: string; commune: string; street?: string; number?: string }>;
   contract_versions: ContractVersion[];
@@ -202,13 +234,32 @@ export const generateContractsListPDF = async (
         case "costo_arriendo":
           if (currentVersion) {
             const superficie = contract.superficie_edificada_local || 0;
-            const isRentUfM2 = currentVersion.regime_rent_is_uf_m2 === true;
-            const rentAmount = isRentUfM2 ? currentVersion.regime_rent * superficie : currentVersion.regime_rent;
-            if (isRentUfM2 && superficie > 0) {
-              rowData.push(`${rentAmount.toLocaleString('es-CL', { minimumFractionDigits: 2 })} UF\n(${currentVersion.regime_rent.toLocaleString('es-CL', { minimumFractionDigits: 2 })} UF/m²)`);
-            } else {
-              rowData.push(`${rentAmount.toLocaleString('es-CL', { minimumFractionDigits: 2 })} UF`);
+            const metrosFrente = contract.metros_lineales_frente || 0;
+
+            const breakdown = calculateTotalArriendoUF({
+              version: currentVersion,
+              signedDate: contract.signed_date,
+              superficie,
+              metrosLinealesFrente: metrosFrente,
+            });
+
+            const fmt = (n: number) => n.toLocaleString('es-CL', { minimumFractionDigits: 2 });
+            const lines: string[] = [`${fmt(breakdown.total)} UF`];
+
+            // If base is UF/m², keep that reference visible
+            if (breakdown.regimeRentUfM2 != null && superficie > 0) {
+              lines.push(`(Canon ${fmt(breakdown.regimeRentUfM2)} UF/m²)`);
             }
+
+            const extras: string[] = [];
+            if (breakdown.ggcc > 0) extras.push(`GGCC ${fmt(breakdown.ggcc)}`);
+            if (breakdown.fondoPromocion > 0) extras.push(`FP ${fmt(breakdown.fondoPromocion)}`);
+            if (breakdown.otrosEgresos > 0) extras.push(`Otros ${fmt(breakdown.otrosEgresos)}`);
+            if (extras.length > 0) {
+              lines.push(`(${extras.join(' + ')})`);
+            }
+
+            rowData.push(lines.join('\n'));
           } else {
             rowData.push('-');
           }
