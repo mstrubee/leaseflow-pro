@@ -19,6 +19,122 @@ interface BusinessCaseEditorProps {
   saving: boolean;
 }
 
+// Helper function to apply styles to specific rows based on content
+const applyBusinessCaseStyles = (instance: any, data: any[][]) => {
+  if (!instance || !data) return;
+
+  // Define row styles based on content patterns
+  const headerRows = [1, 4]; // Tasas de Rendimiento, Resumen Ejecutivo
+  const summaryLabelRows: number[] = [];
+  const yearHeaderRow: number[] = [];
+  const financialHighlightRows: number[] = [];
+  const ebitdaRows: number[] = [];
+  const paybackRows: number[] = [];
+
+  data.forEach((row, index) => {
+    const cellB = String(row[1] || "").toLowerCase();
+    
+    if (cellB.includes("tasas de rendimiento") || cellB.includes("resumen ejecutivo")) {
+      headerRows.push(index);
+    }
+    if (cellB === "año" && row[2] === "0") {
+      yearHeaderRow.push(index);
+    }
+    if (cellB.includes("ebitda") || cellB.includes("ebit")) {
+      ebitdaRows.push(index);
+    }
+    if (cellB.includes("payback") || cellB.includes("tir") || cellB.includes("van") || cellB.includes("rentabilidad")) {
+      financialHighlightRows.push(index);
+    }
+    if (cellB.includes("ingresos") || cellB.includes("margen de contribucion")) {
+      summaryLabelRows.push(index);
+    }
+  });
+
+  // Apply styles using jspreadsheet's setStyle method
+  try {
+    // Header rows - dark blue background
+    headerRows.forEach(row => {
+      for (let col = 1; col <= 7; col++) {
+        const cellName = `${String.fromCharCode(65 + col)}${row + 1}`;
+        instance.setStyle(cellName, 'background-color', '#1e3a5f');
+        instance.setStyle(cellName, 'color', '#ffffff');
+        instance.setStyle(cellName, 'font-weight', 'bold');
+      }
+    });
+
+    // Year header row - medium blue
+    yearHeaderRow.forEach(row => {
+      for (let col = 1; col <= 7; col++) {
+        const cellName = `${String.fromCharCode(65 + col)}${row + 1}`;
+        instance.setStyle(cellName, 'background-color', '#2563eb');
+        instance.setStyle(cellName, 'color', '#ffffff');
+        instance.setStyle(cellName, 'font-weight', 'bold');
+        instance.setStyle(cellName, 'text-align', 'center');
+      }
+    });
+
+    // EBITDA rows - light green
+    ebitdaRows.forEach(row => {
+      for (let col = 1; col <= 7; col++) {
+        const cellName = `${String.fromCharCode(65 + col)}${row + 1}`;
+        instance.setStyle(cellName, 'background-color', '#dcfce7');
+        instance.setStyle(cellName, 'font-weight', 'bold');
+      }
+    });
+
+    // Financial highlight rows (TIR, VAN, Rentabilidad) - light yellow
+    financialHighlightRows.forEach(row => {
+      for (let col = 1; col <= 7; col++) {
+        const cellName = `${String.fromCharCode(65 + col)}${row + 1}`;
+        instance.setStyle(cellName, 'background-color', '#fef9c3');
+        instance.setStyle(cellName, 'font-weight', 'bold');
+      }
+    });
+
+    // Income/margin rows - light blue
+    summaryLabelRows.forEach(row => {
+      for (let col = 1; col <= 7; col++) {
+        const cellName = `${String.fromCharCode(65 + col)}${row + 1}`;
+        instance.setStyle(cellName, 'background-color', '#dbeafe');
+      }
+    });
+
+    // Apply borders to all cells with content
+    data.forEach((row, rowIndex) => {
+      row.forEach((cell, colIndex) => {
+        if (cell && String(cell).trim() !== "") {
+          const cellName = `${String.fromCharCode(65 + colIndex)}${rowIndex + 1}`;
+          instance.setStyle(cellName, 'border', '1px solid #e5e7eb');
+        }
+      });
+    });
+
+    // Column B (labels) - bold and left aligned
+    data.forEach((row, rowIndex) => {
+      if (row[1] && String(row[1]).trim() !== "") {
+        const cellName = `B${rowIndex + 1}`;
+        instance.setStyle(cellName, 'font-weight', 'bold');
+        instance.setStyle(cellName, 'text-align', 'left');
+      }
+    });
+
+    // Numeric columns - right aligned
+    data.forEach((row, rowIndex) => {
+      for (let col = 3; col <= 7; col++) {
+        const cellValue = row[col];
+        if (cellValue && (typeof cellValue === 'number' || /^[\d\-$%.,]+$/.test(String(cellValue).trim()))) {
+          const cellName = `${String.fromCharCode(65 + col)}${rowIndex + 1}`;
+          instance.setStyle(cellName, 'text-align', 'right');
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error("Error applying styles:", error);
+  }
+};
+
 export const BusinessCaseEditor: React.FC<BusinessCaseEditorProps> = ({
   initialData,
   name: initialName,
@@ -52,12 +168,12 @@ export const BusinessCaseEditor: React.FC<BusinessCaseEditorProps> = ({
           data = Array(50).fill(null).map(() => Array(10).fill(""));
         }
         
-        // Initialize jspreadsheet
+        // Initialize jspreadsheet with enhanced styling
         spreadsheetInstanceRef.current = jspreadsheet(jspreadsheetRef.current, {
           data,
           columns: initialData?.columns || [
             { type: "text", width: 40 },
-            { type: "text", width: 200 },
+            { type: "text", width: 220 },
             { type: "text", width: 80 },
             { type: "text", width: 100 },
             { type: "text", width: 100 },
@@ -71,12 +187,18 @@ export const BusinessCaseEditor: React.FC<BusinessCaseEditorProps> = ({
           tableOverflow: true,
           tableWidth: "100%",
           tableHeight: "100%",
+          defaultColWidth: 100,
           onchange: () => setHasChanges(true),
           oninsertrow: () => setHasChanges(true),
           ondeleterow: () => setHasChanges(true),
           oninsertcolumn: () => setHasChanges(true),
           ondeletecolumn: () => setHasChanges(true),
         });
+        
+        // Apply custom styles after initialization
+        setTimeout(() => {
+          applyBusinessCaseStyles(spreadsheetInstanceRef.current, data);
+        }, 100);
         
         setIsReady(true);
       } catch (error) {
@@ -123,6 +245,24 @@ export const BusinessCaseEditor: React.FC<BusinessCaseEditorProps> = ({
       const data = spreadsheetInstanceRef.current.getData();
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet(data);
+      
+      // Apply some basic styling to Excel export
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const addr = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!ws[addr]) continue;
+          ws[addr].s = {
+            border: {
+              top: { style: 'thin', color: { rgb: 'E5E7EB' } },
+              bottom: { style: 'thin', color: { rgb: 'E5E7EB' } },
+              left: { style: 'thin', color: { rgb: 'E5E7EB' } },
+              right: { style: 'thin', color: { rgb: 'E5E7EB' } }
+            }
+          };
+        }
+      }
+      
       XLSX.utils.book_append_sheet(wb, ws, "Business Case");
       XLSX.writeFile(wb, `${bcName}.xlsx`);
       toast.success("Archivo Excel exportado");
@@ -187,7 +327,7 @@ export const BusinessCaseEditor: React.FC<BusinessCaseEditorProps> = ({
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Spreadsheet */}
-        <div className="flex-1 overflow-auto p-4">
+        <div className="flex-1 overflow-auto p-4 bc-spreadsheet-container">
           {!isReady && (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
@@ -196,7 +336,7 @@ export const BusinessCaseEditor: React.FC<BusinessCaseEditorProps> = ({
               </div>
             </div>
           )}
-          <div ref={jspreadsheetRef} className={isReady ? "" : "hidden"} />
+          <div ref={jspreadsheetRef} className={isReady ? "bc-spreadsheet" : "hidden"} />
         </div>
 
         {/* Side Panel */}
@@ -204,6 +344,52 @@ export const BusinessCaseEditor: React.FC<BusinessCaseEditorProps> = ({
           <ContractDataPanel contractData={contractData} />
         </div>
       </div>
+
+      {/* Custom styles for the spreadsheet */}
+      <style>{`
+        .bc-spreadsheet-container .jexcel {
+          font-family: var(--font-sans);
+          font-size: 13px;
+        }
+        
+        .bc-spreadsheet-container .jexcel td {
+          border: 1px solid hsl(var(--border));
+          padding: 6px 8px;
+        }
+        
+        .bc-spreadsheet-container .jexcel thead td {
+          background-color: hsl(var(--muted));
+          color: hsl(var(--muted-foreground));
+          font-weight: 600;
+          border-bottom: 2px solid hsl(var(--border));
+        }
+        
+        .bc-spreadsheet-container .jexcel tbody tr:hover td {
+          background-color: hsl(var(--accent) / 0.3);
+        }
+        
+        .bc-spreadsheet-container .jexcel .highlight {
+          background-color: hsl(var(--primary) / 0.1);
+        }
+        
+        .bc-spreadsheet-container .jexcel .highlight-selected {
+          background-color: hsl(var(--primary) / 0.2);
+          border: 2px solid hsl(var(--primary));
+        }
+        
+        .bc-spreadsheet-container .jexcel_content {
+          border-radius: 8px;
+          overflow: hidden;
+          border: 1px solid hsl(var(--border));
+        }
+        
+        .bc-spreadsheet-container .jexcel tbody td:first-child {
+          background-color: hsl(var(--muted));
+          color: hsl(var(--muted-foreground));
+          font-weight: 500;
+          text-align: center;
+        }
+      `}</style>
     </div>
   );
 };
