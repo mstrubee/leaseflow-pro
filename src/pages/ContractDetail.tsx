@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, FileCheck, AlertCircle, RefreshCw } from "lucide-react";
+import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, FileCheck, AlertCircle, RefreshCw, Calculator } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { DocumentVersions, DocumentVersion } from "@/components/contracts/DocumentVersions";
@@ -19,6 +19,7 @@ import { ContractSurfacesSection } from "@/components/contracts/ContractSurfaces
 import { ContractAlerts } from "@/components/alerts/ContractAlerts";
 import { BudgetDashboard } from "@/components/budget/BudgetDashboard";
 import { GanttModule } from "@/components/gantt/GanttModule";
+import { BusinessCaseModule } from "@/components/business-case/BusinessCaseModule";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { TerminationNoticesSection } from "@/components/contracts/TerminationNoticesSection";
 import { AlertsReturnButton } from "@/components/alerts/AlertsReturnButton";
@@ -177,6 +178,7 @@ const ContractDetail = () => {
     surfaces: "contract_surfaces",
     documentVersions: "contract_documents",
     repository: "contract_repository",
+    businessCase: "contract_business_case",
     budget: "contract_budget",
     gantt: "contract_gantt",
     alerts: "contract_alerts",
@@ -1219,6 +1221,32 @@ const ContractDetail = () => {
                           contractName={contract.name}
                           contractStatus={contract.status}
                         />
+                      </CollapsibleSection>
+                    </SelectableElement>
+                  );
+                }
+
+                case "businessCase": {
+                  // Only show for contracts en negociación
+                  if (contract.status !== "en_negociacion") return null;
+                  const permId = sectionPermissionMap[sectionKey];
+                  if (isHidden(permId)) return null;
+                  return (
+                    <SelectableElement
+                      key={sectionKey}
+                      elementId={permId}
+                      label="Business Case"
+                    >
+                      <CollapsibleSection
+                        id={sectionKey}
+                        title="Business Case"
+                        icon={<Calculator className="h-5 w-5" />}
+                        isCollapsed={isCollapsed(sectionKey)}
+                        onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
+                        isDraggable={canReorder}
+                        wrapperOnly
+                      >
+                        <BusinessCaseModule contractId={contract.id} />
                       </CollapsibleSection>
                     </SelectableElement>
                   );
