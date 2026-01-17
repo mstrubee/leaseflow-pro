@@ -5,19 +5,22 @@ import { ArrowLeft, Bell, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const ALERTS_RETURN_KEY = "alerts_return_url";
+const ALERTS_SCROLL_KEY = "alerts_scroll_position";
 
 export function useAlertsNavigation() {
   const navigate = useNavigate();
   const location = useLocation();
 
   const navigateToContractFromAlerts = (contractId: string) => {
-    // Store the current alerts URL before navigating
+    // Store the current alerts URL and scroll position before navigating
     sessionStorage.setItem(ALERTS_RETURN_KEY, location.pathname + location.search);
+    sessionStorage.setItem(ALERTS_SCROLL_KEY, window.scrollY.toString());
     navigate(`/contracts/${contractId}`, { state: { fromAlerts: true } });
   };
 
   const clearAlertsReturn = () => {
     sessionStorage.removeItem(ALERTS_RETURN_KEY);
+    sessionStorage.removeItem(ALERTS_SCROLL_KEY);
   };
 
   return { navigateToContractFromAlerts, clearAlertsReturn };
@@ -27,18 +30,18 @@ export function AlertsReturnButton() {
   const navigate = useNavigate();
   const location = useLocation();
   const [returnUrl, setReturnUrl] = useState<string | null>(null);
+  const [scrollPosition, setScrollPosition] = useState<number | null>(null);
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
     // Check if we came from alerts - check sessionStorage first
     const storedUrl = sessionStorage.getItem(ALERTS_RETURN_KEY);
-    const fromAlerts = (location.state as any)?.fromAlerts;
-    
-    console.log("AlertsReturnButton check:", { storedUrl, fromAlerts, pathname: location.pathname });
+    const storedScroll = sessionStorage.getItem(ALERTS_SCROLL_KEY);
     
     // Show button if there's a stored URL (we're on a contract page coming from alerts)
     if (storedUrl) {
       setReturnUrl(storedUrl);
+      setScrollPosition(storedScroll ? parseInt(storedScroll, 10) : null);
       setIsVisible(true);
     } else {
       setIsVisible(false);
@@ -46,20 +49,32 @@ export function AlertsReturnButton() {
   }, [location.pathname, location.state]);
 
   const handleReturn = () => {
-    console.log("handleReturn called, returnUrl:", returnUrl);
     if (returnUrl) {
       const url = returnUrl;
+      const scroll = scrollPosition;
       sessionStorage.removeItem(ALERTS_RETURN_KEY);
+      sessionStorage.removeItem(ALERTS_SCROLL_KEY);
       setIsVisible(false);
       setReturnUrl(null);
+      setScrollPosition(null);
+      
       navigate(url);
+      
+      // Restore scroll position after navigation
+      if (scroll !== null) {
+        setTimeout(() => {
+          window.scrollTo({ top: scroll, behavior: "instant" });
+        }, 100);
+      }
     }
   };
 
   const handleClose = () => {
     sessionStorage.removeItem(ALERTS_RETURN_KEY);
+    sessionStorage.removeItem(ALERTS_SCROLL_KEY);
     setIsVisible(false);
     setReturnUrl(null);
+    setScrollPosition(null);
   };
 
   return (
