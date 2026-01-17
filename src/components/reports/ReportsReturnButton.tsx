@@ -5,20 +5,23 @@ import { ArrowLeft, FileText, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const REPORTS_RETURN_KEY = "reports_return_url";
+const REPORTS_SCROLL_KEY = "reports_scroll_position";
 
 export function useReportsNavigation() {
   const navigate = useNavigate();
   const location = useLocation();
 
   const navigateToContractFromReports = (contractId: string, section?: string) => {
-    // Store the current reports URL before navigating
+    // Store the current reports URL and scroll position before navigating
     sessionStorage.setItem(REPORTS_RETURN_KEY, location.pathname + location.search);
+    sessionStorage.setItem(REPORTS_SCROLL_KEY, window.scrollY.toString());
     const sectionParam = section ? `?section=${section}` : "";
     navigate(`/contracts/${contractId}${sectionParam}`, { state: { fromReports: true } });
   };
 
   const clearReportsReturn = () => {
     sessionStorage.removeItem(REPORTS_RETURN_KEY);
+    sessionStorage.removeItem(REPORTS_SCROLL_KEY);
   };
 
   return { navigateToContractFromReports, clearReportsReturn };
@@ -28,15 +31,18 @@ export function ReportsReturnButton() {
   const navigate = useNavigate();
   const location = useLocation();
   const [returnUrl, setReturnUrl] = useState<string | null>(null);
+  const [scrollPosition, setScrollPosition] = useState<number | null>(null);
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
     // Check if we came from reports - check sessionStorage first
     const storedUrl = sessionStorage.getItem(REPORTS_RETURN_KEY);
+    const storedScroll = sessionStorage.getItem(REPORTS_SCROLL_KEY);
     
     // Show button if there's a stored URL (we're on a contract page coming from reports)
     if (storedUrl) {
       setReturnUrl(storedUrl);
+      setScrollPosition(storedScroll ? parseInt(storedScroll, 10) : null);
       setIsVisible(true);
     } else {
       setIsVisible(false);
@@ -46,17 +52,30 @@ export function ReportsReturnButton() {
   const handleReturn = () => {
     if (returnUrl) {
       const url = returnUrl;
+      const scroll = scrollPosition;
       sessionStorage.removeItem(REPORTS_RETURN_KEY);
+      sessionStorage.removeItem(REPORTS_SCROLL_KEY);
       setIsVisible(false);
       setReturnUrl(null);
+      setScrollPosition(null);
+      
       navigate(url);
+      
+      // Restore scroll position after navigation
+      if (scroll !== null) {
+        setTimeout(() => {
+          window.scrollTo({ top: scroll, behavior: "instant" });
+        }, 100);
+      }
     }
   };
 
   const handleClose = () => {
     sessionStorage.removeItem(REPORTS_RETURN_KEY);
+    sessionStorage.removeItem(REPORTS_SCROLL_KEY);
     setIsVisible(false);
     setReturnUrl(null);
+    setScrollPosition(null);
   };
 
   return (
