@@ -18,6 +18,7 @@ import { EconomicIndicators } from "./EconomicIndicators";
 import { PatentsModule } from "@/components/patents/PatentsModule";
 import { SelectableElement } from "@/components/admin/SelectableElement";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
+import { CommuneContractsDialog } from "./CommuneContractsDialog";
 import * as XLSX from "xlsx";
 
 // Chilean regions ordered geographically from north to south
@@ -110,6 +111,11 @@ export const DashboardStats = () => {
   });
   const [statsLoading, setStatsLoading] = useState(true);
   const [expandedRegions, setExpandedRegions] = useState<Set<string>>(new Set());
+  const [communeDialog, setCommuneDialog] = useState<{ open: boolean; region: string; commune: string }>({
+    open: false,
+    region: "",
+    commune: "",
+  });
 
   useEffect(() => {
     loadStats();
@@ -158,7 +164,9 @@ export const DashboardStats = () => {
       contracts?.forEach((contract: any) => {
         const region = contract.contract_addresses?.[0]?.region || "Sin región";
         const commune = contract.contract_addresses?.[0]?.commune || "Sin comuna";
-        const companyName = contract.contract_companies?.[0]?.company?.name?.toLowerCase() || "";
+        
+        // Get all companies for this contract
+        const companies = contract.contract_companies?.map((cc: any) => cc.company?.name?.toLowerCase() || "") || [];
         
         if (!regionMap[region]) {
           regionMap[region] = {
@@ -210,16 +218,22 @@ export const DashboardStats = () => {
             regionMap[region].communes[commune].vigentes++;
             totalVigentes++;
             
-            // Categorize by company
-            if (companyName.includes("autoplanet")) {
+            // Categorize by company - count for EACH company the contract has
+            const hasAutoplanet = companies.some((c: string) => c.includes("autoplanet"));
+            const hasAgroplanet = companies.some((c: string) => c.includes("agroplanet"));
+            const hasGrupoPlanet = companies.some((c: string) => c.includes("grupo planet") || c.includes("grupoplanet"));
+            
+            if (hasAutoplanet) {
               regionMap[region].vigentesAutoplanet++;
               regionMap[region].communes[commune].vigentesAutoplanet++;
               totalVigentesAutoplanet++;
-            } else if (companyName.includes("agroplanet")) {
+            }
+            if (hasAgroplanet) {
               regionMap[region].vigentesAgroplanet++;
               regionMap[region].communes[commune].vigentesAgroplanet++;
               totalVigentesAgroplanet++;
-            } else if (companyName.includes("grupo planet") || companyName.includes("grupoplanet")) {
+            }
+            if (hasGrupoPlanet) {
               regionMap[region].vigentesGrupoPlanet++;
               regionMap[region].communes[commune].vigentesGrupoPlanet++;
               totalVigentesGrupoPlanet++;
@@ -481,8 +495,8 @@ export const DashboardStats = () => {
                         <TableHead className="text-center">General</TableHead>
                         <TableHead className="text-center text-green-600">Vigentes</TableHead>
                         <TableHead className="text-center text-green-700">Autoplanet</TableHead>
-                        <TableHead className="text-center text-green-500">Agroplanet</TableHead>
-                        <TableHead className="text-center text-green-400">Grupo Planet</TableHead>
+                        <TableHead className="text-center text-red-600">Agroplanet</TableHead>
+                        <TableHead className="text-center text-blue-600">Grupo Planet</TableHead>
                         <TableHead className="text-center text-yellow-600">Negociación</TableHead>
                         <TableHead className="text-center text-red-600">Vencidos</TableHead>
                       </TableRow>
@@ -537,10 +551,10 @@ export const DashboardStats = () => {
                               <TableCell className="text-center text-green-700">
                                 {row.vigentesAutoplanet}
                               </TableCell>
-                              <TableCell className="text-center text-green-500">
+                              <TableCell className="text-center text-red-600 font-medium">
                                 {row.vigentesAgroplanet}
                               </TableCell>
-                              <TableCell className="text-center text-green-400">
+                              <TableCell className="text-center text-blue-600 font-medium">
                                 {row.vigentesGrupoPlanet}
                               </TableCell>
                               <TableCell 
@@ -558,8 +572,13 @@ export const DashboardStats = () => {
                             </TableRow>
                             {isExpanded && communesList.map((commune) => (
                               <TableRow key={`${row.region}-${commune.commune}`} className="bg-muted/20">
-                                <TableCell className="font-normal pl-12 text-muted-foreground">
-                                  {commune.commune}
+                                <TableCell className="font-normal pl-12">
+                                  <span 
+                                    className="text-muted-foreground cursor-pointer hover:text-primary hover:underline"
+                                    onClick={() => setCommuneDialog({ open: true, region: row.region, commune: commune.commune })}
+                                  >
+                                    {commune.commune}
+                                  </span>
                                 </TableCell>
                                 <TableCell className="text-center text-muted-foreground">
                                   {commune.total}
@@ -570,10 +589,10 @@ export const DashboardStats = () => {
                                 <TableCell className="text-center text-green-700/70">
                                   {commune.vigentesAutoplanet}
                                 </TableCell>
-                                <TableCell className="text-center text-green-500/70">
+                                <TableCell className="text-center text-red-600/70">
                                   {commune.vigentesAgroplanet}
                                 </TableCell>
-                                <TableCell className="text-center text-green-400/70">
+                                <TableCell className="text-center text-blue-600/70">
                                   {commune.vigentesGrupoPlanet}
                                 </TableCell>
                                 <TableCell className="text-center text-yellow-600/70">
@@ -600,8 +619,8 @@ export const DashboardStats = () => {
                           <TableCell className="text-center">{stats.totalContracts}</TableCell>
                           <TableCell className="text-center text-green-600">{stats.totalVigentes}</TableCell>
                           <TableCell className="text-center text-green-700">{stats.totalVigentesAutoplanet}</TableCell>
-                          <TableCell className="text-center text-green-500">{stats.totalVigentesAgroplanet}</TableCell>
-                          <TableCell className="text-center text-green-400">{stats.totalVigentesGrupoPlanet}</TableCell>
+                          <TableCell className="text-center text-red-600 font-medium">{stats.totalVigentesAgroplanet}</TableCell>
+                          <TableCell className="text-center text-blue-600 font-medium">{stats.totalVigentesGrupoPlanet}</TableCell>
                           <TableCell className="text-center text-yellow-600">{stats.totalNegociacion}</TableCell>
                           <TableCell className="text-center text-red-600">{stats.totalVencidos}</TableCell>
                         </TableRow>
@@ -621,6 +640,14 @@ export const DashboardStats = () => {
           <PatentsModule />
         </SelectableElement>
       )}
+
+      {/* Commune Contracts Dialog */}
+      <CommuneContractsDialog
+        open={communeDialog.open}
+        onOpenChange={(open) => setCommuneDialog((prev) => ({ ...prev, open }))}
+        region={communeDialog.region}
+        commune={communeDialog.commune}
+      />
     </div>
   );
 };
