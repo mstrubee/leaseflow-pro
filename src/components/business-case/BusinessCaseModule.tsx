@@ -46,12 +46,13 @@ export const BusinessCaseModule: React.FC<BusinessCaseModuleProps> = ({ contract
         .select(`
           *,
           contract_addresses(*),
-          contract_companies!contracts_tenant_company_id_fkey(name)
+          contract_companies(companies(name))
         `)
         .eq("id", contractId)
-        .single();
+        .maybeSingle();
       
       if (contractError) throw contractError;
+      if (!contract) return;
       
       const { data: versions, error: versionsError } = await supabase
         .from("contract_versions")
@@ -105,7 +106,7 @@ export const BusinessCaseModule: React.FC<BusinessCaseModuleProps> = ({ contract
         garantiaUF,
         gastosComunesUF,
         ubicacion: address ? `${address.street || ''} ${address.number || ''}, ${address.region || ''}`.trim() : "",
-        empresa: (contract?.contract_companies as any)?.name || ""
+        empresa: contract?.contract_companies?.[0]?.companies?.name || ""
       });
       
     } catch (error) {
