@@ -24,12 +24,11 @@ const applyBusinessCaseStyles = (instance: any, data: any[][]) => {
   if (!instance || !data) return;
 
   // Define row styles based on content patterns
-  const headerRows = [1, 4]; // Tasas de Rendimiento, Resumen Ejecutivo
+  const headerRows: number[] = [];
   const summaryLabelRows: number[] = [];
   const yearHeaderRow: number[] = [];
   const financialHighlightRows: number[] = [];
   const ebitdaRows: number[] = [];
-  const paybackRows: number[] = [];
 
   data.forEach((row, index) => {
     const cellB = String(row[1] || "").toLowerCase();
@@ -130,10 +129,22 @@ const applyBusinessCaseStyles = (instance: any, data: any[][]) => {
       }
     });
 
+    // Highlight formula cells with a subtle indicator
+    data.forEach((row, rowIndex) => {
+      row.forEach((cell, colIndex) => {
+        if (cell && String(cell).startsWith('=')) {
+          const cellName = `${String.fromCharCode(65 + colIndex)}${rowIndex + 1}`;
+          instance.setStyle(cellName, 'background-color', '#f0fdf4');
+          instance.setStyle(cellName, 'border', '1px solid #86efac');
+        }
+      });
+    });
+
   } catch (error) {
     console.error("Error applying styles:", error);
   }
 };
+
 
 export const BusinessCaseEditor: React.FC<BusinessCaseEditorProps> = ({
   initialData,
