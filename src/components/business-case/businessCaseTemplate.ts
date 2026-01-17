@@ -1,4 +1,4 @@
-// Business Case template - simplified to avoid TS compiler issues
+// Business Case template data
 export interface ContractData {
   ufValue: number;
   canonUF: number;
@@ -11,95 +11,122 @@ export interface ContractData {
   empresa: string;
 }
 
-const createCell = (r: number, c: number, value: string | number, opts: Record<string, any> = {}) => ({
-  r, c,
-  v: {
-    v: value,
-    m: String(value),
-    ct: { fa: "General", t: typeof value === "number" ? "n" : "s" },
-    ...opts
-  }
-});
-
-export const getAntofagastaBusinessCaseData = (): any[] => {
-  const cells = [
-    createCell(7, 1, "Tasas de Rendimiento", { bg: "#4472C4", fc: "#FFFFFF", bl: 1 }),
-    createCell(7, 2, "TIR", { bg: "#4472C4", fc: "#FFFFFF" }),
-    createCell(7, 3, 0.29, { bg: "#E2EFDA" }),
-    createCell(8, 2, "VAN", { bg: "#4472C4", fc: "#FFFFFF" }),
-    createCell(8, 3, 149.09, { bg: "#E2EFDA" }),
-    createCell(10, 1, "Resumen Ejecutivo", { bg: "#4472C4", fc: "#FFFFFF", bl: 1 }),
-    createCell(12, 1, "Fecha", { bg: "#D9E2F3" }), createCell(12, 3, "May-25"),
-    createCell(13, 1, "Pais", { bg: "#D9E2F3" }), createCell(13, 3, "Chile"),
-    createCell(14, 1, "Ubicación", { bg: "#D9E2F3" }), createCell(14, 3, "Av. Pedro Aguirre Cerda 9400, Antofagasta"),
-    createCell(15, 1, "Empresa", { bg: "#D9E2F3" }), createCell(15, 3, "Autoplanet"),
-    createCell(16, 1, "Superficie Local", { bg: "#D9E2F3" }), createCell(16, 2, "mt2"), createCell(16, 3, 393),
-    createCell(17, 1, "Valor x mt2", { bg: "#D9E2F3" }), createCell(17, 2, "mt2"), createCell(17, 3, 0.534),
-    createCell(18, 1, "Contrato Arriendo", { bg: "#D9E2F3" }), createCell(18, 2, "Años"), createCell(18, 3, 10),
-    createCell(19, 1, "Canon", { bg: "#D9E2F3" }), createCell(19, 2, "UF"), createCell(19, 3, 209.75),
-    createCell(20, 1, "Gasto Común y otros", { bg: "#D9E2F3" }), createCell(20, 2, "UF"), createCell(20, 3, 46.73),
-    createCell(21, 1, "Arriendo Total", { bg: "#D9E2F3" }), createCell(21, 2, "UF"), createCell(21, 3, 256.48),
-    createCell(28, 1, "Garantia", { bg: "#D9E2F3" }), createCell(28, 2, "UF"), createCell(28, 3, 630),
-    createCell(30, 1, "Tasa de descuento", { bg: "#D9E2F3" }), createCell(30, 3, 0.12),
-    createCell(37, 1, "Año", { bg: "#4472C4", fc: "#FFFFFF", bl: 1 }),
-    createCell(37, 2, 0, { bg: "#4472C4", fc: "#FFFFFF" }),
-    createCell(37, 3, 1, { bg: "#4472C4", fc: "#FFFFFF" }),
-    createCell(37, 4, 2, { bg: "#4472C4", fc: "#FFFFFF" }),
-    createCell(37, 5, 3, { bg: "#4472C4", fc: "#FFFFFF" }),
-    createCell(37, 6, 4, { bg: "#4472C4", fc: "#FFFFFF" }),
-    createCell(37, 7, 5, { bg: "#4472C4", fc: "#FFFFFF" }),
-    createCell(39, 1, "Ingresos", { bg: "#E2EFDA", bl: 1 }),
-    createCell(39, 3, 490), createCell(39, 4, 1080), createCell(39, 5, 1080), createCell(39, 6, 1200), createCell(39, 7, 1200),
-    createCell(53, 1, "EBITDA", { bg: "#4472C4", fc: "#FFFFFF", bl: 1 }),
-    createCell(53, 3, 4), createCell(53, 4, 194), createCell(53, 5, 190), createCell(53, 6, 237), createCell(53, 7, 232),
-    createCell(64, 1, "Flujo operativo", { bg: "#4472C4", fc: "#FFFFFF", bl: 1 }),
-    createCell(64, 2, -276), createCell(64, 3, 9), createCell(64, 4, 148), createCell(64, 5, 145), createCell(64, 6, 179), createCell(64, 7, 176),
-    createCell(65, 1, "PAYBACK", { bg: "#E2EFDA", bl: 1 }),
-    createCell(65, 2, -276), createCell(65, 3, -267), createCell(65, 4, -119), createCell(65, 5, 26), createCell(65, 6, 205), createCell(65, 7, 381),
-  ];
-
-  return [{
-    name: "Business Case",
-    id: "sheet1",
-    status: 1,
-    order: 0,
-    celldata: cells,
-    config: { columnlen: { 1: 220, 2: 80, 3: 100, 4: 100, 5: 100, 6: 100, 7: 100 } },
-    row: 80,
-    column: 16
-  }];
+// Antofagasta BC data from the uploaded Excel
+export const getAntofagastaBusinessCaseData = (): any => {
+  return {
+    data: [
+      ["", "", "", "", "", "", "", "", "", ""],
+      ["", "Tasas de Rendimiento", "TIR", "29%", "", "", "", "", "", ""],
+      ["", "", "VAN", "$149.09", "", "", "", "", "", ""],
+      ["", "", "", "", "", "", "", "", "", ""],
+      ["", "Resumen Ejecutivo", "", "", "", "", "", "", "", ""],
+      ["", "", "", "", "", "", "", "", "", ""],
+      ["", "Fecha", "", "May-25", "", "", "", "", "", ""],
+      ["", "Pais", "", "Chile", "", "", "", "", "", ""],
+      ["", "Ubicación", "", "Av. Pedro Aguirre Cerda 9400, Antofagasta", "", "", "", "", "", ""],
+      ["", "Empresa", "", "Autoplanet", "", "", "", "", "", ""],
+      ["", "Superficie Local", "mt2", "393", "", "", "", "", "", ""],
+      ["", "Valor x mt2", "mt2", "0.534", "", "", "", "", "", ""],
+      ["", "Contrato Arriendo", "Años", "10", "", "", "", "", "", ""],
+      ["", "Canon", "UF", "209.75", "", "", "", "", "", ""],
+      ["", "Gasto Común y otros", "UF", "46.73", "", "", "", "", "", ""],
+      ["", "Arriendo Total", "UF", "256.48", "", "", "", "", "", ""],
+      ["", "Inicio", "", "Feb-26", "", "", "", "", "", ""],
+      ["", "Fecha estimada de Finalización", "", "May-26", "", "", "", "", "", ""],
+      ["", "Inversión Habilitacion", "", "$200", "", "", "", "", "", ""],
+      ["", "Inversion Inventario", "", "-", "", "", "", "", "", ""],
+      ["", "Inversion Tecnologia", "", "$30", "", "", "", "", "", ""],
+      ["", "Inversion Marketing", "", "$8", "", "", "", "", "", ""],
+      ["", "Garantia", "UF", "630", "", "", "", "", "", ""],
+      ["", "Cobro por Instalaciones", "UF", "350", "", "", "", "", "", ""],
+      ["", "Tasa de descuento", "", "12%", "", "", "", "", "", ""],
+      ["", "Periodo de Recuperación (Año)", "años", "3", "", "", "", "", "", ""],
+      ["", "Rentabilidad al 4 año", "", "18%", "", "", "", "", "", ""],
+      ["", "TIR", "", "29%", "", "", "", "", "", ""],
+      ["", "VAN", "", "$149", "", "", "", "", "", ""],
+      ["", "", "", "", "", "", "", "", "", ""],
+      ["", "Año", "0", "1", "2", "3", "4", "5", "", ""],
+      ["", "", "2025", "2026", "2027", "2028", "2029", "2030", "", ""],
+      ["", "Ingresos", "", "490", "1080", "1080", "1200", "1200", "", ""],
+      ["", "Costo por ventas", "", "-221", "-486", "-486", "-540", "-540", "", ""],
+      ["", "Margen directo %", "", "55%", "55%", "55%", "55%", "55%", "", ""],
+      ["", "Otros Costos directos", "", "-4", "-9", "-9", "-10", "-10", "", ""],
+      ["", "Costos Variables", "", "-29", "-65", "-65", "-72", "-72", "", ""],
+      ["", "Margen de contribucion $", "", "236", "521", "521", "578", "578", "", ""],
+      ["", "Margen de contribucion %", "", "48.20%", "48.20%", "48.20%", "48.20%", "48.20%", "", ""],
+      ["", "Gastos Personal", "", "-84", "-148", "-153", "-157", "-162", "", ""],
+      ["", "Publicidad y Promocion", "", "-1", "-3", "-3", "-4", "-4", "", ""],
+      ["", "Gastos Generales", "", "-7", "-16", "-16", "-18", "-18", "", ""],
+      ["", "Tecnologia", "", "-9", "-19", "-19", "-22", "-22", "", ""],
+      ["", "Ocupacion sin Arrdo", "", "-7", "-16", "-16", "-18", "-18", "", ""],
+      ["", "Canon Arriendo", "", "-123", "-123", "-123", "-123", "-123", "", ""],
+      ["", "GAVs", "", "-232", "-327", "-331", "-342", "-346", "", ""],
+      ["", "EBITDA", "", "4", "194", "190", "237", "232", "", ""],
+      ["", "Depreciación Y Amortizacion", "", "-24", "-24", "-24", "-24", "-24", "", ""],
+      ["", "EBIT", "", "-20", "170", "166", "213", "208", "", ""],
+      ["", "ROS%", "", "-4%", "16%", "15%", "18%", "17%", "", ""],
+      ["", "Intereses (-)", "", "-", "-", "-", "-", "-", "", ""],
+      ["", "UAI", "", "-20", "170", "166", "213", "208", "", ""],
+      ["", "Impuesto%", "", "27%", "27%", "27%", "27%", "27%", "", ""],
+      ["", "Impuesto", "", "5", "-46", "-45", "-57", "-56", "", ""],
+      ["", "UDI", "", "-14", "124", "121", "155", "152", "", ""],
+      ["", "", "", "", "", "", "", "", "", ""],
+      ["", "Capex", "-276", "-", "-", "-", "-", "-", "", ""],
+      ["", "Flujo operativo", "-276", "9", "148", "145", "179", "176", "", ""],
+      ["", "PAYBACK", "-276", "-267", "-119", "26", "205", "381", "", ""],
+      ["", "PAYBACK años", "3", "", "", "", "", "", "", ""],
+      ["", "Activos Netos Totales", "", "-252", "-229", "-205", "-181", "-157", "", ""],
+      ["", "Capital de Trabajo", "", "100", "100", "100", "100", "100", "", ""],
+      ["", "Capital empleado", "", "-152", "-129", "-105", "-81", "-57", "", ""],
+      ["", "", "", "", "", "", "", "", "", ""],
+      ["", "Rentabilidad", "", "-4.0%", "15.8%", "15.4%", "17.7%", "17.4%", "", ""],
+    ]
+  };
 };
 
-export const getBlankBusinessCaseTemplate = (contractData: ContractData): any[] => {
-  const cells = [
-    createCell(7, 1, "Tasas de Rendimiento", { bg: "#4472C4", fc: "#FFFFFF", bl: 1 }),
-    createCell(7, 2, "TIR", { bg: "#4472C4", fc: "#FFFFFF" }),
-    createCell(8, 2, "VAN", { bg: "#4472C4", fc: "#FFFFFF" }),
-    createCell(10, 1, "Resumen Ejecutivo", { bg: "#4472C4", fc: "#FFFFFF", bl: 1 }),
-    createCell(14, 1, "Ubicación", { bg: "#D9E2F3" }), createCell(14, 3, contractData.ubicacion),
-    createCell(15, 1, "Empresa", { bg: "#D9E2F3" }), createCell(15, 3, contractData.empresa),
-    createCell(16, 1, "Superficie Local", { bg: "#D9E2F3" }), createCell(16, 2, "mt2"), createCell(16, 3, contractData.superficieM2),
-    createCell(18, 1, "Contrato Arriendo", { bg: "#D9E2F3" }), createCell(18, 2, "Años"), createCell(18, 3, contractData.duracionAnios),
-    createCell(19, 1, "Canon", { bg: "#D9E2F3" }), createCell(19, 2, "UF"), createCell(19, 3, contractData.canonUF),
-    createCell(20, 1, "Gasto Común", { bg: "#D9E2F3" }), createCell(20, 2, "UF"), createCell(20, 3, contractData.gastosComunesUF),
-    createCell(21, 1, "Arriendo Total", { bg: "#D9E2F3" }), createCell(21, 2, "UF"), createCell(21, 3, contractData.arriendoTotalUF),
-    createCell(28, 1, "Garantia", { bg: "#D9E2F3" }), createCell(28, 2, "UF"), createCell(28, 3, contractData.garantiaUF),
-    createCell(31, 1, "Valor UF", { bg: "#D9E2F3" }), createCell(31, 2, "CLP"), createCell(31, 3, contractData.ufValue),
-    createCell(37, 1, "Año", { bg: "#4472C4", fc: "#FFFFFF", bl: 1 }),
-    createCell(39, 1, "Ingresos", { bg: "#E2EFDA", bl: 1 }),
-    createCell(53, 1, "EBITDA", { bg: "#4472C4", fc: "#FFFFFF", bl: 1 }),
-    createCell(64, 1, "Flujo operativo", { bg: "#4472C4", fc: "#FFFFFF", bl: 1 }),
-    createCell(65, 1, "PAYBACK", { bg: "#E2EFDA", bl: 1 }),
-  ];
-
-  return [{
-    name: "Business Case",
-    id: "sheet1",
-    status: 1,
-    order: 0,
-    celldata: cells,
-    config: { columnlen: { 1: 220, 2: 80, 3: 100, 4: 100, 5: 100, 6: 100, 7: 100 } },
-    row: 80,
-    column: 16
-  }];
+// Blank template with system data pre-filled
+export const getBlankBusinessCaseTemplate = (contractData: ContractData): any => {
+  const valorPorM2 = contractData.superficieM2 > 0 
+    ? (contractData.canonUF / contractData.superficieM2).toFixed(3) 
+    : "0";
+    
+  return {
+    data: [
+      ["", "", "", "", "", "", "", "", "", ""],
+      ["", "Tasas de Rendimiento", "TIR", "", "", "", "", "", "", ""],
+      ["", "", "VAN", "", "", "", "", "", "", ""],
+      ["", "", "", "", "", "", "", "", "", ""],
+      ["", "Resumen Ejecutivo", "", "", "", "", "", "", "", ""],
+      ["", "", "", "", "", "", "", "", "", ""],
+      ["", "Fecha", "", new Date().toLocaleDateString('es-CL', { month: 'short', year: '2-digit' }), "", "", "", "", "", ""],
+      ["", "Pais", "", "Chile", "", "", "", "", "", ""],
+      ["", "Ubicación", "", contractData.ubicacion, "", "", "", "", "", ""],
+      ["", "Empresa", "", contractData.empresa, "", "", "", "", "", ""],
+      ["", "Superficie Local", "mt2", String(contractData.superficieM2), "", "", "", "", "", ""],
+      ["", "Valor x mt2", "UF/mt2", valorPorM2, "", "", "", "", "", ""],
+      ["", "Contrato Arriendo", "Años", String(contractData.duracionAnios), "", "", "", "", "", ""],
+      ["", "Canon", "UF", contractData.canonUF.toFixed(2), "", "", "", "", "", ""],
+      ["", "Gasto Común y otros", "UF", contractData.gastosComunesUF.toFixed(2), "", "", "", "", "", ""],
+      ["", "Arriendo Total", "UF", contractData.arriendoTotalUF.toFixed(2), "", "", "", "", "", ""],
+      ["", "Inicio", "", "", "", "", "", "", "", ""],
+      ["", "Fecha estimada de Finalización", "", "", "", "", "", "", "", ""],
+      ["", "Inversión Habilitacion", "", "", "", "", "", "", "", ""],
+      ["", "Inversion Inventario", "", "", "", "", "", "", "", ""],
+      ["", "Inversion Tecnologia", "", "", "", "", "", "", "", ""],
+      ["", "Inversion Marketing", "", "", "", "", "", "", "", ""],
+      ["", "Garantia", "UF", String(Math.round(contractData.garantiaUF)), "", "", "", "", "", ""],
+      ["", "Cobro por Instalaciones", "UF", "", "", "", "", "", "", ""],
+      ["", "Tasa de descuento", "", "12%", "", "", "", "", "", ""],
+      ["", "Valor UF", "CLP", `$${Math.round(contractData.ufValue).toLocaleString('es-CL')}`, "", "", "", "", "", ""],
+      ["", "", "", "", "", "", "", "", "", ""],
+      ["", "Año", "0", "1", "2", "3", "4", "5", "", ""],
+      ["", "Ingresos", "", "", "", "", "", "", "", ""],
+      ["", "Costo por ventas", "", "", "", "", "", "", "", ""],
+      ["", "Margen directo %", "", "", "", "", "", "", "", ""],
+      ["", "EBITDA", "", "", "", "", "", "", "", ""],
+      ["", "Flujo operativo", "", "", "", "", "", "", "", ""],
+      ["", "PAYBACK", "", "", "", "", "", "", "", ""],
+      ["", "Rentabilidad", "", "", "", "", "", "", "", ""],
+    ]
+  };
 };

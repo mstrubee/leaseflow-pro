@@ -8,7 +8,7 @@ import { calculateTotalArriendoUF, calculateGastosComunesUF } from "@/lib/contra
 import { BusinessCaseList } from "./BusinessCaseList";
 import { BusinessCaseEditor } from "./BusinessCaseEditor";
 import { ContractDataForBC } from "./ContractDataPanel";
-import { getBlankBusinessCaseTemplate, getAntofagastaBusinessCaseData } from "./businessCaseTemplate";
+import { getBlankBusinessCaseTemplate } from "./businessCaseTemplate";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 
@@ -34,14 +34,13 @@ export const BusinessCaseModule: React.FC<BusinessCaseModuleProps> = ({ contract
   
   const [editingBC, setEditingBC] = useState<BusinessCase | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [newBCData, setNewBCData] = useState<any[] | null>(null);
+  const [newBCData, setNewBCData] = useState<any | null>(null);
 
   // Fetch contract data for the panel
   const fetchContractData = useCallback(async () => {
     if (!contractId) return;
     
     try {
-      // Get contract basic info
       const { data: contract, error: contractError } = await supabase
         .from("contracts")
         .select(`
@@ -54,7 +53,6 @@ export const BusinessCaseModule: React.FC<BusinessCaseModuleProps> = ({ contract
       
       if (contractError) throw contractError;
       
-      // Get latest version
       const { data: versions, error: versionsError } = await supabase
         .from("contract_versions")
         .select("*")
@@ -68,7 +66,6 @@ export const BusinessCaseModule: React.FC<BusinessCaseModuleProps> = ({ contract
       const address = contract?.contract_addresses?.[0];
       const superficie = contract?.superficie_edificada_local || 0;
       
-      // Calculate rent values
       let canonUF = 0;
       let gastosComunesUF = 0;
       let arriendoTotalUF = 0;
@@ -77,7 +74,6 @@ export const BusinessCaseModule: React.FC<BusinessCaseModuleProps> = ({ contract
       if (latestVersion) {
         canonUF = latestVersion.regime_rent || 0;
         
-        // Calculate gastos comunes
         gastosComunesUF = calculateGastosComunesUF({
           version: latestVersion as any,
           superficie,
@@ -85,7 +81,6 @@ export const BusinessCaseModule: React.FC<BusinessCaseModuleProps> = ({ contract
           baseRegimeRent: canonUF
         });
         
-        // Calculate total arriendo
         const totalBreakdown = calculateTotalArriendoUF({
           version: latestVersion as any,
           signedDate: contract?.signed_date,
@@ -94,11 +89,10 @@ export const BusinessCaseModule: React.FC<BusinessCaseModuleProps> = ({ contract
         });
         arriendoTotalUF = totalBreakdown.total;
         
-        // Calculate garantia
         if (latestVersion.guarantee_type === 'multiplier') {
           garantiaUF = canonUF * (latestVersion.guarantee_multiplier || 0);
         } else {
-          garantiaUF = latestVersion.guarantee_amount || 0;
+          garantiaUF = (latestVersion as any).guarantee_amount || 0;
         }
       }
       
@@ -136,47 +130,11 @@ export const BusinessCaseModule: React.FC<BusinessCaseModuleProps> = ({ contract
     try {
       const arrayBuffer = await file.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: "array" });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
       
-      // Convert to FortuneSheet format
-      const sheets = workbook.SheetNames.map((sheetName, index) => {
-        const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
-        
-        const celldata: any[] = [];
-        (jsonData as any[][]).forEach((row, rowIndex) => {
-          row.forEach((cellValue, colIndex) => {
-            if (cellValue !== "") {
-              celldata.push({
-                r: rowIndex,
-                c: colIndex,
-                v: {
-                  v: cellValue,
-                  m: String(cellValue),
-                  ct: { fa: "General", t: typeof cellValue === "number" ? "n" : "s" }
-                }
-              });
-            }
-          });
-        });
-        
-        return {
-          name: sheetName,
-          color: "#ffffff",
-          id: `sheet${index}`,
-          status: index === 0 ? 1 : 0,
-          order: index,
-          celldata,
-          config: {
-            columnlen: {},
-            rowlen: {}
-          },
-          row: Math.max(jsonData.length, 50),
-          column: Math.max(...(jsonData as any[][]).map(r => r.length), 20),
-          luckysheet_selection_range: []
-        };
-      });
-      
-      setNewBCData(sheets);
+      setNewBCData({ data });
       setIsCreating(true);
       toast.success("Archivo importado correctamente");
     } catch (error) {
@@ -184,11 +142,10 @@ export const BusinessCaseModule: React.FC<BusinessCaseModuleProps> = ({ contract
       toast.error("Error al importar el archivo Excel");
     }
     
-    // Reset file input
     event.target.value = "";
   };
 
-  const handleSaveNew = async (data: any[], name: string) => {
+  const handleSaveNew = async (data: any, name: string) => {
     const result = await createBusinessCase(name, data);
     if (result) {
       setIsCreating(false);
@@ -196,7 +153,7 @@ export const BusinessCaseModule: React.FC<BusinessCaseModuleProps> = ({ contract
     }
   };
 
-  const handleSaveEdit = async (data: any[], name: string) => {
+  const handleSaveEdit = async (data: any, name: string) => {
     if (!editingBC) return;
     const result = await updateBusinessCase(editingBC.id, { spreadsheet_data: data, name });
     if (result) {
@@ -207,23 +164,9 @@ export const BusinessCaseModule: React.FC<BusinessCaseModuleProps> = ({ contract
   const handleExportBC = (bc: BusinessCase) => {
     try {
       const wb = XLSX.utils.book_new();
-      
-      bc.spreadsheet_data.forEach((sheet: any) => {
-        const maxRow = Math.max(...sheet.celldata.map((c: any) => c.r)) + 1;
-        const maxCol = Math.max(...sheet.celldata.map((c: any) => c.c)) + 1;
-        
-        const wsData: any[][] = Array(maxRow).fill(null).map(() => Array(maxCol).fill(""));
-        
-        sheet.celldata.forEach((cell: any) => {
-          if (cell.v) {
-            wsData[cell.r][cell.c] = cell.v.v !== undefined ? cell.v.v : cell.v.m || "";
-          }
-        });
-        
-        const ws = XLSX.utils.aoa_to_sheet(wsData);
-        XLSX.utils.book_append_sheet(wb, ws, sheet.name || "Business Case");
-      });
-      
+      const data = bc.spreadsheet_data?.data || [[""]];
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, ws, "Business Case");
       XLSX.writeFile(wb, `${bc.name}.xlsx`);
       toast.success("Archivo Excel exportado");
     } catch (error) {
@@ -232,7 +175,6 @@ export const BusinessCaseModule: React.FC<BusinessCaseModuleProps> = ({ contract
     }
   };
 
-  // Show editor if creating or editing
   if (isCreating && newBCData) {
     return (
       <BusinessCaseEditor
@@ -261,7 +203,6 @@ export const BusinessCaseModule: React.FC<BusinessCaseModuleProps> = ({ contract
 
   return (
     <div className="space-y-4">
-      {/* Actions */}
       <div className="flex flex-wrap gap-2">
         <Button onClick={handleCreateNew} size="sm">
           <Plus className="h-4 w-4 mr-2" />
@@ -282,7 +223,6 @@ export const BusinessCaseModule: React.FC<BusinessCaseModuleProps> = ({ contract
         </Button>
       </div>
 
-      {/* List of Business Cases */}
       <BusinessCaseList
         businessCases={businessCases}
         loading={loading}
