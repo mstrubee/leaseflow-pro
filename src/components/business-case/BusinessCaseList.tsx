@@ -1,7 +1,6 @@
 import React from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { 
   DropdownMenu, 
   DropdownMenuContent, 
@@ -23,6 +22,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { BusinessCase } from "@/hooks/useBusinessCase";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 
 interface BusinessCaseListProps {
   businessCases: BusinessCase[];

@@ -6,7 +6,7 @@ export interface BusinessCase {
   id: string;
   contract_id: string;
   name: string;
-  spreadsheet_data: any[];
+  spreadsheet_data: any;
   created_at: string;
   updated_at: string;
   created_by: string | null;
@@ -29,14 +29,7 @@ export const useBusinessCase = (contractId: string) => {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      
-      // Cast the data to handle JSONB type
-      const typedData = (data || []).map(item => ({
-        ...item,
-        spreadsheet_data: item.spreadsheet_data as any[]
-      }));
-      
-      setBusinessCases(typedData);
+      setBusinessCases((data || []) as BusinessCase[]);
     } catch (error) {
       console.error("Error fetching business cases:", error);
       toast.error("Error al cargar los Business Cases");
@@ -49,7 +42,7 @@ export const useBusinessCase = (contractId: string) => {
     fetchBusinessCases();
   }, [fetchBusinessCases]);
 
-  const createBusinessCase = async (name: string, spreadsheetData: any[]) => {
+  const createBusinessCase = async (name: string, spreadsheetData: any) => {
     setSaving(true);
     try {
       const { data: userData } = await supabase.auth.getUser();
@@ -59,7 +52,7 @@ export const useBusinessCase = (contractId: string) => {
         .insert({
           contract_id: contractId,
           name,
-          spreadsheet_data: spreadsheetData as any,
+          spreadsheet_data: spreadsheetData,
           created_by: userData.user?.id || null
         })
         .select()
@@ -67,14 +60,9 @@ export const useBusinessCase = (contractId: string) => {
 
       if (error) throw error;
       
-      const typedData = {
-        ...data,
-        spreadsheet_data: data.spreadsheet_data as any[]
-      };
-      
-      setBusinessCases(prev => [typedData, ...prev]);
+      setBusinessCases(prev => [data as BusinessCase, ...prev]);
       toast.success("Business Case creado exitosamente");
-      return typedData;
+      return data as BusinessCase;
     } catch (error) {
       console.error("Error creating business case:", error);
       toast.error("Error al crear el Business Case");
@@ -87,27 +75,17 @@ export const useBusinessCase = (contractId: string) => {
   const updateBusinessCase = async (id: string, updates: Partial<Pick<BusinessCase, "name" | "spreadsheet_data">>) => {
     setSaving(true);
     try {
-      const updateData: any = { ...updates };
-      if (updates.spreadsheet_data) {
-        updateData.spreadsheet_data = updates.spreadsheet_data as any;
-      }
-      
       const { data, error } = await supabase
         .from("business_cases")
-        .update(updateData)
+        .update(updates)
         .eq("id", id)
         .select()
         .single();
 
       if (error) throw error;
       
-      const typedData = {
-        ...data,
-        spreadsheet_data: data.spreadsheet_data as any[]
-      };
-      
-      setBusinessCases(prev => prev.map(bc => bc.id === id ? typedData : bc));
-      return typedData;
+      setBusinessCases(prev => prev.map(bc => bc.id === id ? (data as BusinessCase) : bc));
+      return data as BusinessCase;
     } catch (error) {
       console.error("Error updating business case:", error);
       toast.error("Error al guardar el Business Case");
