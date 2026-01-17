@@ -24,6 +24,7 @@ import { TerminationNoticesSection } from "@/components/contracts/TerminationNot
 import { AlertsReturnButton } from "@/components/alerts/AlertsReturnButton";
 import { OpexReturnButton } from "@/components/opex/OpexReturnButton";
 import { ReportsReturnButton } from "@/components/reports/ReportsReturnButton";
+import { DashboardRegionReturnButton } from "@/components/dashboard/DashboardRegionReturnButton";
 import { CollapsibleSection } from "@/components/contracts/CollapsibleSection";
 import { SelectableElement } from "@/components/admin/SelectableElement";
 import { useContractSections, SectionKey } from "@/hooks/useContractSections";
@@ -1323,6 +1324,9 @@ const ContractDetail = () => {
       
       {/* Floating return button when coming from Reports */}
       <ReportsReturnButton />
+      
+      {/* Floating return button when coming from Dashboard Region */}
+      <DashboardRegionReturnButton />
     </div>;
 };
 export default ContractDetail;
