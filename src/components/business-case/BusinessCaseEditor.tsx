@@ -199,6 +199,16 @@ export const BusinessCaseEditor: React.FC<BusinessCaseEditorProps> = ({
           tableWidth: "100%",
           tableHeight: "100%",
           defaultColWidth: 100,
+          // Opciones de edición explícitas
+          editable: true,
+          allowInsertRow: true,
+          allowInsertColumn: true,
+          allowDeleteRow: true,
+          allowDeleteColumn: true,
+          allowRenameColumn: true,
+          columnDrag: true,
+          rowDrag: true,
+          // Eventos
           onchange: () => setHasChanges(true),
           oninsertrow: () => setHasChanges(true),
           ondeleterow: () => setHasChanges(true),
@@ -347,7 +357,16 @@ export const BusinessCaseEditor: React.FC<BusinessCaseEditorProps> = ({
               </div>
             </div>
           )}
-          <div ref={jspreadsheetRef} className={isReady ? "bc-spreadsheet" : "hidden"} />
+          <div 
+            ref={jspreadsheetRef} 
+            className={isReady ? "bc-spreadsheet" : "hidden"}
+            style={{ pointerEvents: 'auto' }}
+          />
+          {isReady && (
+            <p className="text-xs text-muted-foreground mt-2">
+              💡 Haz doble clic en cualquier celda para editar
+            </p>
+          )}
         </div>
 
         {/* Side Panel */}
@@ -399,6 +418,35 @@ export const BusinessCaseEditor: React.FC<BusinessCaseEditorProps> = ({
           color: hsl(var(--muted-foreground));
           font-weight: 500;
           text-align: center;
+        }
+        
+        /* Asegurar que las celdas sean interactivas */
+        .bc-spreadsheet-container .jexcel td {
+          cursor: cell;
+          pointer-events: auto !important;
+          user-select: text;
+        }
+        
+        /* Editor inline visible y funcional */
+        .bc-spreadsheet-container .jexcel .editor,
+        .bc-spreadsheet-container .jexcel input,
+        .bc-spreadsheet-container .jexcel textarea {
+          pointer-events: auto !important;
+          z-index: 1000 !important;
+          background: white;
+          border: 2px solid hsl(var(--primary)) !important;
+        }
+        
+        /* Celda seleccionada más visible */
+        .bc-spreadsheet-container .jexcel td.selected {
+          background-color: hsl(var(--primary) / 0.15) !important;
+          outline: 2px solid hsl(var(--primary));
+        }
+        
+        /* Asegurar que el contenedor no bloquee eventos */
+        .bc-spreadsheet-container,
+        .bc-spreadsheet-container * {
+          pointer-events: auto;
         }
       `}</style>
     </div>
