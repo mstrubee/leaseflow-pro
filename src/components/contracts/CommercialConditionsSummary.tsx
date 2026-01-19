@@ -212,7 +212,12 @@ export function CommercialConditionsSummary({
     } else if (version.notice_type === "meses" && version.notice_value) {
       const noticeMonths = parseInt(version.notice_value) || 0;
       noticeDate = subMonths(endDate, noticeMonths);
-      noticeDateLabel = `${version.notice_value} meses antes`;
+      noticeDateLabel = `${version.notice_value} meses antes del término anticipado`;
+    } else if (version.notice_type === "sin_termino" && version.notice_value) {
+      // Contract end notice - N months before natural contract expiration
+      const noticeMonths = parseInt(version.notice_value) || 0;
+      noticeDate = subMonths(endDate, noticeMonths);
+      noticeDateLabel = `${version.notice_value} meses antes del vencimiento`;
     } else if (version.notice_type === "rangos" && noticeRanges.length > 0) {
       // Get the first non-expired range (a range is only expired if today > end_month date)
       const today = new Date();
