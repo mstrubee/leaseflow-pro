@@ -21,15 +21,17 @@ const DAYS_BEFORE_OPTIONS = [
 
 export interface NoticeEntry {
   id?: string;
-  notice_type: "meses" | "fecha" | "desde_mes";
-  notice_value: string;
+  months_before: number; // Meses antes del término anticipado principal
   notice_bilaterality: "unilateral_gp" | "bilateral";
-  description?: string;
   create_alert?: boolean;
   alert_days_before?: number[];
   alert_channels?: string[];
   alert_repeat_enabled?: boolean;
   alert_repeat_days?: number;
+  // Legacy fields for backward compatibility
+  notice_type?: "meses" | "fecha" | "desde_mes";
+  notice_value?: string;
+  description?: string;
 }
 
 interface MultipleNoticesSectionProps {
@@ -51,10 +53,8 @@ export function MultipleNoticesSection({
     onChange([
       ...notices,
       {
-        notice_type: "meses",
-        notice_value: "6",
+        months_before: 6,
         notice_bilaterality: "unilateral_gp",
-        description: "renovacion",
         create_alert: false,
         alert_days_before: [30, 7, 1],
         alert_channels: ["email"],
@@ -74,68 +74,22 @@ export function MultipleNoticesSection({
     onChange(notices.filter((_, i) => i !== index));
   };
 
-  // Calculate the deadline date for a notice
-  const calculateDeadlineDate = (notice: NoticeEntry): string | null => {
-    if (!signedDate || !durationMonths) return null;
-
-    try {
-      const startDate = parseISO(signedDate);
-      const endDate = addMonths(startDate, durationMonths);
-
-      if (notice.notice_type === "fecha") {
-        return notice.notice_value;
-      } else if (notice.notice_type === "desde_mes") {
-        // From specific month - the deadline is when that month starts
-        const fromMonth = parseInt(notice.notice_value) || 1;
-        const deadlineDate = addMonths(startDate, fromMonth - 1);
-        return format(deadlineDate, "yyyy-MM-dd");
-      } else {
-        const monthsBefore = parseInt(notice.notice_value) || 0;
-        const deadlineDate = addMonths(endDate, -monthsBefore);
-        return format(deadlineDate, "yyyy-MM-dd");
-      }
-    } catch (e) {
-      return null;
+  // Get months_before value, supporting legacy notice_value for backward compatibility
+  const getMonthsBefore = (notice: NoticeEntry): number => {
+    if (notice.months_before !== undefined) {
+      return notice.months_before;
     }
+    // Legacy: parse from notice_value if it was a "meses" type
+    if (notice.notice_value) {
+      return parseInt(notice.notice_value) || 6;
+    }
+    return 6;
   };
 
-  // Format the notice period display for "desde_mes" type
-  const formatFromMonthDisplay = (notice: NoticeEntry): string => {
-    if (!signedDate || !durationMonths || notice.notice_type !== "desde_mes") return "";
-    
-    try {
-      const startDate = parseISO(signedDate);
-      const fromMonth = parseInt(notice.notice_value) || 1;
-      const fromDate = addMonths(startDate, fromMonth - 1);
-      const endDate = addMonths(startDate, durationMonths);
-      
-      return `Desde ${format(fromDate, "d MMM yyyy", { locale: es })} hasta ${format(endDate, "d MMM yyyy", { locale: es })}`;
-    } catch {
-      return "";
-    }
-  };
-
-  // Format date for display
-  const formatDeadlineDisplay = (notice: NoticeEntry): string => {
-    const date = calculateDeadlineDate(notice);
-    if (!date) return "Fecha no disponible";
-    
-    try {
-      return format(parseISO(date), "d 'de' MMMM 'de' yyyy", { locale: es });
-    } catch {
-      return "Fecha inválida";
-    }
-  };
-
-  const getNoticeTypeLabel = (description?: string) => {
-    switch (description) {
-      case "renovacion":
-        return "Aviso de Renovación";
-      case "termino":
-        return "Aviso de Término";
-      default:
-        return "Aviso";
-    }
+  // Format the notice label
+  const getNoticeLabel = (notice: NoticeEntry): string => {
+    const months = getMonthsBefore(notice);
+    return `${months} ${months === 1 ? 'mes' : 'meses'} antes`;
   };
 
   return (
@@ -162,7 +116,7 @@ export function MultipleNoticesSection({
           >
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-muted-foreground">
-                Aviso #{index + 1}
+                Aviso #{index + 1} - {getNoticeLabel(notice)}
               </span>
               <Button
                 type="button"
@@ -176,117 +130,43 @@ export function MultipleNoticesSection({
             </div>
 
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Tipo de Aviso</Label>
-                <Select
-                  value={notice.description || "renovacion"}
-                  onValueChange={(value) => updateNotice(index, "description", value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="renovacion">Fecha tope para aviso de renovación</SelectItem>
-                    <SelectItem value="termino">Aviso de Término o Salida Anticipada</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Formato</Label>
-                  <Select
-                    value={notice.notice_type}
-                    onValueChange={(value) => updateNotice(index, "notice_type", value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="meses">Meses antes del vencimiento</SelectItem>
-                      <SelectItem value="desde_mes">Desde mes en específico</SelectItem>
-                      <SelectItem value="fecha">Fecha específica</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label>Meses antes del término anticipado *</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max={durationMonths || 999}
+                    value={getMonthsBefore(notice)}
+                    onChange={(e) => updateNotice(index, "months_before", parseInt(e.target.value) || 6)}
+                    placeholder="Ej: 6"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    El aviso debe darse {getMonthsBefore(notice)} {getMonthsBefore(notice) === 1 ? 'mes' : 'meses'} antes de la fecha de término anticipado
+                  </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label>
-                    {notice.notice_type === "meses" 
-                      ? "Número de Meses" 
-                      : notice.notice_type === "desde_mes"
-                        ? "Desde el Mes"
-                        : "Fecha"}
-                  </Label>
-                  {notice.notice_type === "meses" ? (
-                    <Input
-                      type="number"
-                      min="1"
-                      max={durationMonths || 999}
-                      value={notice.notice_value}
-                      onChange={(e) => updateNotice(index, "notice_value", e.target.value)}
-                      placeholder="Ej: 6"
-                    />
-                  ) : notice.notice_type === "desde_mes" ? (
-                    <Input
-                      type="number"
-                      min="1"
-                      max={durationMonths || 999}
-                      value={notice.notice_value}
-                      onChange={(e) => updateNotice(index, "notice_value", e.target.value)}
-                      placeholder="Ej: 12"
-                    />
-                  ) : (
-                    <Input
-                      type="date"
-                      value={notice.notice_value}
-                      onChange={(e) => updateNotice(index, "notice_value", e.target.value)}
-                    />
-                  )}
+                  <Label>Bilateralidad</Label>
+                  <RadioGroup
+                    value={notice.notice_bilaterality}
+                    onValueChange={(value) => updateNotice(index, "notice_bilaterality", value)}
+                    className="flex gap-4"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="unilateral_gp" id={`unilateral_${index}`} />
+                      <Label htmlFor={`unilateral_${index}`} className="cursor-pointer">
+                        Unilateral GP
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="bilateral" id={`bilateral_${index}`} />
+                      <Label htmlFor={`bilateral_${index}`} className="cursor-pointer">
+                        Bilateral
+                      </Label>
+                    </div>
+                  </RadioGroup>
                 </div>
-              </div>
-
-              {/* Show info for desde_mes type */}
-              {notice.notice_type === "desde_mes" && signedDate && durationMonths && (
-                <div className="bg-primary/5 border border-primary/20 rounded p-3">
-                  <p className="text-sm text-muted-foreground">
-                    Período de aviso: <span className="font-medium text-foreground">{formatFromMonthDisplay(notice)}</span>
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    El aviso puede ser dado desde el mes {notice.notice_value} hasta el fin del contrato
-                  </p>
-                </div>
-              )}
-
-              {/* Show calculated deadline - skip for desde_mes which has its own display */}
-              {signedDate && durationMonths && notice.notice_type !== "desde_mes" && (
-                <div className="bg-background/50 rounded p-2">
-                  <p className="text-xs text-muted-foreground">
-                    Fecha límite: <span className="font-medium text-foreground">{formatDeadlineDisplay(notice)}</span>
-                  </p>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label>Bilateralidad</Label>
-                <RadioGroup
-                  value={notice.notice_bilaterality}
-                  onValueChange={(value) => updateNotice(index, "notice_bilaterality", value)}
-                  className="flex gap-4"
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="unilateral_gp" id={`unilateral_${index}`} />
-                    <Label htmlFor={`unilateral_${index}`} className="cursor-pointer">
-                      Unilateral GP
-                    </Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="bilateral" id={`bilateral_${index}`} />
-                    <Label htmlFor={`bilateral_${index}`} className="cursor-pointer">
-                      Bilateral
-                    </Label>
-                  </div>
-                </RadioGroup>
               </div>
 
               {/* Alert creation section */}
@@ -306,7 +186,7 @@ export function MultipleNoticesSection({
                       Crear alerta para este aviso
                     </Label>
                     <p className="text-xs text-muted-foreground">
-                      Se creará una alerta basada en la fecha límite de este aviso
+                      Se creará una alerta {getMonthsBefore(notice)} {getMonthsBefore(notice) === 1 ? 'mes' : 'meses'} antes de la fecha de término anticipado
                     </p>
                   </div>
                 </div>
@@ -400,16 +280,6 @@ export function MultipleNoticesSection({
                         </div>
                       )}
                     </div>
-
-                    {/* Summary */}
-                    {signedDate && durationMonths && (
-                      <div className="pt-2 border-t border-border">
-                        <p className="text-xs text-muted-foreground">
-                          La alerta "{getNoticeTypeLabel(notice.description)}{contractName ? `: ${contractName}` : ""}" 
-                          se enviará {(notice.alert_days_before || [30, 7, 1]).sort((a, b) => b - a).map(d => d === 0 ? "el mismo día" : `${d} días antes`).join(", ")} de la fecha límite ({formatDeadlineDisplay(notice)})
-                        </p>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -428,13 +298,13 @@ export function MultipleNoticesSection({
 }
 
 // Helper function to create alerts from notices - to be called when saving the contract
+// The earlyTerminationDate is the deadline from the main "Tipo de Término Anticipado" configuration
 export async function createAlertsFromNotices(
   supabase: any,
   contractId: string,
   contractName: string,
   notices: NoticeEntry[],
-  signedDate: string,
-  durationMonths: number
+  earlyTerminationDate: string // The calculated date from the main notice type (meses, fecha, desde_mes, rangos)
 ): Promise<{ success: boolean; alertsCreated: number; errors: string[] }> {
   const errors: string[] = [];
   let alertsCreated = 0;
@@ -443,38 +313,22 @@ export async function createAlertsFromNotices(
     if (!notice.create_alert) continue;
 
     try {
-      const startDate = parseISO(signedDate);
-      const endDate = addMonths(startDate, durationMonths);
-      
-      let deadlineDate: string;
-      if (notice.notice_type === "fecha") {
-        deadlineDate = notice.notice_value;
-      } else if (notice.notice_type === "desde_mes") {
-        // From specific month - the alert is set for when that month starts
-        const fromMonth = parseInt(notice.notice_value) || 1;
-        deadlineDate = format(addMonths(startDate, fromMonth - 1), "yyyy-MM-dd");
-      } else {
-        const monthsBefore = parseInt(notice.notice_value) || 0;
-        deadlineDate = format(addMonths(endDate, -monthsBefore), "yyyy-MM-dd");
-      }
+      // Calculate deadline: N months before the early termination date
+      const monthsBefore = notice.months_before || 6;
+      const terminationDate = parseISO(earlyTerminationDate);
+      const deadlineDate = format(addMonths(terminationDate, -monthsBefore), "yyyy-MM-dd");
 
-      const noticeTypeLabel = notice.description === "renovacion" 
-        ? "Aviso de Renovación" 
-        : notice.description === "termino" 
-          ? "Aviso de Término" 
-          : "Aviso";
+      const alertTitle = `Aviso de Término Anticipado: ${contractName}`;
+      const alertMessage = `Se debe dar aviso de término anticipado ${monthsBefore} ${monthsBefore === 1 ? 'mes' : 'meses'} antes de la fecha de término. Fecha límite: ${format(parseISO(deadlineDate), "d 'de' MMMM 'de' yyyy", { locale: es })}`;
 
-      const alertTitle = `${noticeTypeLabel}${contractName ? `: ${contractName}` : ""}`;
-      const alertMessage = `Fecha límite para ${notice.description === "renovacion" ? "dar aviso de renovación" : "dar aviso de término"} del contrato ${contractName}. Fecha límite: ${format(parseISO(deadlineDate), "d 'de' MMMM 'de' yyyy", { locale: es })}`;
-
-      const { data: alertData, error: alertError } = await supabase
+      const { error: alertError } = await supabase
         .from("alerts")
         .insert({
           contract_id: contractId,
           title: alertTitle,
           message: alertMessage,
-          alert_type: notice.description === "renovacion" ? "contract_renewal" : "early_termination_notice",
-          alert_subtype: notice.description,
+          alert_type: "early_termination_notice",
+          alert_subtype: "termino_anticipado",
           due_date: deadlineDate,
           days_before: notice.alert_days_before || [30, 7, 1],
           channels: (notice.alert_channels || ["email"]) as ("email" | "whatsapp")[],
