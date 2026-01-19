@@ -99,7 +99,7 @@ export function RenegotiationDraftForm({
   const [otrosEgresosDescription, setOtrosEgresosDescription] = useState("");
   
   // Avisos
-  const [noticeType, setNoticeType] = useState<"meses" | "fecha" | "rangos">("meses");
+  const [noticeType, setNoticeType] = useState<"meses" | "fecha" | "rangos" | "desde_mes">("meses");
   const [noticeValue, setNoticeValue] = useState("");
   const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">("unilateral_gp");
   const [noticeRanges, setNoticeRanges] = useState<NoticeRange[]>([]);
@@ -783,6 +783,7 @@ export function RenegotiationDraftForm({
                       <SelectItem value="meses">Meses antes del vencimiento</SelectItem>
                       <SelectItem value="fecha">Fecha específica</SelectItem>
                       <SelectItem value="rangos">Rangos de meses</SelectItem>
+                      <SelectItem value="desde_mes">Desde mes en específico</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -893,6 +894,28 @@ export function RenegotiationDraftForm({
                         La duración del contrato es de {durationMonths} meses. Los rangos deben estar dentro de este período.
                       </p>
                     )}
+                  </div>
+                )}
+
+                {noticeType === "desde_mes" && (
+                  <div className="space-y-2">
+                    <Label>Desde el mes *</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max={parseInt(durationMonths) || 999}
+                      value={noticeValue}
+                      onChange={(e) => setNoticeValue(e.target.value)}
+                      placeholder="Ej: 12"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      El aviso podrá darse desde este mes hasta el final del contrato
+                      {durationMonths && noticeValue && parseInt(noticeValue) <= parseInt(durationMonths) && (
+                        <span className="block mt-1 font-medium">
+                          (Mes {noticeValue} al mes {durationMonths})
+                        </span>
+                      )}
+                    </p>
                   </div>
                 )}
               </CardContent>

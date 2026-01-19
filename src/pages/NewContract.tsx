@@ -51,7 +51,7 @@ const NewContract = () => {
   const [regimeRent, setRegimeRent] = useState("");
   const [variableRentPercentage, setVariableRentPercentage] = useState("");
   const [duration, setDuration] = useState("");
-  const [noticeType, setNoticeType] = useState<"fecha" | "meses" | "rangos">("meses");
+  const [noticeType, setNoticeType] = useState<"fecha" | "meses" | "rangos" | "desde_mes">("meses");
   const [noticeValue, setNoticeValue] = useState("");
   const [noticeRanges, setNoticeRanges] = useState<Array<{ start_month: number; end_month: number }>>([]);
   const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">("unilateral_gp");
@@ -179,7 +179,7 @@ const NewContract = () => {
             variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
             duration_months: duration ? parseInt(duration) : 12,
             notice_type: noticeType,
-            notice_value: noticeType === "rangos" ? "rangos" : (noticeValue || "6"),
+            notice_value: noticeType === "rangos" ? "" : (noticeValue || "6"),
             notice_bilaterality: noticeBilaterality,
             effective_date: fechaInicio || null,
             guarantee_multiplier: guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
@@ -1062,6 +1062,7 @@ const NewContract = () => {
                     <SelectItem value="meses">Meses antes del vencimiento</SelectItem>
                     <SelectItem value="fecha">Fecha específica</SelectItem>
                     <SelectItem value="rangos">Rangos de meses</SelectItem>
+                    <SelectItem value="desde_mes">Desde mes en específico</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1187,6 +1188,29 @@ const NewContract = () => {
                       La duración del contrato es de {duration} meses. Los rangos deben estar dentro de este período.
                     </p>
                   )}
+                </div>
+              )}
+
+              {noticeType === "desde_mes" && (
+                <div className="space-y-2">
+                  <Label htmlFor="noticeValue">Desde el mes *</Label>
+                  <Input
+                    id="noticeValue"
+                    type="number"
+                    min="1"
+                    max={parseInt(duration) || 999}
+                    value={noticeValue}
+                    onChange={(e) => setNoticeValue(e.target.value)}
+                    placeholder="Ej: 12"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    El aviso podrá darse desde este mes hasta el final del contrato
+                    {duration && noticeValue && parseInt(noticeValue) <= parseInt(duration) && (
+                      <span className="block mt-1 font-medium">
+                        (Mes {noticeValue} al mes {duration})
+                      </span>
+                    )}
+                  </p>
                 </div>
               )}
 
