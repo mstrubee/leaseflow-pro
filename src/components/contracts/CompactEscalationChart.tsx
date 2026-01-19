@@ -271,7 +271,7 @@ export function CompactEscalationChart({
                 stroke="none"
                 label={{
                   value: noticeMonthInfo.isFromSpecificMonth 
-                    ? `Aviso desde M${range.start_month}`
+                    ? `Término Anticipado desde M${range.start_month}`
                     : noticeMonthInfo.ranges && noticeMonthInfo.ranges.length > 1 
                       ? `Rango ${idx + 1}` 
                       : "Rango Aviso Salida",
