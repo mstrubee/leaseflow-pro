@@ -1873,7 +1873,7 @@ const EditContract = () => {
                             return (
                               <>
                                 <div className="space-y-2">
-                                  <Label>Tipo de Aviso de Término *</Label>
+                                  <Label>Tipo de Término Anticipado *</Label>
                                   <Select value={noticeType} onValueChange={(value: any) => {
                                     setNoticeType(value);
                                     setHasUnsavedChanges(true);

@@ -774,7 +774,7 @@ export function RenegotiationDraftForm({
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Tipo de Aviso de Término</Label>
+                  <Label>Tipo de Término Anticipado</Label>
                   <Select value={noticeType} onValueChange={(value: any) => setNoticeType(value)}>
                     <SelectTrigger>
                       <SelectValue />
