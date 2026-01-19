@@ -186,6 +186,11 @@ export function CompactEscalationChart({
       // The deadline is the last end_month of the ranges
       const lastRange = sortedRanges[sortedRanges.length - 1];
       return { ranges: sortedRanges, deadlineMonth: lastRange?.end_month };
+    } else if (noticeType === "desde_mes" && noticeValue) {
+      // "Desde mes en específico" - range from specified month to end of contract
+      const startMonth = parseInt(noticeValue) || 1;
+      const range: NoticeRange = { start_month: startMonth, end_month: durationMonths };
+      return { ranges: [range], deadlineMonth: durationMonths, isFromSpecificMonth: true };
     }
     return null;
   }, [effectiveDate, noticeType, noticeValue, noticeRanges, durationMonths]);
@@ -258,9 +263,11 @@ export function CompactEscalationChart({
                 fillOpacity={0.15}
                 stroke="none"
                 label={{
-                  value: noticeMonthInfo.ranges && noticeMonthInfo.ranges.length > 1 
-                    ? `Rango ${idx + 1}` 
-                    : "Rango Aviso Salida",
+                  value: noticeMonthInfo.isFromSpecificMonth 
+                    ? `Aviso desde M${range.start_month}`
+                    : noticeMonthInfo.ranges && noticeMonthInfo.ranges.length > 1 
+                      ? `Rango ${idx + 1}` 
+                      : "Rango Aviso Salida",
                   fontSize: 12,
                   fontWeight: 600,
                   fill: "hsl(var(--warning))",
@@ -376,7 +383,9 @@ export function CompactEscalationChart({
         )}
         {noticeMonthInfo && 'ranges' in noticeMonthInfo && (
           <span className="text-warning font-medium">
-            Avisos: {noticeMonthInfo.ranges?.map(r => `M${r.start_month}-${r.end_month}`).join(", ")}
+            {noticeMonthInfo.isFromSpecificMonth 
+              ? `Aviso: desde M${noticeMonthInfo.ranges?.[0]?.start_month}`
+              : `Avisos: ${noticeMonthInfo.ranges?.map(r => `M${r.start_month}-${r.end_month}`).join(", ")}`}
           </span>
         )}
         {summaryPoints.slice(0, 3).map((point, idx) => (
