@@ -30,36 +30,63 @@ serve(async (req) => {
     const currentYear = today.getFullYear();
     const lastYear = currentYear - 1;
 
-    // Helper function to safely fetch and parse JSON
-    const safeFetch = async (url: string): Promise<any> => {
-      const response = await fetch(url);
-      const text = await response.text();
+    // Helper function to safely fetch and parse JSON with retry logic
+    const safeFetch = async (url: string, retries = 3, delay = 1000): Promise<any> => {
+      let lastError: Error | null = null;
       
-      // Check if response is HTML (error page) instead of JSON
-      if (text.trim().startsWith('<')) {
-        console.error(`API returned HTML instead of JSON for ${url}:`, text.substring(0, 200));
-        throw new Error(`API returned HTML error page for ${url}`);
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+          const response = await fetch(url);
+          const text = await response.text();
+          
+          // Check if response is HTML (error page) instead of JSON
+          if (text.trim().startsWith('<')) {
+            console.error(`Attempt ${attempt}: API returned HTML for ${url}:`, text.substring(0, 100));
+            throw new Error(`API returned HTML error page`);
+          }
+          
+          return JSON.parse(text);
+        } catch (e) {
+          lastError = e as Error;
+          console.warn(`Attempt ${attempt}/${retries} failed for ${url}: ${lastError.message}`);
+          
+          if (attempt < retries) {
+            await new Promise(resolve => setTimeout(resolve, delay * attempt));
+          }
+        }
       }
       
-      try {
-        return JSON.parse(text);
-      } catch (e) {
-        console.error(`Failed to parse JSON from ${url}:`, text.substring(0, 200));
-        throw new Error(`Invalid JSON response from ${url}`);
-      }
+      throw lastError || new Error(`Failed to fetch ${url} after ${retries} attempts`);
     };
 
-    // Fetch UF values from mindicador.cl API
-    const ufData = await safeFetch('https://mindicador.cl/api/uf');
-    
-    // Fetch USD values for current year and last year to get full history
-    const [dollarCurrentYear, dollarLastYear] = await Promise.all([
-      safeFetch(`https://mindicador.cl/api/dolar/${currentYear}`),
-      safeFetch(`https://mindicador.cl/api/dolar/${lastYear}`)
-    ]);
+    // Fallback values in case API is completely unavailable
+    const FALLBACK_UF = 38500; // Approximate UF value as fallback
+    const FALLBACK_DOLLAR = 980; // Approximate dollar value as fallback
 
-    console.log(`Fetched ${dollarCurrentYear.serie?.length || 0} records for ${currentYear}`);
-    console.log(`Fetched ${dollarLastYear.serie?.length || 0} records for ${lastYear}`);
+    let ufData, dollarCurrentYear, dollarLastYear;
+    let usedFallback = false;
+
+    try {
+      // Fetch UF values from mindicador.cl API
+      ufData = await safeFetch('https://mindicador.cl/api/uf');
+    } catch (e) {
+      console.warn('UF fetch failed, using fallback values');
+      usedFallback = true;
+      ufData = { serie: [{ valor: FALLBACK_UF, fecha: today.toISOString() }] };
+    }
+
+    try {
+      // Fetch USD values for current year and last year
+      [dollarCurrentYear, dollarLastYear] = await Promise.all([
+        safeFetch(`https://mindicador.cl/api/dolar/${currentYear}`),
+        safeFetch(`https://mindicador.cl/api/dolar/${lastYear}`)
+      ]);
+    } catch (e) {
+      console.warn('Dollar fetch failed, using fallback values');
+      usedFallback = true;
+      dollarCurrentYear = { serie: [{ valor: FALLBACK_DOLLAR, fecha: today.toISOString() }] };
+      dollarLastYear = { serie: [] };
+    }
 
     // Get current UF value
     const currentUF = ufData.serie?.[0]?.valor || 0;
@@ -124,7 +151,8 @@ serve(async (req) => {
           sixMonths: [...dollarSixMonths].sort(sortByDate),
           oneYear: [...dollarOneYear].sort(sortByDate),
           date: today.toISOString()
-        }
+        },
+        usedFallback
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
