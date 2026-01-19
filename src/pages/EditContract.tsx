@@ -639,10 +639,10 @@ const EditContract = () => {
             .insert(
               multipleNotices.map((n) => ({
                 version_id: currentVersionId,
-                notice_type: n.notice_type,
-                notice_value: n.notice_value,
+                notice_type: "meses", // Always use "meses" as the type since notices are now just months before
+                notice_value: String(n.months_before || 6),
                 notice_bilaterality: n.notice_bilaterality,
-                description: n.description || null,
+                description: "termino_anticipado",
               }))
             );
 
