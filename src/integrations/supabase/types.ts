@@ -3839,7 +3839,7 @@ export type Database = {
         | "borrador_r"
         | "borrador_final_r"
         | "firmado_r"
-      notice_type: "fecha" | "meses" | "rangos"
+      notice_type: "fecha" | "meses" | "rangos" | "desde_mes"
       notification_channel: "email" | "whatsapp"
       patent_doc_status:
         | "pendiente"
@@ -3999,7 +3999,7 @@ export const Constants = {
         "borrador_final_r",
         "firmado_r",
       ],
-      notice_type: ["fecha", "meses", "rangos"],
+      notice_type: ["fecha", "meses", "rangos", "desde_mes"],
       notification_channel: ["email", "whatsapp"],
       patent_doc_status: [
         "pendiente",
