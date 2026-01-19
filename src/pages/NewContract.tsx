@@ -51,7 +51,9 @@ const NewContract = () => {
   const [regimeRent, setRegimeRent] = useState("");
   const [variableRentPercentage, setVariableRentPercentage] = useState("");
   const [duration, setDuration] = useState("");
-  const [noticeType, setNoticeType] = useState<"fecha" | "meses" | "rangos" | "desde_mes">("meses");
+  const [noticeType, setNoticeType] = useState<"fecha" | "meses" | "rangos" | "desde_mes" | "sin_termino">("meses");
+  const [contractEndNoticeMonths, setContractEndNoticeMonths] = useState("6");
+  const [contractEndNoticeBilaterality, setContractEndNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">("bilateral");
   const [noticeValue, setNoticeValue] = useState("");
   const [noticeRanges, setNoticeRanges] = useState<Array<{ start_month: number; end_month: number }>>([]);
   const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">("unilateral_gp");
@@ -179,8 +181,12 @@ const NewContract = () => {
             variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
             duration_months: duration ? parseInt(duration) : 12,
             notice_type: noticeType,
-            notice_value: noticeType === "rangos" ? "" : (noticeValue || "6"),
-            notice_bilaterality: noticeBilaterality,
+            notice_value: noticeType === "rangos" 
+              ? "" 
+              : noticeType === "sin_termino" 
+                ? (contractEndNoticeMonths || "6")
+                : (noticeValue || "6"),
+            notice_bilaterality: noticeType === "sin_termino" ? contractEndNoticeBilaterality : noticeBilaterality,
             effective_date: fechaInicio || null,
             guarantee_multiplier: guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
             has_periodic_adjustments: hasPeriodicAdjustments,
@@ -1079,6 +1085,7 @@ const NewContract = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="sin_termino">Sin término anticipado</SelectItem>
                     <SelectItem value="meses">Meses antes del vencimiento</SelectItem>
                     <SelectItem value="fecha">Fecha específica</SelectItem>
                     <SelectItem value="rangos">Rangos de meses</SelectItem>
@@ -1087,26 +1094,71 @@ const NewContract = () => {
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label>Tipo de Aviso</Label>
-                <RadioGroup
-                  value={noticeBilaterality}
-                  onValueChange={(value: "unilateral_gp" | "bilateral") => setNoticeBilaterality(value)}
-                  className="flex gap-4"
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="unilateral_gp" id="unilateralGpNew" />
-                    <Label htmlFor="unilateralGpNew">Unilateral GP</Label>
+              {/* Contract End Notice - only shown when no early termination */}
+              {noticeType === "sin_termino" && (
+                <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
+                  <Label className="text-base font-medium">Aviso de Término de Contrato</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Configura el aviso requerido antes del vencimiento natural del contrato.
+                  </p>
+                  
+                  <div className="space-y-2">
+                    <Label>Meses antes del vencimiento *</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max={parseInt(duration) || 999}
+                      value={contractEndNoticeMonths}
+                      onChange={(e) => setContractEndNoticeMonths(e.target.value)}
+                      placeholder="Ej: 6"
+                    />
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="bilateral" id="bilateralNew" />
-                    <Label htmlFor="bilateralNew">Bilateral</Label>
+
+                  <div className="space-y-2">
+                    <Label>Tipo de Aviso</Label>
+                    <RadioGroup
+                      value={contractEndNoticeBilaterality}
+                      onValueChange={(value: "unilateral_gp" | "bilateral") => setContractEndNoticeBilaterality(value)}
+                      className="flex gap-4"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="unilateral_gp" id="contractEndUnilateral" />
+                        <Label htmlFor="contractEndUnilateral">Unilateral GP</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="bilateral" id="contractEndBilateral" />
+                        <Label htmlFor="contractEndBilateral">Bilateral</Label>
+                      </div>
+                    </RadioGroup>
+                    <p className="text-xs text-muted-foreground">
+                      Bilateral: el propietario también puede dar aviso de término
+                    </p>
                   </div>
-                </RadioGroup>
-                <p className="text-xs text-muted-foreground">
-                  Bilateral: el propietario también puede dar aviso de término
-                </p>
-              </div>
+                </div>
+              )}
+
+              {noticeType !== "sin_termino" && (
+                <div className="space-y-2">
+                  <Label>Tipo de Aviso</Label>
+                  <RadioGroup
+                    value={noticeBilaterality}
+                    onValueChange={(value: "unilateral_gp" | "bilateral") => setNoticeBilaterality(value)}
+                    className="flex gap-4"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="unilateral_gp" id="unilateralGpNew" />
+                      <Label htmlFor="unilateralGpNew">Unilateral GP</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="bilateral" id="bilateralNew" />
+                      <Label htmlFor="bilateralNew">Bilateral</Label>
+                    </div>
+                  </RadioGroup>
+                  <p className="text-xs text-muted-foreground">
+                    Bilateral: el propietario también puede dar aviso de término
+                  </p>
+                </div>
+              )}
 
               {noticeType === "meses" && (
                 <div className="space-y-2">
