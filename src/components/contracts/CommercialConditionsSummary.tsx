@@ -160,7 +160,11 @@ export function CommercialConditionsSummary({
       })} UF`;
     } else if (displayCurrency === "UF" && ufValue > 0) {
       const clp = convertUFToPesos(amount);
-      return clp > 0 ? `$${Math.round(clp).toLocaleString("es-CL")}` : "";
+      if (clp > 0) {
+        const ufFormatted = ufValue.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return `$${Math.round(clp).toLocaleString("es-CL")} (UF: ${ufFormatted})`;
+      }
+      return "";
     }
     return "";
   };
