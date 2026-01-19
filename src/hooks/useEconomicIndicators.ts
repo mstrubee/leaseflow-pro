@@ -51,16 +51,13 @@ export const useEconomicIndicators = () => {
     // Check cache first
     const cacheKey = date.split('T')[0]; // Use date part only for caching
     if (historicalUFCache[cacheKey]) {
+      console.log(`[getHistoricalUF] Using cached value for ${cacheKey}:`, historicalUFCache[cacheKey]);
       return historicalUFCache[cacheKey];
     }
 
     try {
-      const { data: response, error } = await supabase.functions.invoke('economic-indicators', {
-        body: null,
-        headers: {},
-      });
+      console.log(`[getHistoricalUF] Fetching historical UF for date: ${cacheKey}`);
       
-      // For now, use a direct fetch to pass query params
       const projectUrl = import.meta.env.VITE_SUPABASE_URL;
       const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
       
@@ -75,21 +72,25 @@ export const useEconomicIndicators = () => {
       );
       
       if (!fetchResponse.ok) {
-        console.error('Failed to fetch historical UF');
+        console.error('[getHistoricalUF] Failed to fetch historical UF, status:', fetchResponse.status);
         return null;
       }
       
       const result = await fetchResponse.json();
+      console.log('[getHistoricalUF] API response:', result);
+      
       const historicalValue = result?.uf?.historical;
       
       if (historicalValue) {
         historicalUFCache[cacheKey] = historicalValue;
+        console.log(`[getHistoricalUF] Cached value for ${cacheKey}:`, historicalValue);
         return historicalValue;
       }
       
+      console.warn('[getHistoricalUF] No historical value in response');
       return null;
     } catch (error) {
-      console.error('Error fetching historical UF:', error);
+      console.error('[getHistoricalUF] Error:', error);
       return null;
     }
   }, []);
