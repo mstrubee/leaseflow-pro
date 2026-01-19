@@ -492,7 +492,11 @@ const EditContract = () => {
             variable_rent_percentage: variableRentPercentage ? parseFloat(variableRentPercentage) : null,
             duration_months: parseInt(duration) || 12,
             notice_type: noticeType === "rangos" ? "rangos" as any : noticeType,
-            notice_value: noticeType === "rangos" ? "" : (noticeValue || "3"),
+            notice_value: noticeType === "rangos" 
+              ? "" 
+              : noticeType === "sin_termino" 
+                ? (contractEndNoticeMonths || "6")
+                : (noticeValue || "3"),
             guarantee_multiplier: guaranteeType === 'multiplier' && guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
             guarantee_type: guaranteeType,
             guarantee_fixed_amount: (guaranteeType === 'fixed_uf' || guaranteeType === 'fixed_clp') && guaranteeFixedAmount ? parseFloat(guaranteeFixedAmount) : null,
