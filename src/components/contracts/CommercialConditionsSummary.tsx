@@ -90,17 +90,32 @@ export function CommercialConditionsSummary({
 }: CommercialConditionsSummaryProps) {
   const {
     ufValue,
-    convertUFToPesos
+    convertUFToPesos,
+    getHistoricalUF
   } = useEconomicIndicators();
 
   // Entry expenses state
   const [entryExpenses, setEntryExpenses] = useState<EntryExpense[]>([]);
+  
+  // Historical UF value for guarantee conversion (based on signed date)
+  const [historicalUFForGuarantee, setHistoricalUFForGuarantee] = useState<number | null>(null);
   
   // Collapsible state for Total Arriendo detail - persisted
   const { isOpen: totalArriendoExpanded, toggle: toggleTotalArriendoExpanded } = useSingleCollapsible(
     `total_arriendo_expanded_${contractId || 'default'}`,
     false
   );
+  
+  // Fetch historical UF for guarantee if the guarantee is in CLP
+  useEffect(() => {
+    const fetchHistoricalUF = async () => {
+      if (version.guarantee_fixed_currency === 'CLP' && signedDate) {
+        const historicalValue = await getHistoricalUF(signedDate);
+        setHistoricalUFForGuarantee(historicalValue);
+      }
+    };
+    fetchHistoricalUF();
+  }, [version.guarantee_fixed_currency, signedDate, getHistoricalUF]);
   
   useEffect(() => {
     if (contractId) {
@@ -240,24 +255,28 @@ export function CommercialConditionsSummary({
     : null;
   
   // Calculate guarantee amount based on type
+  // For CLP guarantees, use the historical UF value from the signed date
   const guaranteeType = version.guarantee_type || 'multiplier';
   const guaranteeAmount = useMemo(() => {
     if (guaranteeType === 'multiplier' && version.guarantee_multiplier) {
       return version.guarantee_multiplier * actualRegimeRent;
     }
     if ((guaranteeType === 'fixed_uf' || guaranteeType === 'fixed_clp') && version.guarantee_fixed_amount) {
-      // If fixed in CLP and display is UF, convert
-      if (version.guarantee_fixed_currency === 'CLP' && displayCurrency === 'UF' && ufValue > 0) {
-        return version.guarantee_fixed_amount / ufValue;
+      // If fixed in CLP and display is UF, convert using historical UF (signed date) or current as fallback
+      if (version.guarantee_fixed_currency === 'CLP' && displayCurrency === 'UF') {
+        const ufForConversion = historicalUFForGuarantee || ufValue;
+        if (ufForConversion > 0) {
+          return version.guarantee_fixed_amount / ufForConversion;
+        }
       }
-      // If fixed in UF and display is CLP, convert
+      // If fixed in UF and display is CLP, convert using current UF
       if (version.guarantee_fixed_currency === 'UF' && displayCurrency === 'CLP' && ufValue > 0) {
         return version.guarantee_fixed_amount * ufValue;
       }
       return version.guarantee_fixed_amount;
     }
     return null;
-  }, [guaranteeType, version.guarantee_multiplier, version.guarantee_fixed_amount, version.guarantee_fixed_currency, actualRegimeRent, displayCurrency, ufValue]);
+  }, [guaranteeType, version.guarantee_multiplier, version.guarantee_fixed_amount, version.guarantee_fixed_currency, actualRegimeRent, displayCurrency, ufValue, historicalUFForGuarantee]);
 
   // Determine if contract has not started yet (in negotiation or future start date)
   const isContractNotStarted = useMemo(() => {
@@ -670,7 +689,9 @@ export function CommercialConditionsSummary({
               <p className="text-xs text-muted-foreground">
                 {guaranteeType === 'multiplier' 
                   ? `(${version.guarantee_multiplier}× canon)`
-                  : `(monto fijo en ${version.guarantee_fixed_currency})`
+                  : version.guarantee_fixed_currency === 'CLP' && historicalUFForGuarantee && signedDate
+                    ? `(monto fijo en $, UF al ${format(parseISO(signedDate), "dd/MM/yyyy")}: ${historicalUFForGuarantee.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
+                    : `(monto fijo en ${version.guarantee_fixed_currency})`
                 }
               </p>
             </div>}
