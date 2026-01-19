@@ -358,14 +358,16 @@ export function CompactEscalationChart({
               />
             )}
             
-            {/* Current month red vertical line with month number */}
+            {/* Current month red vertical line with month/year */}
             {currentMonth && (
               <ReferenceLine 
                 x={currentMonth} 
                 stroke="hsl(var(--destructive))" 
                 strokeWidth={2}
                 label={{ 
-                  value: `M${currentMonth}`, 
+                  value: effectiveDate 
+                    ? format(addMonths(new Date(effectiveDate), currentMonth - 1), "MMM yyyy", { locale: es })
+                    : `M${currentMonth}`, 
                   fontSize: 10, 
                   fill: "hsl(var(--destructive))",
                   position: "top"
