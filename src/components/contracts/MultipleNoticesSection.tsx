@@ -141,7 +141,7 @@ export function MultipleNoticesSection({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <Label className="text-base font-medium">Otros Avisos</Label>
+        <Label className="text-base font-medium">Avisos de Término Anticipado</Label>
         <Button type="button" variant="outline" size="sm" onClick={addNotice} className="gap-1">
           <Plus className="h-4 w-4" />
           Agregar Aviso

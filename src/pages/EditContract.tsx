@@ -168,7 +168,7 @@ const EditContract = () => {
       otrosArrendamientos: "Otros Arrendamientos",
       periodicAdjustments: "Reajustes Periódicos",
       duration: "Duración",
-      noticeType: "Avisos",
+      noticeType: "Término Anticipado",
     };
     
     // Add UF/m² indicator for sections that use it
