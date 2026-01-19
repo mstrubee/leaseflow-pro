@@ -572,9 +572,9 @@ export function CommercialConditionsSummary({
             ) : (
               <>
                 <p className="text-sm font-medium">
-                  {dates?.noticeDateLabel || (dates?.noticeDate ? formatDateShort(dates.noticeDate) : "Sin definir")}
+                  {dates?.noticeDate ? formatDateShort(dates.noticeDate) : "Sin definir"}
                 </p>
-                {version.notice_type !== "rangos" && dates?.noticeDateLabel && (
+                {dates?.noticeDateLabel && (
                   <p className="text-xs text-muted-foreground">
                     ({dates.noticeDateLabel})
                   </p>
