@@ -106,16 +106,16 @@ export function CommercialConditionsSummary({
     false
   );
   
-  // Fetch historical UF for guarantee if the guarantee is in CLP
+  // Always fetch historical UF for the signed date (used for guarantee conversion)
   useEffect(() => {
     const fetchHistoricalUF = async () => {
-      if (version.guarantee_fixed_currency === 'CLP' && signedDate) {
+      if (signedDate) {
         const historicalValue = await getHistoricalUF(signedDate);
         setHistoricalUFForGuarantee(historicalValue);
       }
     };
     fetchHistoricalUF();
-  }, [version.guarantee_fixed_currency, signedDate, getHistoricalUF]);
+  }, [signedDate, getHistoricalUF]);
   
   useEffect(() => {
     if (contractId) {
@@ -169,7 +169,7 @@ export function CommercialConditionsSummary({
     return "";
   };
 
-  // Secondary format for guarantee - uses historical UF for CLP guarantees
+  // Secondary format for guarantee - always uses historical UF from signed date
   const formatSecondaryGuarantee = (amount: number) => {
     if (displayCurrency === "CLP" && ufValue > 0) {
       const uf = amount / ufValue;
@@ -178,10 +178,8 @@ export function CommercialConditionsSummary({
         maximumFractionDigits: 2
       })} UF`;
     } else if (displayCurrency === "UF") {
-      // For CLP guarantees, use historical UF; otherwise use current
-      const ufForConversion = version.guarantee_fixed_currency === 'CLP' && historicalUFForGuarantee 
-        ? historicalUFForGuarantee 
-        : ufValue;
+      // Always use historical UF from signed date for guarantee conversion
+      const ufForConversion = historicalUFForGuarantee || ufValue;
       
       if (ufForConversion > 0) {
         const clp = amount * ufForConversion;
@@ -716,10 +714,14 @@ export function CommercialConditionsSummary({
               </p>
               <p className="text-xs text-muted-foreground">
                 {guaranteeType === 'multiplier' 
-                  ? `(${version.guarantee_multiplier}× canon)`
+                  ? historicalUFForGuarantee && signedDate
+                    ? `(${version.guarantee_multiplier}× canon, UF al ${format(parseISO(signedDate), "dd/MM/yyyy")}: ${historicalUFForGuarantee.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
+                    : `(${version.guarantee_multiplier}× canon)`
                   : version.guarantee_fixed_currency === 'CLP' && historicalUFForGuarantee && signedDate
                     ? `(monto fijo en $, UF al ${format(parseISO(signedDate), "dd/MM/yyyy")}: ${historicalUFForGuarantee.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
-                    : `(monto fijo en ${version.guarantee_fixed_currency})`
+                    : historicalUFForGuarantee && signedDate
+                      ? `(monto fijo en ${version.guarantee_fixed_currency}, UF al ${format(parseISO(signedDate), "dd/MM/yyyy")}: ${historicalUFForGuarantee.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
+                      : `(monto fijo en ${version.guarantee_fixed_currency})`
                 }
               </p>
             </div>}
