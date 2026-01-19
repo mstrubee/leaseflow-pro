@@ -169,6 +169,30 @@ export function CommercialConditionsSummary({
     return "";
   };
 
+  // Secondary format for guarantee - uses historical UF for CLP guarantees
+  const formatSecondaryGuarantee = (amount: number) => {
+    if (displayCurrency === "CLP" && ufValue > 0) {
+      const uf = amount / ufValue;
+      return `${uf.toLocaleString("es-CL", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      })} UF`;
+    } else if (displayCurrency === "UF") {
+      // For CLP guarantees, use historical UF; otherwise use current
+      const ufForConversion = version.guarantee_fixed_currency === 'CLP' && historicalUFForGuarantee 
+        ? historicalUFForGuarantee 
+        : ufValue;
+      
+      if (ufForConversion > 0) {
+        const clp = amount * ufForConversion;
+        const ufFormatted = ufForConversion.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return `$${Math.round(clp).toLocaleString("es-CL")} (UF: ${ufFormatted})`;
+      }
+      return "";
+    }
+    return "";
+  };
+
   // Calculate dates
   const dates = useMemo(() => {
     // Find the start date: effective_date of current version, or signed_date for original
@@ -688,7 +712,7 @@ export function CommercialConditionsSummary({
                 {formatPrimary(guaranteeAmount)}
               </p>
               <p className="text-xs text-muted-foreground">
-                {formatSecondary(guaranteeAmount)}
+                {formatSecondaryGuarantee(guaranteeAmount)}
               </p>
               <p className="text-xs text-muted-foreground">
                 {guaranteeType === 'multiplier' 
