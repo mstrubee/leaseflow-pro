@@ -21,7 +21,7 @@ const DAYS_BEFORE_OPTIONS = [
 
 export interface NoticeEntry {
   id?: string;
-  notice_type: "meses" | "fecha";
+  notice_type: "meses" | "fecha" | "desde_mes";
   notice_value: string;
   notice_bilaterality: "unilateral_gp" | "bilateral";
   description?: string;
@@ -84,6 +84,11 @@ export function MultipleNoticesSection({
 
       if (notice.notice_type === "fecha") {
         return notice.notice_value;
+      } else if (notice.notice_type === "desde_mes") {
+        // From specific month - the deadline is when that month starts
+        const fromMonth = parseInt(notice.notice_value) || 1;
+        const deadlineDate = addMonths(startDate, fromMonth - 1);
+        return format(deadlineDate, "yyyy-MM-dd");
       } else {
         const monthsBefore = parseInt(notice.notice_value) || 0;
         const deadlineDate = addMonths(endDate, -monthsBefore);
@@ -91,6 +96,22 @@ export function MultipleNoticesSection({
       }
     } catch (e) {
       return null;
+    }
+  };
+
+  // Format the notice period display for "desde_mes" type
+  const formatFromMonthDisplay = (notice: NoticeEntry): string => {
+    if (!signedDate || !durationMonths || notice.notice_type !== "desde_mes") return "";
+    
+    try {
+      const startDate = parseISO(signedDate);
+      const fromMonth = parseInt(notice.notice_value) || 1;
+      const fromDate = addMonths(startDate, fromMonth - 1);
+      const endDate = addMonths(startDate, durationMonths);
+      
+      return `Desde ${format(fromDate, "d MMM yyyy", { locale: es })} hasta ${format(endDate, "d MMM yyyy", { locale: es })}`;
+    } catch {
+      return "";
     }
   };
 
@@ -183,6 +204,7 @@ export function MultipleNoticesSection({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="meses">Meses antes del vencimiento</SelectItem>
+                      <SelectItem value="desde_mes">Desde mes en específico</SelectItem>
                       <SelectItem value="fecha">Fecha específica</SelectItem>
                     </SelectContent>
                   </Select>
@@ -190,7 +212,11 @@ export function MultipleNoticesSection({
 
                 <div className="space-y-2">
                   <Label>
-                    {notice.notice_type === "meses" ? "Número de Meses" : "Fecha"}
+                    {notice.notice_type === "meses" 
+                      ? "Número de Meses" 
+                      : notice.notice_type === "desde_mes"
+                        ? "Desde el Mes"
+                        : "Fecha"}
                   </Label>
                   {notice.notice_type === "meses" ? (
                     <Input
@@ -200,6 +226,15 @@ export function MultipleNoticesSection({
                       value={notice.notice_value}
                       onChange={(e) => updateNotice(index, "notice_value", e.target.value)}
                       placeholder="Ej: 6"
+                    />
+                  ) : notice.notice_type === "desde_mes" ? (
+                    <Input
+                      type="number"
+                      min="1"
+                      max={durationMonths || 999}
+                      value={notice.notice_value}
+                      onChange={(e) => updateNotice(index, "notice_value", e.target.value)}
+                      placeholder="Ej: 12"
                     />
                   ) : (
                     <Input
@@ -211,8 +246,20 @@ export function MultipleNoticesSection({
                 </div>
               </div>
 
-              {/* Show calculated deadline */}
-              {signedDate && durationMonths && (
+              {/* Show info for desde_mes type */}
+              {notice.notice_type === "desde_mes" && signedDate && durationMonths && (
+                <div className="bg-primary/5 border border-primary/20 rounded p-3">
+                  <p className="text-sm text-muted-foreground">
+                    Período de aviso: <span className="font-medium text-foreground">{formatFromMonthDisplay(notice)}</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    El aviso puede ser dado desde el mes {notice.notice_value} hasta el fin del contrato
+                  </p>
+                </div>
+              )}
+
+              {/* Show calculated deadline - skip for desde_mes which has its own display */}
+              {signedDate && durationMonths && notice.notice_type !== "desde_mes" && (
                 <div className="bg-background/50 rounded p-2">
                   <p className="text-xs text-muted-foreground">
                     Fecha límite: <span className="font-medium text-foreground">{formatDeadlineDisplay(notice)}</span>
@@ -402,6 +449,10 @@ export async function createAlertsFromNotices(
       let deadlineDate: string;
       if (notice.notice_type === "fecha") {
         deadlineDate = notice.notice_value;
+      } else if (notice.notice_type === "desde_mes") {
+        // From specific month - the alert is set for when that month starts
+        const fromMonth = parseInt(notice.notice_value) || 1;
+        deadlineDate = format(addMonths(startDate, fromMonth - 1), "yyyy-MM-dd");
       } else {
         const monthsBefore = parseInt(notice.notice_value) || 0;
         deadlineDate = format(addMonths(endDate, -monthsBefore), "yyyy-MM-dd");
