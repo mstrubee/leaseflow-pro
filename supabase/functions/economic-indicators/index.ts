@@ -26,6 +26,73 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
   try {
+    // Check if a specific date is requested for historical UF
+    const url = new URL(req.url);
+    const historicalDateParam = url.searchParams.get('date');
+    
+    // If a historical date is requested, fetch UF for that specific date
+    if (historicalDateParam) {
+      const requestedDate = new Date(historicalDateParam);
+      const year = requestedDate.getFullYear();
+      const month = String(requestedDate.getMonth() + 1).padStart(2, '0');
+      const day = String(requestedDate.getDate()).padStart(2, '0');
+      
+      try {
+        const response = await fetch(`https://mindicador.cl/api/uf/${day}-${month}-${year}`);
+        const text = await response.text();
+        
+        if (text.trim().startsWith('<')) {
+          // API returned HTML error, try fetching the whole year and find closest date
+          const yearResponse = await fetch(`https://mindicador.cl/api/uf/${year}`);
+          const yearText = await yearResponse.text();
+          
+          if (!yearText.trim().startsWith('<')) {
+            const yearData = JSON.parse(yearText);
+            // Find the closest date's UF value
+            const targetTime = requestedDate.getTime();
+            let closestValue = null;
+            let closestDiff = Infinity;
+            
+            for (const item of yearData.serie || []) {
+              const itemDate = new Date(item.fecha);
+              const diff = Math.abs(itemDate.getTime() - targetTime);
+              if (diff < closestDiff) {
+                closestDiff = diff;
+                closestValue = item.valor;
+              }
+            }
+            
+            if (closestValue) {
+              return new Response(
+                JSON.stringify({ uf: { historical: closestValue, date: historicalDateParam } }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+              );
+            }
+          }
+          
+          // Fallback if we can't find the value
+          return new Response(
+            JSON.stringify({ uf: { historical: null, date: historicalDateParam, error: 'UF not found for date' } }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+          );
+        }
+        
+        const data = JSON.parse(text);
+        const ufValue = data.serie?.[0]?.valor || null;
+        
+        return new Response(
+          JSON.stringify({ uf: { historical: ufValue, date: historicalDateParam } }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+        );
+      } catch (e) {
+        console.error('Error fetching historical UF:', e);
+        return new Response(
+          JSON.stringify({ uf: { historical: null, date: historicalDateParam, error: 'Failed to fetch historical UF' } }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+        );
+      }
+    }
+    
     const today = new Date();
     const currentYear = today.getFullYear();
     const lastYear = currentYear - 1;
