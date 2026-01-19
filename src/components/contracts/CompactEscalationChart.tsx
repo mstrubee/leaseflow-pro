@@ -234,9 +234,16 @@ export function CompactEscalationChart({
               dataKey="month" 
               type="number"
               domain={xDomain}
-              tick={{ fontSize: 11 }}
-              tickFormatter={(v) => `M${v}`}
+              tick={{ fontSize: 10 }}
+              tickFormatter={(v) => {
+                if (effectiveDate) {
+                  const date = addMonths(new Date(effectiveDate), v - 1);
+                  return format(date, "MMM yy", { locale: es });
+                }
+                return `M${v}`;
+              }}
               scale="linear"
+              interval="preserveStartEnd"
             />
             <YAxis 
               tick={{ fontSize: 11 }}
