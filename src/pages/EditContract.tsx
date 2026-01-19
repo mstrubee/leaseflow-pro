@@ -339,9 +339,11 @@ const EditContract = () => {
         if (versionNotices && versionNotices.length > 0) {
           setMultipleNotices(versionNotices.map((n: any) => ({
             id: n.id,
-            notice_type: n.notice_type as "meses" | "fecha",
-            notice_value: n.notice_value,
+            months_before: parseInt(n.notice_value) || 6,
             notice_bilaterality: n.notice_bilaterality as "unilateral_gp" | "bilateral",
+            // Legacy fields for reference
+            notice_type: n.notice_type,
+            notice_value: n.notice_value,
             description: n.description || "",
           })));
         }
@@ -650,20 +652,45 @@ const EditContract = () => {
         // Create alerts from notices that have create_alert enabled
         const noticesToAlert = multipleNotices.filter(n => n.create_alert);
         if (noticesToAlert.length > 0 && effectiveDate && duration) {
-          const alertResult = await createAlertsFromNotices(
-            supabase,
-            id!,
-            name,
-            noticesToAlert,
-            effectiveDate,
-            parseInt(duration)
-          );
+          // Calculate early termination date from main notice type
+          const startDate = new Date(effectiveDate);
+          const expirationDate = new Date(startDate);
+          expirationDate.setMonth(expirationDate.getMonth() + (parseInt(duration) || 12));
           
-          if (alertResult.alertsCreated > 0) {
-            console.log(`Created ${alertResult.alertsCreated} alerts from notices`);
+          let earlyTerminationDate: string | null = null;
+          
+          if (noticeType === 'meses' && noticeValue) {
+            const termDate = new Date(expirationDate);
+            termDate.setMonth(termDate.getMonth() - parseInt(noticeValue));
+            earlyTerminationDate = termDate.toISOString().split('T')[0];
+          } else if (noticeType === 'fecha' && noticeValue) {
+            earlyTerminationDate = noticeValue;
+          } else if (noticeType === 'rangos' && noticeRanges.length > 0) {
+            const firstRange = noticeRanges.sort((a, b) => a.start_month - b.start_month)[0];
+            const termDate = new Date(startDate);
+            termDate.setMonth(termDate.getMonth() + firstRange.start_month - 1);
+            earlyTerminationDate = termDate.toISOString().split('T')[0];
+          } else if (noticeType === 'desde_mes' && noticeValue) {
+            const termDate = new Date(startDate);
+            termDate.setMonth(termDate.getMonth() + parseInt(noticeValue) - 1);
+            earlyTerminationDate = termDate.toISOString().split('T')[0];
           }
-          if (alertResult.errors.length > 0) {
-            console.error("Alert creation errors:", alertResult.errors);
+          
+          if (earlyTerminationDate) {
+            const alertResult = await createAlertsFromNotices(
+              supabase,
+              id!,
+              name,
+              noticesToAlert,
+              earlyTerminationDate
+            );
+            
+            if (alertResult.alertsCreated > 0) {
+              console.log(`Created ${alertResult.alertsCreated} alerts from notices`);
+            }
+            if (alertResult.errors.length > 0) {
+              console.error("Alert creation errors:", alertResult.errors);
+            }
           }
         }
       }

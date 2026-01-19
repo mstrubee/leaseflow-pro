@@ -243,20 +243,40 @@ const NewContract = () => {
           // Create alerts from notices that have create_alert enabled
           const noticesToAlert = multipleNotices.filter(n => n.create_alert);
           if (noticesToAlert.length > 0 && fechaInicio && duration) {
-            const alertResult = await createAlertsFromNotices(
-              supabase,
-              contract.id,
-              name,
-              noticesToAlert,
-              fechaInicio,
-              parseInt(duration)
-            );
+            // Calculate early termination date from main notice type
+            const startDate = new Date(fechaInicio);
+            const expirationDate = new Date(startDate);
+            expirationDate.setMonth(expirationDate.getMonth() + (parseInt(duration) || 12));
             
-            if (alertResult.alertsCreated > 0) {
-              console.log(`Created ${alertResult.alertsCreated} alerts from notices`);
+            let earlyTerminationDate: string | null = null;
+            
+            if (noticeType === 'meses' && noticeValue) {
+              const termDate = new Date(expirationDate);
+              termDate.setMonth(termDate.getMonth() - parseInt(noticeValue));
+              earlyTerminationDate = termDate.toISOString().split('T')[0];
+            } else if (noticeType === 'fecha' && noticeValue) {
+              earlyTerminationDate = noticeValue;
+            } else if (noticeType === 'desde_mes' && noticeValue) {
+              const termDate = new Date(startDate);
+              termDate.setMonth(termDate.getMonth() + parseInt(noticeValue) - 1);
+              earlyTerminationDate = termDate.toISOString().split('T')[0];
             }
-            if (alertResult.errors.length > 0) {
-              console.error("Alert creation errors:", alertResult.errors);
+            
+            if (earlyTerminationDate) {
+              const alertResult = await createAlertsFromNotices(
+                supabase,
+                contract.id,
+                name,
+                noticesToAlert,
+                earlyTerminationDate
+              );
+              
+              if (alertResult.alertsCreated > 0) {
+                console.log(`Created ${alertResult.alertsCreated} alerts from notices`);
+              }
+              if (alertResult.errors.length > 0) {
+                console.error("Alert creation errors:", alertResult.errors);
+              }
             }
           }
         }
