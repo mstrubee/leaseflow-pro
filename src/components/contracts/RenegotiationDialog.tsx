@@ -553,7 +553,7 @@ export const RenegotiationDialog = ({
               </div>
 
               <div className="space-y-2">
-                <Label>Tipo de Aviso de Término *</Label>
+                <Label>Tipo de Término Anticipado *</Label>
                 <Select value={noticeType} onValueChange={(v) => setNoticeType(v as any)}>
                   <SelectTrigger>
                     <SelectValue />
