@@ -32,6 +32,8 @@ interface CompactEscalationChartProps {
   displayCurrency?: "UF" | "CLP";
   isUfM2Mode?: boolean;
   superficieM2?: number;
+  // Contract end notice (for sin_termino type)
+  contractEndNoticeMonths?: number;
 }
 
 export function CompactEscalationChart({ 
@@ -52,6 +54,7 @@ export function CompactEscalationChart({
   displayCurrency = "UF",
   isUfM2Mode = false,
   superficieM2 = 0,
+  contractEndNoticeMonths = 0,
 }: CompactEscalationChartProps) {
   const { ufValue } = useEconomicIndicators();
   
@@ -171,7 +174,18 @@ export function CompactEscalationChart({
     
     const startDate = new Date(effectiveDate);
     
-    if (noticeType === "meses" && noticeValue) {
+    if (noticeType === "sin_termino" && contractEndNoticeMonths > 0) {
+      // Contract end notice - shown as a notice window before contract expiration
+      const noticeMonth = durationMonths - contractEndNoticeMonths;
+      const noticeDate = addMonths(startDate, noticeMonth);
+      return { 
+        month: noticeMonth, 
+        date: noticeDate, 
+        label: `Aviso de término ${contractEndNoticeMonths}m antes`, 
+        deadlineMonth: noticeMonth,
+        isContractEndNotice: true 
+      };
+    } else if (noticeType === "meses" && noticeValue) {
       const noticeMonths = parseInt(noticeValue) || 0;
       const noticeMonth = durationMonths - noticeMonths;
       const noticeDate = addMonths(startDate, noticeMonth);
@@ -193,7 +207,7 @@ export function CompactEscalationChart({
       return { ranges: [range], deadlineMonth: durationMonths, isFromSpecificMonth: true };
     }
     return null;
-  }, [effectiveDate, noticeType, noticeValue, noticeRanges, durationMonths]);
+  }, [effectiveDate, noticeType, noticeValue, noticeRanges, durationMonths, contractEndNoticeMonths]);
 
   // Format amount based on display currency
   const formatAmount = (value: number) => {
@@ -307,18 +321,20 @@ export function CompactEscalationChart({
               />
             ])}
             
-            {/* Single notice deadline line for meses/fecha type - red dotted line */}
+            {/* Single notice deadline line for meses/fecha type or contract end notice - red dotted line */}
             {noticeMonthInfo && 'month' in noticeMonthInfo && (
               <ReferenceLine 
                 x={noticeMonthInfo.month} 
-                stroke="hsl(var(--destructive))"
+                stroke={noticeMonthInfo.isContractEndNotice ? "hsl(var(--primary))" : "hsl(var(--destructive))"}
                 strokeWidth={3}
                 strokeDasharray="8 4"
                 label={{ 
-                  value: `Límite Aviso`, 
+                  value: noticeMonthInfo.isContractEndNotice 
+                    ? `Aviso Término ${contractEndNoticeMonths}m` 
+                    : "Límite Aviso", 
                   fontSize: 11, 
                   fontWeight: 600,
-                  fill: "hsl(var(--destructive))",
+                  fill: noticeMonthInfo.isContractEndNotice ? "hsl(var(--primary))" : "hsl(var(--destructive))",
                   position: "insideTopRight"
                 }}
               />
