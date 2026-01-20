@@ -14,12 +14,15 @@ import { es } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
+import { useAlertCategories } from "@/hooks/useAlertCategories";
 
 interface PatentAlertDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   documentId: string;
   documentName: string;
+  contractId?: string;
+  contractName?: string;
   startDate?: string;
   endDate?: string;
 }
@@ -43,10 +46,13 @@ export function PatentAlertDialog({
   onOpenChange,
   documentId,
   documentName,
+  contractId,
+  contractName,
   startDate,
   endDate,
 }: PatentAlertDialogProps) {
   const { user } = useAuth();
+  const { getTrackingCategoryId } = useAlertCategories();
   const [alerts, setAlerts] = useState<PatentAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [newRecipient, setNewRecipient] = useState("");
@@ -111,6 +117,38 @@ export function PatentAlertDialog({
       return;
     }
 
+    // Get tracking category ID for patent alerts
+    const trackingCategoryId = getTrackingCategoryId();
+
+    // Create alert in main alerts table (for Dashboard visibility)
+    const alertTitle = `Documento Patente: ${documentName}${contractName ? ` - ${contractName}` : ''}`;
+    const columnLabel = ALERT_COLUMNS.find(c => c.value === newAlert.alert_column)?.label || newAlert.alert_column;
+    
+    const { error: mainAlertError } = await supabase
+      .from("alerts")
+      .insert({
+        title: alertTitle,
+        message: `Alerta de ${columnLabel} para documento de patente`,
+        alert_type: 'other' as const,
+        due_date: newAlert.alert_date,
+        channels: ['email'] as const,
+        days_before: [7, 1, 0],
+        repeat_every_days: newAlert.frequency_days,
+        contract_id: contractId || null,
+        item_type: 'patent_document',
+        item_id: documentId,
+        category_id: trackingCategoryId,
+        is_active: true,
+        created_by: user?.id,
+      });
+
+    if (mainAlertError) {
+      console.error("Error creating main alert:", mainAlertError);
+      toast.error("Error al crear alerta");
+      return;
+    }
+
+    // Also create in patent_document_alerts for backwards compatibility
     const { error } = await supabase
       .from("patent_document_alerts")
       .insert({
@@ -123,8 +161,8 @@ export function PatentAlertDialog({
       });
 
     if (error) {
-      toast.error("Error al crear alerta");
-      return;
+      console.error("Error creating patent alert:", error);
+      // Don't fail - main alert was created
     }
 
     toast.success("Alerta creada");
