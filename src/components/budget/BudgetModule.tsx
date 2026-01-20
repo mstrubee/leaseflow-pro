@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { OCRequestDialog } from "./OCRequestDialog";
+import { QuotationsManager } from "./QuotationsManager";
 
 interface Budget {
   id: string;
@@ -1163,6 +1164,19 @@ export const BudgetModule = ({ contractId, contractName = "", budgetType, title,
               })}
             </div>
           )}
+
+          {/* Quotations Section */}
+          <div className="border-t pt-4">
+            <QuotationsManager
+              budgetLineId={lineDetailsId}
+              contractId={contractId}
+              lineName={lineDetailsName}
+              projectName={contractName}
+              ufValue={ufValue}
+              formatUF={formatUF}
+              onRefresh={onRefresh}
+            />
+          </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowLineDetailsDialog(false)}>

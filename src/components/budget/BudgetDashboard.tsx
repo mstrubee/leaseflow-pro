@@ -12,6 +12,7 @@ import { BudgetProvider, useBudgetContext } from "./BudgetContext";
 import { BudgetModule } from "./BudgetModule";
 import { PurchaseOrdersModule } from "./PurchaseOrdersModule";
 import { DeletedOrdersModule } from "./DeletedOrdersModule";
+import { OCRequestsList } from "./OCRequestsList";
 import { BudgetSemaphore } from "./BudgetSemaphore";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -735,6 +736,28 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
           />
         </TabsContent>
         <TabsContent value="oc" className="mt-4 space-y-6">
+          {/* OC Requests Section */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <FileText className="h-4 w-4 text-purple-500" />
+                Solicitudes de OC
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <OCRequestsList
+                contractId={contractId}
+                year={selectedYear}
+                ufValue={0}
+                formatUF={formatUF}
+                formatCLP={(v) => `$${Math.round(v).toLocaleString("es-CL")}`}
+                onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
+                isAdmin={true}
+              />
+            </CardContent>
+          </Card>
+          
+          {/* Purchase Orders Section */}
           <PurchaseOrdersModule 
             contractId={contractId} 
             initialYear={selectedYear} 
