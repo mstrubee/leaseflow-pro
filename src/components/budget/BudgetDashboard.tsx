@@ -87,7 +87,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
   const [closingYear, setClosingYear] = useState(false);
 
   const { toast } = useToast();
-  const { formatPrimary, formatSecondary, formatUF } = useBudgetContext();
+  const { formatPrimary, formatSecondary, formatUF, ufValue } = useBudgetContext();
 
   // Refresh key to force BudgetModule to reload
   const [refreshKey, setRefreshKey] = useState(0);
@@ -747,12 +747,14 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
             <CardContent>
               <OCRequestsList
                 contractId={contractId}
+                contractName={contractName}
                 year={selectedYear}
-                ufValue={0}
+                ufValue={ufValue}
                 formatUF={formatUF}
                 formatCLP={(v) => `$${Math.round(v).toLocaleString("es-CL")}`}
                 onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
                 isAdmin={true}
+                allowCreate={true}
               />
             </CardContent>
           </Card>
