@@ -19,6 +19,7 @@ import { GanttTemplateManager } from "@/components/gantt/GanttTemplateManager";
 import { StorageProviderSettings } from "@/components/admin/StorageProviderSettings";
 import { CompanyManager } from "@/components/admin/CompanyManager";
 import { StorageMonitor } from "@/components/admin/StorageMonitor";
+import { OCRequestTemplateManager } from "@/components/admin/OCRequestTemplateManager";
 interface Profile {
   id: string;
   email: string;
@@ -794,6 +795,9 @@ const AdminPanel = () => {
 
         {/* Gantt Templates */}
         <GanttTemplateManager />
+
+        {/* OC Request Templates */}
+        <OCRequestTemplateManager />
 
         {/* Folder Templates */}
         <Card>
