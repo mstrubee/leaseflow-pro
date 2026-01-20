@@ -7,13 +7,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, FileText, Upload, Eye, Trash2, Download, Edit } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Loader2, FileText, Upload, Eye, Trash2, Download, Edit, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { OCRequestViewDialog } from "./OCRequestViewDialog";
+import { MultipleLinesSelector } from "./MultipleLinesSelector";
+import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 
 interface OCRequest {
   id: string;
@@ -30,8 +34,22 @@ interface OCRequest {
   created_at: string;
 }
 
+interface SelectedLine {
+  lineId: string;
+  lineName: string;
+  amount: number;
+  maxAmount: number;
+}
+
+interface PaymentPlanItem {
+  description: string;
+  amount: string;
+  due_date: string;
+}
+
 interface OCRequestsListProps {
   contractId: string;
+  contractName?: string;
   budgetId?: string;
   year: number;
   ufValue: number;
@@ -39,11 +57,13 @@ interface OCRequestsListProps {
   formatCLP: (value: number) => string;
   onRefresh?: () => void;
   isAdmin?: boolean;
-  budgetLineId?: string; // Optional filter for specific line
+  budgetLineId?: string;
+  allowCreate?: boolean;
 }
 
 export const OCRequestsList = ({
   contractId,
+  contractName = "",
   budgetId,
   year,
   ufValue,
@@ -51,7 +71,8 @@ export const OCRequestsList = ({
   formatCLP,
   onRefresh,
   isAdmin = false,
-  budgetLineId
+  budgetLineId,
+  allowCreate = true
 }: OCRequestsListProps) => {
   const [requests, setRequests] = useState<OCRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,6 +86,24 @@ export const OCRequestsList = ({
     order_number: "",
     supplier_name: ""
   });
+  
+  // New request dialog state
+  const [showNewRequestDialog, setShowNewRequestDialog] = useState(false);
+  const [newRequestTab, setNewRequestTab] = useState("basic");
+  const [budgetType, setBudgetType] = useState<"capex" | "opex">("capex");
+  const [availableBudgets, setAvailableBudgets] = useState<{ id: string; type: string; hasLines: boolean }[]>([]);
+  const [selectedBudgetId, setSelectedBudgetId] = useState("");
+  const [loadingBudgets, setLoadingBudgets] = useState(false);
+  const [selectedLines, setSelectedLines] = useState<SelectedLine[]>([]);
+  const [paymentPlan, setPaymentPlan] = useState<PaymentPlanItem[]>([]);
+  const [newRequestForm, setNewRequestForm] = useState({
+    description: "",
+    supplier_id: null as string | null,
+    supplier_name: null as string | null
+  });
+  const [creatingRequest, setCreatingRequest] = useState(false);
+  const [projectName, setProjectName] = useState(contractName);
+  
   const { toast } = useToast();
 
   useEffect(() => {
@@ -201,8 +240,201 @@ export const OCRequestsList = ({
     URL.revokeObjectURL(url);
   };
 
+  // Load available budgets when opening new request dialog
+  const handleOpenNewRequestDialog = async () => {
+    setShowNewRequestDialog(true);
+    setNewRequestTab("basic");
+    setBudgetType("capex");
+    setSelectedLines([]);
+    setPaymentPlan([]);
+    setNewRequestForm({ description: "", supplier_id: null, supplier_name: null });
+    setLoadingBudgets(true);
+    
+    try {
+      // Get contract name if not provided
+      if (!projectName) {
+        const { data: contract } = await supabase
+          .from("contracts")
+          .select("name")
+          .eq("id", contractId)
+          .single();
+        if (contract) setProjectName(contract.name);
+      }
+      
+      // Load available budgets for this contract and year
+      const { data: budgets } = await supabase
+        .from("contract_budgets")
+        .select("id, budget_type")
+        .eq("contract_id", contractId)
+        .eq("year", year)
+        .eq("is_closed", false);
+      
+      if (budgets && budgets.length > 0) {
+        // Check which budgets have lines with available amounts
+        const budgetsWithLines = await Promise.all(budgets.map(async (budget) => {
+          const { count } = await supabase
+            .from("budget_lines")
+            .select("*", { count: "exact", head: true })
+            .eq("budget_id", budget.id)
+            .eq("status", "autorizado");
+          
+          return {
+            id: budget.id,
+            type: budget.budget_type,
+            hasLines: (count || 0) > 0
+          };
+        }));
+        
+        setAvailableBudgets(budgetsWithLines);
+        
+        // Auto-select first available budget
+        const firstWithLines = budgetsWithLines.find(b => b.hasLines);
+        if (firstWithLines) {
+          setBudgetType(firstWithLines.type as "capex" | "opex");
+          setSelectedBudgetId(firstWithLines.id);
+        }
+      } else {
+        setAvailableBudgets([]);
+      }
+    } catch (error) {
+      console.error("Error loading budgets:", error);
+    } finally {
+      setLoadingBudgets(false);
+    }
+  };
+
+  const handleBudgetTypeChange = (type: "capex" | "opex") => {
+    setBudgetType(type);
+    setSelectedLines([]);
+    const budget = availableBudgets.find(b => b.type === type);
+    setSelectedBudgetId(budget?.id || "");
+  };
+
+  const addPaymentItem = () => {
+    setPaymentPlan(prev => [...prev, { description: `Pago ${prev.length + 1}`, amount: "", due_date: "" }]);
+  };
+
+  const removePaymentItem = (index: number) => {
+    setPaymentPlan(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updatePaymentItem = (index: number, field: keyof PaymentPlanItem, value: string) => {
+    setPaymentPlan(prev => prev.map((item, i) => 
+      i === index ? { ...item, [field]: value } : item
+    ));
+  };
+
+  const generateRequestNumber = async (lineNames: string[]): Promise<{ number: string; correlative: number }> => {
+    const today = new Date();
+    const dateStr = today.toISOString().split('T')[0].replace(/-/g, '.');
+    
+    const { count } = await supabase
+      .from("oc_requests")
+      .select("*", { count: "exact", head: true })
+      .eq("request_date", today.toISOString().split('T')[0]);
+    
+    const correlative = (count || 0) + 1;
+    const correlativeStr = correlative.toString().padStart(3, '0');
+    
+    const cleanLineNames = lineNames.map(name => 
+      name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s]/g, '').trim().replace(/\s+/g, '_')
+    ).join('+').substring(0, 60);
+    
+    const cleanProjectName = projectName.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s]/g, '').trim().replace(/\s+/g, '_').substring(0, 30);
+    
+    return { number: `${dateStr}_${correlativeStr}_${cleanLineNames}_${cleanProjectName}`, correlative };
+  };
+
+  const handleCreateNewRequest = async () => {
+    const validLines = selectedLines.filter(l => l.amount > 0);
+    if (validLines.length === 0) {
+      toast({ variant: "destructive", title: "Error", description: "Seleccione al menos una línea con monto" });
+      return;
+    }
+
+    const totalAmount = Math.round(validLines.reduce((sum, l) => sum + l.amount, 0) * 10000) / 10000;
+    const lineNames = validLines.map(l => l.lineName);
+    const displayLineName = lineNames.join(' + ');
+
+    setCreatingRequest(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { number, correlative } = await generateRequestNumber(lineNames);
+      
+      // Use provided UF value or fallback
+      const currentUfValue = ufValue > 0 ? ufValue : 38000;
+      const amountClp = Math.round(totalAmount * currentUfValue);
+
+      // Create request
+      const { data: requestData, error } = await supabase.from("oc_requests").insert({
+        contract_id: contractId,
+        budget_id: selectedBudgetId,
+        budget_line_id: validLines.length === 1 ? validLines[0].lineId : null,
+        request_number: number,
+        correlative_of_day: correlative,
+        request_date: new Date().toISOString().split('T')[0],
+        line_name: displayLineName,
+        project_name: projectName,
+        description: newRequestForm.description,
+        amount_uf: totalAmount,
+        amount_clp: amountClp,
+        input_currency: "UF",
+        uf_value_at_entry: currentUfValue,
+        supplier_id: newRequestForm.supplier_id,
+        supplier_name: newRequestForm.supplier_name,
+        year: year,
+        status: "pending",
+        created_by: user?.id
+      }).select().single();
+
+      if (error) throw error;
+
+      // Create budget line assignments
+      if (requestData) {
+        const lineAssignments = validLines.map(l => ({
+          oc_request_id: requestData.id,
+          budget_line_id: l.lineId,
+          amount_uf: l.amount
+        }));
+        await supabase.from("oc_budget_lines").insert(lineAssignments);
+
+        // Create payment plans
+        if (paymentPlan.length > 0) {
+          const planEntries = paymentPlan
+            .filter(p => parseFloat(p.amount) > 0)
+            .map((p, idx) => ({
+              oc_request_id: requestData.id,
+              payment_number: idx + 1,
+              description: p.description || `Pago ${idx + 1}`,
+              amount_uf: parseFloat(p.amount),
+              due_date: p.due_date || null,
+              status: "pending"
+            }));
+          if (planEntries.length > 0) {
+            await supabase.from("oc_payment_plans").insert(planEntries);
+          }
+        }
+      }
+
+      toast({ title: "Solicitud creada", description: `Solicitud ${number} creada exitosamente` });
+      setShowNewRequestDialog(false);
+      loadRequests();
+      onRefresh?.();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setCreatingRequest(false);
+    }
+  };
+
   const pendingRequests = requests.filter(r => r.status === "pending");
   const convertedRequests = requests.filter(r => r.status === "converted");
+
+  const totalPlanned = paymentPlan.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+  const totalSelected = selectedLines.reduce((sum, l) => sum + l.amount, 0);
+
+  const capexBudget = availableBudgets.find(b => b.type === "capex");
+  const opexBudget = availableBudgets.find(b => b.type === "opex");
 
   if (loading) {
     return (
@@ -212,16 +444,24 @@ export const OCRequestsList = ({
     );
   }
 
-  if (requests.length === 0) {
-    return (
-      <div className="text-center py-6 text-muted-foreground text-sm">
-        No hay solicitudes de OC para este año
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
+      {/* Header with New Request button */}
+      {allowCreate && (
+        <div className="flex justify-end">
+          <Button size="sm" onClick={handleOpenNewRequestDialog} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Nueva Solicitud
+          </Button>
+        </div>
+      )}
+
+      {requests.length === 0 && (
+        <div className="text-center py-6 text-muted-foreground text-sm">
+          No hay solicitudes de OC para este año
+        </div>
+      )}
+      
       {/* Pending Requests */}
       {pendingRequests.length > 0 && (
         <div>
@@ -429,6 +669,220 @@ export const OCRequestsList = ({
           onRefresh?.();
         }}
       />
+
+      {/* New Request Dialog */}
+      <Dialog open={showNewRequestDialog} onOpenChange={setShowNewRequestDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Nueva Solicitud de OC</DialogTitle>
+            <DialogDescription>
+              Crear solicitud para el año {year}
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingBudgets ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : availableBudgets.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>No hay presupuestos disponibles para el año {year}.</p>
+              <p className="text-sm mt-2">Cree un presupuesto CAPEX u OPEX primero.</p>
+            </div>
+          ) : (
+            <Tabs value={newRequestTab} onValueChange={setNewRequestTab}>
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="basic">Tipo y Datos</TabsTrigger>
+                <TabsTrigger value="lines" disabled={!selectedBudgetId}>Líneas</TabsTrigger>
+                <TabsTrigger value="payments" disabled={selectedLines.length === 0}>Pagos</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="basic" className="space-y-4 mt-4">
+                {/* Budget Type Selection */}
+                <div className="space-y-2">
+                  <Label>Tipo de Presupuesto *</Label>
+                  <div className="flex gap-4">
+                    <Button
+                      type="button"
+                      variant={budgetType === "capex" ? "default" : "outline"}
+                      onClick={() => handleBudgetTypeChange("capex")}
+                      disabled={!capexBudget?.hasLines}
+                      className="flex-1"
+                    >
+                      CAPEX
+                      {capexBudget?.hasLines ? (
+                        <Badge variant="secondary" className="ml-2 bg-green-100 text-green-700">Disponible</Badge>
+                      ) : (
+                        <Badge variant="secondary" className="ml-2">Sin líneas</Badge>
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={budgetType === "opex" ? "default" : "outline"}
+                      onClick={() => handleBudgetTypeChange("opex")}
+                      disabled={!opexBudget?.hasLines}
+                      className="flex-1"
+                    >
+                      OPEX
+                      {opexBudget?.hasLines ? (
+                        <Badge variant="secondary" className="ml-2 bg-green-100 text-green-700">Disponible</Badge>
+                      ) : (
+                        <Badge variant="secondary" className="ml-2">Sin líneas</Badge>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div className="space-y-2">
+                  <Label>Descripción</Label>
+                  <Textarea
+                    value={newRequestForm.description}
+                    onChange={(e) => setNewRequestForm(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="Descripción de la solicitud"
+                    rows={2}
+                  />
+                </div>
+
+                {/* Supplier */}
+                <div className="space-y-2">
+                  <Label>Proveedor (opcional)</Label>
+                  <SupplierSelect
+                    value={newRequestForm.supplier_id}
+                    onChange={(id, name) => setNewRequestForm(prev => ({ 
+                      ...prev, 
+                      supplier_id: id, 
+                      supplier_name: name 
+                    }))}
+                  />
+                </div>
+
+                {selectedBudgetId && (
+                  <Button 
+                    onClick={() => setNewRequestTab("lines")} 
+                    className="w-full"
+                  >
+                    Continuar a Selección de Líneas
+                  </Button>
+                )}
+              </TabsContent>
+
+              <TabsContent value="lines" className="space-y-4 mt-4">
+                {selectedBudgetId && (
+                  <MultipleLinesSelector
+                    budgetId={selectedBudgetId}
+                    selectedLines={selectedLines}
+                    onSelectionChange={setSelectedLines}
+                    formatUF={formatUF}
+                  />
+                )}
+
+                {selectedLines.length > 0 && (
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setNewRequestTab("basic")}>
+                      Atrás
+                    </Button>
+                    <Button onClick={() => setNewRequestTab("payments")} className="flex-1">
+                      Continuar a Plan de Pagos
+                    </Button>
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="payments" className="space-y-4 mt-4">
+                <div className="flex items-center justify-between">
+                  <Label>Plan de Pagos (opcional)</Label>
+                  <Button size="sm" variant="outline" onClick={addPaymentItem} className="gap-1">
+                    <Plus className="h-3 w-3" />
+                    Agregar Pago
+                  </Button>
+                </div>
+
+                {paymentPlan.length === 0 ? (
+                  <div className="p-4 bg-muted/30 rounded-lg text-center text-sm text-muted-foreground">
+                    No hay pagos planificados. Puede agregar pagos ahora o después.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {paymentPlan.map((item, idx) => (
+                      <div key={idx} className="grid grid-cols-12 gap-2 items-end">
+                        <div className="col-span-4 space-y-1">
+                          <Label className="text-xs">Descripción</Label>
+                          <Input
+                            value={item.description}
+                            onChange={(e) => updatePaymentItem(idx, "description", e.target.value)}
+                            placeholder={`Pago ${idx + 1}`}
+                          />
+                        </div>
+                        <div className="col-span-3 space-y-1">
+                          <Label className="text-xs">Monto (UF)</Label>
+                          <Input
+                            type="number"
+                            value={item.amount}
+                            onChange={(e) => updatePaymentItem(idx, "amount", e.target.value)}
+                            placeholder="0.00"
+                            step="0.01"
+                          />
+                        </div>
+                        <div className="col-span-4 space-y-1">
+                          <Label className="text-xs">Vencimiento (opcional)</Label>
+                          <Input
+                            type="date"
+                            value={item.due_date}
+                            onChange={(e) => updatePaymentItem(idx, "due_date", e.target.value)}
+                          />
+                        </div>
+                        <div className="col-span-1">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => removePaymentItem(idx)}
+                            className="h-9 w-9 text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+
+                    <div className="p-3 bg-muted/50 rounded-lg text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Total planificado:</span>
+                        <span className={`font-medium ${totalPlanned > totalSelected ? 'text-destructive' : ''}`}>
+                          {formatUF(totalPlanned)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Total solicitud:</span>
+                        <span className="font-medium">{formatUF(totalSelected)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setNewRequestTab("lines")}>
+                    Atrás
+                  </Button>
+                </div>
+              </TabsContent>
+            </Tabs>
+          )}
+
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setShowNewRequestDialog(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleCreateNewRequest} 
+              disabled={creatingRequest || selectedLines.length === 0 || availableBudgets.length === 0}
+            >
+              {creatingRequest && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Crear Solicitud
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
