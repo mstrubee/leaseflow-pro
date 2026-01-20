@@ -290,40 +290,83 @@ export const OCRequestsList = ({
         if (contract) setProjectName(contract.name);
       }
       
-      // Load available budgets for this contract and year
-      const { data: budgets } = await supabase
+      // Load CAPEX budgets for this contract and year
+      const { data: capexBudgets } = await supabase
         .from("contract_budgets")
         .select("id, budget_type")
         .eq("contract_id", contractId)
         .eq("year", year)
+        .eq("budget_type", "capex")
         .eq("is_closed", false);
       
-      if (budgets && budgets.length > 0) {
-        // Check which budgets have lines with available amounts
-        const budgetsWithLines = await Promise.all(budgets.map(async (budget) => {
+      // Check for centralized OPEX master budget (not per contract)
+      const { count: opexMasterCount } = await supabase
+        .from("opex_master_budget")
+        .select("*", { count: "exact", head: true })
+        .eq("year", year)
+        .eq("is_closed", false);
+      
+      const hasOpexMaster = (opexMasterCount || 0) > 0;
+      
+      const budgetsWithLines: { id: string; type: string; hasLines: boolean }[] = [];
+      
+      // Check CAPEX budgets have lines
+      if (capexBudgets && capexBudgets.length > 0) {
+        for (const budget of capexBudgets) {
           const { count } = await supabase
             .from("budget_lines")
             .select("*", { count: "exact", head: true })
             .eq("budget_id", budget.id)
             .eq("status", "autorizado");
           
-          return {
+          budgetsWithLines.push({
             id: budget.id,
-            type: budget.budget_type,
+            type: "capex",
             hasLines: (count || 0) > 0
-          };
-        }));
-        
-        setAvailableBudgets(budgetsWithLines);
-        
-        // Auto-select first available budget
-        const firstWithLines = budgetsWithLines.find(b => b.hasLines);
-        if (firstWithLines) {
-          setBudgetType(firstWithLines.type as "capex" | "opex");
-          setSelectedBudgetId(firstWithLines.id);
+          });
         }
-      } else {
-        setAvailableBudgets([]);
+      }
+      
+      // For OPEX, check if there's an OPEX budget for this contract OR use centralized
+      // First check for contract-specific OPEX budget
+      const { data: opexContractBudget } = await supabase
+        .from("contract_budgets")
+        .select("id")
+        .eq("contract_id", contractId)
+        .eq("year", year)
+        .eq("budget_type", "opex")
+        .eq("is_closed", false)
+        .maybeSingle();
+      
+      if (opexContractBudget) {
+        // Has contract-specific OPEX budget with lines
+        const { count } = await supabase
+          .from("budget_lines")
+          .select("*", { count: "exact", head: true })
+          .eq("budget_id", opexContractBudget.id)
+          .eq("status", "autorizado");
+        
+        budgetsWithLines.push({
+          id: opexContractBudget.id,
+          type: "opex",
+          hasLines: (count || 0) > 0
+        });
+      } else if (hasOpexMaster) {
+        // Use centralized OPEX master budget (virtual entry)
+        budgetsWithLines.push({
+          id: "opex_master",
+          type: "opex",
+          hasLines: true // OPEX master categories are available
+        });
+      }
+      
+      setAvailableBudgets(budgetsWithLines);
+      
+      // Auto-select first available budget
+      const firstWithLines = budgetsWithLines.find(b => b.hasLines);
+      if (firstWithLines) {
+        setBudgetType(firstWithLines.type as "capex" | "opex");
+        setSelectedBudgetId(firstWithLines.id);
       }
     } catch (error) {
       console.error("Error loading budgets:", error);
@@ -394,11 +437,15 @@ export const OCRequestsList = ({
       const currentUfValue = ufValue > 0 ? ufValue : 38000;
       const amountClp = Math.round(totalAmount * currentUfValue);
 
+      // For OPEX master, budget_id is "opex_master" - we need to handle this
+      const isOpexMaster = selectedBudgetId === "opex_master";
+      
       // Create request
       const { data: requestData, error } = await supabase.from("oc_requests").insert({
         contract_id: contractId,
-        budget_id: selectedBudgetId,
-        budget_line_id: validLines.length === 1 ? validLines[0].lineId : null,
+        budget_id: isOpexMaster ? null : selectedBudgetId,
+        budget_line_id: validLines.length === 1 && !isOpexMaster ? validLines[0].lineId : null,
+        opex_master_id: isOpexMaster && validLines.length === 1 ? validLines[0].lineId : null,
         request_number: number,
         correlative_of_day: correlative,
         request_date: new Date().toISOString().split('T')[0],
@@ -866,6 +913,8 @@ export const OCRequestsList = ({
                     selectedLines={selectedLines}
                     onSelectionChange={setSelectedLines}
                     formatUF={formatUF}
+                    year={year}
+                    contractId={contractId}
                   />
                 )}
 

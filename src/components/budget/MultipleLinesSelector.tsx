@@ -31,6 +31,8 @@ interface MultipleLinesSelectorProps {
   onSelectionChange: (lines: SelectedLine[]) => void;
   formatUF: (value: number) => string;
   maxTotal?: number;
+  year?: number; // Required for OPEX master budget
+  contractId?: string; // Used for OPEX local additional
 }
 
 export const MultipleLinesSelector = ({
@@ -38,19 +40,78 @@ export const MultipleLinesSelector = ({
   selectedLines,
   onSelectionChange,
   formatUF,
-  maxTotal
+  maxTotal,
+  year,
+  contractId
 }: MultipleLinesSelectorProps) => {
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [availableAmounts, setAvailableAmounts] = useState<Record<string, number>>({});
+  const [isOpexMaster, setIsOpexMaster] = useState(false);
 
   useEffect(() => {
-    loadLines();
-  }, [budgetId]);
+    if (budgetId === "opex_master") {
+      setIsOpexMaster(true);
+      loadOpexMasterCategories();
+    } else {
+      setIsOpexMaster(false);
+      loadLines();
+    }
+  }, [budgetId, year]);
+
+  const loadOpexMasterCategories = async () => {
+    if (!year) return;
+    
+    setLoading(true);
+    try {
+      // Load OPEX master budget categories for the year
+      const { data: opexData, error } = await supabase
+        .from("opex_master_budget")
+        .select(`
+          id,
+          amount_uf,
+          category:opex_categories(id, name)
+        `)
+        .eq("year", year)
+        .eq("is_closed", false);
+
+      if (error) throw error;
+      
+      // Transform to BudgetLine format
+      const opexLines: BudgetLine[] = (opexData || []).map(item => ({
+        id: item.id, // Use opex_master_budget id as line id
+        name: (item.category as any)?.name || "Sin categoría",
+        parent_id: null,
+        amount_uf: item.amount_uf,
+        status: "autorizado" as const
+      }));
+      
+      setLines(opexLines);
+      
+      // Calculate available amounts for OPEX categories
+      await calculateOpexAvailable(opexLines);
+    } catch (error) {
+      console.error("Error loading OPEX categories:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const calculateOpexAvailable = async (opexLines: BudgetLine[]) => {
+    const available: Record<string, number> = {};
+    
+    for (const line of opexLines) {
+      // For OPEX master, use full budget amount (simplified for now)
+      // TODO: Implement proper consumption tracking across contracts if needed
+      available[line.id] = line.amount_uf;
+    }
+    
+    setAvailableAmounts(available);
+  };
 
   const loadLines = async () => {
-    if (!budgetId) return;
+    if (!budgetId || budgetId === "opex_master") return;
     
     setLoading(true);
     try {
