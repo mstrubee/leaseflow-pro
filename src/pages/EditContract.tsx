@@ -93,6 +93,9 @@ const EditContract = () => {
   const [isRegimeRentUfM2, setIsRegimeRentUfM2] = useState(false);
   const [variableRentPercentage, setVariableRentPercentage] = useState("");
   const [duration, setDuration] = useState("");
+  const [autoRenewal, setAutoRenewal] = useState(false);
+  const [autoRenewalType, setAutoRenewalType] = useState<"unilateral_gp" | "bilateral">("bilateral");
+  const [autoRenewalMonths, setAutoRenewalMonths] = useState("");
   const [noticeType, setNoticeType] = useState<"fecha" | "meses" | "rangos" | "desde_mes" | "sin_termino">("meses");
   const [contractEndNoticeMonths, setContractEndNoticeMonths] = useState("6");
   const [contractEndNoticeBilaterality, setContractEndNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">("bilateral");
@@ -335,6 +338,11 @@ const EditContract = () => {
         
         // Load UF/m² mode for regime rent
         setIsRegimeRentUfM2((version as any).regime_rent_is_uf_m2 || false);
+        
+        // Load automatic renewal
+        setAutoRenewal((version as any).auto_renewal || false);
+        setAutoRenewalType((version as any).auto_renewal_type || "bilateral");
+        setAutoRenewalMonths((version as any).auto_renewal_months?.toString() || "");
 
         // Load multiple notices
         const { data: versionNotices } = await supabase
@@ -522,6 +530,9 @@ const EditContract = () => {
             otros_egresos_amount: otrosEgresosAmount ? parseFloat(otrosEgresosAmount) : null,
             otros_egresos_description: otrosEgresosDescription || null,
             regime_rent_is_uf_m2: isRegimeRentUfM2,
+            auto_renewal: autoRenewal,
+            auto_renewal_type: autoRenewal ? autoRenewalType : null,
+            auto_renewal_months: autoRenewal && autoRenewalMonths ? parseInt(autoRenewalMonths) : null,
           } as any)
           .eq("id", versionId);
 
@@ -569,6 +580,9 @@ const EditContract = () => {
             otros_egresos_amount: otrosEgresosAmount ? parseFloat(otrosEgresosAmount) : null,
             otros_egresos_description: otrosEgresosDescription || null,
             regime_rent_is_uf_m2: isRegimeRentUfM2,
+            auto_renewal: autoRenewal,
+            auto_renewal_type: autoRenewal ? autoRenewalType : null,
+            auto_renewal_months: autoRenewal && autoRenewalMonths ? parseInt(autoRenewalMonths) : null,
           } as any)
           .select()
           .single();
@@ -1902,14 +1916,79 @@ const EditContract = () => {
                             );
                           case "duration":
                             return (
-                              <DurationInput
-                                id="duration"
-                                label="Duración"
-                                value={duration}
-                                onChange={setDuration}
-                                required
-                                description="Duración total del contrato"
-                              />
+                              <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
+                                <DurationInput
+                                  id="duration"
+                                  label="Duración"
+                                  value={duration}
+                                  onChange={(v) => {
+                                    setDuration(v);
+                                    setHasUnsavedChanges(true);
+                                  }}
+                                  required
+                                  description="Duración total del contrato"
+                                />
+
+                                {/* Renovación Automática */}
+                                <div className="pt-3 border-t border-border space-y-3">
+                                  <div className="flex items-center gap-4">
+                                    <Label className="text-sm font-medium">Renovación Automática</Label>
+                                    <RadioGroup
+                                      value={autoRenewal ? "yes" : "no"}
+                                      onValueChange={(v) => {
+                                        setAutoRenewal(v === "yes");
+                                        setHasUnsavedChanges(true);
+                                      }}
+                                      className="flex gap-4"
+                                    >
+                                      <div className="flex items-center space-x-2">
+                                        <RadioGroupItem value="yes" id="autoRenewalYesEdit" />
+                                        <Label htmlFor="autoRenewalYesEdit" className="font-normal">Sí</Label>
+                                      </div>
+                                      <div className="flex items-center space-x-2">
+                                        <RadioGroupItem value="no" id="autoRenewalNoEdit" />
+                                        <Label htmlFor="autoRenewalNoEdit" className="font-normal">No</Label>
+                                      </div>
+                                    </RadioGroup>
+                                  </div>
+
+                                  {autoRenewal && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-primary/30">
+                                      <div className="space-y-2">
+                                        <Label>Tipo de Renovación</Label>
+                                        <RadioGroup
+                                          value={autoRenewalType}
+                                          onValueChange={(v: "unilateral_gp" | "bilateral") => {
+                                            setAutoRenewalType(v);
+                                            setHasUnsavedChanges(true);
+                                          }}
+                                          className="flex gap-4"
+                                        >
+                                          <div className="flex items-center space-x-2">
+                                            <RadioGroupItem value="unilateral_gp" id="renewalUnilateralEdit" />
+                                            <Label htmlFor="renewalUnilateralEdit" className="font-normal">Unilateral GP</Label>
+                                          </div>
+                                          <div className="flex items-center space-x-2">
+                                            <RadioGroupItem value="bilateral" id="renewalBilateralEdit" />
+                                            <Label htmlFor="renewalBilateralEdit" className="font-normal">Bilateral</Label>
+                                          </div>
+                                        </RadioGroup>
+                                      </div>
+                                      <DurationInput
+                                        id="autoRenewalMonthsEdit"
+                                        label="Plazo de Renovación"
+                                        value={autoRenewalMonths}
+                                        onChange={(v) => {
+                                          setAutoRenewalMonths(v);
+                                          setHasUnsavedChanges(true);
+                                        }}
+                                        placeholder="Ej: 12"
+                                        showEquivalent={true}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
                             );
                           case "noticeType":
                             return (

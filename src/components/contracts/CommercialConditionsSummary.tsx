@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { DollarSign, Calendar, Bell, TrendingUp, Percent, Shield, Building2, Megaphone, Users, Receipt, Wallet, ChevronDown, ChevronRight } from "lucide-react";
+import { DollarSign, Calendar, Bell, TrendingUp, Percent, Shield, Building2, Megaphone, Users, Receipt, Wallet, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 import { CompactEscalationChart } from "./CompactEscalationChart";
 import { RenegotiationDialog } from "./RenegotiationDialog";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
@@ -59,6 +59,9 @@ interface ContractVersion {
   otros_egresos_description?: string | null;
   regime_rent_is_uf_m2?: boolean | null;
   initial_rent_is_uf_m2?: boolean | null;
+  auto_renewal?: boolean | null;
+  auto_renewal_type?: string | null;
+  auto_renewal_months?: number | null;
   rent_escalations: Escalation[];
 }
 interface CommercialConditionsSummaryProps {
@@ -550,7 +553,34 @@ export function CommercialConditionsSummary({
             <p className="text-xs text-muted-foreground">
               ({version.duration_months} meses)
             </p>
+            {/* Renovación Automática indicator */}
+            {version.auto_renewal && (
+              <div className="flex items-center gap-1 mt-1">
+                <RefreshCw className="h-3 w-3 text-primary" />
+                <span className="text-xs text-primary font-medium">Con renovación</span>
+              </div>
+            )}
           </div>
+
+          {/* Renovación Automática - Solo si está activa */}
+          {version.auto_renewal && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <RefreshCw className="h-3 w-3" />
+                Renovación Automática
+              </div>
+              <p className="text-sm font-medium">
+                {version.auto_renewal_months 
+                  ? version.auto_renewal_months >= 12 
+                    ? `${Math.floor(version.auto_renewal_months / 12)} ${Math.floor(version.auto_renewal_months / 12) === 1 ? 'año' : 'años'}${version.auto_renewal_months % 12 > 0 ? ` y ${version.auto_renewal_months % 12} meses` : ''}`
+                    : `${version.auto_renewal_months} meses`
+                  : "Sin plazo definido"}
+              </p>
+              <Badge variant={version.auto_renewal_type === "bilateral" ? "default" : "secondary"} className="text-xs">
+                {version.auto_renewal_type === "bilateral" ? "Bilateral" : "Unilateral GP"}
+              </Badge>
+            </div>
+          )}
 
           {/* Fecha Aviso */}
           <div className="space-y-1">
