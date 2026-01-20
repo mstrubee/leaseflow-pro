@@ -36,6 +36,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ArrowLeft,
   Search,
@@ -51,6 +52,9 @@ import {
   DollarSign,
   FileCheck,
   AlertCircle,
+  ClipboardList,
+  Download,
+  CheckCircle2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { format, parseISO } from "date-fns";
@@ -86,6 +90,21 @@ interface PurchaseOrder {
   invoices_count?: number;
   invoices_total?: number;
   year?: number;
+}
+
+interface OCRequest {
+  id: string;
+  request_number: string;
+  request_date: string;
+  line_name: string;
+  project_name: string;
+  description: string | null;
+  amount_uf: number;
+  status: string;
+  supplier_name: string | null;
+  contract_id: string;
+  year: number;
+  converted_oc_id: string | null;
 }
 
 interface Contract {
@@ -125,9 +144,11 @@ const PurchaseOrdersDashboard = () => {
   const { user, loading: authLoading, isAdmin } = useAuth();
 
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
+  const [ocRequests, setOcRequests] = useState<OCRequest[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("oc");
 
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
@@ -136,6 +157,7 @@ const PurchaseOrdersDashboard = () => {
   const [categoryFilter, setCategoryFilter] = useState("todos");
   const [classificationFilter, setClassificationFilter] = useState("todos");
   const [amountFilter, setAmountFilter] = useState("todos");
+  const [requestStatusFilter, setRequestStatusFilter] = useState("todos");
 
   // Chart-based filters
   const [chartContractFilter, setChartContractFilter] = useState<string | null>(null);
@@ -147,6 +169,7 @@ const PurchaseOrdersDashboard = () => {
 
   // Selection for deletion
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
+  const [selectedRequests, setSelectedRequests] = useState<Set<string>>(new Set());
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showConfirmDeleteDialog, setShowConfirmDeleteDialog] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -157,12 +180,15 @@ const PurchaseOrdersDashboard = () => {
     orders.forEach(o => {
       if (o.year) years.add(o.year);
     });
+    ocRequests.forEach(r => {
+      if (r.year) years.add(r.year);
+    });
     const currentYear = new Date().getFullYear();
     years.add(currentYear);
     years.add(currentYear - 1);
     years.add(currentYear + 1);
     return Array.from(years).sort((a, b) => b - a);
-  }, [orders]);
+  }, [orders, ocRequests]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -234,6 +260,14 @@ const PurchaseOrdersDashboard = () => {
       });
 
       setOrders(processedOrders);
+
+      // Load OC requests
+      const { data: requestsData } = await supabase
+        .from("oc_requests")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      setOcRequests((requestsData || []) as unknown as OCRequest[]);
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
@@ -412,6 +446,7 @@ const PurchaseOrdersDashboard = () => {
     setCategoryFilter("todos");
     setClassificationFilter("todos");
     setAmountFilter("todos");
+    setRequestStatusFilter("todos");
     setChartContractFilter(null);
     setChartCategoryFilter(null);
   };
@@ -422,8 +457,122 @@ const PurchaseOrdersDashboard = () => {
     categoryFilter !== "todos" ||
     classificationFilter !== "todos" ||
     amountFilter !== "todos" ||
+    requestStatusFilter !== "todos" ||
     chartContractFilter ||
     chartCategoryFilter;
+
+  // Filtered OC Requests
+  const filteredRequests = useMemo(() => {
+    const yearNum = parseInt(yearFilter);
+    let filtered = ocRequests.filter(r => r.year === yearNum);
+
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(r =>
+        r.request_number?.toLowerCase().includes(term) ||
+        r.description?.toLowerCase().includes(term) ||
+        r.project_name?.toLowerCase().includes(term) ||
+        r.supplier_name?.toLowerCase().includes(term)
+      );
+    }
+
+    if (contractFilter !== "todos") {
+      filtered = filtered.filter(r => r.contract_id === contractFilter);
+    }
+
+    if (requestStatusFilter !== "todos") {
+      filtered = filtered.filter(r => r.status === requestStatusFilter);
+    }
+
+    return filtered;
+  }, [ocRequests, yearFilter, searchTerm, contractFilter, requestStatusFilter]);
+
+  // OC Request summary
+  const requestSummary = useMemo(() => {
+    const yearNum = parseInt(yearFilter);
+    const yearRequests = ocRequests.filter(r => r.year === yearNum);
+    const pending = yearRequests.filter(r => r.status === "pending");
+    const converted = yearRequests.filter(r => r.status === "converted");
+    
+    return {
+      total: yearRequests.length,
+      totalAmount: yearRequests.reduce((sum, r) => sum + (r.amount_uf || 0), 0),
+      pending: pending.length,
+      pendingAmount: pending.reduce((sum, r) => sum + (r.amount_uf || 0), 0),
+      converted: converted.length,
+      convertedAmount: converted.reduce((sum, r) => sum + (r.amount_uf || 0), 0),
+    };
+  }, [ocRequests, yearFilter]);
+
+  // Toggle request selection
+  const toggleRequestSelection = (requestId: string) => {
+    setSelectedRequests(prev => {
+      const next = new Set(prev);
+      if (next.has(requestId)) {
+        next.delete(requestId);
+      } else {
+        next.add(requestId);
+      }
+      return next;
+    });
+  };
+
+  // Delete selected requests
+  const handleDeleteSelectedRequests = async () => {
+    if (selectedRequests.size === 0) return;
+    
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("oc_requests")
+        .delete()
+        .in("id", Array.from(selectedRequests));
+
+      if (error) throw error;
+
+      toast.success(`${selectedRequests.size} solicitudes eliminadas`);
+      setSelectedRequests(new Set());
+      setShowConfirmDeleteDialog(false);
+      setShowDeleteDialog(false);
+      loadData();
+    } catch (error) {
+      console.error("Error deleting requests:", error);
+      toast.error("Error al eliminar las solicitudes");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Export requests to Excel
+  const exportRequestsToExcel = () => {
+    const yearNum = parseInt(yearFilter);
+    const data = filteredRequests.map(r => ({
+      "Número Solicitud": r.request_number,
+      "Fecha": r.request_date,
+      "Proyecto": r.project_name,
+      "Línea": r.line_name,
+      "Descripción": r.description || "",
+      "Monto UF": r.amount_uf.toFixed(2),
+      "Proveedor": r.supplier_name || "",
+      "Estado": r.status === "pending" ? "Pendiente" : "Convertida",
+    }));
+
+    // Build CSV
+    const headers = Object.keys(data[0] || {});
+    const csvContent = [
+      headers.join(","),
+      ...data.map(row => headers.map(h => `"${(row as any)[h] || ""}"`).join(","))
+    ].join("\n");
+
+    const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `solicitudes_oc_${yearNum}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Solicitudes exportadas a Excel");
+  };
 
   // Selection handlers
   const toggleOrderSelection = (orderId: string) => {
@@ -861,233 +1010,425 @@ const PurchaseOrdersDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Grouped Orders */}
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          </div>
-        ) : groupedOrders.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              No se encontraron órdenes de compra para el año {yearFilter}
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {groupedOrders.map((group) => {
-              const isExpanded = expandedContracts.has(group.contract.id);
-              const groupTotal = group.orders.reduce((sum, o) => sum + (o.amount_uf || 0), 0);
-              const groupInvoiced = group.orders.reduce((sum, o) => sum + (o.invoices_total || 0), 0);
-              const allSelected = group.orders.every((o) => selectedOrders.has(o.id));
-              const someSelected = group.orders.some((o) => selectedOrders.has(o.id));
+        {/* Tabs for OC and Requests */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-2 mb-4">
+            <TabsTrigger value="oc" className="gap-2">
+              <ShoppingCart className="h-4 w-4" />
+              Órdenes de Compra ({summaryData.countOC})
+            </TabsTrigger>
+            <TabsTrigger value="requests" className="gap-2">
+              <ClipboardList className="h-4 w-4" />
+              Solicitudes de OC ({requestSummary.total})
+            </TabsTrigger>
+          </TabsList>
 
-              return (
-                <Collapsible
-                  key={group.contract.id}
-                  open={isExpanded}
-                  onOpenChange={() => toggleContract(group.contract.id)}
-                >
-                  <Card>
-                    <CollapsibleTrigger asChild>
-                      <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            {isExpanded ? (
-                              <ChevronDown className="h-5 w-5 text-muted-foreground" />
-                            ) : (
-                              <ChevronRight className="h-5 w-5 text-muted-foreground" />
-                            )}
-                            <div>
-                              <CardTitle className="text-base">{group.contract.name}</CardTitle>
-                              <p className="text-sm text-muted-foreground">
-                                {group.orders.length} OC · Total: {formatUF(groupTotal)} · Facturado: {formatUF(groupInvoiced)}
-                              </p>
+          <TabsContent value="oc">
+            {/* Grouped Orders */}
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              </div>
+            ) : groupedOrders.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center text-muted-foreground">
+                  No se encontraron órdenes de compra para el año {yearFilter}
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {groupedOrders.map((group) => {
+                  const isExpanded = expandedContracts.has(group.contract.id);
+                  const groupTotal = group.orders.reduce((sum, o) => sum + (o.amount_uf || 0), 0);
+                  const groupInvoiced = group.orders.reduce((sum, o) => sum + (o.invoices_total || 0), 0);
+                  const allSelected = group.orders.every((o) => selectedOrders.has(o.id));
+                  const someSelected = group.orders.some((o) => selectedOrders.has(o.id));
+
+                  return (
+                    <Collapsible
+                      key={group.contract.id}
+                      open={isExpanded}
+                      onOpenChange={() => toggleContract(group.contract.id)}
+                    >
+                      <Card>
+                        <CollapsibleTrigger asChild>
+                          <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                {isExpanded ? (
+                                  <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                                ) : (
+                                  <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                                )}
+                                <div>
+                                  <CardTitle className="text-base">{group.contract.name}</CardTitle>
+                                  <p className="text-sm text-muted-foreground">
+                                    {group.orders.length} OC · Total: {formatUF(groupTotal)} · Facturado: {formatUF(groupInvoiced)}
+                                  </p>
+                                </div>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate(`/contracts/${group.contract.id}?section=ordenes-compra&returnTo=purchase-orders`);
+                                }}
+                              >
+                                <ExternalLink className="h-4 w-4 mr-1" />
+                                Ver en Local
+                              </Button>
                             </div>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(`/contracts/${group.contract.id}?section=ordenes-compra&returnTo=purchase-orders`);
-                            }}
-                          >
-                            <ExternalLink className="h-4 w-4 mr-1" />
-                            Ver en Local
-                          </Button>
-                        </div>
-                      </CardHeader>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <CardContent className="pt-0">
-                        {isAdmin && (
-                          <div className="mb-2 flex items-center gap-2">
-                            <Checkbox
-                              checked={allSelected}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  selectAllInGroup(group.orders);
-                                } else {
-                                  deselectAllInGroup(group.orders);
-                                }
-                              }}
-                            />
-                            <span className="text-sm text-muted-foreground">
-                              {someSelected ? `${group.orders.filter(o => selectedOrders.has(o.id)).length} seleccionadas` : "Seleccionar todas"}
-                            </span>
-                          </div>
-                        )}
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              {isAdmin && <TableHead className="w-[40px]"></TableHead>}
-                              <TableHead>Nº OC</TableHead>
-                              <TableHead>Descripción</TableHead>
-                              <TableHead>Proveedor</TableHead>
-                              <TableHead>Tipo</TableHead>
-                              <TableHead>Categoría</TableHead>
-                              <TableHead className="text-right">Monto (UF)</TableHead>
-                              <TableHead className="text-center">Facturas</TableHead>
-                              <TableHead>Estado</TableHead>
-                              <TableHead>Fecha</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {group.orders.map((order) => {
-                              const hasInvoices = order.invoices && order.invoices.length > 0;
-                              const isOrderExpanded = expandedOrders.has(order.id);
+                          </CardHeader>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <CardContent className="pt-0">
+                            {isAdmin && (
+                              <div className="mb-2 flex items-center gap-2">
+                                <Checkbox
+                                  checked={allSelected}
+                                  onCheckedChange={(checked) => {
+                                    if (checked) {
+                                      selectAllInGroup(group.orders);
+                                    } else {
+                                      deselectAllInGroup(group.orders);
+                                    }
+                                  }}
+                                />
+                                <span className="text-sm text-muted-foreground">
+                                  {someSelected ? `${group.orders.filter(o => selectedOrders.has(o.id)).length} seleccionadas` : "Seleccionar todas"}
+                                </span>
+                              </div>
+                            )}
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  {isAdmin && <TableHead className="w-[40px]"></TableHead>}
+                                  <TableHead>Nº OC</TableHead>
+                                  <TableHead>Descripción</TableHead>
+                                  <TableHead>Proveedor</TableHead>
+                                  <TableHead>Tipo</TableHead>
+                                  <TableHead>Categoría</TableHead>
+                                  <TableHead className="text-right">Monto (UF)</TableHead>
+                                  <TableHead className="text-center">Facturas</TableHead>
+                                  <TableHead>Estado</TableHead>
+                                  <TableHead>Fecha</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {group.orders.map((order) => {
+                                  const hasInvoices = order.invoices && order.invoices.length > 0;
+                                  const isOrderExpanded = expandedOrders.has(order.id);
 
-                              return (
-                                <>
-                                  <TableRow 
-                                    key={order.id}
-                                    className={hasInvoices ? "cursor-pointer hover:bg-muted/30" : ""}
-                                    onClick={() => hasInvoices && toggleOrderInvoices(order.id)}
-                                  >
-                                    {isAdmin && (
-                                      <TableCell onClick={(e) => e.stopPropagation()}>
-                                        <Checkbox
-                                          checked={selectedOrders.has(order.id)}
-                                          onCheckedChange={() => toggleOrderSelection(order.id)}
-                                        />
-                                      </TableCell>
-                                    )}
-                                    <TableCell className="font-medium">
-                                      <div className="flex items-center gap-2">
-                                        <FileText className="h-4 w-4 text-muted-foreground" />
-                                        {order.order_number}
-                                        {hasInvoices && (
-                                          isOrderExpanded ? 
-                                            <ChevronDown className="h-3 w-3 text-muted-foreground" /> : 
-                                            <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                                        )}
-                                      </div>
-                                    </TableCell>
-                                    <TableCell className="max-w-[150px] truncate">
-                                      {order.description || "-"}
-                                    </TableCell>
-                                    <TableCell className="max-w-[120px] truncate">
-                                      {order.supplier_name || "-"}
-                                    </TableCell>
-                                    <TableCell>
-                                      {order.budget_classification ? (
-                                        <Badge
-                                          variant={order.budget_classification === "CAPEX" ? "default" : "secondary"}
-                                        >
-                                          {order.budget_classification}
-                                        </Badge>
-                                      ) : (
-                                        "-"
-                                      )}
-                                    </TableCell>
-                                    <TableCell>
-                                      {order.opex_category_name || order.budget_line_name || "-"}
-                                    </TableCell>
-                                    <TableCell className="text-right font-medium">
-                                      {formatUF(order.amount_uf)}
-                                    </TableCell>
-                                    <TableCell className="text-center">
-                                      <div className="flex items-center justify-center gap-1">
-                                        <Receipt className="h-3 w-3 text-muted-foreground" />
-                                        <span>{order.invoices_count}</span>
-                                      </div>
-                                    </TableCell>
-                                    <TableCell>
-                                      <Badge
-                                        variant={
-                                          order.status === "completada"
-                                            ? "default"
-                                            : order.status === "pendiente"
-                                            ? "secondary"
-                                            : "outline"
-                                        }
+                                  return (
+                                    <>
+                                      <TableRow 
+                                        key={order.id}
+                                        className={hasInvoices ? "cursor-pointer hover:bg-muted/30" : ""}
+                                        onClick={() => hasInvoices && toggleOrderInvoices(order.id)}
                                       >
-                                        {order.status}
-                                      </Badge>
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                      {order.order_date ? format(parseISO(order.order_date), "dd MMM yyyy", { locale: es }) : "-"}
-                                    </TableCell>
-                                  </TableRow>
-                                  {/* Invoices sub-table */}
-                                  {hasInvoices && isOrderExpanded && (
-                                    <TableRow className="bg-muted/20">
-                                      <TableCell colSpan={isAdmin ? 10 : 9} className="py-2 px-4">
-                                        <div className="pl-8">
-                                          <p className="text-xs font-medium text-muted-foreground mb-2">Facturas asociadas:</p>
-                                          <Table>
-                                            <TableHeader>
-                                              <TableRow>
-                                                <TableHead className="text-xs">Nº Factura</TableHead>
-                                                <TableHead className="text-xs">Fecha</TableHead>
-                                                <TableHead className="text-xs text-right">Monto (UF)</TableHead>
-                                                <TableHead className="text-xs">Estado</TableHead>
-                                              </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                              {order.invoices.map((invoice) => (
-                                                <TableRow key={invoice.id}>
-                                                  <TableCell className="text-sm py-1">
-                                                    <div className="flex items-center gap-2">
-                                                      <Receipt className="h-3 w-3 text-primary" />
-                                                      {invoice.invoice_number}
-                                                    </div>
-                                                  </TableCell>
-                                                  <TableCell className="text-sm py-1">
-                                                    {format(parseISO(invoice.invoice_date), "dd MMM yyyy", { locale: es })}
-                                                  </TableCell>
-                                                  <TableCell className="text-sm py-1 text-right font-medium">
-                                                    {formatUF(invoice.amount_uf)}
-                                                  </TableCell>
-                                                  <TableCell className="py-1">
-                                                    <Badge
-                                                      variant={invoice.reception_status === "recibida" ? "default" : "secondary"}
-                                                      className="text-xs"
-                                                    >
-                                                      {invoice.reception_status}
-                                                    </Badge>
-                                                  </TableCell>
-                                                </TableRow>
-                                              ))}
-                                            </TableBody>
-                                          </Table>
-                                        </div>
-                                      </TableCell>
-                                    </TableRow>
-                                  )}
-                                </>
-                              );
-                            })}
-                          </TableBody>
-                        </Table>
-                      </CardContent>
-                    </CollapsibleContent>
-                  </Card>
-                </Collapsible>
-              );
-            })}
-          </div>
-        )}
+                                        {isAdmin && (
+                                          <TableCell onClick={(e) => e.stopPropagation()}>
+                                            <Checkbox
+                                              checked={selectedOrders.has(order.id)}
+                                              onCheckedChange={() => toggleOrderSelection(order.id)}
+                                            />
+                                          </TableCell>
+                                        )}
+                                        <TableCell className="font-medium">
+                                          <div className="flex items-center gap-2">
+                                            <FileText className="h-4 w-4 text-muted-foreground" />
+                                            {order.order_number}
+                                            {hasInvoices && (
+                                              isOrderExpanded ? 
+                                                <ChevronDown className="h-3 w-3 text-muted-foreground" /> : 
+                                                <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                                            )}
+                                          </div>
+                                        </TableCell>
+                                        <TableCell className="max-w-[150px] truncate">
+                                          {order.description || "-"}
+                                        </TableCell>
+                                        <TableCell className="max-w-[120px] truncate">
+                                          {order.supplier_name || "-"}
+                                        </TableCell>
+                                        <TableCell>
+                                          {order.budget_classification ? (
+                                            <Badge
+                                              variant={order.budget_classification === "CAPEX" ? "default" : "secondary"}
+                                            >
+                                              {order.budget_classification}
+                                            </Badge>
+                                          ) : (
+                                            "-"
+                                          )}
+                                        </TableCell>
+                                        <TableCell>
+                                          {order.opex_category_name || order.budget_line_name || "-"}
+                                        </TableCell>
+                                        <TableCell className="text-right font-medium">
+                                          {formatUF(order.amount_uf)}
+                                        </TableCell>
+                                        <TableCell className="text-center">
+                                          <div className="flex items-center justify-center gap-1">
+                                            <Receipt className="h-3 w-3 text-muted-foreground" />
+                                            <span>{order.invoices_count}</span>
+                                          </div>
+                                        </TableCell>
+                                        <TableCell>
+                                          <Badge
+                                            variant={
+                                              order.status === "completada"
+                                                ? "default"
+                                                : order.status === "pendiente"
+                                                ? "secondary"
+                                                : "outline"
+                                            }
+                                          >
+                                            {order.status}
+                                          </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-muted-foreground">
+                                          {order.order_date ? format(parseISO(order.order_date), "dd MMM yyyy", { locale: es }) : "-"}
+                                        </TableCell>
+                                      </TableRow>
+                                      {/* Invoices sub-table */}
+                                      {hasInvoices && isOrderExpanded && (
+                                        <TableRow className="bg-muted/20">
+                                          <TableCell colSpan={isAdmin ? 10 : 9} className="py-2 px-4">
+                                            <div className="pl-8">
+                                              <p className="text-xs font-medium text-muted-foreground mb-2">Facturas asociadas:</p>
+                                              <Table>
+                                                <TableHeader>
+                                                  <TableRow>
+                                                    <TableHead className="text-xs">Nº Factura</TableHead>
+                                                    <TableHead className="text-xs">Fecha</TableHead>
+                                                    <TableHead className="text-xs text-right">Monto (UF)</TableHead>
+                                                    <TableHead className="text-xs">Estado</TableHead>
+                                                  </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                  {order.invoices.map((invoice) => (
+                                                    <TableRow key={invoice.id}>
+                                                      <TableCell className="text-sm py-1">
+                                                        <div className="flex items-center gap-2">
+                                                          <Receipt className="h-3 w-3 text-primary" />
+                                                          {invoice.invoice_number}
+                                                        </div>
+                                                      </TableCell>
+                                                      <TableCell className="text-sm py-1">
+                                                        {format(parseISO(invoice.invoice_date), "dd MMM yyyy", { locale: es })}
+                                                      </TableCell>
+                                                      <TableCell className="text-sm py-1 text-right font-medium">
+                                                        {formatUF(invoice.amount_uf)}
+                                                      </TableCell>
+                                                      <TableCell className="py-1">
+                                                        <Badge
+                                                          variant={invoice.reception_status === "recibida" ? "default" : "secondary"}
+                                                          className="text-xs"
+                                                        >
+                                                          {invoice.reception_status}
+                                                        </Badge>
+                                                      </TableCell>
+                                                    </TableRow>
+                                                  ))}
+                                                </TableBody>
+                                              </Table>
+                                            </div>
+                                          </TableCell>
+                                        </TableRow>
+                                      )}
+                                    </>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          </CardContent>
+                        </CollapsibleContent>
+                      </Card>
+                    </Collapsible>
+                  );
+                })}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="requests">
+            {/* OC Requests Summary */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                    <ClipboardList className="h-4 w-4" />
+                    Total Solicitudes
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{requestSummary.total}</div>
+                  <p className="text-xs text-muted-foreground">{formatUF(requestSummary.totalAmount)}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4" />
+                    Pendientes
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-amber-600">{requestSummary.pending}</div>
+                  <p className="text-xs text-muted-foreground">{formatUF(requestSummary.pendingAmount)}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Convertidas
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-green-600">{requestSummary.converted}</div>
+                  <p className="text-xs text-muted-foreground">{formatUF(requestSummary.convertedAmount)}</p>
+                </CardContent>
+              </Card>
+              <Card className="flex items-center justify-center">
+                <CardContent className="py-4">
+                  <Button onClick={exportRequestsToExcel} variant="outline" className="gap-2" disabled={filteredRequests.length === 0}>
+                    <Download className="h-4 w-4" />
+                    Exportar Excel
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Status Filter for Requests */}
+            <Card className="mb-4">
+              <CardContent className="pt-4">
+                <div className="flex flex-wrap gap-3 items-center">
+                  <div className="relative flex-1 min-w-[200px]">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar por número, descripción o proyecto..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                  <Select value={contractFilter} onValueChange={setContractFilter}>
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="Proyecto" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos los proyectos</SelectItem>
+                      {contracts.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={requestStatusFilter} onValueChange={setRequestStatusFilter}>
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue placeholder="Estado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos</SelectItem>
+                      <SelectItem value="pending">Pendientes</SelectItem>
+                      <SelectItem value="converted">Convertidas</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {isAdmin && selectedRequests.size > 0 && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setShowDeleteDialog(true)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Eliminar ({selectedRequests.size})
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Requests Table */}
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              </div>
+            ) : filteredRequests.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center text-muted-foreground">
+                  No se encontraron solicitudes de OC para el año {yearFilter}
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardContent className="pt-4">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        {isAdmin && <TableHead className="w-[40px]"></TableHead>}
+                        <TableHead>Nº Solicitud</TableHead>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Proyecto</TableHead>
+                        <TableHead>Línea</TableHead>
+                        <TableHead>Descripción</TableHead>
+                        <TableHead>Proveedor</TableHead>
+                        <TableHead className="text-right">Monto (UF)</TableHead>
+                        <TableHead>Estado</TableHead>
+                        <TableHead>Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredRequests.map((req) => (
+                        <TableRow key={req.id}>
+                          {isAdmin && (
+                            <TableCell>
+                              <Checkbox
+                                checked={selectedRequests.has(req.id)}
+                                onCheckedChange={() => toggleRequestSelection(req.id)}
+                              />
+                            </TableCell>
+                          )}
+                          <TableCell className="font-medium font-mono text-xs">
+                            <div className="flex items-center gap-2">
+                              <ClipboardList className="h-4 w-4 text-muted-foreground" />
+                              {req.request_number}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {format(parseISO(req.request_date), "dd MMM yyyy", { locale: es })}
+                          </TableCell>
+                          <TableCell className="max-w-[120px] truncate">{req.project_name}</TableCell>
+                          <TableCell className="max-w-[120px] truncate">{req.line_name}</TableCell>
+                          <TableCell className="max-w-[150px] truncate">{req.description || "-"}</TableCell>
+                          <TableCell className="max-w-[100px] truncate">{req.supplier_name || "-"}</TableCell>
+                          <TableCell className="text-right font-medium">{formatUF(req.amount_uf)}</TableCell>
+                          <TableCell>
+                            <Badge variant={req.status === "pending" ? "secondary" : "default"}>
+                              {req.status === "pending" ? "Pendiente" : "Convertida"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => navigate(`/contracts/${req.contract_id}?section=ordenes-compra&returnTo=purchase-orders`)}
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+        </Tabs>
       </main>
 
       {/* First Delete Confirmation Dialog */}
