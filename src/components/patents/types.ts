@@ -6,6 +6,7 @@ export interface PatentChecklistSection {
   code: string;
   name: string;
   display_order: number;
+  repository_folder_id?: string;
 }
 
 export interface PatentChecklistItem {

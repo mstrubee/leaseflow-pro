@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, Save, X, Palette, GripVertical } from "lucide-react";
+import { Plus, Pencil, Trash2, Save, X, Palette, GripVertical, Folder } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { PatentChecklistSection, PatentChecklistItem, PatentEmitter, PatentStatus, PatentItemEmitter } from "./types";
@@ -107,6 +107,9 @@ export function PatentAdminPanel({
   const [statuses, setStatuses] = useState<PatentStatus[]>([]);
   const [itemEmitters, setItemEmitters] = useState<PatentItemEmitter[]>([]);
   
+  // Repository folders state
+  const [repositoryFolders, setRepositoryFolders] = useState<{ id: string; name: string; path: string }[]>([]);
+  
   // Form states
   const [newItemName, setNewItemName] = useState("");
   const [newItemSection, setNewItemSection] = useState("");
@@ -143,11 +146,12 @@ export function PatentAdminPanel({
     setLocalEmitters(initialEmitters);
   }, [initialEmitters]);
 
-  // Load statuses and item emitters
+  // Load statuses, item emitters and repository folders
   useEffect(() => {
     if (open) {
       loadStatuses();
       loadItemEmitters();
+      loadRepositoryFolders();
     }
   }, [open]);
 
@@ -165,6 +169,34 @@ export function PatentAdminPanel({
       .from("patent_item_emitters")
       .select("*");
     if (data) setItemEmitters(data);
+  };
+
+  const loadRepositoryFolders = async () => {
+    // Load all folder templates (these are global templates, not contract-specific)
+    const { data } = await supabase
+      .from("folder_templates")
+      .select("id, name, parent_id")
+      .order("display_order");
+    
+    if (data) {
+      // Build folder paths for display
+      const folderMap = new Map(data.map(f => [f.id, f]));
+      const foldersWithPaths = data.map(folder => {
+        let path = folder.name;
+        let current = folder;
+        while (current.parent_id) {
+          const parent = folderMap.get(current.parent_id);
+          if (parent) {
+            path = `${parent.name} / ${path}`;
+            current = parent;
+          } else {
+            break;
+          }
+        }
+        return { id: folder.id, name: folder.name, path };
+      });
+      setRepositoryFolders(foldersWithPaths);
+    }
   };
 
   // --- REORDER HANDLERS ---
@@ -414,7 +446,7 @@ export function PatentAdminPanel({
   const handleUpdateSection = async (section: PatentChecklistSection) => {
     const { error } = await supabase
       .from("patent_checklist_sections")
-      .update({ name: section.name, code: section.code })
+      .update({ name: section.name, code: section.code, repository_folder_id: section.repository_folder_id || null })
       .eq("id", section.id);
 
     if (error) {
@@ -426,6 +458,25 @@ export function PatentAdminPanel({
     setLocalSections(prev => prev.map(s => s.id === section.id ? section : s));
     toast.success("Sección actualizada");
     setEditingSection(null);
+  };
+
+  const handleUpdateSectionFolder = async (sectionId: string, folderId: string | null) => {
+    const { error } = await supabase
+      .from("patent_checklist_sections")
+      .update({ repository_folder_id: folderId })
+      .eq("id", sectionId);
+
+    if (error) {
+      toast.error("Error al actualizar carpeta");
+      return;
+    }
+
+    // Update local state immediately
+    setLocalSections(prev => prev.map(s => 
+      s.id === sectionId ? { ...s, repository_folder_id: folderId || undefined } : s
+    ));
+    toast.success("Carpeta actualizada");
+    onDataChange();
   };
 
   const handleDeleteSection = async (id: string) => {
@@ -834,6 +885,7 @@ export function PatentAdminPanel({
                           <TableHead className="w-[40px]"></TableHead>
                           <TableHead className="w-[80px]">Código</TableHead>
                           <TableHead>Nombre</TableHead>
+                          <TableHead className="w-[200px]">Carpeta Repositorio</TableHead>
                           <TableHead className="w-[100px]">Acciones</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -867,6 +919,24 @@ export function PatentAdminPanel({
                                 ) : (
                                   section.name
                                 )}
+                              </TableCell>
+                              <TableCell>
+                                <Select 
+                                  value={section.repository_folder_id || "none"} 
+                                  onValueChange={(value) => handleUpdateSectionFolder(section.id, value === "none" ? null : value)}
+                                >
+                                  <SelectTrigger className="h-8 text-xs">
+                                    <SelectValue placeholder="Sin carpeta" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="none">Sin carpeta</SelectItem>
+                                    {repositoryFolders.map(folder => (
+                                      <SelectItem key={folder.id} value={folder.id}>
+                                        {folder.path}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                               </TableCell>
                               <TableCell>
                                 {editingSection?.id === section.id ? (
