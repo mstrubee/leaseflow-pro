@@ -27,11 +27,16 @@ interface TodayAlert {
   due_date: string;
   alert_type: string;
   contract_id: string | null;
+  assigned_to: string | null;
   contracts?: {
     name: string;
   } | null;
   alert_categories?: {
     name: string;
+  } | null;
+  profiles?: {
+    full_name: string | null;
+    email: string;
   } | null;
 }
 
@@ -86,7 +91,7 @@ export function TodayAlertsFloating() {
       const weekStart = format(startOfWeek(today, { weekStartsOn: 1 }), "yyyy-MM-dd");
       const weekEnd = format(endOfWeek(today, { weekStartsOn: 1 }), "yyyy-MM-dd");
       
-      // Load today's alerts
+      // Load today's alerts - for admins show all, for regular users show assigned only
       const { data: todayData, error: todayError } = await supabase
         .from("alerts")
         .select(`
@@ -95,8 +100,10 @@ export function TodayAlertsFloating() {
           due_date,
           alert_type,
           contract_id,
+          assigned_to,
           contracts (name),
-          alert_categories (name)
+          alert_categories (name),
+          profiles!alerts_assigned_to_fkey (full_name, email)
         `)
         .eq("due_date", todayStr)
         .eq("is_active", true)
@@ -116,8 +123,10 @@ export function TodayAlertsFloating() {
           due_date,
           alert_type,
           contract_id,
+          assigned_to,
           contracts (name),
-          alert_categories (name)
+          alert_categories (name),
+          profiles!alerts_assigned_to_fkey (full_name, email)
         `)
         .gte("due_date", weekStart)
         .lte("due_date", weekEnd)

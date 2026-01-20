@@ -136,6 +136,7 @@ export type Database = {
         Row: {
           alert_subtype: string | null
           alert_type: Database["public"]["Enums"]["alert_type"]
+          assigned_to: string | null
           category_id: string | null
           channels: Database["public"]["Enums"]["notification_channel"][]
           completed_at: string | null
@@ -147,6 +148,7 @@ export type Database = {
           deleted_at: string | null
           deleted_by: string | null
           due_date: string
+          external_emails: string[] | null
           id: string
           is_active: boolean
           item_id: string | null
@@ -162,6 +164,7 @@ export type Database = {
         Insert: {
           alert_subtype?: string | null
           alert_type?: Database["public"]["Enums"]["alert_type"]
+          assigned_to?: string | null
           category_id?: string | null
           channels?: Database["public"]["Enums"]["notification_channel"][]
           completed_at?: string | null
@@ -173,6 +176,7 @@ export type Database = {
           deleted_at?: string | null
           deleted_by?: string | null
           due_date: string
+          external_emails?: string[] | null
           id?: string
           is_active?: boolean
           item_id?: string | null
@@ -188,6 +192,7 @@ export type Database = {
         Update: {
           alert_subtype?: string | null
           alert_type?: Database["public"]["Enums"]["alert_type"]
+          assigned_to?: string | null
           category_id?: string | null
           channels?: Database["public"]["Enums"]["notification_channel"][]
           completed_at?: string | null
@@ -199,6 +204,7 @@ export type Database = {
           deleted_at?: string | null
           deleted_by?: string | null
           due_date?: string
+          external_emails?: string[] | null
           id?: string
           is_active?: boolean
           item_id?: string | null
@@ -212,6 +218,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "alerts_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "alerts_category_id_fkey"
             columns: ["category_id"]

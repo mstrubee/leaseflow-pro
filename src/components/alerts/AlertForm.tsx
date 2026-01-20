@@ -8,14 +8,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Bell, Mail, MessageSquare, Save, X, Tag } from "lucide-react";
+import { CalendarIcon, Bell, Mail, MessageSquare, Save, X, Tag, User, Plus, Trash2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAlertCategories } from "@/hooks/useAlertCategories";
+import { Badge } from "@/components/ui/badge";
 
+interface UserProfile {
+  id: string;
+  email: string;
+  full_name: string | null;
+}
 const ALERT_TYPES = [
   { value: "contract_expiration", label: "Vencimiento de contrato" },
   { value: "contract_renewal", label: "Renovación de contrato" },
@@ -52,6 +58,8 @@ export interface AlertData {
   repeat_every_days: number | null;
   contract_id: string | null;
   category_id?: string | null;
+  assigned_to?: string | null;
+  external_emails?: string[];
 }
 
 interface AlertFormProps {
@@ -78,6 +86,27 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
   const [repeatEveryDays, setRepeatEveryDays] = useState<number | null>(null);
   const [enableRepeat, setEnableRepeat] = useState(false);
   const [categoryId, setCategoryId] = useState<string | undefined>(forceCategoryId);
+  
+  // Responsible user and external emails
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [assignedTo, setAssignedTo] = useState<string>("");
+  const [externalEmails, setExternalEmails] = useState<string[]>([]);
+  const [newExternalEmail, setNewExternalEmail] = useState("");
+
+  // Load available users
+  useEffect(() => {
+    const loadUsers = async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, email, full_name")
+        .order("full_name");
+      
+      if (!error && data) {
+        setUsers(data);
+      }
+    };
+    loadUsers();
+  }, []);
 
   // Load editing alert data
   useEffect(() => {
@@ -91,8 +120,42 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
       setRepeatEveryDays(editingAlert.repeat_every_days);
       setEnableRepeat(!!editingAlert.repeat_every_days);
       setCategoryId(editingAlert.category_id || undefined);
+      setAssignedTo(editingAlert.assigned_to || "");
+      setExternalEmails(editingAlert.external_emails || []);
     }
   }, [editingAlert]);
+
+  const handleAddExternalEmail = () => {
+    const email = newExternalEmail.trim();
+    if (!email) return;
+    
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      toast({
+        title: "Email inválido",
+        description: "Ingrese un email válido",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (externalEmails.includes(email)) {
+      toast({
+        title: "Email duplicado",
+        description: "Este email ya fue agregado",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setExternalEmails([...externalEmails, email]);
+    setNewExternalEmail("");
+  };
+
+  const handleRemoveExternalEmail = (email: string) => {
+    setExternalEmails(externalEmails.filter(e => e !== email));
+  };
 
   // Auto-select category based on alert type (if not forced)
   useEffect(() => {
@@ -136,6 +199,16 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
       return;
     }
 
+    // Validate that there's an assigned user
+    if (!assignedTo) {
+      toast({
+        title: "Error",
+        description: "Debe asignar un responsable a la alerta",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -153,6 +226,8 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
         item_type: (editingAlert?.contract_id || contractId) ? "contract" : null,
         is_active: true,
         category_id: categoryId || null,
+        assigned_to: assignedTo,
+        external_emails: externalEmails,
       };
 
       if (editingAlert) {
@@ -253,6 +328,75 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+          </div>
+
+          {/* Responsible User Assignment */}
+          <div className="space-y-3 p-4 border rounded-lg">
+            <Label className="flex items-center gap-1">
+              <User className="h-4 w-4" />
+              Responsable *
+            </Label>
+            <Select value={assignedTo} onValueChange={setAssignedTo}>
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar responsable" />
+              </SelectTrigger>
+              <SelectContent>
+                {users.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.full_name || u.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              El responsable recibirá las notificaciones de esta alerta
+            </p>
+          </div>
+
+          {/* External Emails */}
+          <div className="space-y-3 p-4 border rounded-lg">
+            <Label className="flex items-center gap-1">
+              <Mail className="h-4 w-4" />
+              Emails externos (opcional)
+            </Label>
+            <p className="text-xs text-muted-foreground mb-2">
+              Puede agregar emails de personas externas que también recibirán las notificaciones
+            </p>
+            
+            <div className="flex gap-2">
+              <Input
+                type="email"
+                value={newExternalEmail}
+                onChange={(e) => setNewExternalEmail(e.target.value)}
+                placeholder="email@ejemplo.com"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAddExternalEmail();
+                  }
+                }}
+              />
+              <Button type="button" variant="outline" onClick={handleAddExternalEmail}>
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+            
+            {externalEmails.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-2">
+                {externalEmails.map((email) => (
+                  <Badge key={email} variant="secondary" className="flex items-center gap-1">
+                    {email}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveExternalEmail(email)}
+                      className="ml-1 hover:text-destructive"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
               </div>
             )}
           </div>
