@@ -45,6 +45,7 @@ interface Alert {
   completed_by: string | null;
   deleted_at: string | null;
   deleted_by: string | null;
+  category_id?: string | null;
   contracts?: {
     name: string;
   } | null;
@@ -55,9 +56,10 @@ interface AlertsListProps {
   showAll?: boolean;
   onRefresh?: () => void;
   showOnlyActive?: boolean;
+  categoryFilter?: string;
 }
 
-export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyActive = true }: AlertsListProps) {
+export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyActive = true, categoryFilter }: AlertsListProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const { navigateToContractFromAlerts } = useAlertsNavigation();
@@ -84,6 +86,10 @@ export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyAct
 
       if (contractId) {
         query = query.eq("contract_id", contractId);
+      }
+
+      if (categoryFilter) {
+        query = query.eq("category_id", categoryFilter);
       }
 
       if (showOnlyActive) {

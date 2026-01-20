@@ -6,9 +6,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Bell, BellRing, Clock, CheckCircle, AlertTriangle, Plus, RefreshCw, Archive, Trash2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ArrowLeft, Bell, BellRing, Clock, CheckCircle, AlertTriangle, Plus, RefreshCw, Archive, Trash2, Filter, Tag } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useAlertCategories } from "@/hooks/useAlertCategories";
 import { AlertForm } from "@/components/alerts/AlertForm";
 import { AlertsList } from "@/components/alerts/AlertsList";
 import { FinalizedAlertsList } from "@/components/alerts/FinalizedAlertsList";
@@ -33,6 +35,7 @@ interface AlertStats {
   expired: number;
   upcoming7Days: number;
   upcoming30Days: number;
+  byCategory: Record<string, number>;
 }
 
 interface AlertHistoryItem {
@@ -44,6 +47,7 @@ interface AlertHistoryItem {
   days_before_due: number | null;
   alerts: {
     title: string;
+    category_id: string | null;
     contracts: {
       name: string;
     } | null;
@@ -54,6 +58,7 @@ export default function AlertsDashboard() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const { toast } = useToast();
+  const { categories, getCategoryById } = useAlertCategories();
   const [showForm, setShowForm] = useState(false);
   const [stats, setStats] = useState<AlertStats>({
     total: 0,
@@ -61,11 +66,15 @@ export default function AlertsDashboard() {
     expired: 0,
     upcoming7Days: 0,
     upcoming30Days: 0,
+    byCategory: {},
   });
   const [history, setHistory] = useState<AlertHistoryItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  
+  // Filtering state
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   
   // History bulk delete state
   const [selectedHistory, setSelectedHistory] = useState<Set<string>>(new Set());
@@ -87,7 +96,7 @@ export default function AlertsDashboard() {
     try {
       const { data: alerts, error } = await supabase
         .from("alerts")
-        .select("id, is_active, due_date");
+        .select("id, is_active, due_date, category_id");
 
       if (error) throw error;
 
@@ -98,6 +107,7 @@ export default function AlertsDashboard() {
         expired: 0,
         upcoming7Days: 0,
         upcoming30Days: 0,
+        byCategory: {},
       };
 
       alerts?.forEach((alert) => {
@@ -108,6 +118,10 @@ export default function AlertsDashboard() {
         if (days < 0) stats.expired++;
         if (days >= 0 && days <= 7) stats.upcoming7Days++;
         if (days >= 0 && days <= 30) stats.upcoming30Days++;
+        
+        // Count by category
+        const catId = alert.category_id || 'uncategorized';
+        stats.byCategory[catId] = (stats.byCategory[catId] || 0) + 1;
       });
 
       setStats(stats);
@@ -130,6 +144,7 @@ export default function AlertsDashboard() {
           days_before_due,
           alerts (
             title,
+            category_id,
             contracts (name)
           )
         `)
@@ -334,10 +349,28 @@ export default function AlertsDashboard() {
           </TabsList>
 
           <TabsContent value="all">
+            {/* Category Filter */}
+            <div className="flex items-center gap-3 mb-4">
+              <Tag className="h-4 w-4 text-muted-foreground" />
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="Filtrar por categoría" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas las categorías</SelectItem>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name} ({stats.byCategory[cat.id] || 0})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <AlertsList
-              key={refreshKey}
+              key={`${refreshKey}-${categoryFilter}`}
               showAll
               showOnlyActive={true}
+              categoryFilter={categoryFilter !== "all" ? categoryFilter : undefined}
               onRefresh={() => setRefreshKey((k) => k + 1)}
             />
           </TabsContent>

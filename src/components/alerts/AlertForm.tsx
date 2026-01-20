@@ -8,12 +8,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Bell, Mail, MessageSquare, Save, X } from "lucide-react";
+import { CalendarIcon, Bell, Mail, MessageSquare, Save, X, Tag } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAlertCategories } from "@/hooks/useAlertCategories";
 
 const ALERT_TYPES = [
   { value: "contract_expiration", label: "Vencimiento de contrato" },
@@ -26,6 +27,9 @@ const ALERT_TYPES = [
   { value: "certificate", label: "Certificado" },
   { value: "other", label: "Otro" },
 ];
+
+// Alert types that should be categorized as "contract_alerts"
+const CONTRACT_ALERT_TYPES = ['contract_expiration', 'contract_renewal', 'early_termination_notice'];
 
 const DAYS_BEFORE_OPTIONS = [
   { value: 60, label: "60 días antes" },
@@ -47,6 +51,7 @@ export interface AlertData {
   days_before: number[];
   repeat_every_days: number | null;
   contract_id: string | null;
+  category_id?: string | null;
 }
 
 interface AlertFormProps {
@@ -54,12 +59,14 @@ interface AlertFormProps {
   contractName?: string;
   initialDueDate?: Date;
   editingAlert?: AlertData | null;
+  forceCategoryId?: string; // Force a specific category (for patent alerts)
   onSuccess?: () => void;
   onCancel?: () => void;
 }
 
-export function AlertForm({ contractId, contractName, initialDueDate, editingAlert, onSuccess, onCancel }: AlertFormProps) {
+export function AlertForm({ contractId, contractName, initialDueDate, editingAlert, forceCategoryId, onSuccess, onCancel }: AlertFormProps) {
   const { toast } = useToast();
+  const { categories, getContractCategoryId, getTrackingCategoryId } = useAlertCategories();
   const [loading, setLoading] = useState(false);
   
   const [title, setTitle] = useState(contractName ? `Vencimiento - ${contractName}` : "");
@@ -70,6 +77,7 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
   const [daysBefore, setDaysBefore] = useState<number[]>([30, 7, 1]);
   const [repeatEveryDays, setRepeatEveryDays] = useState<number | null>(null);
   const [enableRepeat, setEnableRepeat] = useState(false);
+  const [categoryId, setCategoryId] = useState<string | undefined>(forceCategoryId);
 
   // Load editing alert data
   useEffect(() => {
@@ -82,8 +90,23 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
       setDaysBefore(editingAlert.days_before);
       setRepeatEveryDays(editingAlert.repeat_every_days);
       setEnableRepeat(!!editingAlert.repeat_every_days);
+      setCategoryId(editingAlert.category_id || undefined);
     }
   }, [editingAlert]);
+
+  // Auto-select category based on alert type (if not forced)
+  useEffect(() => {
+    if (forceCategoryId) {
+      setCategoryId(forceCategoryId);
+      return;
+    }
+    
+    if (CONTRACT_ALERT_TYPES.includes(alertType)) {
+      setCategoryId(getContractCategoryId());
+    } else if (!categoryId) {
+      setCategoryId(getTrackingCategoryId());
+    }
+  }, [alertType, forceCategoryId, getContractCategoryId, getTrackingCategoryId]);
 
   const handleChannelToggle = (channel: string) => {
     setChannels(prev => 
@@ -129,6 +152,7 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
         contract_id: editingAlert?.contract_id || contractId || null,
         item_type: (editingAlert?.contract_id || contractId) ? "contract" : null,
         is_active: true,
+        category_id: categoryId || null,
       };
 
       if (editingAlert) {
@@ -209,6 +233,28 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Category selector - only show if not forced */}
+            {!forceCategoryId && categories.length > 0 && (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1">
+                  <Tag className="h-3 w-3" />
+                  Categoría
+                </Label>
+                <Select value={categoryId || ""} onValueChange={setCategoryId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar categoría" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">

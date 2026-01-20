@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      alert_categories: {
+        Row: {
+          code: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          display_order: number | null
+          id: string
+          is_active: boolean | null
+          is_system: boolean | null
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          is_active?: boolean | null
+          is_system?: boolean | null
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          is_active?: boolean | null
+          is_system?: boolean | null
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       alert_history: {
         Row: {
           alert_id: string
@@ -97,6 +136,7 @@ export type Database = {
         Row: {
           alert_subtype: string | null
           alert_type: Database["public"]["Enums"]["alert_type"]
+          category_id: string | null
           channels: Database["public"]["Enums"]["notification_channel"][]
           completed_at: string | null
           completed_by: string | null
@@ -122,6 +162,7 @@ export type Database = {
         Insert: {
           alert_subtype?: string | null
           alert_type?: Database["public"]["Enums"]["alert_type"]
+          category_id?: string | null
           channels?: Database["public"]["Enums"]["notification_channel"][]
           completed_at?: string | null
           completed_by?: string | null
@@ -147,6 +188,7 @@ export type Database = {
         Update: {
           alert_subtype?: string | null
           alert_type?: Database["public"]["Enums"]["alert_type"]
+          category_id?: string | null
           channels?: Database["public"]["Enums"]["notification_channel"][]
           completed_at?: string | null
           completed_by?: string | null
@@ -170,6 +212,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "alerts_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "alert_categories"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "alerts_contract_id_fkey"
             columns: ["contract_id"]
