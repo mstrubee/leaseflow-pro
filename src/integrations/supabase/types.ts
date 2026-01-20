@@ -2551,6 +2551,7 @@ export type Database = {
           id: string
           input_currency: string | null
           line_name: string
+          opex_master_id: string | null
           project_name: string
           purchase_order_id: string | null
           request_date: string
@@ -2575,6 +2576,7 @@ export type Database = {
           id?: string
           input_currency?: string | null
           line_name: string
+          opex_master_id?: string | null
           project_name: string
           purchase_order_id?: string | null
           request_date?: string
@@ -2599,6 +2601,7 @@ export type Database = {
           id?: string
           input_currency?: string | null
           line_name?: string
+          opex_master_id?: string | null
           project_name?: string
           purchase_order_id?: string | null
           request_date?: string
@@ -2637,6 +2640,13 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "oc_requests_opex_master_id_fkey"
+            columns: ["opex_master_id"]
+            isOneToOne: false
+            referencedRelation: "opex_master_budget"
             referencedColumns: ["id"]
           },
           {
@@ -3323,6 +3333,7 @@ export type Database = {
           id: string
           input_currency: string | null
           opex_category_id: string | null
+          opex_master_id: string | null
           order_date: string
           order_number: string
           status: string
@@ -3351,6 +3362,7 @@ export type Database = {
           id?: string
           input_currency?: string | null
           opex_category_id?: string | null
+          opex_master_id?: string | null
           order_date?: string
           order_number: string
           status?: string
@@ -3379,6 +3391,7 @@ export type Database = {
           id?: string
           input_currency?: string | null
           opex_category_id?: string | null
+          opex_master_id?: string | null
           order_date?: string
           order_number?: string
           status?: string
@@ -3416,6 +3429,13 @@ export type Database = {
             columns: ["opex_category_id"]
             isOneToOne: false
             referencedRelation: "opex_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_opex_master_id_fkey"
+            columns: ["opex_master_id"]
+            isOneToOne: false
+            referencedRelation: "opex_master_budget"
             referencedColumns: ["id"]
           },
           {
