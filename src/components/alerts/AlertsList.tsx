@@ -115,7 +115,29 @@ export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyAct
 
   useEffect(() => {
     loadAlerts();
-  }, [contractId, showOnlyActive]);
+  }, [contractId, showOnlyActive, categoryFilter]);
+
+  // Realtime subscription for alerts
+  useEffect(() => {
+    const channel = supabase
+      .channel('alerts-list-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'alerts',
+        },
+        () => {
+          loadAlerts();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [contractId, showOnlyActive, categoryFilter]);
 
   const handleToggleActive = async (alertId: string, isActive: boolean) => {
     try {
