@@ -98,6 +98,14 @@ export const BudgetModule = ({ contractId, contractName = "", budgetType, title,
     invoices: { id: string; invoice_number: string; amount_uf: number; invoice_date: string }[];
     credit_notes: { id: string; credit_note_number: string; amount_uf: number; invoice_id: string }[];
   }[]>([]);
+  const [lineDetailsRequests, setLineDetailsRequests] = useState<{
+    id: string;
+    request_number: string;
+    amount_uf: number;
+    status: string;
+    supplier_name: string | null;
+    request_date: string;
+  }[]>([]);
   const [loadingLineDetails, setLoadingLineDetails] = useState(false);
   
   // Global expand/collapse state
@@ -525,7 +533,7 @@ export const BudgetModule = ({ contractId, contractName = "", budgetType, title,
     }
   };
 
-  // Handler to view line details (OCs, invoices, credit notes)
+  // Handler to view line details (OCs, invoices, credit notes, requests)
   const handleViewLineDetails = async (budgetLineId: string, lineName: string) => {
     setLineDetailsId(budgetLineId);
     setLineDetailsName(lineName);
@@ -541,6 +549,15 @@ export const BudgetModule = ({ contractId, contractName = "", budgetType, title,
         .order("order_date", { ascending: false });
 
       if (ocsError) throw ocsError;
+
+      // Fetch OC Requests for this line
+      const { data: requests } = await supabase
+        .from("oc_requests")
+        .select("id, request_number, amount_uf, status, supplier_name, request_date")
+        .eq("budget_line_id", budgetLineId)
+        .order("created_at", { ascending: false });
+      
+      setLineDetailsRequests((requests || []) as any);
 
       // For each OC, fetch invoices and credit notes
       const ocsWithDetails = await Promise.all(
@@ -1067,12 +1084,34 @@ export const BudgetModule = ({ contractId, contractName = "", budgetType, title,
               <Loader2 className="h-6 w-6 animate-spin" />
               <span className="ml-2">Cargando...</span>
             </div>
-          ) : lineDetailsOCs.length === 0 ? (
+          ) : lineDetailsOCs.length === 0 && lineDetailsRequests.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              <p>No hay órdenes de compra asociadas a esta línea.</p>
+              <p>No hay órdenes de compra ni solicitudes asociadas a esta línea.</p>
             </div>
           ) : (
             <div className="space-y-4">
+              {/* OC Requests Section */}
+              {lineDetailsRequests.length > 0 && (
+                <div className="border rounded-lg p-4 space-y-2 bg-purple-50/50 dark:bg-purple-950/20">
+                  <h4 className="font-medium text-sm text-purple-700 dark:text-purple-300">
+                    Solicitudes de OC ({lineDetailsRequests.length})
+                  </h4>
+                  {lineDetailsRequests.map((req) => (
+                    <div key={req.id} className="flex items-center justify-between text-sm p-2 bg-background rounded">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs">{req.request_number}</span>
+                        <Badge variant={req.status === "converted" ? "default" : "secondary"}
+                          className={req.status === "converted" ? "bg-green-500" : "bg-yellow-500"}>
+                          {req.status === "converted" ? "Convertida" : "Pendiente"}
+                        </Badge>
+                      </div>
+                      <span className="font-mono">{formatUF(req.amount_uf)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {/* OCs Section */}
               {lineDetailsOCs.map((oc) => {
                 const totalInvoiced = oc.invoices.reduce((sum, inv) => sum + inv.amount_uf, 0);
                 const totalCreditNotes = oc.credit_notes.reduce((sum, cn) => sum + cn.amount_uf, 0);

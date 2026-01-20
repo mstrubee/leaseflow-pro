@@ -106,7 +106,7 @@ export const OCRequestDialog = ({
     }
   }, [open, lineName, budgetLineId, lineAvailable]);
 
-  const generateRequestNumber = async (): Promise<{ number: string; correlative: number }> => {
+  const generateRequestNumber = async (lineNames: string[]): Promise<{ number: string; correlative: number }> => {
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0].replace(/-/g, '.');
     
@@ -119,11 +119,14 @@ export const OCRequestDialog = ({
     const correlative = (count || 0) + 1;
     const correlativeStr = correlative.toString().padStart(3, '0');
     
-    // Clean names for the number
-    const cleanLineName = lineName.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s]/g, '').trim().replace(/\s+/g, '_').substring(0, 30);
+    // Clean names for the number - include all line names
+    const cleanLineNames = lineNames.map(name => 
+      name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s]/g, '').trim().replace(/\s+/g, '_')
+    ).join('+').substring(0, 60);
+    
     const cleanProjectName = contractName.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s]/g, '').trim().replace(/\s+/g, '_').substring(0, 30);
     
-    const requestNumber = `${dateStr}_${correlativeStr}_${cleanLineName}_${cleanProjectName}`;
+    const requestNumber = `${dateStr}_${correlativeStr}_${cleanLineNames}_${cleanProjectName}`;
     
     return { number: requestNumber, correlative };
   };
@@ -131,9 +134,13 @@ export const OCRequestDialog = ({
   const handleCreate = async () => {
     // Calculate total from selected lines or single amount
     let totalAmountUf: number;
+    let lineNamesForNumber: string[] = [];
     
     if (useMultipleLines) {
-      totalAmountUf = selectedLines.reduce((sum, l) => sum + l.amount, 0);
+      const validLines = selectedLines.filter(l => l.amount > 0);
+      totalAmountUf = validLines.reduce((sum, l) => sum + l.amount, 0);
+      lineNamesForNumber = validLines.map(l => l.lineName);
+      
       if (totalAmountUf <= 0) {
         toast({ variant: "destructive", title: "Error", description: "Seleccione líneas y asigne montos" });
         return;
@@ -146,6 +153,7 @@ export const OCRequestDialog = ({
       }
       
       totalAmountUf = form.currency === "CLP" && ufValue > 0 ? amount / ufValue : amount;
+      lineNamesForNumber = [lineName];
       
       // Validate against available
       if (totalAmountUf > lineAvailable + 0.01) {
@@ -158,13 +166,21 @@ export const OCRequestDialog = ({
       }
     }
 
-    // Calculate CLP equivalent
-    const amountClp = totalAmountUf * ufValue;
+    // Round to 4 decimal places to avoid floating point issues
+    totalAmountUf = Math.round(totalAmountUf * 10000) / 10000;
+    
+    // Calculate CLP equivalent (round to integer)
+    const amountClp = Math.round(totalAmountUf * ufValue);
 
     setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const { number, correlative } = await generateRequestNumber();
+      const { number, correlative } = await generateRequestNumber(lineNamesForNumber);
+      
+      // Build line_name for display - include all line names
+      const displayLineName = useMultipleLines 
+        ? selectedLines.filter(l => l.amount > 0).map(l => l.lineName).join(' + ')
+        : lineName;
 
       // Create the OC request
       const { data: requestData, error } = await supabase.from("oc_requests").insert({
@@ -174,7 +190,7 @@ export const OCRequestDialog = ({
         request_number: number,
         correlative_of_day: correlative,
         request_date: new Date().toISOString().split('T')[0],
-        line_name: useMultipleLines ? `Múltiples líneas (${selectedLines.length})` : lineName,
+        line_name: displayLineName,
         project_name: contractName,
         description: form.description,
         amount_uf: totalAmountUf,
@@ -423,11 +439,12 @@ export const OCRequestDialog = ({
                       />
                     </div>
                     <div className="col-span-4 space-y-1">
-                      <Label className="text-xs">Vencimiento</Label>
+                      <Label className="text-xs">Vencimiento (opcional)</Label>
                       <Input
                         type="date"
                         value={item.due_date}
                         onChange={(e) => updatePaymentItem(idx, "due_date", e.target.value)}
+                        placeholder="Sin fecha"
                       />
                     </div>
                     <div className="col-span-1">
