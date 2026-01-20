@@ -2306,6 +2306,154 @@ export type Database = {
           },
         ]
       }
+      oc_request_templates: {
+        Row: {
+          created_at: string
+          file_name: string
+          file_path: string
+          id: string
+          is_active: boolean | null
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          file_name: string
+          file_path: string
+          id?: string
+          is_active?: boolean | null
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          file_name?: string
+          file_path?: string
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      oc_requests: {
+        Row: {
+          amount_clp: number | null
+          amount_uf: number | null
+          budget_id: string | null
+          budget_line_id: string | null
+          contract_id: string
+          correlative_of_day: number
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          input_currency: string | null
+          line_name: string
+          project_name: string
+          purchase_order_id: string | null
+          request_date: string
+          request_number: string
+          status: string
+          supplier_id: string | null
+          supplier_name: string | null
+          uf_value_at_entry: number | null
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          amount_clp?: number | null
+          amount_uf?: number | null
+          budget_id?: string | null
+          budget_line_id?: string | null
+          contract_id: string
+          correlative_of_day?: number
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          input_currency?: string | null
+          line_name: string
+          project_name: string
+          purchase_order_id?: string | null
+          request_date?: string
+          request_number: string
+          status?: string
+          supplier_id?: string | null
+          supplier_name?: string | null
+          uf_value_at_entry?: number | null
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          amount_clp?: number | null
+          amount_uf?: number | null
+          budget_id?: string | null
+          budget_line_id?: string | null
+          contract_id?: string
+          correlative_of_day?: number
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          input_currency?: string | null
+          line_name?: string
+          project_name?: string
+          purchase_order_id?: string | null
+          request_date?: string
+          request_number?: string
+          status?: string
+          supplier_id?: string | null
+          supplier_name?: string | null
+          uf_value_at_entry?: number | null
+          updated_at?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "oc_requests_budget_id_fkey"
+            columns: ["budget_id"]
+            isOneToOne: false
+            referencedRelation: "contract_budgets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "oc_requests_budget_line_id_fkey"
+            columns: ["budget_line_id"]
+            isOneToOne: false
+            referencedRelation: "budget_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "oc_requests_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "oc_requests_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "oc_requests_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "oc_requests_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       opex_categories: {
         Row: {
           created_at: string

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +33,7 @@ interface BudgetLineTreeProps {
   onUpdateLine: (id: string, data: Partial<BudgetLine>) => void;
   onDeleteLine: (id: string) => void;
   onCreateOC?: (budgetLineId: string, lineName: string) => void;
+  onCreateOCRequest?: (budgetLineId: string, lineName: string) => void;
   onCreateInvoice?: (budgetLineId: string, lineName: string) => void;
   onViewLineDetails?: (budgetLineId: string, lineName: string) => void;
   level?: number;
@@ -46,6 +47,7 @@ export const BudgetLineTree = ({
   onUpdateLine,
   onDeleteLine,
   onCreateOC,
+  onCreateOCRequest,
   onCreateInvoice,
   onViewLineDetails,
   level = 0,
@@ -62,6 +64,7 @@ export const BudgetLineTree = ({
         onUpdateLine={onUpdateLine} 
         onDeleteLine={onDeleteLine} 
         onCreateOC={onCreateOC} 
+        onCreateOCRequest={onCreateOCRequest}
         onCreateInvoice={onCreateInvoice} 
         onViewLineDetails={onViewLineDetails} 
         readOnly={readOnly}
@@ -81,6 +84,7 @@ interface BudgetLineItemProps {
   onUpdateLine: (id: string, data: Partial<BudgetLine>) => void;
   onDeleteLine: (id: string) => void;
   onCreateOC?: (budgetLineId: string, lineName: string) => void;
+  onCreateOCRequest?: (budgetLineId: string, lineName: string) => void;
   onCreateInvoice?: (budgetLineId: string, lineName: string) => void;
   onViewLineDetails?: (budgetLineId: string, lineName: string) => void;
   readOnly?: boolean;
@@ -94,6 +98,7 @@ const BudgetLineItem = ({
   onUpdateLine,
   onDeleteLine,
   onCreateOC,
+  onCreateOCRequest,
   onCreateInvoice,
   onViewLineDetails,
   readOnly = false,
@@ -468,9 +473,27 @@ const BudgetLineItem = ({
             </span>
           )}
           
-          {/* OC and Invoice buttons - only for authorized leaf lines */}
+          {/* OC Request, OC and Invoice buttons - only for authorized leaf lines */}
           {!isParent && line.status === "autorizado" && !readOnly && (
             <div className="flex items-center gap-1 ml-2">
+              {onCreateOCRequest && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={() => onCreateOCRequest(line.id, line.name)} 
+                        className="h-6 px-2 text-[10px] border-purple-300 text-purple-600 hover:bg-purple-50 hover:text-purple-700"
+                      >
+                        <ClipboardList className="h-3 w-3 mr-1" />
+                        Solicitud
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Crear Solicitud de OC</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
               {onCreateOC && (
                 <TooltipProvider>
                   <Tooltip>
@@ -521,7 +544,7 @@ const BudgetLineItem = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} />}
     </div>;
 };
 
