@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Lock, AlertTriangle, RefreshCw } from "lucide-react";
+import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp } from "lucide-react";
 import { OpexConsumptionPieChart } from "./OpexConsumptionPieChart";
 import { useToast } from "@/hooks/use-toast";
 import { BudgetLineTree, BudgetLine, calculateAuthorizedTotal, calculateUnauthorizedTotal, getUnauthorizedLines, getAllDescendantIds, hasDescendants } from "./BudgetLineTree";
@@ -96,6 +96,9 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
     credit_notes: { id: string; credit_note_number: string; amount_uf: number; invoice_id: string }[];
   }[]>([]);
   const [loadingLineDetails, setLoadingLineDetails] = useState(false);
+  
+  // Global expand/collapse state
+  const [globalExpandState, setGlobalExpandState] = useState<"expanded" | "collapsed" | null>(null);
   
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos, ufValue } = useBudgetContext();
@@ -611,7 +614,33 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
             )}
 
             {!isClosed && currentBudget && (
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setGlobalExpandState(null);
+                    setTimeout(() => setGlobalExpandState("expanded"), 0);
+                  }}
+                  className="gap-1"
+                  title="Expandir todas las líneas"
+                >
+                  <ChevronsUpDown className="h-4 w-4" />
+                  Expandir
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setGlobalExpandState(null);
+                    setTimeout(() => setGlobalExpandState("collapsed"), 0);
+                  }}
+                  className="gap-1"
+                  title="Colapsar todas las líneas"
+                >
+                  <ChevronsDownUp className="h-4 w-4" />
+                  Colapsar
+                </Button>
                 <Button 
                   variant="outline" 
                   size="sm" 
@@ -638,6 +667,7 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
               onCreateInvoice={handleCreateInvoiceFromLine}
               onViewLineDetails={handleViewLineDetails}
               readOnly={isClosed}
+              globalExpandState={globalExpandState}
             />
           </>
         ) : budgetType === "opex" ? (

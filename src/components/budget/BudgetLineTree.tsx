@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,7 @@ interface BudgetLineTreeProps {
   level?: number;
   readOnly?: boolean;
   parentCategoryId?: string | null;
+  globalExpandState?: "expanded" | "collapsed" | null;
 }
 export const BudgetLineTree = ({
   lines,
@@ -49,7 +50,8 @@ export const BudgetLineTree = ({
   onViewLineDetails,
   level = 0,
   readOnly = false,
-  parentCategoryId = null
+  parentCategoryId = null,
+  globalExpandState = null
 }: BudgetLineTreeProps) => {
   return <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
       {lines.map(line => <BudgetLineItem 
@@ -64,6 +66,7 @@ export const BudgetLineTree = ({
         onViewLineDetails={onViewLineDetails} 
         readOnly={readOnly}
         parentCategoryId={line.category_id || parentCategoryId}
+        globalExpandState={globalExpandState}
       />)}
       {level === 0 && !readOnly && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
@@ -82,6 +85,7 @@ interface BudgetLineItemProps {
   onViewLineDetails?: (budgetLineId: string, lineName: string) => void;
   readOnly?: boolean;
   parentCategoryId?: string | null;
+  globalExpandState?: "expanded" | "collapsed" | null;
 }
 const BudgetLineItem = ({
   line,
@@ -93,7 +97,8 @@ const BudgetLineItem = ({
   onCreateInvoice,
   onViewLineDetails,
   readOnly = false,
-  parentCategoryId = null
+  parentCategoryId = null,
+  globalExpandState = null
 }: BudgetLineItemProps) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isEditingQuantity, setIsEditingQuantity] = useState(false);
@@ -110,6 +115,16 @@ const BudgetLineItem = ({
     convertUFToPesos,
     ufValue
   } = useBudgetContext();
+  
+  // Respond to global expand/collapse state
+  useEffect(() => {
+    if (globalExpandState === "expanded") {
+      setIsExpanded(true);
+    } else if (globalExpandState === "collapsed") {
+      setIsExpanded(false);
+    }
+  }, [globalExpandState]);
+  
   const hasChildren = line.children && line.children.length > 0;
   const isParent = hasChildren;
 
@@ -506,7 +521,7 @@ const BudgetLineItem = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} parentCategoryId={line.category_id || parentCategoryId} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} />}
     </div>;
 };
 
