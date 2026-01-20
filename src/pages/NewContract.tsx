@@ -51,6 +51,9 @@ const NewContract = () => {
   const [regimeRent, setRegimeRent] = useState("");
   const [variableRentPercentage, setVariableRentPercentage] = useState("");
   const [duration, setDuration] = useState("");
+  const [autoRenewal, setAutoRenewal] = useState(false);
+  const [autoRenewalType, setAutoRenewalType] = useState<"unilateral_gp" | "bilateral">("bilateral");
+  const [autoRenewalMonths, setAutoRenewalMonths] = useState("");
   const [noticeType, setNoticeType] = useState<"fecha" | "meses" | "rangos" | "desde_mes" | "sin_termino">("meses");
   const [contractEndNoticeMonths, setContractEndNoticeMonths] = useState("6");
   const [contractEndNoticeBilaterality, setContractEndNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">("bilateral");
@@ -208,6 +211,9 @@ const NewContract = () => {
             grace_months: graceMonths || 0,
             otros_egresos_amount: otrosEgresosAmount ? getUFValue(otrosEgresosAmount) : null,
             otros_egresos_description: otrosEgresosDescription || null,
+            auto_renewal: autoRenewal,
+            auto_renewal_type: autoRenewal ? autoRenewalType : null,
+            auto_renewal_months: autoRenewal && autoRenewalMonths ? parseInt(autoRenewalMonths) : null,
           } as any)
           .select()
           .single();
@@ -1070,13 +1076,66 @@ const NewContract = () => {
                 </div>
               )}
 
-              <DurationInput
-                id="duration"
-                label="Duración"
-                value={duration}
-                onChange={setDuration}
-                description="Duración total del contrato"
-              />
+              <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
+                <DurationInput
+                  id="duration"
+                  label="Duración"
+                  value={duration}
+                  onChange={setDuration}
+                  description="Duración total del contrato"
+                />
+
+                {/* Renovación Automática */}
+                <div className="pt-3 border-t border-border space-y-3">
+                  <div className="flex items-center gap-4">
+                    <Label className="text-sm font-medium">Renovación Automática</Label>
+                    <RadioGroup
+                      value={autoRenewal ? "yes" : "no"}
+                      onValueChange={(v) => setAutoRenewal(v === "yes")}
+                      className="flex gap-4"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="yes" id="autoRenewalYes" />
+                        <Label htmlFor="autoRenewalYes" className="font-normal">Sí</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="no" id="autoRenewalNo" />
+                        <Label htmlFor="autoRenewalNo" className="font-normal">No</Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+
+                  {autoRenewal && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-primary/30">
+                      <div className="space-y-2">
+                        <Label>Tipo de Renovación</Label>
+                        <RadioGroup
+                          value={autoRenewalType}
+                          onValueChange={(v: "unilateral_gp" | "bilateral") => setAutoRenewalType(v)}
+                          className="flex gap-4"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="unilateral_gp" id="renewalUnilateral" />
+                            <Label htmlFor="renewalUnilateral" className="font-normal">Unilateral GP</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="bilateral" id="renewalBilateral" />
+                            <Label htmlFor="renewalBilateral" className="font-normal">Bilateral</Label>
+                          </div>
+                        </RadioGroup>
+                      </div>
+                      <DurationInput
+                        id="autoRenewalMonths"
+                        label="Plazo de Renovación"
+                        value={autoRenewalMonths}
+                        onChange={setAutoRenewalMonths}
+                        placeholder="Ej: 12"
+                        showEquivalent={true}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
 
               <div className="space-y-2">
                 <Label>Tipo de Término Anticipado</Label>

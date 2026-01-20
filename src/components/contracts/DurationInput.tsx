@@ -54,20 +54,30 @@ export const DurationInput = ({
         setDisplayValue(months.toString());
       }
     } else {
+      // Clear display when value is 0 or empty - don't show "0"
       setDisplayValue("");
     }
   }, [value, unit]);
 
   const handleValueChange = (newValue: string) => {
-    setDisplayValue(newValue);
-    
-    if (!newValue || newValue === "") {
+    // Allow user to clear the field completely
+    if (newValue === "" || newValue === undefined) {
+      setDisplayValue("");
       onChange("");
       return;
     }
 
+    // If input is "0", allow it but clear the parent value (will be replaced when user types)
+    if (newValue === "0") {
+      setDisplayValue("");
+      onChange("");
+      return;
+    }
+
+    setDisplayValue(newValue);
+
     const numValue = parseFloat(newValue);
-    if (isNaN(numValue)) {
+    if (isNaN(numValue) || numValue <= 0) {
       onChange("");
       return;
     }
