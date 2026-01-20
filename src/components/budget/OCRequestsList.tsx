@@ -32,6 +32,8 @@ interface OCRequest {
   status: "pending" | "converted";
   purchase_order_id: string | null;
   created_at: string;
+  budget_id: string | null;
+  budget_type?: string; // Joined from contract_budgets
 }
 
 interface SelectedLine {
@@ -87,6 +89,9 @@ export const OCRequestsList = ({
     supplier_name: ""
   });
   
+  // Filter state
+  const [budgetTypeFilter, setBudgetTypeFilter] = useState<"all" | "capex" | "opex">("all");
+  
   // New request dialog state
   const [showNewRequestDialog, setShowNewRequestDialog] = useState(false);
   const [newRequestTab, setNewRequestTab] = useState("basic");
@@ -113,6 +118,7 @@ export const OCRequestsList = ({
   const loadRequests = async () => {
     setLoading(true);
     try {
+      // First get the requests
       let query = supabase
         .from("oc_requests")
         .select("*")
@@ -120,15 +126,38 @@ export const OCRequestsList = ({
         .eq("year", year)
         .order("created_at", { ascending: false });
       
-      // Filter by budget line if provided
       if (budgetLineId) {
         query = query.eq("budget_line_id", budgetLineId);
       }
 
       const { data, error } = await query;
-
       if (error) throw error;
-      setRequests((data || []) as OCRequest[]);
+
+      // Get budget types for each request
+      const requestsWithType: OCRequest[] = [];
+      const budgetIds = [...new Set((data || []).map(r => r.budget_id).filter(Boolean))];
+      
+      let budgetTypeMap: Record<string, string> = {};
+      if (budgetIds.length > 0) {
+        const { data: budgets } = await supabase
+          .from("contract_budgets")
+          .select("id, budget_type")
+          .in("id", budgetIds);
+        
+        budgetTypeMap = (budgets || []).reduce((acc, b) => {
+          acc[b.id] = b.budget_type;
+          return acc;
+        }, {} as Record<string, string>);
+      }
+
+      for (const req of (data || [])) {
+        requestsWithType.push({
+          ...req,
+          budget_type: req.budget_id ? budgetTypeMap[req.budget_id] : undefined
+        } as OCRequest);
+      }
+
+      setRequests(requestsWithType);
     } catch (error) {
       console.error("Error loading OC requests:", error);
     } finally {
@@ -427,14 +456,23 @@ export const OCRequestsList = ({
     }
   };
 
-  const pendingRequests = requests.filter(r => r.status === "pending");
-  const convertedRequests = requests.filter(r => r.status === "converted");
+  // Filter requests by budget type
+  const filteredRequests = budgetTypeFilter === "all" 
+    ? requests 
+    : requests.filter(r => r.budget_type === budgetTypeFilter);
+  
+  const pendingRequests = filteredRequests.filter(r => r.status === "pending");
+  const convertedRequests = filteredRequests.filter(r => r.status === "converted");
 
   const totalPlanned = paymentPlan.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
   const totalSelected = selectedLines.reduce((sum, l) => sum + l.amount, 0);
 
   const capexBudget = availableBudgets.find(b => b.type === "capex");
   const opexBudget = availableBudgets.find(b => b.type === "opex");
+
+  // Count by type for filter badges
+  const capexCount = requests.filter(r => r.budget_type === "capex").length;
+  const opexCount = requests.filter(r => r.budget_type === "opex").length;
 
   if (loading) {
     return (
@@ -446,19 +484,55 @@ export const OCRequestsList = ({
 
   return (
     <div className="space-y-4">
-      {/* Header with New Request button */}
-      {allowCreate && (
-        <div className="flex justify-end">
+      {/* Header with filters and New Request button */}
+      <div className="flex items-center justify-between gap-4">
+        {/* Budget type filter */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Filtrar:</span>
+          <div className="flex gap-1">
+            <Button
+              size="sm"
+              variant={budgetTypeFilter === "all" ? "default" : "outline"}
+              onClick={() => setBudgetTypeFilter("all")}
+              className="h-7 text-xs"
+            >
+              Todos ({requests.length})
+            </Button>
+            <Button
+              size="sm"
+              variant={budgetTypeFilter === "capex" ? "default" : "outline"}
+              onClick={() => setBudgetTypeFilter("capex")}
+              className="h-7 text-xs"
+              disabled={capexCount === 0}
+            >
+              CAPEX ({capexCount})
+            </Button>
+            <Button
+              size="sm"
+              variant={budgetTypeFilter === "opex" ? "default" : "outline"}
+              onClick={() => setBudgetTypeFilter("opex")}
+              className="h-7 text-xs"
+              disabled={opexCount === 0}
+            >
+              OPEX ({opexCount})
+            </Button>
+          </div>
+        </div>
+        
+        {allowCreate && (
           <Button size="sm" onClick={handleOpenNewRequestDialog} className="gap-2">
             <Plus className="h-4 w-4" />
             Nueva Solicitud
           </Button>
-        </div>
-      )}
+        )}
+      </div>
 
-      {requests.length === 0 && (
+      {filteredRequests.length === 0 && (
         <div className="text-center py-6 text-muted-foreground text-sm">
-          No hay solicitudes de OC para este año
+          {requests.length === 0 
+            ? "No hay solicitudes de OC para este año"
+            : `No hay solicitudes de OC ${budgetTypeFilter.toUpperCase()}`
+          }
         </div>
       )}
       
@@ -473,6 +547,7 @@ export const OCRequestsList = ({
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Tipo</TableHead>
                 <TableHead>Número</TableHead>
                 <TableHead>Fecha</TableHead>
                 <TableHead>Línea</TableHead>
@@ -484,6 +559,14 @@ export const OCRequestsList = ({
             <TableBody>
               {pendingRequests.map((request) => (
                 <TableRow key={request.id}>
+                  <TableCell>
+                    <Badge variant="outline" className={request.budget_type === "capex" 
+                      ? "bg-blue-50 text-blue-700 border-blue-300 text-[10px]" 
+                      : "bg-orange-50 text-orange-700 border-orange-300 text-[10px]"
+                    }>
+                      {request.budget_type?.toUpperCase() || "N/A"}
+                    </Badge>
+                  </TableCell>
                   <TableCell className="font-mono text-xs">{request.request_number}</TableCell>
                   <TableCell>{format(new Date(request.request_date), 'dd/MM/yyyy', { locale: es })}</TableCell>
                   <TableCell className="truncate max-w-[150px]">{request.line_name}</TableCell>
@@ -561,6 +644,7 @@ export const OCRequestsList = ({
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Tipo</TableHead>
                 <TableHead>Número Solicitud</TableHead>
                 <TableHead>Fecha</TableHead>
                 <TableHead>Línea</TableHead>
@@ -571,6 +655,14 @@ export const OCRequestsList = ({
             <TableBody>
               {convertedRequests.map((request) => (
                 <TableRow key={request.id} className="opacity-60">
+                  <TableCell>
+                    <Badge variant="outline" className={request.budget_type === "capex" 
+                      ? "bg-blue-50 text-blue-700 border-blue-300 text-[10px]" 
+                      : "bg-orange-50 text-orange-700 border-orange-300 text-[10px]"
+                    }>
+                      {request.budget_type?.toUpperCase() || "N/A"}
+                    </Badge>
+                  </TableCell>
                   <TableCell className="font-mono text-xs">{request.request_number}</TableCell>
                   <TableCell>{format(new Date(request.request_date), 'dd/MM/yyyy', { locale: es })}</TableCell>
                   <TableCell className="truncate max-w-[150px]">{request.line_name}</TableCell>
