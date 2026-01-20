@@ -46,6 +46,68 @@ interface FolderTemplate {
   parent_id: string | null;
 }
 
+// Recursive component for rendering folder templates with unlimited nesting
+const FolderTemplateItem = ({
+  template,
+  level,
+  getSubfolders,
+  onAddSubfolder,
+  onDelete,
+}: {
+  template: FolderTemplate;
+  level: number;
+  getSubfolders: (parentId: string) => FolderTemplate[];
+  onAddSubfolder: (parentId: string) => void;
+  onDelete: (id: string, name: string) => void;
+}) => {
+  const subfolders = getSubfolders(template.id);
+  const isRoot = level === 0;
+  const paddingLeft = level * 16; // 16px per level
+  
+  return (
+    <div className="space-y-1">
+      <div 
+        className={`flex items-center justify-between p-2 ${isRoot ? 'p-3 bg-muted/50' : 'bg-muted/30'} rounded-lg`}
+        style={{ marginLeft: `${paddingLeft}px` }}
+      >
+        <div className="flex items-center gap-2">
+          {!isRoot && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+          <Folder className={`${isRoot ? 'h-4 w-4' : 'h-3 w-3'} text-muted-foreground`} />
+          <span className={isRoot ? 'font-medium' : 'text-sm'}>{template.name}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onAddSubfolder(template.id)}
+            title="Agregar subcarpeta"
+          >
+            <FolderPlus className={`${isRoot ? 'h-4 w-4' : 'h-3 w-3'} text-primary`} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onDelete(template.id, template.name)}
+          >
+            <Trash2 className={`${isRoot ? 'h-4 w-4' : 'h-3 w-3'} text-destructive`} />
+          </Button>
+        </div>
+      </div>
+      {/* Recursive render of subfolders */}
+      {subfolders.map((subfolder) => (
+        <FolderTemplateItem
+          key={subfolder.id}
+          template={subfolder}
+          level={level + 1}
+          getSubfolders={getSubfolders}
+          onAddSubfolder={onAddSubfolder}
+          onDelete={onDelete}
+        />
+      ))}
+    </div>
+  );
+};
+
 interface Profile {
   id: string;
   email: string;
@@ -784,51 +846,17 @@ const AdminPanel = () => {
           <CardContent>
             <div className="space-y-2">
               {getRootTemplates().map((template) => (
-                <div key={template.id} className="space-y-1">
-                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <Folder className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-medium">{template.name}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedParentTemplate(template.id);
-                          setSubfolderDialogOpen(true);
-                        }}
-                        title="Agregar subcarpeta"
-                      >
-                        <FolderPlus className="h-4 w-4 text-primary" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteTemplate(template.id, template.name)}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </div>
-                  {/* Subfolders */}
-                  {getSubfolders(template.id).map((subfolder) => (
-                    <div key={subfolder.id} className="flex items-center justify-between p-2 pl-8 bg-muted/30 rounded-lg ml-4">
-                      <div className="flex items-center gap-2">
-                        <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                        <Folder className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-sm">{subfolder.name}</span>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteTemplate(subfolder.id, subfolder.name)}
-                      >
-                        <Trash2 className="h-3 w-3 text-destructive" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
+                <FolderTemplateItem
+                  key={template.id}
+                  template={template}
+                  level={0}
+                  getSubfolders={getSubfolders}
+                  onAddSubfolder={(id) => {
+                    setSelectedParentTemplate(id);
+                    setSubfolderDialogOpen(true);
+                  }}
+                  onDelete={handleDeleteTemplate}
+                />
               ))}
               {getRootTemplates().length === 0 && (
                 <p className="text-sm text-muted-foreground text-center py-4">
