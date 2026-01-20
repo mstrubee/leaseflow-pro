@@ -16,6 +16,7 @@ import { BudgetTemplateSelector, updateBudgetTemplatePreservingValues, getCurren
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { OCRequestDialog } from "./OCRequestDialog";
 
 interface Budget {
   id: string;
@@ -29,6 +30,7 @@ interface Budget {
 
 interface BudgetModuleProps {
   contractId: string;
+  contractName?: string;
   budgetType: "capex" | "opex";
   title: string;
   selectedYear: number;
@@ -36,7 +38,7 @@ interface BudgetModuleProps {
   onRefresh?: () => void;
 }
 
-export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTotal = 0, onRefresh }: BudgetModuleProps) => {
+export const BudgetModule = ({ contractId, contractName = "", budgetType, title, selectedYear, ocTotal = 0, onRefresh }: BudgetModuleProps) => {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,6 +101,13 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
   
   // Global expand/collapse state
   const [globalExpandState, setGlobalExpandState] = useState<"expanded" | "collapsed" | null>(null);
+  
+  // OC Request Dialog state
+  const [showOCRequestDialog, setShowOCRequestDialog] = useState(false);
+  const [ocRequestLineId, setOcRequestLineId] = useState("");
+  const [ocRequestLineName, setOcRequestLineName] = useState("");
+  const [ocRequestLineAvailable, setOcRequestLineAvailable] = useState(0);
+  const [ocRequestLineBudget, setOcRequestLineBudget] = useState(0);
   
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos, ufValue } = useBudgetContext();
@@ -283,6 +292,54 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
     }
   };
 
+  // Handle opening OC Request dialog from budget line
+  const handleCreateOCRequestFromLine = async (budgetLineId: string, lineName: string) => {
+    setOcRequestLineId(budgetLineId);
+    setOcRequestLineName(lineName);
+    
+    // Find the line recursively
+    const findLine = (items: BudgetLine[]): BudgetLine | null => {
+      for (const item of items) {
+        if (item.id === budgetLineId) return item;
+        if (item.children?.length) {
+          const found = findLine(item.children);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    
+    const budgetLine = findLine(lines);
+    const lineAmount = budgetLine?.amount_uf || 0;
+    setOcRequestLineBudget(lineAmount);
+    
+    // Calculate available (budget - existing OCs - existing requests)
+    try {
+      const [{ data: existingOCs }, { data: existingRequests }] = await Promise.all([
+        supabase
+          .from("purchase_orders")
+          .select("amount_uf")
+          .eq("budget_line_id", budgetLineId)
+          .eq("year", selectedYear),
+        supabase
+          .from("oc_requests")
+          .select("amount_uf")
+          .eq("budget_line_id", budgetLineId)
+          .eq("year", selectedYear)
+          .eq("status", "pending")
+      ]);
+      
+      const usedByOC = (existingOCs || []).reduce((sum, oc) => sum + oc.amount_uf, 0);
+      const usedByRequests = (existingRequests || []).reduce((sum, r) => sum + r.amount_uf, 0);
+      setOcRequestLineAvailable(lineAmount - usedByOC - usedByRequests);
+    } catch (error) {
+      console.error("Error calculating available:", error);
+      setOcRequestLineAvailable(lineAmount);
+    }
+    
+    setShowOCRequestDialog(true);
+  };
+
   // Handle opening OC dialog from budget line
   const handleCreateOCFromLine = async (budgetLineId: string, lineName: string) => {
     setOcBudgetLineId(budgetLineId);
@@ -298,8 +355,19 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
     setLoadingLineAvailable(true);
     
     try {
-      // Get the budget line amount
-      const budgetLine = lines.find(l => l.id === budgetLineId);
+      // Find the line recursively
+      const findLine = (items: BudgetLine[]): BudgetLine | null => {
+        for (const item of items) {
+          if (item.id === budgetLineId) return item;
+          if (item.children?.length) {
+            const found = findLine(item.children);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+      
+      const budgetLine = findLine(lines);
       const lineAmount = budgetLine?.amount_uf || 0;
       setOcLineBudget(lineAmount);
       
@@ -664,6 +732,7 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
               onUpdateLine={handleUpdateLine}
               onDeleteLine={handleDeleteLine}
               onCreateOC={handleCreateOCFromLine}
+              onCreateOCRequest={handleCreateOCRequestFromLine}
               onCreateInvoice={handleCreateInvoiceFromLine}
               onViewLineDetails={handleViewLineDetails}
               readOnly={isClosed}
@@ -1102,6 +1171,23 @@ export const BudgetModule = ({ contractId, budgetType, title, selectedYear, ocTo
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* OC Request Dialog */}
+      <OCRequestDialog
+        open={showOCRequestDialog}
+        onOpenChange={setShowOCRequestDialog}
+        contractId={contractId}
+        contractName={contractName}
+        budgetId={currentBudget?.id || ""}
+        budgetLineId={ocRequestLineId}
+        lineName={ocRequestLineName}
+        lineAvailable={ocRequestLineAvailable}
+        lineBudget={ocRequestLineBudget}
+        year={selectedYear}
+        ufValue={ufValue}
+        formatUF={formatUF}
+        onSuccess={onRefresh}
+      />
     </Card>
   );
 };

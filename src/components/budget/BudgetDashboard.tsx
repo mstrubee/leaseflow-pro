@@ -53,6 +53,7 @@ const STORAGE_KEY_PREFIX = "budget_selected_year_";
 
 const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps) => {
   const [loading, setLoading] = useState(true);
+  const [contractName, setContractName] = useState("");
   const [selectedYear, setSelectedYear] = useState(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}${contractId}`);
     return saved ? parseInt(saved) : new Date().getFullYear();
@@ -92,8 +93,18 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
 
   useEffect(() => {
     loadAvailableYears();
+    loadContractName();
     setLoading(false);
   }, [contractId]);
+
+  const loadContractName = async () => {
+    const { data } = await supabase
+      .from("contracts")
+      .select("name")
+      .eq("id", contractId)
+      .single();
+    if (data) setContractName(data.name);
+  };
 
   const refreshData = async () => {
     await Promise.all([
@@ -702,7 +713,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
         <TabsContent value="capex" className="mt-4">
           <BudgetModule 
             key={`cap-${selectedYear}-${refreshKey}`}
-            contractId={contractId} 
+            contractId={contractId}
+            contractName={contractName}
             budgetType="capex" 
             title="CAPEX" 
             selectedYear={selectedYear}
@@ -713,7 +725,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
         <TabsContent value="opex" className="mt-4">
           <BudgetModule 
             key={`opx-${selectedYear}-${refreshKey}`}
-            contractId={contractId} 
+            contractId={contractId}
+            contractName={contractName}
             budgetType="opex" 
             title="OPEX"
             selectedYear={selectedYear}
