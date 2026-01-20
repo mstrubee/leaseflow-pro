@@ -93,9 +93,12 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
   const [externalEmails, setExternalEmails] = useState<string[]>([]);
   const [newExternalEmail, setNewExternalEmail] = useState("");
 
-  // Load available users
+  // Load available users and set current user as default
   useEffect(() => {
-    const loadUsers = async () => {
+    const loadUsersAndSetDefault = async () => {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      
       const { data, error } = await supabase
         .from("profiles")
         .select("id, email, full_name")
@@ -103,10 +106,15 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
       
       if (!error && data) {
         setUsers(data);
+        
+        // Set current user as default responsible (only if not editing)
+        if (!editingAlert && user && !assignedTo) {
+          setAssignedTo(user.id);
+        }
       }
     };
-    loadUsers();
-  }, []);
+    loadUsersAndSetDefault();
+  }, [editingAlert]);
 
   // Load editing alert data
   useEffect(() => {
