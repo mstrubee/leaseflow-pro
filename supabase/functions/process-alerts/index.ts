@@ -31,6 +31,8 @@ interface Alert {
   repeat_every_days: number | null;
   contract_id: string | null;
   item_type: string | null;
+  assigned_to: string | null;
+  external_emails: string[] | null;
   contracts?: {
     name: string;
     id: string;
@@ -144,13 +146,37 @@ async function processAlerts(supabase: any, resendApiKey: string | undefined, co
         (new Date(alert.due_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
       );
 
+      // Get recipient emails - assigned user + external emails
+      let recipientEmails: string[] = [];
+      
+      // Get assigned user's email
+      if (alert.assigned_to) {
+        const { data: assignedProfile } = await supabase
+          .from("profiles")
+          .select("email")
+          .eq("id", alert.assigned_to)
+          .single();
+        
+        if (assignedProfile?.email) {
+          recipientEmails.push(assignedProfile.email);
+        }
+      }
+      
+      // Add external emails
+      if (alert.external_emails && alert.external_emails.length > 0) {
+        recipientEmails = [...recipientEmails, ...alert.external_emails];
+      }
+      
+      // Remove duplicates
+      recipientEmails = [...new Set(recipientEmails)];
+
       // Enviar por cada canal configurado
       for (const channel of alert.channels) {
-        if (channel === "email" && resendApiKey && adminEmails.length > 0) {
-          await sendEmailAlert(resendApiKey, alert, adminEmails, daysUntilDue);
+        if (channel === "email" && resendApiKey && recipientEmails.length > 0) {
+          await sendEmailAlert(resendApiKey, alert, recipientEmails, daysUntilDue);
           
           // Registrar en historial
-          for (const email of adminEmails) {
+          for (const email of recipientEmails) {
             await supabase.from("alert_history").insert({
               alert_id: alert.id,
               channel: "email",
@@ -365,23 +391,31 @@ async function testAlert(supabase: any, resendApiKey: string | undefined, alertI
     });
   }
 
-  // Obtener admins
-  const { data: adminRoles } = await supabase
-    .from("user_roles")
-    .select("user_id")
-    .eq("role", "admin");
-
-  const adminUserIds = adminRoles?.map((r: any) => r.user_id) || [];
+  // Get recipient emails based on assignment
+  let recipientEmails: string[] = [];
   
-  const { data: adminProfiles } = await supabase
-    .from("profiles")
-    .select("email")
-    .in("id", adminUserIds);
+  if (alert.assigned_to) {
+    const { data: assignedProfile } = await supabase
+      .from("profiles")
+      .select("email")
+      .eq("id", alert.assigned_to)
+      .single();
+    
+    if (assignedProfile?.email) {
+      recipientEmails.push(assignedProfile.email);
+    }
+  }
+  
+  // Add external emails
+  if (alert.external_emails && alert.external_emails.length > 0) {
+    recipientEmails = [...recipientEmails, ...alert.external_emails];
+  }
+  
+  // Remove duplicates
+  recipientEmails = [...new Set(recipientEmails)];
 
-  const adminEmails = adminProfiles?.map((p: any) => p.email).filter(Boolean) || [];
-
-  if (adminEmails.length === 0) {
-    return new Response(JSON.stringify({ error: "No admin emails found" }), {
+  if (recipientEmails.length === 0) {
+    return new Response(JSON.stringify({ error: "No recipient emails found. Please assign a responsible user." }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -391,9 +425,9 @@ async function testAlert(supabase: any, resendApiKey: string | undefined, alertI
     (new Date(alert.due_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
   );
 
-  await sendEmailAlert(resendApiKey, alert, adminEmails, daysUntilDue);
+  await sendEmailAlert(resendApiKey, alert, recipientEmails, daysUntilDue);
 
-  return new Response(JSON.stringify({ success: true, sentTo: adminEmails }), {
+  return new Response(JSON.stringify({ success: true, sentTo: recipientEmails }), {
     status: 200,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
