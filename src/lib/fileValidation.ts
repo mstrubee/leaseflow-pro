@@ -84,20 +84,37 @@ export function validateFile(file: File): FileValidationResult {
  * Sanitizes a filename by removing dangerous characters
  */
 export function sanitizeFileName(fileName: string): string {
+  // Get extension first
+  const lastDotIndex = fileName.lastIndexOf('.');
+  const ext = lastDotIndex !== -1 ? fileName.substring(lastDotIndex) : '';
+  const nameWithoutExt = lastDotIndex !== -1 ? fileName.substring(0, lastDotIndex) : fileName;
+  
+  // Normalize to decompose accented characters, then remove diacritics
+  let sanitized = nameWithoutExt
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, ''); // Remove diacritical marks
+  
+  // Replace spaces with underscores
+  sanitized = sanitized.replace(/\s+/g, '_');
+  
   // Remove path traversal attempts
-  let sanitized = fileName.replace(/\.\./g, '');
+  sanitized = sanitized.replace(/\.\./g, '');
   
   // Remove directory separators
   sanitized = sanitized.replace(/[/\\]/g, '_');
   
-  // Remove special characters except for safe ones
-  sanitized = sanitized.replace(/[<>:"|?*\x00-\x1f]/g, '_');
+  // Keep only alphanumeric, underscores, and hyphens
+  sanitized = sanitized.replace(/[^a-zA-Z0-9_-]/g, '_');
+  
+  // Remove multiple consecutive underscores
+  sanitized = sanitized.replace(/_+/g, '_');
+  
+  // Remove leading/trailing underscores
+  sanitized = sanitized.replace(/^_+|_+$/g, '');
   
   // Limit filename length
-  if (sanitized.length > 255) {
-    const ext = sanitized.substring(sanitized.lastIndexOf('.'));
-    const name = sanitized.substring(0, 255 - ext.length);
-    sanitized = name + ext;
+  if (sanitized.length > 200) {
+    sanitized = sanitized.substring(0, 200);
   }
   
   // Ensure filename is not empty
@@ -105,7 +122,10 @@ export function sanitizeFileName(fileName: string): string {
     sanitized = 'unnamed_file';
   }
   
-  return sanitized;
+  // Add extension back (also sanitize it)
+  const sanitizedExt = ext.toLowerCase().replace(/[^a-zA-Z0-9.]/g, '');
+  
+  return sanitized + sanitizedExt;
 }
 
 /**
