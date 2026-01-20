@@ -111,13 +111,23 @@ export const MultipleLinesSelector = ({
     const available: Record<string, number> = {};
     
     for (const line of leafLines) {
-      const { data } = await supabase
+      // Get existing OCs
+      const { data: existingOCs } = await supabase
         .from("purchase_orders")
         .select("amount_uf")
         .eq("budget_line_id", line.id);
       
-      const used = (data || []).reduce((sum, oc) => sum + oc.amount_uf, 0);
-      available[line.id] = Math.max(0, line.amount_uf - used);
+      // Get pending requests
+      const { data: existingRequests } = await supabase
+        .from("oc_requests")
+        .select("amount_uf")
+        .eq("budget_line_id", line.id)
+        .eq("status", "pending");
+      
+      const usedByOC = (existingOCs || []).reduce((sum, oc) => sum + oc.amount_uf, 0);
+      const usedByRequests = (existingRequests || []).reduce((sum, r) => sum + r.amount_uf, 0);
+      
+      available[line.id] = Math.max(0, Math.round((line.amount_uf - usedByOC - usedByRequests) * 10000) / 10000);
     }
     
     setAvailableAmounts(available);

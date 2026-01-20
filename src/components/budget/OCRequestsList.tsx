@@ -8,11 +8,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, FileText, Upload, Eye, Trash2, Download } from "lucide-react";
+import { Loader2, FileText, Upload, Eye, Trash2, Download, Edit } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+import { OCRequestViewDialog } from "./OCRequestViewDialog";
 
 interface OCRequest {
   id: string;
@@ -38,6 +39,7 @@ interface OCRequestsListProps {
   formatCLP: (value: number) => string;
   onRefresh?: () => void;
   isAdmin?: boolean;
+  budgetLineId?: string; // Optional filter for specific line
 }
 
 export const OCRequestsList = ({
@@ -48,13 +50,16 @@ export const OCRequestsList = ({
   formatUF,
   formatCLP,
   onRefresh,
-  isAdmin = false
+  isAdmin = false,
+  budgetLineId
 }: OCRequestsListProps) => {
   const [requests, setRequests] = useState<OCRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState<OCRequest | null>(null);
   const [showConvertDialog, setShowConvertDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showViewDialog, setShowViewDialog] = useState(false);
+  const [viewRequestId, setViewRequestId] = useState<string | null>(null);
   const [converting, setConverting] = useState(false);
   const [convertForm, setConvertForm] = useState({
     order_number: "",
@@ -64,17 +69,24 @@ export const OCRequestsList = ({
 
   useEffect(() => {
     loadRequests();
-  }, [contractId, year]);
+  }, [contractId, year, budgetLineId]);
 
   const loadRequests = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("oc_requests")
         .select("*")
         .eq("contract_id", contractId)
         .eq("year", year)
         .order("created_at", { ascending: false });
+      
+      // Filter by budget line if provided
+      if (budgetLineId) {
+        query = query.eq("budget_line_id", budgetLineId);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setRequests((data || []) as OCRequest[]);
@@ -242,6 +254,18 @@ export const OCRequestsList = ({
                       <Button
                         variant="outline"
                         size="sm"
+                        onClick={() => {
+                          setViewRequestId(request.id);
+                          setShowViewDialog(true);
+                        }}
+                        className="h-7 px-2"
+                        title="Ver/Editar Solicitud"
+                      >
+                        <Eye className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => exportToExcel(request)}
                         className="h-7 px-2"
                         title="Descargar Excel"
@@ -393,6 +417,18 @@ export const OCRequestsList = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* View/Edit Dialog */}
+      <OCRequestViewDialog
+        open={showViewDialog}
+        onOpenChange={setShowViewDialog}
+        requestId={viewRequestId}
+        formatUF={formatUF}
+        onRefresh={() => {
+          loadRequests();
+          onRefresh?.();
+        }}
+      />
     </div>
   );
 };
