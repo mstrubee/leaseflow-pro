@@ -829,9 +829,21 @@ export function PatentChecklist({
                                       variant="ghost"
                                       size="sm"
                                       className="h-8 text-primary hover:text-primary/80"
-                                      onClick={(e) => {
+                                      onClick={async (e) => {
                                         e.stopPropagation();
-                                        window.open(urls[0], '_blank');
+                                        const url = urls[0];
+                                        // Check if it's a storage URL that needs signed URL
+                                        if (url.startsWith('storage://') || url.includes('/repository-files/')) {
+                                          const { getSignedUrl } = await import('@/lib/storageUtils');
+                                          const signedUrl = await getSignedUrl(url);
+                                          if (signedUrl) {
+                                            window.open(signedUrl, '_blank');
+                                          } else {
+                                            toast.error("No se pudo acceder al archivo");
+                                          }
+                                        } else {
+                                          window.open(url, '_blank');
+                                        }
                                       }}
                                       title="Ver archivo"
                                     >
