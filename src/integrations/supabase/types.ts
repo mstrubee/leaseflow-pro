@@ -2476,6 +2476,7 @@ export type Database = {
           display_order: number
           id: string
           name: string
+          repository_folder_id: string | null
           updated_at: string
         }
         Insert: {
@@ -2484,6 +2485,7 @@ export type Database = {
           display_order?: number
           id?: string
           name: string
+          repository_folder_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -2492,9 +2494,18 @@ export type Database = {
           display_order?: number
           id?: string
           name?: string
+          repository_folder_id?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "patent_checklist_sections_repository_folder_id_fkey"
+            columns: ["repository_folder_id"]
+            isOneToOne: false
+            referencedRelation: "repository_folders"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       patent_custom_columns: {
         Row: {
