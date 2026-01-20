@@ -945,6 +945,8 @@ export function PatentChecklist({
           onOpenChange={() => setAlertDialog(null)}
           documentId={alertDialog.docId}
           documentName={alertDialog.itemName}
+          contractId={contract.id}
+          contractName={contract.name}
           startDate={alertDialog.startDate}
           endDate={alertDialog.endDate}
         />
