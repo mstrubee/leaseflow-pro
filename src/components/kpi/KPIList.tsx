@@ -283,44 +283,6 @@ export function KPIList({
                         </Button>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => onViewMeasurements(kpi)}
-                          title="Ver mediciones"
-                        >
-                          <BarChart3 className="h-4 w-4" />
-                        </Button>
-                        {onCreateSubKPI && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => onCreateSubKPI(kpi)}
-                            title="Crear Sub-KPI"
-                          >
-                            <Users className="h-4 w-4 text-blue-600" />
-                          </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => onEditKPI(kpi)}
-                          title="Editar"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDelete(kpi.id)}
-                          title="Eliminar"
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
                   </TableRow>
                   {/* Sub-KPIs */}
                   {isExpanded && subKPIs.map((subKpi) => (
