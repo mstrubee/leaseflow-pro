@@ -2043,6 +2043,44 @@ export type Database = {
         }
         Relationships: []
       }
+      kpi_empresa_entries: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          entry_date: string
+          id: string
+          kpi_id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          entry_date?: string
+          id?: string
+          kpi_id: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          entry_date?: string
+          id?: string
+          kpi_id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kpi_empresa_entries_kpi_id_fkey"
+            columns: ["kpi_id"]
+            isOneToOne: false
+            referencedRelation: "kpis"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       kpi_formula_versions: {
         Row: {
           created_at: string
@@ -2182,10 +2220,12 @@ export type Database = {
           formula: string | null
           formula_variables: Json | null
           frequency_id: string | null
+          goal_100: number | null
           goal_type_id: string | null
           goal_value: number | null
           id: string
           is_active: boolean | null
+          kpi_classification: string | null
           name: string
           parent_kpi_id: string | null
           responsible_user_id: string | null
@@ -2194,6 +2234,8 @@ export type Database = {
           threshold_yellow: number | null
           unit: string | null
           updated_at: string
+          validity_end: string | null
+          validity_start: string | null
         }
         Insert: {
           assigned_user_id?: string | null
@@ -2206,10 +2248,12 @@ export type Database = {
           formula?: string | null
           formula_variables?: Json | null
           frequency_id?: string | null
+          goal_100?: number | null
           goal_type_id?: string | null
           goal_value?: number | null
           id?: string
           is_active?: boolean | null
+          kpi_classification?: string | null
           name: string
           parent_kpi_id?: string | null
           responsible_user_id?: string | null
@@ -2218,6 +2262,8 @@ export type Database = {
           threshold_yellow?: number | null
           unit?: string | null
           updated_at?: string
+          validity_end?: string | null
+          validity_start?: string | null
         }
         Update: {
           assigned_user_id?: string | null
@@ -2230,10 +2276,12 @@ export type Database = {
           formula?: string | null
           formula_variables?: Json | null
           frequency_id?: string | null
+          goal_100?: number | null
           goal_type_id?: string | null
           goal_value?: number | null
           id?: string
           is_active?: boolean | null
+          kpi_classification?: string | null
           name?: string
           parent_kpi_id?: string | null
           responsible_user_id?: string | null
@@ -2242,6 +2290,8 @@ export type Database = {
           threshold_yellow?: number | null
           unit?: string | null
           updated_at?: string
+          validity_end?: string | null
+          validity_start?: string | null
         }
         Relationships: [
           {

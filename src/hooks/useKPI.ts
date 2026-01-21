@@ -49,11 +49,27 @@ export interface KPI {
   // Sub-KPI support
   parent_kpi_id: string | null;
   assigned_user_id: string | null;
+  // Classification
+  kpi_classification: string;
+  // KPI Empresa simplified fields
+  validity_start: string | null;
+  validity_end: string | null;
+  goal_100: number | null;
   // Joined fields
   category?: KPICategory;
   goal_type?: KPIGoalType;
   frequency?: KPIFrequency;
   responsible_user?: { id: string; email: string; full_name: string | null };
+}
+
+export interface KPIEmpresaEntry {
+  id: string;
+  kpi_id: string;
+  name: string;
+  description: string | null;
+  entry_date: string;
+  created_at: string;
+  created_by: string | null;
 }
 
 export interface KPIMeasurement {

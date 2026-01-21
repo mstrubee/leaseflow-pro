@@ -9,6 +9,7 @@ import { KPIForm } from "./KPIForm";
 import { KPICategoryManager } from "./KPICategoryManager";
 import { KPIGoalTypeManager } from "./KPIGoalTypeManager";
 import { KPIMeasurementsDialog } from "./KPIMeasurementsDialog";
+import { KPIEmpresaEntriesDialog } from "./KPIEmpresaEntriesDialog";
 import { KPIAuditLog } from "./KPIAuditLog";
 
 interface Profile {
@@ -46,6 +47,7 @@ export function KPIModule() {
   const [isKPIFormOpen, setIsKPIFormOpen] = useState(false);
   const [editingKPI, setEditingKPI] = useState<KPI | null>(null);
   const [measurementsDialogKPI, setMeasurementsDialogKPI] = useState<KPI | null>(null);
+  const [entriesDialogKPI, setEntriesDialogKPI] = useState<KPI | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -90,6 +92,10 @@ export function KPIModule() {
 
   const handleViewMeasurements = (kpi: KPI) => {
     setMeasurementsDialogKPI(kpi);
+  };
+
+  const handleViewEntries = (kpi: KPI) => {
+    setEntriesDialogKPI(kpi);
   };
 
   if (loading) {
@@ -147,6 +153,7 @@ export function KPIModule() {
             onDeleteKPI={deleteKPI}
             onViewMeasurements={handleViewMeasurements}
             onCreateSubKPI={handleCreateSubKPI}
+            onViewEntries={handleViewEntries}
           />
         </TabsContent>
 
@@ -191,6 +198,13 @@ export function KPIModule() {
         onOpenChange={(open) => !open && setMeasurementsDialogKPI(null)}
         kpi={measurementsDialogKPI}
         onCreateMeasurement={createMeasurement}
+      />
+
+      {/* KPI Empresa Entries Dialog */}
+      <KPIEmpresaEntriesDialog
+        open={!!entriesDialogKPI}
+        onOpenChange={(open) => !open && setEntriesDialogKPI(null)}
+        kpi={entriesDialogKPI}
       />
     </div>
   );

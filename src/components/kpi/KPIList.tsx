@@ -1,11 +1,11 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, Search, Filter, BarChart3, Download, ChevronRight, Users } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Filter, BarChart3, Download, ChevronRight, Users, Building2, Target } from "lucide-react";
 import { KPI, KPICategory } from "@/hooks/useKPI";
 import { generateKPIListPDF } from "./KPIPDFExport";
 
@@ -17,6 +17,7 @@ interface KPIListProps {
   onDeleteKPI: (id: string) => Promise<void>;
   onViewMeasurements: (kpi: KPI) => void;
   onCreateSubKPI?: (parentKPI: KPI) => void;
+  onViewEntries?: (kpi: KPI) => void;
 }
 
 export function KPIList({
@@ -27,9 +28,11 @@ export function KPIList({
   onDeleteKPI,
   onViewMeasurements,
   onCreateSubKPI,
+  onViewEntries,
 }: KPIListProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [classificationFilter, setClassificationFilter] = useState<string>("all");
   const [expandedKPIs, setExpandedKPIs] = useState<Set<string>>(new Set());
 
   // Separate parent KPIs and sub-KPIs
@@ -49,7 +52,8 @@ export function KPIList({
     const matchesSearch = kpi.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (kpi.description?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false);
     const matchesCategory = categoryFilter === "all" || kpi.category_id === categoryFilter;
-    return matchesSearch && matchesCategory;
+    const matchesClassification = classificationFilter === "all" || kpi.kpi_classification === classificationFilter;
+    return matchesSearch && matchesCategory && matchesClassification;
   });
 
   const toggleExpand = (kpiId: string) => {
@@ -88,8 +92,8 @@ export function KPIList({
         </div>
       </CardHeader>
       <CardContent>
-        <div className="flex gap-4 mb-4">
-          <div className="relative flex-1">
+        <div className="flex gap-4 mb-4 flex-wrap">
+          <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Buscar KPI..."
@@ -98,8 +102,26 @@ export function KPIList({
               className="pl-10"
             />
           </div>
+          <Select value={classificationFilter} onValueChange={setClassificationFilter}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Clasificación" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas las clasificaciones</SelectItem>
+              <SelectItem value="objetivos_gerencia">
+                <span className="flex items-center gap-2">
+                  <Target className="h-3 w-3" /> Objetivos Gerencia
+                </span>
+              </SelectItem>
+              <SelectItem value="kpi_empresa">
+                <span className="flex items-center gap-2">
+                  <Building2 className="h-3 w-3" /> KPI Empresa
+                </span>
+              </SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-            <SelectTrigger className="w-64">
+            <SelectTrigger className="w-48">
               <Filter className="h-4 w-4 mr-2" />
               <SelectValue placeholder="Filtrar por categoría" />
             </SelectTrigger>
@@ -119,6 +141,7 @@ export function KPIList({
             <TableRow>
               <TableHead className="w-8"></TableHead>
               <TableHead>Nombre</TableHead>
+              <TableHead>Clasificación</TableHead>
               <TableHead>Categoría</TableHead>
               <TableHead>Meta</TableHead>
               <TableHead>Frecuencia</TableHead>
@@ -133,8 +156,8 @@ export function KPIList({
               const isExpanded = expandedKPIs.has(kpi.id);
 
               return (
-                <>
-                  <TableRow key={kpi.id}>
+                <React.Fragment key={kpi.id}>
+                  <TableRow>
                     <TableCell className="w-8">
                       {hasSubKPIs && (
                         <Button
@@ -164,17 +187,40 @@ export function KPIList({
                       </div>
                     </TableCell>
                     <TableCell>
+                      <Badge 
+                        variant="outline" 
+                        className={kpi.kpi_classification === "kpi_empresa" 
+                          ? "border-blue-500 text-blue-700 bg-blue-50" 
+                          : "border-purple-500 text-purple-700 bg-purple-50"
+                        }
+                      >
+                        {kpi.kpi_classification === "kpi_empresa" ? (
+                          <><Building2 className="h-3 w-3 mr-1" /> Empresa</>
+                        ) : (
+                          <><Target className="h-3 w-3 mr-1" /> Gerencia</>
+                        )}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
                       <Badge variant="outline">
                         {kpi.category?.name || "Sin categoría"}
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {kpi.goal_value != null ? (
+                      {kpi.kpi_classification === "kpi_empresa" ? (
                         <span>
-                          {kpi.goal_value} {kpi.unit || ""}
+                          {kpi.goal_100 != null ? `${kpi.goal_100} unidades` : <span className="text-muted-foreground">-</span>}
                         </span>
                       ) : (
-                        <span className="text-muted-foreground">-</span>
+                        <span>
+                          {kpi.goal_value != null ? (
+                            <span>
+                              {kpi.goal_value} {kpi.unit || ""}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </span>
                       )}
                     </TableCell>
                     <TableCell>
@@ -187,6 +233,55 @@ export function KPIList({
                       >
                         {kpi.is_active ? "Activo" : "Inactivo"}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {kpi.kpi_classification === "kpi_empresa" && onViewEntries ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => onViewEntries(kpi)}
+                            title="Ver ingresos"
+                          >
+                            <BarChart3 className="h-4 w-4 text-blue-600" />
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => onViewMeasurements(kpi)}
+                            title="Ver mediciones"
+                          >
+                            <BarChart3 className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {onCreateSubKPI && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => onCreateSubKPI(kpi)}
+                            title="Crear Sub-KPI"
+                          >
+                            <Users className="h-4 w-4 text-blue-600" />
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => onEditKPI(kpi)}
+                          title="Editar"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDelete(kpi.id)}
+                          title="Eliminar"
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
@@ -304,7 +399,7 @@ export function KPIList({
                       </TableCell>
                     </TableRow>
                   ))}
-                </>
+                </React.Fragment>
               );
             })}
             {filteredKPIs.length === 0 && (
