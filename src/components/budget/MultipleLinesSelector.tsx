@@ -1,7 +1,5 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +12,7 @@ interface BudgetLine {
   name: string;
   parent_id: string | null;
   amount_uf: number;
+  amount_clp?: number; // For OPEX lines in CLP
   status: "autorizado" | "no_autorizado";
   children?: BudgetLine[];
 }
@@ -30,6 +29,7 @@ interface MultipleLinesSelectorProps {
   selectedLines: SelectedLine[];
   onSelectionChange: (lines: SelectedLine[]) => void;
   formatUF: (value: number) => string;
+  formatCLP?: (value: number) => string; // For OPEX display in CLP
   maxTotal?: number;
   year?: number; // Required for OPEX master budget
   contractId?: string; // Used for OPEX local additional
@@ -40,6 +40,7 @@ export const MultipleLinesSelector = ({
   selectedLines,
   onSelectionChange,
   formatUF,
+  formatCLP,
   maxTotal,
   year,
   contractId
@@ -65,12 +66,13 @@ export const MultipleLinesSelector = ({
     
     setLoading(true);
     try {
-      // Load OPEX master budget categories for the year
+      // Load OPEX master budget categories for the year - using amount_clp for OPEX
       const { data: opexData, error } = await supabase
         .from("opex_master_budget")
         .select(`
           id,
           amount_uf,
+          amount_clp,
           category:opex_categories(id, name)
         `)
         .eq("year", year)
@@ -79,18 +81,20 @@ export const MultipleLinesSelector = ({
       if (error) throw error;
       
       // Transform to BudgetLine format - OPEX lines are always leaf nodes (no children)
+      // Store amount_clp for OPEX budget tracking
       const opexLines: BudgetLine[] = (opexData || []).map(item => ({
         id: item.id, // Use opex_master_budget id as line id
         name: (item.category as any)?.name || "Sin categoría",
         parent_id: null,
         amount_uf: item.amount_uf,
+        amount_clp: item.amount_clp || 0, // OPEX budget in CLP
         status: "autorizado" as const,
         children: [] // Explicitly set empty children to mark as leaf
       }));
       
       setLines(opexLines);
       
-      // Calculate available amounts for OPEX categories
+      // Calculate available amounts for OPEX categories (in CLP)
       await calculateOpexAvailable(opexLines);
     } catch (error) {
       console.error("Error loading OPEX categories:", error);
@@ -107,17 +111,17 @@ export const MultipleLinesSelector = ({
     
     const opexIds = opexLines.map(l => l.id);
     
-    // Batch query: Get all OCs for all OPEX lines at once
+    // Batch query: Get all OCs for all OPEX lines at once - use amount_clp for OPEX
     const { data: allOCs } = await supabase
       .from("purchase_orders")
-      .select("amount_uf, opex_master_id")
+      .select("amount_clp, opex_master_id")
       .in("opex_master_id", opexIds)
       .is("deleted_at", null);
     
-    // Batch query: Get all pending requests for all OPEX lines at once
+    // Batch query: Get all pending requests for all OPEX lines at once - use amount_clp for OPEX
     const { data: allRequests } = await supabase
       .from("oc_requests")
-      .select("amount_uf, opex_master_id")
+      .select("amount_clp, opex_master_id")
       .in("opex_master_id", opexIds)
       .eq("status", "pending");
     
@@ -126,14 +130,15 @@ export const MultipleLinesSelector = ({
     for (const line of opexLines) {
       const usedByOC = (allOCs || [])
         .filter(oc => oc.opex_master_id === line.id)
-        .reduce((sum, oc) => sum + oc.amount_uf, 0);
+        .reduce((sum, oc) => sum + (oc.amount_clp || 0), 0);
       const usedByRequests = (allRequests || [])
         .filter(r => r.opex_master_id === line.id)
-        .reduce((sum, r) => sum + r.amount_uf, 0);
+        .reduce((sum, r) => sum + (r.amount_clp || 0), 0);
       
       // OPEX master amounts are stored as negative (expenses), so use absolute value
-      const budgetAmount = Math.abs(line.amount_uf);
-      available[line.id] = Math.max(0, Math.round((budgetAmount - usedByOC - usedByRequests) * 10000) / 10000);
+      // Available is calculated in CLP for OPEX
+      const budgetAmount = Math.abs(line.amount_clp || 0);
+      available[line.id] = Math.max(0, Math.round(budgetAmount - usedByOC - usedByRequests));
     }
     
     setAvailableAmounts(available);
@@ -247,11 +252,11 @@ export const MultipleLinesSelector = ({
 
   const handleLineToggle = (line: BudgetLine, checked: boolean) => {
     if (checked) {
-      // Add line with max available amount
+      // Add line for imputation (amount=0 since it's set in the form, maxAmount for reference)
       const maxAmount = availableAmounts[line.id] || 0;
       onSelectionChange([
         ...selectedLines,
-        { lineId: line.id, lineName: line.name, amount: maxAmount, maxAmount }
+        { lineId: line.id, lineName: line.name, amount: 0, maxAmount }
       ]);
     } else {
       // Remove line
@@ -298,7 +303,9 @@ export const MultipleLinesSelector = ({
 
           {isLeaf && (
             <Badge variant="outline" className="text-xs">
-              Disp: {formatUF(available)}
+              Disp: {isOpexMaster && formatCLP 
+                ? formatCLP(available) 
+                : formatUF(available)}
             </Badge>
           )}
         </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+// Card component removed - not in use currently
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, FileText, Upload, Eye, Trash2, Download, Edit, Plus } from "lucide-react";
+import { Loader2, Upload, Eye, Trash2, Download, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
@@ -103,6 +103,8 @@ export const OCRequestsList = ({
   const [paymentPlan, setPaymentPlan] = useState<PaymentPlanItem[]>([]);
   const [newRequestForm, setNewRequestForm] = useState({
     description: "",
+    amount: "",
+    currency: "UF" as "UF" | "CLP",
     supplier_id: null as string | null,
     supplier_name: null as string | null
   });
@@ -276,7 +278,7 @@ export const OCRequestsList = ({
     setBudgetType("capex");
     setSelectedLines([]);
     setPaymentPlan([]);
-    setNewRequestForm({ description: "", supplier_id: null, supplier_name: null });
+    setNewRequestForm({ description: "", amount: "", currency: "UF", supplier_id: null, supplier_name: null });
     setLoadingBudgets(true);
     
     try {
@@ -418,13 +420,37 @@ export const OCRequestsList = ({
   };
 
   const handleCreateNewRequest = async () => {
-    const validLines = selectedLines.filter(l => l.amount > 0);
-    if (validLines.length === 0) {
-      toast({ variant: "destructive", title: "Error", description: "Seleccione al menos una línea con monto" });
+    // Validate amount from form
+    const enteredAmount = parseFloat(newRequestForm.amount) || 0;
+    if (enteredAmount <= 0) {
+      toast({ variant: "destructive", title: "Error", description: "Ingrese un monto válido" });
       return;
     }
 
-    const totalAmount = Math.round(validLines.reduce((sum, l) => sum + l.amount, 0) * 10000) / 10000;
+    const validLines = selectedLines.filter(l => l.lineId);
+    if (validLines.length === 0) {
+      toast({ variant: "destructive", title: "Error", description: "Seleccione al menos una línea de imputación" });
+      return;
+    }
+
+    // Use provided UF value or fallback
+    const currentUfValue = ufValue > 0 ? ufValue : 38000;
+    
+    // Convert amount based on currency and budget type
+    // OPEX always works in CLP, CAPEX can be UF or CLP
+    let totalAmountUf: number;
+    let totalAmountClp: number;
+    const inputCurrency = newRequestForm.currency;
+    
+    if (inputCurrency === "CLP") {
+      totalAmountClp = Math.round(enteredAmount);
+      totalAmountUf = Math.round((enteredAmount / currentUfValue) * 10000) / 10000;
+    } else {
+      // UF
+      totalAmountUf = Math.round(enteredAmount * 10000) / 10000;
+      totalAmountClp = Math.round(enteredAmount * currentUfValue);
+    }
+
     const lineNames = validLines.map(l => l.lineName);
     const displayLineName = lineNames.join(' + ');
 
@@ -432,10 +458,6 @@ export const OCRequestsList = ({
     try {
       const { data: { user } } = await supabase.auth.getUser();
       const { number, correlative } = await generateRequestNumber(lineNames);
-      
-      // Use provided UF value or fallback
-      const currentUfValue = ufValue > 0 ? ufValue : 38000;
-      const amountClp = Math.round(totalAmount * currentUfValue);
 
       // For OPEX master, budget_id is "opex_master" - we need to handle this
       const isOpexMaster = selectedBudgetId === "opex_master";
@@ -452,9 +474,9 @@ export const OCRequestsList = ({
         line_name: displayLineName,
         project_name: projectName,
         description: newRequestForm.description,
-        amount_uf: totalAmount,
-        amount_clp: amountClp,
-        input_currency: "UF",
+        amount_uf: totalAmountUf,
+        amount_clp: totalAmountClp,
+        input_currency: inputCurrency,
         uf_value_at_entry: currentUfValue,
         supplier_id: newRequestForm.supplier_id,
         supplier_name: newRequestForm.supplier_name,
@@ -489,6 +511,16 @@ export const OCRequestsList = ({
           if (planEntries.length > 0) {
             await supabase.from("oc_payment_plans").insert(planEntries);
           }
+        } else {
+          // No payment plan defined - assume single payment with full amount
+          await supabase.from("oc_payment_plans").insert({
+            oc_request_id: requestData.id,
+            payment_number: 1,
+            description: "Pago único",
+            amount_uf: totalAmountUf,
+            due_date: null,
+            status: "pending"
+          });
         }
       }
 
@@ -512,7 +544,11 @@ export const OCRequestsList = ({
   const convertedRequests = filteredRequests.filter(r => r.status === "converted");
 
   const totalPlanned = paymentPlan.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-  const totalSelected = selectedLines.reduce((sum, l) => sum + l.amount, 0);
+  // Use form amount (converted to UF for display consistency)
+  const formAmountUf = newRequestForm.currency === "CLP" && ufValue > 0 
+    ? (parseFloat(newRequestForm.amount) || 0) / ufValue 
+    : parseFloat(newRequestForm.amount) || 0;
+  const totalSelected = formAmountUf;
 
   const capexBudget = availableBudgets.find(b => b.type === "capex");
   const opexBudget = availableBudgets.find(b => b.type === "opex");
@@ -883,6 +919,46 @@ export const OCRequestsList = ({
                   />
                 </div>
 
+                {/* Amount + Currency */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Monto *</Label>
+                    <Input
+                      type="number"
+                      value={newRequestForm.amount}
+                      onChange={(e) => setNewRequestForm(prev => ({ ...prev, amount: e.target.value }))}
+                      placeholder="0.00"
+                      min="0"
+                      step="0.01"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Moneda</Label>
+                    <Select 
+                      value={newRequestForm.currency} 
+                      onValueChange={(v: "UF" | "CLP") => setNewRequestForm(prev => ({ ...prev, currency: v }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="UF">UF</SelectItem>
+                        <SelectItem value="CLP">$</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Show equivalent */}
+                {parseFloat(newRequestForm.amount) > 0 && ufValue > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Equivalente: {newRequestForm.currency === "CLP" 
+                      ? `UF ${(parseFloat(newRequestForm.amount) / ufValue).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : `$ ${Math.round(parseFloat(newRequestForm.amount) * ufValue).toLocaleString("es-CL")}`
+                    }
+                  </p>
+                )}
+
                 {/* Supplier */}
                 <div className="space-y-2">
                   <Label>Proveedor (opcional)</Label>
@@ -913,6 +989,7 @@ export const OCRequestsList = ({
                     selectedLines={selectedLines}
                     onSelectionChange={setSelectedLines}
                     formatUF={formatUF}
+                    formatCLP={formatCLP}
                     year={year}
                     contractId={contractId}
                   />
@@ -941,7 +1018,8 @@ export const OCRequestsList = ({
 
                 {paymentPlan.length === 0 ? (
                   <div className="p-4 bg-muted/30 rounded-lg text-center text-sm text-muted-foreground">
-                    No hay pagos planificados. Puede agregar pagos ahora o después.
+                    <p>No hay pagos planificados.</p>
+                    <p className="text-xs mt-1">Se asumirá un pago único por el total de la solicitud.</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -1016,7 +1094,7 @@ export const OCRequestsList = ({
             </Button>
             <Button 
               onClick={handleCreateNewRequest} 
-              disabled={creatingRequest || selectedLines.length === 0 || availableBudgets.length === 0}
+              disabled={creatingRequest || selectedLines.length === 0 || availableBudgets.length === 0 || !newRequestForm.amount || parseFloat(newRequestForm.amount) <= 0}
             >
               {creatingRequest && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Crear Solicitud
