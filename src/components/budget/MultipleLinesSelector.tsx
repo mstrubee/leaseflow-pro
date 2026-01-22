@@ -78,13 +78,14 @@ export const MultipleLinesSelector = ({
 
       if (error) throw error;
       
-      // Transform to BudgetLine format
+      // Transform to BudgetLine format - OPEX lines are always leaf nodes (no children)
       const opexLines: BudgetLine[] = (opexData || []).map(item => ({
         id: item.id, // Use opex_master_budget id as line id
         name: (item.category as any)?.name || "Sin categoría",
         parent_id: null,
         amount_uf: item.amount_uf,
-        status: "autorizado" as const
+        status: "autorizado" as const,
+        children: [] // Explicitly set empty children to mark as leaf
       }));
       
       setLines(opexLines);
@@ -102,9 +103,23 @@ export const MultipleLinesSelector = ({
     const available: Record<string, number> = {};
     
     for (const line of opexLines) {
-      // For OPEX master, use full budget amount (simplified for now)
-      // TODO: Implement proper consumption tracking across contracts if needed
-      available[line.id] = line.amount_uf;
+      // Get existing OCs linked to this OPEX master category
+      const { data: existingOCs } = await supabase
+        .from("purchase_orders")
+        .select("amount_uf")
+        .eq("opex_master_id", line.id);
+      
+      // Get pending requests linked to this OPEX master category
+      const { data: existingRequests } = await supabase
+        .from("oc_requests")
+        .select("amount_uf")
+        .eq("opex_master_id", line.id)
+        .eq("status", "pending");
+      
+      const usedByOC = (existingOCs || []).reduce((sum, oc) => sum + oc.amount_uf, 0);
+      const usedByRequests = (existingRequests || []).reduce((sum, r) => sum + r.amount_uf, 0);
+      
+      available[line.id] = Math.max(0, Math.round((line.amount_uf - usedByOC - usedByRequests) * 10000) / 10000);
     }
     
     setAvailableAmounts(available);
