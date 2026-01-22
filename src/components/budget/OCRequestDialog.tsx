@@ -221,21 +221,33 @@ export const OCRequestDialog = ({
         }
       }
 
-      // Create payment plan entries if defined
-      if (paymentPlan.length > 0 && requestData) {
-        const planEntries = paymentPlan
-          .filter(p => parseFloat(p.amount) > 0)
-          .map((p, idx) => ({
-            oc_request_id: requestData.id,
-            payment_number: idx + 1,
-            description: p.description || `Pago ${idx + 1}`,
-            amount_uf: parseFloat(p.amount),
-            due_date: p.due_date || null,
-            status: "pending"
-          }));
+      // Create payment plan entries - if no plan defined, create single payment entry
+      if (requestData) {
+        if (paymentPlan.length > 0) {
+          const planEntries = paymentPlan
+            .filter(p => parseFloat(p.amount) > 0)
+            .map((p, idx) => ({
+              oc_request_id: requestData.id,
+              payment_number: idx + 1,
+              description: p.description || `Pago ${idx + 1}`,
+              amount_uf: parseFloat(p.amount),
+              due_date: p.due_date || null,
+              status: "pending"
+            }));
 
-        if (planEntries.length > 0) {
-          await supabase.from("oc_payment_plans").insert(planEntries);
+          if (planEntries.length > 0) {
+            await supabase.from("oc_payment_plans").insert(planEntries);
+          }
+        } else {
+          // No payment plan defined - assume single payment with full amount
+          await supabase.from("oc_payment_plans").insert({
+            oc_request_id: requestData.id,
+            payment_number: 1,
+            description: "Pago único",
+            amount_uf: totalAmountUf,
+            due_date: null,
+            status: "pending"
+          });
         }
       }
 
@@ -415,7 +427,8 @@ export const OCRequestDialog = ({
 
             {paymentPlan.length === 0 ? (
               <div className="p-4 bg-muted/30 rounded-lg text-center text-sm text-muted-foreground">
-                No hay pagos planificados. Puede agregar pagos ahora o después de crear la solicitud.
+                <p>No hay pagos planificados.</p>
+                <p className="text-xs mt-1">Se asumirá un pago único por el total de la solicitud.</p>
               </div>
             ) : (
               <div className="space-y-3">

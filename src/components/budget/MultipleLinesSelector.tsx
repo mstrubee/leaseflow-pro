@@ -100,25 +100,36 @@ export const MultipleLinesSelector = ({
   };
 
   const calculateOpexAvailable = async (opexLines: BudgetLine[]) => {
+    if (opexLines.length === 0) {
+      setAvailableAmounts({});
+      return;
+    }
+    
+    const opexIds = opexLines.map(l => l.id);
+    
+    // Batch query: Get all OCs for all OPEX lines at once
+    const { data: allOCs } = await supabase
+      .from("purchase_orders")
+      .select("amount_uf, opex_master_id")
+      .in("opex_master_id", opexIds)
+      .is("deleted_at", null);
+    
+    // Batch query: Get all pending requests for all OPEX lines at once
+    const { data: allRequests } = await supabase
+      .from("oc_requests")
+      .select("amount_uf, opex_master_id")
+      .in("opex_master_id", opexIds)
+      .eq("status", "pending");
+    
     const available: Record<string, number> = {};
     
     for (const line of opexLines) {
-      // Get existing OCs linked to this OPEX master category
-      const { data: existingOCs } = await supabase
-        .from("purchase_orders")
-        .select("amount_uf")
-        .eq("opex_master_id", line.id)
-        .is("deleted_at", null);
-      
-      // Get pending requests linked to this OPEX master category
-      const { data: existingRequests } = await supabase
-        .from("oc_requests")
-        .select("amount_uf")
-        .eq("opex_master_id", line.id)
-        .eq("status", "pending");
-      
-      const usedByOC = (existingOCs || []).reduce((sum, oc) => sum + oc.amount_uf, 0);
-      const usedByRequests = (existingRequests || []).reduce((sum, r) => sum + r.amount_uf, 0);
+      const usedByOC = (allOCs || [])
+        .filter(oc => oc.opex_master_id === line.id)
+        .reduce((sum, oc) => sum + oc.amount_uf, 0);
+      const usedByRequests = (allRequests || [])
+        .filter(r => r.opex_master_id === line.id)
+        .reduce((sum, r) => sum + r.amount_uf, 0);
       
       // OPEX master amounts are stored as negative (expenses), so use absolute value
       const budgetAmount = Math.abs(line.amount_uf);
@@ -187,24 +198,36 @@ export const MultipleLinesSelector = ({
       return !hasChildren;
     });
 
+    if (leafLines.length === 0) {
+      setAvailableAmounts({});
+      return;
+    }
+    
+    const leafIds = leafLines.map(l => l.id);
+    
+    // Batch query: Get all OCs for all leaf lines at once
+    const { data: allOCs } = await supabase
+      .from("purchase_orders")
+      .select("amount_uf, budget_line_id")
+      .in("budget_line_id", leafIds)
+      .is("deleted_at", null);
+    
+    // Batch query: Get all pending requests for all leaf lines at once
+    const { data: allRequests } = await supabase
+      .from("oc_requests")
+      .select("amount_uf, budget_line_id")
+      .in("budget_line_id", leafIds)
+      .eq("status", "pending");
+
     const available: Record<string, number> = {};
     
     for (const line of leafLines) {
-      // Get existing OCs
-      const { data: existingOCs } = await supabase
-        .from("purchase_orders")
-        .select("amount_uf")
-        .eq("budget_line_id", line.id);
-      
-      // Get pending requests
-      const { data: existingRequests } = await supabase
-        .from("oc_requests")
-        .select("amount_uf")
-        .eq("budget_line_id", line.id)
-        .eq("status", "pending");
-      
-      const usedByOC = (existingOCs || []).reduce((sum, oc) => sum + oc.amount_uf, 0);
-      const usedByRequests = (existingRequests || []).reduce((sum, r) => sum + r.amount_uf, 0);
+      const usedByOC = (allOCs || [])
+        .filter(oc => oc.budget_line_id === line.id)
+        .reduce((sum, oc) => sum + oc.amount_uf, 0);
+      const usedByRequests = (allRequests || [])
+        .filter(r => r.budget_line_id === line.id)
+        .reduce((sum, r) => sum + r.amount_uf, 0);
       
       available[line.id] = Math.max(0, Math.round((line.amount_uf - usedByOC - usedByRequests) * 10000) / 10000);
     }
