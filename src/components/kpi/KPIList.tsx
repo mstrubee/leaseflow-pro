@@ -1,13 +1,14 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, Search, Filter, BarChart3, Download, ChevronRight, Users, Building2, Target } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Plus, Pencil, Trash2, Search, Filter, BarChart3, Download, ChevronRight, Users, Building2, Target, FileText } from "lucide-react";
 import { KPI, KPICategory } from "@/hooks/useKPI";
-import { generateKPIListPDF } from "./KPIPDFExport";
+import { generateKPIListPDF, generateSelectedKPIsPDF } from "./KPIPDFExport";
 
 interface KPIListProps {
   kpis: KPI[];
@@ -34,19 +35,23 @@ export function KPIList({
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [classificationFilter, setClassificationFilter] = useState<string>("all");
   const [expandedKPIs, setExpandedKPIs] = useState<Set<string>>(new Set());
+  const [selectedKPIs, setSelectedKPIs] = useState<Set<string>>(new Set());
 
   // Separate parent KPIs and sub-KPIs
   const parentKPIs = kpis.filter((kpi) => !(kpi as any).parent_kpi_id);
-  const subKPIsMap = new Map<string, KPI[]>();
-  kpis.forEach((kpi) => {
-    const parentId = (kpi as any).parent_kpi_id;
-    if (parentId) {
-      if (!subKPIsMap.has(parentId)) {
-        subKPIsMap.set(parentId, []);
+  const subKPIsMap = useMemo(() => {
+    const map = new Map<string, KPI[]>();
+    kpis.forEach((kpi) => {
+      const parentId = (kpi as any).parent_kpi_id;
+      if (parentId) {
+        if (!map.has(parentId)) {
+          map.set(parentId, []);
+        }
+        map.get(parentId)!.push(kpi);
       }
-      subKPIsMap.get(parentId)!.push(kpi);
-    }
-  });
+    });
+    return map;
+  }, [kpis]);
 
   const filteredKPIs = parentKPIs.filter((kpi) => {
     const matchesSearch = kpi.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -66,8 +71,40 @@ export function KPIList({
     setExpandedKPIs(newExpanded);
   };
 
+  const toggleSelectKPI = (kpiId: string) => {
+    const newSelected = new Set(selectedKPIs);
+    if (newSelected.has(kpiId)) {
+      newSelected.delete(kpiId);
+    } else {
+      newSelected.add(kpiId);
+    }
+    setSelectedKPIs(newSelected);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedKPIs.size === filteredKPIs.length) {
+      setSelectedKPIs(new Set());
+    } else {
+      setSelectedKPIs(new Set(filteredKPIs.map((kpi) => kpi.id)));
+    }
+  };
+
   const handleDownloadPDF = () => {
     generateKPIListPDF(kpis, categories);
+  };
+
+  const handleDownloadSelectedPDF = () => {
+    const selectedKPIsList = kpis.filter((kpi) => selectedKPIs.has(kpi.id));
+    // Include sub-KPIs for selected parent KPIs
+    const allSubKPIs: KPI[] = [];
+    selectedKPIsList.forEach((kpi) => {
+      const subs = subKPIsMap.get(kpi.id);
+      if (subs) {
+        allSubKPIs.push(...subs);
+      }
+    });
+    generateSelectedKPIsPDF(selectedKPIsList, allSubKPIs, categories);
+    setSelectedKPIs(new Set());
   };
 
   const handleDelete = async (id: string) => {
@@ -81,6 +118,12 @@ export function KPIList({
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-lg">Indicadores (KPI)</CardTitle>
         <div className="flex gap-2">
+          {selectedKPIs.size > 0 && (
+            <Button onClick={handleDownloadSelectedPDF} className="gap-2 bg-blue-600 hover:bg-blue-700">
+              <FileText className="h-4 w-4" />
+              Informe ({selectedKPIs.size})
+            </Button>
+          )}
           <Button variant="outline" onClick={handleDownloadPDF} className="gap-2">
             <Download className="h-4 w-4" />
             Descargar PDF
@@ -139,6 +182,13 @@ export function KPIList({
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10">
+                <Checkbox
+                  checked={selectedKPIs.size === filteredKPIs.length && filteredKPIs.length > 0}
+                  onCheckedChange={toggleSelectAll}
+                  aria-label="Seleccionar todos"
+                />
+              </TableHead>
               <TableHead className="w-8"></TableHead>
               <TableHead>Nombre</TableHead>
               <TableHead>Clasificación</TableHead>
@@ -154,10 +204,18 @@ export function KPIList({
               const subKPIs = subKPIsMap.get(kpi.id) || [];
               const hasSubKPIs = subKPIs.length > 0;
               const isExpanded = expandedKPIs.has(kpi.id);
+              const isSelected = selectedKPIs.has(kpi.id);
 
               return (
                 <React.Fragment key={kpi.id}>
-                  <TableRow>
+                  <TableRow className={isSelected ? "bg-primary/5" : ""}>
+                    <TableCell className="w-10">
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggleSelectKPI(kpi.id)}
+                        aria-label={`Seleccionar ${kpi.name}`}
+                      />
+                    </TableCell>
                     <TableCell className="w-8">
                       {hasSubKPIs && (
                         <Button
@@ -287,6 +345,7 @@ export function KPIList({
                   {/* Sub-KPIs */}
                   {isExpanded && subKPIs.map((subKpi) => (
                     <TableRow key={subKpi.id} className="bg-muted/30">
+                      <TableCell className="w-10"></TableCell>
                       <TableCell className="w-8"></TableCell>
                       <TableCell>
                         <div className="pl-6 border-l-2 border-primary/30">
@@ -366,7 +425,7 @@ export function KPIList({
             })}
             {filteredKPIs.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                   {searchTerm || categoryFilter !== "all"
                     ? "No se encontraron KPIs con los filtros aplicados"
                     : "No hay KPIs definidos. Cree el primero haciendo clic en 'Nuevo KPI'."}

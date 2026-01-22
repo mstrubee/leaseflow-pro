@@ -210,3 +210,178 @@ export function generateKPIListPDF(
 
   doc.save("listado-kpi.pdf");
 }
+
+export function generateSelectedKPIsPDF(
+  selectedKPIs: KPI[],
+  subKPIs: KPI[],
+  categories: KPICategory[]
+) {
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.width;
+
+  // Title
+  doc.setFontSize(18);
+  doc.setFont("helvetica", "bold");
+  doc.text("Informe de Indicadores KPI Seleccionados", pageWidth / 2, 20, { align: "center" });
+
+  // Date
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Generado: ${new Date().toLocaleDateString("es-CL")}`, pageWidth / 2, 28, { align: "center" });
+
+  // Summary
+  doc.setFontSize(11);
+  const totalSubKPIs = subKPIs.length;
+  doc.text(`KPIs Seleccionados: ${selectedKPIs.length} | Sub-KPIs incluidos: ${totalSubKPIs}`, 14, 40);
+
+  let currentY = 50;
+
+  // Process each selected KPI
+  selectedKPIs.forEach((kpi, index) => {
+    // Check if we need a new page
+    if (currentY > 250) {
+      doc.addPage();
+      currentY = 20;
+    }
+
+    // KPI Header
+    doc.setFillColor(59, 130, 246);
+    doc.rect(14, currentY - 5, pageWidth - 28, 12, "F");
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(255, 255, 255);
+    doc.text(`${index + 1}. ${kpi.name}`, 18, currentY + 3);
+    doc.setTextColor(0, 0, 0);
+
+    currentY += 15;
+
+    // KPI Details
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+
+    const classificationLabel = kpi.kpi_classification === "kpi_empresa" ? "KPI Empresa" : "Objetivos Gerencia";
+    doc.text(`Clasificación: ${classificationLabel}`, 14, currentY);
+    currentY += 6;
+
+    doc.text(`Categoría: ${kpi.category?.name || "Sin categoría"}`, 14, currentY);
+    currentY += 6;
+
+    if (kpi.description) {
+      const descLines = doc.splitTextToSize(`Descripción: ${kpi.description}`, pageWidth - 28);
+      doc.text(descLines, 14, currentY);
+      currentY += 6 * descLines.length;
+    }
+
+    // Meta info
+    if (kpi.kpi_classification === "kpi_empresa") {
+      if (kpi.goal_100 != null) {
+        doc.text(`Meta 100%: ${kpi.goal_100} unidades`, 14, currentY);
+        currentY += 6;
+        const goal80 = Math.round(kpi.goal_100 * 0.8);
+        const goal120 = Math.round(kpi.goal_100 * 1.2);
+        doc.text(`Umbral 80%: ${goal80} | Umbral 120%: ${goal120}`, 14, currentY);
+        currentY += 6;
+      }
+      if ((kpi as any).validity_start && (kpi as any).validity_end) {
+        doc.text(`Vigencia: ${new Date((kpi as any).validity_start).toLocaleDateString("es-CL")} - ${new Date((kpi as any).validity_end).toLocaleDateString("es-CL")}`, 14, currentY);
+        currentY += 6;
+      }
+    } else {
+      if (kpi.goal_value != null) {
+        doc.text(`Meta: ${kpi.goal_value} ${kpi.unit || ""}`, 14, currentY);
+        currentY += 6;
+      }
+      if (kpi.threshold_green != null && kpi.threshold_yellow != null) {
+        doc.text(`Umbral Verde: ${kpi.threshold_green} | Umbral Amarillo: ${kpi.threshold_yellow}`, 14, currentY);
+        currentY += 6;
+      }
+    }
+
+    doc.text(`Frecuencia: ${kpi.frequency?.name || "-"}`, 14, currentY);
+    currentY += 6;
+
+    doc.text(`Estado: ${kpi.is_active ? "Activo" : "Inactivo"}`, 14, currentY);
+    currentY += 10;
+
+    // Sub-KPIs for this parent
+    const kpiSubKPIs = subKPIs.filter((sub) => (sub as any).parent_kpi_id === kpi.id);
+
+    if (kpiSubKPIs.length > 0) {
+      if (currentY > 230) {
+        doc.addPage();
+        currentY = 20;
+      }
+
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text(`Sub-KPIs (${kpiSubKPIs.length})`, 18, currentY);
+      currentY += 8;
+
+      // Sub-KPIs table
+      const subTableData = kpiSubKPIs.map((sub) => {
+        const assignedUser = (sub as any).responsible_user;
+        return [
+          sub.name,
+          assignedUser?.full_name || assignedUser?.email || "-",
+          sub.goal_value != null ? `${sub.goal_value} ${sub.unit || ""}` : "-",
+          sub.is_active ? "Activo" : "Inactivo",
+        ];
+      });
+
+      autoTable(doc, {
+        startY: currentY,
+        head: [["Nombre Sub-KPI", "Responsable", "Meta", "Estado"]],
+        body: subTableData,
+        theme: "striped",
+        headStyles: { fillColor: [100, 149, 237] },
+        styles: { fontSize: 9 },
+        margin: { left: 18 },
+        tableWidth: pageWidth - 36,
+      });
+
+      currentY = (doc as any).lastAutoTable.finalY + 15;
+    } else {
+      currentY += 5;
+    }
+  });
+
+  // Summary by category at the end
+  if (currentY > 220) {
+    doc.addPage();
+    currentY = 20;
+  }
+
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "bold");
+  doc.text("Resumen por Categoría", 14, currentY);
+  currentY += 8;
+
+  const categoryData = categories
+    .filter((c) => c.is_active)
+    .map((cat) => {
+      const catKPIs = selectedKPIs.filter((k) => k.category_id === cat.id);
+      const catSubKPIs = subKPIs.filter((s) => {
+        const parentKPI = selectedKPIs.find((k) => k.id === (s as any).parent_kpi_id);
+        return parentKPI?.category_id === cat.id;
+      });
+      return [
+        cat.name,
+        catKPIs.length.toString(),
+        catSubKPIs.length.toString(),
+      ];
+    })
+    .filter((row) => parseInt(row[1]) > 0 || parseInt(row[2]) > 0);
+
+  if (categoryData.length > 0) {
+    autoTable(doc, {
+      startY: currentY,
+      head: [["Categoría", "KPIs", "Sub-KPIs"]],
+      body: categoryData,
+      theme: "grid",
+      headStyles: { fillColor: [59, 130, 246] },
+      styles: { halign: "center" },
+    });
+  }
+
+  doc.save("informe-kpis-seleccionados.pdf");
+}
