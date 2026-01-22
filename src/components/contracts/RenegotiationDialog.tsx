@@ -266,6 +266,16 @@ export const RenegotiationDialog = ({
     setSaving(true);
 
     try {
+      // Get the maximum version number for this contract
+      const { data: versions } = await supabase
+        .from("contract_versions")
+        .select("version_number")
+        .eq("contract_id", contractId)
+        .order("version_number", { ascending: false })
+        .limit(1);
+
+      const newVersionNumber = (versions?.[0]?.version_number || 0) + 1;
+
       // Set current version as not current
       const { error: updateError } = await supabase
         .from("contract_versions")
@@ -282,7 +292,7 @@ export const RenegotiationDialog = ({
         .from("contract_versions")
         .insert({
           contract_id: contractId,
-          version_number: currentVersion.version_number + 1,
+          version_number: newVersionNumber,
           is_current: true,
           is_renegotiation: true,
 
