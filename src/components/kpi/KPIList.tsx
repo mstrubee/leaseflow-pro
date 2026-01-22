@@ -6,9 +6,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Pencil, Trash2, Search, Filter, BarChart3, Download, ChevronRight, Users, Building2, Target, FileText } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Filter, BarChart3, Download, ChevronRight, Users, Building2, Target, FileText, FileSpreadsheet } from "lucide-react";
 import { KPI, KPICategory } from "@/hooks/useKPI";
 import { generateKPIListPDF, generateSelectedKPIsPDF } from "./KPIPDFExport";
+import { generateSelectedKPIsExcel } from "./KPIExcelExport";
 
 interface KPIListProps {
   kpis: KPI[];
@@ -104,7 +105,18 @@ export function KPIList({
       }
     });
     generateSelectedKPIsPDF(selectedKPIsList, allSubKPIs, categories);
-    setSelectedKPIs(new Set());
+  };
+
+  const handleDownloadSelectedExcel = () => {
+    const selectedKPIsList = kpis.filter((kpi) => selectedKPIs.has(kpi.id));
+    const allSubKPIs: KPI[] = [];
+    selectedKPIsList.forEach((kpi) => {
+      const subs = subKPIsMap.get(kpi.id);
+      if (subs) {
+        allSubKPIs.push(...subs);
+      }
+    });
+    generateSelectedKPIsExcel(selectedKPIsList, allSubKPIs, categories);
   };
 
   const handleDelete = async (id: string) => {
@@ -119,10 +131,16 @@ export function KPIList({
         <CardTitle className="text-lg">Indicadores (KPI)</CardTitle>
         <div className="flex gap-2">
           {selectedKPIs.size > 0 && (
-            <Button onClick={handleDownloadSelectedPDF} className="gap-2 bg-blue-600 hover:bg-blue-700">
-              <FileText className="h-4 w-4" />
-              Informe ({selectedKPIs.size})
-            </Button>
+            <>
+              <Button onClick={handleDownloadSelectedPDF} className="gap-2 bg-blue-600 hover:bg-blue-700">
+                <FileText className="h-4 w-4" />
+                PDF ({selectedKPIs.size})
+              </Button>
+              <Button onClick={handleDownloadSelectedExcel} variant="outline" className="gap-2">
+                <FileSpreadsheet className="h-4 w-4" />
+                Excel ({selectedKPIs.size})
+              </Button>
+            </>
           )}
           <Button variant="outline" onClick={handleDownloadPDF} className="gap-2">
             <Download className="h-4 w-4" />

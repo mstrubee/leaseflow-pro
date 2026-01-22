@@ -319,7 +319,7 @@ export function generateSelectedKPIsPDF(
         const assignedUser = (sub as any).responsible_user;
         return [
           sub.name,
-          sub.description?.substring(0, 80) || "-",
+          sub.description || "-",
           assignedUser?.full_name || assignedUser?.email || "-",
           sub.is_active ? "Activo" : "Inactivo",
         ];
@@ -331,11 +331,14 @@ export function generateSelectedKPIsPDF(
         body: subTableData,
         theme: "striped",
         headStyles: { fillColor: [100, 149, 237] },
-        styles: { fontSize: 9 },
+        styles: { fontSize: 9, cellPadding: 3 },
         margin: { left: 18 },
         tableWidth: pageWidth - 36,
         columnStyles: {
-          1: { cellWidth: 60 },
+          0: { cellWidth: 35 },
+          1: { cellWidth: 'auto' },
+          2: { cellWidth: 30 },
+          3: { cellWidth: 20 },
         },
       });
 
