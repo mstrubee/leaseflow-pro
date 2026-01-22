@@ -478,55 +478,10 @@ export function CommercialConditionsSummary({
   const adjustmentValueFormatted = formatAdjustmentValue();
   return <Card>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <DollarSign className="h-4 w-4" />
-            Condiciones Comerciales
-          </CardTitle>
-          {showRenegotiationButton && contractId && (
-            <RenegotiationDialog
-              contractId={contractId}
-              currentVersion={{
-                id: version.id,
-                version_number: version.version_number,
-                initial_rent: version.initial_rent,
-                regime_rent: version.regime_rent,
-                variable_rent_percentage: version.variable_rent_percentage,
-                duration_months: version.duration_months,
-                notice_type: version.notice_type,
-                notice_value: version.notice_value,
-                notice_bilaterality: version.notice_bilaterality,
-                grace_months: version.grace_months,
-                guarantee_multiplier: version.guarantee_multiplier,
-                has_periodic_adjustments: version.has_periodic_adjustments,
-                adjustment_type: version.adjustment_type,
-                adjustment_value: version.adjustment_value,
-                first_adjustment_month: version.first_adjustment_month,
-                adjustment_periodicity_months: version.adjustment_periodicity_months,
-                gastos_comunes_methodology: version.gastos_comunes_methodology,
-                gastos_comunes_uf_m2: version.gastos_comunes_uf_m2,
-                gastos_comunes_uf_ml_frente: version.gastos_comunes_uf_ml_frente,
-                gastos_comunes_prorrata_kwh_clima: version.gastos_comunes_prorrata_kwh_clima,
-                gastos_comunes_percentage: version.gastos_comunes_percentage,
-                gastos_comunes_total_centro: version.gastos_comunes_total_centro,
-                gastos_comunes_tope: version.gastos_comunes_tope,
-                gastos_comunes_tope_type: version.gastos_comunes_tope_type,
-                has_extended_gastos_comunes: version.has_extended_gastos_comunes,
-                adicional_administracion_percentage: version.adicional_administracion_percentage,
-                fondo_promocion_percentage: version.fondo_promocion_percentage,
-                otros_egresos_amount: version.otros_egresos_amount,
-                otros_egresos_description: version.otros_egresos_description,
-                rent_escalations: (version.rent_escalations || []).map((e) => ({
-                  month_number: e.month_number,
-                  amount: e.amount,
-                })),
-                notice_ranges: noticeRanges,
-              }}
-              onSuccess={onRenegotiationSuccess || (() => {})}
-              displayCurrency={displayCurrency}
-            />
-          )}
-        </div>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <DollarSign className="h-4 w-4" />
+          Condiciones Comerciales
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
