@@ -107,7 +107,8 @@ export const MultipleLinesSelector = ({
       const { data: existingOCs } = await supabase
         .from("purchase_orders")
         .select("amount_uf")
-        .eq("opex_master_id", line.id);
+        .eq("opex_master_id", line.id)
+        .is("deleted_at", null);
       
       // Get pending requests linked to this OPEX master category
       const { data: existingRequests } = await supabase
@@ -119,7 +120,9 @@ export const MultipleLinesSelector = ({
       const usedByOC = (existingOCs || []).reduce((sum, oc) => sum + oc.amount_uf, 0);
       const usedByRequests = (existingRequests || []).reduce((sum, r) => sum + r.amount_uf, 0);
       
-      available[line.id] = Math.max(0, Math.round((line.amount_uf - usedByOC - usedByRequests) * 10000) / 10000);
+      // OPEX master amounts are stored as negative (expenses), so use absolute value
+      const budgetAmount = Math.abs(line.amount_uf);
+      available[line.id] = Math.max(0, Math.round((budgetAmount - usedByOC - usedByRequests) * 10000) / 10000);
     }
     
     setAvailableAmounts(available);
