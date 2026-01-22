@@ -376,9 +376,9 @@ const Contracts = () => {
           (contract.status === "vencido" && contract.is_expired_but_operating)
         );
       } else if (statusFilter === "vencido") {
-        // Only show vencido contracts that are NOT operating (fully expired)
+        // Show all vencido contracts (including those still operating - they appear in both lists)
         filtered = filtered.filter((contract) => 
-          contract.status === "vencido" && !contract.is_expired_but_operating
+          contract.status === "vencido"
         );
       } else {
         filtered = filtered.filter((contract) => contract.status === statusFilter);
