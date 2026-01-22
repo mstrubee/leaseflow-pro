@@ -132,30 +132,29 @@ export const OCRequestDialog = ({
   };
 
   const handleCreate = async () => {
-    // Calculate total from selected lines or single amount
-    let totalAmountUf: number;
-    let lineNamesForNumber: string[] = [];
+    // Amount is always entered in basic tab
+    const amount = parseFloat(form.amount) || 0;
+    if (amount <= 0) {
+      toast({ variant: "destructive", title: "Error", description: "Ingrese un monto válido" });
+      return;
+    }
     
+    // Convert to UF if entered in CLP
+    let totalAmountUf = form.currency === "CLP" && ufValue > 0 ? amount / ufValue : amount;
+    
+    // Get line names for the request number
+    let lineNamesForNumber: string[] = [];
     if (useMultipleLines) {
-      const validLines = selectedLines.filter(l => l.amount > 0);
-      totalAmountUf = validLines.reduce((sum, l) => sum + l.amount, 0);
+      const validLines = selectedLines.filter(l => l.lineId);
+      if (validLines.length === 0) {
+        toast({ variant: "destructive", title: "Error", description: "Seleccione al menos una línea de presupuesto" });
+        return;
+      }
       lineNamesForNumber = validLines.map(l => l.lineName);
-      
-      if (totalAmountUf <= 0) {
-        toast({ variant: "destructive", title: "Error", description: "Seleccione líneas y asigne montos" });
-        return;
-      }
     } else {
-      const amount = parseFloat(form.amount) || 0;
-      if (amount <= 0) {
-        toast({ variant: "destructive", title: "Error", description: "Ingrese un monto válido" });
-        return;
-      }
-      
-      totalAmountUf = form.currency === "CLP" && ufValue > 0 ? amount / ufValue : amount;
       lineNamesForNumber = [lineName];
       
-      // Validate against available
+      // Validate against available (only for single line mode)
       if (totalAmountUf > lineAvailable + 0.01) {
         toast({ 
           variant: "destructive", 
@@ -280,11 +279,10 @@ export const OCRequestDialog = ({
   };
 
   const totalPlanned = paymentPlan.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-  const currentTotal = useMultipleLines 
-    ? selectedLines.reduce((sum, l) => sum + l.amount, 0)
-    : (form.currency === "CLP" && ufValue > 0 
-        ? (parseFloat(form.amount) || 0) / ufValue 
-        : parseFloat(form.amount) || 0);
+  // Amount is always from the form
+  const currentTotal = form.currency === "CLP" && ufValue > 0 
+    ? (parseFloat(form.amount) || 0) / ufValue 
+    : parseFloat(form.amount) || 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -333,48 +331,41 @@ export const OCRequestDialog = ({
               />
             </div>
 
-            {/* Amount (only when not using multiple lines) */}
-            {!useMultipleLines && (
-              <>
-                <div className="p-3 rounded-md bg-muted/50 border text-sm space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Presupuesto línea:</span>
-                    <span className="font-medium">{formatUF(lineBudget)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Disponible:</span>
-                    <span className={`font-medium ${lineAvailable <= 0 ? 'text-destructive' : 'text-green-600'}`}>
-                      {formatUF(lineAvailable)}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label>Monto</Label>
-                    <Input
-                      type="number"
-                      value={form.amount}
-                      onChange={(e) => setForm(prev => ({ ...prev, amount: e.target.value }))}
-                      placeholder="0.00"
-                      min="0"
-                      step="0.01"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Moneda</Label>
-                    <Select value={form.currency} onValueChange={(v) => setForm(prev => ({ ...prev, currency: v }))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="UF">UF</SelectItem>
-                        <SelectItem value="CLP">CLP</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </>
+            {/* Amount - always shown */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Monto</Label>
+                <Input
+                  type="number"
+                  value={form.amount}
+                  onChange={(e) => setForm(prev => ({ ...prev, amount: e.target.value }))}
+                  placeholder="0.00"
+                  min="0"
+                  step="0.01"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Moneda</Label>
+                <Select value={form.currency} onValueChange={(v) => setForm(prev => ({ ...prev, currency: v }))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UF">UF</SelectItem>
+                    <SelectItem value="CLP">$</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
+            {/* Show equivalent */}
+            {parseFloat(form.amount) > 0 && ufValue > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Equivalente: {form.currency === "CLP" 
+                  ? `UF ${(parseFloat(form.amount) / ufValue).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : `$ ${Math.round(parseFloat(form.amount) * ufValue).toLocaleString("es-CL")}`
+                }
+              </p>
             )}
 
             {/* Supplier */}

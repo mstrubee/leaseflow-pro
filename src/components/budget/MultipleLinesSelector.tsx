@@ -259,18 +259,7 @@ export const MultipleLinesSelector = ({
     }
   };
 
-  const handleAmountChange = (lineId: string, amount: number) => {
-    onSelectionChange(
-      selectedLines.map(sl => 
-        sl.lineId === lineId ? { ...sl, amount: Math.min(amount, sl.maxAmount) } : sl
-      )
-    );
-  };
-
   const isLineSelected = (lineId: string) => selectedLines.some(sl => sl.lineId === lineId);
-  const getLineAmount = (lineId: string) => selectedLines.find(sl => sl.lineId === lineId)?.amount || 0;
-
-  const totalSelected = selectedLines.reduce((sum, sl) => sum + sl.amount, 0);
 
   const renderLine = (line: BudgetLine, level: number = 0): React.ReactNode => {
     const hasChildren = line.children && line.children.length > 0;
@@ -308,21 +297,9 @@ export const MultipleLinesSelector = ({
           </span>
 
           {isLeaf && (
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-xs">
-                Disp: {formatUF(available)}
-              </Badge>
-              {isSelected && (
-                <Input
-                  type="number"
-                  value={getLineAmount(line.id)}
-                  onChange={(e) => handleAmountChange(line.id, parseFloat(e.target.value) || 0)}
-                  className="h-6 w-24 text-xs"
-                  max={available}
-                  step="0.01"
-                />
-              )}
-            </div>
+            <Badge variant="outline" className="text-xs">
+              Disp: {formatUF(available)}
+            </Badge>
           )}
         </div>
 
@@ -341,15 +318,7 @@ export const MultipleLinesSelector = ({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <Label>Seleccionar Líneas Autorizadas</Label>
-        <div className="text-sm">
-          Total: <span className={cn("font-medium", maxTotal && totalSelected > maxTotal && "text-destructive")}>
-            {formatUF(totalSelected)}
-          </span>
-          {maxTotal && <span className="text-muted-foreground"> / {formatUF(maxTotal)}</span>}
-        </div>
-      </div>
+      <Label>Seleccionar Línea(s) de Imputación</Label>
       
       <ScrollArea className="h-[300px] border rounded-lg p-2">
         {lines.length > 0 ? (
@@ -363,11 +332,10 @@ export const MultipleLinesSelector = ({
 
       {selectedLines.length > 0 && (
         <div className="p-3 bg-muted/50 rounded-lg space-y-1">
-          <p className="text-xs font-medium text-muted-foreground">Líneas seleccionadas:</p>
+          <p className="text-xs font-medium text-muted-foreground">Líneas seleccionadas ({selectedLines.length}):</p>
           {selectedLines.map(sl => (
-            <div key={sl.lineId} className="flex justify-between text-sm">
-              <span className="truncate">{sl.lineName}</span>
-              <span className="font-mono">{formatUF(sl.amount)}</span>
+            <div key={sl.lineId} className="text-sm">
+              <span className="truncate">• {sl.lineName}</span>
             </div>
           ))}
         </div>
