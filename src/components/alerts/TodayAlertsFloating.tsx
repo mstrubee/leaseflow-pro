@@ -158,6 +158,10 @@ export function TodayAlertsFloating() {
 
       if (error) throw error;
 
+      // Immediately remove the completed alert from local state for instant UI feedback
+      setTodayAlerts(prev => prev.filter(a => a.id !== alertId));
+      setWeekAlerts(prev => prev.filter(a => a.id !== alertId));
+
       toast({
         title: "Alerta completada",
         description: "La alerta ha sido marcada como completada",
