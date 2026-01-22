@@ -297,9 +297,6 @@ export function generateSelectedKPIsPDF(
       }
     }
 
-    doc.text(`Frecuencia: ${kpi.frequency?.name || "-"}`, 14, currentY);
-    currentY += 6;
-
     doc.text(`Estado: ${kpi.is_active ? "Activo" : "Inactivo"}`, 14, currentY);
     currentY += 10;
 
@@ -322,21 +319,24 @@ export function generateSelectedKPIsPDF(
         const assignedUser = (sub as any).responsible_user;
         return [
           sub.name,
+          sub.description?.substring(0, 80) || "-",
           assignedUser?.full_name || assignedUser?.email || "-",
-          sub.goal_value != null ? `${sub.goal_value} ${sub.unit || ""}` : "-",
           sub.is_active ? "Activo" : "Inactivo",
         ];
       });
 
       autoTable(doc, {
         startY: currentY,
-        head: [["Nombre Sub-KPI", "Responsable", "Meta", "Estado"]],
+        head: [["Nombre Sub-KPI", "Objetivo/Descripción", "Responsable", "Estado"]],
         body: subTableData,
         theme: "striped",
         headStyles: { fillColor: [100, 149, 237] },
         styles: { fontSize: 9 },
         margin: { left: 18 },
         tableWidth: pageWidth - 36,
+        columnStyles: {
+          1: { cellWidth: 60 },
+        },
       });
 
       currentY = (doc as any).lastAutoTable.finalY + 15;
@@ -344,44 +344,6 @@ export function generateSelectedKPIsPDF(
       currentY += 5;
     }
   });
-
-  // Summary by category at the end
-  if (currentY > 220) {
-    doc.addPage();
-    currentY = 20;
-  }
-
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "bold");
-  doc.text("Resumen por Categoría", 14, currentY);
-  currentY += 8;
-
-  const categoryData = categories
-    .filter((c) => c.is_active)
-    .map((cat) => {
-      const catKPIs = selectedKPIs.filter((k) => k.category_id === cat.id);
-      const catSubKPIs = subKPIs.filter((s) => {
-        const parentKPI = selectedKPIs.find((k) => k.id === (s as any).parent_kpi_id);
-        return parentKPI?.category_id === cat.id;
-      });
-      return [
-        cat.name,
-        catKPIs.length.toString(),
-        catSubKPIs.length.toString(),
-      ];
-    })
-    .filter((row) => parseInt(row[1]) > 0 || parseInt(row[2]) > 0);
-
-  if (categoryData.length > 0) {
-    autoTable(doc, {
-      startY: currentY,
-      head: [["Categoría", "KPIs", "Sub-KPIs"]],
-      body: categoryData,
-      theme: "grid",
-      headStyles: { fillColor: [59, 130, 246] },
-      styles: { halign: "center" },
-    });
-  }
 
   doc.save("informe-kpis-seleccionados.pdf");
 }
