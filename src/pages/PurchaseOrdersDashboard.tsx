@@ -1563,7 +1563,8 @@ const PurchaseOrdersDashboard = () => {
                     </TableHeader>
                     <TableBody>
                       {filteredRequests.map((req) => {
-                        const isMulti = req.is_multi_contract && req.allocations && req.allocations.length > 0;
+                        // Detect multi-contract by allocations presence (more robust than flag alone)
+                        const isMulti = req.allocations && req.allocations.length > 0;
                         const isMultiExpanded = expandedMultiRequests.has(req.id);
 
                         return (
