@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -10,11 +10,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2, Upload, FileText, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { useAuth } from "@/hooks/useAuth";
-
+import { uploadFileToStorage } from "@/lib/storageUtils";
 interface Contract {
   id: string;
   name: string;
@@ -79,6 +79,11 @@ export const CentralizedOrderCreator = ({
   const [singleContractId, setSingleContractId] = useState("");
   const [contractAllocations, setContractAllocations] = useState<ContractAllocation[]>([]);
   const [paymentPlan, setPaymentPlan] = useState<PaymentPlanItem[]>([]);
+  
+  // Quotation file state
+  const [quotationFile, setQuotationFile] = useState<File | null>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [formData, setFormData] = useState({
     description: "",
@@ -213,6 +218,44 @@ export const CentralizedOrderCreator = ({
     setPaymentPlan(prev => prev.filter((_, i) => i !== index));
   };
   
+  // Handle quotation file selection
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setQuotationFile(file);
+    }
+  };
+  
+  const handleRemoveFile = () => {
+    setQuotationFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+  
+  // Upload quotation file
+  const uploadQuotationFile = async (): Promise<{ url: string; fileName: string } | null> => {
+    if (!quotationFile) return null;
+    
+    setUploadingFile(true);
+    try {
+      const timestamp = new Date().toISOString().split('T')[0].replace(/-/g, '');
+      const sanitizedName = quotationFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const filePath = `quotations/${timestamp}_${sanitizedName}`;
+      
+      const { path, error } = await uploadFileToStorage(filePath, quotationFile);
+      
+      if (error) throw error;
+      
+      return { url: `storage://${path}`, fileName: quotationFile.name };
+    } catch (error) {
+      console.error("Error uploading quotation file:", error);
+      throw error;
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+  
   // Generate request/order number
   const generateNumber = async () => {
     const today = new Date();
@@ -291,6 +334,12 @@ export const CentralizedOrderCreator = ({
         // Create OC Request
         const { number, correlative } = await generateNumber();
         
+        // Upload quotation file if present
+        let quotationData: { url: string; fileName: string } | null = null;
+        if (quotationFile) {
+          quotationData = await uploadQuotationFile();
+        }
+        
         const requestPayload: any = {
           contract_id: primaryContractId,
           budget_id: null,
@@ -310,7 +359,9 @@ export const CentralizedOrderCreator = ({
           supplier_name: formData.supplier_name,
           year: year,
           status: "pending",
-          created_by: user?.id
+          created_by: user?.id,
+          quotation_url: quotationData?.url || null,
+          quotation_file_name: quotationData?.fileName || null
         };
         
         const { data: requestData, error: requestError } = await supabase
@@ -385,6 +436,12 @@ export const CentralizedOrderCreator = ({
         // Create Purchase Order directly
         const { number } = await generateNumber();
         
+        // Upload quotation file if present
+        let quotationData: { url: string; fileName: string } | null = null;
+        if (quotationFile) {
+          quotationData = await uploadQuotationFile();
+        }
+        
         const orderPayload: any = {
           contract_id: primaryContractId,
           budget_id: null,
@@ -402,7 +459,8 @@ export const CentralizedOrderCreator = ({
           supplier_name: formData.supplier_name,
           year: year,
           status: "active",
-          budget_classification: "opex"
+          budget_classification: "OPEX",
+          attachment_url: quotationData?.url || null
         };
         
         const { data: orderData, error: orderError } = await supabase
@@ -462,6 +520,10 @@ export const CentralizedOrderCreator = ({
     setSingleContractId("");
     setContractAllocations([]);
     setPaymentPlan([]);
+    setQuotationFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
     setFormData({
       description: "",
       amount: "",
@@ -590,6 +652,44 @@ export const CentralizedOrderCreator = ({
                   />
                 </div>
                 
+                {/* Quotation File Upload */}
+                <div className="space-y-2">
+                  <Label>Cotización (archivo)</Label>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                  />
+                  {!quotationFile ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingFile}
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Subir cotización
+                    </Button>
+                  ) : (
+                    <div className="flex items-center gap-2 p-2 border rounded bg-muted/50">
+                      <FileText className="h-4 w-4 text-primary flex-shrink-0" />
+                      <span className="text-sm flex-1 truncate">{quotationFile.name}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 flex-shrink-0"
+                        onClick={handleRemoveFile}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                
                 {/* Order specific fields */}
                 {mode === "order" && (
                   <div className="grid grid-cols-2 gap-3">
@@ -655,61 +755,63 @@ export const CentralizedOrderCreator = ({
                         Agregue contratos para asignar montos
                       </p>
                     ) : (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Contrato</TableHead>
-                            <TableHead>Monto ({formData.currency})</TableHead>
-                            <TableHead className="w-10"></TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {contractAllocations.map((alloc, idx) => (
-                            <TableRow key={idx}>
-                              <TableCell>
-                                <Select 
-                                  value={alloc.contractId} 
-                                  onValueChange={(v) => handleUpdateAllocation(idx, "contractId", v)}
-                                >
-                                  <SelectTrigger className="w-full">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {contracts.map(c => (
-                                      <SelectItem 
-                                        key={c.id} 
-                                        value={c.id}
-                                        disabled={contractAllocations.some((a, i) => i !== idx && a.contractId === c.id)}
-                                      >
-                                        {c.name}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  type="number"
-                                  value={alloc.amount || ""}
-                                  onChange={(e) => handleUpdateAllocation(idx, "amount", parseFloat(e.target.value) || 0)}
-                                  min="0"
-                                  step="1"
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => handleRemoveAllocation(idx)}
-                                >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                              </TableCell>
+                      <ScrollArea className="max-h-[250px]">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Contrato</TableHead>
+                              <TableHead>Monto ({formData.currency})</TableHead>
+                              <TableHead className="w-10"></TableHead>
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                          </TableHeader>
+                          <TableBody>
+                            {contractAllocations.map((alloc, idx) => (
+                              <TableRow key={idx}>
+                                <TableCell>
+                                  <Select 
+                                    value={alloc.contractId} 
+                                    onValueChange={(v) => handleUpdateAllocation(idx, "contractId", v)}
+                                  >
+                                    <SelectTrigger className="w-full">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {contracts.map(c => (
+                                        <SelectItem 
+                                          key={c.id} 
+                                          value={c.id}
+                                          disabled={contractAllocations.some((a, i) => i !== idx && a.contractId === c.id)}
+                                        >
+                                          {c.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </TableCell>
+                                <TableCell>
+                                  <Input
+                                    type="number"
+                                    value={alloc.amount || ""}
+                                    onChange={(e) => handleUpdateAllocation(idx, "amount", parseFloat(e.target.value) || 0)}
+                                    min="0"
+                                    step="1"
+                                  />
+                                </TableCell>
+                                <TableCell>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleRemoveAllocation(idx)}
+                                  >
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </ScrollArea>
                     )}
                     
                     {contractAllocations.length > 0 && (
