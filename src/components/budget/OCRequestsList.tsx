@@ -158,12 +158,39 @@ export const OCRequestsList = ({
         `)
         .eq("contract_id", contractId);
 
-      // Get budget types for each request
-      const allRequests = [...(directData || [])];
+      // Build a map of allocations by request ID for this contract
+      const allocationsByRequestId: Record<string, { amount_uf: number; amount_clp: number }> = {};
+      for (const alloc of (allocationsData || [])) {
+        allocationsByRequestId[alloc.oc_request_id] = {
+          amount_uf: alloc.amount_uf,
+          amount_clp: alloc.amount_clp
+        };
+      }
+
+      // Process direct requests - check if they have allocations and update amounts accordingly
+      const processedDirectRequests = (directData || []).map(req => {
+        const allocation = allocationsByRequestId[req.id];
+        if (allocation) {
+          // This direct request has an allocation for this contract - use allocated amounts
+          return {
+            ...req,
+            is_multi_contract: true,
+            allocated_amount_uf: allocation.amount_uf,
+            allocated_amount_clp: allocation.amount_clp,
+            total_request_amount_uf: req.amount_uf,
+            total_request_amount_clp: req.amount_clp,
+            // Override displayed amounts with allocated amounts
+            amount_uf: allocation.amount_uf,
+            amount_clp: allocation.amount_clp
+          };
+        }
+        return req;
+      });
+
       const multiContractRequests: OCRequest[] = [];
 
-      // Process multi-contract allocations (exclude if already in direct requests)
-      const directIds = new Set(allRequests.map(r => r.id));
+      // Process multi-contract allocations that are NOT already in direct requests
+      const directIds = new Set(processedDirectRequests.map(r => r.id));
       for (const alloc of (allocationsData || [])) {
         const req = alloc.oc_requests as any;
         if (req && !directIds.has(req.id)) {
@@ -185,7 +212,7 @@ export const OCRequestsList = ({
         }
       }
 
-      const combinedRequests = [...allRequests, ...multiContractRequests];
+      const combinedRequests = [...processedDirectRequests, ...multiContractRequests];
       const budgetIds = [...new Set(combinedRequests.map(r => r.budget_id).filter(Boolean))];
       
       let budgetTypeMap: Record<string, string> = {};
