@@ -361,7 +361,8 @@ export const CentralizedOrderCreator = ({
           status: "pending",
           created_by: user?.id,
           quotation_url: quotationData?.url || null,
-          quotation_file_name: quotationData?.fileName || null
+          quotation_file_name: quotationData?.fileName || null,
+          is_multi_contract: isMultiContract
         };
         
         const { data: requestData, error: requestError } = await supabase
