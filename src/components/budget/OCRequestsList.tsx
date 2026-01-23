@@ -36,6 +36,12 @@ interface OCRequest {
   budget_type?: string; // Joined from contract_budgets
   quotation_url?: string | null;
   quotation_file_name?: string | null;
+  // Multi-contract allocation info
+  is_multi_contract?: boolean;
+  allocated_amount_uf?: number;
+  allocated_amount_clp?: number;
+  total_request_amount_uf?: number;
+  total_request_amount_clp?: number;
 }
 
 interface SelectedLine {
@@ -122,7 +128,7 @@ export const OCRequestsList = ({
   const loadRequests = async () => {
     setLoading(true);
     try {
-      // First get the requests
+      // First get direct requests for this contract
       let query = supabase
         .from("oc_requests")
         .select("*")
@@ -134,12 +140,53 @@ export const OCRequestsList = ({
         query = query.eq("budget_line_id", budgetLineId);
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
+      const { data: directData, error: directError } = await query;
+      if (directError) throw directError;
+
+      // Also get multi-contract allocations for this contract
+      const { data: allocationsData, error: allocError } = await supabase
+        .from("oc_request_contract_allocations")
+        .select(`
+          oc_request_id,
+          amount_uf,
+          amount_clp,
+          oc_requests!inner(
+            id, request_number, request_date, line_name, project_name,
+            description, amount_uf, amount_clp, supplier_name, status,
+            purchase_order_id, created_at, budget_id, quotation_url, quotation_file_name
+          )
+        `)
+        .eq("contract_id", contractId);
 
       // Get budget types for each request
-      const requestsWithType: OCRequest[] = [];
-      const budgetIds = [...new Set((data || []).map(r => r.budget_id).filter(Boolean))];
+      const allRequests = [...(directData || [])];
+      const multiContractRequests: OCRequest[] = [];
+
+      // Process multi-contract allocations (exclude if already in direct requests)
+      const directIds = new Set(allRequests.map(r => r.id));
+      for (const alloc of (allocationsData || [])) {
+        const req = alloc.oc_requests as any;
+        if (req && !directIds.has(req.id)) {
+          // Filter by year
+          const reqDate = new Date(req.request_date);
+          if (reqDate.getFullYear() === year) {
+            multiContractRequests.push({
+              ...req,
+              is_multi_contract: true,
+              allocated_amount_uf: alloc.amount_uf,
+              allocated_amount_clp: alloc.amount_clp,
+              total_request_amount_uf: req.amount_uf,
+              total_request_amount_clp: req.amount_clp,
+              // Override displayed amounts with allocated amounts
+              amount_uf: alloc.amount_uf,
+              amount_clp: alloc.amount_clp
+            });
+          }
+        }
+      }
+
+      const combinedRequests = [...allRequests, ...multiContractRequests];
+      const budgetIds = [...new Set(combinedRequests.map(r => r.budget_id).filter(Boolean))];
       
       let budgetTypeMap: Record<string, string> = {};
       if (budgetIds.length > 0) {
@@ -154,12 +201,13 @@ export const OCRequestsList = ({
         }, {} as Record<string, string>);
       }
 
-      for (const req of (data || [])) {
-        requestsWithType.push({
-          ...req,
-          budget_type: req.budget_id ? budgetTypeMap[req.budget_id] : undefined
-        } as OCRequest);
-      }
+      const requestsWithType: OCRequest[] = combinedRequests.map(req => ({
+        ...req,
+        budget_type: req.budget_id ? budgetTypeMap[req.budget_id] : undefined
+      })) as OCRequest[];
+
+      // Sort by created_at descending
+      requestsWithType.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
       setRequests(requestsWithType);
     } catch (error) {
@@ -646,17 +694,33 @@ export const OCRequestsList = ({
               {pendingRequests.map((request) => (
                 <TableRow key={request.id}>
                   <TableCell>
-                    <Badge variant="outline" className={request.budget_type === "capex" 
-                      ? "bg-blue-50 text-blue-700 border-blue-300 text-[10px]" 
-                      : "bg-orange-50 text-orange-700 border-orange-300 text-[10px]"
-                    }>
-                      {request.budget_type?.toUpperCase() || "N/A"}
-                    </Badge>
+                    <div className="flex items-center gap-1">
+                      <Badge variant="outline" className={request.budget_type === "capex" 
+                        ? "bg-blue-50 text-blue-700 border-blue-300 text-[10px]" 
+                        : "bg-orange-50 text-orange-700 border-orange-300 text-[10px]"
+                      }>
+                        {request.budget_type?.toUpperCase() || "N/A"}
+                      </Badge>
+                      {request.is_multi_contract && (
+                        <Badge variant="secondary" className="text-[9px] px-1">
+                          Multi
+                        </Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="font-mono text-xs">{request.request_number}</TableCell>
                   <TableCell>{format(new Date(request.request_date), 'dd/MM/yyyy', { locale: es })}</TableCell>
                   <TableCell className="truncate max-w-[150px]">{request.line_name}</TableCell>
-                  <TableCell className="text-right">{formatUF(request.amount_uf)}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex flex-col items-end">
+                      <span>{formatUF(request.amount_uf)}</span>
+                      {request.is_multi_contract && request.total_request_amount_uf && (
+                        <span className="text-[10px] text-muted-foreground">
+                          (Total: {formatUF(request.total_request_amount_uf)})
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell className="truncate max-w-[120px]">{request.supplier_name || '-'}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
