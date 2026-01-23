@@ -2557,6 +2557,48 @@ export type Database = {
           },
         ]
       }
+      oc_request_contract_allocations: {
+        Row: {
+          amount_clp: number | null
+          amount_uf: number
+          contract_id: string
+          created_at: string
+          id: string
+          oc_request_id: string
+        }
+        Insert: {
+          amount_clp?: number | null
+          amount_uf?: number
+          contract_id: string
+          created_at?: string
+          id?: string
+          oc_request_id: string
+        }
+        Update: {
+          amount_clp?: number | null
+          amount_uf?: number
+          contract_id?: string
+          created_at?: string
+          id?: string
+          oc_request_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "oc_request_contract_allocations_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "oc_request_contract_allocations_oc_request_id_fkey"
+            columns: ["oc_request_id"]
+            isOneToOne: false
+            referencedRelation: "oc_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       oc_request_templates: {
         Row: {
           created_at: string
@@ -2600,6 +2642,7 @@ export type Database = {
           description: string | null
           id: string
           input_currency: string | null
+          is_multi_contract: boolean | null
           line_name: string
           opex_master_id: string | null
           project_name: string
@@ -2625,6 +2668,7 @@ export type Database = {
           description?: string | null
           id?: string
           input_currency?: string | null
+          is_multi_contract?: boolean | null
           line_name: string
           opex_master_id?: string | null
           project_name: string
@@ -2650,6 +2694,7 @@ export type Database = {
           description?: string | null
           id?: string
           input_currency?: string | null
+          is_multi_contract?: boolean | null
           line_name?: string
           opex_master_id?: string | null
           project_name?: string
@@ -3364,6 +3409,48 @@ export type Database = {
           },
         ]
       }
+      purchase_order_contract_allocations: {
+        Row: {
+          amount_clp: number | null
+          amount_uf: number
+          contract_id: string
+          created_at: string
+          id: string
+          purchase_order_id: string
+        }
+        Insert: {
+          amount_clp?: number | null
+          amount_uf?: number
+          contract_id: string
+          created_at?: string
+          id?: string
+          purchase_order_id: string
+        }
+        Update: {
+          amount_clp?: number | null
+          amount_uf?: number
+          contract_id?: string
+          created_at?: string
+          id?: string
+          purchase_order_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_order_contract_allocations_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_order_contract_allocations_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       purchase_orders: {
         Row: {
           amount_clp: number | null
@@ -3382,6 +3469,7 @@ export type Database = {
           drive_file_id: string | null
           id: string
           input_currency: string | null
+          is_multi_contract: boolean | null
           opex_category_id: string | null
           opex_master_id: string | null
           order_date: string
@@ -3411,6 +3499,7 @@ export type Database = {
           drive_file_id?: string | null
           id?: string
           input_currency?: string | null
+          is_multi_contract?: boolean | null
           opex_category_id?: string | null
           opex_master_id?: string | null
           order_date?: string
@@ -3440,6 +3529,7 @@ export type Database = {
           drive_file_id?: string | null
           id?: string
           input_currency?: string | null
+          is_multi_contract?: boolean | null
           opex_category_id?: string | null
           opex_master_id?: string | null
           order_date?: string
