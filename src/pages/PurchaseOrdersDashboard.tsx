@@ -1624,14 +1624,28 @@ const PurchaseOrdersDashboard = () => {
                                       <Edit className="h-3 w-3" />
                                     </Button>
                                   )}
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => navigate(`/contracts/${req.contract_id}?section=ordenes-compra&returnTo=purchase-orders`)}
-                                    className="h-7 px-2"
-                                  >
-                                    <ExternalLink className="h-3 w-3" />
-                                  </Button>
+                                  {isMulti ? (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => toggleMultiRequest(req.id)}
+                                      className="h-7 px-2 gap-1"
+                                      title="Ver contratos asignados"
+                                    >
+                                      <Layers className="h-3 w-3" />
+                                      {isMultiExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => navigate(`/contracts/${req.contract_id}?section=ordenes-compra&returnTo=purchase-orders`)}
+                                      className="h-7 px-2"
+                                      title="Ver contrato"
+                                    >
+                                      <ExternalLink className="h-3 w-3" />
+                                    </Button>
+                                  )}
                                 </div>
                               </TableCell>
                             </TableRow>
