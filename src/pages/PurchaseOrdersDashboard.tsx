@@ -55,12 +55,15 @@ import {
   ClipboardList,
   Download,
   CheckCircle2,
+  Plus,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
+import { CentralizedOrderCreator } from "@/components/budget/CentralizedOrderCreator";
 
 interface Invoice {
   id: string;
@@ -142,8 +145,13 @@ const COLORS = [
 const PurchaseOrdersDashboard = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading, isAdmin } = useAuth();
+  const { ufValue } = useEconomicIndicators();
 
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
+  
+  // Centralized creator dialogs
+  const [showRequestCreator, setShowRequestCreator] = useState(false);
+  const [showOrderCreator, setShowOrderCreator] = useState(false);
   const [ocRequests, setOcRequests] = useState<OCRequest[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
@@ -691,6 +699,14 @@ const PurchaseOrdersDashboard = () => {
                   Eliminar ({selectedOrders.size})
                 </Button>
               )}
+              <Button variant="outline" size="sm" onClick={() => setShowRequestCreator(true)}>
+                <Plus className="h-4 w-4 mr-1" />
+                Solicitud OC
+              </Button>
+              <Button size="sm" onClick={() => setShowOrderCreator(true)}>
+                <Plus className="h-4 w-4 mr-1" />
+                Nueva OC
+              </Button>
               <Button variant="outline" size="sm" onClick={expandAll}>
                 <ChevronsUpDown className="h-4 w-4 mr-1" />
                 Expandir
@@ -1481,6 +1497,24 @@ const PurchaseOrdersDashboard = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Centralized Order Creators */}
+      <CentralizedOrderCreator
+        open={showRequestCreator}
+        onOpenChange={setShowRequestCreator}
+        mode="request"
+        year={parseInt(yearFilter)}
+        ufValue={ufValue}
+        onSuccess={loadData}
+      />
+      <CentralizedOrderCreator
+        open={showOrderCreator}
+        onOpenChange={setShowOrderCreator}
+        mode="order"
+        year={parseInt(yearFilter)}
+        ufValue={ufValue}
+        onSuccess={loadData}
+      />
     </div>
   );
 };
