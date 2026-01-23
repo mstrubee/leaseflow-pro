@@ -33,6 +33,10 @@ interface PurchaseOrder {
   opex_category_id: string | null;
   deleted_at: string | null;
   deleted_by: string | null;
+  // Multi-contract allocation info
+  is_multi_contract?: boolean;
+  allocated_amount_uf?: number;
+  total_order_amount_uf?: number;
 }
 
 interface PurchaseOrdersModuleProps {
@@ -155,7 +159,8 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
   const loadOrders = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      // Get direct orders for this contract
+      const { data: directData, error: directError } = await supabase
         .from("purchase_orders")
         .select("*")
         .eq("contract_id", contractId)
@@ -163,12 +168,49 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         .is("deleted_at", null)
         .order("order_date", { ascending: false });
 
-      if (error) throw error;
-      setOrders(data || []);
+      if (directError) throw directError;
+
+      // Also get multi-contract allocations for this contract
+      const { data: allocationsData, error: allocError } = await supabase
+        .from("purchase_order_contract_allocations")
+        .select(`
+          purchase_order_id,
+          amount_uf,
+          amount_clp,
+          purchase_orders!inner(
+            id, order_number, supplier_name, order_date, amount_uf,
+            description, attachment_url, year, status, budget_id,
+            budget_line_id, opex_category_id, deleted_at, deleted_by
+          )
+        `)
+        .eq("contract_id", contractId);
+
+      // Process multi-contract allocations (exclude if already in direct orders)
+      const allOrders = [...(directData || [])];
+      const directIds = new Set(allOrders.map(o => o.id));
+
+      for (const alloc of (allocationsData || [])) {
+        const order = alloc.purchase_orders as any;
+        if (order && !directIds.has(order.id) && order.year === selectedYear && !order.deleted_at) {
+          allOrders.push({
+            ...order,
+            is_multi_contract: true,
+            allocated_amount_uf: alloc.amount_uf,
+            total_order_amount_uf: order.amount_uf,
+            // Override displayed amount with allocated amount
+            amount_uf: alloc.amount_uf
+          });
+        }
+      }
+
+      // Sort by order_date descending
+      allOrders.sort((a, b) => new Date(b.order_date).getTime() - new Date(a.order_date).getTime());
+
+      setOrders(allOrders);
 
       // Load invoice and credit note data for each order
-      if (data && data.length > 0) {
-        const orderIds = data.map(o => o.id);
+      if (allOrders.length > 0) {
+        const orderIds = allOrders.map(o => o.id);
         
         const { data: invoicesData } = await supabase
           .from("invoices")
@@ -1002,14 +1044,30 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                     <TableCell>{new Date(order.order_date).toLocaleDateString("es-CL")}</TableCell>
                     <TableCell>{order.supplier_name || "-"}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="text-xs">
-                        {getBudgetTypeForOrder(order)}
-                      </Badge>
+                      <div className="flex items-center gap-1">
+                        <Badge variant="outline" className="text-xs">
+                          {getBudgetTypeForOrder(order)}
+                        </Badge>
+                        {order.is_multi_contract && (
+                          <Badge variant="secondary" className="text-[9px] px-1">
+                            Multi
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="max-w-32 truncate" title={order.description || ""}>
                       {order.description || "-"}
                     </TableCell>
-                    <TableCell className="text-right font-mono">{formatUF(order.amount_uf)}</TableCell>
+                    <TableCell className="text-right font-mono">
+                      <div className="flex flex-col items-end">
+                        <span>{formatUF(order.amount_uf)}</span>
+                        {order.is_multi_contract && order.total_order_amount_uf && (
+                          <span className="text-[10px] text-muted-foreground">
+                            (Total: {formatUF(order.total_order_amount_uf)})
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>{getStatusBadge(order)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
