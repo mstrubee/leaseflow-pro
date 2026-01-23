@@ -2647,6 +2647,8 @@ export type Database = {
           opex_master_id: string | null
           project_name: string
           purchase_order_id: string | null
+          quotation_file_name: string | null
+          quotation_url: string | null
           request_date: string
           request_number: string
           status: string
@@ -2673,6 +2675,8 @@ export type Database = {
           opex_master_id?: string | null
           project_name: string
           purchase_order_id?: string | null
+          quotation_file_name?: string | null
+          quotation_url?: string | null
           request_date?: string
           request_number: string
           status?: string
@@ -2699,6 +2703,8 @@ export type Database = {
           opex_master_id?: string | null
           project_name?: string
           purchase_order_id?: string | null
+          quotation_file_name?: string | null
+          quotation_url?: string | null
           request_date?: string
           request_number?: string
           status?: string

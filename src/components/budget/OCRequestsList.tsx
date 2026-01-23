@@ -34,6 +34,8 @@ interface OCRequest {
   created_at: string;
   budget_id: string | null;
   budget_type?: string; // Joined from contract_budgets
+  quotation_url?: string | null;
+  quotation_file_name?: string | null;
 }
 
 interface SelectedLine {
@@ -189,7 +191,8 @@ export const OCRequestsList = ({
         input_currency: "UF",
         uf_value_at_entry: ufValue,
         year: year,
-        status: "abierta"
+        status: "abierta",
+        attachment_url: selectedRequest.quotation_url || null
       }).select("id").single();
 
       if (ocError) throw ocError;
