@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -6,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Save, Trash2, Plus, Calendar, Check, AlertCircle } from "lucide-react";
+import { Loader2, Save, Trash2, Plus, Calendar, Check, AlertCircle, Layers, ExternalLink, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { format, isPast, isToday } from "date-fns";
@@ -26,6 +27,9 @@ interface OCRequest {
   supplier_name: string | null;
   status: "pending" | "converted";
   purchase_order_id: string | null;
+  is_multi_contract?: boolean;
+  quotation_url?: string | null;
+  quotation_file_name?: string | null;
 }
 
 interface BudgetLineAssignment {
@@ -33,6 +37,14 @@ interface BudgetLineAssignment {
   budget_line_id: string;
   amount_uf: number;
   line_name?: string;
+}
+
+interface ContractAllocation {
+  id: string;
+  contract_id: string;
+  contract_name: string;
+  amount_uf: number;
+  amount_clp: number;
 }
 
 interface PaymentPlan {
@@ -62,10 +74,12 @@ export const OCRequestViewDialog = ({
   onRefresh,
   readOnly = false
 }: OCRequestViewDialogProps) => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [request, setRequest] = useState<OCRequest | null>(null);
   const [budgetLines, setBudgetLines] = useState<BudgetLineAssignment[]>([]);
+  const [contractAllocations, setContractAllocations] = useState<ContractAllocation[]>([]);
   const [paymentPlans, setPaymentPlans] = useState<PaymentPlan[]>([]);
   const [activeTab, setActiveTab] = useState("info");
   
@@ -125,6 +139,24 @@ export const OCRequestViewDialog = ({
         })));
       } else {
         setBudgetLines([]);
+      }
+
+      // Load contract allocations (multi-contract)
+      const { data: allocationsData } = await supabase
+        .from("oc_request_contract_allocations")
+        .select("id, contract_id, amount_uf, amount_clp, contracts(name)")
+        .eq("oc_request_id", requestId);
+      
+      if (allocationsData && allocationsData.length > 0) {
+        setContractAllocations(allocationsData.map((a: any) => ({
+          id: a.id,
+          contract_id: a.contract_id,
+          contract_name: a.contracts?.name || "Sin nombre",
+          amount_uf: a.amount_uf || 0,
+          amount_clp: a.amount_clp || 0,
+        })));
+      } else {
+        setContractAllocations([]);
       }
 
       // Load payment plans
@@ -239,18 +271,32 @@ export const OCRequestViewDialog = ({
     return <Badge variant="secondary" className="text-[10px]">Pendiente</Badge>;
   };
 
+  const handleNavigateToContract = (contractId: string) => {
+    onOpenChange(false);
+    navigate(`/contracts/${contractId}?section=ordenes-compra`);
+  };
+
   const totalPlanned = paymentPlans.reduce((sum, p) => sum + p.amount_uf, 0);
   const totalPaid = paymentPlans.filter(p => p.status === "paid").reduce((sum, p) => sum + p.amount_uf, 0);
   const remaining = (request?.amount_uf || 0) - totalPlanned;
+
+  const isMultiContract = contractAllocations.length > 0;
+  const tabCount = isMultiContract ? 4 : 3;
 
   if (!open) return null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
             {request?.status === "converted" ? "Solicitud Convertida" : "Ver/Editar Solicitud de OC"}
+            {isMultiContract && (
+              <Badge variant="outline" className="text-xs gap-1">
+                <Layers className="h-3 w-3" />
+                Centralizado
+              </Badge>
+            )}
           </DialogTitle>
           <DialogDescription>
             {request?.request_number}
@@ -263,8 +309,14 @@ export const OCRequestViewDialog = ({
           </div>
         ) : request ? (
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className={`grid w-full ${isMultiContract ? 'grid-cols-4' : 'grid-cols-3'}`}>
               <TabsTrigger value="info">Información</TabsTrigger>
+              {isMultiContract && (
+                <TabsTrigger value="contracts" className="gap-1">
+                  <Layers className="h-3 w-3" />
+                  Contratos ({contractAllocations.length})
+                </TabsTrigger>
+              )}
               <TabsTrigger value="lines">Líneas ({budgetLines.length})</TabsTrigger>
               <TabsTrigger value="payments">Pagos ({paymentPlans.length})</TabsTrigger>
             </TabsList>
@@ -276,6 +328,11 @@ export const OCRequestViewDialog = ({
                   className={request.status === "converted" ? "bg-green-500" : "bg-yellow-500"}>
                   {request.status === "converted" ? "Convertida a OC" : "Pendiente"}
                 </Badge>
+                {isMultiContract && (
+                  <Badge variant="outline" className="text-xs">
+                    Multi-contrato: {contractAllocations.length} locales
+                  </Badge>
+                )}
               </div>
 
               {/* Summary */}
@@ -285,8 +342,13 @@ export const OCRequestViewDialog = ({
                   <p className="font-medium">{format(new Date(request.request_date), 'dd/MM/yyyy', { locale: es })}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Monto</p>
+                  <p className="text-xs text-muted-foreground">Monto Total</p>
                   <p className="font-medium">{formatUF(request.amount_uf)}</p>
+                  {request.amount_clp > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      ${Math.round(request.amount_clp).toLocaleString("es-CL")} CLP
+                    </p>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Proyecto</p>
@@ -297,6 +359,17 @@ export const OCRequestViewDialog = ({
                   <p className="font-medium truncate">{request.line_name}</p>
                 </div>
               </div>
+
+              {/* Quotation file */}
+              {request.quotation_url && (
+                <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg">
+                  <FileText className="h-4 w-4 text-blue-600" />
+                  <div className="flex-1">
+                    <p className="text-xs text-muted-foreground">Archivo de cotización</p>
+                    <p className="text-sm font-medium">{request.quotation_file_name || "Cotización adjunta"}</p>
+                  </div>
+                </div>
+              )}
 
               {/* Editable fields */}
               {!readOnly && request.status === "pending" && (
@@ -341,6 +414,80 @@ export const OCRequestViewDialog = ({
                 </div>
               )}
             </TabsContent>
+
+            {/* Contracts Tab - Only for multi-contract */}
+            {isMultiContract && (
+              <TabsContent value="contracts" className="space-y-4 mt-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Layers className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Asignación por Contrato</span>
+                </div>
+
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Contrato</TableHead>
+                        <TableHead className="text-right">Monto (UF)</TableHead>
+                        <TableHead className="text-right">Monto (CLP)</TableHead>
+                        <TableHead className="text-right">% del Total</TableHead>
+                        <TableHead className="w-[100px]">Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {contractAllocations.map((alloc) => {
+                        const percentage = request.amount_uf > 0 
+                          ? ((alloc.amount_uf / request.amount_uf) * 100).toFixed(1) 
+                          : "0";
+                        
+                        return (
+                          <TableRow key={alloc.id}>
+                            <TableCell className="font-medium">
+                              {alloc.contract_name}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatUF(alloc.amount_uf)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              ${Math.round(alloc.amount_clp).toLocaleString("es-CL")}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Badge variant="outline" className="text-xs">
+                                {percentage}%
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleNavigateToContract(alloc.contract_id)}
+                                className="h-7 px-2 gap-1"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                Ver
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Summary */}
+                <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
+                  <span className="font-medium">Total Asignado</span>
+                  <div className="text-right">
+                    <span className="font-mono font-medium">
+                      {formatUF(contractAllocations.reduce((sum, a) => sum + a.amount_uf, 0))}
+                    </span>
+                    <span className="text-muted-foreground text-sm ml-2">
+                      (${Math.round(contractAllocations.reduce((sum, a) => sum + a.amount_clp, 0)).toLocaleString("es-CL")} CLP)
+                    </span>
+                  </div>
+                </div>
+              </TabsContent>
+            )}
 
             <TabsContent value="lines" className="space-y-4 mt-4">
               {budgetLines.length > 0 ? (
