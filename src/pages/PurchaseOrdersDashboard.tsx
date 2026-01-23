@@ -56,6 +56,8 @@ import {
   Download,
   CheckCircle2,
   Plus,
+  Edit,
+  Layers,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
@@ -64,6 +66,7 @@ import { es } from "date-fns/locale";
 import { toast } from "sonner";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import { CentralizedOrderCreator } from "@/components/budget/CentralizedOrderCreator";
+import { OCRequestViewDialog } from "@/components/budget/OCRequestViewDialog";
 
 interface Invoice {
   id: string;
@@ -71,6 +74,13 @@ interface Invoice {
   invoice_date: string;
   amount_uf: number;
   reception_status: string;
+}
+
+interface ContractAllocation {
+  contract_id: string;
+  contract_name: string;
+  amount_uf: number;
+  amount_clp: number;
 }
 
 interface PurchaseOrder {
@@ -93,6 +103,8 @@ interface PurchaseOrder {
   invoices_count?: number;
   invoices_total?: number;
   year?: number;
+  is_multi_contract?: boolean;
+  allocations?: ContractAllocation[];
 }
 
 interface OCRequest {
@@ -108,6 +120,10 @@ interface OCRequest {
   contract_id: string;
   year: number;
   converted_oc_id: string | null;
+  is_multi_contract?: boolean;
+  allocations?: ContractAllocation[];
+  quotation_url?: string | null;
+  quotation_file_name?: string | null;
 }
 
 interface Contract {
@@ -157,6 +173,14 @@ const PurchaseOrdersDashboard = () => {
   const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("oc");
+
+  // Edit dialog for OC requests
+  const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
+  const [showEditRequestDialog, setShowEditRequestDialog] = useState(false);
+
+  // Expanded rows for multi-contract items
+  const [expandedMultiRequests, setExpandedMultiRequests] = useState<Set<string>>(new Set());
+  const [expandedMultiOrders, setExpandedMultiOrders] = useState<Set<string>>(new Set());
 
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
@@ -246,6 +270,7 @@ const PurchaseOrdersDashboard = () => {
           budget_line_id,
           opex_category_id,
           supplier_name,
+          is_multi_contract,
           contracts!inner(name),
           budget_lines(name),
           opex_categories(name),
@@ -253,6 +278,23 @@ const PurchaseOrdersDashboard = () => {
         `)
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
+
+      // Load multi-contract allocations for purchase orders
+      const { data: orderAllocationsData } = await supabase
+        .from("purchase_order_contract_allocations")
+        .select("purchase_order_id, contract_id, amount_uf, amount_clp, contracts(name)");
+
+      const orderAllocationsMap = new Map<string, ContractAllocation[]>();
+      (orderAllocationsData || []).forEach((alloc: any) => {
+        const existing = orderAllocationsMap.get(alloc.purchase_order_id) || [];
+        existing.push({
+          contract_id: alloc.contract_id,
+          contract_name: alloc.contracts?.name || "Sin nombre",
+          amount_uf: alloc.amount_uf || 0,
+          amount_clp: alloc.amount_clp || 0,
+        });
+        orderAllocationsMap.set(alloc.purchase_order_id, existing);
+      });
 
       const processedOrders = (ordersData || []).map((order: any) => {
         const validInvoices = (order.invoices || []).filter((inv: any) => !inv.deleted_at);
@@ -264,6 +306,7 @@ const PurchaseOrdersDashboard = () => {
           invoices: validInvoices,
           invoices_count: validInvoices.length,
           invoices_total: validInvoices.reduce((sum: number, inv: any) => sum + (inv.amount_uf || 0), 0),
+          allocations: orderAllocationsMap.get(order.id) || [],
         };
       });
 
@@ -275,12 +318,65 @@ const PurchaseOrdersDashboard = () => {
         .select("*")
         .order("created_at", { ascending: false });
 
-      setOcRequests((requestsData || []) as unknown as OCRequest[]);
+      // Load multi-contract allocations for requests
+      const { data: requestAllocationsData } = await supabase
+        .from("oc_request_contract_allocations")
+        .select("oc_request_id, contract_id, amount_uf, amount_clp, contracts(name)");
+
+      const requestAllocationsMap = new Map<string, ContractAllocation[]>();
+      (requestAllocationsData || []).forEach((alloc: any) => {
+        const existing = requestAllocationsMap.get(alloc.oc_request_id) || [];
+        existing.push({
+          contract_id: alloc.contract_id,
+          contract_name: alloc.contracts?.name || "Sin nombre",
+          amount_uf: alloc.amount_uf || 0,
+          amount_clp: alloc.amount_clp || 0,
+        });
+        requestAllocationsMap.set(alloc.oc_request_id, existing);
+      });
+
+      const processedRequests = (requestsData || []).map((req: any) => ({
+        ...req,
+        allocations: requestAllocationsMap.get(req.id) || [],
+      }));
+
+      setOcRequests(processedRequests as unknown as OCRequest[]);
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Toggle multi-contract expansion
+  const toggleMultiRequest = (requestId: string) => {
+    setExpandedMultiRequests((prev) => {
+      const next = new Set(prev);
+      if (next.has(requestId)) {
+        next.delete(requestId);
+      } else {
+        next.add(requestId);
+      }
+      return next;
+    });
+  };
+
+  const toggleMultiOrder = (orderId: string) => {
+    setExpandedMultiOrders((prev) => {
+      const next = new Set(prev);
+      if (next.has(orderId)) {
+        next.delete(orderId);
+      } else {
+        next.add(orderId);
+      }
+      return next;
+    });
+  };
+
+  // Handle opening edit dialog
+  const handleEditRequest = (requestId: string) => {
+    setEditingRequestId(requestId);
+    setShowEditRequestDialog(true);
   };
 
   // Chart data for contracts
@@ -961,28 +1057,28 @@ const PurchaseOrdersDashboard = () => {
                   <SelectValue placeholder="Tipo" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="todos">CAPEX/OPEX</SelectItem>
+                  <SelectItem value="todos">Todos</SelectItem>
                   <SelectItem value="CAPEX">CAPEX</SelectItem>
                   <SelectItem value="OPEX">OPEX</SelectItem>
                 </SelectContent>
               </Select>
 
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-[160px]">
+                <SelectTrigger className="w-[180px]">
                   <SelectValue placeholder="Categoría" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todas las categorías</SelectItem>
-                  {opexCategories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
+                  {opexCategories.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
 
               <Select value={amountFilter} onValueChange={setAmountFilter}>
-                <SelectTrigger className="w-[140px]">
+                <SelectTrigger className="w-[150px]">
                   <SelectValue placeholder="Monto" />
                 </SelectTrigger>
                 <SelectContent>
@@ -990,7 +1086,7 @@ const PurchaseOrdersDashboard = () => {
                   <SelectItem value="0-100">0 - 100 UF</SelectItem>
                   <SelectItem value="100-500">100 - 500 UF</SelectItem>
                   <SelectItem value="500-1000">500 - 1.000 UF</SelectItem>
-                  <SelectItem value="1000+">Más de 1.000 UF</SelectItem>
+                  <SelectItem value="1000+">+1.000 UF</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -1135,13 +1231,21 @@ const PurchaseOrdersDashboard = () => {
                                 {group.orders.map((order) => {
                                   const hasInvoices = order.invoices && order.invoices.length > 0;
                                   const isOrderExpanded = expandedOrders.has(order.id);
+                                  const isMulti = order.is_multi_contract && order.allocations && order.allocations.length > 0;
+                                  const isMultiExpanded = expandedMultiOrders.has(order.id);
 
                                   return (
                                     <>
                                       <TableRow 
                                         key={order.id}
-                                        className={hasInvoices ? "cursor-pointer hover:bg-muted/30" : ""}
-                                        onClick={() => hasInvoices && toggleOrderInvoices(order.id)}
+                                        className={hasInvoices || isMulti ? "cursor-pointer hover:bg-muted/30" : ""}
+                                        onClick={() => {
+                                          if (isMulti) {
+                                            toggleMultiOrder(order.id);
+                                          } else if (hasInvoices) {
+                                            toggleOrderInvoices(order.id);
+                                          }
+                                        }}
                                       >
                                         {isAdmin && (
                                           <TableCell onClick={(e) => e.stopPropagation()}>
@@ -1155,8 +1259,14 @@ const PurchaseOrdersDashboard = () => {
                                           <div className="flex items-center gap-2">
                                             <FileText className="h-4 w-4 text-muted-foreground" />
                                             {order.order_number}
-                                            {hasInvoices && (
-                                              isOrderExpanded ? 
+                                            {isMulti && (
+                                              <Badge variant="outline" className="text-[10px] gap-1">
+                                                <Layers className="h-3 w-3" />
+                                                Multi
+                                              </Badge>
+                                            )}
+                                            {(hasInvoices || isMulti) && (
+                                              isMultiExpanded || isOrderExpanded ? 
                                                 <ChevronDown className="h-3 w-3 text-muted-foreground" /> : 
                                                 <ChevronRight className="h-3 w-3 text-muted-foreground" />
                                             )}
@@ -1208,8 +1318,62 @@ const PurchaseOrdersDashboard = () => {
                                           {order.order_date ? format(parseISO(order.order_date), "dd MMM yyyy", { locale: es }) : "-"}
                                         </TableCell>
                                       </TableRow>
+                                      
+                                      {/* Multi-contract allocations */}
+                                      {isMulti && isMultiExpanded && (
+                                        <TableRow className="bg-blue-50/50 dark:bg-blue-950/20">
+                                          <TableCell colSpan={isAdmin ? 10 : 9} className="py-2 px-4">
+                                            <div className="pl-8">
+                                              <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
+                                                <Layers className="h-4 w-4" />
+                                                Asignación por Contrato:
+                                              </p>
+                                              <Table>
+                                                <TableHeader>
+                                                  <TableRow>
+                                                    <TableHead className="text-xs">Contrato</TableHead>
+                                                    <TableHead className="text-xs text-right">Monto (UF)</TableHead>
+                                                    <TableHead className="text-xs text-right">Monto (CLP)</TableHead>
+                                                    <TableHead className="text-xs">Acciones</TableHead>
+                                                  </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                  {order.allocations?.map((alloc) => (
+                                                    <TableRow key={alloc.contract_id}>
+                                                      <TableCell className="text-sm py-1 font-medium">
+                                                        {alloc.contract_name}
+                                                      </TableCell>
+                                                      <TableCell className="text-sm py-1 text-right">
+                                                        {formatUF(alloc.amount_uf)}
+                                                      </TableCell>
+                                                      <TableCell className="text-sm py-1 text-right">
+                                                        ${Math.round(alloc.amount_clp).toLocaleString("es-CL")}
+                                                      </TableCell>
+                                                      <TableCell className="py-1">
+                                                        <Button
+                                                          variant="ghost"
+                                                          size="sm"
+                                                          onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            navigate(`/contracts/${alloc.contract_id}?section=ordenes-compra&returnTo=purchase-orders`);
+                                                          }}
+                                                          className="h-6 px-2 text-xs"
+                                                        >
+                                                          <ExternalLink className="h-3 w-3 mr-1" />
+                                                          Ver Contrato
+                                                        </Button>
+                                                      </TableCell>
+                                                    </TableRow>
+                                                  ))}
+                                                </TableBody>
+                                              </Table>
+                                            </div>
+                                          </TableCell>
+                                        </TableRow>
+                                      )}
+
                                       {/* Invoices sub-table */}
-                                      {hasInvoices && isOrderExpanded && (
+                                      {hasInvoices && isOrderExpanded && !isMulti && (
                                         <TableRow className="bg-muted/20">
                                           <TableCell colSpan={isAdmin ? 10 : 9} className="py-2 px-4">
                                             <div className="pl-8">
@@ -1398,46 +1562,135 @@ const PurchaseOrdersDashboard = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredRequests.map((req) => (
-                        <TableRow key={req.id}>
-                          {isAdmin && (
-                            <TableCell>
-                              <Checkbox
-                                checked={selectedRequests.has(req.id)}
-                                onCheckedChange={() => toggleRequestSelection(req.id)}
-                              />
-                            </TableCell>
-                          )}
-                          <TableCell className="font-medium font-mono text-xs">
-                            <div className="flex items-center gap-2">
-                              <ClipboardList className="h-4 w-4 text-muted-foreground" />
-                              {req.request_number}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {format(parseISO(req.request_date), "dd MMM yyyy", { locale: es })}
-                          </TableCell>
-                          <TableCell className="max-w-[120px] truncate">{req.project_name}</TableCell>
-                          <TableCell className="max-w-[120px] truncate">{req.line_name}</TableCell>
-                          <TableCell className="max-w-[150px] truncate">{req.description || "-"}</TableCell>
-                          <TableCell className="max-w-[100px] truncate">{req.supplier_name || "-"}</TableCell>
-                          <TableCell className="text-right font-medium">{formatUF(req.amount_uf)}</TableCell>
-                          <TableCell>
-                            <Badge variant={req.status === "pending" ? "secondary" : "default"}>
-                              {req.status === "pending" ? "Pendiente" : "Convertida"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => navigate(`/contracts/${req.contract_id}?section=ordenes-compra&returnTo=purchase-orders`)}
+                      {filteredRequests.map((req) => {
+                        const isMulti = req.is_multi_contract && req.allocations && req.allocations.length > 0;
+                        const isMultiExpanded = expandedMultiRequests.has(req.id);
+
+                        return (
+                          <>
+                            <TableRow 
+                              key={req.id}
+                              className={isMulti ? "cursor-pointer hover:bg-muted/30" : ""}
+                              onClick={() => isMulti && toggleMultiRequest(req.id)}
                             >
-                              <ExternalLink className="h-3 w-3" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                              {isAdmin && (
+                                <TableCell onClick={(e) => e.stopPropagation()}>
+                                  <Checkbox
+                                    checked={selectedRequests.has(req.id)}
+                                    onCheckedChange={() => toggleRequestSelection(req.id)}
+                                  />
+                                </TableCell>
+                              )}
+                              <TableCell className="font-medium font-mono text-xs">
+                                <div className="flex items-center gap-2">
+                                  <ClipboardList className="h-4 w-4 text-muted-foreground" />
+                                  {req.request_number}
+                                  {isMulti && (
+                                    <Badge variant="outline" className="text-[10px] gap-1">
+                                      <Layers className="h-3 w-3" />
+                                      Centralizado
+                                    </Badge>
+                                  )}
+                                  {isMulti && (
+                                    isMultiExpanded ? 
+                                      <ChevronDown className="h-3 w-3 text-muted-foreground" /> : 
+                                      <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {format(parseISO(req.request_date), "dd MMM yyyy", { locale: es })}
+                              </TableCell>
+                              <TableCell className="max-w-[120px] truncate">{req.project_name}</TableCell>
+                              <TableCell className="max-w-[120px] truncate">{req.line_name}</TableCell>
+                              <TableCell className="max-w-[150px] truncate">{req.description || "-"}</TableCell>
+                              <TableCell className="max-w-[100px] truncate">{req.supplier_name || "-"}</TableCell>
+                              <TableCell className="text-right font-medium">{formatUF(req.amount_uf)}</TableCell>
+                              <TableCell>
+                                <Badge variant={req.status === "pending" ? "secondary" : "default"}>
+                                  {req.status === "pending" ? "Pendiente" : "Convertida"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                  {req.status === "pending" && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleEditRequest(req.id)}
+                                      className="h-7 px-2"
+                                      title="Editar solicitud"
+                                    >
+                                      <Edit className="h-3 w-3" />
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => navigate(`/contracts/${req.contract_id}?section=ordenes-compra&returnTo=purchase-orders`)}
+                                    className="h-7 px-2"
+                                  >
+                                    <ExternalLink className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+
+                            {/* Multi-contract allocations for requests */}
+                            {isMulti && isMultiExpanded && (
+                              <TableRow className="bg-blue-50/50 dark:bg-blue-950/20">
+                                <TableCell colSpan={isAdmin ? 10 : 9} className="py-2 px-4">
+                                  <div className="pl-8">
+                                    <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
+                                      <Layers className="h-4 w-4" />
+                                      Asignación por Contrato:
+                                    </p>
+                                    <Table>
+                                      <TableHeader>
+                                        <TableRow>
+                                          <TableHead className="text-xs">Contrato</TableHead>
+                                          <TableHead className="text-xs text-right">Monto (UF)</TableHead>
+                                          <TableHead className="text-xs text-right">Monto (CLP)</TableHead>
+                                          <TableHead className="text-xs">Acciones</TableHead>
+                                        </TableRow>
+                                      </TableHeader>
+                                      <TableBody>
+                                        {req.allocations?.map((alloc) => (
+                                          <TableRow key={alloc.contract_id}>
+                                            <TableCell className="text-sm py-1 font-medium">
+                                              {alloc.contract_name}
+                                            </TableCell>
+                                            <TableCell className="text-sm py-1 text-right">
+                                              {formatUF(alloc.amount_uf)}
+                                            </TableCell>
+                                            <TableCell className="text-sm py-1 text-right">
+                                              ${Math.round(alloc.amount_clp).toLocaleString("es-CL")}
+                                            </TableCell>
+                                            <TableCell className="py-1">
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  navigate(`/contracts/${alloc.contract_id}?section=ordenes-compra&returnTo=purchase-orders`);
+                                                }}
+                                                className="h-6 px-2 text-xs"
+                                              >
+                                                <ExternalLink className="h-3 w-3 mr-1" />
+                                                Ver Contrato
+                                              </Button>
+                                            </TableCell>
+                                          </TableRow>
+                                        ))}
+                                      </TableBody>
+                                    </Table>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </CardContent>
@@ -1514,6 +1767,16 @@ const PurchaseOrdersDashboard = () => {
         year={parseInt(yearFilter)}
         ufValue={ufValue}
         onSuccess={loadData}
+      />
+
+      {/* Edit OC Request Dialog */}
+      <OCRequestViewDialog
+        open={showEditRequestDialog}
+        onOpenChange={setShowEditRequestDialog}
+        requestId={editingRequestId}
+        formatUF={formatUF}
+        onRefresh={loadData}
+        readOnly={false}
       />
     </div>
   );
