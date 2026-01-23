@@ -755,7 +755,7 @@ export const CentralizedOrderCreator = ({
                         Agregue contratos para asignar montos
                       </p>
                     ) : (
-                      <ScrollArea className="max-h-[250px]">
+                      <div className="border rounded-md max-h-[200px] overflow-y-auto">
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -811,7 +811,7 @@ export const CentralizedOrderCreator = ({
                             ))}
                           </TableBody>
                         </Table>
-                      </ScrollArea>
+                      </div>
                     )}
                     
                     {contractAllocations.length > 0 && (
