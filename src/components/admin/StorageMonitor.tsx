@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -104,7 +105,11 @@ function getStatusColor(percentage: number): { color: string; icon: React.Elemen
   return { color: 'hsl(var(--chart-1))', icon: AlertTriangle, textClass: 'text-red-600' };
 }
 
-export function StorageMonitor() {
+interface StorageMonitorProps {
+  defaultCollapsed?: boolean;
+}
+
+export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps) {
   const [stats, setStats] = useState<StorageStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -216,35 +221,30 @@ export function StorageMonitor() {
 
   if (loading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Database className="h-5 w-5" />
-            Monitoreo de Almacenamiento
-          </CardTitle>
-          <CardDescription>Cargando estadísticas...</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <CollapsibleCard
+        title="Monitoreo de Almacenamiento"
+        description="Uso de base de datos y archivos en Lovable Cloud"
+        icon={<Database className="h-5 w-5" />}
+        defaultOpen={!defaultCollapsed}
+      >
+        <div className="space-y-4">
           <Skeleton className="h-24 w-full" />
           <Skeleton className="h-24 w-full" />
-        </CardContent>
-      </Card>
+        </div>
+      </CollapsibleCard>
     );
   }
 
   if (!stats) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Database className="h-5 w-5" />
-            Monitoreo de Almacenamiento
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground">Error al cargar estadísticas</p>
-        </CardContent>
-      </Card>
+      <CollapsibleCard
+        title="Monitoreo de Almacenamiento"
+        description="Uso de base de datos y archivos en Lovable Cloud"
+        icon={<Database className="h-5 w-5" />}
+        defaultOpen={!defaultCollapsed}
+      >
+        <p className="text-muted-foreground">Error al cargar estadísticas</p>
+      </CollapsibleCard>
     );
   }
 
@@ -255,30 +255,24 @@ export function StorageMonitor() {
   const filesStatus = getStatusColor(filesPercentage);
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Database className="h-5 w-5" />
-              Monitoreo de Almacenamiento
-            </CardTitle>
-            <CardDescription>
-              Uso de base de datos y archivos en Lovable Cloud
-            </CardDescription>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={loadStats}
-            disabled={refreshing}
-          >
-            <RefreshCw className={cn("h-4 w-4 mr-2", refreshing && "animate-spin")} />
-            Actualizar
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-6">
+    <CollapsibleCard
+      title="Monitoreo de Almacenamiento"
+      description="Uso de base de datos y archivos en Lovable Cloud"
+      icon={<Database className="h-5 w-5" />}
+      defaultOpen={!defaultCollapsed}
+      headerActions={
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={loadStats}
+          disabled={refreshing}
+        >
+          <RefreshCw className={cn("h-4 w-4 mr-2", refreshing && "animate-spin")} />
+          Actualizar
+        </Button>
+      }
+    >
+      <div className="space-y-6">
         {/* Database Usage Card */}
         <div className="border rounded-lg p-4 space-y-4">
           <div className="flex items-center justify-between">
@@ -384,7 +378,7 @@ export function StorageMonitor() {
             <span>&gt; 80%: Límite cercano, acción requerida</span>
           </p>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </CollapsibleCard>
   );
 }

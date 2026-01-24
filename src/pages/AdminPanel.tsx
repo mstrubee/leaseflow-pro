@@ -580,137 +580,137 @@ const AdminPanel = () => {
               <p className="text-muted-foreground">Gestiona usuarios y permisos</p>
             </div>
           </div>
-          
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Nuevo Usuario
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>Crear Nuevo Usuario</DialogTitle>
-                <DialogDescription>
-                  Ingresa los datos del nuevo usuario y asigna permisos
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="new-name">Nombre Completo</Label>
-                  <Input
-                    id="new-name"
-                    value={newUserName}
-                    onChange={(e) => setNewUserName(e.target.value)}
-                    placeholder="Juan Pérez"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="new-email">Email</Label>
-                  <Input
-                    id="new-email"
-                    type="email"
-                    value={newUserEmail}
-                    onChange={(e) => setNewUserEmail(e.target.value)}
-                    placeholder="usuario@email.com"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="new-password">Contraseña</Label>
-                  <Input
-                    id="new-password"
-                    type="password"
-                    value={newUserPassword}
-                    onChange={(e) => setNewUserPassword(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Rol</Label>
-                  <Select value={newUserRole} onValueChange={(v) => setNewUserRole(v as "admin" | "user")}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="user">Usuario</SelectItem>
-                      <SelectItem value="admin">Administrador</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {newUserRole === "user" && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <Label>Permisos por Sección</Label>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          // Save current form data and start selection mode
-                          startSelection({
-                            email: newUserEmail,
-                            password: newUserPassword,
-                            name: newUserName,
-                            role: newUserRole,
-                          });
-                          setDialogOpen(false);
-                          navigate("/");
-                        }}
-                        className="gap-1"
-                      >
-                        <Navigation className="h-3 w-3" />
-                        Navegar y Seleccionar
-                      </Button>
-                    </div>
-                    {RESOURCES.map(resource => (
-                      <div key={resource.id} className="flex items-center justify-between">
-                        <span className="text-sm">{resource.label}</span>
-                        <Select
-                          value={newUserPermissions[resource.id] || "none"}
-                          onValueChange={(v) => setNewUserPermissions(prev => ({ ...prev, [resource.id]: v as any }))}
-                        >
-                          <SelectTrigger className="w-32">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Sin acceso</SelectItem>
-                            <SelectItem value="view">Ver</SelectItem>
-                            <SelectItem value="edit">Editar</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ))}
-                    {Object.keys(newUserPermissions).filter(k => !RESOURCES.find(r => r.id === k) && newUserPermissions[k] !== "none").length > 0 && (
-                      <div className="pt-2 border-t">
-                        <p className="text-xs text-muted-foreground mb-2">Permisos adicionales seleccionados:</p>
-                        <div className="flex flex-wrap gap-1">
-                          {Object.entries(newUserPermissions)
-                            .filter(([k, v]) => !RESOURCES.find(r => r.id === k) && v !== "none")
-                            .map(([key, value]) => (
-                              <span key={key} className="px-2 py-1 bg-primary/10 text-primary text-xs rounded">
-                                {key}: {value}
-                              </span>
-                            ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-                <Button onClick={handleCreateUser} disabled={creating}>
-                  {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Crear Usuario
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
         </div>
 
         <CollapsibleCard
           title="Usuarios"
           description="Lista de todos los usuarios registrados"
           icon={<Shield className="h-5 w-5" />}
+          headerActions={
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nuevo Usuario
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Crear Nuevo Usuario</DialogTitle>
+                  <DialogDescription>
+                    Ingresa los datos del nuevo usuario y asigna permisos
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="new-name">Nombre Completo</Label>
+                    <Input
+                      id="new-name"
+                      value={newUserName}
+                      onChange={(e) => setNewUserName(e.target.value)}
+                      placeholder="Juan Pérez"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="new-email">Email</Label>
+                    <Input
+                      id="new-email"
+                      type="email"
+                      value={newUserEmail}
+                      onChange={(e) => setNewUserEmail(e.target.value)}
+                      placeholder="usuario@email.com"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="new-password">Contraseña</Label>
+                    <Input
+                      id="new-password"
+                      type="password"
+                      value={newUserPassword}
+                      onChange={(e) => setNewUserPassword(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Rol</Label>
+                    <Select value={newUserRole} onValueChange={(v) => setNewUserRole(v as "admin" | "user")}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="user">Usuario</SelectItem>
+                        <SelectItem value="admin">Administrador</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {newUserRole === "user" && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label>Permisos por Sección</Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            startSelection({
+                              email: newUserEmail,
+                              password: newUserPassword,
+                              name: newUserName,
+                              role: newUserRole,
+                            });
+                            setDialogOpen(false);
+                            navigate("/");
+                          }}
+                          className="gap-1"
+                        >
+                          <Navigation className="h-3 w-3" />
+                          Navegar y Seleccionar
+                        </Button>
+                      </div>
+                      {RESOURCES.map(resource => (
+                        <div key={resource.id} className="flex items-center justify-between">
+                          <span className="text-sm">{resource.label}</span>
+                          <Select
+                            value={newUserPermissions[resource.id] || "none"}
+                            onValueChange={(v) => setNewUserPermissions(prev => ({ ...prev, [resource.id]: v as any }))}
+                          >
+                            <SelectTrigger className="w-32">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Sin acceso</SelectItem>
+                              <SelectItem value="view">Ver</SelectItem>
+                              <SelectItem value="edit">Editar</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                      {Object.keys(newUserPermissions).filter(k => !RESOURCES.find(r => r.id === k) && newUserPermissions[k] !== "none").length > 0 && (
+                        <div className="pt-2 border-t">
+                          <p className="text-xs text-muted-foreground mb-2">Permisos adicionales seleccionados:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {Object.entries(newUserPermissions)
+                              .filter(([k, v]) => !RESOURCES.find(r => r.id === k) && v !== "none")
+                              .map(([key, value]) => (
+                                <span key={key} className="px-2 py-1 bg-primary/10 text-primary text-xs rounded">
+                                  {key}: {value}
+                                </span>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
+                  <Button onClick={handleCreateUser} disabled={creating}>
+                    {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Crear Usuario
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          }
         >
             <Table>
               <TableHeader>
@@ -799,91 +799,82 @@ const AdminPanel = () => {
         <CloudStorageSettings defaultCollapsed />
 
         {/* Budget Templates */}
-        <BudgetTemplateManager />
+        <BudgetTemplateManager defaultCollapsed />
 
         {/* Gantt Templates */}
-        <GanttTemplateManager />
+        <GanttTemplateManager defaultCollapsed />
 
         {/* OC Request Templates */}
-        <OCRequestTemplateManager />
+        <OCRequestTemplateManager defaultCollapsed />
 
         {/* Folder Templates */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Folder className="h-5 w-5" />
-                  Carpetas del Repositorio
-                </CardTitle>
-                <CardDescription>
-                  Define las carpetas base que se crearán automáticamente en todos los contratos
-                </CardDescription>
-              </div>
-              <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm">
-                    <FolderPlus className="mr-2 h-4 w-4" />
-                    Nueva Carpeta
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Agregar Carpeta al Template</DialogTitle>
-                    <DialogDescription>
-                      Esta carpeta se creará automáticamente en todos los contratos existentes y futuros.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label>Nombre de la Carpeta *</Label>
-                      <Input
-                        value={newTemplateName}
-                        onChange={(e) => setNewTemplateName(e.target.value)}
-                        placeholder="Ej: Documentos Legales"
-                      />
-                    </div>
+        <CollapsibleCard
+          title="Carpetas del Repositorio"
+          description="Define las carpetas base que se crearán automáticamente en todos los contratos"
+          icon={<Folder className="h-5 w-5" />}
+          headerActions={
+            <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm">
+                  <FolderPlus className="mr-2 h-4 w-4" />
+                  Nueva Carpeta
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Agregar Carpeta al Template</DialogTitle>
+                  <DialogDescription>
+                    Esta carpeta se creará automáticamente en todos los contratos existentes y futuros.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label>Nombre de la Carpeta *</Label>
+                    <Input
+                      value={newTemplateName}
+                      onChange={(e) => setNewTemplateName(e.target.value)}
+                      placeholder="Ej: Documentos Legales"
+                    />
                   </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setTemplateDialogOpen(false)}>Cancelar</Button>
-                    <Button onClick={handleCreateTemplate} disabled={creatingTemplate}>
-                      {creatingTemplate && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Crear Carpeta
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {getRootTemplates().map((template) => (
-                <FolderTemplateItem
-                  key={template.id}
-                  template={template}
-                  level={0}
-                  getSubfolders={getSubfolders}
-                  onAddSubfolder={(id) => {
-                    setSelectedParentTemplate(id);
-                    setSubfolderDialogOpen(true);
-                  }}
-                  onDelete={handleDeleteTemplate}
-                />
-              ))}
-              {getRootTemplates().length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  No hay carpetas definidas
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setTemplateDialogOpen(false)}>Cancelar</Button>
+                  <Button onClick={handleCreateTemplate} disabled={creatingTemplate}>
+                    {creatingTemplate && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Crear Carpeta
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          }
+        >
+          <div className="space-y-2">
+            {getRootTemplates().map((template) => (
+              <FolderTemplateItem
+                key={template.id}
+                template={template}
+                level={0}
+                getSubfolders={getSubfolders}
+                onAddSubfolder={(id) => {
+                  setSelectedParentTemplate(id);
+                  setSubfolderDialogOpen(true);
+                }}
+                onDelete={handleDeleteTemplate}
+              />
+            ))}
+            {getRootTemplates().length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No hay carpetas definidas
+              </p>
+            )}
+          </div>
+        </CollapsibleCard>
 
         {/* Storage Provider Settings */}
-        <StorageProviderSettings />
+        <StorageProviderSettings defaultCollapsed />
 
         {/* Storage Monitor - Admin only */}
-        <StorageMonitor />
+        <StorageMonitor defaultCollapsed />
 
         {/* Edit Permissions Dialog */}
         <Dialog open={!!editingUserId} onOpenChange={(open) => !open && setEditingUserId(null)}>
