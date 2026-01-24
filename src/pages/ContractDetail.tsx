@@ -30,6 +30,7 @@ import { CollapsibleSection } from "@/components/contracts/CollapsibleSection";
 import { SelectableElement } from "@/components/admin/SelectableElement";
 import { useContractSections, SectionKey } from "@/hooks/useContractSections";
 import { useAuth } from "@/hooks/useAuth";
+import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import {
   DndContext,
@@ -703,6 +704,10 @@ const ContractDetail = () => {
           <div className="flex items-start justify-between">
             <div className="flex flex-col">
               <div className="flex items-center gap-3">
+                <CompanyLogo 
+                  companyName={companyNames[0]} 
+                  size="md" 
+                />
                 <h1 className="text-2xl font-semibold text-foreground">{contract.name}</h1>
                 {getStatusBadge(contract.status)}
               </div>

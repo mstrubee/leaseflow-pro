@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ExternalLink, Loader2 } from "lucide-react";
 import { useDashboardRegionNavigation } from "./DashboardRegionReturnButton";
+import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 
 interface Contract {
   id: string;
@@ -152,7 +153,12 @@ export function CommuneContractsDialog({
             <TableBody>
               {contracts.map((contract) => (
                 <TableRow key={contract.id}>
-                  <TableCell className="font-medium">{contract.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      <CompanyLogo companyName={contract.companies[0]} size="sm" />
+                      {contract.name}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
                       {contract.companies.map((company, idx) => (
