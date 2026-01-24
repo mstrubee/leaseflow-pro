@@ -221,23 +221,46 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
   };
 
   const loadBudgetTypeTotals = async (contractId: string, budgetType: string, year: number): Promise<BudgetTypeTotals> => {
-    // Get OC totals using budget_classification instead of budget_id
-    // This is because OPEX OCs may not have a budget_id but have opex_category_id instead
-    const budgetClassification = budgetType === "capex" ? "CAPEX" : "OPEX";
+    // For CAPEX: use budget_classification = 'CAPEX' OR budget_line_id is not null
+    // For OPEX: use opex_master_id is not null (centralized OPEX) or opex_category_id is not null
     
-    const { data: orders } = await supabase
-      .from("purchase_orders")
-      .select("id, amount_uf")
-      .eq("contract_id", contractId)
-      .eq("budget_classification", budgetClassification as "CAPEX" | "OPEX")
-      .eq("year", year)
-      .is("deleted_at", null);
+    let orders: { id: string; amount_uf: number }[] = [];
+    
+    if (budgetType === "capex") {
+      // CAPEX orders: have budget_classification = 'CAPEX' or have a budget_line_id
+      const { data: capexOrders } = await supabase
+        .from("purchase_orders")
+        .select("id, amount_uf")
+        .eq("contract_id", contractId)
+        .eq("year", year)
+        .is("deleted_at", null);
+      
+      // Filter CAPEX orders: either budget_classification is CAPEX or has budget_line_id (and no opex references)
+      orders = (capexOrders || []).filter(o => {
+        const order = o as any;
+        return order.budget_classification === "CAPEX" || 
+               (order.budget_line_id && !order.opex_master_id && !order.opex_category_id);
+      });
+    } else {
+      // OPEX orders: have opex_master_id or opex_category_id or budget_classification = 'OPEX'
+      const { data: opexOrders } = await supabase
+        .from("purchase_orders")
+        .select("id, amount_uf, opex_master_id, opex_category_id, budget_classification")
+        .eq("contract_id", contractId)
+        .eq("year", year)
+        .is("deleted_at", null);
+      
+      // Filter OPEX orders: have opex_master_id, opex_category_id, or budget_classification is OPEX
+      orders = (opexOrders || []).filter(o => 
+        o.opex_master_id || o.opex_category_id || o.budget_classification === "OPEX"
+      );
+    }
 
-    const ocTotal = (orders || []).reduce((acc, o) => acc + (o.amount_uf || 0), 0);
+    const ocTotal = orders.reduce((acc, o) => acc + (o.amount_uf || 0), 0);
 
     // Get invoice totals for these OCs
     let invoicesTotal = 0;
-    if (orders && orders.length > 0) {
+    if (orders.length > 0) {
       const orderIds = orders.map(o => o.id);
       const { data: invoices } = await supabase
         .from("invoices")
