@@ -1,6 +1,5 @@
-import logoAgroplanet from "@/assets/logo-agroplanet.png";
-import logoAutoplanet from "@/assets/logo-autoplanet.png";
 import { cn } from "@/lib/utils";
+import { useAppLogos } from "@/hooks/useAppLogos";
 
 interface CompanyLogoProps {
   companyName?: string | null;
@@ -15,6 +14,8 @@ interface CompanyLogoProps {
  * Returns null if no company names match either company.
  */
 export const CompanyLogo = ({ companyName, companyNames, size = "sm", className }: CompanyLogoProps) => {
+  const { logos } = useAppLogos();
+  
   const sizeClasses = {
     sm: "h-6 w-6",
     md: "h-8 w-8",
@@ -45,12 +46,12 @@ export const CompanyLogo = ({ companyName, companyNames, size = "sm", className 
     return (
       <div className="flex flex-col gap-0.5 flex-shrink-0">
         <img
-          src={logoAgroplanet}
+          src={logos.agroplanet}
           alt="Agroplanet"
           className={cn(sizeClasses[size], "rounded object-contain", className)}
         />
         <img
-          src={logoAutoplanet}
+          src={logos.autoplanet}
           alt="Autoplanet"
           className={cn(sizeClasses[size], "rounded object-contain", className)}
         />
@@ -59,7 +60,7 @@ export const CompanyLogo = ({ companyName, companyNames, size = "sm", className 
   }
 
   // Single company logo
-  const logo = hasAgroplanet ? logoAgroplanet : logoAutoplanet;
+  const logo = hasAgroplanet ? logos.agroplanet : logos.autoplanet;
   const alt = hasAgroplanet ? "Agroplanet" : "Autoplanet";
 
   return (

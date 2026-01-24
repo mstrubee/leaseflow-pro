@@ -6,7 +6,7 @@ import { DashboardStats } from "@/components/dashboard/DashboardStats";
 import { SuppliersModule } from "@/components/suppliers/SuppliersModule";
 import { useAuth } from "@/hooks/useAuth";
 import { ReportsReturnButton } from "@/components/reports/ReportsReturnButton";
-import logosHeader from "@/assets/logos-header.png";
+import { useAppLogos } from "@/hooks/useAppLogos";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -26,6 +26,8 @@ const Dashboard = () => {
     await signOut();
     navigate("/auth");
   };
+  const { logos } = useAppLogos();
+  
   if (loading || !roleLoaded) {
     return <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -37,7 +39,7 @@ const Dashboard = () => {
           <div className="flex flex-col gap-4">
             {/* Primera fila: Logo y título */}
             <div className="flex items-center gap-6">
-              <img src={logosHeader} alt="AutoPlanet Agroplanet" className="h-[62px] object-contain" />
+              <img src={logos.dashboard_header} alt="AutoPlanet Agroplanet" className="h-[62px] object-contain" />
               <div>
                 <h1 className="text-2xl font-semibold text-sky-950">Gerencia Desarrollo</h1>
                 <p className="text-sm text-muted-foreground mt-1">Desarrollo Negocios y Administración Inmobiliaria</p>

@@ -20,6 +20,7 @@ import { StorageProviderSettings } from "@/components/admin/StorageProviderSetti
 import { CompanyManager } from "@/components/admin/CompanyManager";
 import { StorageMonitor } from "@/components/admin/StorageMonitor";
 import { OCRequestTemplateManager } from "@/components/admin/OCRequestTemplateManager";
+import { LogoManager } from "@/components/admin/LogoManager";
 interface Profile {
   id: string;
   email: string;
@@ -786,6 +787,22 @@ const AdminPanel = () => {
 
         {/* Companies */}
         <CompanyManager />
+
+        {/* Logo Management */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <img src="/placeholder.svg" alt="" className="h-5 w-5" />
+              Logos de la Aplicación
+            </CardTitle>
+            <CardDescription>
+              Administra los logos que se muestran en la aplicación
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <LogoManager />
+          </CardContent>
+        </Card>
 
         {/* Cloud Storage Settings */}
         <CloudStorageSettings />
