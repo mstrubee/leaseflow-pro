@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,7 +22,11 @@ interface BudgetTemplate {
   created_at: string;
 }
 
-export const BudgetTemplateManager = () => {
+interface BudgetTemplateManagerProps {
+  defaultCollapsed?: boolean;
+}
+
+export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTemplateManagerProps) => {
   const [templates, setTemplates] = useState<BudgetTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTemplate, setSelectedTemplate] = useState<BudgetTemplate | null>(null);

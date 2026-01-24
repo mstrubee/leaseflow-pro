@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,7 +45,11 @@ const CLOUD_PROVIDERS = [
   { id: "dropbox", name: "Dropbox", icon: "📦", helpUrl: "https://dropbox.com" },
 ];
 
-export const CloudStorageSettings = () => {
+interface CloudStorageSettingsProps {
+  defaultCollapsed?: boolean;
+}
+
+export const CloudStorageSettings = ({ defaultCollapsed = false }: CloudStorageSettingsProps) => {
   const { toast } = useToast();
   const [connections, setConnections] = useState<CloudConnection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -185,25 +190,18 @@ export const CloudStorageSettings = () => {
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Cloud className="h-5 w-5" />
-                Almacenamiento en la Nube
-              </CardTitle>
-              <CardDescription>
-                Configura conexiones a servicios de almacenamiento en la nube
-              </CardDescription>
-            </div>
-            <Button onClick={() => setDialogOpen(true)} className="gap-2">
-              <Plus className="h-4 w-4" />
-              Agregar Conexión
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
+      <CollapsibleCard
+        title="Almacenamiento en la Nube"
+        description="Configura conexiones a servicios de almacenamiento en la nube"
+        icon={<Cloud className="h-5 w-5" />}
+        defaultOpen={!defaultCollapsed}
+        headerActions={
+          <Button onClick={(e) => { e.stopPropagation(); setDialogOpen(true); }} className="gap-2" size="sm">
+            <Plus className="h-4 w-4" />
+            Agregar Conexión
+          </Button>
+        }
+      >
           {connections.length > 0 ? (
             <div className="space-y-3">
               {connections.map((conn) => {
@@ -270,8 +268,7 @@ export const CloudStorageSettings = () => {
               </p>
             </div>
           )}
-        </CardContent>
-      </Card>
+      </CollapsibleCard>
 
       {/* Add connection dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -16,7 +16,11 @@ interface Company {
   created_at: string;
 }
 
-export const CompanyManager = () => {
+interface CompanyManagerProps {
+  defaultCollapsed?: boolean;
+}
+
+export const CompanyManager = ({ defaultCollapsed = false }: CompanyManagerProps) => {
   const { toast } = useToast();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
@@ -147,23 +151,19 @@ export const CompanyManager = () => {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5" />
-              Empresas
-            </CardTitle>
-            <CardDescription>Administrar empresas para asignar a contratos</CardDescription>
-          </div>
-          <Button onClick={() => setCreateDialogOpen(true)} size="sm">
-            <Plus className="h-4 w-4 mr-1" />
-            Nueva Empresa
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent>
+    <>
+    <CollapsibleCard
+      title="Empresas"
+      description="Administrar empresas para asignar a contratos"
+      icon={<Building2 className="h-5 w-5" />}
+      defaultOpen={!defaultCollapsed}
+      headerActions={
+        <Button onClick={(e) => { e.stopPropagation(); setCreateDialogOpen(true); }} size="sm">
+          <Plus className="h-4 w-4 mr-1" />
+          Nueva Empresa
+        </Button>
+      }
+    >
         {loading ? (
           <div className="flex justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin" />
@@ -197,7 +197,7 @@ export const CompanyManager = () => {
             </TableBody>
           </Table>
         )}
-      </CardContent>
+    </CollapsibleCard>
 
       {/* Create Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
@@ -296,6 +296,6 @@ export const CompanyManager = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Card>
+    </>
   );
 };
