@@ -158,14 +158,11 @@ export const OCRequestTemplateManager = ({ defaultCollapsed = false }: OCRequest
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-lg flex items-center gap-2">
-          <FileSpreadsheet className="h-5 w-5" />
-          Plantilla de Solicitud de OC
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <CollapsibleCard
+      title="Plantilla de Solicitud de OC"
+      icon={<FileSpreadsheet className="h-5 w-5" />}
+      defaultOpen={!defaultCollapsed}
+    >
         {/* Upload new template */}
         <div className="p-4 border rounded-lg space-y-3">
           <h4 className="font-medium text-sm">Subir nueva plantilla</h4>
@@ -272,7 +269,6 @@ export const OCRequestTemplateManager = ({ defaultCollapsed = false }: OCRequest
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </CardContent>
-    </Card>
+    </CollapsibleCard>
   );
 };

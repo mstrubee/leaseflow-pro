@@ -362,28 +362,21 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Formatos de Presupuesto Tipo
-            </CardTitle>
-            <CardDescription>
-              Define plantillas de presupuesto que podrán aplicarse al crear contratos
-            </CardDescription>
-          </div>
-          <Button onClick={() => {
-            setNewType(activeTab);
-            setShowNewDialog(true);
-          }}>
-            <Plus className="h-4 w-4 mr-2" />
-            Nueva Plantilla
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent>
+    <CollapsibleCard
+      title="Formatos de Presupuesto Tipo"
+      description="Define plantillas de presupuesto que podrán aplicarse al crear contratos"
+      icon={<FileText className="h-5 w-5" />}
+      defaultOpen={!defaultCollapsed}
+      headerActions={
+        <Button onClick={() => {
+          setNewType(activeTab);
+          setShowNewDialog(true);
+        }} size="sm">
+          <Plus className="h-4 w-4 mr-2" />
+          Nueva Plantilla
+        </Button>
+      }
+    >
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
           <TabsList className="mb-4">
             <TabsTrigger value="capex">CAPEX</TabsTrigger>
@@ -491,7 +484,6 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
             </div>
           </TabsContent>
         </Tabs>
-      </CardContent>
 
       {/* Dialog: Nueva plantilla */}
       <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
@@ -576,6 +568,6 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Card>
+    </CollapsibleCard>
   );
 };
