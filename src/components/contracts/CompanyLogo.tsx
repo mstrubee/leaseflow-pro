@@ -3,33 +3,64 @@ import logoAutoplanet from "@/assets/logo-autoplanet.png";
 import { cn } from "@/lib/utils";
 
 interface CompanyLogoProps {
-  companyName: string | null | undefined;
+  companyName?: string | null;
+  companyNames?: string[];
   size?: "sm" | "md" | "lg";
   className?: string;
 }
 
 /**
- * Displays the company logo (Agroplanet or Autoplanet) based on the company name.
- * Returns null if the company name doesn't match either company.
+ * Displays the company logo(s) (Agroplanet and/or Autoplanet) based on the company name(s).
+ * Supports both single companyName and multiple companyNames.
+ * Returns null if no company names match either company.
  */
-export const CompanyLogo = ({ companyName, size = "sm", className }: CompanyLogoProps) => {
-  if (!companyName) return null;
-
-  const lowerName = companyName.toLowerCase();
-  
-  const isAgroplanet = lowerName.includes("agroplanet");
-  const isAutoplanet = lowerName.includes("autoplanet");
-
-  if (!isAgroplanet && !isAutoplanet) return null;
-
+export const CompanyLogo = ({ companyName, companyNames, size = "sm", className }: CompanyLogoProps) => {
   const sizeClasses = {
     sm: "h-6 w-6",
     md: "h-8 w-8",
     lg: "h-10 w-10",
   };
 
-  const logo = isAgroplanet ? logoAgroplanet : logoAutoplanet;
-  const alt = isAgroplanet ? "Agroplanet" : "Autoplanet";
+  // Collect all names to check
+  const namesToCheck: string[] = [];
+  if (companyName) namesToCheck.push(companyName);
+  if (companyNames) namesToCheck.push(...companyNames);
+
+  if (namesToCheck.length === 0) return null;
+
+  // Check which companies are present
+  let hasAgroplanet = false;
+  let hasAutoplanet = false;
+
+  for (const name of namesToCheck) {
+    const lowerName = name.toLowerCase();
+    if (lowerName.includes("agroplanet")) hasAgroplanet = true;
+    if (lowerName.includes("autoplanet")) hasAutoplanet = true;
+  }
+
+  if (!hasAgroplanet && !hasAutoplanet) return null;
+
+  // If both companies, show both logos
+  if (hasAgroplanet && hasAutoplanet) {
+    return (
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <img
+          src={logoAgroplanet}
+          alt="Agroplanet"
+          className={cn(sizeClasses[size], "rounded object-contain", className)}
+        />
+        <img
+          src={logoAutoplanet}
+          alt="Autoplanet"
+          className={cn(sizeClasses[size], "rounded object-contain", className)}
+        />
+      </div>
+    );
+  }
+
+  // Single company logo
+  const logo = hasAgroplanet ? logoAgroplanet : logoAutoplanet;
+  const alt = hasAgroplanet ? "Agroplanet" : "Autoplanet";
 
   return (
     <img
@@ -42,6 +73,19 @@ export const CompanyLogo = ({ companyName, size = "sm", className }: CompanyLogo
       )}
     />
   );
+};
+
+/**
+ * Helper function to get all company names from a contract's companies array.
+ */
+export const getCompanyNames = (
+  contractCompanies: Array<{ companies?: { name: string } | null }> | null | undefined
+): string[] => {
+  if (!contractCompanies || contractCompanies.length === 0) return [];
+  
+  return contractCompanies
+    .map(cc => cc.companies?.name)
+    .filter((name): name is string => !!name);
 };
 
 /**
