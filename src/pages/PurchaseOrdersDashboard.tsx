@@ -36,6 +36,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ArrowLeft,
@@ -209,6 +217,17 @@ const PurchaseOrdersDashboard = () => {
   // Expanded rows for multi-contract items
   const [expandedMultiRequests, setExpandedMultiRequests] = useState<Set<string>>(new Set());
   const [expandedMultiOrders, setExpandedMultiOrders] = useState<Set<string>>(new Set());
+
+  // Invoice dialog states
+  const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
+  const [selectedOrderForInvoice, setSelectedOrderForInvoice] = useState<PurchaseOrder | null>(null);
+  const [newInvoiceData, setNewInvoiceData] = useState({
+    invoice_number: "",
+    invoice_date: new Date().toISOString().split("T")[0],
+    amount: "",
+    currency: "UF" as "UF" | "CLP",
+  });
+  const [creatingInvoice, setCreatingInvoice] = useState(false);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
@@ -836,6 +855,63 @@ const PurchaseOrdersDashboard = () => {
     return `${value.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
   };
 
+  // Handle opening invoice dialog
+  const handleOpenInvoiceDialog = (order: PurchaseOrder) => {
+    setSelectedOrderForInvoice(order);
+    setNewInvoiceData({
+      invoice_number: "",
+      invoice_date: new Date().toISOString().split("T")[0],
+      amount: "",
+      currency: "UF",
+    });
+    setShowInvoiceDialog(true);
+  };
+
+  // Handle create invoice
+  const handleCreateInvoice = async () => {
+    if (!selectedOrderForInvoice || !newInvoiceData.invoice_number || !newInvoiceData.amount) {
+      toast.error("Complete todos los campos requeridos");
+      return;
+    }
+
+    setCreatingInvoice(true);
+    try {
+      const inputAmount = parseFloat(newInvoiceData.amount) || 0;
+      let amountUF: number;
+      let amountCLP: number;
+
+      if (newInvoiceData.currency === "UF") {
+        amountUF = inputAmount;
+        amountCLP = inputAmount * ufValue;
+      } else {
+        amountCLP = inputAmount;
+        amountUF = inputAmount / ufValue;
+      }
+
+      const { error } = await supabase.from("invoices").insert({
+        purchase_order_id: selectedOrderForInvoice.id,
+        invoice_number: newInvoiceData.invoice_number,
+        invoice_date: newInvoiceData.invoice_date,
+        amount_uf: amountUF,
+        amount_clp: amountCLP,
+        input_currency: newInvoiceData.currency,
+        uf_value_at_entry: ufValue,
+      });
+
+      if (error) throw error;
+
+      toast.success("Factura agregada correctamente");
+      setShowInvoiceDialog(false);
+      setSelectedOrderForInvoice(null);
+      loadData();
+    } catch (error: any) {
+      console.error("Error creating invoice:", error);
+      toast.error("Error al crear la factura: " + error.message);
+    } finally {
+      setCreatingInvoice(false);
+    }
+  };
+
   const totalOrders = groupedOrdersByNumber.length;
   const totalAmount = groupedOrdersByNumber.reduce(
     (sum, g) => sum + g.total_amount_uf,
@@ -1209,7 +1285,7 @@ const PurchaseOrdersDashboard = () => {
           <TabsList className="grid w-full grid-cols-2 mb-4">
             <TabsTrigger value="oc" className="gap-2">
               <ShoppingCart className="h-4 w-4" />
-              Órdenes de Compra ({summaryData.countOC})
+              Órdenes de Compra ({groupedOrdersByNumber.length})
             </TabsTrigger>
             <TabsTrigger value="requests" className="gap-2">
               <ClipboardList className="h-4 w-4" />
@@ -1370,42 +1446,86 @@ const PurchaseOrdersDashboard = () => {
                                               <TableHead className="text-xs">Contrato</TableHead>
                                               <TableHead className="text-xs text-right">Monto (UF)</TableHead>
                                               <TableHead className="text-xs text-center">Facturas</TableHead>
+                                              <TableHead className="text-xs text-right">Facturado</TableHead>
+                                              <TableHead className="text-xs text-right">Pendiente</TableHead>
                                               <TableHead className="text-xs">Acciones</TableHead>
                                             </TableRow>
                                           </TableHeader>
                                           <TableBody>
-                                            {groupedOrder.orders.map((order) => (
-                                              <TableRow key={order.id}>
-                                                <TableCell className="text-sm py-1.5 font-medium">
-                                                  {order.contract_name}
-                                                </TableCell>
-                                                <TableCell className="text-sm py-1.5 text-right">
-                                                  {formatUF(order.amount_uf)}
-                                                </TableCell>
-                                                <TableCell className="text-sm py-1.5 text-center">
-                                                  <div className="flex items-center justify-center gap-1">
-                                                    <Receipt className="h-3 w-3 text-muted-foreground" />
-                                                    {order.invoices_count || 0}
-                                                  </div>
-                                                </TableCell>
-                                                <TableCell className="py-1.5">
-                                                  <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      navigate(`/contracts/${order.contract_id}?section=ordenes-compra&returnTo=purchase-orders`);
-                                                    }}
-                                                    className="h-6 px-2 text-xs"
-                                                  >
-                                                    <ExternalLink className="h-3 w-3 mr-1" />
-                                                    Ver Local
-                                                  </Button>
-                                                </TableCell>
-                                              </TableRow>
-                                            ))}
+                                            {groupedOrder.orders.map((order) => {
+                                              const invoicedAmount = order.invoices_total || 0;
+                                              const pendingAmount = (order.amount_uf || 0) - invoicedAmount;
+                                              return (
+                                                <TableRow key={order.id}>
+                                                  <TableCell className="text-sm py-1.5 font-medium">
+                                                    {order.contract_name}
+                                                  </TableCell>
+                                                  <TableCell className="text-sm py-1.5 text-right">
+                                                    {formatUF(order.amount_uf)}
+                                                  </TableCell>
+                                                  <TableCell className="text-sm py-1.5 text-center">
+                                                    <div className="flex items-center justify-center gap-1">
+                                                      <Receipt className="h-3 w-3 text-muted-foreground" />
+                                                      {order.invoices_count || 0}
+                                                    </div>
+                                                  </TableCell>
+                                                  <TableCell className="text-sm py-1.5 text-right text-green-600">
+                                                    {formatUF(invoicedAmount)}
+                                                  </TableCell>
+                                                  <TableCell className="text-sm py-1.5 text-right text-orange-600">
+                                                    {formatUF(pendingAmount)}
+                                                  </TableCell>
+                                                  <TableCell className="py-1.5">
+                                                    <div className="flex items-center gap-1">
+                                                      <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          handleOpenInvoiceDialog(order);
+                                                        }}
+                                                        className="h-6 px-2 text-xs gap-1"
+                                                      >
+                                                        <Plus className="h-3 w-3" />
+                                                        Factura
+                                                      </Button>
+                                                      <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          navigate(`/contracts/${order.contract_id}?section=ordenes-compra&returnTo=purchase-orders`);
+                                                        }}
+                                                        className="h-6 px-2 text-xs"
+                                                      >
+                                                        <ExternalLink className="h-3 w-3 mr-1" />
+                                                        Ver Local
+                                                      </Button>
+                                                    </div>
+                                                  </TableCell>
+                                                </TableRow>
+                                              );
+                                            })}
                                           </TableBody>
                                         </Table>
+                                      </div>
+                                    )}
+
+                                    {/* For single-contract orders, show add invoice button */}
+                                    {!groupedOrder.is_multi_contract && (
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenInvoiceDialog(groupedOrder.orders[0]);
+                                          }}
+                                          className="h-7 gap-1"
+                                        >
+                                          <Plus className="h-3 w-3" />
+                                          Agregar Factura
+                                        </Button>
                                       </div>
                                     )}
 
@@ -1874,6 +1994,120 @@ const PurchaseOrdersDashboard = () => {
         formatUF={formatUF}
         onSuccess={loadData}
       />
+
+      {/* Invoice Creation Dialog */}
+      <Dialog open={showInvoiceDialog} onOpenChange={setShowInvoiceDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Receipt className="h-5 w-5" />
+              Agregar Factura
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedOrderForInvoice && (
+            <div className="space-y-4">
+              {/* Order info */}
+              <div className="bg-muted/50 rounded-lg p-3 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">OC:</span>
+                  <span className="text-sm font-medium">{selectedOrderForInvoice.order_number}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Contrato:</span>
+                  <span className="text-sm font-medium">{selectedOrderForInvoice.contract_name}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Monto OC:</span>
+                  <span className="text-sm font-bold">{formatUF(selectedOrderForInvoice.amount_uf)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Facturado:</span>
+                  <span className="text-sm font-medium text-green-600">{formatUF(selectedOrderForInvoice.invoices_total || 0)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Pendiente:</span>
+                  <span className="text-sm font-medium text-orange-600">
+                    {formatUF((selectedOrderForInvoice.amount_uf || 0) - (selectedOrderForInvoice.invoices_total || 0))}
+                  </span>
+                </div>
+              </div>
+
+              {/* Invoice form */}
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="invoice_number">Número de Factura *</Label>
+                  <Input
+                    id="invoice_number"
+                    placeholder="Ej: 12345"
+                    value={newInvoiceData.invoice_number}
+                    onChange={(e) => setNewInvoiceData({ ...newInvoiceData, invoice_number: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="invoice_date">Fecha de Factura</Label>
+                  <Input
+                    id="invoice_date"
+                    type="date"
+                    value={newInvoiceData.invoice_date}
+                    onChange={(e) => setNewInvoiceData({ ...newInvoiceData, invoice_date: e.target.value })}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="invoice_amount">Monto *</Label>
+                    <Input
+                      id="invoice_amount"
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={newInvoiceData.amount}
+                      onChange={(e) => setNewInvoiceData({ ...newInvoiceData, amount: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="invoice_currency">Moneda</Label>
+                    <Select
+                      value={newInvoiceData.currency}
+                      onValueChange={(v) => setNewInvoiceData({ ...newInvoiceData, currency: v as "UF" | "CLP" })}
+                    >
+                      <SelectTrigger id="invoice_currency">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="UF">UF</SelectItem>
+                        <SelectItem value="CLP">CLP ($)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Preview converted amount */}
+                {newInvoiceData.amount && (
+                  <div className="text-xs text-muted-foreground text-right">
+                    {newInvoiceData.currency === "UF" ? (
+                      <span>≈ ${Math.round(parseFloat(newInvoiceData.amount) * ufValue).toLocaleString("es-CL")} CLP</span>
+                    ) : (
+                      <span>≈ {(parseFloat(newInvoiceData.amount) / ufValue).toFixed(2)} UF</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowInvoiceDialog(false)} disabled={creatingInvoice}>
+              Cancelar
+            </Button>
+            <Button onClick={handleCreateInvoice} disabled={creatingInvoice || !newInvoiceData.invoice_number || !newInvoiceData.amount}>
+              {creatingInvoice ? "Guardando..." : "Agregar Factura"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
