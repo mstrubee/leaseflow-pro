@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,7 +41,11 @@ interface GanttTemplateDependency {
   lag_type: string;
 }
 
-export function GanttTemplateManager() {
+interface GanttTemplateManagerProps {
+  defaultCollapsed?: boolean;
+}
+
+export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplateManagerProps) {
   const { toast } = useToast();
   const [templates, setTemplates] = useState<GanttTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<GanttTemplate | null>(null);

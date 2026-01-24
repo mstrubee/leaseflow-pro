@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,7 +19,11 @@ interface OCTemplate {
   created_at: string;
 }
 
-export const OCRequestTemplateManager = () => {
+interface OCRequestTemplateManagerProps {
+  defaultCollapsed?: boolean;
+}
+
+export const OCRequestTemplateManager = ({ defaultCollapsed = false }: OCRequestTemplateManagerProps) => {
   const [templates, setTemplates] = useState<OCTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);

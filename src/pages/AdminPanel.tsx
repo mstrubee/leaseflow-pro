@@ -21,6 +21,7 @@ import { CompanyManager } from "@/components/admin/CompanyManager";
 import { StorageMonitor } from "@/components/admin/StorageMonitor";
 import { OCRequestTemplateManager } from "@/components/admin/OCRequestTemplateManager";
 import { LogoManager } from "@/components/admin/LogoManager";
+import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 interface Profile {
   id: string;
   email: string;
@@ -706,12 +707,11 @@ const AdminPanel = () => {
           </Dialog>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Usuarios</CardTitle>
-            <CardDescription>Lista de todos los usuarios registrados</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <CollapsibleCard
+          title="Usuarios"
+          description="Lista de todos los usuarios registrados"
+          icon={<Shield className="h-5 w-5" />}
+        >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -782,30 +782,21 @@ const AdminPanel = () => {
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+        </CollapsibleCard>
 
         {/* Companies */}
-        <CompanyManager />
+        <CompanyManager defaultCollapsed />
 
         {/* Logo Management */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <img src="/placeholder.svg" alt="" className="h-5 w-5" />
-              Logos de la Aplicación
-            </CardTitle>
-            <CardDescription>
-              Administra los logos que se muestran en la aplicación
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <LogoManager />
-          </CardContent>
-        </Card>
+        <CollapsibleCard
+          title="Logos de la Aplicación"
+          description="Administra los logos que se muestran en la aplicación"
+        >
+          <LogoManager />
+        </CollapsibleCard>
 
         {/* Cloud Storage Settings */}
-        <CloudStorageSettings />
+        <CloudStorageSettings defaultCollapsed />
 
         {/* Budget Templates */}
         <BudgetTemplateManager />
