@@ -933,6 +933,7 @@ export const OCRequestsList = ({
         onOpenChange={setShowViewDialog}
         requestId={viewRequestId}
         formatUF={formatUF}
+        ufValue={ufValue}
         onRefresh={() => {
           loadRequests();
           onRefresh?.();

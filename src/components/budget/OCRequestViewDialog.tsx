@@ -7,12 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Save, Trash2, Plus, Calendar, Check, AlertCircle, Layers, ExternalLink, FileText } from "lucide-react";
+import { Loader2, Save, Trash2, Plus, Calendar, Check, AlertCircle, Layers, ExternalLink, FileText, Pencil, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { format, isPast, isToday } from "date-fns";
 import { es } from "date-fns/locale";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface OCRequest {
   id: string;
@@ -47,6 +48,19 @@ interface ContractAllocation {
   amount_clp: number;
 }
 
+interface EditableAllocation {
+  id?: string;
+  contract_id: string;
+  contract_name: string;
+  amount_uf: number;
+  isNew?: boolean;
+}
+
+interface Contract {
+  id: string;
+  name: string;
+}
+
 interface PaymentPlan {
   id: string;
   payment_number: number;
@@ -64,6 +78,7 @@ interface OCRequestViewDialogProps {
   formatUF: (value: number) => string;
   onRefresh?: () => void;
   readOnly?: boolean;
+  ufValue?: number;
 }
 
 export const OCRequestViewDialog = ({
@@ -72,7 +87,8 @@ export const OCRequestViewDialog = ({
   requestId,
   formatUF,
   onRefresh,
-  readOnly = false
+  readOnly = false,
+  ufValue = 39700
 }: OCRequestViewDialogProps) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -91,6 +107,12 @@ export const OCRequestViewDialog = ({
   // New payment form
   const [newPayment, setNewPayment] = useState({ description: "", amount: "", due_date: "" });
   const [addingPayment, setAddingPayment] = useState(false);
+
+  // Contract allocations edit state
+  const [isEditingAllocations, setIsEditingAllocations] = useState(false);
+  const [editableAllocations, setEditableAllocations] = useState<EditableAllocation[]>([]);
+  const [availableContracts, setAvailableContracts] = useState<Contract[]>([]);
+  const [savingAllocations, setSavingAllocations] = useState(false);
   
   const { toast } = useToast();
 
@@ -172,6 +194,129 @@ export const OCRequestViewDialog = ({
       toast({ variant: "destructive", title: "Error", description: "No se pudo cargar la solicitud" });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Load all contracts for allocation editing
+  const loadContracts = async () => {
+    const { data } = await supabase
+      .from("contracts")
+      .select("id, name")
+      .is("deleted_at", null)
+      .order("name");
+    setAvailableContracts(data || []);
+  };
+
+  // Start editing allocations
+  const handleStartEditAllocations = () => {
+    loadContracts();
+    setEditableAllocations(
+      contractAllocations.map(a => ({
+        id: a.id,
+        contract_id: a.contract_id,
+        contract_name: a.contract_name,
+        amount_uf: a.amount_uf
+      }))
+    );
+    setIsEditingAllocations(true);
+  };
+
+  // Cancel editing
+  const handleCancelEditAllocations = () => {
+    setIsEditingAllocations(false);
+    setEditableAllocations([]);
+  };
+
+  // Add new allocation
+  const handleAddAllocation = () => {
+    const usedContractIds = editableAllocations.map(a => a.contract_id);
+    const availableContract = availableContracts.find(c => !usedContractIds.includes(c.id));
+    
+    if (availableContract) {
+      setEditableAllocations(prev => [
+        ...prev,
+        {
+          contract_id: availableContract.id,
+          contract_name: availableContract.name,
+          amount_uf: 0,
+          isNew: true
+        }
+      ]);
+    } else {
+      toast({ variant: "destructive", title: "Sin contratos disponibles", description: "Todos los contratos ya están asignados" });
+    }
+  };
+
+  // Update allocation
+  const handleUpdateAllocation = (index: number, field: "contract_id" | "amount_uf", value: any) => {
+    setEditableAllocations(prev => {
+      const updated = [...prev];
+      if (field === "contract_id") {
+        const contract = availableContracts.find(c => c.id === value);
+        updated[index] = { ...updated[index], contract_id: value, contract_name: contract?.name || "" };
+      } else {
+        updated[index] = { ...updated[index], amount_uf: parseFloat(value) || 0 };
+      }
+      return updated;
+    });
+  };
+
+  // Remove allocation
+  const handleRemoveAllocation = (index: number) => {
+    setEditableAllocations(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Save allocations
+  const handleSaveAllocations = async () => {
+    if (!request) return;
+
+    // Validate
+    if (editableAllocations.length === 0) {
+      toast({ variant: "destructive", title: "Error", description: "Debe asignar al menos un contrato" });
+      return;
+    }
+
+    const totalAllocated = editableAllocations.reduce((sum, a) => sum + a.amount_uf, 0);
+    const tolerance = 0.01;
+    if (Math.abs(totalAllocated - request.amount_uf) > tolerance) {
+      toast({ 
+        variant: "destructive", 
+        title: "Error de distribución", 
+        description: `El total asignado (${formatUF(totalAllocated)}) no coincide con el monto total (${formatUF(request.amount_uf)})` 
+      });
+      return;
+    }
+
+    setSavingAllocations(true);
+    try {
+      // Delete existing allocations
+      await supabase
+        .from("oc_request_contract_allocations")
+        .delete()
+        .eq("oc_request_id", request.id);
+
+      // Insert new allocations
+      const allocations = editableAllocations.map(a => ({
+        oc_request_id: request.id,
+        contract_id: a.contract_id,
+        amount_uf: Math.round(a.amount_uf * 10000) / 10000,
+        amount_clp: Math.round(a.amount_uf * ufValue)
+      }));
+
+      const { error } = await supabase
+        .from("oc_request_contract_allocations")
+        .insert(allocations);
+
+      if (error) throw error;
+
+      toast({ title: "Asignaciones actualizadas" });
+      setIsEditingAllocations(false);
+      loadRequest();
+      onRefresh?.();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setSavingAllocations(false);
     }
   };
 
@@ -418,74 +563,231 @@ export const OCRequestViewDialog = ({
             {/* Contracts Tab - Only for multi-contract */}
             {isMultiContract && (
               <TabsContent value="contracts" className="space-y-4 mt-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Layers className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Asignación por Contrato</span>
-                </div>
-
-                <div className="border rounded-lg overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Contrato</TableHead>
-                        <TableHead className="text-right">Monto (UF)</TableHead>
-                        <TableHead className="text-right">Monto (CLP)</TableHead>
-                        <TableHead className="text-right">% del Total</TableHead>
-                        <TableHead className="w-[100px]">Acciones</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {contractAllocations.map((alloc) => {
-                        const percentage = request.amount_uf > 0 
-                          ? ((alloc.amount_uf / request.amount_uf) * 100).toFixed(1) 
-                          : "0";
-                        
-                        return (
-                          <TableRow key={alloc.id}>
-                            <TableCell className="font-medium">
-                              {alloc.contract_name}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {formatUF(alloc.amount_uf)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              ${Math.round(alloc.amount_clp).toLocaleString("es-CL")}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Badge variant="outline" className="text-xs">
-                                {percentage}%
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleNavigateToContract(alloc.contract_id)}
-                                className="h-7 px-2 gap-1"
-                              >
-                                <ExternalLink className="h-3 w-3" />
-                                Ver
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-
-                {/* Summary */}
-                <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
-                  <span className="font-medium">Total Asignado</span>
-                  <div className="text-right">
-                    <span className="font-mono font-medium">
-                      {formatUF(contractAllocations.reduce((sum, a) => sum + a.amount_uf, 0))}
-                    </span>
-                    <span className="text-muted-foreground text-sm ml-2">
-                      (${Math.round(contractAllocations.reduce((sum, a) => sum + a.amount_clp, 0)).toLocaleString("es-CL")} CLP)
-                    </span>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Asignación por Contrato</span>
                   </div>
+                  {!readOnly && request.status === "pending" && !isEditingAllocations && (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={handleStartEditAllocations}
+                      className="gap-1"
+                    >
+                      <Pencil className="h-3 w-3" />
+                      Editar
+                    </Button>
+                  )}
+                  {isEditingAllocations && (
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={handleCancelEditAllocations}
+                        className="gap-1"
+                      >
+                        <X className="h-3 w-3" />
+                        Cancelar
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        onClick={handleSaveAllocations}
+                        disabled={savingAllocations}
+                        className="gap-1"
+                      >
+                        {savingAllocations ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                        Guardar
+                      </Button>
+                    </div>
+                  )}
                 </div>
+
+                {/* View Mode */}
+                {!isEditingAllocations && (
+                  <>
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Contrato</TableHead>
+                            <TableHead className="text-right">Monto (UF)</TableHead>
+                            <TableHead className="text-right">Monto (CLP)</TableHead>
+                            <TableHead className="text-right">% del Total</TableHead>
+                            <TableHead className="w-[100px]">Acciones</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {contractAllocations.map((alloc) => {
+                            const percentage = request.amount_uf > 0 
+                              ? ((alloc.amount_uf / request.amount_uf) * 100).toFixed(1) 
+                              : "0";
+                            
+                            return (
+                              <TableRow key={alloc.id}>
+                                <TableCell className="font-medium">
+                                  {alloc.contract_name}
+                                </TableCell>
+                                <TableCell className="text-right font-mono">
+                                  {formatUF(alloc.amount_uf)}
+                                </TableCell>
+                                <TableCell className="text-right font-mono">
+                                  ${Math.round(alloc.amount_clp).toLocaleString("es-CL")}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Badge variant="outline" className="text-xs">
+                                    {percentage}%
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleNavigateToContract(alloc.contract_id)}
+                                    className="h-7 px-2 gap-1"
+                                  >
+                                    <ExternalLink className="h-3 w-3" />
+                                    Ver
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    {/* Summary */}
+                    <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
+                      <span className="font-medium">Total Asignado</span>
+                      <div className="text-right">
+                        <span className="font-mono font-medium">
+                          {formatUF(contractAllocations.reduce((sum, a) => sum + a.amount_uf, 0))}
+                        </span>
+                        <span className="text-muted-foreground text-sm ml-2">
+                          (${Math.round(contractAllocations.reduce((sum, a) => sum + a.amount_clp, 0)).toLocaleString("es-CL")} CLP)
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Edit Mode */}
+                {isEditingAllocations && (
+                  <>
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Contrato</TableHead>
+                            <TableHead className="text-right w-[150px]">Monto (UF)</TableHead>
+                            <TableHead className="text-right">% del Total</TableHead>
+                            <TableHead className="w-[80px]">Acciones</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {editableAllocations.map((alloc, index) => {
+                            const percentage = request.amount_uf > 0 
+                              ? ((alloc.amount_uf / request.amount_uf) * 100).toFixed(1) 
+                              : "0";
+                            const usedContractIds = editableAllocations.filter((_, i) => i !== index).map(a => a.contract_id);
+                            const availableForThisRow = availableContracts.filter(
+                              c => c.id === alloc.contract_id || !usedContractIds.includes(c.id)
+                            );
+                            
+                            return (
+                              <TableRow key={alloc.id || `new-${index}`}>
+                                <TableCell>
+                                  <Select
+                                    value={alloc.contract_id}
+                                    onValueChange={(value) => handleUpdateAllocation(index, "contract_id", value)}
+                                  >
+                                    <SelectTrigger className="h-8">
+                                      <SelectValue placeholder="Seleccionar contrato" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {availableForThisRow.map(contract => (
+                                        <SelectItem key={contract.id} value={contract.id}>
+                                          {contract.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    value={alloc.amount_uf || ""}
+                                    onChange={(e) => handleUpdateAllocation(index, "amount_uf", e.target.value)}
+                                    className="h-8 text-right font-mono w-[130px]"
+                                    placeholder="0.00"
+                                  />
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Badge variant="outline" className="text-xs">
+                                    {percentage}%
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleRemoveAllocation(index)}
+                                    className="h-7 px-2 text-destructive hover:text-destructive"
+                                    disabled={editableAllocations.length <= 1}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    {/* Add button */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddAllocation}
+                      className="gap-1"
+                      disabled={editableAllocations.length >= availableContracts.length}
+                    >
+                      <Plus className="h-3 w-3" />
+                      Agregar Contrato
+                    </Button>
+
+                    {/* Edit Summary */}
+                    {(() => {
+                      const totalEditable = editableAllocations.reduce((sum, a) => sum + a.amount_uf, 0);
+                      const diff = request.amount_uf - totalEditable;
+                      const isBalanced = Math.abs(diff) < 0.01;
+                      
+                      return (
+                        <div className={`flex justify-between items-center p-3 rounded-lg ${isBalanced ? 'bg-green-50 dark:bg-green-950/30' : 'bg-yellow-50 dark:bg-yellow-950/30'}`}>
+                          <div className="flex flex-col">
+                            <span className="font-medium">Total Asignado</span>
+                            {!isBalanced && (
+                              <span className="text-xs text-yellow-600 dark:text-yellow-400">
+                                {diff > 0 ? `Faltan ${formatUF(diff)} por asignar` : `Exceso de ${formatUF(Math.abs(diff))}`}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <span className={`font-mono font-medium ${isBalanced ? 'text-green-600' : 'text-yellow-600'}`}>
+                              {formatUF(totalEditable)}
+                            </span>
+                            <span className="text-muted-foreground text-sm ml-2">
+                              / {formatUF(request.amount_uf)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </>
+                )}
               </TabsContent>
             )}
 
