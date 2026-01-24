@@ -155,7 +155,7 @@ export function CommuneContractsDialog({
                 <TableRow key={contract.id}>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
-                      <CompanyLogo companyName={contract.companies[0]} size="sm" />
+                      <CompanyLogo companyNames={contract.companies} size="sm" />
                       {contract.name}
                     </div>
                   </TableCell>
