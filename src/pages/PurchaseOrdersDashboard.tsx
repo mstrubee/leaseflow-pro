@@ -67,6 +67,7 @@ import { toast } from "sonner";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import { CentralizedOrderCreator } from "@/components/budget/CentralizedOrderCreator";
 import { OCRequestViewDialog } from "@/components/budget/OCRequestViewDialog";
+import { ConvertOCRequestDialog } from "@/components/budget/ConvertOCRequestDialog";
 
 interface Invoice {
   id: string;
@@ -115,9 +116,13 @@ interface OCRequest {
   project_name: string;
   description: string | null;
   amount_uf: number;
+  amount_clp?: number;
   status: string;
+  supplier_id: string | null;
   supplier_name: string | null;
   contract_id: string;
+  budget_id?: string | null;
+  opex_master_id?: string | null;
   year: number;
   converted_oc_id: string | null;
   is_multi_contract?: boolean;
@@ -176,6 +181,10 @@ const PurchaseOrdersDashboard = () => {
 
   // Edit dialog for OC requests
   const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
+  
+  // Convert dialog for OC requests
+  const [convertingRequest, setConvertingRequest] = useState<OCRequest | null>(null);
+  const [showConvertDialog, setShowConvertDialog] = useState(false);
   const [showEditRequestDialog, setShowEditRequestDialog] = useState(false);
 
   // Expanded rows for multi-contract items
@@ -377,6 +386,12 @@ const PurchaseOrdersDashboard = () => {
   const handleEditRequest = (requestId: string) => {
     setEditingRequestId(requestId);
     setShowEditRequestDialog(true);
+  };
+
+  // Handle opening convert dialog
+  const handleConvertRequest = (req: OCRequest) => {
+    setConvertingRequest(req);
+    setShowConvertDialog(true);
   };
 
   // Chart data for contracts
@@ -1615,15 +1630,27 @@ const PurchaseOrdersDashboard = () => {
                               <TableCell>
                                 <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                                   {req.status === "pending" && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => handleEditRequest(req.id)}
-                                      className="h-7 px-2"
-                                      title="Editar solicitud"
-                                    >
-                                      <Edit className="h-3 w-3" />
-                                    </Button>
+                                    <>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleEditRequest(req.id)}
+                                        className="h-7 px-2"
+                                        title="Editar solicitud"
+                                      >
+                                        <Edit className="h-3 w-3" />
+                                      </Button>
+                                      <Button
+                                        variant="default"
+                                        size="sm"
+                                        onClick={() => handleConvertRequest(req)}
+                                        className="h-7 px-2 gap-1"
+                                        title="Convertir a OC"
+                                      >
+                                        <ShoppingCart className="h-3 w-3" />
+                                        Crear OC
+                                      </Button>
+                                    </>
                                   )}
                                   {isMulti ? (
                                     <Button
@@ -1792,6 +1819,16 @@ const PurchaseOrdersDashboard = () => {
         formatUF={formatUF}
         onRefresh={loadData}
         readOnly={false}
+      />
+
+      {/* Convert OC Request Dialog */}
+      <ConvertOCRequestDialog
+        open={showConvertDialog}
+        onOpenChange={setShowConvertDialog}
+        request={convertingRequest}
+        ufValue={ufValue}
+        formatUF={formatUF}
+        onSuccess={loadData}
       />
     </div>
   );
