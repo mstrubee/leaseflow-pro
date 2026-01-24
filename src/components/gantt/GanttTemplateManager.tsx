@@ -366,25 +366,18 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <div className="flex justify-between items-start">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <CalendarDays className="h-5 w-5" />
-                Plantillas de Línea de Tiempo (Gantt)
-              </CardTitle>
-              <CardDescription>
-                Crea y gestiona plantillas reutilizables para líneas de tiempo de proyectos
-              </CardDescription>
-            </div>
-            <Button onClick={() => { setEditingTemplate(null); setTemplateForm({ name: "", description: "" }); setTemplateDialogOpen(true); }}>
-              <Plus className="h-4 w-4 mr-2" />
-              Nueva Plantilla
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
+      <CollapsibleCard
+        title="Plantillas de Línea de Tiempo (Gantt)"
+        description="Crea y gestiona plantillas reutilizables para líneas de tiempo de proyectos"
+        icon={<CalendarDays className="h-5 w-5" />}
+        defaultOpen={!defaultCollapsed}
+        headerActions={
+          <Button onClick={() => { setEditingTemplate(null); setTemplateForm({ name: "", description: "" }); setTemplateDialogOpen(true); }} size="sm">
+            <Plus className="h-4 w-4 mr-2" />
+            Nueva Plantilla
+          </Button>
+        }
+      >
           {templates.length === 0 ? (
             <p className="text-muted-foreground text-center py-8">No hay plantillas creadas aún.</p>
           ) : (
@@ -430,8 +423,7 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
+      </CollapsibleCard>
 
       {/* Tasks section */}
       {selectedTemplate && (
