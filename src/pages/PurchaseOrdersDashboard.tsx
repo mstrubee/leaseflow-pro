@@ -455,18 +455,22 @@ const PurchaseOrdersDashboard = () => {
       .slice(0, 10);
   }, [orders, yearFilter]);
 
-  // Chart data for categories
+  // Chart data for categories - detect OPEX orders more robustly
   const categoryChartData = useMemo(() => {
     const yearNum = parseInt(yearFilter);
-    const filtered = orders.filter(o => o.year === yearNum && o.opex_category_id);
+    // Include orders that have opex_category_id OR budget_classification === "OPEX"
+    const filtered = orders.filter(o => 
+      o.year === yearNum && 
+      (o.opex_category_id || o.budget_classification === "OPEX")
+    );
     
     const categoryMap = new Map<string, { name: string; amount: number }>();
     filtered.forEach(order => {
-      if (order.opex_category_id) {
-        const existing = categoryMap.get(order.opex_category_id) || { name: order.opex_category_name || "Sin categoría", amount: 0 };
-        existing.amount += order.amount_uf || 0;
-        categoryMap.set(order.opex_category_id, existing);
-      }
+      const catId = order.opex_category_id || "sin_categoria";
+      const catName = order.opex_category_name || "Sin categoría";
+      const existing = categoryMap.get(catId) || { name: catName, amount: 0 };
+      existing.amount += order.amount_uf || 0;
+      categoryMap.set(catId, existing);
     });
 
     return Array.from(categoryMap.entries())
@@ -487,12 +491,19 @@ const PurchaseOrdersDashboard = () => {
     const totalOC = filtered.reduce((sum, o) => sum + (o.amount_uf || 0), 0);
     const totalFacturado = filtered.reduce((sum, o) => sum + (o.invoices_total || 0), 0);
     const sinFacturar = totalOC - totalFacturado;
+    
+    // Count unique order numbers (unique OCs)
+    const uniqueOrderNumbers = new Set(filtered.map(o => o.order_number));
+    
+    // Count unique contracts/locales with OCs
+    const uniqueContracts = new Set(filtered.map(o => o.contract_id));
 
     return {
       totalOC,
       totalFacturado,
       sinFacturar,
-      countOC: filtered.length,
+      countOC: uniqueOrderNumbers.size, // Unique OC count
+      countLocales: uniqueContracts.size, // Unique locales with OC
       countFacturas: filtered.reduce((sum, o) => sum + (o.invoices_count || 0), 0),
     };
   }, [orders, yearFilter]);
@@ -1008,12 +1019,12 @@ const PurchaseOrdersDashboard = () => {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <DollarSign className="h-4 w-4" />
-                Monto Total
+                <Layers className="h-4 w-4" />
+                Locales con OC
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{formatUF(summaryData.totalOC)}</div>
+              <div className="text-2xl font-bold">{summaryData.countLocales}</div>
             </CardContent>
           </Card>
           <Card>
@@ -1041,12 +1052,13 @@ const PurchaseOrdersDashboard = () => {
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                OC Únicas
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <DollarSign className="h-4 w-4" />
+                Monto Total
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{groupedOrdersByNumber.length}</div>
+              <div className="text-2xl font-bold">{formatUF(summaryData.totalOC)}</div>
             </CardContent>
           </Card>
         </div>
@@ -1433,6 +1445,26 @@ const PurchaseOrdersDashboard = () => {
                               <TableRow className="bg-muted/20">
                                 <TableCell colSpan={isAdmin ? 10 : 9} className="py-3 px-4">
                                   <div className="space-y-4">
+                                    {/* Add invoice button at OC level (for both single and multi-contract) */}
+                                    <div className="flex items-center gap-2 mb-3">
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          // Use first order for invoice - invoice is at OC level
+                                          handleOpenInvoiceDialog(groupedOrder.orders[0]);
+                                        }}
+                                        className="h-7 gap-1"
+                                      >
+                                        <Plus className="h-3 w-3" />
+                                        Agregar Factura
+                                      </Button>
+                                      <span className="text-xs text-muted-foreground">
+                                        La factura se asocia a la OC completa
+                                      </span>
+                                    </div>
+
                                     {/* Contracts breakdown for multi-contract */}
                                     {groupedOrder.is_multi_contract && (
                                       <div>
@@ -1445,16 +1477,11 @@ const PurchaseOrdersDashboard = () => {
                                             <TableRow>
                                               <TableHead className="text-xs">Contrato</TableHead>
                                               <TableHead className="text-xs text-right">Monto (UF)</TableHead>
-                                              <TableHead className="text-xs text-center">Facturas</TableHead>
-                                              <TableHead className="text-xs text-right">Facturado</TableHead>
-                                              <TableHead className="text-xs text-right">Pendiente</TableHead>
                                               <TableHead className="text-xs">Acciones</TableHead>
                                             </TableRow>
                                           </TableHeader>
                                           <TableBody>
                                             {groupedOrder.orders.map((order) => {
-                                              const invoicedAmount = order.invoices_total || 0;
-                                              const pendingAmount = (order.amount_uf || 0) - invoicedAmount;
                                               return (
                                                 <TableRow key={order.id}>
                                                   <TableCell className="text-sm py-1.5 font-medium">
@@ -1463,69 +1490,25 @@ const PurchaseOrdersDashboard = () => {
                                                   <TableCell className="text-sm py-1.5 text-right">
                                                     {formatUF(order.amount_uf)}
                                                   </TableCell>
-                                                  <TableCell className="text-sm py-1.5 text-center">
-                                                    <div className="flex items-center justify-center gap-1">
-                                                      <Receipt className="h-3 w-3 text-muted-foreground" />
-                                                      {order.invoices_count || 0}
-                                                    </div>
-                                                  </TableCell>
-                                                  <TableCell className="text-sm py-1.5 text-right text-green-600">
-                                                    {formatUF(invoicedAmount)}
-                                                  </TableCell>
-                                                  <TableCell className="text-sm py-1.5 text-right text-orange-600">
-                                                    {formatUF(pendingAmount)}
-                                                  </TableCell>
                                                   <TableCell className="py-1.5">
-                                                    <div className="flex items-center gap-1">
-                                                      <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={(e) => {
-                                                          e.stopPropagation();
-                                                          handleOpenInvoiceDialog(order);
-                                                        }}
-                                                        className="h-6 px-2 text-xs gap-1"
-                                                      >
-                                                        <Plus className="h-3 w-3" />
-                                                        Factura
-                                                      </Button>
-                                                      <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={(e) => {
-                                                          e.stopPropagation();
-                                                          navigate(`/contracts/${order.contract_id}?section=ordenes-compra&returnTo=purchase-orders`);
-                                                        }}
-                                                        className="h-6 px-2 text-xs"
-                                                      >
-                                                        <ExternalLink className="h-3 w-3 mr-1" />
-                                                        Ver Local
-                                                      </Button>
-                                                    </div>
+                                                    <Button
+                                                      variant="ghost"
+                                                      size="sm"
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        navigate(`/contracts/${order.contract_id}?section=ordenes-compra&returnTo=purchase-orders`);
+                                                      }}
+                                                      className="h-6 px-2 text-xs"
+                                                    >
+                                                      <ExternalLink className="h-3 w-3 mr-1" />
+                                                      Ver Local
+                                                    </Button>
                                                   </TableCell>
                                                 </TableRow>
                                               );
                                             })}
                                           </TableBody>
                                         </Table>
-                                      </div>
-                                    )}
-
-                                    {/* For single-contract orders, show add invoice button */}
-                                    {!groupedOrder.is_multi_contract && (
-                                      <div className="flex items-center gap-2 mb-2">
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleOpenInvoiceDialog(groupedOrder.orders[0]);
-                                          }}
-                                          className="h-7 gap-1"
-                                        >
-                                          <Plus className="h-3 w-3" />
-                                          Agregar Factura
-                                        </Button>
                                       </div>
                                     )}
 
