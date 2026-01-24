@@ -1819,6 +1819,7 @@ const PurchaseOrdersDashboard = () => {
         formatUF={formatUF}
         onRefresh={loadData}
         readOnly={false}
+        ufValue={ufValue}
       />
 
       {/* Convert OC Request Dialog */}
