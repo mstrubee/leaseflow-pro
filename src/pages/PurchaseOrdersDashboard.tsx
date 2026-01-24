@@ -148,6 +148,25 @@ interface ChartData {
   color: string;
 }
 
+// Grouped order for display - combines multiple orders with the same order_number
+interface GroupedOrder {
+  order_number: string;
+  description: string | null;
+  supplier_name: string | null;
+  order_date: string;
+  budget_classification: string | null;
+  opex_category_name: string | null;
+  budget_line_name: string | null;
+  total_amount_uf: number;
+  total_invoices_count: number;
+  total_invoices_amount: number;
+  status: string;
+  year: number;
+  is_multi_contract: boolean;
+  orders: PurchaseOrder[]; // Individual orders that make up this group
+  contracts: { contract_id: string; contract_name: string; amount_uf: number; order_id: string }[];
+}
+
 const COLORS = [
   "hsl(var(--chart-1))",
   "hsl(var(--chart-2))",
@@ -459,8 +478,8 @@ const PurchaseOrdersDashboard = () => {
     };
   }, [orders, yearFilter]);
 
-  // Group orders by contract with all filters
-  const groupedOrders = useMemo(() => {
+  // Group orders by order_number - each unique order_number appears once
+  const groupedOrdersByNumber = useMemo((): GroupedOrder[] => {
     const yearNum = parseInt(yearFilter);
     let filtered = orders.filter(o => o.year === yearNum);
 
@@ -511,19 +530,67 @@ const PurchaseOrdersDashboard = () => {
       filtered = filtered.filter((o) => o.opex_category_id === chartCategoryFilter);
     }
 
-    // Group by contract
-    const grouped: Record<string, { contract: Contract; orders: PurchaseOrder[] }> = {};
+    // Group by order_number
+    const orderNumberMap = new Map<string, PurchaseOrder[]>();
     filtered.forEach((order) => {
-      if (!grouped[order.contract_id]) {
-        grouped[order.contract_id] = {
-          contract: { id: order.contract_id, name: order.contract_name || "Sin contrato" },
-          orders: [],
-        };
-      }
-      grouped[order.contract_id].orders.push(order);
+      const existing = orderNumberMap.get(order.order_number) || [];
+      existing.push(order);
+      orderNumberMap.set(order.order_number, existing);
     });
 
-    return Object.values(grouped).sort((a, b) => a.contract.name.localeCompare(b.contract.name));
+    // Convert to GroupedOrder array
+    const result: GroupedOrder[] = [];
+    orderNumberMap.forEach((ordersList, orderNumber) => {
+      const firstOrder = ordersList[0];
+      const isMulti = ordersList.length > 1;
+      
+      // Calculate totals
+      const totalAmount = ordersList.reduce((sum, o) => sum + (o.amount_uf || 0), 0);
+      const totalInvoicesCount = ordersList.reduce((sum, o) => sum + (o.invoices_count || 0), 0);
+      const totalInvoicesAmount = ordersList.reduce((sum, o) => sum + (o.invoices_total || 0), 0);
+      
+      // Determine overall status
+      let status = "abierta";
+      if (totalInvoicesAmount >= totalAmount) {
+        status = "cerrada";
+      } else if (totalInvoicesAmount > totalAmount) {
+        status = "descuadrada";
+      }
+
+      // Build contracts list
+      const contracts = ordersList.map(o => ({
+        contract_id: o.contract_id,
+        contract_name: o.contract_name || "Sin contrato",
+        amount_uf: o.amount_uf || 0,
+        order_id: o.id,
+      }));
+
+      result.push({
+        order_number: orderNumber,
+        description: firstOrder.description,
+        supplier_name: firstOrder.supplier_name,
+        order_date: firstOrder.order_date,
+        budget_classification: firstOrder.budget_classification,
+        opex_category_name: firstOrder.opex_category_name,
+        budget_line_name: firstOrder.budget_line_name,
+        total_amount_uf: totalAmount,
+        total_invoices_count: totalInvoicesCount,
+        total_invoices_amount: totalInvoicesAmount,
+        status,
+        year: firstOrder.year || yearNum,
+        is_multi_contract: isMulti,
+        orders: ordersList,
+        contracts,
+      });
+    });
+
+    // Sort by order_date descending
+    return result.sort((a, b) => {
+      if (!a.order_date && !b.order_date) return 0;
+      if (!a.order_date) return 1;
+      if (!b.order_date) return -1;
+      return b.order_date.localeCompare(a.order_date);
+    });
   }, [orders, searchTerm, contractFilter, yearFilter, categoryFilter, classificationFilter, amountFilter, chartContractFilter, chartCategoryFilter]);
 
   const toggleContract = (contractId: string) => {
@@ -551,11 +618,11 @@ const PurchaseOrdersDashboard = () => {
   };
 
   const expandAll = () => {
-    setExpandedContracts(new Set(groupedOrders.map((g) => g.contract.id)));
+    setExpandedMultiOrders(new Set(groupedOrdersByNumber.filter(g => g.is_multi_contract).map(g => g.order_number)));
   };
 
   const collapseAll = () => {
-    setExpandedContracts(new Set());
+    setExpandedMultiOrders(new Set());
     setExpandedOrders(new Set());
   };
 
@@ -769,9 +836,9 @@ const PurchaseOrdersDashboard = () => {
     return `${value.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
   };
 
-  const totalOrders = groupedOrders.reduce((sum, g) => sum + g.orders.length, 0);
-  const totalAmount = groupedOrders.reduce(
-    (sum, g) => sum + g.orders.reduce((s, o) => s + (o.amount_uf || 0), 0),
+  const totalOrders = groupedOrdersByNumber.length;
+  const totalAmount = groupedOrdersByNumber.reduce(
+    (sum, g) => sum + g.total_amount_uf,
     0
   );
 
@@ -899,11 +966,11 @@ const PurchaseOrdersDashboard = () => {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Locales con OC
+                OC Únicas
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{groupedOrders.length}</div>
+              <div className="text-2xl font-bold">{groupedOrdersByNumber.length}</div>
             </CardContent>
           </Card>
         </div>
@@ -1151,300 +1218,276 @@ const PurchaseOrdersDashboard = () => {
           </TabsList>
 
           <TabsContent value="oc">
-            {/* Grouped Orders */}
+            {/* Orders List - Grouped by order_number */}
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               </div>
-            ) : groupedOrders.length === 0 ? (
+            ) : groupedOrdersByNumber.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center text-muted-foreground">
                   No se encontraron órdenes de compra para el año {yearFilter}
                 </CardContent>
               </Card>
             ) : (
-              <div className="space-y-3">
-                {groupedOrders.map((group) => {
-                  const isExpanded = expandedContracts.has(group.contract.id);
-                  const groupTotal = group.orders.reduce((sum, o) => sum + (o.amount_uf || 0), 0);
-                  const groupInvoiced = group.orders.reduce((sum, o) => sum + (o.invoices_total || 0), 0);
-                  const allSelected = group.orders.every((o) => selectedOrders.has(o.id));
-                  const someSelected = group.orders.some((o) => selectedOrders.has(o.id));
+              <Card>
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        {isAdmin && <TableHead className="w-[40px]"></TableHead>}
+                        <TableHead>Nº OC</TableHead>
+                        <TableHead>Descripción</TableHead>
+                        <TableHead>Proveedor</TableHead>
+                        <TableHead>Tipo</TableHead>
+                        <TableHead>Categoría</TableHead>
+                        <TableHead className="text-right">Monto Total (UF)</TableHead>
+                        <TableHead className="text-center">Facturas</TableHead>
+                        <TableHead>Estado</TableHead>
+                        <TableHead>Fecha</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {groupedOrdersByNumber.map((groupedOrder) => {
+                        const isExpanded = expandedMultiOrders.has(groupedOrder.order_number);
+                        const hasInvoices = groupedOrder.total_invoices_count > 0;
+                        const allOrderIds = groupedOrder.orders.map(o => o.id);
+                        const allSelected = allOrderIds.every(id => selectedOrders.has(id));
+                        const someSelected = allOrderIds.some(id => selectedOrders.has(id));
 
-                  return (
-                    <Collapsible
-                      key={group.contract.id}
-                      open={isExpanded}
-                      onOpenChange={() => toggleContract(group.contract.id)}
-                    >
-                      <Card>
-                        <CollapsibleTrigger asChild>
-                          <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                {isExpanded ? (
-                                  <ChevronDown className="h-5 w-5 text-muted-foreground" />
-                                ) : (
-                                  <ChevronRight className="h-5 w-5 text-muted-foreground" />
-                                )}
-                                <div>
-                                  <CardTitle className="text-base">{group.contract.name}</CardTitle>
-                                  <p className="text-sm text-muted-foreground">
-                                    {group.orders.length} OC · Total: {formatUF(groupTotal)} · Facturado: {formatUF(groupInvoiced)}
-                                  </p>
+                        return (
+                          <>
+                            <TableRow
+                              key={groupedOrder.order_number}
+                              className={groupedOrder.is_multi_contract || hasInvoices ? "cursor-pointer hover:bg-muted/30" : ""}
+                              onClick={() => {
+                                if (groupedOrder.is_multi_contract || hasInvoices) {
+                                  toggleMultiOrder(groupedOrder.order_number);
+                                }
+                              }}
+                            >
+                              {isAdmin && (
+                                <TableCell onClick={(e) => e.stopPropagation()}>
+                                  <Checkbox
+                                    checked={allSelected}
+                                    onCheckedChange={(checked) => {
+                                      if (checked) {
+                                        setSelectedOrders(prev => {
+                                          const next = new Set(prev);
+                                          allOrderIds.forEach(id => next.add(id));
+                                          return next;
+                                        });
+                                      } else {
+                                        setSelectedOrders(prev => {
+                                          const next = new Set(prev);
+                                          allOrderIds.forEach(id => next.delete(id));
+                                          return next;
+                                        });
+                                      }
+                                    }}
+                                  />
+                                </TableCell>
+                              )}
+                              <TableCell className="font-medium">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="h-4 w-4 text-muted-foreground" />
+                                  {groupedOrder.order_number}
+                                  {groupedOrder.is_multi_contract && (
+                                    <Badge variant="outline" className="text-[10px] gap-1">
+                                      <Layers className="h-3 w-3" />
+                                      {groupedOrder.contracts.length} Locales
+                                    </Badge>
+                                  )}
+                                  {(groupedOrder.is_multi_contract || hasInvoices) && (
+                                    isExpanded ?
+                                      <ChevronDown className="h-3 w-3 text-muted-foreground" /> :
+                                      <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                                  )}
                                 </div>
-                              </div>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  navigate(`/contracts/${group.contract.id}?section=ordenes-compra&returnTo=purchase-orders`);
-                                }}
-                              >
-                                <ExternalLink className="h-4 w-4 mr-1" />
-                                Ver en Local
-                              </Button>
-                            </div>
-                          </CardHeader>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent>
-                          <CardContent className="pt-0">
-                            {isAdmin && (
-                              <div className="mb-2 flex items-center gap-2">
-                                <Checkbox
-                                  checked={allSelected}
-                                  onCheckedChange={(checked) => {
-                                    if (checked) {
-                                      selectAllInGroup(group.orders);
-                                    } else {
-                                      deselectAllInGroup(group.orders);
-                                    }
-                                  }}
-                                />
-                                <span className="text-sm text-muted-foreground">
-                                  {someSelected ? `${group.orders.filter(o => selectedOrders.has(o.id)).length} seleccionadas` : "Seleccionar todas"}
-                                </span>
-                              </div>
+                              </TableCell>
+                              <TableCell className="max-w-[150px] truncate">
+                                {groupedOrder.description || "-"}
+                              </TableCell>
+                              <TableCell className="max-w-[120px] truncate">
+                                {groupedOrder.supplier_name || "-"}
+                              </TableCell>
+                              <TableCell>
+                                {groupedOrder.budget_classification ? (
+                                  <Badge
+                                    variant={groupedOrder.budget_classification === "CAPEX" ? "default" : "secondary"}
+                                  >
+                                    {groupedOrder.budget_classification}
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="secondary">OPEX</Badge>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {groupedOrder.opex_category_name || groupedOrder.budget_line_name || "-"}
+                              </TableCell>
+                              <TableCell className="text-right font-medium">
+                                {formatUF(groupedOrder.total_amount_uf)}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  <Receipt className="h-3 w-3 text-muted-foreground" />
+                                  <span>{groupedOrder.total_invoices_count}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={
+                                    groupedOrder.status === "cerrada"
+                                      ? "default"
+                                      : groupedOrder.status === "descuadrada"
+                                      ? "destructive"
+                                      : "outline"
+                                  }
+                                >
+                                  {groupedOrder.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {groupedOrder.order_date ? format(parseISO(groupedOrder.order_date), "dd MMM yyyy", { locale: es }) : "-"}
+                              </TableCell>
+                            </TableRow>
+
+                            {/* Expanded content - show contracts breakdown and invoices */}
+                            {isExpanded && (
+                              <TableRow className="bg-muted/20">
+                                <TableCell colSpan={isAdmin ? 10 : 9} className="py-3 px-4">
+                                  <div className="space-y-4">
+                                    {/* Contracts breakdown for multi-contract */}
+                                    {groupedOrder.is_multi_contract && (
+                                      <div>
+                                        <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
+                                          <Layers className="h-4 w-4" />
+                                          Desglose por Contrato:
+                                        </p>
+                                        <Table>
+                                          <TableHeader>
+                                            <TableRow>
+                                              <TableHead className="text-xs">Contrato</TableHead>
+                                              <TableHead className="text-xs text-right">Monto (UF)</TableHead>
+                                              <TableHead className="text-xs text-center">Facturas</TableHead>
+                                              <TableHead className="text-xs">Acciones</TableHead>
+                                            </TableRow>
+                                          </TableHeader>
+                                          <TableBody>
+                                            {groupedOrder.orders.map((order) => (
+                                              <TableRow key={order.id}>
+                                                <TableCell className="text-sm py-1.5 font-medium">
+                                                  {order.contract_name}
+                                                </TableCell>
+                                                <TableCell className="text-sm py-1.5 text-right">
+                                                  {formatUF(order.amount_uf)}
+                                                </TableCell>
+                                                <TableCell className="text-sm py-1.5 text-center">
+                                                  <div className="flex items-center justify-center gap-1">
+                                                    <Receipt className="h-3 w-3 text-muted-foreground" />
+                                                    {order.invoices_count || 0}
+                                                  </div>
+                                                </TableCell>
+                                                <TableCell className="py-1.5">
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      navigate(`/contracts/${order.contract_id}?section=ordenes-compra&returnTo=purchase-orders`);
+                                                    }}
+                                                    className="h-6 px-2 text-xs"
+                                                  >
+                                                    <ExternalLink className="h-3 w-3 mr-1" />
+                                                    Ver Local
+                                                  </Button>
+                                                </TableCell>
+                                              </TableRow>
+                                            ))}
+                                          </TableBody>
+                                        </Table>
+                                      </div>
+                                    )}
+
+                                    {/* Invoices for all orders */}
+                                    {hasInvoices && (
+                                      <div>
+                                        <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
+                                          <Receipt className="h-4 w-4" />
+                                          Facturas Asociadas ({groupedOrder.total_invoices_count}):
+                                        </p>
+                                        <Table>
+                                          <TableHeader>
+                                            <TableRow>
+                                              {groupedOrder.is_multi_contract && <TableHead className="text-xs">Contrato</TableHead>}
+                                              <TableHead className="text-xs">Nº Factura</TableHead>
+                                              <TableHead className="text-xs">Fecha</TableHead>
+                                              <TableHead className="text-xs text-right">Monto (UF)</TableHead>
+                                              <TableHead className="text-xs">Estado</TableHead>
+                                            </TableRow>
+                                          </TableHeader>
+                                          <TableBody>
+                                            {groupedOrder.orders.flatMap((order) =>
+                                              order.invoices.map((invoice) => (
+                                                <TableRow key={invoice.id}>
+                                                  {groupedOrder.is_multi_contract && (
+                                                    <TableCell className="text-sm py-1.5">
+                                                      {order.contract_name}
+                                                    </TableCell>
+                                                  )}
+                                                  <TableCell className="text-sm py-1.5">
+                                                    <div className="flex items-center gap-2">
+                                                      <Receipt className="h-3 w-3 text-primary" />
+                                                      {invoice.invoice_number}
+                                                    </div>
+                                                  </TableCell>
+                                                  <TableCell className="text-sm py-1.5">
+                                                    {format(parseISO(invoice.invoice_date), "dd MMM yyyy", { locale: es })}
+                                                  </TableCell>
+                                                  <TableCell className="text-sm py-1.5 text-right font-medium">
+                                                    {formatUF(invoice.amount_uf)}
+                                                  </TableCell>
+                                                  <TableCell className="py-1.5">
+                                                    <Badge
+                                                      variant={invoice.reception_status === "recibida" ? "default" : "secondary"}
+                                                      className="text-xs"
+                                                    >
+                                                      {invoice.reception_status}
+                                                    </Badge>
+                                                  </TableCell>
+                                                </TableRow>
+                                              ))
+                                            )}
+                                          </TableBody>
+                                        </Table>
+                                      </div>
+                                    )}
+
+                                    {/* Summary row */}
+                                    <div className="flex items-center justify-between text-sm pt-2 border-t">
+                                      <div className="flex items-center gap-4">
+                                        <span className="text-muted-foreground">
+                                          Total OC: <span className="font-medium text-foreground">{formatUF(groupedOrder.total_amount_uf)}</span>
+                                        </span>
+                                        <span className="text-muted-foreground">
+                                          Facturado: <span className="font-medium text-green-600">{formatUF(groupedOrder.total_invoices_amount)}</span>
+                                        </span>
+                                        <span className="text-muted-foreground">
+                                          Pendiente: <span className="font-medium text-orange-600">{formatUF(groupedOrder.total_amount_uf - groupedOrder.total_invoices_amount)}</span>
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
                             )}
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  {isAdmin && <TableHead className="w-[40px]"></TableHead>}
-                                  <TableHead>Nº OC</TableHead>
-                                  <TableHead>Descripción</TableHead>
-                                  <TableHead>Proveedor</TableHead>
-                                  <TableHead>Tipo</TableHead>
-                                  <TableHead>Categoría</TableHead>
-                                  <TableHead className="text-right">Monto (UF)</TableHead>
-                                  <TableHead className="text-center">Facturas</TableHead>
-                                  <TableHead>Estado</TableHead>
-                                  <TableHead>Fecha</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {group.orders.map((order) => {
-                                  const hasInvoices = order.invoices && order.invoices.length > 0;
-                                  const isOrderExpanded = expandedOrders.has(order.id);
-                                  const isMulti = order.is_multi_contract && order.allocations && order.allocations.length > 0;
-                                  const isMultiExpanded = expandedMultiOrders.has(order.id);
-
-                                  return (
-                                    <>
-                                      <TableRow 
-                                        key={order.id}
-                                        className={hasInvoices || isMulti ? "cursor-pointer hover:bg-muted/30" : ""}
-                                        onClick={() => {
-                                          if (isMulti) {
-                                            toggleMultiOrder(order.id);
-                                          } else if (hasInvoices) {
-                                            toggleOrderInvoices(order.id);
-                                          }
-                                        }}
-                                      >
-                                        {isAdmin && (
-                                          <TableCell onClick={(e) => e.stopPropagation()}>
-                                            <Checkbox
-                                              checked={selectedOrders.has(order.id)}
-                                              onCheckedChange={() => toggleOrderSelection(order.id)}
-                                            />
-                                          </TableCell>
-                                        )}
-                                        <TableCell className="font-medium">
-                                          <div className="flex items-center gap-2">
-                                            <FileText className="h-4 w-4 text-muted-foreground" />
-                                            {order.order_number}
-                                            {isMulti && (
-                                              <Badge variant="outline" className="text-[10px] gap-1">
-                                                <Layers className="h-3 w-3" />
-                                                Multi
-                                              </Badge>
-                                            )}
-                                            {(hasInvoices || isMulti) && (
-                                              isMultiExpanded || isOrderExpanded ? 
-                                                <ChevronDown className="h-3 w-3 text-muted-foreground" /> : 
-                                                <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                                            )}
-                                          </div>
-                                        </TableCell>
-                                        <TableCell className="max-w-[150px] truncate">
-                                          {order.description || "-"}
-                                        </TableCell>
-                                        <TableCell className="max-w-[120px] truncate">
-                                          {order.supplier_name || "-"}
-                                        </TableCell>
-                                        <TableCell>
-                                          {order.budget_classification ? (
-                                            <Badge
-                                              variant={order.budget_classification === "CAPEX" ? "default" : "secondary"}
-                                            >
-                                              {order.budget_classification}
-                                            </Badge>
-                                          ) : (
-                                            "-"
-                                          )}
-                                        </TableCell>
-                                        <TableCell>
-                                          {order.opex_category_name || order.budget_line_name || "-"}
-                                        </TableCell>
-                                        <TableCell className="text-right font-medium">
-                                          {formatUF(order.amount_uf)}
-                                        </TableCell>
-                                        <TableCell className="text-center">
-                                          <div className="flex items-center justify-center gap-1">
-                                            <Receipt className="h-3 w-3 text-muted-foreground" />
-                                            <span>{order.invoices_count}</span>
-                                          </div>
-                                        </TableCell>
-                                        <TableCell>
-                                          <Badge
-                                            variant={
-                                              order.status === "completada"
-                                                ? "default"
-                                                : order.status === "pendiente"
-                                                ? "secondary"
-                                                : "outline"
-                                            }
-                                          >
-                                            {order.status}
-                                          </Badge>
-                                        </TableCell>
-                                        <TableCell className="text-muted-foreground">
-                                          {order.order_date ? format(parseISO(order.order_date), "dd MMM yyyy", { locale: es }) : "-"}
-                                        </TableCell>
-                                      </TableRow>
-                                      
-                                      {/* Multi-contract allocations */}
-                                      {isMulti && isMultiExpanded && (
-                                        <TableRow className="bg-blue-50/50 dark:bg-blue-950/20">
-                                          <TableCell colSpan={isAdmin ? 10 : 9} className="py-2 px-4">
-                                            <div className="pl-8">
-                                              <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
-                                                <Layers className="h-4 w-4" />
-                                                Asignación por Contrato:
-                                              </p>
-                                              <Table>
-                                                <TableHeader>
-                                                  <TableRow>
-                                                    <TableHead className="text-xs">Contrato</TableHead>
-                                                    <TableHead className="text-xs text-right">Monto (UF)</TableHead>
-                                                    <TableHead className="text-xs text-right">Monto (CLP)</TableHead>
-                                                    <TableHead className="text-xs">Acciones</TableHead>
-                                                  </TableRow>
-                                                </TableHeader>
-                                                <TableBody>
-                                                  {order.allocations?.map((alloc) => (
-                                                    <TableRow key={alloc.contract_id}>
-                                                      <TableCell className="text-sm py-1 font-medium">
-                                                        {alloc.contract_name}
-                                                      </TableCell>
-                                                      <TableCell className="text-sm py-1 text-right">
-                                                        {formatUF(alloc.amount_uf)}
-                                                      </TableCell>
-                                                      <TableCell className="text-sm py-1 text-right">
-                                                        ${Math.round(alloc.amount_clp).toLocaleString("es-CL")}
-                                                      </TableCell>
-                                                      <TableCell className="py-1">
-                                                        <Button
-                                                          variant="ghost"
-                                                          size="sm"
-                                                          onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            navigate(`/contracts/${alloc.contract_id}?section=ordenes-compra&returnTo=purchase-orders`);
-                                                          }}
-                                                          className="h-6 px-2 text-xs"
-                                                        >
-                                                          <ExternalLink className="h-3 w-3 mr-1" />
-                                                          Ver Contrato
-                                                        </Button>
-                                                      </TableCell>
-                                                    </TableRow>
-                                                  ))}
-                                                </TableBody>
-                                              </Table>
-                                            </div>
-                                          </TableCell>
-                                        </TableRow>
-                                      )}
-
-                                      {/* Invoices sub-table */}
-                                      {hasInvoices && isOrderExpanded && !isMulti && (
-                                        <TableRow className="bg-muted/20">
-                                          <TableCell colSpan={isAdmin ? 10 : 9} className="py-2 px-4">
-                                            <div className="pl-8">
-                                              <p className="text-xs font-medium text-muted-foreground mb-2">Facturas asociadas:</p>
-                                              <Table>
-                                                <TableHeader>
-                                                  <TableRow>
-                                                    <TableHead className="text-xs">Nº Factura</TableHead>
-                                                    <TableHead className="text-xs">Fecha</TableHead>
-                                                    <TableHead className="text-xs text-right">Monto (UF)</TableHead>
-                                                    <TableHead className="text-xs">Estado</TableHead>
-                                                  </TableRow>
-                                                </TableHeader>
-                                                <TableBody>
-                                                  {order.invoices.map((invoice) => (
-                                                    <TableRow key={invoice.id}>
-                                                      <TableCell className="text-sm py-1">
-                                                        <div className="flex items-center gap-2">
-                                                          <Receipt className="h-3 w-3 text-primary" />
-                                                          {invoice.invoice_number}
-                                                        </div>
-                                                      </TableCell>
-                                                      <TableCell className="text-sm py-1">
-                                                        {format(parseISO(invoice.invoice_date), "dd MMM yyyy", { locale: es })}
-                                                      </TableCell>
-                                                      <TableCell className="text-sm py-1 text-right font-medium">
-                                                        {formatUF(invoice.amount_uf)}
-                                                      </TableCell>
-                                                      <TableCell className="py-1">
-                                                        <Badge
-                                                          variant={invoice.reception_status === "recibida" ? "default" : "secondary"}
-                                                          className="text-xs"
-                                                        >
-                                                          {invoice.reception_status}
-                                                        </Badge>
-                                                      </TableCell>
-                                                    </TableRow>
-                                                  ))}
-                                                </TableBody>
-                                              </Table>
-                                            </div>
-                                          </TableCell>
-                                        </TableRow>
-                                      )}
-                                    </>
-                                  );
-                                })}
-                              </TableBody>
-                            </Table>
-                          </CardContent>
-                        </CollapsibleContent>
-                      </Card>
-                    </Collapsible>
-                  );
-                })}
-              </div>
+                          </>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
             )}
           </TabsContent>
 
