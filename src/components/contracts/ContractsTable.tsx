@@ -15,6 +15,7 @@ import { addMonths, format, subMonths, parseISO, differenceInMonths, differenceI
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
 import { SortableTableHead, SortOrder } from "./SortableTableHead";
+import { CompanyLogo, getPrimaryCompanyName } from "./CompanyLogo";
 
 interface ContractAlert {
   id: string;
@@ -619,6 +620,10 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
               >
                 <TableCell>
                   <div className="flex items-center gap-2">
+                    <CompanyLogo 
+                      companyName={getPrimaryCompanyName(contract.contract_companies)} 
+                      size="sm" 
+                    />
                     <div className="flex-1">
                       <div className="font-medium text-sm">{contract.name}</div>
                       {contract.contract_companies && contract.contract_companies.length > 0 && (
