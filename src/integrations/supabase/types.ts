@@ -241,6 +241,39 @@ export type Database = {
           },
         ]
       }
+      app_logos: {
+        Row: {
+          created_at: string
+          display_name: string
+          display_order: number | null
+          id: string
+          is_active: boolean | null
+          logo_key: string
+          storage_path: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_name: string
+          display_order?: number | null
+          id?: string
+          is_active?: boolean | null
+          logo_key: string
+          storage_path?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          display_order?: number | null
+          id?: string
+          is_active?: boolean | null
+          logo_key?: string
+          storage_path?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       budget_carryover: {
         Row: {
           amount_uf: number
