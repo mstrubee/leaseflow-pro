@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
+import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,7 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Loader2, Cloud, HardDrive, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import { Loader2, Cloud, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
 
 interface StorageSettings {
   id: string;
@@ -41,7 +42,11 @@ const PROVIDERS = [
   },
 ];
 
-export function StorageProviderSettings() {
+interface StorageProviderSettingsProps {
+  defaultCollapsed?: boolean;
+}
+
+export function StorageProviderSettings({ defaultCollapsed = false }: StorageProviderSettingsProps) {
   const [settings, setSettings] = useState<StorageSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -132,27 +137,28 @@ export function StorageProviderSettings() {
 
   if (loading) {
     return (
-      <Card>
-        <CardContent className="flex items-center justify-center py-8">
-          <Loader2 className="h-6 w-6 animate-spin" />
-        </CardContent>
-      </Card>
+      <CollapsibleCard
+        title="Proveedor de Almacenamiento"
+        description="Selecciona el servicio de almacenamiento en la nube para los archivos de contratos"
+        icon={<Cloud className="h-5 w-5" />}
+        defaultOpen={!defaultCollapsed}
+      >
+        <div className="flex items-center justify-center py-8">
+          <Skeleton className="h-32 w-full" />
+        </div>
+      </CollapsibleCard>
     );
   }
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Cloud className="h-5 w-5" />
-            <CardTitle>Proveedor de Almacenamiento</CardTitle>
-          </div>
-          <CardDescription>
-            Selecciona el servicio de almacenamiento en la nube para los archivos de contratos
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
+      <CollapsibleCard
+        title="Proveedor de Almacenamiento"
+        description="Selecciona el servicio de almacenamiento en la nube para los archivos de contratos"
+        icon={<Cloud className="h-5 w-5" />}
+        defaultOpen={!defaultCollapsed}
+      >
+        <div className="space-y-6">
           <RadioGroup
             value={selectedProvider}
             onValueChange={handleProviderChange}
@@ -213,8 +219,8 @@ export function StorageProviderSettings() {
               <li>• Cada archivo muestra el ícono de su proveedor de origen</li>
             </ul>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </CollapsibleCard>
 
       <AlertDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
         <AlertDialogContent>
