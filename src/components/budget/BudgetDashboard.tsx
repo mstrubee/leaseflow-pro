@@ -224,134 +224,148 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
     // For CAPEX: use budget_classification = 'CAPEX' OR budget_line_id is not null
     // For OPEX: use opex_master_id is not null (centralized OPEX) or opex_category_id is not null
     
-    let orders: { id: string; amount_uf: number }[] = [];
+    let directOrders: { id: string; amount_uf: number; order_number: string; is_multi_contract: boolean }[] = [];
     
     // Get direct orders for this contract
     if (budgetType === "capex") {
       // CAPEX orders: have budget_classification = 'CAPEX' or have a budget_line_id
       const { data: capexOrders } = await supabase
         .from("purchase_orders")
-        .select("id, amount_uf, budget_classification, budget_line_id, opex_master_id, opex_category_id")
+        .select("id, amount_uf, budget_classification, budget_line_id, opex_master_id, opex_category_id, order_number, is_multi_contract")
         .eq("contract_id", contractId)
         .eq("year", year)
         .is("deleted_at", null);
       
       // Filter CAPEX orders: either budget_classification is CAPEX or has budget_line_id (and no opex references)
-      orders = (capexOrders || []).filter(o => {
+      directOrders = (capexOrders || []).filter(o => {
         return o.budget_classification === "CAPEX" || 
                (o.budget_line_id && !o.opex_master_id && !o.opex_category_id);
-      });
+      }).map(o => ({
+        id: o.id,
+        amount_uf: o.amount_uf,
+        order_number: o.order_number,
+        is_multi_contract: o.is_multi_contract || false
+      }));
     } else {
       // OPEX orders: have opex_master_id or opex_category_id or budget_classification = 'OPEX'
       const { data: opexOrders } = await supabase
         .from("purchase_orders")
-        .select("id, amount_uf, opex_master_id, opex_category_id, budget_classification")
+        .select("id, amount_uf, opex_master_id, opex_category_id, budget_classification, order_number, is_multi_contract")
         .eq("contract_id", contractId)
         .eq("year", year)
         .is("deleted_at", null);
       
       // Filter OPEX orders: have opex_master_id, opex_category_id, or budget_classification is OPEX
-      orders = (opexOrders || []).filter(o => 
+      directOrders = (opexOrders || []).filter(o => 
         o.opex_master_id || o.opex_category_id || o.budget_classification === "OPEX"
-      );
+      ).map(o => ({
+        id: o.id,
+        amount_uf: o.amount_uf,
+        order_number: o.order_number,
+        is_multi_contract: o.is_multi_contract || false
+      }));
     }
 
-    // Also get multi-contract allocations for this contract
-    const { data: allocations } = await supabase
-      .from("purchase_order_contract_allocations")
-      .select(`
-        amount_uf,
-        purchase_order_id,
-        purchase_orders!inner(id, year, deleted_at, budget_classification, opex_master_id, opex_category_id, budget_line_id)
-      `)
-      .eq("contract_id", contractId);
+    const ocTotal = directOrders.reduce((acc, o) => acc + (o.amount_uf || 0), 0);
 
-    // Process multi-contract allocations
-    const directOrderIds = new Set(orders.map(o => o.id));
-    const multiContractOrders: { id: string; amount_uf: number; weight: number }[] = [];
-    
-    for (const alloc of (allocations || [])) {
-      const po = alloc.purchase_orders as any;
-      if (!po || po.deleted_at || po.year !== year) continue;
-      if (directOrderIds.has(po.id)) continue; // Already counted as direct order
-      
-      // Check if this order matches the budget type
-      const isCapex = po.budget_classification === "CAPEX" || 
-                     (po.budget_line_id && !po.opex_master_id && !po.opex_category_id);
-      const isOpex = po.opex_master_id || po.opex_category_id || po.budget_classification === "OPEX";
-      
-      if ((budgetType === "capex" && isCapex) || (budgetType === "opex" && isOpex)) {
-        multiContractOrders.push({
-          id: po.id,
-          amount_uf: alloc.amount_uf, // Use allocated amount
-          weight: 1 // Weight is used for invoice proportional calc
-        });
-      }
-    }
-
-    // Combine orders
-    const allOrders = [...orders, ...multiContractOrders.map(o => ({ id: o.id, amount_uf: o.amount_uf }))];
-    const ocTotal = allOrders.reduce((acc, o) => acc + (o.amount_uf || 0), 0);
-
-    // Get invoice totals for all OCs (including multi-contract)
+    // Get invoice totals
     let invoicesTotal = 0;
-    if (allOrders.length > 0) {
-      const orderIds = allOrders.map(o => o.id);
-      const { data: invoices } = await supabase
-        .from("invoices")
-        .select("purchase_order_id, amount_uf")
-        .in("purchase_order_id", orderIds)
-        .is("deleted_at", null);
-
-      // Get credit notes to subtract from invoices
-      const { data: creditNotes } = await supabase
-        .from("credit_notes")
-        .select("purchase_order_id, amount_uf")
-        .in("purchase_order_id", orderIds)
-        .is("deleted_at", null);
-
-      // For multi-contract orders, we need to calculate proportional invoiced amounts
-      // Direct orders: full invoice amount
-      // Multi-contract orders: proportional based on allocation weight
+    
+    if (directOrders.length > 0) {
+      // Separate multi-contract and single-contract orders
+      const singleContractOrders = directOrders.filter(o => !o.is_multi_contract);
+      const multiContractOrders = directOrders.filter(o => o.is_multi_contract);
       
-      // First, get total amounts per order_number for multi-contract orders
-      const multiOrderInfo = new Map<string, { totalOC: number; allocatedAmount: number }>();
-      for (const mco of multiContractOrders) {
-        // Get total amount for this multi-contract order
-        const { data: totalData } = await supabase
-          .from("purchase_orders")
-          .select("amount_uf")
-          .eq("id", mco.id)
-          .single();
+      // For single-contract orders: get invoices directly by purchase_order_id
+      if (singleContractOrders.length > 0) {
+        const singleOrderIds = singleContractOrders.map(o => o.id);
         
-        if (totalData) {
-          multiOrderInfo.set(mco.id, {
-            totalOC: totalData.amount_uf,
-            allocatedAmount: mco.amount_uf
-          });
-        }
-      }
-
-      for (const inv of (invoices || [])) {
-        const multiInfo = multiOrderInfo.get(inv.purchase_order_id);
-        if (multiInfo && multiInfo.totalOC > 0) {
-          // Proportional invoice for multi-contract
-          const proportion = multiInfo.allocatedAmount / multiInfo.totalOC;
-          invoicesTotal += (inv.amount_uf || 0) * proportion;
-        } else {
-          // Direct order - full amount
+        const { data: invoices } = await supabase
+          .from("invoices")
+          .select("purchase_order_id, amount_uf")
+          .in("purchase_order_id", singleOrderIds)
+          .is("deleted_at", null);
+        
+        const { data: creditNotes } = await supabase
+          .from("credit_notes")
+          .select("purchase_order_id, amount_uf")
+          .in("purchase_order_id", singleOrderIds)
+          .is("deleted_at", null);
+        
+        for (const inv of (invoices || [])) {
           invoicesTotal += inv.amount_uf || 0;
         }
-      }
-
-      // Apply credit notes proportionally too
-      for (const cn of (creditNotes || [])) {
-        const multiInfo = multiOrderInfo.get(cn.purchase_order_id);
-        if (multiInfo && multiInfo.totalOC > 0) {
-          const proportion = multiInfo.allocatedAmount / multiInfo.totalOC;
-          invoicesTotal -= (cn.amount_uf || 0) * proportion;
-        } else {
+        for (const cn of (creditNotes || [])) {
           invoicesTotal -= cn.amount_uf || 0;
+        }
+      }
+      
+      // For multi-contract orders: get invoices by order_number and calculate proportional share
+      if (multiContractOrders.length > 0) {
+        const orderNumbers = [...new Set(multiContractOrders.map(o => o.order_number))];
+        
+        // Get all POs with the same order_numbers to find their invoices
+        const { data: allMultiPOs } = await supabase
+          .from("purchase_orders")
+          .select("id, order_number, amount_uf")
+          .in("order_number", orderNumbers)
+          .is("deleted_at", null);
+        
+        const allMultiPOIds = (allMultiPOs || []).map(po => po.id);
+        
+        if (allMultiPOIds.length > 0) {
+          // Get all invoices for these order groups
+          const { data: multiInvoices } = await supabase
+            .from("invoices")
+            .select("purchase_order_id, amount_uf")
+            .in("purchase_order_id", allMultiPOIds)
+            .is("deleted_at", null);
+          
+          const { data: multiCreditNotes } = await supabase
+            .from("credit_notes")
+            .select("purchase_order_id, amount_uf")
+            .in("purchase_order_id", allMultiPOIds)
+            .is("deleted_at", null);
+          
+          // Build a map of order_number -> total amount for that group
+          const orderNumberTotals = new Map<string, number>();
+          for (const po of (allMultiPOs || [])) {
+            const current = orderNumberTotals.get(po.order_number) || 0;
+            orderNumberTotals.set(po.order_number, current + (po.amount_uf || 0));
+          }
+          
+          // Build a map of PO id -> order_number for lookup
+          const poIdToOrderNumber = new Map<string, string>();
+          for (const po of (allMultiPOs || [])) {
+            poIdToOrderNumber.set(po.id, po.order_number);
+          }
+          
+          // Calculate proportional invoices for each multi-contract order
+          for (const order of multiContractOrders) {
+            const totalGroupAmount = orderNumberTotals.get(order.order_number) || 0;
+            if (totalGroupAmount <= 0) continue;
+            
+            const proportion = order.amount_uf / totalGroupAmount;
+            
+            // Sum all invoices for this order_number and apply proportion
+            let groupInvoiceTotal = 0;
+            for (const inv of (multiInvoices || [])) {
+              const invOrderNumber = poIdToOrderNumber.get(inv.purchase_order_id);
+              if (invOrderNumber === order.order_number) {
+                groupInvoiceTotal += inv.amount_uf || 0;
+              }
+            }
+            
+            let groupCreditNoteTotal = 0;
+            for (const cn of (multiCreditNotes || [])) {
+              const cnOrderNumber = poIdToOrderNumber.get(cn.purchase_order_id);
+              if (cnOrderNumber === order.order_number) {
+                groupCreditNoteTotal += cn.amount_uf || 0;
+              }
+            }
+            
+            invoicesTotal += (groupInvoiceTotal - groupCreditNoteTotal) * proportion;
+          }
         }
       }
     }
