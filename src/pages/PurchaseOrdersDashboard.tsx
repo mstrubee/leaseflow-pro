@@ -504,10 +504,15 @@ const PurchaseOrdersDashboard = () => {
     setShowConvertDialog(true);
   };
 
-  // Chart data for contracts
-  const contractChartData = useMemo(() => {
+  // Chart data for CAPEX by local
+  const capexLocalChartData = useMemo(() => {
     const yearNum = parseInt(yearFilter);
-    const filtered = orders.filter(o => o.year === yearNum);
+    // CAPEX: orders with budget_line_id OR budget_classification === "CAPEX", excluding OPEX
+    const filtered = orders.filter(o => 
+      o.year === yearNum && 
+      !o.opex_category_id && 
+      o.budget_classification !== "OPEX"
+    );
     
     const contractMap = new Map<string, { name: string; amount: number }>();
     filtered.forEach(order => {
@@ -527,38 +532,114 @@ const PurchaseOrdersDashboard = () => {
       .slice(0, 10);
   }, [orders, yearFilter]);
 
-  // Chart data for categories - detect OPEX orders more robustly
-  const categoryChartData = useMemo(() => {
+  // Chart data for OPEX by local
+  const opexLocalChartData = useMemo(() => {
     const yearNum = parseInt(yearFilter);
-    // Include orders that have opex_category_id OR budget_classification === "OPEX"
     const filtered = orders.filter(o => 
       o.year === yearNum && 
       (o.opex_category_id || o.budget_classification === "OPEX")
     );
     
-    const categoryMap = new Map<string, { name: string; amount: number }>();
+    const contractMap = new Map<string, { name: string; amount: number }>();
     filtered.forEach(order => {
-      const catId = order.opex_category_id || "sin_categoria";
-      const catName = order.opex_category_name || "Sin categoría";
-      const existing = categoryMap.get(catId) || { name: catName, amount: 0 };
+      const existing = contractMap.get(order.contract_id) || { name: order.contract_name || "", amount: 0 };
       existing.amount += order.amount_uf || 0;
-      categoryMap.set(catId, existing);
+      contractMap.set(order.contract_id, existing);
     });
 
-    return Array.from(categoryMap.entries())
+    return Array.from(contractMap.entries())
       .map(([id, data], index) => ({
         id,
         name: data.name,
         value: data.amount,
         color: COLORS[index % COLORS.length],
       }))
-      .sort((a, b) => b.value - a.value);
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
   }, [orders, yearFilter]);
 
-  // Chart data for OPEX by company (empresa)
-  const companyChartData = useMemo(() => {
+  // Chart data for OPEX by category by company
+  const opexCategoryByCompanyData = useMemo(() => {
     const yearNum = parseInt(yearFilter);
-    // Filter OPEX orders
+    const filtered = orders.filter(o => 
+      o.year === yearNum && 
+      (o.opex_category_id || o.budget_classification === "OPEX")
+    );
+    
+    // Group by company -> category
+    const companyCategories = new Map<string, Map<string, number>>();
+    filtered.forEach(order => {
+      const companyName = contractCompanyMap.get(order.contract_id) || "Sin empresa";
+      const catName = order.opex_category_name || "Sin categoría";
+      
+      if (!companyCategories.has(companyName)) {
+        companyCategories.set(companyName, new Map());
+      }
+      const catMap = companyCategories.get(companyName)!;
+      catMap.set(catName, (catMap.get(catName) || 0) + (order.amount_uf || 0));
+    });
+
+    // Flatten for chart
+    const result: { id: string; name: string; value: number; company: string; color: string }[] = [];
+    let colorIndex = 0;
+    companyCategories.forEach((catMap, company) => {
+      catMap.forEach((amount, category) => {
+        result.push({
+          id: `${company}-${category}`,
+          name: `${category}`,
+          company,
+          value: amount,
+          color: COLORS[colorIndex % COLORS.length],
+        });
+        colorIndex++;
+      });
+    });
+
+    return result.sort((a, b) => b.value - a.value).slice(0, 8);
+  }, [orders, yearFilter, contractCompanyMap]);
+
+  // Chart data for CAPEX by category by company (using budget_line as category)
+  const capexCategoryByCompanyData = useMemo(() => {
+    const yearNum = parseInt(yearFilter);
+    const filtered = orders.filter(o => 
+      o.year === yearNum && 
+      !o.opex_category_id && 
+      o.budget_classification !== "OPEX"
+    );
+    
+    const companyCategories = new Map<string, Map<string, number>>();
+    filtered.forEach(order => {
+      const companyName = contractCompanyMap.get(order.contract_id) || "Sin empresa";
+      const catName = order.budget_line_name || "Sin línea";
+      
+      if (!companyCategories.has(companyName)) {
+        companyCategories.set(companyName, new Map());
+      }
+      const catMap = companyCategories.get(companyName)!;
+      catMap.set(catName, (catMap.get(catName) || 0) + (order.amount_uf || 0));
+    });
+
+    const result: { id: string; name: string; value: number; company: string; color: string }[] = [];
+    let colorIndex = 0;
+    companyCategories.forEach((catMap, company) => {
+      catMap.forEach((amount, category) => {
+        result.push({
+          id: `${company}-${category}`,
+          name: `${category}`,
+          company,
+          value: amount,
+          color: COLORS[colorIndex % COLORS.length],
+        });
+        colorIndex++;
+      });
+    });
+
+    return result.sort((a, b) => b.value - a.value).slice(0, 8);
+  }, [orders, yearFilter, contractCompanyMap]);
+
+  // Chart data for OPEX by company
+  const opexByCompanyData = useMemo(() => {
+    const yearNum = parseInt(yearFilter);
     const filtered = orders.filter(o => 
       o.year === yearNum && 
       (o.opex_category_id || o.budget_classification === "OPEX")
@@ -566,7 +647,34 @@ const PurchaseOrdersDashboard = () => {
     
     const companyAggMap = new Map<string, { name: string; amount: number }>();
     filtered.forEach(order => {
-      // Get company from contract_companies relationship
+      const companyName = contractCompanyMap.get(order.contract_id) || "Sin empresa";
+      const existing = companyAggMap.get(companyName) || { name: companyName, amount: 0 };
+      existing.amount += order.amount_uf || 0;
+      companyAggMap.set(companyName, existing);
+    });
+
+    return Array.from(companyAggMap.entries())
+      .map(([id, data], index) => ({
+        id,
+        name: data.name,
+        value: data.amount,
+        color: COLORS[index % COLORS.length],
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8);
+  }, [orders, yearFilter, contractCompanyMap]);
+
+  // Chart data for CAPEX by company
+  const capexByCompanyData = useMemo(() => {
+    const yearNum = parseInt(yearFilter);
+    const filtered = orders.filter(o => 
+      o.year === yearNum && 
+      !o.opex_category_id && 
+      o.budget_classification !== "OPEX"
+    );
+    
+    const companyAggMap = new Map<string, { name: string; amount: number }>();
+    filtered.forEach(order => {
       const companyName = contractCompanyMap.get(order.contract_id) || "Sin empresa";
       const existing = companyAggMap.get(companyName) || { name: companyName, amount: 0 };
       existing.amount += order.amount_uf || 0;
@@ -1497,115 +1605,240 @@ const PurchaseOrdersDashboard = () => {
           </Card>
         </div>
 
-        {/* Interactive Charts - Bar chart full width, two pie charts in second column */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Bar Chart - OC por Local */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center justify-between">
-                <span>OC por Local</span>
-                {chartContractFilter && (
-                  <Button variant="ghost" size="sm" onClick={() => setChartContractFilter(null)}>
-                    <X className="h-4 w-4 mr-1" />
-                    Limpiar filtro
-                  </Button>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {contractChartData.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">Sin datos para el año {yearFilter}</p>
-              ) : (
-                <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={contractChartData}
-                      layout="vertical"
-                      margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                      <XAxis 
-                        type="number" 
-                        tickFormatter={(value) => `${value.toFixed(0)} UF`}
-                        tick={{ fontSize: 10 }}
-                      />
-                      <YAxis 
-                        type="category" 
-                        dataKey="name" 
-                        width={100}
-                        tick={{ fontSize: 10 }}
-                        tickFormatter={(value) => value.length > 12 ? `${value.substring(0, 12)}...` : value}
-                      />
-                      <Tooltip
-                        formatter={(value: number) => formatUF(value)}
-                        contentStyle={{
-                          backgroundColor: "hsl(var(--popover))",
-                          border: "1px solid hsl(var(--border))",
-                          borderRadius: "8px",
-                        }}
-                      />
-                      <Bar 
-                        dataKey="value" 
-                        onClick={(data) => handleChartClick(data, "contract")}
-                        style={{ cursor: "pointer" }}
-                      >
-                        {contractChartData.map((entry, index) => (
-                          <Cell 
-                            key={`cell-${index}`} 
-                            fill={entry.color}
-                            opacity={chartContractFilter && chartContractFilter !== entry.id ? 0.3 : 1}
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Two Pie Charts stacked */}
-          <div className="flex flex-col gap-4">
-            {/* Pie Chart - OPEX por Categoría */}
+        {/* Interactive Charts - 2 Bar charts in first row, 4 pie charts in second row */}
+        <div className="space-y-4">
+          {/* Row 1: Bar Charts - CAPEX por Local y OPEX por Local */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Bar Chart - CAPEX por Local */}
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center justify-between">
-                  <span>OPEX por Categoría</span>
-                  {chartCategoryFilter && (
-                    <Button variant="ghost" size="sm" onClick={() => setChartCategoryFilter(null)}>
-                      <X className="h-3 w-3 mr-1" />
-                      Limpiar
-                    </Button>
-                  )}
-                </CardTitle>
+                <CardTitle className="text-base">OC CAPEX por Local</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {capexLocalChartData.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">Sin datos CAPEX para {yearFilter}</p>
+                ) : (
+                  <div className="h-[250px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={capexLocalChartData}
+                        layout="vertical"
+                        margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <XAxis 
+                          type="number" 
+                          tickFormatter={(value) => `${value.toFixed(0)} UF`}
+                          tick={{ fontSize: 10 }}
+                        />
+                        <YAxis 
+                          type="category" 
+                          dataKey="name" 
+                          width={90}
+                          tick={{ fontSize: 9 }}
+                          tickFormatter={(value) => value.length > 12 ? `${value.substring(0, 12)}...` : value}
+                        />
+                        <Tooltip
+                          formatter={(value: number) => formatUF(value)}
+                          contentStyle={{
+                            backgroundColor: "hsl(var(--popover))",
+                            border: "1px solid hsl(var(--border))",
+                            borderRadius: "8px",
+                          }}
+                        />
+                        <Bar dataKey="value">
+                          {capexLocalChartData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Bar Chart - OPEX por Local */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">OC OPEX por Local</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {opexLocalChartData.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">Sin datos OPEX para {yearFilter}</p>
+                ) : (
+                  <div className="h-[250px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={opexLocalChartData}
+                        layout="vertical"
+                        margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <XAxis 
+                          type="number" 
+                          tickFormatter={(value) => `${value.toFixed(0)} UF`}
+                          tick={{ fontSize: 10 }}
+                        />
+                        <YAxis 
+                          type="category" 
+                          dataKey="name" 
+                          width={90}
+                          tick={{ fontSize: 9 }}
+                          tickFormatter={(value) => value.length > 12 ? `${value.substring(0, 12)}...` : value}
+                        />
+                        <Tooltip
+                          formatter={(value: number) => formatUF(value)}
+                          contentStyle={{
+                            backgroundColor: "hsl(var(--popover))",
+                            border: "1px solid hsl(var(--border))",
+                            borderRadius: "8px",
+                          }}
+                        />
+                        <Bar dataKey="value">
+                          {opexLocalChartData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Row 2: Pie Charts - Categoría por Empresa */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Pie Chart - CAPEX por Categoría por Empresa */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">CAPEX por Categoría/Empresa</CardTitle>
               </CardHeader>
               <CardContent className="pt-0">
-                {categoryChartData.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-4 text-sm">Sin datos OPEX</p>
+                {capexCategoryByCompanyData.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-4 text-sm">Sin datos CAPEX</p>
                 ) : (
-                  <div className="h-[130px]">
+                  <div className="h-[150px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
-                          data={categoryChartData}
+                          data={capexCategoryByCompanyData}
                           cx="30%"
                           cy="50%"
                           innerRadius={25}
-                          outerRadius={45}
+                          outerRadius={50}
                           paddingAngle={2}
                           dataKey="value"
                           nameKey="name"
-                          onClick={(data) => handleChartClick(data, "category")}
-                          style={{ cursor: "pointer" }}
                         >
-                          {categoryChartData.map((entry, index) => (
-                            <Cell 
-                              key={`cell-${index}`} 
-                              fill={entry.color}
-                              opacity={chartCategoryFilter && chartCategoryFilter !== entry.id ? 0.3 : 1}
-                              stroke={chartCategoryFilter === entry.id ? "hsl(var(--primary))" : "transparent"}
-                              strokeWidth={2}
-                            />
+                          {capexCategoryByCompanyData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value: number, name, props) => [formatUF(value), `${props.payload.company}: ${name}`]}
+                          contentStyle={{
+                            backgroundColor: "hsl(var(--popover))",
+                            border: "1px solid hsl(var(--border))",
+                            borderRadius: "8px",
+                            fontSize: "11px",
+                          }}
+                        />
+                        <Legend
+                          layout="vertical"
+                          align="right"
+                          verticalAlign="middle"
+                          wrapperStyle={{ fontSize: "9px", right: 0 }}
+                          formatter={(value, entry: any) => (
+                            <span className="text-[9px]">{entry.payload?.company}: {value.length > 10 ? `${value.substring(0, 10)}...` : value}</span>
+                          )}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Pie Chart - OPEX por Categoría por Empresa */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">OPEX por Categoría/Empresa</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {opexCategoryByCompanyData.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-4 text-sm">Sin datos OPEX</p>
+                ) : (
+                  <div className="h-[150px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={opexCategoryByCompanyData}
+                          cx="30%"
+                          cy="50%"
+                          innerRadius={25}
+                          outerRadius={50}
+                          paddingAngle={2}
+                          dataKey="value"
+                          nameKey="name"
+                        >
+                          {opexCategoryByCompanyData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value: number, name, props) => [formatUF(value), `${props.payload.company}: ${name}`]}
+                          contentStyle={{
+                            backgroundColor: "hsl(var(--popover))",
+                            border: "1px solid hsl(var(--border))",
+                            borderRadius: "8px",
+                            fontSize: "11px",
+                          }}
+                        />
+                        <Legend
+                          layout="vertical"
+                          align="right"
+                          verticalAlign="middle"
+                          wrapperStyle={{ fontSize: "9px", right: 0 }}
+                          formatter={(value, entry: any) => (
+                            <span className="text-[9px]">{entry.payload?.company}: {value.length > 10 ? `${value.substring(0, 10)}...` : value}</span>
+                          )}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Row 3: Pie Charts - Por Empresa */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Pie Chart - CAPEX por Empresa */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">CAPEX por Empresa</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {capexByCompanyData.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-4 text-sm">Sin datos CAPEX</p>
+                ) : (
+                  <div className="h-[150px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={capexByCompanyData}
+                          cx="30%"
+                          cy="50%"
+                          innerRadius={25}
+                          outerRadius={50}
+                          paddingAngle={2}
+                          dataKey="value"
+                          nameKey="name"
+                        >
+                          {capexByCompanyData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
                         </Pie>
                         <Tooltip
@@ -1623,7 +1856,7 @@ const PurchaseOrdersDashboard = () => {
                           verticalAlign="middle"
                           wrapperStyle={{ fontSize: "10px", right: 0 }}
                           formatter={(value) => (
-                            <span className="text-[10px]">{value.length > 12 ? `${value.substring(0, 12)}...` : value}</span>
+                            <span className="text-[10px]">{value}</span>
                           )}
                         />
                       </PieChart>
@@ -1639,27 +1872,24 @@ const PurchaseOrdersDashboard = () => {
                 <CardTitle className="text-sm">OPEX por Empresa</CardTitle>
               </CardHeader>
               <CardContent className="pt-0">
-                {companyChartData.length === 0 ? (
+                {opexByCompanyData.length === 0 ? (
                   <p className="text-center text-muted-foreground py-4 text-sm">Sin datos OPEX</p>
                 ) : (
-                  <div className="h-[130px]">
+                  <div className="h-[150px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
-                          data={companyChartData}
+                          data={opexByCompanyData}
                           cx="30%"
                           cy="50%"
                           innerRadius={25}
-                          outerRadius={45}
+                          outerRadius={50}
                           paddingAngle={2}
                           dataKey="value"
                           nameKey="name"
                         >
-                          {companyChartData.map((entry, index) => (
-                            <Cell 
-                              key={`cell-${index}`} 
-                              fill={entry.color}
-                            />
+                          {opexByCompanyData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
                         </Pie>
                         <Tooltip
@@ -1677,7 +1907,7 @@ const PurchaseOrdersDashboard = () => {
                           verticalAlign="middle"
                           wrapperStyle={{ fontSize: "10px", right: 0 }}
                           formatter={(value) => (
-                            <span className="text-[10px]">{value.length > 12 ? `${value.substring(0, 12)}...` : value}</span>
+                            <span className="text-[10px]">{value}</span>
                           )}
                         />
                       </PieChart>
