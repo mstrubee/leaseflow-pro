@@ -765,10 +765,32 @@ const PurchaseOrdersDashboard = () => {
     chartContractFilter ||
     chartCategoryFilter;
 
-  // Filtered OC Requests
+  // Filtered OC Requests - hide converted requests except for admin historical view
   const filteredRequests = useMemo(() => {
     const yearNum = parseInt(yearFilter);
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth(); // 0-indexed
+    
     let filtered = ocRequests.filter(r => r.year === yearNum);
+
+    // For non-admins: always hide converted requests
+    // For admins: show converted requests only if within 3 months after year change
+    if (!isAdmin) {
+      filtered = filtered.filter(r => r.status !== "converted");
+    } else {
+      // Admin can see converted if:
+      // - Current year is the same as request year, OR
+      // - Current year is next year AND current month is Jan/Feb/Mar (first 3 months)
+      const isHistoricalViewAllowed = 
+        yearNum === currentYear || 
+        (yearNum === currentYear - 1 && currentMonth < 3);
+      
+      if (!isHistoricalViewAllowed) {
+        // Even admin can't see converted from older years
+        filtered = filtered.filter(r => r.status !== "converted");
+      }
+      // If historical view is allowed, show all including converted
+    }
 
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
@@ -789,12 +811,28 @@ const PurchaseOrdersDashboard = () => {
     }
 
     return filtered;
-  }, [ocRequests, yearFilter, searchTerm, contractFilter, requestStatusFilter]);
+  }, [ocRequests, yearFilter, searchTerm, contractFilter, requestStatusFilter, isAdmin]);
 
-  // OC Request summary
+  // OC Request summary - only count pending for display (converted are hidden)
   const requestSummary = useMemo(() => {
     const yearNum = parseInt(yearFilter);
-    const yearRequests = ocRequests.filter(r => r.year === yearNum);
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth();
+    
+    let yearRequests = ocRequests.filter(r => r.year === yearNum);
+    
+    // Apply same visibility rules as filtered list
+    if (!isAdmin) {
+      yearRequests = yearRequests.filter(r => r.status !== "converted");
+    } else {
+      const isHistoricalViewAllowed = 
+        yearNum === currentYear || 
+        (yearNum === currentYear - 1 && currentMonth < 3);
+      if (!isHistoricalViewAllowed) {
+        yearRequests = yearRequests.filter(r => r.status !== "converted");
+      }
+    }
+    
     const pending = yearRequests.filter(r => r.status === "pending");
     const converted = yearRequests.filter(r => r.status === "converted");
     
@@ -806,7 +844,8 @@ const PurchaseOrdersDashboard = () => {
       converted: converted.length,
       convertedAmount: converted.reduce((sum, r) => sum + (r.amount_uf || 0), 0),
     };
-  }, [ocRequests, yearFilter]);
+  }, [ocRequests, yearFilter, isAdmin]);
+
 
   // Toggle request selection
   const toggleRequestSelection = (requestId: string) => {

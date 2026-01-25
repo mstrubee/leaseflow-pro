@@ -781,6 +781,16 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
 
   const totalOC = orders.reduce((sum, o) => sum + o.amount_uf, 0);
 
+  // Handler for multi-contract OC warning
+  const handleMultiContractWarning = (order: PurchaseOrder) => {
+    toast({ 
+      title: "OC Multilocal",
+      description: "Esta OC es multilocal. Solo se puede gestionar desde la Central de OC.",
+    });
+    // Navigate to central OC management with search for this order
+    window.location.href = `/purchase-orders?search=${encodeURIComponent(order.order_number)}`;
+  };
+
   // Sorting handler
   const handleSort = (column: string) => {
     if (sortColumn === column) {
@@ -1083,7 +1093,8 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                           size="sm"
                           variant="ghost"
                           className="h-8 w-8 p-0"
-                          onClick={(e) => handleEditClick(e, order)}
+                          onClick={(e) => order.is_multi_contract ? handleMultiContractWarning(order) : handleEditClick(e, order)}
+                          title={order.is_multi_contract ? "OC Multilocal - gestionar desde Central de OC" : "Editar OC"}
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -1091,7 +1102,8 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                           size="sm"
                           variant="ghost"
                           className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                          onClick={(e) => handleDeleteClick(e, order)}
+                          onClick={(e) => order.is_multi_contract ? handleMultiContractWarning(order) : handleDeleteClick(e, order)}
+                          title={order.is_multi_contract ? "OC Multilocal - gestionar desde Central de OC" : "Eliminar OC"}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>

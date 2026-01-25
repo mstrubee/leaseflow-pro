@@ -613,10 +613,25 @@ export const OCRequestsList = ({
     }
   };
 
-  // Filter requests by budget type
-  const filteredRequests = budgetTypeFilter === "all" 
+  // Determine if converted requests should be visible (admin only, within 3 months of year change)
+  const shouldShowConverted = () => {
+    if (!isAdmin) return false;
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth(); // 0-indexed
+    // Admin can see converted if:
+    // - Request year is current year, OR
+    // - Request year is last year AND current month is Jan/Feb/Mar (first 3 months)
+    return year === currentYear || (year === currentYear - 1 && currentMonth < 3);
+  };
+
+  // Filter requests by budget type and visibility rules
+  const visibleRequests = shouldShowConverted() 
     ? requests 
-    : requests.filter(r => r.budget_type === budgetTypeFilter);
+    : requests.filter(r => r.status !== "converted");
+    
+  const filteredRequests = budgetTypeFilter === "all" 
+    ? visibleRequests 
+    : visibleRequests.filter(r => r.budget_type === budgetTypeFilter);
   
   const pendingRequests = filteredRequests.filter(r => r.status === "pending");
   const convertedRequests = filteredRequests.filter(r => r.status === "converted");
@@ -631,9 +646,9 @@ export const OCRequestsList = ({
   const capexBudget = availableBudgets.find(b => b.type === "capex");
   const opexBudget = availableBudgets.find(b => b.type === "opex");
 
-  // Count by type for filter badges
-  const capexCount = requests.filter(r => r.budget_type === "capex").length;
-  const opexCount = requests.filter(r => r.budget_type === "opex").length;
+  // Count by type for filter badges (only visible requests)
+  const capexCount = visibleRequests.filter(r => r.budget_type === "capex").length;
+  const opexCount = visibleRequests.filter(r => r.budget_type === "opex").length;
 
   if (loading) {
     return (
@@ -657,7 +672,7 @@ export const OCRequestsList = ({
               onClick={() => setBudgetTypeFilter("all")}
               className="h-7 text-xs"
             >
-              Todos ({requests.length})
+              Todos ({visibleRequests.length})
             </Button>
             <Button
               size="sm"
