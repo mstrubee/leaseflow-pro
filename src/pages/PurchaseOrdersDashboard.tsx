@@ -1058,8 +1058,8 @@ const PurchaseOrdersDashboard = () => {
     }
   };
 
-  // Handle open credit note dialog
-  const handleOpenCreditNoteDialog = (invoice: Invoice, groupedOrder: GroupedOrder) => {
+  // Handle open credit note dialog - for multi-contract, we pass the groupedOrder to distribute
+  const handleOpenCreditNoteDialog = (invoice: Invoice | null, groupedOrder: GroupedOrder) => {
     setSelectedInvoiceForCreditNote(invoice);
     setSelectedGroupedOrder(groupedOrder);
     setNewCreditNoteData({
@@ -1072,9 +1072,9 @@ const PurchaseOrdersDashboard = () => {
     setShowCreditNoteDialog(true);
   };
 
-  // Handle create credit note
+  // Handle create credit note - for multi-contract, distributes proportionally
   const handleCreateCreditNote = async () => {
-    if (!selectedInvoiceForCreditNote || !newCreditNoteData.credit_note_number || !newCreditNoteData.amount) {
+    if (!selectedGroupedOrder || !newCreditNoteData.credit_note_number || !newCreditNoteData.amount) {
       toast.error("Complete todos los campos requeridos");
       return;
     }
@@ -1093,31 +1093,91 @@ const PurchaseOrdersDashboard = () => {
         amountUF = inputAmount / ufValue;
       }
 
-      // Find the purchase_order_id from the invoice
-      const { data: invoiceData } = await supabase
-        .from("invoices")
-        .select("purchase_order_id")
-        .eq("id", selectedInvoiceForCreditNote.id)
-        .single();
+      // For multi-contract orders, distribute credit note proportionally
+      if (selectedGroupedOrder.is_multi_contract && selectedGroupedOrder.orders.length > 1) {
+        const totalOrderAmount = selectedGroupedOrder.total_amount_uf;
+        
+        // Get all invoices from all orders in this group
+        const allInvoices = selectedGroupedOrder.orders.flatMap((order) => 
+          order.invoices.map(inv => ({ ...inv, order_id: order.id, order_amount_uf: order.amount_uf }))
+        );
+        
+        if (allInvoices.length === 0) {
+          throw new Error("No hay facturas asociadas a esta OC");
+        }
 
-      if (!invoiceData) throw new Error("Factura no encontrada");
+        // Distribute credit note proportionally to each order/invoice
+        const creditNoteInserts = selectedGroupedOrder.orders
+          .filter(order => order.invoices.length > 0)
+          .map(order => {
+            const proportion = order.amount_uf / totalOrderAmount;
+            const proportionalAmountUF = amountUF * proportion;
+            const proportionalAmountCLP = amountCLP * proportion;
+            
+            // Use the first invoice of each order
+            const invoiceForOrder = order.invoices[0];
+            
+            return {
+              purchase_order_id: order.id,
+              invoice_id: invoiceForOrder.id,
+              credit_note_number: newCreditNoteData.credit_note_number,
+              credit_note_date: newCreditNoteData.credit_note_date,
+              amount_uf: proportionalAmountUF,
+              amount_clp: proportionalAmountCLP,
+              input_currency: newCreditNoteData.currency,
+              uf_value_at_entry: ufValue,
+              reason: newCreditNoteData.reason || null,
+            };
+          });
 
-      const { error } = await supabase.from("credit_notes").insert({
-        purchase_order_id: invoiceData.purchase_order_id,
-        invoice_id: selectedInvoiceForCreditNote.id,
-        credit_note_number: newCreditNoteData.credit_note_number,
-        credit_note_date: newCreditNoteData.credit_note_date,
-        amount_uf: amountUF,
-        amount_clp: amountCLP,
-        input_currency: newCreditNoteData.currency,
-        uf_value_at_entry: ufValue,
-        reason: newCreditNoteData.reason || null,
-      });
+        if (creditNoteInserts.length === 0) {
+          throw new Error("No se encontraron facturas para distribuir la nota de crédito");
+        }
 
-      if (error) throw error;
-      toast.success("Nota de crédito agregada");
+        const { error } = await supabase.from("credit_notes").insert(creditNoteInserts);
+        if (error) throw error;
+        toast.success(`Nota de crédito distribuida proporcionalmente en ${creditNoteInserts.length} contratos`);
+      } else {
+        // Single contract - insert to the selected invoice or first available
+        let invoiceId: string;
+        let purchaseOrderId: string;
+
+        if (selectedInvoiceForCreditNote) {
+          invoiceId = selectedInvoiceForCreditNote.id;
+          const { data: invoiceData } = await supabase
+            .from("invoices")
+            .select("purchase_order_id")
+            .eq("id", selectedInvoiceForCreditNote.id)
+            .single();
+          if (!invoiceData) throw new Error("Factura no encontrada");
+          purchaseOrderId = invoiceData.purchase_order_id;
+        } else {
+          // Find first invoice from the order
+          const firstInvoice = selectedGroupedOrder.orders[0].invoices[0];
+          if (!firstInvoice) throw new Error("No hay facturas asociadas a esta OC");
+          invoiceId = firstInvoice.id;
+          purchaseOrderId = selectedGroupedOrder.orders[0].id;
+        }
+
+        const { error } = await supabase.from("credit_notes").insert({
+          purchase_order_id: purchaseOrderId,
+          invoice_id: invoiceId,
+          credit_note_number: newCreditNoteData.credit_note_number,
+          credit_note_date: newCreditNoteData.credit_note_date,
+          amount_uf: amountUF,
+          amount_clp: amountCLP,
+          input_currency: newCreditNoteData.currency,
+          uf_value_at_entry: ufValue,
+          reason: newCreditNoteData.reason || null,
+        });
+
+        if (error) throw error;
+        toast.success("Nota de crédito agregada");
+      }
+
       setShowCreditNoteDialog(false);
       setSelectedInvoiceForCreditNote(null);
+      setSelectedGroupedOrder(null);
       loadData();
     } catch (error: any) {
       toast.error("Error al crear nota de crédito: " + error.message);
@@ -1749,13 +1809,7 @@ const PurchaseOrdersDashboard = () => {
                                     <Button
                                       variant="ghost"
                                       size="sm"
-                                      onClick={() => {
-                                        // Open credit note for the first invoice
-                                        const firstInvoice = groupedOrder.orders[0].invoices[0];
-                                        if (firstInvoice) {
-                                          handleOpenCreditNoteDialog(firstInvoice, groupedOrder);
-                                        }
-                                      }}
+                                      onClick={() => handleOpenCreditNoteDialog(null, groupedOrder)}
                                       className="h-7 w-7 p-0"
                                       title="Agregar Nota de Crédito"
                                     >
