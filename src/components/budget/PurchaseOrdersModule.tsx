@@ -607,7 +607,15 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       }
     }
 
-    const netInvoiced = data.totalInvoiced - data.totalCreditNotes;
+    const rawNetInvoiced = data.totalInvoiced - data.totalCreditNotes;
+
+    // For multi-contract OCs, show status proportionally to the local allocation
+    const totalOrderAmountUF = order.is_multi_contract && order.total_order_amount_uf ? order.total_order_amount_uf : order.amount_uf;
+    const groupPercentage = totalOrderAmountUF > 0 ? rawNetInvoiced / totalOrderAmountUF : 0;
+    const netInvoiced = order.is_multi_contract && order.total_order_amount_uf
+      ? order.amount_uf * groupPercentage
+      : rawNetInvoiced;
+
     const orderAmount = order.amount_uf;
 
     if (netInvoiced > orderAmount) {
