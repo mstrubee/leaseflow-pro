@@ -279,6 +279,9 @@ const PurchaseOrdersDashboard = () => {
   const [chartContractFilter, setChartContractFilter] = useState<string | null>(null);
   const [chartCategoryFilter, setChartCategoryFilter] = useState<string | null>(null);
 
+  // Contract to company mapping
+  const [contractCompanyMap, setContractCompanyMap] = useState<Map<string, string>>(new Map());
+
   // Collapse state per contract
   const [expandedContracts, setExpandedContracts] = useState<Set<string>>(new Set());
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
@@ -336,6 +339,19 @@ const PurchaseOrdersDashboard = () => {
         .eq("is_active", true)
         .order("display_order");
       setOpexCategories(categoriesData || []);
+
+      // Load contract-company relationships
+      const { data: contractCompaniesData } = await supabase
+        .from("contract_companies")
+        .select("contract_id, companies(name)");
+      
+      const companyMap = new Map<string, string>();
+      (contractCompaniesData || []).forEach((cc: any) => {
+        if (cc.companies?.name) {
+          companyMap.set(cc.contract_id, cc.companies.name);
+        }
+      });
+      setContractCompanyMap(companyMap);
 
       // Load purchase orders with related data and invoices
       const { data: ordersData } = await supabase
@@ -548,19 +564,16 @@ const PurchaseOrdersDashboard = () => {
       (o.opex_category_id || o.budget_classification === "OPEX")
     );
     
-    const companyMap = new Map<string, { name: string; amount: number }>();
+    const companyAggMap = new Map<string, { name: string; amount: number }>();
     filtered.forEach(order => {
-      // Extract company from contract name (before " - " if present)
-      const contractName = order.contract_name || "Sin empresa";
-      const companyName = contractName.includes(" - ") 
-        ? contractName.split(" - ")[0] 
-        : contractName;
-      const existing = companyMap.get(companyName) || { name: companyName, amount: 0 };
+      // Get company from contract_companies relationship
+      const companyName = contractCompanyMap.get(order.contract_id) || "Sin empresa";
+      const existing = companyAggMap.get(companyName) || { name: companyName, amount: 0 };
       existing.amount += order.amount_uf || 0;
-      companyMap.set(companyName, existing);
+      companyAggMap.set(companyName, existing);
     });
 
-    return Array.from(companyMap.entries())
+    return Array.from(companyAggMap.entries())
       .map(([id, data], index) => ({
         id,
         name: data.name,
@@ -569,7 +582,7 @@ const PurchaseOrdersDashboard = () => {
       }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 8);
-  }, [orders, yearFilter]);
+  }, [orders, yearFilter, contractCompanyMap]);
 
   // Summary calculations
   const summaryData = useMemo(() => {
