@@ -690,8 +690,41 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     return creditNotes.filter(cn => cn.invoice_id === invoiceId);
   };
 
+  // Check if this is a multi-contract OC viewed from within a contract
+  const isMultiContractInLocalView = isMultiContract && contractId;
+
+  const handleMultiContractWarning = () => {
+    toast({
+      title: "OC Multilocal",
+      description: "Esta OC es multilocal. Solo se puede gestionar desde la Central de OC.",
+      action: (
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={() => window.location.href = `/purchase-orders?search=${purchaseOrder.order_number}`}
+        >
+          Ir a Central
+        </Button>
+      ),
+    });
+  };
+
   return (
     <div className="space-y-4">
+      {isMultiContractInLocalView && (
+        <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800">
+          <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+          <span className="text-sm">
+            OC Multilocal - Solo se puede gestionar desde la{" "}
+            <a 
+              href={`/purchase-orders?search=${encodeURIComponent(purchaseOrder.order_number)}`}
+              className="font-medium underline hover:text-amber-900"
+            >
+              Central de OC
+            </a>
+          </span>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-6">
           <div>
@@ -700,7 +733,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Facturado</p>
-            <p className="font-bold">{formatUF(displayedTotalInvoiced)}</p>
+            <p className="font-bold">{formatUF(displayedNetInvoiced)}</p>
           </div>
           {displayedTotalCreditNotes > 0 && (
             <div>
@@ -708,10 +741,6 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
               <p className="font-bold text-green-600">-{formatUF(displayedTotalCreditNotes)}</p>
             </div>
           )}
-          <div>
-            <p className="text-xs text-muted-foreground">Neto Facturado</p>
-            <p className="font-bold">{formatUF(displayedNetInvoiced)}</p>
-          </div>
           <div>
             <p className="text-xs text-muted-foreground">Pendiente</p>
             <p className={cn("font-bold", pendingAmount < 0 && "text-red-600")}>
@@ -736,7 +765,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {ocStatus === "sobrepasado" && (
+          {ocStatus === "sobrepasado" && !isMultiContractInLocalView && (
             <Button 
               size="sm" 
               variant="outline" 
@@ -750,8 +779,8 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
           <Button 
             size="sm" 
             variant="outline" 
-            onClick={() => setShowCreditNoteDialog(true)}
-            disabled={invoices.length === 0}
+            onClick={isMultiContractInLocalView ? handleMultiContractWarning : () => setShowCreditNoteDialog(true)}
+            disabled={invoices.length === 0 && !isMultiContractInLocalView}
           >
             <CreditCard className="h-4 w-4 mr-1" />
             Nota Crédito
@@ -759,9 +788,9 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
           <Button 
             size="sm" 
             variant="outline" 
-            onClick={() => setShowNewDialog(true)}
-            disabled={ocStatus === "cerrada"}
-            title={ocStatus === "cerrada" ? "OC cerrada - no se permiten más facturas" : undefined}
+            onClick={isMultiContractInLocalView ? handleMultiContractWarning : () => setShowNewDialog(true)}
+            disabled={ocStatus === "cerrada" && !isMultiContractInLocalView}
+            title={isMultiContractInLocalView ? "OC Multilocal - gestionar desde Central de OC" : ocStatus === "cerrada" ? "OC cerrada - no se permiten más facturas" : undefined}
           >
             <Plus className="h-4 w-4 mr-1" />
             Nueva Factura
