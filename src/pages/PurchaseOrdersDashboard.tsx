@@ -75,7 +75,7 @@ import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import { CentralizedOrderCreator } from "@/components/budget/CentralizedOrderCreator";
 import { OCRequestViewDialog } from "@/components/budget/OCRequestViewDialog";
 import { ConvertOCRequestDialog } from "@/components/budget/ConvertOCRequestDialog";
@@ -537,6 +537,38 @@ const PurchaseOrdersDashboard = () => {
         color: COLORS[index % COLORS.length],
       }))
       .sort((a, b) => b.value - a.value);
+  }, [orders, yearFilter]);
+
+  // Chart data for OPEX by company (empresa)
+  const companyChartData = useMemo(() => {
+    const yearNum = parseInt(yearFilter);
+    // Filter OPEX orders
+    const filtered = orders.filter(o => 
+      o.year === yearNum && 
+      (o.opex_category_id || o.budget_classification === "OPEX")
+    );
+    
+    const companyMap = new Map<string, { name: string; amount: number }>();
+    filtered.forEach(order => {
+      // Extract company from contract name (before " - " if present)
+      const contractName = order.contract_name || "Sin empresa";
+      const companyName = contractName.includes(" - ") 
+        ? contractName.split(" - ")[0] 
+        : contractName;
+      const existing = companyMap.get(companyName) || { name: companyName, amount: 0 };
+      existing.amount += order.amount_uf || 0;
+      companyMap.set(companyName, existing);
+    });
+
+    return Array.from(companyMap.entries())
+      .map(([id, data], index) => ({
+        id,
+        name: data.name,
+        value: data.amount,
+        color: COLORS[index % COLORS.length],
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8);
   }, [orders, yearFilter]);
 
   // Summary calculations
@@ -1413,10 +1445,11 @@ const PurchaseOrdersDashboard = () => {
           </Card>
         </div>
 
-        {/* Interactive Charts */}
+        {/* Interactive Charts - Bar chart full width, two pie charts in second column */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Bar Chart - OC por Local */}
           <Card>
-            <CardHeader>
+            <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center justify-between">
                 <span>OC por Local</span>
                 {chartContractFilter && (
@@ -1431,18 +1464,36 @@ const PurchaseOrdersDashboard = () => {
               {contractChartData.length === 0 ? (
                 <p className="text-center text-muted-foreground py-8">Sin datos para el año {yearFilter}</p>
               ) : (
-                <div className="h-[250px]">
+                <div className="h-[300px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={contractChartData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={50}
-                        outerRadius={80}
-                        paddingAngle={2}
-                        dataKey="value"
-                        nameKey="name"
+                    <BarChart
+                      data={contractChartData}
+                      layout="vertical"
+                      margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis 
+                        type="number" 
+                        tickFormatter={(value) => `${value.toFixed(0)} UF`}
+                        tick={{ fontSize: 10 }}
+                      />
+                      <YAxis 
+                        type="category" 
+                        dataKey="name" 
+                        width={100}
+                        tick={{ fontSize: 10 }}
+                        tickFormatter={(value) => value.length > 12 ? `${value.substring(0, 12)}...` : value}
+                      />
+                      <Tooltip
+                        formatter={(value: number) => formatUF(value)}
+                        contentStyle={{
+                          backgroundColor: "hsl(var(--popover))",
+                          border: "1px solid hsl(var(--border))",
+                          borderRadius: "8px",
+                        }}
+                      />
+                      <Bar 
+                        dataKey="value" 
                         onClick={(data) => handleChartClick(data, "contract")}
                         style={{ cursor: "pointer" }}
                       >
@@ -1451,97 +1502,139 @@ const PurchaseOrdersDashboard = () => {
                             key={`cell-${index}`} 
                             fill={entry.color}
                             opacity={chartContractFilter && chartContractFilter !== entry.id ? 0.3 : 1}
-                            stroke={chartContractFilter === entry.id ? "hsl(var(--primary))" : "transparent"}
-                            strokeWidth={2}
                           />
                         ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value: number) => formatUF(value)}
-                        contentStyle={{
-                          backgroundColor: "hsl(var(--popover))",
-                          border: "1px solid hsl(var(--border))",
-                          borderRadius: "8px",
-                        }}
-                      />
-                      <Legend
-                        layout="vertical"
-                        align="right"
-                        verticalAlign="middle"
-                        formatter={(value) => (
-                          <span className="text-xs">{value.length > 15 ? `${value.substring(0, 15)}...` : value}</span>
-                        )}
-                      />
-                    </PieChart>
+                      </Bar>
+                    </BarChart>
                   </ResponsiveContainer>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center justify-between">
-                <span>OC por Categoría OPEX</span>
-                {chartCategoryFilter && (
-                  <Button variant="ghost" size="sm" onClick={() => setChartCategoryFilter(null)}>
-                    <X className="h-4 w-4 mr-1" />
-                    Limpiar filtro
-                  </Button>
+          {/* Two Pie Charts stacked */}
+          <div className="flex flex-col gap-4">
+            {/* Pie Chart - OPEX por Categoría */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center justify-between">
+                  <span>OPEX por Categoría</span>
+                  {chartCategoryFilter && (
+                    <Button variant="ghost" size="sm" onClick={() => setChartCategoryFilter(null)}>
+                      <X className="h-3 w-3 mr-1" />
+                      Limpiar
+                    </Button>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {categoryChartData.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-4 text-sm">Sin datos OPEX</p>
+                ) : (
+                  <div className="h-[130px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={categoryChartData}
+                          cx="30%"
+                          cy="50%"
+                          innerRadius={25}
+                          outerRadius={45}
+                          paddingAngle={2}
+                          dataKey="value"
+                          nameKey="name"
+                          onClick={(data) => handleChartClick(data, "category")}
+                          style={{ cursor: "pointer" }}
+                        >
+                          {categoryChartData.map((entry, index) => (
+                            <Cell 
+                              key={`cell-${index}`} 
+                              fill={entry.color}
+                              opacity={chartCategoryFilter && chartCategoryFilter !== entry.id ? 0.3 : 1}
+                              stroke={chartCategoryFilter === entry.id ? "hsl(var(--primary))" : "transparent"}
+                              strokeWidth={2}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value: number) => formatUF(value)}
+                          contentStyle={{
+                            backgroundColor: "hsl(var(--popover))",
+                            border: "1px solid hsl(var(--border))",
+                            borderRadius: "8px",
+                            fontSize: "11px",
+                          }}
+                        />
+                        <Legend
+                          layout="vertical"
+                          align="right"
+                          verticalAlign="middle"
+                          wrapperStyle={{ fontSize: "10px", right: 0 }}
+                          formatter={(value) => (
+                            <span className="text-[10px]">{value.length > 12 ? `${value.substring(0, 12)}...` : value}</span>
+                          )}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
                 )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {categoryChartData.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">Sin datos OPEX para el año {yearFilter}</p>
-              ) : (
-                <div className="h-[250px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={categoryChartData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={50}
-                        outerRadius={80}
-                        paddingAngle={2}
-                        dataKey="value"
-                        nameKey="name"
-                        onClick={(data) => handleChartClick(data, "category")}
-                        style={{ cursor: "pointer" }}
-                      >
-                        {categoryChartData.map((entry, index) => (
-                          <Cell 
-                            key={`cell-${index}`} 
-                            fill={entry.color}
-                            opacity={chartCategoryFilter && chartCategoryFilter !== entry.id ? 0.3 : 1}
-                            stroke={chartCategoryFilter === entry.id ? "hsl(var(--primary))" : "transparent"}
-                            strokeWidth={2}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value: number) => formatUF(value)}
-                        contentStyle={{
-                          backgroundColor: "hsl(var(--popover))",
-                          border: "1px solid hsl(var(--border))",
-                          borderRadius: "8px",
-                        }}
-                      />
-                      <Legend
-                        layout="vertical"
-                        align="right"
-                        verticalAlign="middle"
-                        formatter={(value) => (
-                          <span className="text-xs">{value}</span>
-                        )}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+
+            {/* Pie Chart - OPEX por Empresa */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">OPEX por Empresa</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {companyChartData.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-4 text-sm">Sin datos OPEX</p>
+                ) : (
+                  <div className="h-[130px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={companyChartData}
+                          cx="30%"
+                          cy="50%"
+                          innerRadius={25}
+                          outerRadius={45}
+                          paddingAngle={2}
+                          dataKey="value"
+                          nameKey="name"
+                        >
+                          {companyChartData.map((entry, index) => (
+                            <Cell 
+                              key={`cell-${index}`} 
+                              fill={entry.color}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value: number) => formatUF(value)}
+                          contentStyle={{
+                            backgroundColor: "hsl(var(--popover))",
+                            border: "1px solid hsl(var(--border))",
+                            borderRadius: "8px",
+                            fontSize: "11px",
+                          }}
+                        />
+                        <Legend
+                          layout="vertical"
+                          align="right"
+                          verticalAlign="middle"
+                          wrapperStyle={{ fontSize: "10px", right: 0 }}
+                          formatter={(value) => (
+                            <span className="text-[10px]">{value.length > 12 ? `${value.substring(0, 12)}...` : value}</span>
+                          )}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         {/* Filters */}
