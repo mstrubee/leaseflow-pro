@@ -57,6 +57,10 @@ interface InvoiceListProps {
     id: string;
     order_number: string;
     amount_uf: number;
+    // Multi-contract allocation info (optional)
+    is_multi_contract?: boolean;
+    allocated_amount_uf?: number;
+    total_order_amount_uf?: number;
   };
   onUpdate: () => void;
 }
@@ -64,6 +68,11 @@ interface InvoiceListProps {
 export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
+  const [groupTotals, setGroupTotals] = useState<{
+    totalInvoiced: number;
+    totalCreditNotes: number;
+    totalAmountUF: number;
+  } | null>(null);
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showStatusDialog, setShowStatusDialog] = useState(false);
@@ -116,9 +125,16 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   useEffect(() => {
     loadInvoices();
     loadCreditNotes();
+    loadGroupTotals();
     loadLastEmail();
     loadContractId();
   }, [purchaseOrder.id]);
+
+  useEffect(() => {
+    // If the user opens the same OC (same id) but order_number changes, refresh group totals.
+    loadGroupTotals();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [purchaseOrder.order_number, purchaseOrder.is_multi_contract, purchaseOrder.total_order_amount_uf, purchaseOrder.allocated_amount_uf]);
 
   const loadContractId = async () => {
     const { data } = await supabase
@@ -147,6 +163,54 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
       .eq("purchase_order_id", purchaseOrder.id)
       .order("credit_note_date", { ascending: false });
     setCreditNotes(data || []);
+  };
+
+  const loadGroupTotals = async () => {
+    if (!purchaseOrder.is_multi_contract) {
+      setGroupTotals(null);
+      return;
+    }
+
+    try {
+      // Aggregate totals across all purchase_orders that share this OC number.
+      const { data: poRows, error: poError } = await supabase
+        .from("purchase_orders")
+        .select("id, amount_uf")
+        .eq("order_number", purchaseOrder.order_number)
+        .is("deleted_at", null);
+
+      if (poError) throw poError;
+
+      const ids = (poRows || []).map((r: any) => r.id);
+      const totalAmountUF = (poRows || []).reduce((sum: number, r: any) => sum + (r.amount_uf || 0), 0);
+
+      if (ids.length === 0) {
+        setGroupTotals({ totalInvoiced: 0, totalCreditNotes: 0, totalAmountUF: 0 });
+        return;
+      }
+
+      const { data: invRows, error: invError } = await supabase
+        .from("invoices")
+        .select("purchase_order_id, amount_uf")
+        .in("purchase_order_id", ids)
+        .is("deleted_at", null);
+      if (invError) throw invError;
+
+      const { data: cnRows, error: cnError } = await supabase
+        .from("credit_notes")
+        .select("purchase_order_id, amount_uf")
+        .in("purchase_order_id", ids)
+        .is("deleted_at", null);
+      if (cnError) throw cnError;
+
+      const totalInvoiced = (invRows || []).reduce((sum: number, r: any) => sum + (r.amount_uf || 0), 0);
+      const totalCreditNotes = (cnRows || []).reduce((sum: number, r: any) => sum + (r.amount_uf || 0), 0);
+
+      setGroupTotals({ totalInvoiced, totalCreditNotes, totalAmountUF });
+    } catch (error) {
+      console.error("Error loading grouped invoice totals:", error);
+      setGroupTotals(null);
+    }
   };
 
   const loadLastEmail = async () => {
@@ -210,16 +274,30 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   };
 
   // Calculate totals
-  const totalInvoiced = invoices.reduce((sum, inv) => sum + inv.amount_uf, 0);
-  const totalCreditNotes = creditNotes.reduce((sum, cn) => sum + cn.amount_uf, 0);
-  const netInvoiced = totalInvoiced - totalCreditNotes;
-  const pendingAmount = purchaseOrder.amount_uf - netInvoiced;
+  const localTotalInvoiced = invoices.reduce((sum, inv) => sum + inv.amount_uf, 0);
+  const localTotalCreditNotes = creditNotes.reduce((sum, cn) => sum + cn.amount_uf, 0);
+
+  // For multi-contract OCs shown in a contract context, we display invoicing proportionally
+  // to the allocated amount (so % and amounts match the global OC status).
+  const localAmountUF = purchaseOrder.amount_uf || 0;
+  const totalOrderAmountUF = groupTotals?.totalAmountUF ?? purchaseOrder.total_order_amount_uf ?? localAmountUF;
+  const allocatedAmountUF = purchaseOrder.allocated_amount_uf ?? localAmountUF;
+  const isMultiContract = Boolean(purchaseOrder.is_multi_contract && totalOrderAmountUF > 0);
+  const allocationWeight = isMultiContract ? allocatedAmountUF / totalOrderAmountUF : 1;
+
+  const sourceTotalInvoiced = groupTotals?.totalInvoiced ?? localTotalInvoiced;
+  const sourceTotalCreditNotes = groupTotals?.totalCreditNotes ?? localTotalCreditNotes;
+
+  const displayedTotalInvoiced = sourceTotalInvoiced * allocationWeight;
+  const displayedTotalCreditNotes = sourceTotalCreditNotes * allocationWeight;
+  const displayedNetInvoiced = displayedTotalInvoiced - displayedTotalCreditNotes;
+  const pendingAmount = localAmountUF - displayedNetInvoiced;
   
   // Determine OC status
   const getOCStatus = () => {
-    if (netInvoiced > purchaseOrder.amount_uf) {
+    if (displayedNetInvoiced > localAmountUF) {
       return "sobrepasado";
-    } else if (Math.abs(netInvoiced - purchaseOrder.amount_uf) < 0.01) {
+    } else if (Math.abs(displayedNetInvoiced - localAmountUF) < 0.01) {
       return "cerrada";
     } else {
       return "ok";
@@ -227,7 +305,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   };
 
   const ocStatus = getOCStatus();
-  const percentageConsumed = purchaseOrder.amount_uf > 0 ? (netInvoiced / purchaseOrder.amount_uf) * 100 : 0;
+  const percentageConsumed = localAmountUF > 0 ? (displayedNetInvoiced / localAmountUF) * 100 : 0;
 
   // Validate invoice amount
   const validateInvoiceAmount = (amount: number, excludeInvoiceId?: string) => {
@@ -235,13 +313,13 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
       .filter(inv => inv.id !== excludeInvoiceId)
       .reduce((sum, inv) => sum + inv.amount_uf, 0);
     
-    const projectedTotal = currentTotalInvoiced + amount - totalCreditNotes;
+    const projectedTotal = currentTotalInvoiced + amount - localTotalCreditNotes;
     
-    if (projectedTotal > purchaseOrder.amount_uf) {
+    if (projectedTotal > localAmountUF) {
       return {
         valid: false,
         warning: "Factura o suma de facturas sobrepasa el monto de la OC. Regularizar",
-        exceedsBy: projectedTotal - purchaseOrder.amount_uf
+        exceedsBy: projectedTotal - localAmountUF
       };
     }
     
@@ -618,21 +696,21 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         <div className="flex items-center gap-6">
           <div>
             <p className="text-xs text-muted-foreground">Monto OC</p>
-            <p className="font-bold">{formatUF(purchaseOrder.amount_uf)}</p>
+            <p className="font-bold">{formatUF(localAmountUF)}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Facturado</p>
-            <p className="font-bold">{formatUF(totalInvoiced)}</p>
+            <p className="font-bold">{formatUF(displayedTotalInvoiced)}</p>
           </div>
-          {totalCreditNotes > 0 && (
+          {displayedTotalCreditNotes > 0 && (
             <div>
               <p className="text-xs text-muted-foreground">Notas Crédito</p>
-              <p className="font-bold text-green-600">-{formatUF(totalCreditNotes)}</p>
+              <p className="font-bold text-green-600">-{formatUF(displayedTotalCreditNotes)}</p>
             </div>
           )}
           <div>
             <p className="text-xs text-muted-foreground">Neto Facturado</p>
-            <p className="font-bold">{formatUF(netInvoiced)}</p>
+            <p className="font-bold">{formatUF(displayedNetInvoiced)}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Pendiente</p>
