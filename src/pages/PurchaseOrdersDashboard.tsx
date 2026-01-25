@@ -220,6 +220,10 @@ const PurchaseOrdersDashboard = () => {
   // Expanded rows for multi-contract items
   const [expandedMultiRequests, setExpandedMultiRequests] = useState<Set<string>>(new Set());
   const [expandedMultiOrders, setExpandedMultiOrders] = useState<Set<string>>(new Set());
+  
+  // Separate expansion states for invoices and contract breakdown
+  const [expandedInvoiceSections, setExpandedInvoiceSections] = useState<Set<string>>(new Set());
+  const [expandedContractSections, setExpandedContractSections] = useState<Set<string>>(new Set());
 
   // Invoice dialog states
   const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
@@ -254,6 +258,7 @@ const PurchaseOrdersDashboard = () => {
     description: "",
     supplier_name: "",
     order_date: "",
+    opex_category_id: "" as string | null,
   });
   const [editingOCId, setEditingOCId] = useState<string | null>(null);
   const [updatingOC, setUpdatingOC] = useState(false);
@@ -1141,6 +1146,7 @@ const PurchaseOrdersDashboard = () => {
       description: groupedOrder.description || "",
       supplier_name: groupedOrder.supplier_name || "",
       order_date: groupedOrder.order_date || "",
+      opex_category_id: groupedOrder.orders[0].opex_category_id || "",
     });
     setShowEditOCDialog(true);
   };
@@ -1165,6 +1171,7 @@ const PurchaseOrdersDashboard = () => {
             description: editingOCData.description || null,
             supplier_name: editingOCData.supplier_name || null,
             order_date: editingOCData.order_date || null,
+            opex_category_id: editingOCData.opex_category_id || null,
           })
           .eq("id", order.id);
 
@@ -1324,12 +1331,12 @@ const PurchaseOrdersDashboard = () => {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                 <FileCheck className="h-4 w-4" />
-                Facturado
+                Total Facturado
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">{formatUF(summaryData.totalFacturado)}</div>
-              <p className="text-xs text-muted-foreground">{summaryData.countFacturas} facturas</p>
+              <div className="text-2xl font-bold text-green-600">${Math.round(summaryData.totalFacturado * ufValue).toLocaleString("es-CL")}</div>
+              <p className="text-xs text-muted-foreground">{formatUF(summaryData.totalFacturado)} • {summaryData.countFacturas} facturas</p>
             </CardContent>
           </Card>
           <Card>
@@ -1340,7 +1347,8 @@ const PurchaseOrdersDashboard = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-amber-600">{formatUF(summaryData.sinFacturar)}</div>
+              <div className="text-2xl font-bold text-amber-600">${Math.round(summaryData.sinFacturar * ufValue).toLocaleString("es-CL")}</div>
+              <p className="text-xs text-muted-foreground">{formatUF(summaryData.sinFacturar)}</p>
             </CardContent>
           </Card>
         </div>
@@ -1615,29 +1623,23 @@ const PurchaseOrdersDashboard = () => {
                         <TableHead className="text-center">Facturas</TableHead>
                         <TableHead>Estado</TableHead>
                         <TableHead>Fecha</TableHead>
+                        <TableHead>Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {groupedOrdersByNumber.map((groupedOrder) => {
-                        const isExpanded = expandedMultiOrders.has(groupedOrder.order_number);
+                        const isInvoicesExpanded = expandedInvoiceSections.has(groupedOrder.order_number);
+                        const isContractsExpanded = expandedContractSections.has(groupedOrder.order_number);
                         const hasInvoices = groupedOrder.total_invoices_count > 0;
                         const allOrderIds = groupedOrder.orders.map(o => o.id);
                         const allSelected = allOrderIds.every(id => selectedOrders.has(id));
-                        const someSelected = allOrderIds.some(id => selectedOrders.has(id));
+                        const statusInfo = getOCStatusInfo(groupedOrder);
 
                         return (
                           <>
-                            <TableRow
-                              key={groupedOrder.order_number}
-                              className={groupedOrder.is_multi_contract || hasInvoices ? "cursor-pointer hover:bg-muted/30" : ""}
-                              onClick={() => {
-                                if (groupedOrder.is_multi_contract || hasInvoices) {
-                                  toggleMultiOrder(groupedOrder.order_number);
-                                }
-                              }}
-                            >
+                            <TableRow key={groupedOrder.order_number} className="hover:bg-muted/30">
                               {isAdmin && (
-                                <TableCell onClick={(e) => e.stopPropagation()}>
+                                <TableCell>
                                   <Checkbox
                                     checked={allSelected}
                                     onCheckedChange={(checked) => {
@@ -1667,11 +1669,6 @@ const PurchaseOrdersDashboard = () => {
                                       <Layers className="h-3 w-3" />
                                       {groupedOrder.contracts.length} Locales
                                     </Badge>
-                                  )}
-                                  {(groupedOrder.is_multi_contract || hasInvoices) && (
-                                    isExpanded ?
-                                      <ChevronDown className="h-3 w-3 text-muted-foreground" /> :
-                                      <ChevronRight className="h-3 w-3 text-muted-foreground" />
                                   )}
                                 </div>
                               </TableCell>
@@ -1707,300 +1704,341 @@ const PurchaseOrdersDashboard = () => {
                               <TableCell>
                                 <Badge
                                   variant={
-                                    groupedOrder.status === "cerrada"
+                                    statusInfo.status === "cerrada"
                                       ? "default"
-                                      : groupedOrder.status === "descuadrada"
+                                      : statusInfo.status === "sobrepasada"
                                       ? "destructive"
                                       : "outline"
                                   }
+                                  className="gap-1"
                                 >
-                                  {groupedOrder.status}
+                                  {statusInfo.status === "abierta" && `${statusInfo.percentage.toFixed(0)}%`}
+                                  {statusInfo.status === "cerrada" && "Cerrada"}
+                                  {statusInfo.status === "sobrepasada" && (
+                                    <>
+                                      <AlertTriangle className="h-3 w-3" />
+                                      {statusInfo.percentage.toFixed(0)}%
+                                    </>
+                                  )}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {groupedOrder.order_date ? format(parseISO(groupedOrder.order_date), "dd MMM yyyy", { locale: es }) : "-"}
+                              <TableCell className="text-muted-foreground text-sm">
+                                {groupedOrder.order_date ? format(parseISO(groupedOrder.order_date), "dd/MM/yy", { locale: es }) : "-"}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleOpenEditOCDialog(groupedOrder)}
+                                    className="h-7 w-7 p-0"
+                                    title="Editar OC"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleOpenInvoiceDialogForGroup(groupedOrder)}
+                                    className="h-7 w-7 p-0"
+                                    title="Agregar Factura"
+                                  >
+                                    <Receipt className="h-3.5 w-3.5" />
+                                  </Button>
+                                  {hasInvoices && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        // Open credit note for the first invoice
+                                        const firstInvoice = groupedOrder.orders[0].invoices[0];
+                                        if (firstInvoice) {
+                                          handleOpenCreditNoteDialog(firstInvoice, groupedOrder);
+                                        }
+                                      }}
+                                      className="h-7 w-7 p-0"
+                                      title="Agregar Nota de Crédito"
+                                    >
+                                      <CreditCard className="h-3.5 w-3.5" />
+                                    </Button>
+                                  )}
+                                  {/* Expandable toggles */}
+                                  {hasInvoices && (
+                                    <Button
+                                      variant={isInvoicesExpanded ? "secondary" : "ghost"}
+                                      size="sm"
+                                      onClick={() => {
+                                        setExpandedInvoiceSections(prev => {
+                                          const next = new Set(prev);
+                                          if (next.has(groupedOrder.order_number)) {
+                                            next.delete(groupedOrder.order_number);
+                                          } else {
+                                            next.add(groupedOrder.order_number);
+                                          }
+                                          return next;
+                                        });
+                                      }}
+                                      className="h-7 px-2 gap-1 text-xs"
+                                      title="Ver facturas"
+                                    >
+                                      <FileCheck className="h-3 w-3" />
+                                      {isInvoicesExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                    </Button>
+                                  )}
+                                  {groupedOrder.is_multi_contract && (
+                                    <Button
+                                      variant={isContractsExpanded ? "secondary" : "ghost"}
+                                      size="sm"
+                                      onClick={() => {
+                                        setExpandedContractSections(prev => {
+                                          const next = new Set(prev);
+                                          if (next.has(groupedOrder.order_number)) {
+                                            next.delete(groupedOrder.order_number);
+                                          } else {
+                                            next.add(groupedOrder.order_number);
+                                          }
+                                          return next;
+                                        });
+                                      }}
+                                      className="h-7 px-2 gap-1 text-xs"
+                                      title="Ver desglose por contrato"
+                                    >
+                                      <Layers className="h-3 w-3" />
+                                      {isContractsExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                    </Button>
+                                  )}
+                                  {!groupedOrder.is_multi_contract && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => navigate(`/contracts/${groupedOrder.orders[0].contract_id}?section=ordenes-compra&returnTo=purchase-orders`)}
+                                      className="h-7 w-7 p-0"
+                                      title="Ver contrato"
+                                    >
+                                      <ExternalLink className="h-3.5 w-3.5" />
+                                    </Button>
+                                  )}
+                                </div>
                               </TableCell>
                             </TableRow>
 
-                            {/* Expanded content - show invoices first, then contracts breakdown */}
-                            {isExpanded && (() => {
-                              const statusInfo = getOCStatusInfo(groupedOrder);
+                            {/* Invoices expanded section */}
+                            {isInvoicesExpanded && (() => {
                               const allInvoices = groupedOrder.orders.flatMap((order) => 
-                                order.invoices.map(inv => ({ ...inv, contract_name: order.contract_name, order_id: order.id }))
+                                order.invoices.map(inv => ({ ...inv, contract_name: order.contract_name, order_id: order.id, order_amount_uf: order.amount_uf }))
                               );
                               const allCreditNotes = groupedOrder.orders.flatMap(o => creditNotes.get(o.id) || []);
 
                               return (
-                                <TableRow className="bg-muted/20">
-                                  <TableCell colSpan={isAdmin ? 10 : 9} className="py-3 px-4">
-                                    <div className="space-y-4">
-                                      {/* Header with status and actions */}
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                          {/* Status Badge with percentage */}
-                                          {statusInfo.status === "abierta" && (
-                                            <Badge variant="outline" className="gap-1">
-                                              Abierta ({statusInfo.percentage.toFixed(0)}%)
-                                            </Badge>
-                                          )}
-                                          {statusInfo.status === "cerrada" && (
-                                            <Badge className="bg-blue-500 gap-1">
-                                              Cerrada
-                                            </Badge>
-                                          )}
-                                          {statusInfo.status === "sobrepasada" && (
-                                            <Badge variant="destructive" className="gap-1">
-                                              <AlertTriangle className="h-3 w-3" />
-                                              Sobrepasada ({statusInfo.percentage.toFixed(0)}%)
-                                            </Badge>
-                                          )}
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                          <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleOpenEditOCDialog(groupedOrder);
-                                            }}
-                                            className="h-7 gap-1"
-                                          >
-                                            <Pencil className="h-3 w-3" />
-                                            Editar OC
-                                          </Button>
-                                          <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleOpenInvoiceDialogForGroup(groupedOrder);
-                                            }}
-                                            className="h-7 gap-1"
-                                          >
-                                            <Plus className="h-3 w-3" />
-                                            Agregar Factura
-                                          </Button>
-                                        </div>
-                                      </div>
-
-                                      {/* Invoices section - FIRST */}
-                                      {allInvoices.length > 0 && (
-                                        <div>
-                                          <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
-                                            <Receipt className="h-4 w-4" />
-                                            Facturas ({allInvoices.length}):
-                                          </p>
-                                          <Table>
-                                            <TableHeader>
-                                              <TableRow>
-                                                {groupedOrder.is_multi_contract && <TableHead className="text-xs">Contrato</TableHead>}
-                                                <TableHead className="text-xs">Nº Factura</TableHead>
-                                                <TableHead className="text-xs">Fecha</TableHead>
-                                                <TableHead className="text-xs text-right">Monto (UF)</TableHead>
-                                                <TableHead className="text-xs">Notas Crédito</TableHead>
-                                                <TableHead className="text-xs">Estado</TableHead>
-                                                <TableHead className="text-xs">Acciones</TableHead>
-                                              </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                              {allInvoices.map((invoice) => {
-                                                const invoiceCreditNotes = allCreditNotes.filter(cn => cn.invoice_id === invoice.id);
-                                                const creditNotesTotal = invoiceCreditNotes.reduce((sum, cn) => sum + cn.amount_uf, 0);
-                                                
-                                                return (
-                                                  <TableRow key={invoice.id}>
-                                                    {groupedOrder.is_multi_contract && (
-                                                      <TableCell className="text-sm py-1.5">
-                                                        {invoice.contract_name}
-                                                      </TableCell>
-                                                    )}
-                                                    <TableCell className="text-sm py-1.5">
-                                                      <div className="flex items-center gap-2">
-                                                        <Receipt className="h-3 w-3 text-primary" />
-                                                        {invoice.invoice_number}
-                                                      </div>
-                                                    </TableCell>
-                                                    <TableCell className="text-sm py-1.5">
-                                                      {format(parseISO(invoice.invoice_date), "dd MMM yyyy", { locale: es })}
-                                                    </TableCell>
-                                                    <TableCell className="text-sm py-1.5 text-right font-medium">
-                                                      {formatUF(invoice.amount_uf)}
-                                                    </TableCell>
-                                                    <TableCell className="py-1.5">
-                                                      {invoiceCreditNotes.length > 0 ? (
-                                                        <div className="space-y-1">
-                                                          {invoiceCreditNotes.map((cn) => (
-                                                            <div key={cn.id} className="flex items-center gap-1">
-                                                              <Badge variant="outline" className="text-green-600 border-green-300 text-xs">
-                                                                NC {cn.credit_note_number}: -{formatUF(cn.amount_uf)}
-                                                              </Badge>
-                                                              <Button
-                                                                size="sm"
-                                                                variant="ghost"
-                                                                className="h-5 w-5 p-0 text-destructive"
-                                                                onClick={(e) => {
-                                                                  e.stopPropagation();
-                                                                  handleDeleteCreditNote(cn.id);
-                                                                }}
-                                                              >
-                                                                <Trash2 className="h-3 w-3" />
-                                                              </Button>
-                                                            </div>
-                                                          ))}
-                                                          <p className="text-xs text-muted-foreground">
-                                                            Neto: {formatUF(invoice.amount_uf - creditNotesTotal)}
-                                                          </p>
+                                <TableRow className="bg-green-50/30 dark:bg-green-950/10">
+                                  <TableCell colSpan={isAdmin ? 11 : 10} className="py-3 px-4">
+                                    <div className="space-y-3">
+                                      <p className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+                                        <Receipt className="h-4 w-4" />
+                                        Facturas y Notas de Crédito ({allInvoices.length})
+                                      </p>
+                                      <Table>
+                                        <TableHeader>
+                                          <TableRow>
+                                            {groupedOrder.is_multi_contract && <TableHead className="text-xs">Contrato</TableHead>}
+                                            <TableHead className="text-xs">Nº Factura</TableHead>
+                                            <TableHead className="text-xs">Fecha</TableHead>
+                                            <TableHead className="text-xs text-right">Monto (UF)</TableHead>
+                                            <TableHead className="text-xs">Notas Crédito</TableHead>
+                                            <TableHead className="text-xs">Estado</TableHead>
+                                            <TableHead className="text-xs">Acciones</TableHead>
+                                          </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                          {allInvoices.map((invoice) => {
+                                            const invoiceCreditNotes = allCreditNotes.filter(cn => cn.invoice_id === invoice.id);
+                                            const creditNotesTotal = invoiceCreditNotes.reduce((sum, cn) => sum + cn.amount_uf, 0);
+                                            
+                                            return (
+                                              <TableRow key={invoice.id}>
+                                                {groupedOrder.is_multi_contract && (
+                                                  <TableCell className="text-sm py-1.5">
+                                                    {invoice.contract_name}
+                                                  </TableCell>
+                                                )}
+                                                <TableCell className="text-sm py-1.5">
+                                                  <div className="flex items-center gap-2">
+                                                    <Receipt className="h-3 w-3 text-primary" />
+                                                    {invoice.invoice_number}
+                                                  </div>
+                                                </TableCell>
+                                                <TableCell className="text-sm py-1.5">
+                                                  {format(parseISO(invoice.invoice_date), "dd MMM yyyy", { locale: es })}
+                                                </TableCell>
+                                                <TableCell className="text-sm py-1.5 text-right font-medium">
+                                                  {formatUF(invoice.amount_uf)}
+                                                </TableCell>
+                                                <TableCell className="py-1.5">
+                                                  {invoiceCreditNotes.length > 0 ? (
+                                                    <div className="space-y-1">
+                                                      {invoiceCreditNotes.map((cn) => (
+                                                        <div key={cn.id} className="flex items-center gap-1">
+                                                          <Badge variant="outline" className="text-green-600 border-green-300 text-xs">
+                                                            NC {cn.credit_note_number}: -{formatUF(cn.amount_uf)}
+                                                          </Badge>
+                                                          <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            className="h-5 w-5 p-0 text-destructive"
+                                                            onClick={() => handleDeleteCreditNote(cn.id)}
+                                                          >
+                                                            <Trash2 className="h-3 w-3" />
+                                                          </Button>
                                                         </div>
-                                                      ) : (
-                                                        <span className="text-muted-foreground">-</span>
-                                                      )}
-                                                    </TableCell>
-                                                    <TableCell className="py-1.5">
-                                                      <Badge
-                                                        variant={invoice.reception_status === "recibido" ? "default" : "secondary"}
-                                                        className="text-xs"
-                                                      >
-                                                        {invoice.reception_status}
-                                                      </Badge>
-                                                    </TableCell>
-                                                    <TableCell className="py-1.5">
-                                                      <div className="flex items-center gap-1">
-                                                        <Button
-                                                          size="sm"
-                                                          variant="ghost"
-                                                          onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleOpenCreditNoteDialog(invoice, groupedOrder);
-                                                          }}
-                                                          className="h-6 px-1.5"
-                                                          title="Agregar Nota de Crédito"
-                                                        >
-                                                          <CreditCard className="h-3 w-3" />
-                                                        </Button>
-                                                        <Button
-                                                          size="sm"
-                                                          variant="ghost"
-                                                          onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleEditInvoice(invoice, groupedOrder);
-                                                          }}
-                                                          className="h-6 px-1.5"
-                                                          title="Editar Factura"
-                                                        >
-                                                          <Pencil className="h-3 w-3" />
-                                                        </Button>
-                                                        <Button
-                                                          size="sm"
-                                                          variant="ghost"
-                                                          onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleDeleteInvoice(invoice.id);
-                                                          }}
-                                                          className="h-6 px-1.5 text-destructive"
-                                                          title="Eliminar Factura"
-                                                        >
-                                                          <Trash2 className="h-3 w-3" />
-                                                        </Button>
-                                                      </div>
-                                                    </TableCell>
-                                                  </TableRow>
-                                                );
-                                              })}
-                                            </TableBody>
-                                          </Table>
-                                        </div>
-                                      )}
-
-                                      {/* Contracts breakdown for multi-contract - AFTER invoices */}
-                                      {groupedOrder.is_multi_contract && (
-                                        <div>
-                                          <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
-                                            <Layers className="h-4 w-4" />
-                                            Desglose por Contrato:
-                                          </p>
-                                          <Table>
-                                            <TableHeader>
-                                              <TableRow>
-                                                <TableHead className="text-xs">Contrato</TableHead>
-                                                <TableHead className="text-xs text-right">Monto OC (UF)</TableHead>
-                                                <TableHead className="text-xs text-right">Facturado</TableHead>
-                                                <TableHead className="text-xs text-right">Pendiente</TableHead>
-                                                <TableHead className="text-xs">Acciones</TableHead>
+                                                      ))}
+                                                      <p className="text-xs text-muted-foreground">
+                                                        Neto: {formatUF(invoice.amount_uf - creditNotesTotal)}
+                                                      </p>
+                                                    </div>
+                                                  ) : (
+                                                    <span className="text-muted-foreground">-</span>
+                                                  )}
+                                                </TableCell>
+                                                <TableCell className="py-1.5">
+                                                  <Badge
+                                                    variant={invoice.reception_status === "recibido" ? "default" : "secondary"}
+                                                    className="text-xs"
+                                                  >
+                                                    {invoice.reception_status}
+                                                  </Badge>
+                                                </TableCell>
+                                                <TableCell className="py-1.5">
+                                                  <div className="flex items-center gap-1">
+                                                    <Button
+                                                      size="sm"
+                                                      variant="ghost"
+                                                      onClick={() => handleOpenCreditNoteDialog(invoice, groupedOrder)}
+                                                      className="h-6 px-1.5"
+                                                      title="Agregar Nota de Crédito"
+                                                    >
+                                                      <CreditCard className="h-3 w-3" />
+                                                    </Button>
+                                                    <Button
+                                                      size="sm"
+                                                      variant="ghost"
+                                                      onClick={() => handleEditInvoice(invoice, groupedOrder)}
+                                                      className="h-6 px-1.5"
+                                                      title="Editar Factura"
+                                                    >
+                                                      <Pencil className="h-3 w-3" />
+                                                    </Button>
+                                                    <Button
+                                                      size="sm"
+                                                      variant="ghost"
+                                                      onClick={() => handleDeleteInvoice(invoice.id)}
+                                                      className="h-6 px-1.5 text-destructive"
+                                                      title="Eliminar Factura"
+                                                    >
+                                                      <Trash2 className="h-3 w-3" />
+                                                    </Button>
+                                                  </div>
+                                                </TableCell>
                                               </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                              {groupedOrder.orders.map((order) => {
-                                                const orderInvoicesTotal = order.invoices_total || 0;
-                                                const orderCreditNotes = creditNotes.get(order.id) || [];
-                                                const orderCreditNotesTotal = orderCreditNotes.reduce((sum, cn) => sum + cn.amount_uf, 0);
-                                                const netInvoiced = orderInvoicesTotal - orderCreditNotesTotal;
-                                                const pending = order.amount_uf - netInvoiced;
-                                                
-                                                return (
-                                                  <TableRow key={order.id}>
-                                                    <TableCell className="text-sm py-1.5 font-medium">
-                                                      {order.contract_name}
-                                                    </TableCell>
-                                                    <TableCell className="text-sm py-1.5 text-right">
-                                                      {formatUF(order.amount_uf)}
-                                                    </TableCell>
-                                                    <TableCell className="text-sm py-1.5 text-right text-green-600">
-                                                      {formatUF(netInvoiced)}
-                                                    </TableCell>
-                                                    <TableCell className={`text-sm py-1.5 text-right ${pending < 0 ? 'text-red-600' : 'text-orange-600'}`}>
-                                                      {formatUF(pending)}
-                                                    </TableCell>
-                                                    <TableCell className="py-1.5">
-                                                      <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={(e) => {
-                                                          e.stopPropagation();
-                                                          navigate(`/contracts/${order.contract_id}?section=ordenes-compra&returnTo=purchase-orders`);
-                                                        }}
-                                                        className="h-6 px-2 text-xs"
-                                                      >
-                                                        <ExternalLink className="h-3 w-3 mr-1" />
-                                                        Ver Local
-                                                      </Button>
-                                                    </TableCell>
-                                                  </TableRow>
-                                                );
-                                              })}
-                                            </TableBody>
-                                          </Table>
-                                        </div>
-                                      )}
-
-                                      {/* Summary row with credit notes considered */}
-                                      <div className="flex items-center justify-between text-sm pt-2 border-t">
-                                        <div className="flex items-center gap-4">
+                                            );
+                                          })}
+                                        </TableBody>
+                                      </Table>
+                                      {/* Summary */}
+                                      <div className="flex items-center gap-4 text-sm pt-2 border-t">
+                                        <span className="text-muted-foreground">
+                                          Total OC: <span className="font-medium text-foreground">{formatUF(groupedOrder.total_amount_uf)}</span>
+                                        </span>
+                                        <span className="text-muted-foreground">
+                                          Facturado: <span className="font-medium text-green-600">{formatUF(groupedOrder.total_invoices_amount)}</span>
+                                        </span>
+                                        {statusInfo.totalCreditNotes > 0 && (
                                           <span className="text-muted-foreground">
-                                            Total OC: <span className="font-medium text-foreground">{formatUF(groupedOrder.total_amount_uf)}</span>
+                                            NC: <span className="font-medium text-blue-600">-{formatUF(statusInfo.totalCreditNotes)}</span>
                                           </span>
-                                          <span className="text-muted-foreground">
-                                            Facturado: <span className="font-medium text-green-600">{formatUF(groupedOrder.total_invoices_amount)}</span>
+                                        )}
+                                        <span className="text-muted-foreground">
+                                          Pendiente: <span className={`font-medium ${statusInfo.pending < 0 ? 'text-red-600' : 'text-orange-600'}`}>
+                                            {formatUF(statusInfo.pending)}
                                           </span>
-                                          {statusInfo.totalCreditNotes > 0 && (
-                                            <span className="text-muted-foreground">
-                                              NC: <span className="font-medium text-blue-600">-{formatUF(statusInfo.totalCreditNotes)}</span>
-                                            </span>
-                                          )}
-                                          <span className="text-muted-foreground">
-                                            Neto: <span className="font-medium">{formatUF(statusInfo.netInvoiced)}</span>
-                                          </span>
-                                          <span className="text-muted-foreground">
-                                            Pendiente: <span className={`font-medium ${statusInfo.pending < 0 ? 'text-red-600' : 'text-orange-600'}`}>
-                                              {formatUF(statusInfo.pending)}
-                                            </span>
-                                          </span>
-                                        </div>
+                                        </span>
                                       </div>
                                     </div>
                                   </TableCell>
                                 </TableRow>
                               );
                             })()}
+
+                            {/* Contracts breakdown expanded section */}
+                            {isContractsExpanded && groupedOrder.is_multi_contract && (
+                              <TableRow className="bg-blue-50/30 dark:bg-blue-950/10">
+                                <TableCell colSpan={isAdmin ? 11 : 10} className="py-3 px-4">
+                                  <div className="space-y-3">
+                                    <p className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+                                      <Layers className="h-4 w-4" />
+                                      Desglose por Contrato ({groupedOrder.contracts.length} locales)
+                                    </p>
+                                    <Table>
+                                      <TableHeader>
+                                        <TableRow>
+                                          <TableHead className="text-xs">Contrato</TableHead>
+                                          <TableHead className="text-xs text-right">Monto OC (UF)</TableHead>
+                                          <TableHead className="text-xs text-right">Facturado (UF)</TableHead>
+                                          <TableHead className="text-xs text-right">% Facturado</TableHead>
+                                          <TableHead className="text-xs text-right">Pendiente (UF)</TableHead>
+                                          <TableHead className="text-xs">Acciones</TableHead>
+                                        </TableRow>
+                                      </TableHeader>
+                                      <TableBody>
+                                        {groupedOrder.orders.map((order) => {
+                                          const orderInvoicesTotal = order.invoices_total || 0;
+                                          const orderCreditNotes = creditNotes.get(order.id) || [];
+                                          const orderCreditNotesTotal = orderCreditNotes.reduce((sum, cn) => sum + cn.amount_uf, 0);
+                                          const netInvoiced = orderInvoicesTotal - orderCreditNotesTotal;
+                                          const pending = order.amount_uf - netInvoiced;
+                                          const percentage = order.amount_uf > 0 ? (netInvoiced / order.amount_uf) * 100 : 0;
+                                          
+                                          return (
+                                            <TableRow key={order.id}>
+                                              <TableCell className="text-sm py-1.5 font-medium">
+                                                {order.contract_name}
+                                              </TableCell>
+                                              <TableCell className="text-sm py-1.5 text-right">
+                                                {formatUF(order.amount_uf)}
+                                              </TableCell>
+                                              <TableCell className="text-sm py-1.5 text-right text-green-600">
+                                                {formatUF(netInvoiced)}
+                                              </TableCell>
+                                              <TableCell className="text-sm py-1.5 text-right">
+                                                <Badge 
+                                                  variant={percentage >= 100 ? "default" : "outline"}
+                                                  className={percentage > 100 ? "bg-red-500" : percentage === 100 ? "bg-blue-500" : ""}
+                                                >
+                                                  {percentage.toFixed(0)}%
+                                                </Badge>
+                                              </TableCell>
+                                              <TableCell className={`text-sm py-1.5 text-right ${pending < 0 ? 'text-red-600' : 'text-orange-600'}`}>
+                                                {formatUF(pending)}
+                                              </TableCell>
+                                              <TableCell className="py-1.5">
+                                                <Button
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  onClick={() => navigate(`/contracts/${order.contract_id}?section=ordenes-compra&returnTo=purchase-orders`)}
+                                                  className="h-6 px-2 text-xs"
+                                                >
+                                                  <ExternalLink className="h-3 w-3 mr-1" />
+                                                  Ver Local
+                                                </Button>
+                                              </TableCell>
+                                            </TableRow>
+                                          );
+                                        })}
+                                      </TableBody>
+                                    </Table>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
                           </>
                         );
                       })}
@@ -2657,6 +2695,26 @@ const PurchaseOrdersDashboard = () => {
                 value={editingOCData.order_date}
                 onChange={(e) => setEditingOCData({ ...editingOCData, order_date: e.target.value })}
               />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="oc_category">Categoría OPEX</Label>
+              <Select
+                value={editingOCData.opex_category_id || "none"}
+                onValueChange={(v) => setEditingOCData({ ...editingOCData, opex_category_id: v === "none" ? null : v })}
+              >
+                <SelectTrigger id="oc_category">
+                  <SelectValue placeholder="Seleccionar categoría" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sin categoría</SelectItem>
+                  {opexCategories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

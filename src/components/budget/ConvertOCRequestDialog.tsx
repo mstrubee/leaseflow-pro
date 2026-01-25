@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Dialog,
@@ -12,6 +12,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -64,6 +71,12 @@ interface OCRequest {
   quotation_url?: string | null;
   quotation_file_name?: string | null;
   allocations?: ContractAllocation[];
+  opex_category_id?: string | null;
+}
+
+interface OpexCategory {
+  id: string;
+  name: string;
 }
 
 interface ConvertOCRequestDialogProps {
@@ -93,8 +106,28 @@ export const ConvertOCRequestDialog = ({
   const [supplierName, setSupplierName] = useState<string | null>(null);
   const [ocFile, setOcFile] = useState<File | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
 
   const isMultiContract = request?.allocations && request.allocations.length > 0;
+
+  // Load OPEX categories
+  useEffect(() => {
+    if (open) {
+      loadCategories();
+      // Set initial category from request if available
+      setSelectedCategoryId(request?.opex_category_id || null);
+    }
+  }, [open, request]);
+
+  const loadCategories = async () => {
+    const { data } = await supabase
+      .from("opex_categories")
+      .select("id, name")
+      .eq("is_active", true)
+      .order("display_order");
+    setOpexCategories(data || []);
+  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -172,6 +205,7 @@ export const ConvertOCRequestDialog = ({
               contract_id: alloc.contract_id,
               budget_id: request.budget_id,
               opex_master_id: request.opex_master_id,
+              opex_category_id: selectedCategoryId || request.opex_category_id,
               order_number: orderNumber,
               supplier_id: supplierId || request.supplier_id,
               supplier_name: supplierName || request.supplier_name,
@@ -204,6 +238,7 @@ export const ConvertOCRequestDialog = ({
           contract_id: request.contract_id,
           budget_id: request.budget_id,
           opex_master_id: request.opex_master_id,
+          opex_category_id: selectedCategoryId || request.opex_category_id,
           order_number: orderNumber,
           supplier_id: supplierId || request.supplier_id,
           supplier_name: supplierName || request.supplier_name,
@@ -260,6 +295,7 @@ export const ConvertOCRequestDialog = ({
       setSupplierId(null);
       setSupplierName(null);
       setOcFile(null);
+      setSelectedCategoryId(null);
       onOpenChange(false);
     }
   };
@@ -382,7 +418,26 @@ export const ConvertOCRequestDialog = ({
               )}
             </div>
 
-            {/* OC File Upload */}
+            <div className="space-y-2">
+              <Label>Categoría OPEX</Label>
+              <Select
+                value={selectedCategoryId || "none"}
+                onValueChange={(v) => setSelectedCategoryId(v === "none" ? null : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar categoría" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sin categoría</SelectItem>
+                  {opexCategories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="space-y-2">
               <Label>Archivo OC (PDF)</Label>
               {ocFile ? (
