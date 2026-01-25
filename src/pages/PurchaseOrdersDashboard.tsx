@@ -2044,12 +2044,11 @@ const PurchaseOrdersDashboard = () => {
                                       </TableHeader>
                                       <TableBody>
                                         {groupedOrder.orders.map((order) => {
-                                          const orderInvoicesTotal = order.invoices_total || 0;
-                                          const orderCreditNotes = creditNotes.get(order.id) || [];
-                                          const orderCreditNotesTotal = orderCreditNotes.reduce((sum, cn) => sum + cn.amount_uf, 0);
-                                          const netInvoiced = orderInvoicesTotal - orderCreditNotesTotal;
-                                          const pending = order.amount_uf - netInvoiced;
-                                          const percentage = order.amount_uf > 0 ? (netInvoiced / order.amount_uf) * 100 : 0;
+                                          // For multi-contract orders, calculate proportional amounts based on group percentage
+                                          // This ensures all lines show the same percentage as the group total
+                                          const groupPercentage = statusInfo.percentage;
+                                          const proportionalInvoiced = (order.amount_uf * groupPercentage) / 100;
+                                          const proportionalPending = order.amount_uf - proportionalInvoiced;
                                           
                                           return (
                                             <TableRow key={order.id}>
@@ -2060,18 +2059,18 @@ const PurchaseOrdersDashboard = () => {
                                                 {formatUF(order.amount_uf)}
                                               </TableCell>
                                               <TableCell className="text-sm py-1.5 text-right text-green-600">
-                                                {formatUF(netInvoiced)}
+                                                {formatUF(proportionalInvoiced)}
                                               </TableCell>
                                               <TableCell className="text-sm py-1.5 text-right">
                                                 <Badge 
-                                                  variant={percentage >= 100 ? "default" : "outline"}
-                                                  className={percentage > 100 ? "bg-red-500" : percentage === 100 ? "bg-blue-500" : ""}
+                                                  variant={groupPercentage >= 100 ? "default" : "outline"}
+                                                  className={groupPercentage > 100 ? "bg-red-500" : groupPercentage === 100 ? "bg-blue-500" : ""}
                                                 >
-                                                  {percentage.toFixed(0)}%
+                                                  {groupPercentage.toFixed(0)}%
                                                 </Badge>
                                               </TableCell>
-                                              <TableCell className={`text-sm py-1.5 text-right ${pending < 0 ? 'text-red-600' : 'text-orange-600'}`}>
-                                                {formatUF(pending)}
+                                              <TableCell className={`text-sm py-1.5 text-right ${proportionalPending < 0 ? 'text-red-600' : 'text-orange-600'}`}>
+                                                {formatUF(proportionalPending)}
                                               </TableCell>
                                               <TableCell className="py-1.5">
                                                 <Button
