@@ -28,7 +28,7 @@ export interface NoticeRange {
 export interface NoticeEntry {
   id?: string;
   months_before: number; // Meses antes del término anticipado principal
-  notice_bilaterality: "unilateral_gp" | "bilateral";
+  notice_bilaterality: "unilateral_gp" | "unilateral_arrendador" | "bilateral";
   create_alert?: boolean;
   alert_days_before?: number[];
   alert_channels?: string[];
@@ -202,12 +202,18 @@ export function MultipleNoticesSection({
                   <RadioGroup
                     value={notice.notice_bilaterality}
                     onValueChange={(value) => updateNotice(index, "notice_bilaterality", value)}
-                    className="flex gap-4"
+                    className="flex flex-wrap gap-4"
                   >
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="unilateral_gp" id={`unilateral_${index}`} />
                       <Label htmlFor={`unilateral_${index}`} className="cursor-pointer">
                         Unilateral GP
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="unilateral_arrendador" id={`unilateral_arrendador_${index}`} />
+                      <Label htmlFor={`unilateral_arrendador_${index}`} className="cursor-pointer text-destructive">
+                        Unilateral Arrendador
                       </Label>
                     </div>
                     <div className="flex items-center space-x-2">
