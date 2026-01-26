@@ -268,19 +268,27 @@ const NewContract = () => {
               earlyTerminationDate = termDate.toISOString().split('T')[0];
             } else if (noticeType === 'fecha' && noticeValue) {
               earlyTerminationDate = noticeValue;
+            } else if (noticeType === 'rangos' && noticeRanges.length > 0) {
+              const firstRange = noticeRanges.sort((a, b) => a.start_month - b.start_month)[0];
+              const termDate = new Date(startDate);
+              termDate.setMonth(termDate.getMonth() + firstRange.start_month - 1);
+              earlyTerminationDate = termDate.toISOString().split('T')[0];
             } else if (noticeType === 'desde_mes' && noticeValue) {
               const termDate = new Date(startDate);
               termDate.setMonth(termDate.getMonth() + parseInt(noticeValue) - 1);
               earlyTerminationDate = termDate.toISOString().split('T')[0];
             }
             
-            if (earlyTerminationDate) {
+            if (earlyTerminationDate || (noticeType === 'rangos' && noticeRanges.length > 0)) {
               const alertResult = await createAlertsFromNotices(
                 supabase,
                 contract.id,
                 name,
                 noticesToAlert,
-                earlyTerminationDate
+                earlyTerminationDate || '',
+                noticeType,
+                noticeRanges,
+                fechaInicio
               );
               
               if (alertResult.alertsCreated > 0) {
@@ -1353,6 +1361,8 @@ const NewContract = () => {
                   durationMonths={parseInt(duration) || undefined}
                   signedDate={fechaInicio}
                   contractName={name}
+                  noticeType={noticeType}
+                  noticeRanges={noticeRanges}
                 />
               </div>
             </CardContent>

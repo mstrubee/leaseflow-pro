@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Trash2, Bell } from "lucide-react";
+import { Plus, Trash2, Bell, Calendar } from "lucide-react";
 import { addMonths, format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -19,6 +19,12 @@ const DAYS_BEFORE_OPTIONS = [
   { value: 0, label: "El mismo día" },
 ];
 
+export interface NoticeRange {
+  id?: string;
+  start_month: number;
+  end_month: number;
+}
+
 export interface NoticeEntry {
   id?: string;
   months_before: number; // Meses antes del término anticipado principal
@@ -28,6 +34,8 @@ export interface NoticeEntry {
   alert_channels?: string[];
   alert_repeat_enabled?: boolean;
   alert_repeat_days?: number;
+  // New: indices of which ranges this notice applies to (for "rangos" type)
+  selected_range_indices?: number[];
   // Legacy fields for backward compatibility
   notice_type?: "meses" | "fecha" | "desde_mes";
   notice_value?: string;
@@ -40,6 +48,9 @@ interface MultipleNoticesSectionProps {
   durationMonths?: number;
   signedDate?: string;
   contractName?: string;
+  // New props for range support
+  noticeType?: string;
+  noticeRanges?: NoticeRange[];
 }
 
 export function MultipleNoticesSection({ 
@@ -47,8 +58,12 @@ export function MultipleNoticesSection({
   onChange, 
   durationMonths,
   signedDate,
-  contractName
+  contractName,
+  noticeType,
+  noticeRanges = []
 }: MultipleNoticesSectionProps) {
+  const hasRanges = noticeType === "rangos" && noticeRanges.length > 0;
+  
   const addNotice = () => {
     onChange([
       ...notices,
@@ -60,6 +75,8 @@ export function MultipleNoticesSection({
         alert_channels: ["email"],
         alert_repeat_enabled: false,
         alert_repeat_days: 7,
+        // By default, select all ranges
+        selected_range_indices: hasRanges ? noticeRanges.map((_, i) => i) : undefined,
       },
     ]);
   };
@@ -72,6 +89,18 @@ export function MultipleNoticesSection({
 
   const removeNotice = (index: number) => {
     onChange(notices.filter((_, i) => i !== index));
+  };
+
+  const toggleRangeSelection = (noticeIndex: number, rangeIndex: number) => {
+    const notice = notices[noticeIndex];
+    const currentSelection = notice.selected_range_indices || [];
+    const isSelected = currentSelection.includes(rangeIndex);
+    
+    const newSelection = isSelected
+      ? currentSelection.filter(i => i !== rangeIndex)
+      : [...currentSelection, rangeIndex].sort((a, b) => a - b);
+    
+    updateNotice(noticeIndex, "selected_range_indices", newSelection);
   };
 
   // Get months_before value, supporting legacy notice_value for backward compatibility
@@ -90,6 +119,26 @@ export function MultipleNoticesSection({
   const getNoticeLabel = (notice: NoticeEntry): string => {
     const months = getMonthsBefore(notice);
     return `${months} ${months === 1 ? 'mes' : 'meses'} antes`;
+  };
+
+  // Calculate notice deadline for a specific range
+  const calculateNoticeDeadlineForRange = (notice: NoticeEntry, range: NoticeRange, startDate?: string): string | null => {
+    if (!startDate) return null;
+    try {
+      const start = parseISO(startDate);
+      const rangeStartDate = addMonths(start, range.start_month - 1);
+      const monthsBefore = getMonthsBefore(notice);
+      const deadlineDate = addMonths(rangeStartDate, -monthsBefore);
+      return format(deadlineDate, "d 'de' MMMM yyyy", { locale: es });
+    } catch {
+      return null;
+    }
+  };
+
+  // Calculate the month number for notice deadline for a range
+  const getNoticeDeadlineMonth = (notice: NoticeEntry, range: NoticeRange): number => {
+    const monthsBefore = getMonthsBefore(notice);
+    return range.start_month - monthsBefore;
   };
 
   return (
@@ -169,6 +218,68 @@ export function MultipleNoticesSection({
                 </div>
               </div>
 
+              {/* Range selection section - only show when there are ranges */}
+              {hasRanges && (
+                <div className="border-t border-border pt-4 mt-4">
+                  <div className="space-y-3">
+                    <Label className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-primary" />
+                      Aplicar a rangos de término *
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Selecciona los rangos de término anticipado a los que aplica este aviso. Se creará una alerta para cada rango seleccionado.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {noticeRanges.map((range, rangeIndex) => {
+                        const isSelected = (notice.selected_range_indices || []).includes(rangeIndex);
+                        const deadlineMonth = getNoticeDeadlineMonth(notice, range);
+                        const deadlineDate = calculateNoticeDeadlineForRange(notice, range, signedDate);
+                        
+                        return (
+                          <div
+                            key={rangeIndex}
+                            onClick={() => toggleRangeSelection(index, rangeIndex)}
+                            className={`
+                              cursor-pointer border rounded-lg p-3 transition-all
+                              ${isSelected 
+                                ? 'border-primary bg-primary/5 ring-1 ring-primary' 
+                                : 'border-border hover:border-muted-foreground/50'
+                              }
+                            `}
+                          >
+                            <div className="flex items-start gap-2">
+                              <Checkbox
+                                checked={isSelected}
+                                onCheckedChange={() => toggleRangeSelection(index, rangeIndex)}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium">
+                                  Rango {rangeIndex + 1}: M{range.start_month} - M{range.end_month}
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Aviso tope: <span className="font-medium text-foreground">Mes {deadlineMonth}</span>
+                                </p>
+                                {deadlineDate && (
+                                  <p className="text-xs text-muted-foreground">
+                                    ({deadlineDate})
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {(notice.selected_range_indices?.length || 0) === 0 && (
+                      <p className="text-xs text-destructive">
+                        Debes seleccionar al menos un rango
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Alert creation section */}
               <div className="border-t border-border pt-4 mt-4">
                 <div className="flex items-start space-x-3">
@@ -186,7 +297,11 @@ export function MultipleNoticesSection({
                       Crear alerta para este aviso
                     </Label>
                     <p className="text-xs text-muted-foreground">
-                      Se creará una alerta {getMonthsBefore(notice)} {getMonthsBefore(notice) === 1 ? 'mes' : 'meses'} antes de la fecha de término anticipado
+                      {hasRanges && (notice.selected_range_indices?.length || 0) > 0 ? (
+                        <>Se crearán {notice.selected_range_indices?.length} alerta{(notice.selected_range_indices?.length || 0) > 1 ? 's' : ''} (una por cada rango seleccionado)</>
+                      ) : (
+                        <>Se creará una alerta {getMonthsBefore(notice)} {getMonthsBefore(notice) === 1 ? 'mes' : 'meses'} antes de la fecha de término anticipado</>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -299,12 +414,16 @@ export function MultipleNoticesSection({
 
 // Helper function to create alerts from notices - to be called when saving the contract
 // The earlyTerminationDate is the deadline from the main "Tipo de Término Anticipado" configuration
+// For "rangos" type, we now support creating multiple alerts based on selected_range_indices
 export async function createAlertsFromNotices(
   supabase: any,
   contractId: string,
   contractName: string,
   notices: NoticeEntry[],
-  earlyTerminationDate: string // The calculated date from the main notice type (meses, fecha, desde_mes, rangos)
+  earlyTerminationDate: string, // The calculated date from the main notice type (meses, fecha, desde_mes, rangos)
+  noticeType?: string,
+  noticeRanges?: NoticeRange[],
+  contractStartDate?: string
 ): Promise<{ success: boolean; alertsCreated: number; errors: string[] }> {
   const errors: string[] = [];
   let alertsCreated = 0;
@@ -313,38 +432,85 @@ export async function createAlertsFromNotices(
     if (!notice.create_alert) continue;
 
     try {
-      // Calculate deadline: N months before the early termination date
       const monthsBefore = notice.months_before || 6;
-      const terminationDate = parseISO(earlyTerminationDate);
-      const deadlineDate = format(addMonths(terminationDate, -monthsBefore), "yyyy-MM-dd");
+      
+      // Check if this is a "rangos" type with selected ranges
+      if (noticeType === "rangos" && noticeRanges && noticeRanges.length > 0 && contractStartDate) {
+        const selectedIndices = notice.selected_range_indices || noticeRanges.map((_, i) => i);
+        
+        if (selectedIndices.length === 0) continue;
+        
+        // Create an alert for each selected range
+        for (const rangeIndex of selectedIndices) {
+          const range = noticeRanges[rangeIndex];
+          if (!range) continue;
+          
+          // Calculate the notice deadline for this specific range
+          const startDate = parseISO(contractStartDate);
+          const rangeStartDate = addMonths(startDate, range.start_month - 1);
+          const deadlineDate = format(addMonths(rangeStartDate, -monthsBefore), "yyyy-MM-dd");
+          
+          const alertTitle = `Aviso de Término Anticipado (Rango M${range.start_month}-M${range.end_month}): ${contractName}`;
+          const alertMessage = `Se debe dar aviso de término anticipado ${monthsBefore} ${monthsBefore === 1 ? 'mes' : 'meses'} antes del rango de término M${range.start_month}-M${range.end_month}. Fecha límite: ${format(parseISO(deadlineDate), "d 'de' MMMM 'de' yyyy", { locale: es })}`;
 
-      const alertTitle = `Aviso de Término Anticipado: ${contractName}`;
-      const alertMessage = `Se debe dar aviso de término anticipado ${monthsBefore} ${monthsBefore === 1 ? 'mes' : 'meses'} antes de la fecha de término. Fecha límite: ${format(parseISO(deadlineDate), "d 'de' MMMM 'de' yyyy", { locale: es })}`;
+          const { error: alertError } = await supabase
+            .from("alerts")
+            .insert({
+              contract_id: contractId,
+              title: alertTitle,
+              message: alertMessage,
+              alert_type: "early_termination_notice",
+              alert_subtype: "termino_anticipado",
+              due_date: deadlineDate,
+              days_before: notice.alert_days_before || [30, 7, 1],
+              channels: (notice.alert_channels || ["email"]) as ("email" | "whatsapp")[],
+              repeat_every_days: notice.alert_repeat_enabled ? (notice.alert_repeat_days || 7) : null,
+              is_active: true,
+              item_type: "notice",
+            })
+            .select()
+            .single();
 
-      const { error: alertError } = await supabase
-        .from("alerts")
-        .insert({
-          contract_id: contractId,
-          title: alertTitle,
-          message: alertMessage,
-          alert_type: "early_termination_notice",
-          alert_subtype: "termino_anticipado",
-          due_date: deadlineDate,
-          days_before: notice.alert_days_before || [30, 7, 1],
-          channels: (notice.alert_channels || ["email"]) as ("email" | "whatsapp")[],
-          repeat_every_days: notice.alert_repeat_enabled ? (notice.alert_repeat_days || 7) : null,
-          is_active: true,
-          item_type: "notice",
-        })
-        .select()
-        .single();
+          if (alertError) {
+            errors.push(`Error al crear alerta para rango M${range.start_month}: ${alertError.message}`);
+            continue;
+          }
 
-      if (alertError) {
-        errors.push(`Error al crear alerta para aviso: ${alertError.message}`);
-        continue;
+          alertsCreated++;
+        }
+      } else {
+        // Original logic for non-range types
+        const terminationDate = parseISO(earlyTerminationDate);
+        const deadlineDate = format(addMonths(terminationDate, -monthsBefore), "yyyy-MM-dd");
+
+        const alertTitle = `Aviso de Término Anticipado: ${contractName}`;
+        const alertMessage = `Se debe dar aviso de término anticipado ${monthsBefore} ${monthsBefore === 1 ? 'mes' : 'meses'} antes de la fecha de término. Fecha límite: ${format(parseISO(deadlineDate), "d 'de' MMMM 'de' yyyy", { locale: es })}`;
+
+        const { error: alertError } = await supabase
+          .from("alerts")
+          .insert({
+            contract_id: contractId,
+            title: alertTitle,
+            message: alertMessage,
+            alert_type: "early_termination_notice",
+            alert_subtype: "termino_anticipado",
+            due_date: deadlineDate,
+            days_before: notice.alert_days_before || [30, 7, 1],
+            channels: (notice.alert_channels || ["email"]) as ("email" | "whatsapp")[],
+            repeat_every_days: notice.alert_repeat_enabled ? (notice.alert_repeat_days || 7) : null,
+            is_active: true,
+            item_type: "notice",
+          })
+          .select()
+          .single();
+
+        if (alertError) {
+          errors.push(`Error al crear alerta para aviso: ${alertError.message}`);
+          continue;
+        }
+
+        alertsCreated++;
       }
-
-      alertsCreated++;
     } catch (e: any) {
       errors.push(`Error procesando aviso: ${e.message}`);
     }
