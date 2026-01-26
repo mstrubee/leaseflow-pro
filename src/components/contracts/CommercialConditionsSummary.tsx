@@ -159,12 +159,18 @@ export function CommercialConditionsSummary({
       ? parseInt(versionNotices[0].notice_value) || 12
       : 12; // Default to 12 months if no notices found
     
+    // Get bilaterality from the first notice (or default to unilateral_gp)
+    const bilaterality = versionNotices.length > 0 
+      ? versionNotices[0].notice_bilaterality as "unilateral_gp" | "unilateral_arrendador" | "bilateral"
+      : "unilateral_gp";
+    
     return noticeRanges.map((range, idx) => ({
       rangeIndex: idx,
       rangeStart: range.start_month,
       rangeEnd: range.end_month,
       monthsBefore,
-      deadlineMonth: range.end_month - monthsBefore
+      deadlineMonth: range.end_month - monthsBefore,
+      bilaterality
     }));
   }, [version.notice_type, noticeRanges, versionNotices]);
 

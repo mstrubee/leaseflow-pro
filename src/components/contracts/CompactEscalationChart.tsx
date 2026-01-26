@@ -21,6 +21,7 @@ interface NoticeDeadline {
   rangeEnd: number;
   monthsBefore: number;
   deadlineMonth: number; // rangeEnd - monthsBefore
+  bilaterality?: "unilateral_gp" | "unilateral_arrendador" | "bilateral";
 }
 
 interface CompactEscalationChartProps {
@@ -325,18 +326,25 @@ export function CompactEscalationChart({
                 ? format(addMonths(new Date(effectiveDate), deadline.deadlineMonth - 1), "dd MMM yy", { locale: es })
                 : `M${deadline.deadlineMonth}`;
               
+              // Use red for "unilateral_arrendador", destructive for others
+              const isArrendador = deadline.bilaterality === "unilateral_arrendador";
+              const strokeColor = isArrendador ? "#dc2626" : "hsl(var(--destructive))";
+              const labelText = isArrendador 
+                ? `Arrendador: ${deadlineDateStr}` 
+                : `Límite ${idx + 1}: ${deadlineDateStr}`;
+              
               return (
                 <ReferenceLine
                   key={`deadline-${idx}`}
                   x={deadline.deadlineMonth}
-                  stroke="hsl(var(--destructive))"
-                  strokeWidth={2}
-                  strokeDasharray="6 3"
+                  stroke={strokeColor}
+                  strokeWidth={isArrendador ? 3 : 2}
+                  strokeDasharray={isArrendador ? "4 2" : "6 3"}
                   label={{
-                    value: `Límite ${idx + 1}: ${deadlineDateStr}`,
+                    value: labelText,
                     fontSize: 9,
                     fontWeight: 600,
-                    fill: "hsl(var(--destructive))",
+                    fill: strokeColor,
                     position: "insideTopLeft"
                   }}
                 />
@@ -444,10 +452,11 @@ export function CompactEscalationChart({
                 {noticeDeadlines.map((deadline, idx) => {
                   const deadlineDate = addMonths(new Date(effectiveDate), deadline.deadlineMonth - 1);
                   const rangeEndDate = addMonths(new Date(effectiveDate), deadline.rangeEnd - 1);
+                  const isArrendador = deadline.bilaterality === "unilateral_arrendador";
                   return (
                     <div key={idx} className="text-xs">
-                      <span className="text-destructive font-semibold">
-                        Límite {idx + 1}: {format(deadlineDate, "dd MMM yyyy", { locale: es })}
+                      <span className={isArrendador ? "text-[#dc2626] font-bold" : "text-destructive font-semibold"}>
+                        {isArrendador ? "Rango a favor Arrendador" : `Límite ${idx + 1}`}: {format(deadlineDate, "dd MMM yyyy", { locale: es })}
                       </span>
                       <span className="text-muted-foreground ml-1">
                         ({deadline.monthsBefore}m antes de {format(rangeEndDate, "MMM yy", { locale: es })})
