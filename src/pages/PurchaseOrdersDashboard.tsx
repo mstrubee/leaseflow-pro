@@ -224,6 +224,9 @@ const PurchaseOrdersDashboard = () => {
   // Separate expansion states for invoices and contract breakdown
   const [expandedInvoiceSections, setExpandedInvoiceSections] = useState<Set<string>>(new Set());
   const [expandedContractSections, setExpandedContractSections] = useState<Set<string>>(new Set());
+  
+  // State for expanded invoice breakdown (shows contract allocation for multi-contract invoices)
+  const [expandedInvoiceBreakdown, setExpandedInvoiceBreakdown] = useState<Set<string>>(new Set());
 
   // Invoice dialog states
   const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
@@ -2310,13 +2313,13 @@ const PurchaseOrdersDashboard = () => {
                                   })()
                                 : null;
 
-                              // State for expanded invoices (show contract breakdown)
-                              const [expandedInvoiceNumbers, setExpandedInvoiceNumbers] = useState<Set<string>>(new Set());
-                              const toggleInvoiceExpand = (invoiceNumber: string) => {
-                                setExpandedInvoiceNumbers(prev => {
+                              // Helper function for toggling invoice expansion using component-level state
+                              const toggleInvoiceBreakdownExpand = (orderNumber: string, invoiceNumber: string) => {
+                                const key = `${orderNumber}::${invoiceNumber}`;
+                                setExpandedInvoiceBreakdown(prev => {
                                   const next = new Set(prev);
-                                  if (next.has(invoiceNumber)) next.delete(invoiceNumber);
-                                  else next.add(invoiceNumber);
+                                  if (next.has(key)) next.delete(key);
+                                  else next.add(key);
                                   return next;
                                 });
                               };
@@ -2349,7 +2352,8 @@ const PurchaseOrdersDashboard = () => {
                                           {groupedOrder.is_multi_contract && consolidatedInvoices ? (
                                             // Multi-contract: show consolidated invoices
                                             consolidatedInvoices.map((consolidated) => {
-                                              const isExpanded = expandedInvoiceNumbers.has(consolidated.invoice_number);
+                                              const invoiceKey = `${groupedOrder.order_number}::${consolidated.invoice_number}`;
+                                              const isExpanded = expandedInvoiceBreakdown.has(invoiceKey);
                                               // Get all credit notes for all invoices in this group
                                               const invoiceCreditNotes = allCreditNotes.filter(cn => 
                                                 consolidated.allInvoiceIds.includes(cn.invoice_id)
@@ -2376,7 +2380,7 @@ const PurchaseOrdersDashboard = () => {
                                                         variant="ghost"
                                                         size="icon"
                                                         className="h-6 w-6"
-                                                        onClick={() => toggleInvoiceExpand(consolidated.invoice_number)}
+                                                        onClick={() => toggleInvoiceBreakdownExpand(groupedOrder.order_number, consolidated.invoice_number)}
                                                       >
                                                         {isExpanded ? (
                                                           <ChevronDown className="h-3 w-3" />
