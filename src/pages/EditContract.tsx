@@ -705,13 +705,16 @@ const EditContract = () => {
             earlyTerminationDate = termDate.toISOString().split('T')[0];
           }
           
-          if (earlyTerminationDate) {
+          if (earlyTerminationDate || (noticeType === 'rangos' && noticeRanges.length > 0)) {
             const alertResult = await createAlertsFromNotices(
               supabase,
               id!,
               name,
               noticesToAlert,
-              earlyTerminationDate
+              earlyTerminationDate || '',
+              noticeType,
+              noticeRanges,
+              effectiveDate
             );
             
             if (alertResult.alertsCreated > 0) {
@@ -2237,6 +2240,8 @@ const EditContract = () => {
                                     durationMonths={parseInt(duration) || undefined}
                                     signedDate={effectiveDate}
                                     contractName={name}
+                                    noticeType={noticeType}
+                                    noticeRanges={noticeRanges}
                                   />
                                 </div>
                               </>
