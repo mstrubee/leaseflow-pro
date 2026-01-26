@@ -121,24 +121,26 @@ export function MultipleNoticesSection({
     return `${months} ${months === 1 ? 'mes' : 'meses'} antes`;
   };
 
-  // Calculate notice deadline for a specific range
+  // Calculate notice deadline for a specific range (based on END of range)
   const calculateNoticeDeadlineForRange = (notice: NoticeEntry, range: NoticeRange, startDate?: string): string | null => {
     if (!startDate) return null;
     try {
       const start = parseISO(startDate);
-      const rangeStartDate = addMonths(start, range.start_month - 1);
+      // Use end_month for the deadline calculation (notice is X months before the END of the range)
+      const rangeEndDate = addMonths(start, range.end_month - 1);
       const monthsBefore = getMonthsBefore(notice);
-      const deadlineDate = addMonths(rangeStartDate, -monthsBefore);
+      const deadlineDate = addMonths(rangeEndDate, -monthsBefore);
       return format(deadlineDate, "d 'de' MMMM yyyy", { locale: es });
     } catch {
       return null;
     }
   };
 
-  // Calculate the month number for notice deadline for a range
+  // Calculate the month number for notice deadline for a range (based on END of range)
   const getNoticeDeadlineMonth = (notice: NoticeEntry, range: NoticeRange): number => {
     const monthsBefore = getMonthsBefore(notice);
-    return range.start_month - monthsBefore;
+    // Notice deadline is X months before the END of the range
+    return range.end_month - monthsBefore;
   };
 
   return (
@@ -445,13 +447,14 @@ export async function createAlertsFromNotices(
           const range = noticeRanges[rangeIndex];
           if (!range) continue;
           
-          // Calculate the notice deadline for this specific range
+          // Calculate the notice deadline for this specific range (based on END of range)
           const startDate = parseISO(contractStartDate);
-          const rangeStartDate = addMonths(startDate, range.start_month - 1);
-          const deadlineDate = format(addMonths(rangeStartDate, -monthsBefore), "yyyy-MM-dd");
+          // Use end_month: the notice is X months before the END of the range
+          const rangeEndDate = addMonths(startDate, range.end_month - 1);
+          const deadlineDate = format(addMonths(rangeEndDate, -monthsBefore), "yyyy-MM-dd");
           
           const alertTitle = `Aviso de Término Anticipado (Rango M${range.start_month}-M${range.end_month}): ${contractName}`;
-          const alertMessage = `Se debe dar aviso de término anticipado ${monthsBefore} ${monthsBefore === 1 ? 'mes' : 'meses'} antes del rango de término M${range.start_month}-M${range.end_month}. Fecha límite: ${format(parseISO(deadlineDate), "d 'de' MMMM 'de' yyyy", { locale: es })}`;
+          const alertMessage = `Se debe dar aviso de término anticipado ${monthsBefore} ${monthsBefore === 1 ? 'mes' : 'meses'} antes del vencimiento del rango M${range.start_month}-M${range.end_month}. Fecha límite: ${format(parseISO(deadlineDate), "d 'de' MMMM 'de' yyyy", { locale: es })}`;
 
           const { error: alertError } = await supabase
             .from("alerts")
