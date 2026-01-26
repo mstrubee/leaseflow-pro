@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -2258,118 +2258,336 @@ const PurchaseOrdersDashboard = () => {
                               );
                               const allCreditNotes = groupedOrder.orders.flatMap(o => creditNotes.get(o.id) || []);
 
+                              // For multi-contract orders, group invoices by invoice_number
+                              const consolidatedInvoices = groupedOrder.is_multi_contract
+                                ? (() => {
+                                    const invoiceMap = new Map<string, {
+                                      invoice_number: string;
+                                      invoice_date: string;
+                                      total_amount_uf: number;
+                                      reception_status: string;
+                                      contracts: Array<{
+                                        id: string;
+                                        contract_name: string;
+                                        amount_uf: number;
+                                        order_id: string;
+                                      }>;
+                                      // Keep first invoice for operations
+                                      firstInvoice: typeof allInvoices[0];
+                                      allInvoiceIds: string[];
+                                    }>();
+                                    
+                                    allInvoices.forEach(inv => {
+                                      const existing = invoiceMap.get(inv.invoice_number);
+                                      if (existing) {
+                                        existing.total_amount_uf += inv.amount_uf;
+                                        existing.contracts.push({
+                                          id: inv.id,
+                                          contract_name: inv.contract_name,
+                                          amount_uf: inv.amount_uf,
+                                          order_id: inv.order_id,
+                                        });
+                                        existing.allInvoiceIds.push(inv.id);
+                                      } else {
+                                        invoiceMap.set(inv.invoice_number, {
+                                          invoice_number: inv.invoice_number,
+                                          invoice_date: inv.invoice_date,
+                                          total_amount_uf: inv.amount_uf,
+                                          reception_status: inv.reception_status,
+                                          contracts: [{
+                                            id: inv.id,
+                                            contract_name: inv.contract_name,
+                                            amount_uf: inv.amount_uf,
+                                            order_id: inv.order_id,
+                                          }],
+                                          firstInvoice: inv,
+                                          allInvoiceIds: [inv.id],
+                                        });
+                                      }
+                                    });
+                                    
+                                    return Array.from(invoiceMap.values());
+                                  })()
+                                : null;
+
+                              // State for expanded invoices (show contract breakdown)
+                              const [expandedInvoiceNumbers, setExpandedInvoiceNumbers] = useState<Set<string>>(new Set());
+                              const toggleInvoiceExpand = (invoiceNumber: string) => {
+                                setExpandedInvoiceNumbers(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(invoiceNumber)) next.delete(invoiceNumber);
+                                  else next.add(invoiceNumber);
+                                  return next;
+                                });
+                              };
+
+                              // Count unique invoices for display
+                              const uniqueInvoiceCount = consolidatedInvoices?.length || allInvoices.length;
+
                               return (
                                 <TableRow className="bg-green-50/30 dark:bg-green-950/10">
                                   <TableCell colSpan={isAdmin ? 11 : 10} className="py-3 px-4">
                                     <div className="space-y-3">
                                       <p className="text-xs font-medium text-muted-foreground flex items-center gap-2">
                                         <Receipt className="h-4 w-4" />
-                                        Facturas y Notas de Crédito ({allInvoices.length})
+                                        Facturas y Notas de Crédito ({uniqueInvoiceCount})
                                       </p>
                                       <Table>
                                         <TableHeader>
                                           <TableRow>
-                                            {groupedOrder.is_multi_contract && <TableHead className="text-xs">Contrato</TableHead>}
+                                            {groupedOrder.is_multi_contract && <TableHead className="text-xs w-8"></TableHead>}
                                             <TableHead className="text-xs">Nº Factura</TableHead>
                                             <TableHead className="text-xs">Fecha</TableHead>
-                                            <TableHead className="text-xs text-right">Monto (UF)</TableHead>
+                                            <TableHead className="text-xs text-right">Monto Total (UF)</TableHead>
+                                            {groupedOrder.is_multi_contract && <TableHead className="text-xs text-center">Contratos</TableHead>}
                                             <TableHead className="text-xs">Notas Crédito</TableHead>
                                             <TableHead className="text-xs">Estado</TableHead>
                                             <TableHead className="text-xs">Acciones</TableHead>
                                           </TableRow>
                                         </TableHeader>
                                         <TableBody>
-                                          {allInvoices.map((invoice) => {
-                                            const invoiceCreditNotes = allCreditNotes.filter(cn => cn.invoice_id === invoice.id);
-                                            const creditNotesTotal = invoiceCreditNotes.reduce((sum, cn) => sum + cn.amount_uf, 0);
-                                            
-                                            return (
-                                              <TableRow key={invoice.id}>
-                                                {groupedOrder.is_multi_contract && (
-                                                  <TableCell className="text-sm py-1.5">
-                                                    {invoice.contract_name}
-                                                  </TableCell>
-                                                )}
-                                                <TableCell className="text-sm py-1.5">
-                                                  <div className="flex items-center gap-2">
-                                                    <Receipt className="h-3 w-3 text-primary" />
-                                                    {invoice.invoice_number}
-                                                  </div>
-                                                </TableCell>
-                                                <TableCell className="text-sm py-1.5">
-                                                  {format(parseISO(invoice.invoice_date), "dd MMM yyyy", { locale: es })}
-                                                </TableCell>
-                                                <TableCell className="text-sm py-1.5 text-right font-medium">
-                                                  {formatUF(invoice.amount_uf)}
-                                                </TableCell>
-                                                <TableCell className="py-1.5">
-                                                  {invoiceCreditNotes.length > 0 ? (
-                                                    <div className="space-y-1">
-                                                      {invoiceCreditNotes.map((cn) => (
-                                                        <div key={cn.id} className="flex items-center gap-1">
-                                                          <Badge variant="outline" className="text-green-600 border-green-300 text-xs">
-                                                            NC {cn.credit_note_number}: -{formatUF(cn.amount_uf)}
-                                                          </Badge>
-                                                          <Button
-                                                            size="sm"
-                                                            variant="ghost"
-                                                            className="h-5 w-5 p-0 text-destructive"
-                                                            onClick={() => handleDeleteCreditNote(cn.id)}
-                                                          >
-                                                            <Trash2 className="h-3 w-3" />
-                                                          </Button>
+                                          {groupedOrder.is_multi_contract && consolidatedInvoices ? (
+                                            // Multi-contract: show consolidated invoices
+                                            consolidatedInvoices.map((consolidated) => {
+                                              const isExpanded = expandedInvoiceNumbers.has(consolidated.invoice_number);
+                                              // Get all credit notes for all invoices in this group
+                                              const invoiceCreditNotes = allCreditNotes.filter(cn => 
+                                                consolidated.allInvoiceIds.includes(cn.invoice_id)
+                                              );
+                                              // Consolidate credit notes by number
+                                              const creditNoteMap = new Map<string, { number: string; total: number; ids: string[] }>();
+                                              invoiceCreditNotes.forEach(cn => {
+                                                const existing = creditNoteMap.get(cn.credit_note_number);
+                                                if (existing) {
+                                                  existing.total += cn.amount_uf;
+                                                  existing.ids.push(cn.id);
+                                                } else {
+                                                  creditNoteMap.set(cn.credit_note_number, { number: cn.credit_note_number, total: cn.amount_uf, ids: [cn.id] });
+                                                }
+                                              });
+                                              const consolidatedCreditNotes = Array.from(creditNoteMap.values());
+                                              const creditNotesTotal = consolidatedCreditNotes.reduce((sum, cn) => sum + cn.total, 0);
+                                              
+                                              return (
+                                                <React.Fragment key={consolidated.invoice_number}>
+                                                  <TableRow className="hover:bg-muted/30">
+                                                    <TableCell className="p-0 w-8">
+                                                      <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-6 w-6"
+                                                        onClick={() => toggleInvoiceExpand(consolidated.invoice_number)}
+                                                      >
+                                                        {isExpanded ? (
+                                                          <ChevronDown className="h-3 w-3" />
+                                                        ) : (
+                                                          <ChevronRight className="h-3 w-3" />
+                                                        )}
+                                                      </Button>
+                                                    </TableCell>
+                                                    <TableCell className="text-sm py-1.5">
+                                                      <div className="flex items-center gap-2">
+                                                        <Receipt className="h-3 w-3 text-primary" />
+                                                        {consolidated.invoice_number}
+                                                      </div>
+                                                    </TableCell>
+                                                    <TableCell className="text-sm py-1.5">
+                                                      {format(parseISO(consolidated.invoice_date), "dd MMM yyyy", { locale: es })}
+                                                    </TableCell>
+                                                    <TableCell className="text-sm py-1.5 text-right font-medium">
+                                                      {formatUF(consolidated.total_amount_uf)}
+                                                    </TableCell>
+                                                    <TableCell className="text-sm py-1.5 text-center">
+                                                      <Badge variant="outline" className="text-xs">
+                                                        {consolidated.contracts.length} locales
+                                                      </Badge>
+                                                    </TableCell>
+                                                    <TableCell className="py-1.5">
+                                                      {consolidatedCreditNotes.length > 0 ? (
+                                                        <div className="space-y-1">
+                                                          {consolidatedCreditNotes.map((cn) => (
+                                                            <div key={cn.number} className="flex items-center gap-1">
+                                                              <Badge variant="outline" className="text-green-600 border-green-300 text-xs">
+                                                                NC {cn.number}: -{formatUF(cn.total)}
+                                                              </Badge>
+                                                              <Button
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                className="h-5 w-5 p-0 text-destructive"
+                                                                onClick={async () => {
+                                                                  // Delete all related credit notes
+                                                                  for (const id of cn.ids) {
+                                                                    await handleDeleteCreditNote(id);
+                                                                  }
+                                                                }}
+                                                              >
+                                                                <Trash2 className="h-3 w-3" />
+                                                              </Button>
+                                                            </div>
+                                                          ))}
+                                                          <p className="text-xs text-muted-foreground">
+                                                            Neto: {formatUF(consolidated.total_amount_uf - creditNotesTotal)}
+                                                          </p>
                                                         </div>
-                                                      ))}
-                                                      <p className="text-xs text-muted-foreground">
-                                                        Neto: {formatUF(invoice.amount_uf - creditNotesTotal)}
-                                                      </p>
-                                                    </div>
-                                                  ) : (
-                                                    <span className="text-muted-foreground">-</span>
+                                                      ) : (
+                                                        <span className="text-muted-foreground">-</span>
+                                                      )}
+                                                    </TableCell>
+                                                    <TableCell className="py-1.5">
+                                                      <Badge
+                                                        variant={consolidated.reception_status === "recibido" ? "default" : "secondary"}
+                                                        className="text-xs"
+                                                      >
+                                                        {consolidated.reception_status}
+                                                      </Badge>
+                                                    </TableCell>
+                                                    <TableCell className="py-1.5">
+                                                      <div className="flex items-center gap-1">
+                                                        <Button
+                                                          size="sm"
+                                                          variant="ghost"
+                                                          onClick={() => handleOpenCreditNoteDialog(consolidated.firstInvoice, groupedOrder)}
+                                                          className="h-6 px-1.5"
+                                                          title="Agregar Nota de Crédito"
+                                                        >
+                                                          <CreditCard className="h-3 w-3" />
+                                                        </Button>
+                                                        <Button
+                                                          size="sm"
+                                                          variant="ghost"
+                                                          onClick={() => handleEditInvoice(consolidated.firstInvoice, groupedOrder)}
+                                                          className="h-6 px-1.5"
+                                                          title="Editar Factura"
+                                                        >
+                                                          <Pencil className="h-3 w-3" />
+                                                        </Button>
+                                                        <Button
+                                                          size="sm"
+                                                          variant="ghost"
+                                                          onClick={async () => {
+                                                            // Delete all related invoices
+                                                            for (const id of consolidated.allInvoiceIds) {
+                                                              await handleDeleteInvoice(id);
+                                                            }
+                                                          }}
+                                                          className="h-6 px-1.5 text-destructive"
+                                                          title="Eliminar Factura"
+                                                        >
+                                                          <Trash2 className="h-3 w-3" />
+                                                        </Button>
+                                                      </div>
+                                                    </TableCell>
+                                                  </TableRow>
+                                                  {/* Contract breakdown when expanded */}
+                                                  {isExpanded && (
+                                                    <TableRow className="bg-muted/20">
+                                                      <TableCell colSpan={8} className="py-2 px-6">
+                                                        <div className="text-xs space-y-1">
+                                                          <p className="font-medium text-muted-foreground mb-2">Desglose por Contrato:</p>
+                                                          <div className="grid grid-cols-2 gap-2">
+                                                            {consolidated.contracts.map((contract) => (
+                                                              <div key={contract.id} className="flex justify-between items-center p-2 bg-background rounded border">
+                                                                <span className="font-medium">{contract.contract_name}</span>
+                                                                <span className="text-primary">{formatUF(contract.amount_uf)}</span>
+                                                              </div>
+                                                            ))}
+                                                          </div>
+                                                        </div>
+                                                      </TableCell>
+                                                    </TableRow>
                                                   )}
-                                                </TableCell>
-                                                <TableCell className="py-1.5">
-                                                  <Badge
-                                                    variant={invoice.reception_status === "recibido" ? "default" : "secondary"}
-                                                    className="text-xs"
-                                                  >
-                                                    {invoice.reception_status}
-                                                  </Badge>
-                                                </TableCell>
-                                                <TableCell className="py-1.5">
-                                                  <div className="flex items-center gap-1">
-                                                    <Button
-                                                      size="sm"
-                                                      variant="ghost"
-                                                      onClick={() => handleOpenCreditNoteDialog(invoice, groupedOrder)}
-                                                      className="h-6 px-1.5"
-                                                      title="Agregar Nota de Crédito"
+                                                </React.Fragment>
+                                              );
+                                            })
+                                          ) : (
+                                            // Single-contract: show invoices normally
+                                            allInvoices.map((invoice) => {
+                                              const invoiceCreditNotes = allCreditNotes.filter(cn => cn.invoice_id === invoice.id);
+                                              const creditNotesTotal = invoiceCreditNotes.reduce((sum, cn) => sum + cn.amount_uf, 0);
+                                              
+                                              return (
+                                                <TableRow key={invoice.id}>
+                                                  <TableCell className="text-sm py-1.5">
+                                                    <div className="flex items-center gap-2">
+                                                      <Receipt className="h-3 w-3 text-primary" />
+                                                      {invoice.invoice_number}
+                                                    </div>
+                                                  </TableCell>
+                                                  <TableCell className="text-sm py-1.5">
+                                                    {format(parseISO(invoice.invoice_date), "dd MMM yyyy", { locale: es })}
+                                                  </TableCell>
+                                                  <TableCell className="text-sm py-1.5 text-right font-medium">
+                                                    {formatUF(invoice.amount_uf)}
+                                                  </TableCell>
+                                                  <TableCell className="py-1.5">
+                                                    {invoiceCreditNotes.length > 0 ? (
+                                                      <div className="space-y-1">
+                                                        {invoiceCreditNotes.map((cn) => (
+                                                          <div key={cn.id} className="flex items-center gap-1">
+                                                            <Badge variant="outline" className="text-green-600 border-green-300 text-xs">
+                                                              NC {cn.credit_note_number}: -{formatUF(cn.amount_uf)}
+                                                            </Badge>
+                                                            <Button
+                                                              size="sm"
+                                                              variant="ghost"
+                                                              className="h-5 w-5 p-0 text-destructive"
+                                                              onClick={() => handleDeleteCreditNote(cn.id)}
+                                                            >
+                                                              <Trash2 className="h-3 w-3" />
+                                                            </Button>
+                                                          </div>
+                                                        ))}
+                                                        <p className="text-xs text-muted-foreground">
+                                                          Neto: {formatUF(invoice.amount_uf - creditNotesTotal)}
+                                                        </p>
+                                                      </div>
+                                                    ) : (
+                                                      <span className="text-muted-foreground">-</span>
+                                                    )}
+                                                  </TableCell>
+                                                  <TableCell className="py-1.5">
+                                                    <Badge
+                                                      variant={invoice.reception_status === "recibido" ? "default" : "secondary"}
+                                                      className="text-xs"
                                                     >
-                                                      <CreditCard className="h-3 w-3" />
-                                                    </Button>
-                                                    <Button
-                                                      size="sm"
-                                                      variant="ghost"
-                                                      onClick={() => handleEditInvoice(invoice, groupedOrder)}
-                                                      className="h-6 px-1.5"
-                                                      title="Editar Factura"
-                                                    >
-                                                      <Pencil className="h-3 w-3" />
-                                                    </Button>
-                                                    <Button
-                                                      size="sm"
-                                                      variant="ghost"
-                                                      onClick={() => handleDeleteInvoice(invoice.id)}
-                                                      className="h-6 px-1.5 text-destructive"
-                                                      title="Eliminar Factura"
-                                                    >
-                                                      <Trash2 className="h-3 w-3" />
-                                                    </Button>
-                                                  </div>
-                                                </TableCell>
-                                              </TableRow>
-                                            );
-                                          })}
+                                                      {invoice.reception_status}
+                                                    </Badge>
+                                                  </TableCell>
+                                                  <TableCell className="py-1.5">
+                                                    <div className="flex items-center gap-1">
+                                                      <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        onClick={() => handleOpenCreditNoteDialog(invoice, groupedOrder)}
+                                                        className="h-6 px-1.5"
+                                                        title="Agregar Nota de Crédito"
+                                                      >
+                                                        <CreditCard className="h-3 w-3" />
+                                                      </Button>
+                                                      <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        onClick={() => handleEditInvoice(invoice, groupedOrder)}
+                                                        className="h-6 px-1.5"
+                                                        title="Editar Factura"
+                                                      >
+                                                        <Pencil className="h-3 w-3" />
+                                                      </Button>
+                                                      <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        onClick={() => handleDeleteInvoice(invoice.id)}
+                                                        className="h-6 px-1.5 text-destructive"
+                                                        title="Eliminar Factura"
+                                                      >
+                                                        <Trash2 className="h-3 w-3" />
+                                                      </Button>
+                                                    </div>
+                                                  </TableCell>
+                                                </TableRow>
+                                              );
+                                            })
+                                          )}
                                         </TableBody>
                                       </Table>
                                       {/* Summary */}
