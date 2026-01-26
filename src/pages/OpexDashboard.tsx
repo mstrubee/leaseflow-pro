@@ -228,6 +228,7 @@ const OpexDashboard = () => {
       setLocalAdditionals(processedAdditionals);
 
       // Load consumption (OPEX purchase orders) with invoice data
+      // Filter by the year field instead of created_at for accuracy
       const {
         data: ordersData
       } = await supabase.from("purchase_orders").select(`
@@ -235,17 +236,16 @@ const OpexDashboard = () => {
           contract_id,
           amount_uf,
           opex_category_id,
-          created_at,
+          year,
           contracts!inner(name),
           opex_categories(name),
           invoices(amount_uf, deleted_at)
-        `).eq("budget_classification", "OPEX").is("deleted_at", null);
+        `)
+        .eq("year", selectedYear)
+        .is("deleted_at", null)
+        .or("budget_classification.eq.OPEX,opex_category_id.not.is.null");
 
-      // Filter by year based on created_at
-      const filteredOrders = (ordersData || []).filter((o: any) => {
-        const orderYear = new Date(o.created_at).getFullYear();
-        return orderYear === selectedYear;
-      });
+      const filteredOrders = ordersData || [];
 
       // Aggregate consumption by contract and category
       const consumptionMap = new Map<string, OpexConsumption>();
