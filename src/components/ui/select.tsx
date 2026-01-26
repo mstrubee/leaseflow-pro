@@ -23,7 +23,12 @@ const SelectTrigger = React.forwardRef<
     {...props}
   >
     {children}
-    <SelectPrimitive.Icon asChild>
+    {/*
+      NOTE: Avoid `asChild` here.
+      In some Radix/React combos this can trigger a ref-compose loop (setRef -> re-render -> setRef)
+      leading to "Maximum update depth exceeded".
+    */}
+    <SelectPrimitive.Icon>
       <ChevronDown className="h-4 w-4 opacity-50" />
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
