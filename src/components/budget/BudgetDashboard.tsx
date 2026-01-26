@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, TrendingUp, DollarSign, FileText, Receipt, RotateCcw, AlertCircle, Plus, Trash2, Calendar, Lock, Clock } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, FileText, Receipt, RotateCcw, AlertCircle, Plus, Trash2, Calendar, Lock, Clock, Edit2 } from "lucide-react";
 import { BudgetProvider, useBudgetContext } from "./BudgetContext";
 import { BudgetModule } from "./BudgetModule";
 import { PurchaseOrdersModule } from "./PurchaseOrdersModule";
@@ -69,13 +69,20 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
   
   // Dialog states
   const [showNewYearDialog, setShowNewYearDialog] = useState(false);
+  const [showEditCapexDialog, setShowEditCapexDialog] = useState(false);
   const [showDeleteYearDialog1, setShowDeleteYearDialog1] = useState(false);
   const [showDeleteYearDialog2, setShowDeleteYearDialog2] = useState(false);
   const [showCloseYearDialog, setShowCloseYearDialog] = useState(false);
   
+  // Edit CAPEX form state
+  const [editCapexAmount, setEditCapexAmount] = useState("");
+  const [editCapexCurrency, setEditCapexCurrency] = useState<"UF" | "CLP">("UF");
+  const [editingCapex, setEditingCapex] = useState(false);
+  
   // New year form state
   const [newYear, setNewYear] = useState(new Date().getFullYear());
   const [capexAmount, setCapexAmount] = useState("");
+  const [capexCurrency, setCapexCurrency] = useState<"UF" | "CLP">("UF");
   const [capexTemplateId, setCapexTemplateId] = useState("");
   const [closeCurrentYearOnCreate, setCloseCurrentYearOnCreate] = useState(false);
   const [previousYearPendingOCs, setPreviousYearPendingOCs] = useState<{
@@ -477,13 +484,20 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
 
   // Handle new year creation - Only CAPEX
   const handleCreateNewYear = async () => {
-    if (!capexTemplateId || capexTemplateId === "none") {
-      toast({ variant: "destructive", title: "Error", description: "Debe seleccionar una plantilla CAPEX" });
+    const numAmount = parseFloat(capexAmount) || 0;
+    if (numAmount <= 0) {
+      toast({ variant: "destructive", title: "Error", description: "Debe ingresar un monto CAPEX válido" });
       return;
     }
 
     setCreatingYear(true);
     try {
+      // Convert CLP to UF if needed
+      let amountUf = numAmount;
+      if (capexCurrency === "CLP" && ufValue > 0) {
+        amountUf = numAmount / ufValue;
+      }
+
       // Create CAPEX budget
       const { data: capBudget, error: capError } = await supabase
         .from("contract_budgets")
@@ -491,13 +505,17 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
           contract_id: contractId,
           year: newYear,
           budget_type: "capex",
-          amount_uf: parseFloat(capexAmount) || 0,
+          amount_uf: amountUf,
         })
         .select()
         .single();
 
       if (capError) throw capError;
-      await applyBudgetTemplate(capexTemplateId, capBudget.id);
+      
+      // Apply template only if one is selected
+      if (capexTemplateId && capexTemplateId !== "none") {
+        await applyBudgetTemplate(capexTemplateId, capBudget.id);
+      }
 
       // Handle carryover if closing previous year
       if (closeCurrentYearOnCreate && previousYearPendingOCs.count > 0) {
@@ -505,9 +523,10 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
         // (Similar to what was in BudgetModule)
       }
 
-      toast({ title: "Año CAPEX creado", description: `Presupuesto CAPEX para ${newYear} creado exitosamente` });
+      toast({ title: "Año CAPEX creado", description: `Presupuesto CAPEX para ${newYear} creado exitosamente con ${formatUF(amountUf)}` });
       setShowNewYearDialog(false);
       setCapexAmount("");
+      setCapexCurrency("UF");
       setCapexTemplateId("");
       setCloseCurrentYearOnCreate(false);
       await loadAvailableYears();
@@ -575,6 +594,67 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setClosingYear(false);
+    }
+  };
+
+  // Handle edit CAPEX amount
+  const handleOpenEditCapex = () => {
+    setEditCapexAmount(capexSummary.budget.toString());
+    setEditCapexCurrency("UF");
+    setShowEditCapexDialog(true);
+  };
+
+  const handleSaveCapexAmount = async () => {
+    const numAmount = parseFloat(editCapexAmount) || 0;
+    if (numAmount < 0) {
+      toast({ variant: "destructive", title: "Error", description: "El monto debe ser mayor o igual a 0" });
+      return;
+    }
+
+    setEditingCapex(true);
+    try {
+      // Convert CLP to UF if needed
+      let amountUf = numAmount;
+      if (editCapexCurrency === "CLP" && ufValue > 0) {
+        amountUf = numAmount / ufValue;
+      }
+
+      // Update or create CAPEX budget
+      const { data: existingBudget } = await supabase
+        .from("contract_budgets")
+        .select("id")
+        .eq("contract_id", contractId)
+        .eq("year", selectedYear)
+        .eq("budget_type", "capex")
+        .maybeSingle();
+
+      if (existingBudget) {
+        // Update existing
+        await supabase
+          .from("contract_budgets")
+          .update({ amount_uf: amountUf })
+          .eq("id", existingBudget.id);
+      } else {
+        // Create new
+        await supabase
+          .from("contract_budgets")
+          .insert({
+            contract_id: contractId,
+            year: selectedYear,
+            budget_type: "capex",
+            amount_uf: amountUf,
+          });
+      }
+
+      toast({ title: "CAPEX actualizado", description: `Monto CAPEX actualizado a ${formatUF(amountUf)}` });
+      setShowEditCapexDialog(false);
+      setRefreshKey(k => k + 1);
+      await refreshData();
+      await loadAvailableYears();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setEditingCapex(false);
     }
   };
 
@@ -716,18 +796,31 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
         {/* TOTAL CAPEX */}
         <Card className="border-l-4 border-l-blue-500">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-blue-500" />
-              TOTAL CAPEX {selectedYear}
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-blue-500" />
+                TOTAL CAPEX {selectedYear}
+              </div>
+              {!yearBudgetInfo.capexClosed && (
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-6 w-6 p-0" 
+                  onClick={handleOpenEditCapex}
+                  title="Editar monto CAPEX"
+                >
+                  <Edit2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-lg font-bold">{formatUF(capexSummary.authorized)}</p>
-                <p className="text-xs text-muted-foreground">{formatSecondary(capexSummary.authorized)}</p>
+                <p className="text-lg font-bold">{formatUF(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized)}</p>
+                <p className="text-xs text-muted-foreground">{formatSecondary(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized)}</p>
               </div>
-              <BudgetSemaphore budget={capexSummary.authorized} consumed={capexTotals.oc} showLabel={false} size="md" />
+              <BudgetSemaphore budget={capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized} consumed={capexTotals.oc} showLabel={false} size="md" />
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm border-t pt-2">
               <div className="flex items-center gap-1.5">
@@ -752,8 +845,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                 <DollarSign className="h-3.5 w-3.5 text-green-500" />
                 <span className="text-muted-foreground">Disponible:</span>
               </div>
-              <span className={`font-medium text-right ${capexTotals.oc > capexSummary.authorized ? "text-destructive" : "text-green-600"}`}>
-                {formatPrimary(capexSummary.authorized - capexTotals.oc)}
+              <span className={`font-medium text-right ${capexTotals.oc > (capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized) ? "text-destructive" : "text-green-600"}`}>
+                {formatPrimary((capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized) - capexTotals.oc)}
               </span>
               
               {capexSummary.unauthorized > 0 && (
@@ -911,21 +1004,38 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
             </div>
             
             <div className="space-y-2">
-              <Label>Monto CAPEX (UF)</Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={capexAmount}
-                onChange={(e) => setCapexAmount(e.target.value)}
-                placeholder="0.00"
-              />
+              <Label>Monto CAPEX</Label>
+              <div className="flex gap-2">
+                <Select value={capexCurrency} onValueChange={(v: "UF" | "CLP") => setCapexCurrency(v)}>
+                  <SelectTrigger className="w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UF">UF</SelectItem>
+                    <SelectItem value="CLP">$</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  step={capexCurrency === "UF" ? "0.01" : "1"}
+                  value={capexAmount}
+                  onChange={(e) => setCapexAmount(e.target.value)}
+                  placeholder={capexCurrency === "UF" ? "0.00" : "0"}
+                  className="flex-1"
+                />
+              </div>
+              {capexCurrency === "CLP" && parseFloat(capexAmount) > 0 && ufValue > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  ≈ {formatUF(parseFloat(capexAmount) / ufValue)} (UF: {ufValue.toLocaleString("es-CL", { minimumFractionDigits: 2 })})
+                </p>
+              )}
             </div>
 
             <BudgetTemplateSelector
               budgetType="capex"
               value={capexTemplateId}
               onChange={setCapexTemplateId}
-              label="Plantilla CAPEX"
+              label="Plantilla CAPEX (opcional)"
             />
             
             {previousYearPendingOCs.count > 0 && (
@@ -954,7 +1064,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
             </Button>
             <Button 
               onClick={handleCreateNewYear} 
-              disabled={creatingYear || !capexTemplateId}
+              disabled={creatingYear || !capexAmount || parseFloat(capexAmount) <= 0}
             >
               {creatingYear && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Crear CAPEX
@@ -1038,6 +1148,72 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog: Editar CAPEX */}
+      <Dialog open={showEditCapexDialog} onOpenChange={setShowEditCapexDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar Monto CAPEX {selectedYear}</DialogTitle>
+            <DialogDescription>
+              Modifique el monto total del presupuesto CAPEX para este local.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Monto CAPEX</Label>
+              <div className="flex gap-2">
+                <Select value={editCapexCurrency} onValueChange={(v: "UF" | "CLP") => setEditCapexCurrency(v)}>
+                  <SelectTrigger className="w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UF">UF</SelectItem>
+                    <SelectItem value="CLP">$</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  step={editCapexCurrency === "UF" ? "0.01" : "1"}
+                  value={editCapexAmount}
+                  onChange={(e) => setEditCapexAmount(e.target.value)}
+                  placeholder={editCapexCurrency === "UF" ? "0.00" : "0"}
+                  className="flex-1"
+                />
+              </div>
+              {editCapexCurrency === "CLP" && parseFloat(editCapexAmount) > 0 && ufValue > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  ≈ {formatUF(parseFloat(editCapexAmount) / ufValue)} (UF: {ufValue.toLocaleString("es-CL", { minimumFractionDigits: 2 })})
+                </p>
+              )}
+            </div>
+            
+            {/* Show current consumption info */}
+            <div className="p-3 bg-muted/50 rounded-lg space-y-1">
+              <p className="text-xs text-muted-foreground">Consumo actual:</p>
+              <div className="flex justify-between text-sm">
+                <span>OC emitidas:</span>
+                <span className="font-medium">{formatUF(capexTotals.oc)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Facturado:</span>
+                <span className="font-medium">{formatUF(capexTotals.invoices)}</span>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditCapexDialog(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleSaveCapexAmount} 
+              disabled={editingCapex || parseFloat(editCapexAmount) < 0}
+            >
+              {editingCapex && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
