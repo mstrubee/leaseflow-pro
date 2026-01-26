@@ -32,81 +32,13 @@ export const SupplierSelect = ({
   const loadSuppliers = async () => {
     setLoading(true);
     try {
-      // If no filters, load ALL suppliers for full selection capability
-      if (!categoryId && !templateLineId) {
-        const { data: allSuppliers } = await supabase
-          .from("suppliers")
-          .select("id, name, is_generic, category_id")
-          .order("name");
-        
-        setSuppliers((allSuppliers || []) as Supplier[]);
-        return;
-      }
-
-      // Get generic suppliers
-      const { data: genericSuppliers } = await supabase
+      // Always load ALL suppliers to ensure complete selection capability
+      const { data: allSuppliers } = await supabase
         .from("suppliers")
         .select("id, name, is_generic, category_id")
-        .eq("is_generic", true)
         .order("name");
-
-      // Get suppliers by category (if category provided)
-      let categorySuppliers: any[] = [];
-      if (categoryId) {
-        const { data } = await supabase
-          .from("suppliers")
-          .select("id, name, is_generic, category_id")
-          .eq("category_id", categoryId)
-          .eq("is_generic", false)
-          .order("name");
-        categorySuppliers = data || [];
-      }
-
-      // Get suppliers associated with the template line
-      let associatedSuppliers: any[] = [];
-      if (templateLineId) {
-        const { data: supplierProducts } = await supabase
-          .from("supplier_products")
-          .select(`
-            supplier:suppliers(id, name, is_generic, category_id)
-          `)
-          .eq("template_line_id", templateLineId);
-        
-        if (supplierProducts) {
-          associatedSuppliers = supplierProducts
-            .map((sp: any) => sp.supplier)
-            .filter(Boolean);
-        }
-      }
-
-      // Ensure the currently selected supplier is included
-      let currentSupplier: Supplier | null = null;
-      if (value && ![...associatedSuppliers, ...categorySuppliers, ...(genericSuppliers || [])].find(s => s.id === value)) {
-        const { data: selectedSupplier } = await supabase
-          .from("suppliers")
-          .select("id, name, is_generic, category_id")
-          .eq("id", value)
-          .single();
-        if (selectedSupplier) {
-          currentSupplier = selectedSupplier as Supplier;
-        }
-      }
-
-      // Merge and deduplicate - prioritize: current > associated > category > generic
-      const allSuppliers = [
-        ...(currentSupplier ? [currentSupplier] : []),
-        ...associatedSuppliers, 
-        ...categorySuppliers, 
-        ...(genericSuppliers || [])
-      ];
-      const uniqueSuppliers = allSuppliers.reduce((acc: Supplier[], curr) => {
-        if (!acc.find(s => s.id === curr.id)) {
-          acc.push(curr as Supplier);
-        }
-        return acc;
-      }, []);
-
-      setSuppliers(uniqueSuppliers);
+      
+      setSuppliers((allSuppliers || []) as Supplier[]);
     } catch (error) {
       console.error("Error loading suppliers:", error);
     } finally {

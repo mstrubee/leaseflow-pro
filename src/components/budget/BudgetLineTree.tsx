@@ -306,10 +306,10 @@ const BudgetLineItem = ({
         ) : (
           <span 
             className={cn(
-              "text-sm flex-shrink-0 min-w-[250px] cursor-pointer hover:text-primary hover:underline", 
-              level === 0 ? "font-semibold" : "font-medium"
+              "text-sm flex-shrink-0 min-w-[250px]", 
+              level === 0 ? "font-semibold" : "font-medium",
+              !readOnly && "cursor-text hover:bg-accent/30 px-1 py-0.5 rounded"
             )}
-            onClick={() => onViewLineDetails?.(line.id, line.name)}
             onDoubleClick={(e) => {
               e.stopPropagation();
               if (!readOnly) {
@@ -317,7 +317,7 @@ const BudgetLineItem = ({
                 setIsEditingName(true);
               }
             }}
-            title="Clic para ver detalles, doble clic para editar nombre"
+            title={!readOnly ? "Doble clic para editar nombre" : undefined}
           >
             {line.name}
           </span>
