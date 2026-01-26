@@ -297,29 +297,40 @@ export function CompactEscalationChart({
               />
             ))}
             {/* Vertical lines at range boundaries - start in warning, end in red (deadline) */}
-            {noticeMonthInfo && 'ranges' in noticeMonthInfo && noticeMonthInfo.ranges?.flatMap((range, idx) => [
-              <ReferenceLine
-                key={`start-${idx}`}
-                x={range.start_month}
-                stroke="hsl(var(--warning))"
-                strokeWidth={2}
-                strokeDasharray="4 4"
-              />,
-              <ReferenceLine
-                key={`end-${idx}`}
-                x={range.end_month}
-                stroke="hsl(var(--destructive))"
-                strokeWidth={3}
-                strokeDasharray="8 4"
-                label={{
-                  value: `Límite R${idx + 1}`,
-                  fontSize: 10,
-                  fontWeight: 600,
-                  fill: "hsl(var(--destructive))",
-                  position: "insideTopLeft"
-                }}
-              />
-            ])}
+            {noticeMonthInfo && 'ranges' in noticeMonthInfo && noticeMonthInfo.ranges?.flatMap((range, idx) => {
+              // Calculate deadline month (notice period before end of range)
+              // We need to get months_before from somewhere - for now use a default or passed prop
+              const deadlineMonth = range.start_month; // The deadline is at the start of the range window
+              const deadlineDateStr = effectiveDate 
+                ? format(addMonths(new Date(effectiveDate), deadlineMonth - 1), "MMM yy", { locale: es })
+                : `M${deadlineMonth}`;
+              
+              return [
+                <ReferenceLine
+                  key={`start-${idx}`}
+                  x={range.start_month}
+                  stroke="hsl(var(--warning))"
+                  strokeWidth={2}
+                  strokeDasharray="4 4"
+                />,
+                <ReferenceLine
+                  key={`end-${idx}`}
+                  x={range.end_month}
+                  stroke="hsl(var(--destructive))"
+                  strokeWidth={3}
+                  strokeDasharray="8 4"
+                  label={{
+                    value: effectiveDate 
+                      ? format(addMonths(new Date(effectiveDate), range.end_month - 1), "MMM yy", { locale: es })
+                      : `M${range.end_month}`,
+                    fontSize: 9,
+                    fontWeight: 600,
+                    fill: "hsl(var(--destructive))",
+                    position: "top"
+                  }}
+                />
+              ];
+            })}
             
             {/* Single notice deadline line for meses/fecha type or contract end notice - red dotted line */}
             {noticeMonthInfo && 'month' in noticeMonthInfo && (
@@ -374,19 +385,18 @@ export function CompactEscalationChart({
               />
             )}
             
-            {/* Current month red vertical line with month/year */}
+            {/* Current month - green vertical line with clear label */}
             {currentMonth && (
               <ReferenceLine 
                 x={currentMonth} 
-                stroke="hsl(var(--destructive))" 
+                stroke="hsl(142 76% 36%)" 
                 strokeWidth={2}
                 label={{ 
-                  value: effectiveDate 
-                    ? format(addMonths(new Date(effectiveDate), currentMonth - 1), "MMM yyyy", { locale: es })
-                    : `M${currentMonth}`, 
+                  value: "HOY", 
                   fontSize: 10, 
-                  fill: "hsl(var(--destructive))",
-                  position: "top"
+                  fontWeight: 700,
+                  fill: "hsl(142 76% 36%)",
+                  position: "insideTopRight"
                 }}
               />
             )}
@@ -394,31 +404,42 @@ export function CompactEscalationChart({
         </ResponsiveContainer>
       </div>
       
-      {/* Summary text */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        {currentMonth && (
-          <span className="text-destructive font-medium">
-            Mes actual: {currentMonth}
-          </span>
+      {/* Legend */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs border-t pt-2 mt-2">
+        {currentMonth && effectiveDate && (
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-0.5 bg-[hsl(142_76%_36%)]" />
+            <span className="text-[hsl(142_76%_36%)] font-semibold">
+              Hoy: {format(addMonths(new Date(effectiveDate), currentMonth - 1), "dd MMM yyyy", { locale: es })} (M{currentMonth})
+            </span>
+          </div>
         )}
         {noticeMonthInfo && 'month' in noticeMonthInfo && effectiveDate && (
-          <span className="text-warning font-medium">
-            Aviso: {format(noticeMonthInfo.date, "dd MMM yyyy", { locale: es })}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-0.5 bg-destructive" style={{ borderStyle: 'dashed' }} />
+            <span className="text-destructive font-medium">
+              Límite aviso: {format(noticeMonthInfo.date, "dd MMM yyyy", { locale: es })}
+            </span>
+          </div>
         )}
-        {noticeMonthInfo && 'ranges' in noticeMonthInfo && (
-          <span className="text-warning font-medium">
-            {noticeMonthInfo.isFromSpecificMonth 
-              ? `Aviso: desde M${noticeMonthInfo.ranges?.[0]?.start_month}`
-              : `Avisos: ${noticeMonthInfo.ranges?.map(r => `M${r.start_month}-${r.end_month}`).join(", ")}`}
-          </span>
+        {noticeMonthInfo && 'ranges' in noticeMonthInfo && effectiveDate && (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-2 bg-warning/20 border border-warning" />
+              <span className="text-muted-foreground">Ventanas de término</span>
+            </div>
+            <div className="flex flex-wrap gap-2 ml-4">
+              {noticeMonthInfo.ranges?.map((range, idx) => {
+                const endDate = addMonths(new Date(effectiveDate), range.end_month - 1);
+                return (
+                  <span key={idx} className="text-destructive font-medium">
+                    Venc. {idx + 1}: {format(endDate, "MMM yyyy", { locale: es })}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
         )}
-        {summaryPoints.slice(0, 3).map((point, idx) => (
-          <span key={idx} className={point.isRegime ? "font-medium text-primary" : ""}>
-            M{point.month}: {formatAmount(point.rent)}
-            {point.isRegime && " (régimen)"}
-          </span>
-        ))}
       </div>
     </div>
   );
