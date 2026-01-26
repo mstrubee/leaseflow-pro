@@ -64,6 +64,12 @@ interface ContractVersion {
   auto_renewal_months?: number | null;
   rent_escalations: Escalation[];
 }
+interface VersionNotice {
+  notice_type: string;
+  notice_value: string;
+  notice_bilaterality: string;
+}
+
 interface CommercialConditionsSummaryProps {
   version: ContractVersion;
   signedDate: string | null;
@@ -74,6 +80,7 @@ interface CommercialConditionsSummaryProps {
     start_month: number;
     end_month: number;
   }>;
+  versionNotices?: VersionNotice[];
   contractId?: string;
   showRenegotiationButton?: boolean;
   onRenegotiationSuccess?: () => void;
@@ -86,6 +93,7 @@ export function CommercialConditionsSummary({
   superficieEdificadaLocal,
   metrosLinealesFrente,
   noticeRanges = [],
+  versionNotices = [],
   contractId,
   showRenegotiationButton = false,
   onRenegotiationSuccess,
@@ -140,6 +148,25 @@ export function CommercialConditionsSummary({
   const entryExpensesTotal = useMemo(() => {
     return entryExpenses.reduce((sum, e) => sum + e.amount_uf, 0);
   }, [entryExpenses]);
+
+  // Calculate notice deadlines for each range based on version notices
+  const noticeDeadlines = useMemo(() => {
+    if (version.notice_type !== "rangos" || noticeRanges.length === 0) return [];
+    
+    // If we have version_notices, use the first one's notice_value as months_before
+    // (typically all notices for a version have the same months_before)
+    const monthsBefore = versionNotices.length > 0 
+      ? parseInt(versionNotices[0].notice_value) || 12
+      : 12; // Default to 12 months if no notices found
+    
+    return noticeRanges.map((range, idx) => ({
+      rangeIndex: idx,
+      rangeStart: range.start_month,
+      rangeEnd: range.end_month,
+      monthsBefore,
+      deadlineMonth: range.end_month - monthsBefore
+    }));
+  }, [version.notice_type, noticeRanges, versionNotices]);
 
   // Format functions based on display currency
   // Values are stored in the selected currency, so we display directly
@@ -818,7 +845,7 @@ export function CommercialConditionsSummary({
               <TrendingUp className="h-3 w-3" />
               {hasEscalations ? "Escalonamiento de Renta" : "Tendencia de Renta"}
             </div>
-            <CompactEscalationChart escalations={version.rent_escalations} initialRent={version.initial_rent} regimeRent={version.regime_rent} durationMonths={version.duration_months} effectiveDate={version.effective_date || signedDate || undefined} graceMonths={version.grace_months || 0} hasPeriodicAdjustments={version.has_periodic_adjustments || false} adjustmentType={version.adjustment_type || "percentage"} adjustmentValue={version.adjustment_value || 0} firstAdjustmentMonth={version.first_adjustment_month || 0} adjustmentPeriodicityMonths={version.adjustment_periodicity_months || 0} noticeRanges={noticeRanges} noticeType={version.notice_type} noticeValue={version.notice_value} displayCurrency={displayCurrency} isUfM2Mode={version.initial_rent_is_uf_m2 || version.regime_rent_is_uf_m2 || false} superficieM2={superficieEdificadaLocal || 0} contractEndNoticeMonths={version.notice_type === "sin_termino" ? parseInt(version.notice_value) || 0 : 0} />
+            <CompactEscalationChart escalations={version.rent_escalations} initialRent={version.initial_rent} regimeRent={version.regime_rent} durationMonths={version.duration_months} effectiveDate={version.effective_date || signedDate || undefined} graceMonths={version.grace_months || 0} hasPeriodicAdjustments={version.has_periodic_adjustments || false} adjustmentType={version.adjustment_type || "percentage"} adjustmentValue={version.adjustment_value || 0} firstAdjustmentMonth={version.first_adjustment_month || 0} adjustmentPeriodicityMonths={version.adjustment_periodicity_months || 0} noticeRanges={noticeRanges} noticeType={version.notice_type} noticeValue={version.notice_value} displayCurrency={displayCurrency} isUfM2Mode={version.initial_rent_is_uf_m2 || version.regime_rent_is_uf_m2 || false} superficieM2={superficieEdificadaLocal || 0} noticeDeadlines={noticeDeadlines} contractEndNoticeMonths={version.notice_type === "sin_termino" ? parseInt(version.notice_value) || 0 : 0} />
           </div>}
       </CardContent>
     </Card>;
