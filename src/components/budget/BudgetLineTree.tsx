@@ -106,10 +106,12 @@ const BudgetLineItem = ({
   globalExpandState = null
 }: BudgetLineItemProps) => {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [isEditingName, setIsEditingName] = useState(false);
   const [isEditingQuantity, setIsEditingQuantity] = useState(false);
   const [isEditingUnit, setIsEditingUnit] = useState(false);
   const [isEditingPrice, setIsEditingPrice] = useState(false);
   const [isEditingCurrency, setIsEditingCurrency] = useState(false);
+  const [editName, setEditName] = useState(line.name);
   const [editQuantity, setEditQuantity] = useState((line.quantity || 0).toString());
   const [editUnitPrice, setEditUnitPrice] = useState((line.unit_price || 0).toString());
   const [editCurrency, setEditCurrency] = useState(line.currency || "UF");
@@ -275,17 +277,51 @@ const BudgetLineItem = ({
           {hasChildren ? isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" /> : <div className="h-3.5 w-3.5" />}
         </button>
 
-        {/* Line name - fixed width for alignment, clickeable para ver detalles */}
-        <span 
-          className={cn(
-            "text-sm flex-shrink-0 min-w-[250px] cursor-pointer hover:text-primary hover:underline", 
-            level === 0 ? "font-semibold" : "font-medium"
-          )}
-          onClick={() => onViewLineDetails?.(line.id, line.name)}
-          title="Ver OC, Facturas y Notas de Crédito"
-        >
-          {line.name}
-        </span>
+        {/* Line name - editable on double click, click to view details */}
+        {isEditingName && !readOnly ? (
+          <Input 
+            type="text" 
+            value={editName} 
+            onChange={e => setEditName(e.target.value)} 
+            onBlur={() => {
+              if (editName.trim() !== line.name) {
+                onUpdateLine(line.id, { name: editName.trim() || "Sin nombre" });
+              }
+              setIsEditingName(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                if (editName.trim() !== line.name) {
+                  onUpdateLine(line.id, { name: editName.trim() || "Sin nombre" });
+                }
+                setIsEditingName(false);
+              } else if (e.key === "Escape") {
+                setEditName(line.name);
+                setIsEditingName(false);
+              }
+            }}
+            className="h-6 w-[240px] text-sm" 
+            autoFocus
+          />
+        ) : (
+          <span 
+            className={cn(
+              "text-sm flex-shrink-0 min-w-[250px] cursor-pointer hover:text-primary hover:underline", 
+              level === 0 ? "font-semibold" : "font-medium"
+            )}
+            onClick={() => onViewLineDetails?.(line.id, line.name)}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              if (!readOnly) {
+                setEditName(line.name);
+                setIsEditingName(true);
+              }
+            }}
+            title="Clic para ver detalles, doble clic para editar nombre"
+          >
+            {line.name}
+          </span>
+        )}
 
         {/* For non-parent lines: show quantity/unit and price inputs - editable on double click */}
         {!isParent && <div className="flex items-center gap-1 min-w-[320px]">
@@ -457,8 +493,8 @@ const BudgetLineItem = ({
               </Tooltip>
             </TooltipProvider>}
           
-          {/* Supplier dropdown - only for leaf lines */}
-          {!isParent && !readOnly && (
+          {/* Supplier dropdown - for all lines (parent and leaf) */}
+          {!readOnly && (
             <SupplierSelect
               value={line.supplier_id || null}
               onChange={handleSupplierChange}
@@ -467,7 +503,7 @@ const BudgetLineItem = ({
               disabled={readOnly}
             />
           )}
-          {!isParent && readOnly && line.supplier_name && (
+          {readOnly && line.supplier_name && (
             <span className="text-xs bg-muted/30 px-1.5 py-0.5 rounded truncate max-w-[140px]">
               {line.supplier_name}
             </span>
