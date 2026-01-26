@@ -14,6 +14,15 @@ interface NoticeRange {
   end_month: number;
 }
 
+// Notice deadline: calculated as end_month - months_before for each range
+interface NoticeDeadline {
+  rangeIndex: number;
+  rangeStart: number;
+  rangeEnd: number;
+  monthsBefore: number;
+  deadlineMonth: number; // rangeEnd - monthsBefore
+}
+
 interface CompactEscalationChartProps {
   escalations: Escalation[];
   initialRent?: number | null;
@@ -32,6 +41,8 @@ interface CompactEscalationChartProps {
   displayCurrency?: "UF" | "CLP";
   isUfM2Mode?: boolean;
   superficieM2?: number;
+  // Notice deadlines for ranges (calculated as range.end_month - months_before)
+  noticeDeadlines?: NoticeDeadline[];
   // Contract end notice (for sin_termino type)
   contractEndNoticeMonths?: number;
 }
@@ -54,6 +65,7 @@ export function CompactEscalationChart({
   displayCurrency = "UF",
   isUfM2Mode = false,
   superficieM2 = 0,
+  noticeDeadlines = [],
   contractEndNoticeMonths = 0,
 }: CompactEscalationChartProps) {
   const { ufValue } = useEconomicIndicators();
@@ -296,40 +308,39 @@ export function CompactEscalationChart({
                 }}
               />
             ))}
-            {/* Vertical lines at range boundaries - start in warning, end in red (deadline) */}
-            {noticeMonthInfo && 'ranges' in noticeMonthInfo && noticeMonthInfo.ranges?.flatMap((range, idx) => {
-              // Calculate deadline month (notice period before end of range)
-              // We need to get months_before from somewhere - for now use a default or passed prop
-              const deadlineMonth = range.start_month; // The deadline is at the start of the range window
+            {/* Vertical lines at range boundaries - end of range as vencimiento */}
+            {noticeMonthInfo && 'ranges' in noticeMonthInfo && noticeMonthInfo.ranges?.map((range, idx) => (
+              <ReferenceLine
+                key={`end-${idx}`}
+                x={range.end_month}
+                stroke="hsl(var(--muted-foreground))"
+                strokeWidth={1}
+                strokeDasharray="4 4"
+              />
+            ))}
+            
+            {/* Notice deadline lines - calculated from noticeDeadlines prop */}
+            {noticeDeadlines.length > 0 && noticeDeadlines.map((deadline, idx) => {
               const deadlineDateStr = effectiveDate 
-                ? format(addMonths(new Date(effectiveDate), deadlineMonth - 1), "MMM yy", { locale: es })
-                : `M${deadlineMonth}`;
+                ? format(addMonths(new Date(effectiveDate), deadline.deadlineMonth - 1), "dd MMM yy", { locale: es })
+                : `M${deadline.deadlineMonth}`;
               
-              return [
+              return (
                 <ReferenceLine
-                  key={`start-${idx}`}
-                  x={range.start_month}
-                  stroke="hsl(var(--warning))"
-                  strokeWidth={2}
-                  strokeDasharray="4 4"
-                />,
-                <ReferenceLine
-                  key={`end-${idx}`}
-                  x={range.end_month}
+                  key={`deadline-${idx}`}
+                  x={deadline.deadlineMonth}
                   stroke="hsl(var(--destructive))"
-                  strokeWidth={3}
-                  strokeDasharray="8 4"
+                  strokeWidth={2}
+                  strokeDasharray="6 3"
                   label={{
-                    value: effectiveDate 
-                      ? format(addMonths(new Date(effectiveDate), range.end_month - 1), "MMM yy", { locale: es })
-                      : `M${range.end_month}`,
+                    value: `Límite ${idx + 1}: ${deadlineDateStr}`,
                     fontSize: 9,
                     fontWeight: 600,
                     fill: "hsl(var(--destructive))",
-                    position: "top"
+                    position: "insideTopLeft"
                   }}
                 />
-              ];
+              );
             })}
             
             {/* Single notice deadline line for meses/fecha type or contract end notice - red dotted line */}
@@ -426,18 +437,26 @@ export function CompactEscalationChart({
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-1.5">
               <div className="w-3 h-2 bg-warning/20 border border-warning" />
-              <span className="text-muted-foreground">Ventanas de término</span>
+              <span className="text-muted-foreground">Ventanas de término anticipado</span>
             </div>
-            <div className="flex flex-wrap gap-2 ml-4">
-              {noticeMonthInfo.ranges?.map((range, idx) => {
-                const endDate = addMonths(new Date(effectiveDate), range.end_month - 1);
-                return (
-                  <span key={idx} className="text-destructive font-medium">
-                    Venc. {idx + 1}: {format(endDate, "MMM yyyy", { locale: es })}
-                  </span>
-                );
-              })}
-            </div>
+            {noticeDeadlines.length > 0 && (
+              <div className="flex flex-wrap gap-3 ml-4">
+                {noticeDeadlines.map((deadline, idx) => {
+                  const deadlineDate = addMonths(new Date(effectiveDate), deadline.deadlineMonth - 1);
+                  const rangeEndDate = addMonths(new Date(effectiveDate), deadline.rangeEnd - 1);
+                  return (
+                    <div key={idx} className="text-xs">
+                      <span className="text-destructive font-semibold">
+                        Límite {idx + 1}: {format(deadlineDate, "dd MMM yyyy", { locale: es })}
+                      </span>
+                      <span className="text-muted-foreground ml-1">
+                        ({deadline.monthsBefore}m antes de {format(rangeEndDate, "MMM yy", { locale: es })})
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -259,7 +259,7 @@ const ContractDetail = () => {
           contract_companies (companies (name)),
           contract_addresses (*),
           contract_contacts (*),
-          contract_versions (*, rent_escalations (*), notice_ranges (start_month, end_month)),
+          contract_versions (*, rent_escalations (*), notice_ranges (start_month, end_month), version_notices (notice_type, notice_value, notice_bilaterality)),
           contract_documents (*),
           termination_notices (*)
         `).eq("id", id).single();
@@ -975,6 +975,7 @@ const ContractDetail = () => {
                           superficieEdificadaLocal={superficieEdificada ?? contract.superficie_edificada_local}
                           metrosLinealesFrente={contract.metros_lineales_frente}
                           noticeRanges={displayVersion.notice_ranges || []}
+                          versionNotices={(displayVersion as any).version_notices || []}
                           contractId={contract.id}
                           displayCurrency={contract.display_currency}
                         />
