@@ -61,6 +61,8 @@ interface OCRequest {
   description: string | null;
   amount_uf: number;
   amount_clp?: number;
+  input_currency?: string;
+  uf_value_at_entry?: number;
   supplier_id: string | null;
   supplier_name: string | null;
   status: string;
@@ -221,8 +223,8 @@ export const ConvertOCRequestDialog = ({
               description: request.description,
               amount_uf: allocAmountUf,
               amount_clp: allocAmountClp,
-              input_currency: "UF",
-              uf_value_at_entry: ufValue,
+              input_currency: request.input_currency || "CLP",
+              uf_value_at_entry: request.uf_value_at_entry || ufValue,
               year: request.year,
               status: "abierta",
               attachment_url: attachmentUrl,
@@ -262,8 +264,8 @@ export const ConvertOCRequestDialog = ({
           description: request.description,
           amount_uf: singleAmountUf,
           amount_clp: singleAmountClp,
-          input_currency: "UF",
-          uf_value_at_entry: ufValue,
+          input_currency: request.input_currency || "CLP",
+          uf_value_at_entry: request.uf_value_at_entry || ufValue,
           year: request.year,
           status: "abierta",
           attachment_url: attachmentUrl,
