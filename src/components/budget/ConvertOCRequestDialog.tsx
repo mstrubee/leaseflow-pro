@@ -40,6 +40,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { uploadFileToStorage } from "@/lib/storageUtils";
 import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
+import { backupOCToMultipleContracts } from "@/lib/repositoryBackup";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -272,6 +273,17 @@ export const ConvertOCRequestDialog = ({
         });
 
         if (ocError) throw ocError;
+      }
+
+      // Backup OC file to repository for all affected contracts
+      if (attachmentUrl) {
+        const fileName = fileData?.fileName || request.quotation_file_name || "documento_oc.pdf";
+        if (isMultiContract && request.allocations) {
+          const contractIds = request.allocations.map(a => a.contract_id);
+          await backupOCToMultipleContracts(contractIds, attachmentUrl, orderNumber, fileName);
+        } else {
+          await backupOCToMultipleContracts([request.contract_id], attachmentUrl, orderNumber, fileName);
+        }
       }
 
       // Update the request status to converted

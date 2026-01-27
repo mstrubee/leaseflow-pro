@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { useAuth } from "@/hooks/useAuth";
 import { uploadFileToStorage } from "@/lib/storageUtils";
+import { backupOCToMultipleContracts, backupOCFromStorageUrl } from "@/lib/repositoryBackup";
 interface Contract {
   id: string;
   name: string;
@@ -540,6 +541,12 @@ export const CentralizedOrderCreator = ({
             }
           }
           
+          // Backup OC file to repository for all contracts
+          if (quotationData?.url) {
+            const contractIds = contractAllocations.map(a => a.contractId);
+            await backupOCToMultipleContracts(contractIds, quotationData.url, orderNumber, quotationData.fileName);
+          }
+          
           toast({ title: "Orden creada", description: `OC ${orderNumber} creada para ${contractAllocations.length} contratos` });
         } else {
           // Single contract: Create one PO
@@ -570,6 +577,11 @@ export const CentralizedOrderCreator = ({
             .insert(orderPayload);
           
           if (orderError) throw orderError;
+          
+          // Backup OC file to repository
+          if (quotationData?.url && primaryContractId) {
+            await backupOCFromStorageUrl(primaryContractId, quotationData.url, orderNumber, quotationData.fileName);
+          }
           
           toast({ title: "Orden creada", description: `OC ${orderNumber} creada exitosamente` });
         }
