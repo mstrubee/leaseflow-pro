@@ -159,7 +159,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
   const loadOrders = async () => {
     setLoading(true);
     try {
-      // Get direct orders for this contract
+      // Get direct orders for this contract (these are the "official" records for this contract)
       const { data: directData, error: directError } = await supabase
         .from("purchase_orders")
         .select("*")
@@ -170,36 +170,76 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
 
       if (directError) throw directError;
 
-      // Also get multi-contract allocations for this contract
-      const { data: allocationsData, error: allocError } = await supabase
+      // For multi-contract orders, we need to get the allocated amount from allocations table
+      // instead of using the direct PO amount_uf
+      const directOrders = directData || [];
+      const directIds = directOrders.map(o => o.id);
+      const directOrderNumbers = new Set(directOrders.map(o => o.order_number));
+
+      // Get allocations for these direct orders to get proper allocated amounts
+      let allocationsMap: Record<string, number> = {};
+      if (directIds.length > 0) {
+        const { data: allocForDirect } = await supabase
+          .from("purchase_order_contract_allocations")
+          .select("purchase_order_id, amount_uf")
+          .in("purchase_order_id", directIds)
+          .eq("contract_id", contractId);
+        
+        for (const alloc of (allocForDirect || [])) {
+          allocationsMap[alloc.purchase_order_id] = alloc.amount_uf;
+        }
+      }
+
+      // Build final list from direct orders, using allocation amounts for multi-contract
+      const allOrders: PurchaseOrder[] = directOrders.map(order => {
+        const allocatedAmount = allocationsMap[order.id];
+        if (order.is_multi_contract && allocatedAmount !== undefined) {
+          return {
+            ...order,
+            allocated_amount_uf: allocatedAmount,
+            total_order_amount_uf: order.amount_uf,
+            amount_uf: allocatedAmount // Display allocated amount
+          };
+        }
+        return order;
+      });
+
+      // Also check for legacy allocations (orders from other contracts with allocations to this one)
+      // This handles cases where an order's contract_id is different but has an allocation here
+      const { data: legacyAllocations, error: legacyError } = await supabase
         .from("purchase_order_contract_allocations")
         .select(`
           purchase_order_id,
           amount_uf,
-          amount_clp,
           purchase_orders!inner(
             id, order_number, supplier_name, order_date, amount_uf,
             description, attachment_url, year, status, budget_id,
-            budget_line_id, opex_category_id, deleted_at, deleted_by
+            budget_line_id, opex_category_id, deleted_at, deleted_by, is_multi_contract
           )
         `)
         .eq("contract_id", contractId);
 
-      // Process multi-contract allocations (exclude if already in direct orders)
-      const allOrders = [...(directData || [])];
-      const directIds = new Set(allOrders.map(o => o.id));
-
-      for (const alloc of (allocationsData || [])) {
-        const order = alloc.purchase_orders as any;
-        if (order && !directIds.has(order.id) && order.year === selectedYear && !order.deleted_at) {
-          allOrders.push({
-            ...order,
-            is_multi_contract: true,
-            allocated_amount_uf: alloc.amount_uf,
-            total_order_amount_uf: order.amount_uf,
-            // Override displayed amount with allocated amount
-            amount_uf: alloc.amount_uf
-          });
+      if (!legacyError && legacyAllocations) {
+        const addedIds = new Set(allOrders.map(o => o.id));
+        
+        for (const alloc of legacyAllocations) {
+          const order = alloc.purchase_orders as any;
+          // Only add if: not already in our list, correct year, not deleted, 
+          // AND doesn't have same order_number as existing (prevents duplicates from edits)
+          if (order && 
+              !addedIds.has(order.id) && 
+              !directOrderNumbers.has(order.order_number) &&
+              order.year === selectedYear && 
+              !order.deleted_at) {
+            allOrders.push({
+              ...order,
+              is_multi_contract: true,
+              allocated_amount_uf: alloc.amount_uf,
+              total_order_amount_uf: order.amount_uf,
+              amount_uf: alloc.amount_uf
+            });
+            addedIds.add(order.id);
+          }
         }
       }
 
@@ -215,12 +255,14 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         const { data: invoicesData } = await supabase
           .from("invoices")
           .select("purchase_order_id, amount_uf")
-          .in("purchase_order_id", orderIds);
+          .in("purchase_order_id", orderIds)
+          .is("deleted_at", null);
 
         const { data: creditNotesData } = await supabase
           .from("credit_notes")
           .select("purchase_order_id, amount_uf")
-          .in("purchase_order_id", orderIds);
+          .in("purchase_order_id", orderIds)
+          .is("deleted_at", null);
 
         const invoiceDataMap: Record<string, { totalInvoiced: number; totalCreditNotes: number }> = {};
         
