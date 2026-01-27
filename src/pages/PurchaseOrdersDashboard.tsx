@@ -3306,7 +3306,7 @@ const PurchaseOrdersDashboard = () => {
 
       {/* Edit OC Dialog */}
       <Dialog open={showEditOCDialog} onOpenChange={setShowEditOCDialog}>
-        <DialogContent className={editingOCIsMulti && editingOCContracts.length > 0 ? "sm:max-w-2xl" : "sm:max-w-md"}>
+        <DialogContent className={editingOCContracts.length > 0 ? "sm:max-w-2xl" : "sm:max-w-md"}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Pencil className="h-5 w-5" />
@@ -3378,12 +3378,15 @@ const PurchaseOrdersDashboard = () => {
               </Select>
             </div>
 
-            {/* Multi-contract allocations display */}
-            {editingOCIsMulti && editingOCContracts.length > 0 && (
+            {/* Contract allocations display - always visible for editing */}
+            {editingOCContracts.length > 0 && (
               <div className="space-y-2 pt-2 border-t">
                 <Label className="flex items-center gap-2">
                   <Layers className="h-4 w-4" />
                   Contratos asignados ({editingOCContracts.length})
+                  {editingOCIsMulti && (
+                    <Badge variant="outline" className="text-xs">Multi-contrato</Badge>
+                  )}
                 </Label>
                 <div className="border rounded-lg overflow-hidden">
                   <Table>
