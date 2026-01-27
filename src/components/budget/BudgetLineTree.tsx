@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +8,17 @@ import { cn } from "@/lib/utils";
 import { useBudgetContext } from "./BudgetContext";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
 export interface BudgetLine {
   id: string;
   budget_id: string;
@@ -60,6 +71,7 @@ export const BudgetLineTree = ({
         key={line.id} 
         line={line} 
         level={level} 
+        allLines={lines}
         onAddLine={onAddLine} 
         onUpdateLine={onUpdateLine} 
         onDeleteLine={onDeleteLine} 
@@ -80,6 +92,7 @@ export const BudgetLineTree = ({
 interface BudgetLineItemProps {
   line: BudgetLine;
   level: number;
+  allLines: BudgetLine[];
   onAddLine: (parentId: string | null) => void;
   onUpdateLine: (id: string, data: Partial<BudgetLine>) => void;
   onDeleteLine: (id: string) => void;
@@ -91,9 +104,16 @@ interface BudgetLineItemProps {
   parentCategoryId?: string | null;
   globalExpandState?: "expanded" | "collapsed" | null;
 }
+
+const countDescendants = (line: BudgetLine): number => {
+  if (!line.children || line.children.length === 0) return 0;
+  return line.children.reduce((sum, child) => sum + 1 + countDescendants(child), 0);
+};
+
 const BudgetLineItem = ({
   line,
   level,
+  allLines,
   onAddLine,
   onUpdateLine,
   onDeleteLine,
@@ -111,6 +131,7 @@ const BudgetLineItem = ({
   const [isEditingUnit, setIsEditingUnit] = useState(false);
   const [isEditingPrice, setIsEditingPrice] = useState(false);
   const [isEditingCurrency, setIsEditingCurrency] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [editName, setEditName] = useState(line.name);
   const [editQuantity, setEditQuantity] = useState((line.quantity || 0).toString());
   const [editUnitPrice, setEditUnitPrice] = useState((line.unit_price || 0).toString());
@@ -123,6 +144,8 @@ const BudgetLineItem = ({
     ufValue
   } = useBudgetContext();
   
+  const descendantCount = countDescendants(line);
+
   // Respond to global expand/collapse state
   useEffect(() => {
     if (globalExpandState === "expanded") {
@@ -573,7 +596,7 @@ const BudgetLineItem = ({
               <Button size="sm" variant="ghost" onClick={() => onAddLine(line.id)} className="h-6 w-6 p-0">
                 <Plus className="h-3 w-3" />
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => onDeleteLine(line.id)} className="h-6 w-6 p-0 text-destructive">
+              <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(true)} className="h-6 w-6 p-0 text-destructive">
                 <Trash2 className="h-3 w-3" />
               </Button>
             </div>}
@@ -581,6 +604,45 @@ const BudgetLineItem = ({
       </div>
 
       {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} />}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Confirmar Eliminación
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>¿Estás seguro de que deseas eliminar la línea <strong>"{line.name}"</strong>?</p>
+              {descendantCount > 0 && (
+                <div className="mt-3 p-3 bg-destructive/10 border border-destructive/30 rounded-md">
+                  <p className="text-destructive font-medium flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4" />
+                    ¡Atención! Esta línea tiene {descendantCount} sublínea{descendantCount > 1 ? 's' : ''} que también será{descendantCount > 1 ? 'n' : ''} eliminada{descendantCount > 1 ? 's' : ''}.
+                  </p>
+                </div>
+              )}
+              <p className="text-sm text-muted-foreground mt-2">
+                Las líneas eliminadas se moverán a la papelera y podrás restaurarlas posteriormente.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                onDeleteLine(line.id);
+                setShowDeleteConfirm(false);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Eliminar{descendantCount > 0 ? ` (${descendantCount + 1} líneas)` : ''}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>;
 };
 

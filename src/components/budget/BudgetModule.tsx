@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { OCRequestDialog } from "./OCRequestDialog";
 import { QuotationsManager } from "./QuotationsManager";
+import { BudgetTrashPanel } from "./BudgetTrashPanel";
 
 interface Budget {
   id: string;
@@ -162,6 +163,7 @@ export const BudgetModule = ({ contractId, contractName = "", budgetType, title,
         .from("budget_lines")
         .select("*")
         .eq("budget_id", budgetId)
+        .is("deleted_at", null)  // Only load non-deleted lines
         .order("display_order");
 
       if (error) throw error;
@@ -292,8 +294,28 @@ export const BudgetModule = ({ contractId, contractName = "", budgetType, title,
     if (budget?.is_closed) return;
 
     try {
-      const { error } = await supabase.from("budget_lines").delete().eq("id", id);
+      // Get current user for audit
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Get all descendant IDs to soft-delete them too
+      const descendantIds = getAllDescendantIds(lines, id);
+      const allIdsToDelete = [id, ...descendantIds];
+      
+      // Soft delete: update deleted_at and deleted_by
+      const { error } = await supabase
+        .from("budget_lines")
+        .update({ 
+          deleted_at: new Date().toISOString(),
+          deleted_by: user?.id || null
+        })
+        .in("id", allIdsToDelete);
+        
       if (error) throw error;
+      
+      toast({ 
+        title: "Línea(s) eliminada(s)", 
+        description: `${allIdsToDelete.length} línea(s) movida(s) a la papelera` 
+      });
       
       if (budget) loadLines(budget.id);
     } catch (error: any) {
@@ -756,6 +778,16 @@ export const BudgetModule = ({ contractId, contractName = "", budgetType, title,
               readOnly={isClosed}
               globalExpandState={globalExpandState}
             />
+            
+            {/* Trash Panel - shows deleted lines and audit history */}
+            {currentBudget && (
+              <div className="mt-4">
+                <BudgetTrashPanel 
+                  budgetId={currentBudget.id} 
+                  onRestore={() => loadLines(currentBudget.id)} 
+                />
+              </div>
+            )}
           </>
         ) : budgetType === "opex" ? (
           <OpexConsumptionPieChart contractId={contractId} year={selectedYear} />
