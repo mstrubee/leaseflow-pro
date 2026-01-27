@@ -979,7 +979,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
         <CardTitle className="text-lg flex items-center gap-2">
           <FileText className="h-5 w-5" />
-          Órdenes de Compra - {selectedYear}
+          Órdenes de Compra y Facturas - {selectedYear}
         </CardTitle>
         <Button size="sm" onClick={() => setShowNewDialog(true)}>
           <Plus className="h-4 w-4 mr-1" />
@@ -1008,63 +1008,84 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
             )}
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
-            <Input
-              placeholder="Nº OC"
-              className="h-8 text-sm"
-              value={filters.order_number || ""}
-              onChange={(e) => setFilters({ ...filters, order_number: e.target.value })}
-            />
-            <Input
-              placeholder="Fecha"
-              className="h-8 text-sm"
-              value={filters.order_date || ""}
-              onChange={(e) => setFilters({ ...filters, order_date: e.target.value })}
-            />
-            <Input
-              placeholder="Proveedor"
-              className="h-8 text-sm"
-              value={filters.supplier_name || ""}
-              onChange={(e) => setFilters({ ...filters, supplier_name: e.target.value })}
-            />
-            <Select
-              value={filters.type || "all"}
-              onValueChange={(v) => setFilters({ ...filters, type: v === "all" ? "" : v })}
-            >
-              <SelectTrigger className="h-8 text-sm">
-                <SelectValue placeholder="Tipo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos los tipos</SelectItem>
-                <SelectItem value="capex">Capex</SelectItem>
-                <SelectItem value="opex">Opex</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input
-              placeholder="Descripción"
-              className="h-8 text-sm"
-              value={filters.description || ""}
-              onChange={(e) => setFilters({ ...filters, description: e.target.value })}
-            />
-            <Input
-              placeholder="Monto"
-              className="h-8 text-sm"
-              value={filters.amount || ""}
-              onChange={(e) => setFilters({ ...filters, amount: e.target.value })}
-            />
-            <Select
-              value={filters.status || "all"}
-              onValueChange={(v) => setFilters({ ...filters, status: v === "all" ? "" : v })}
-            >
-              <SelectTrigger className="h-8 text-sm">
-                <SelectValue placeholder="Estado" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="abierta">OK</SelectItem>
-                <SelectItem value="cerrada">Cerrada</SelectItem>
-                <SelectItem value="descuadrada">Sobrepasado</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Nº OC</label>
+              <Input
+                placeholder="Buscar..."
+                className="h-8 text-sm"
+                value={filters.order_number || ""}
+                onChange={(e) => setFilters({ ...filters, order_number: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Fecha</label>
+              <Input
+                placeholder="Buscar..."
+                className="h-8 text-sm"
+                value={filters.order_date || ""}
+                onChange={(e) => setFilters({ ...filters, order_date: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Proveedor</label>
+              <Input
+                placeholder="Buscar..."
+                className="h-8 text-sm"
+                value={filters.supplier_name || ""}
+                onChange={(e) => setFilters({ ...filters, supplier_name: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Tipo</label>
+              <Select
+                value={filters.type || "all"}
+                onValueChange={(v) => setFilters({ ...filters, type: v === "all" ? "" : v })}
+              >
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los tipos</SelectItem>
+                  <SelectItem value="capex">Capex</SelectItem>
+                  <SelectItem value="opex">Opex</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Descripción</label>
+              <Input
+                placeholder="Buscar..."
+                className="h-8 text-sm"
+                value={filters.description || ""}
+                onChange={(e) => setFilters({ ...filters, description: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Monto</label>
+              <Input
+                placeholder="Buscar..."
+                className="h-8 text-sm"
+                value={filters.amount || ""}
+                onChange={(e) => setFilters({ ...filters, amount: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Estado</label>
+              <Select
+                value={filters.status || "all"}
+                onValueChange={(v) => setFilters({ ...filters, status: v === "all" ? "" : v })}
+              >
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="abierta">OK</SelectItem>
+                  <SelectItem value="cerrada">Cerrada</SelectItem>
+                  <SelectItem value="descuadrada">Sobrepasado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
 
