@@ -82,6 +82,10 @@ export function MultiFileUploadDialog({
     const newFiles: FileUploadItem[] = [];
     const folderStats = new Map<string, { fileCount: number; subfolders: Set<string> }>();
     
+    // Get existing file paths to avoid duplicates
+    const existingPaths = new Set(files.map(f => f.relativePath || f.file.name));
+    const existingFolderNames = new Set(addedFolders.map(f => f.name));
+    
     for (let i = 0; i < selectedFiles.length; i++) {
       const file = selectedFiles[i];
       const validation = validateFile(file);
@@ -99,12 +103,17 @@ export function MultiFileUploadDialog({
       // Check for folder path from webkitRelativePath
       const relativePath = (file as any).webkitRelativePath || "";
       
+      // Skip if this exact file path already exists
+      if (existingPaths.has(relativePath || file.name)) {
+        continue;
+      }
+      
       // Extract root folder name for grouping
       const pathParts = relativePath.split('/').filter((p: string) => p.length > 0);
       const rootFolder = pathParts.length > 0 ? pathParts[0] : undefined;
       
-      // Track folder statistics
-      if (rootFolder) {
+      // Track folder statistics (only for new folders)
+      if (rootFolder && !existingFolderNames.has(rootFolder)) {
         if (!folderStats.has(rootFolder)) {
           folderStats.set(rootFolder, { fileCount: 0, subfolders: new Set() });
         }
@@ -127,25 +136,23 @@ export function MultiFileUploadDialog({
       });
     }
     
-    // Update added folders list
+    // Update added folders list (only truly new folders)
     const newAddedFolders: AddedFolder[] = [];
     folderStats.forEach((stats, folderName) => {
-      // Check if folder already exists
-      const existingIndex = addedFolders.findIndex(f => f.name === folderName);
-      if (existingIndex === -1) {
-        newAddedFolders.push({
-          name: folderName,
-          fileCount: stats.fileCount,
-          subfolderCount: stats.subfolders.size,
-        });
-      }
+      newAddedFolders.push({
+        name: folderName,
+        fileCount: stats.fileCount,
+        subfolderCount: stats.subfolders.size,
+      });
     });
     
     if (newAddedFolders.length > 0) {
       setAddedFolders(prev => [...prev, ...newAddedFolders]);
     }
     
-    setFiles(prev => [...prev, ...newFiles]);
+    if (newFiles.length > 0) {
+      setFiles(prev => [...prev, ...newFiles]);
+    }
     
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -435,7 +442,7 @@ export function MultiFileUploadDialog({
             {/* Folder selector */}
             <div 
               className={cn(
-                "border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors relative",
+                "border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors",
                 "hover:border-primary hover:bg-muted/50",
                 isUploading && "pointer-events-none opacity-50"
               )}
@@ -455,13 +462,8 @@ export function MultiFileUploadDialog({
               <FolderUp className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
               <p className="text-sm font-medium">Carpetas</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Click para agregar
+                Una a la vez
               </p>
-              {addedFolders.length > 0 && (
-                <div className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
-                  +
-                </div>
-              )}
             </div>
           </div>
           
@@ -501,21 +503,9 @@ export function MultiFileUploadDialog({
                   </div>
                 ))}
               </div>
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-blue-600 dark:text-blue-400">
-                  📁 Se crearán automáticamente todas las subcarpetas
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs border-blue-300 text-blue-600 hover:bg-blue-50"
-                  onClick={() => folderInputRef.current?.click()}
-                  disabled={isUploading}
-                >
-                  <FolderUp className="h-3 w-3 mr-1" />
-                  Agregar otra
-                </Button>
-              </div>
+              <p className="text-xs text-blue-600 dark:text-blue-400">
+                📁 Se crearán automáticamente todas las subcarpetas
+              </p>
             </div>
           )}
 
