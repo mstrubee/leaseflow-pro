@@ -264,7 +264,7 @@ const PurchaseOrdersDashboard = () => {
     opex_category_id: "" as string | null,
   });
   const [editingOCId, setEditingOCId] = useState<string | null>(null);
-  const [editingOCContracts, setEditingOCContracts] = useState<{ contract_id: string; contract_name: string; amount_uf: number; order_id?: string }[]>([]);
+  const [editingOCContracts, setEditingOCContracts] = useState<{ contract_id: string; contract_name: string; amount_uf: number; amount_input: number; currency: "UF" | "CLP"; order_id?: string }[]>([]);
   const [editingOCIsMulti, setEditingOCIsMulti] = useState(false);
   const [updatingOC, setUpdatingOC] = useState(false);
   const [editingOCOriginalOrderNumber, setEditingOCOriginalOrderNumber] = useState<string>("");
@@ -1413,6 +1413,8 @@ const PurchaseOrdersDashboard = () => {
       contract_id: c.contract_id,
       contract_name: c.contract_name,
       amount_uf: c.amount_uf,
+      amount_input: c.amount_uf, // Default to UF value
+      currency: "UF" as "UF" | "CLP",
       order_id: c.order_id,
     })));
     setShowEditOCDialog(true);
@@ -1433,6 +1435,8 @@ const PurchaseOrdersDashboard = () => {
       contract_id: contractId,
       contract_name: contract.name,
       amount_uf: 0,
+      amount_input: 0,
+      currency: "UF" as "UF" | "CLP",
     }]);
   };
 
@@ -1447,9 +1451,24 @@ const PurchaseOrdersDashboard = () => {
 
   // Handle updating a contract amount in the edit OC dialog
   const handleUpdateContractAmountInEditOC = (contractId: string, amount: number) => {
-    setEditingOCContracts(prev => prev.map(c => 
-      c.contract_id === contractId ? { ...c, amount_uf: amount } : c
-    ));
+    setEditingOCContracts(prev => prev.map(c => {
+      if (c.contract_id !== contractId) return c;
+      const newAmountUf = c.currency === "CLP" && ufValue > 0 ? amount / ufValue : amount;
+      return { ...c, amount_input: amount, amount_uf: newAmountUf };
+    }));
+  };
+
+  // Handle changing currency for a contract in edit OC dialog
+  const handleUpdateContractCurrencyInEditOC = (contractId: string, currency: "UF" | "CLP") => {
+    setEditingOCContracts(prev => prev.map(c => {
+      if (c.contract_id !== contractId) return c;
+      // Convert the current amount_uf to the new currency for display
+      let newInputAmount = c.amount_uf;
+      if (currency === "CLP" && ufValue > 0) {
+        newInputAmount = Math.round(c.amount_uf * ufValue);
+      }
+      return { ...c, currency, amount_input: newInputAmount };
+    }));
   };
 
   // Handle update OC
@@ -3550,7 +3569,9 @@ const PurchaseOrdersDashboard = () => {
                     <TableHeader>
                       <TableRow className="bg-muted/50">
                         <TableHead className="text-xs">Contrato</TableHead>
-                        <TableHead className="text-xs text-right w-[140px]">Monto (UF)</TableHead>
+                        <TableHead className="text-xs w-[80px]">Moneda</TableHead>
+                        <TableHead className="text-xs text-right w-[130px]">Monto</TableHead>
+                        <TableHead className="text-xs text-right w-[100px]">Equiv. UF</TableHead>
                         <TableHead className="text-xs w-[50px]"></TableHead>
                       </TableRow>
                     </TableHeader>
@@ -3559,14 +3580,35 @@ const PurchaseOrdersDashboard = () => {
                         <TableRow key={c.contract_id}>
                           <TableCell className="py-2 text-sm font-medium">{c.contract_name}</TableCell>
                           <TableCell className="py-1.5">
+                            <Select
+                              value={c.currency}
+                              onValueChange={(v) => handleUpdateContractCurrencyInEditOC(c.contract_id, v as "UF" | "CLP")}
+                            >
+                              <SelectTrigger className="h-8 w-[70px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="UF">UF</SelectItem>
+                                <SelectItem value="CLP">$</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell className="py-1.5">
                             <Input
                               type="number"
-                              step="0.01"
+                              step={c.currency === "UF" ? "0.01" : "1"}
                               min="0"
-                              value={c.amount_uf || ""}
+                              value={c.amount_input || ""}
                               onChange={(e) => handleUpdateContractAmountInEditOC(c.contract_id, parseFloat(e.target.value) || 0)}
                               className="h-8 text-right font-mono text-sm"
                             />
+                          </TableCell>
+                          <TableCell className="py-1.5 text-right text-sm font-mono text-muted-foreground">
+                            {c.currency === "CLP" ? (
+                              c.amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                            ) : (
+                              <span className="text-foreground">{c.amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            )}
                           </TableCell>
                           <TableCell className="py-1.5">
                             <Button
