@@ -30,6 +30,7 @@ interface OCRequestDialogProps {
   onOpenChange: (open: boolean) => void;
   contractId: string;
   contractName: string;
+  contractCebe?: string | null;
   budgetId: string;
   budgetLineId: string;
   lineName: string;
@@ -46,6 +47,7 @@ export const OCRequestDialog = ({
   onOpenChange,
   contractId,
   contractName,
+  contractCebe,
   budgetId,
   budgetLineId,
   lineName,
@@ -291,6 +293,7 @@ export const OCRequestDialog = ({
           <DialogTitle>Crear Solicitud de OC</DialogTitle>
           <DialogDescription>
             Proyecto: <strong>{contractName}</strong>
+            {contractCebe && <span className="ml-2 text-xs">CEBE: {contractCebe}</span>}
           </DialogDescription>
         </DialogHeader>
 

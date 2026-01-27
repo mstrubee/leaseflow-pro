@@ -18,6 +18,7 @@ import { uploadFileToStorage } from "@/lib/storageUtils";
 interface Contract {
   id: string;
   name: string;
+  cebe: string | null;
 }
 
 interface OpexCategory {
@@ -36,6 +37,7 @@ interface OpexMasterLine {
 interface ContractAllocation {
   contractId: string;
   contractName: string;
+  cebe: string | null;
   amount: number;
 }
 
@@ -106,13 +108,45 @@ export const CentralizedOrderCreator = ({
   const loadInitialData = async () => {
     setLoadingData(true);
     try {
-      // Load contracts
+      // Load contracts with CEBE custom field
       const { data: contractsData } = await supabase
         .from("contracts")
         .select("id, name")
         .is("deleted_at", null)
         .order("name");
-      setContracts(contractsData || []);
+      
+      // Get CEBE field definition
+      const { data: cebeFieldData } = await supabase
+        .from("contract_custom_fields")
+        .select("id")
+        .ilike("field_name", "cebe")
+        .eq("is_active", true)
+        .limit(1)
+        .single();
+      
+      let contractsWithCebe: Contract[] = [];
+      
+      if (cebeFieldData && contractsData) {
+        // Get CEBE values for all contracts
+        const { data: cebeValues } = await supabase
+          .from("contract_custom_field_values")
+          .select("contract_id, field_value")
+          .eq("field_id", cebeFieldData.id);
+        
+        const cebeMap = new Map<string, string>();
+        (cebeValues || []).forEach(v => {
+          if (v.field_value) cebeMap.set(v.contract_id, v.field_value);
+        });
+        
+        contractsWithCebe = (contractsData || []).map(c => ({
+          ...c,
+          cebe: cebeMap.get(c.id) || null
+        }));
+      } else {
+        contractsWithCebe = (contractsData || []).map(c => ({ ...c, cebe: null }));
+      }
+      
+      setContracts(contractsWithCebe);
       
       // Load OPEX categories
       const { data: categoriesData } = await supabase
@@ -175,7 +209,7 @@ export const CentralizedOrderCreator = ({
     if (availableContracts.length > 0) {
       setContractAllocations(prev => [
         ...prev,
-        { contractId: availableContracts[0].id, contractName: availableContracts[0].name, amount: 0 }
+        { contractId: availableContracts[0].id, contractName: availableContracts[0].name, cebe: availableContracts[0].cebe, amount: 0 }
       ]);
     }
   };
@@ -186,7 +220,7 @@ export const CentralizedOrderCreator = ({
       const updated = [...prev];
       if (field === "contractId") {
         const contract = contracts.find(c => c.id === value);
-        updated[index] = { ...updated[index], contractId: value, contractName: contract?.name || "" };
+        updated[index] = { ...updated[index], contractId: value, contractName: contract?.name || "", cebe: contract?.cebe || null };
       } else {
         updated[index] = { ...updated[index], [field]: value };
       }
@@ -736,10 +770,23 @@ export const CentralizedOrderCreator = ({
                       </SelectTrigger>
                       <SelectContent>
                         {contracts.map(c => (
-                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                          <SelectItem key={c.id} value={c.id}>
+                            <div className="flex items-center gap-2">
+                              <span>{c.name}</span>
+                              {c.cebe && <span className="text-xs text-muted-foreground">({c.cebe})</span>}
+                            </div>
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    {singleContractId && (
+                      <div className="text-xs text-muted-foreground">
+                        {(() => {
+                          const selectedContract = contracts.find(c => c.id === singleContractId);
+                          return selectedContract?.cebe ? `CEBE: ${selectedContract.cebe}` : null;
+                        })()}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -761,6 +808,7 @@ export const CentralizedOrderCreator = ({
                           <TableHeader>
                             <TableRow>
                               <TableHead>Contrato</TableHead>
+                              <TableHead>CEBE</TableHead>
                               <TableHead>Monto ({formData.currency})</TableHead>
                               <TableHead className="w-10"></TableHead>
                             </TableRow>
@@ -783,11 +831,17 @@ export const CentralizedOrderCreator = ({
                                           value={c.id}
                                           disabled={contractAllocations.some((a, i) => i !== idx && a.contractId === c.id)}
                                         >
-                                          {c.name}
+                                          <div className="flex items-center gap-2">
+                                            <span>{c.name}</span>
+                                            {c.cebe && <span className="text-xs text-muted-foreground">({c.cebe})</span>}
+                                          </div>
                                         </SelectItem>
                                       ))}
                                     </SelectContent>
                                   </Select>
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  {alloc.cebe || "-"}
                                 </TableCell>
                                 <TableCell>
                                   <Input

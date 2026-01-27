@@ -55,6 +55,7 @@ const STORAGE_KEY_PREFIX = "budget_selected_year_";
 const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps) => {
   const [loading, setLoading] = useState(true);
   const [contractName, setContractName] = useState("");
+  const [contractCebe, setContractCebe] = useState<string | null>(null);
   const [selectedYear, setSelectedYear] = useState(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}${contractId}`);
     return saved ? parseInt(saved) : new Date().getFullYear();
@@ -112,6 +113,28 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
       .eq("id", contractId)
       .single();
     if (data) setContractName(data.name);
+    
+    // Load CEBE custom field
+    const { data: cebeFieldData } = await supabase
+      .from("contract_custom_fields")
+      .select("id")
+      .ilike("field_name", "cebe")
+      .eq("is_active", true)
+      .limit(1)
+      .single();
+    
+    if (cebeFieldData) {
+      const { data: cebeValue } = await supabase
+        .from("contract_custom_field_values")
+        .select("field_value")
+        .eq("contract_id", contractId)
+        .eq("field_id", cebeFieldData.id)
+        .single();
+      
+      if (cebeValue?.field_value) {
+        setContractCebe(cebeValue.field_value);
+      }
+    }
   };
 
   const refreshData = async () => {
@@ -922,6 +945,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
             key={`cap-${selectedYear}-${refreshKey}`}
             contractId={contractId}
             contractName={contractName}
+            contractCebe={contractCebe}
             budgetType="capex" 
             title="CAPEX" 
             selectedYear={selectedYear}
@@ -934,6 +958,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
             key={`opx-${selectedYear}-${refreshKey}`}
             contractId={contractId}
             contractName={contractName}
+            contractCebe={contractCebe}
             budgetType="opex" 
             title="OPEX"
             selectedYear={selectedYear}
