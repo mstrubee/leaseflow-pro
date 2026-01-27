@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,9 +18,9 @@ import {
   Cloud,
   AlertTriangle
 } from "lucide-react";
+import { MultiFileUploadDialog } from "./MultiFileUploadDialog";
 import { useToast } from "@/hooks/use-toast";
 import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
-import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
 import { deleteFileFromStorage, isStorageUrl } from "@/lib/storageUtils";
 import {
   Dialog,
@@ -100,7 +100,6 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
   const { toast } = useToast();
   const { isAdmin } = useAuth();
   const { openFile } = useSecureFileAccess();
-  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [folders, setFolders] = useState<RepositoryFolder[]>([]);
   const [files, setFiles] = useState<RepositoryFile[]>([]);
@@ -108,7 +107,6 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
   const [currentFolder, setCurrentFolder] = useState<RepositoryFolder | null>(null);
   const [folderPath, setFolderPath] = useState<RepositoryFolder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [folderTemplates, setFolderTemplates] = useState<FolderTemplate[]>([]);
   const [driveLinked, setDriveLinked] = useState(false);
@@ -117,14 +115,9 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
   // Dialog states
   const [newFolderName, setNewFolderName] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [fileDialogOpen, setFileDialogOpen] = useState(false);
+  const [multiUploadDialogOpen, setMultiUploadDialogOpen] = useState(false);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [driveWarning, setDriveWarning] = useState<string | null>(null);
-  
-  // File upload states
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [suggestedFileName, setSuggestedFileName] = useState("");
-  const [selectedStatus, setSelectedStatus] = useState("pendiente");
   
   // Custom status states
   const [folderStatuses, setFolderStatuses] = useState<FolderStatus[]>([]);
@@ -534,118 +527,10 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      // Validate file before proceeding
-      const validation = validateFile(file);
-      if (!validation.isValid) {
-        toast({
-          variant: "destructive",
-          title: "Archivo no válido",
-          description: validation.error,
-        });
-        if (fileInputRef.current) {
-          fileInputRef.current.value = "";
-        }
-        return;
-      }
-      
-      setSelectedFile(file);
-      const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
-      setSuggestedFileName(sanitizeFileName(nameWithoutExt));
-      setSelectedStatus("pendiente");
-      setFileDialogOpen(true);
-    }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  const handleUploadFile = async () => {
-    if (!selectedFile || !currentFolder || !suggestedFileName.trim()) return;
-
-    setUploading(true);
-    try {
-      const ext = selectedFile.name.split('.').pop() || '';
-      const finalFileName = `${suggestedFileName.trim()}.${ext}`;
-      
-      let driveFileId = null;
-      let fileUrl = '';
-
-      // Upload to Google Drive if folder has drive ID
-      if (currentFolder.drive_folder_id) {
-        // Convert file to base64
-        const arrayBuffer = await selectedFile.arrayBuffer();
-        const base64Content = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-
-        const { data: driveData, error: driveError } = await supabase.functions.invoke('google-drive', {
-          body: { 
-            action: 'uploadFile',
-            fileName: finalFileName,
-            fileContent: base64Content,
-            mimeType: selectedFile.type || 'application/octet-stream',
-            driveFolderId: currentFolder.drive_folder_id
-          }
-        });
-
-        if (driveError) throw driveError;
-        
-        driveFileId = driveData.id;
-        fileUrl = driveData.webViewLink || driveData.webContentLink || '';
-      } else {
-        // Fallback to Supabase Storage
-        const filePath = `contracts/${contractId}/${currentFolder.id}/${Date.now()}_${finalFileName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("repository-files")
-          .upload(filePath, selectedFile);
-
-        if (uploadError) throw uploadError;
-
-        // Store the storage path reference instead of public URL for security
-        // The path will be converted to a signed URL when accessed
-        fileUrl = `storage://repository-files/${filePath}`;
-      }
-
-      // Save file record to database
-      const { error: dbError } = await supabase
-        .from("repository_files")
-        .insert({
-          folder_id: currentFolder.id,
-          name: finalFileName,
-          url: fileUrl,
-          file_type: ext,
-          status: selectedStatus,
-          drive_file_id: driveFileId,
-        });
-
-      if (dbError) throw dbError;
-
-      toast({
-        title: "Archivo subido",
-        description: driveFileId 
-          ? `El archivo "${finalFileName}" ha sido subido a Google Drive`
-          : `El archivo "${finalFileName}" ha sido subido`,
-      });
-
-      setSelectedFile(null);
-      setSuggestedFileName("");
-      setSelectedStatus("pendiente");
-      setFileDialogOpen(false);
-      loadFolderContents(currentFolder.id);
-      
-      if (currentFolder.drive_folder_id) {
-        loadDriveFiles(currentFolder.drive_folder_id);
-      }
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "No se pudo subir el archivo: " + error.message,
-      });
-    } finally {
-      setUploading(false);
+  const handleUploadComplete = () => {
+    loadFolderContents(currentFolder?.id || null);
+    if (currentFolder?.drive_folder_id) {
+      loadDriveFiles(currentFolder.drive_folder_id);
     }
   };
 
@@ -857,13 +742,18 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
           </Alert>
         )}
 
-        {/* Hidden file input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          className="hidden"
-          onChange={handleFileSelect}
-        />
+        {/* Multi File Upload Dialog */}
+        {currentFolder && (
+          <MultiFileUploadDialog
+            open={multiUploadDialogOpen}
+            onOpenChange={setMultiUploadDialogOpen}
+            contractId={contractId}
+            folderId={currentFolder.id}
+            driveFolderId={currentFolder.drive_folder_id}
+            folderStatuses={getAvailableStatuses()}
+            onUploadComplete={handleUploadComplete}
+          />
+        )}
 
         {/* Breadcrumb Navigation */}
         <div className="flex items-center gap-2 text-sm">
@@ -944,10 +834,10 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
               <Button 
                 size="sm" 
                 className="gap-1"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => setMultiUploadDialogOpen(true)}
               >
                 <Upload className="h-4 w-4" />
-                Subir Archivo
+                Subir Archivos
               </Button>
 
               {/* Sync current folder with Drive */}
@@ -1045,69 +935,6 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
           )}
         </div>
 
-        {/* File Upload Dialog */}
-        <Dialog open={fileDialogOpen} onOpenChange={(open) => {
-          if (!open) {
-            setSelectedFile(null);
-            setSuggestedFileName("");
-          }
-          setFileDialogOpen(open);
-        }}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Subir Archivo</DialogTitle>
-              <DialogDescription>
-                {currentFolder?.drive_folder_id 
-                  ? "El archivo se subirá directamente a Google Drive"
-                  : "Confirma el nombre y estado del archivo"
-                }
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label>Archivo seleccionado</Label>
-                <p className="text-sm text-muted-foreground">{selectedFile?.name}</p>
-              </div>
-              <div className="space-y-2">
-                <Label>Nombre del archivo</Label>
-                <Input
-                  value={suggestedFileName}
-                  onChange={(e) => setSuggestedFileName(e.target.value)}
-                  placeholder="Nombre del archivo"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Estado</Label>
-                <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getAvailableStatuses().map((status) => (
-                      <SelectItem key={status.name} value={status.name}>
-                        <div className="flex items-center gap-2">
-                          <div 
-                            className="w-3 h-3 rounded-full" 
-                            style={{ backgroundColor: status.color }}
-                          />
-                          {status.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setFileDialogOpen(false)} disabled={uploading}>
-                Cancelar
-              </Button>
-              <Button onClick={handleUploadFile} disabled={!suggestedFileName.trim() || uploading}>
-                {uploading ? "Subiendo..." : currentFolder?.drive_folder_id ? "Subir a Drive" : "Subir"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
 
         {/* Folders */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
