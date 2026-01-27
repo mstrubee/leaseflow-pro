@@ -3662,9 +3662,14 @@ const PurchaseOrdersDashboard = () => {
               {/* Total */}
               <div className="flex justify-between items-center text-sm pt-1">
                 <span className="text-muted-foreground">Total:</span>
-                <span className="font-bold font-mono">
-                  {editingOCContracts.reduce((sum, c) => sum + (c.amount_uf || 0), 0).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
-                </span>
+                <div className="text-right">
+                  <div className="font-bold font-mono">
+                    $ {editingOCContracts.reduce((sum, c) => sum + (c.amount_clp || Math.round((c.amount_uf || 0) * ufValue)), 0).toLocaleString("es-CL")}
+                  </div>
+                  <div className="text-xs text-muted-foreground font-mono">
+                    {editingOCContracts.reduce((sum, c) => sum + (c.amount_uf || 0), 0).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
+                  </div>
+                </div>
               </div>
             </div>
           </div>
