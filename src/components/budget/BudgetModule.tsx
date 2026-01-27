@@ -33,6 +33,7 @@ interface Budget {
 interface BudgetModuleProps {
   contractId: string;
   contractName?: string;
+  contractCebe?: string | null;
   budgetType: "capex" | "opex";
   title: string;
   selectedYear: number;
@@ -40,7 +41,7 @@ interface BudgetModuleProps {
   onRefresh?: () => void;
 }
 
-export const BudgetModule = ({ contractId, contractName = "", budgetType, title, selectedYear, ocTotal = 0, onRefresh }: BudgetModuleProps) => {
+export const BudgetModule = ({ contractId, contractName = "", contractCebe, budgetType, title, selectedYear, ocTotal = 0, onRefresh }: BudgetModuleProps) => {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1263,6 +1264,7 @@ export const BudgetModule = ({ contractId, contractName = "", budgetType, title,
         onOpenChange={setShowOCRequestDialog}
         contractId={contractId}
         contractName={contractName}
+        contractCebe={contractCebe}
         budgetId={currentBudget?.id || ""}
         budgetLineId={ocRequestLineId}
         lineName={ocRequestLineName}
