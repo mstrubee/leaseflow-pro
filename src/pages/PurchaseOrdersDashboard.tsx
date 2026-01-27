@@ -370,6 +370,9 @@ const PurchaseOrdersDashboard = () => {
           order_number,
           description,
           amount_uf,
+          amount_clp,
+          input_currency,
+          uf_value_at_entry,
           status,
           budget_classification,
           created_at,
@@ -2249,7 +2252,7 @@ const PurchaseOrdersDashboard = () => {
                         <TableHead>Proveedor</TableHead>
                         <TableHead>Tipo</TableHead>
                         <TableHead>Categoría</TableHead>
-                        <TableHead className="text-right">Monto Total (UF)</TableHead>
+                        <TableHead className="text-right">Monto Total</TableHead>
                         <TableHead className="text-center">Facturas</TableHead>
                         <TableHead>Estado</TableHead>
                         <TableHead>Fecha</TableHead>
@@ -2841,9 +2844,11 @@ const PurchaseOrdersDashboard = () => {
                                           const groupPercentage = statusInfo.percentage;
                                           const proportionalInvoiced = (order.amount_uf * groupPercentage) / 100;
                                           const proportionalPending = order.amount_uf - proportionalInvoiced;
+                                          // Use stored CLP amount, not recalculated
                                           const orderAmountClp = order.amount_clp || Math.round(order.amount_uf * ufValue);
-                                          const invoicedClp = Math.round(proportionalInvoiced * ufValue);
-                                          const pendingClp = Math.round(proportionalPending * ufValue);
+                                          // Calculate invoiced/pending CLP proportionally from stored CLP
+                                          const invoicedClp = Math.round((orderAmountClp * groupPercentage) / 100);
+                                          const pendingClp = orderAmountClp - invoicedClp;
                                           
                                           return (
                                             <TableRow key={order.id}>
