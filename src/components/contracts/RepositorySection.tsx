@@ -17,7 +17,8 @@ import {
   RefreshCw,
   Cloud,
   AlertTriangle,
-  FolderInput
+  FolderInput,
+  FolderX
 } from "lucide-react";
 import { MultiFileUploadDialog } from "./MultiFileUploadDialog";
 import { MoveFilesDialog } from "./MoveFilesDialog";
@@ -33,6 +34,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -121,6 +132,12 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
   const [moveFilesDialogOpen, setMoveFilesDialogOpen] = useState(false);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [driveWarning, setDriveWarning] = useState<string | null>(null);
+  
+  // Delete folder state
+  const [deleteFolderDialogOpen, setDeleteFolderDialogOpen] = useState(false);
+  const [folderToDelete, setFolderToDelete] = useState<RepositoryFolder | null>(null);
+  const [deleteFolderStats, setDeleteFolderStats] = useState<{ subfolders: number; files: number } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // Custom status states
   const [folderStatuses, setFolderStatuses] = useState<FolderStatus[]>([]);
@@ -659,6 +676,140 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
     }
   };
 
+  // Recursive function to get all subfolder IDs
+  const getAllSubfolderIds = async (folderId: string): Promise<string[]> => {
+    const { data: subfolders } = await supabase
+      .from("repository_folders")
+      .select("id")
+      .eq("contract_id", contractId)
+      .eq("parent_id", folderId);
+    
+    if (!subfolders || subfolders.length === 0) return [];
+    
+    const ids = subfolders.map(f => f.id);
+    for (const subfolder of subfolders) {
+      const nestedIds = await getAllSubfolderIds(subfolder.id);
+      ids.push(...nestedIds);
+    }
+    return ids;
+  };
+
+  const handlePrepareDeleteFolder = async (folder: RepositoryFolder) => {
+    setFolderToDelete(folder);
+    setDeleteFolderStats(null);
+    setDeleteFolderDialogOpen(true);
+    
+    try {
+      // Get all subfolder IDs recursively
+      const subfolderIds = await getAllSubfolderIds(folder.id);
+      
+      // Count files in this folder and all subfolders
+      const allFolderIds = [folder.id, ...subfolderIds];
+      const { count: fileCount } = await supabase
+        .from("repository_files")
+        .select("*", { count: "exact", head: true })
+        .in("folder_id", allFolderIds);
+      
+      setDeleteFolderStats({
+        subfolders: subfolderIds.length,
+        files: fileCount || 0
+      });
+    } catch (error) {
+      console.error("Error counting folder contents:", error);
+      setDeleteFolderStats({ subfolders: 0, files: 0 });
+    }
+  };
+
+  const handleDeleteFolder = async () => {
+    if (!folderToDelete) return;
+    
+    setIsDeleting(true);
+    try {
+      // Get all subfolder IDs recursively
+      const subfolderIds = await getAllSubfolderIds(folderToDelete.id);
+      const allFolderIds = [folderToDelete.id, ...subfolderIds];
+      
+      // Get all files in these folders
+      const { data: allFiles } = await supabase
+        .from("repository_files")
+        .select("id, url, drive_file_id")
+        .in("folder_id", allFolderIds);
+      
+      // Delete files from storage
+      for (const file of allFiles || []) {
+        try {
+          if (file.drive_file_id) {
+            await supabase.functions.invoke('google-drive', {
+              body: { action: 'deleteFile', driveFileId: file.drive_file_id }
+            });
+          } else if (isStorageUrl(file.url)) {
+            await deleteFileFromStorage(file.url);
+          }
+        } catch (error) {
+          console.error("Error deleting file from storage:", error);
+        }
+      }
+      
+      // Delete file records
+      if (allFiles && allFiles.length > 0) {
+        await supabase
+          .from("repository_files")
+          .delete()
+          .in("folder_id", allFolderIds);
+      }
+      
+      // Delete folder statuses
+      await supabase
+        .from("folder_statuses")
+        .delete()
+        .in("folder_id", allFolderIds);
+      
+      // Delete from Google Drive if has drive ID
+      if (folderToDelete.drive_folder_id) {
+        try {
+          await supabase.functions.invoke('google-drive', {
+            body: { action: 'deleteFile', driveFileId: folderToDelete.drive_folder_id }
+          });
+        } catch (error) {
+          console.error("Error deleting folder from Drive:", error);
+        }
+      }
+      
+      // Delete subfolders first (in reverse order to respect foreign keys)
+      for (const subfolderId of subfolderIds.reverse()) {
+        await supabase
+          .from("repository_folders")
+          .delete()
+          .eq("id", subfolderId);
+      }
+      
+      // Delete the main folder
+      const { error } = await supabase
+        .from("repository_folders")
+        .delete()
+        .eq("id", folderToDelete.id);
+      
+      if (error) throw error;
+      
+      toast({
+        title: "Carpeta eliminada",
+        description: `La carpeta "${folderToDelete.name}" ha sido eliminada`,
+      });
+      
+      setDeleteFolderDialogOpen(false);
+      setFolderToDelete(null);
+      loadFolderContents(currentFolder?.id || null);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo eliminar la carpeta",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString("es-CL", {
       year: "numeric",
@@ -963,24 +1114,86 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
           )}
         </div>
 
+        {/* Delete Folder Confirmation Dialog */}
+        <AlertDialog open={deleteFolderDialogOpen} onOpenChange={setDeleteFolderDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <FolderX className="h-5 w-5 text-destructive" />
+                Eliminar Carpeta
+              </AlertDialogTitle>
+              <AlertDialogDescription className="space-y-3">
+                <p>
+                  ¿Estás seguro de eliminar la carpeta <strong>"{folderToDelete?.name}"</strong>?
+                </p>
+                {deleteFolderStats && (deleteFolderStats.subfolders > 0 || deleteFolderStats.files > 0) && (
+                  <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 text-sm">
+                    <p className="font-medium text-destructive mb-1">Esta acción eliminará:</p>
+                    <ul className="list-disc list-inside text-muted-foreground">
+                      {deleteFolderStats.subfolders > 0 && (
+                        <li>{deleteFolderStats.subfolders} subcarpeta(s)</li>
+                      )}
+                      {deleteFolderStats.files > 0 && (
+                        <li>{deleteFolderStats.files} archivo(s)</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+                <p className="text-sm text-muted-foreground">
+                  Esta acción no se puede deshacer.
+                </p>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteFolder}
+                disabled={isDeleting}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {isDeleting ? "Eliminando..." : "Eliminar Carpeta"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Folders */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
           {folders.map((folder) => (
-            <button
+            <div
               key={folder.id}
-              onClick={() => navigateToFolder(folder)}
-              className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors text-left"
+              className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors group"
             >
-              <div className="relative">
-                <Folder className="h-5 w-5 text-primary" />
-                {folder.drive_folder_id && (
-                  <Cloud className="h-3 w-3 text-blue-500 absolute -top-1 -right-1" />
+              <button
+                onClick={() => navigateToFolder(folder)}
+                className="flex items-center gap-3 flex-1 min-w-0 text-left"
+              >
+                <div className="relative flex-shrink-0">
+                  <Folder className="h-5 w-5 text-primary" />
+                  {folder.drive_folder_id && (
+                    <Cloud className="h-3 w-3 text-blue-500 absolute -top-1 -right-1" />
+                  )}
+                </div>
+                <span className="font-medium text-sm truncate">{folder.name}</span>
+              </button>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                {/* Delete button - only for non-base folders */}
+                {!folder.is_base_folder && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handlePrepareDeleteFolder(folder);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 )}
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </div>
-              <span className="font-medium text-sm truncate">{folder.name}</span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground ml-auto" />
-            </button>
+            </div>
           ))}
         </div>
 
