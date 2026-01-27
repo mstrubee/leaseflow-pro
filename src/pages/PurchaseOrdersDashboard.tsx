@@ -79,6 +79,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Ba
 import { CentralizedOrderCreator } from "@/components/budget/CentralizedOrderCreator";
 import { OCRequestViewDialog } from "@/components/budget/OCRequestViewDialog";
 import { ConvertOCRequestDialog } from "@/components/budget/ConvertOCRequestDialog";
+import { formatCLP } from "@/lib/utils";
 
 interface Invoice {
   id: string;
@@ -100,6 +101,7 @@ interface PurchaseOrder {
   order_number: string;
   description: string | null;
   amount_uf: number;
+  amount_clp?: number;
   status: string;
   budget_classification: string | null;
   created_at: string;
@@ -169,6 +171,7 @@ interface GroupedOrder {
   opex_category_name: string | null;
   budget_line_name: string | null;
   total_amount_uf: number;
+  total_amount_clp: number;
   total_invoices_count: number;
   total_invoices_amount: number;
   status: string;
@@ -791,6 +794,7 @@ const PurchaseOrdersDashboard = () => {
       
       // Calculate totals
       const totalAmount = ordersList.reduce((sum, o) => sum + (o.amount_uf || 0), 0);
+      const totalAmountClp = ordersList.reduce((sum, o) => sum + (o.amount_clp || Math.round((o.amount_uf || 0) * ufValue)), 0);
       const totalInvoicesCount = ordersList.reduce((sum, o) => sum + (o.invoices_count || 0), 0);
       const totalInvoicesAmount = ordersList.reduce((sum, o) => sum + (o.invoices_total || 0), 0);
       
@@ -819,6 +823,7 @@ const PurchaseOrdersDashboard = () => {
         opex_category_name: firstOrder.opex_category_name,
         budget_line_name: firstOrder.budget_line_name,
         total_amount_uf: totalAmount,
+        total_amount_clp: totalAmountClp,
         total_invoices_count: totalInvoicesCount,
         total_invoices_amount: totalInvoicesAmount,
         status,
@@ -2318,7 +2323,10 @@ const PurchaseOrdersDashboard = () => {
                                 {groupedOrder.opex_category_name || groupedOrder.budget_line_name || "-"}
                               </TableCell>
                               <TableCell className="text-right font-medium">
-                                {formatUF(groupedOrder.total_amount_uf)}
+                                <div className="flex flex-col items-end">
+                                  <span>{formatCLP(groupedOrder.total_amount_clp || Math.round(groupedOrder.total_amount_uf * ufValue))}</span>
+                                  <span className="text-[10px] text-muted-foreground">{formatUF(groupedOrder.total_amount_uf)}</span>
+                                </div>
                               </TableCell>
                               <TableCell className="text-center">
                                 <div className="flex items-center justify-center gap-1">
