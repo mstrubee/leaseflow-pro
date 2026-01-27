@@ -264,9 +264,10 @@ const PurchaseOrdersDashboard = () => {
     opex_category_id: "" as string | null,
   });
   const [editingOCId, setEditingOCId] = useState<string | null>(null);
-  const [editingOCContracts, setEditingOCContracts] = useState<{ contract_id: string; contract_name: string; amount_uf: number }[]>([]);
+  const [editingOCContracts, setEditingOCContracts] = useState<{ contract_id: string; contract_name: string; amount_uf: number; order_id?: string }[]>([]);
   const [editingOCIsMulti, setEditingOCIsMulti] = useState(false);
   const [updatingOC, setUpdatingOC] = useState(false);
+  const [editingOCOriginalOrderNumber, setEditingOCOriginalOrderNumber] = useState<string>("");
 
   // Credit notes storage
   const [creditNotes, setCreditNotes] = useState<Map<string, { id: string; credit_note_number: string; amount_uf: number; invoice_id: string; }[]>>(new Map());
@@ -1398,6 +1399,7 @@ const PurchaseOrdersDashboard = () => {
   // Handle edit OC
   const handleOpenEditOCDialog = (groupedOrder: GroupedOrder) => {
     setEditingOCId(groupedOrder.orders[0].id);
+    setEditingOCOriginalOrderNumber(groupedOrder.order_number);
     setEditingOCData({
       order_number: groupedOrder.order_number,
       description: groupedOrder.description || "",
@@ -1405,25 +1407,104 @@ const PurchaseOrdersDashboard = () => {
       order_date: groupedOrder.order_date || "",
       opex_category_id: groupedOrder.orders[0].opex_category_id || "",
     });
-    // Set multi-contract info
+    // Set multi-contract info with order_id for each contract
     setEditingOCIsMulti(groupedOrder.is_multi_contract);
-    setEditingOCContracts(groupedOrder.contracts);
+    setEditingOCContracts(groupedOrder.contracts.map(c => ({
+      contract_id: c.contract_id,
+      contract_name: c.contract_name,
+      amount_uf: c.amount_uf,
+      order_id: c.order_id,
+    })));
     setShowEditOCDialog(true);
+  };
+
+  // Handle adding a new contract to the edit OC dialog
+  const handleAddContractToEditOC = (contractId: string) => {
+    const contract = contracts.find(c => c.id === contractId);
+    if (!contract) return;
+    
+    // Check if contract already exists
+    if (editingOCContracts.some(c => c.contract_id === contractId)) {
+      toast.error("Este contrato ya está asignado");
+      return;
+    }
+    
+    setEditingOCContracts(prev => [...prev, {
+      contract_id: contractId,
+      contract_name: contract.name,
+      amount_uf: 0,
+    }]);
+  };
+
+  // Handle removing a contract from the edit OC dialog
+  const handleRemoveContractFromEditOC = (contractId: string) => {
+    if (editingOCContracts.length <= 1) {
+      toast.error("Debe haber al menos un contrato asignado");
+      return;
+    }
+    setEditingOCContracts(prev => prev.filter(c => c.contract_id !== contractId));
+  };
+
+  // Handle updating a contract amount in the edit OC dialog
+  const handleUpdateContractAmountInEditOC = (contractId: string, amount: number) => {
+    setEditingOCContracts(prev => prev.map(c => 
+      c.contract_id === contractId ? { ...c, amount_uf: amount } : c
+    ));
   };
 
   // Handle update OC
   const handleUpdateOC = async () => {
-    if (!editingOCId) return;
+    if (!editingOCId || editingOCContracts.length === 0) return;
+    
+    // Validate that all contracts have valid amounts
+    const invalidContracts = editingOCContracts.filter(c => !c.amount_uf || c.amount_uf <= 0);
+    if (invalidContracts.length > 0) {
+      toast.error("Todos los contratos deben tener un monto mayor a 0");
+      return;
+    }
     
     setUpdatingOC(true);
     try {
-      // Find all orders with same order_number to update them all
-      const originalOrder = orders.find(o => o.id === editingOCId);
-      if (!originalOrder) throw new Error("OC no encontrada");
-
-      const ordersToUpdate = orders.filter(o => o.order_number === originalOrder.order_number);
+      // Find all existing orders with the original order_number
+      const existingOrders = orders.filter(o => o.order_number === editingOCOriginalOrderNumber);
+      const existingContractIds = new Set(existingOrders.map(o => o.contract_id));
+      const newContractIds = new Set(editingOCContracts.map(c => c.contract_id));
       
-      for (const order of ordersToUpdate) {
+      // Determine which contracts to add, update, or remove
+      const contractsToAdd = editingOCContracts.filter(c => !existingContractIds.has(c.contract_id));
+      const contractsToUpdate = editingOCContracts.filter(c => existingContractIds.has(c.contract_id));
+      const contractsToRemove = existingOrders.filter(o => !newContractIds.has(o.contract_id));
+      
+      const isMulti = editingOCContracts.length > 1;
+      const firstExistingOrder = existingOrders[0];
+      
+      // Remove contracts that were deleted
+      for (const order of contractsToRemove) {
+        // Check if this order has invoices
+        if (order.invoices && order.invoices.length > 0) {
+          throw new Error(`No se puede eliminar el contrato ${order.contract_name} porque tiene facturas asociadas`);
+        }
+        
+        // Soft delete the order
+        const { error } = await supabase
+          .from("purchase_orders")
+          .update({ deleted_at: new Date().toISOString() })
+          .eq("id", order.id);
+        
+        if (error) throw error;
+        
+        // Also delete allocation if exists
+        await supabase
+          .from("purchase_order_contract_allocations")
+          .delete()
+          .eq("purchase_order_id", order.id);
+      }
+      
+      // Update existing contracts
+      for (const contractData of contractsToUpdate) {
+        const existingOrder = existingOrders.find(o => o.contract_id === contractData.contract_id);
+        if (!existingOrder) continue;
+        
         const { error } = await supabase
           .from("purchase_orders")
           .update({
@@ -1432,15 +1513,66 @@ const PurchaseOrdersDashboard = () => {
             supplier_name: editingOCData.supplier_name || null,
             order_date: editingOCData.order_date || null,
             opex_category_id: editingOCData.opex_category_id || null,
+            amount_uf: contractData.amount_uf,
+            is_multi_contract: isMulti,
           })
-          .eq("id", order.id);
+          .eq("id", existingOrder.id);
 
         if (error) throw error;
+        
+        // Update allocation
+        await supabase
+          .from("purchase_order_contract_allocations")
+          .upsert({
+            purchase_order_id: existingOrder.id,
+            contract_id: contractData.contract_id,
+            amount_uf: contractData.amount_uf,
+            amount_clp: Math.round(contractData.amount_uf * ufValue),
+          }, { onConflict: "purchase_order_id,contract_id" });
+      }
+      
+      // Add new contracts
+      for (const contractData of contractsToAdd) {
+        const newOrderData: any = {
+          order_number: editingOCData.order_number,
+          description: editingOCData.description || null,
+          supplier_name: editingOCData.supplier_name || null,
+          order_date: editingOCData.order_date || null,
+          opex_category_id: editingOCData.opex_category_id || null,
+          contract_id: contractData.contract_id,
+          amount_uf: contractData.amount_uf,
+          amount_clp: Math.round(contractData.amount_uf * ufValue),
+          year: firstExistingOrder?.year || new Date().getFullYear(),
+          budget_classification: firstExistingOrder?.budget_classification || "OPEX",
+          status: "abierta" as const,
+          is_multi_contract: isMulti,
+        };
+        
+        const { data: newOrder, error: insertError } = await supabase
+          .from("purchase_orders")
+          .insert(newOrderData)
+          .select()
+          .single();
+
+        if (insertError) throw insertError;
+        
+        // Create allocation for new order
+        if (newOrder) {
+          await supabase
+            .from("purchase_order_contract_allocations")
+            .insert({
+              purchase_order_id: newOrder.id,
+              contract_id: contractData.contract_id,
+              amount_uf: contractData.amount_uf,
+              amount_clp: Math.round(contractData.amount_uf * ufValue),
+            });
+        }
       }
 
       toast.success("OC actualizada correctamente");
       setShowEditOCDialog(false);
       setEditingOCId(null);
+      setEditingOCOriginalOrderNumber("");
       loadData();
     } catch (error: any) {
       toast.error("Error al actualizar OC: " + error.message);
@@ -3378,41 +3510,90 @@ const PurchaseOrdersDashboard = () => {
               </Select>
             </div>
 
-            {/* Contract allocations display - always visible for editing */}
-            {editingOCContracts.length > 0 && (
-              <div className="space-y-2 pt-2 border-t">
+            {/* Contract allocations - editable */}
+            <div className="space-y-3 pt-2 border-t">
+              <div className="flex items-center justify-between">
                 <Label className="flex items-center gap-2">
                   <Layers className="h-4 w-4" />
                   Contratos asignados ({editingOCContracts.length})
-                  {editingOCIsMulti && (
+                  {editingOCContracts.length > 1 && (
                     <Badge variant="outline" className="text-xs">Multi-contrato</Badge>
                   )}
                 </Label>
-                <div className="border rounded-lg overflow-hidden">
+              </div>
+              
+              {/* Add contract selector */}
+              <div className="flex gap-2">
+                <Select
+                  onValueChange={(v) => handleAddContractToEditOC(v)}
+                  value=""
+                >
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Agregar contrato..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {contracts
+                      .filter(c => !editingOCContracts.some(ec => ec.contract_id === c.id))
+                      .map((contract) => (
+                        <SelectItem key={contract.id} value={contract.id}>
+                          {contract.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Contracts table */}
+              {editingOCContracts.length > 0 && (
+                <div className="border rounded-lg overflow-hidden max-h-[250px] overflow-y-auto">
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/50">
                         <TableHead className="text-xs">Contrato</TableHead>
-                        <TableHead className="text-xs text-right">Monto (UF)</TableHead>
+                        <TableHead className="text-xs text-right w-[140px]">Monto (UF)</TableHead>
+                        <TableHead className="text-xs w-[50px]"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {editingOCContracts.map((c) => (
                         <TableRow key={c.contract_id}>
                           <TableCell className="py-2 text-sm font-medium">{c.contract_name}</TableCell>
-                          <TableCell className="py-2 text-sm text-right font-mono">
-                            {c.amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
+                          <TableCell className="py-1.5">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={c.amount_uf || ""}
+                              onChange={(e) => handleUpdateContractAmountInEditOC(c.contract_id, parseFloat(e.target.value) || 0)}
+                              className="h-8 text-right font-mono text-sm"
+                            />
+                          </TableCell>
+                          <TableCell className="py-1.5">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRemoveContractFromEditOC(c.contract_id)}
+                              className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                              disabled={editingOCContracts.length <= 1}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
                 </div>
-                <p className="text-xs text-muted-foreground text-right">
-                  Total: {editingOCContracts.reduce((sum, c) => sum + c.amount_uf, 0).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
-                </p>
+              )}
+              
+              {/* Total */}
+              <div className="flex justify-between items-center text-sm pt-1">
+                <span className="text-muted-foreground">Total:</span>
+                <span className="font-bold font-mono">
+                  {editingOCContracts.reduce((sum, c) => sum + (c.amount_uf || 0), 0).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
+                </span>
               </div>
-            )}
+            </div>
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0">
