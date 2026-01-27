@@ -498,7 +498,7 @@ export const CentralizedOrderCreator = ({
           supplier_id: formData.supplier_id,
           supplier_name: formData.supplier_name,
           year: year,
-          status: "active",
+          status: "abierta",
           budget_classification: "OPEX",
           attachment_url: quotationData?.url || null
         };
