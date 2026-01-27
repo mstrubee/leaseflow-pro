@@ -251,7 +251,14 @@ export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyAct
     }
   };
 
-  const handleEditClick = (alert: Alert) => {
+  const handleEditClick = async (alert: Alert) => {
+    // Fetch full alert data including assigned_to and external_emails
+    const { data: fullAlert } = await supabase
+      .from("alerts")
+      .select("assigned_to, external_emails")
+      .eq("id", alert.id)
+      .single();
+
     setEditingAlert({
       id: alert.id,
       title: alert.title,
@@ -262,6 +269,9 @@ export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyAct
       days_before: alert.days_before,
       repeat_every_days: alert.repeat_every_days,
       contract_id: alert.contract_id,
+      category_id: alert.category_id,
+      assigned_to: fullAlert?.assigned_to || null,
+      external_emails: fullAlert?.external_emails || [],
     });
   };
 
