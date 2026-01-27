@@ -435,7 +435,7 @@ export function MultiFileUploadDialog({
             {/* Folder selector */}
             <div 
               className={cn(
-                "border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors",
+                "border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors relative",
                 "hover:border-primary hover:bg-muted/50",
                 isUploading && "pointer-events-none opacity-50"
               )}
@@ -455,8 +455,13 @@ export function MultiFileUploadDialog({
               <FolderUp className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
               <p className="text-sm font-medium">Carpetas</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Agregar múltiples
+                Click para agregar
               </p>
+              {addedFolders.length > 0 && (
+                <div className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                  +
+                </div>
+              )}
             </div>
           </div>
           
@@ -496,9 +501,21 @@ export function MultiFileUploadDialog({
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-blue-600 dark:text-blue-400">
-                📁 Se crearán automáticamente todas las subcarpetas
-              </p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-blue-600 dark:text-blue-400">
+                  📁 Se crearán automáticamente todas las subcarpetas
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs border-blue-300 text-blue-600 hover:bg-blue-50"
+                  onClick={() => folderInputRef.current?.click()}
+                  disabled={isUploading}
+                >
+                  <FolderUp className="h-3 w-3 mr-1" />
+                  Agregar otra
+                </Button>
+              </div>
             </div>
           )}
 
