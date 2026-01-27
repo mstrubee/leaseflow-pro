@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Bell, Mail, MessageSquare, Save, X, Tag, User, Plus, Trash2 } from "lucide-react";
+import { CalendarIcon, Bell, Mail, MessageSquare, Save, X, Tag, User, Plus, Trash2, Building2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,12 @@ interface UserProfile {
   email: string;
   full_name: string | null;
 }
+
+interface ContractOption {
+  id: string;
+  name: string;
+}
+
 const ALERT_TYPES = [
   { value: "contract_expiration", label: "Vencimiento de contrato" },
   { value: "contract_renewal", label: "Renovación de contrato" },
@@ -93,6 +99,34 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
   const [externalEmails, setExternalEmails] = useState<string[]>([]);
   const [newExternalEmail, setNewExternalEmail] = useState("");
 
+  // Contract selection (for standalone alerts)
+  const [contracts, setContracts] = useState<ContractOption[]>([]);
+  const [selectedContractId, setSelectedContractId] = useState<string>(contractId || "");
+  const [loadingContracts, setLoadingContracts] = useState(false);
+
+  // Load available contracts
+  useEffect(() => {
+    const loadContracts = async () => {
+      setLoadingContracts(true);
+      try {
+        const { data, error } = await supabase
+          .from("contracts")
+          .select("id, name")
+          .is("deleted_at", null)
+          .order("name");
+        
+        if (!error && data) {
+          setContracts(data);
+        }
+      } catch (err) {
+        console.error("Error loading contracts:", err);
+      } finally {
+        setLoadingContracts(false);
+      }
+    };
+    loadContracts();
+  }, []);
+
   // Load available users and set current user as default
   useEffect(() => {
     const loadUsersAndSetDefault = async () => {
@@ -130,8 +164,16 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
       setCategoryId(editingAlert.category_id || undefined);
       setAssignedTo(editingAlert.assigned_to || "");
       setExternalEmails(editingAlert.external_emails || []);
+      setSelectedContractId(editingAlert.contract_id || "");
     }
   }, [editingAlert]);
+
+  // Set initial contract ID from props
+  useEffect(() => {
+    if (contractId && !editingAlert) {
+      setSelectedContractId(contractId);
+    }
+  }, [contractId, editingAlert]);
 
   const handleAddExternalEmail = () => {
     const email = newExternalEmail.trim();
@@ -217,6 +259,16 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
       return;
     }
 
+    // Validate that a contract (local) is selected
+    if (!selectedContractId) {
+      toast({
+        title: "Error",
+        description: "Debe seleccionar un local para la alerta",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -230,8 +282,8 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
         channels: channels as ("email" | "whatsapp")[],
         days_before: daysBefore,
         repeat_every_days: enableRepeat ? repeatEveryDays : null,
-        contract_id: editingAlert?.contract_id || contractId || null,
-        item_type: (editingAlert?.contract_id || contractId) ? "contract" : null,
+        contract_id: selectedContractId || null,
+        item_type: selectedContractId ? "contract" : null,
         is_active: true,
         category_id: categoryId || null,
         assigned_to: assignedTo,
@@ -338,6 +390,33 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
                 </Select>
               </div>
             )}
+          </div>
+
+          {/* Contract (Local) selector */}
+          <div className="space-y-3 p-4 border rounded-lg border-primary/30 bg-primary/5">
+            <Label className="flex items-center gap-1">
+              <Building2 className="h-4 w-4" />
+              Local *
+            </Label>
+            <Select 
+              value={selectedContractId} 
+              onValueChange={setSelectedContractId}
+              disabled={!!contractId && !editingAlert}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={loadingContracts ? "Cargando..." : "Seleccionar local"} />
+              </SelectTrigger>
+              <SelectContent>
+                {contracts.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Cada alerta debe estar asociada a un local específico
+            </p>
           </div>
 
           {/* Responsible User Assignment */}
