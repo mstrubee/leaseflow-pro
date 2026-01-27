@@ -199,6 +199,15 @@ export const ConvertOCRequestDialog = ({
       if (isMultiContract && request.allocations) {
         // Multi-contract: Create a PO for each allocation
         for (const alloc of request.allocations) {
+          // Ensure amount_uf is never null/undefined
+          const allocAmountUf = alloc.amount_uf ?? 0;
+          const allocAmountClp = alloc.amount_clp ?? Math.round(allocAmountUf * ufValue);
+          
+          if (allocAmountUf <= 0) {
+            console.warn(`Skipping allocation for contract ${alloc.contract_id} with zero/null amount`);
+            continue;
+          }
+          
           const { data: ocData, error: ocError } = await supabase
             .from("purchase_orders")
             .insert({
@@ -210,8 +219,8 @@ export const ConvertOCRequestDialog = ({
               supplier_id: supplierId || request.supplier_id,
               supplier_name: supplierName || request.supplier_name,
               description: request.description,
-              amount_uf: alloc.amount_uf,
-              amount_clp: alloc.amount_clp,
+              amount_uf: allocAmountUf,
+              amount_clp: allocAmountClp,
               input_currency: "UF",
               uf_value_at_entry: ufValue,
               year: request.year,
@@ -228,12 +237,20 @@ export const ConvertOCRequestDialog = ({
           await supabase.from("purchase_order_contract_allocations").insert({
             purchase_order_id: ocData.id,
             contract_id: alloc.contract_id,
-            amount_uf: alloc.amount_uf,
-            amount_clp: alloc.amount_clp,
+            amount_uf: allocAmountUf,
+            amount_clp: allocAmountClp,
           });
         }
       } else {
         // Single contract: Create one PO
+        // Ensure amount_uf is never null/undefined
+        const singleAmountUf = request.amount_uf ?? 0;
+        const singleAmountClp = request.amount_clp ?? Math.round(singleAmountUf * ufValue);
+        
+        if (singleAmountUf <= 0) {
+          throw new Error("El monto de la solicitud no puede ser cero o vacío");
+        }
+        
         const { error: ocError } = await supabase.from("purchase_orders").insert({
           contract_id: request.contract_id,
           budget_id: request.budget_id,
@@ -243,8 +260,8 @@ export const ConvertOCRequestDialog = ({
           supplier_id: supplierId || request.supplier_id,
           supplier_name: supplierName || request.supplier_name,
           description: request.description,
-          amount_uf: request.amount_uf,
-          amount_clp: request.amount_clp || 0,
+          amount_uf: singleAmountUf,
+          amount_clp: singleAmountClp,
           input_currency: "UF",
           uf_value_at_entry: ufValue,
           year: request.year,
