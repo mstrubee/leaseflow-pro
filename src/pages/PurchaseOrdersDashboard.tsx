@@ -2827,10 +2827,10 @@ const PurchaseOrdersDashboard = () => {
                                       <TableHeader>
                                         <TableRow>
                                           <TableHead className="text-xs">Contrato</TableHead>
-                                          <TableHead className="text-xs text-right">Monto OC (UF)</TableHead>
-                                          <TableHead className="text-xs text-right">Facturado (UF)</TableHead>
+                                          <TableHead className="text-xs text-right">Monto OC</TableHead>
+                                          <TableHead className="text-xs text-right">Facturado</TableHead>
                                           <TableHead className="text-xs text-right">% Facturado</TableHead>
-                                          <TableHead className="text-xs text-right">Pendiente (UF)</TableHead>
+                                          <TableHead className="text-xs text-right">Pendiente</TableHead>
                                           <TableHead className="text-xs">Acciones</TableHead>
                                         </TableRow>
                                       </TableHeader>
@@ -2841,6 +2841,9 @@ const PurchaseOrdersDashboard = () => {
                                           const groupPercentage = statusInfo.percentage;
                                           const proportionalInvoiced = (order.amount_uf * groupPercentage) / 100;
                                           const proportionalPending = order.amount_uf - proportionalInvoiced;
+                                          const orderAmountClp = order.amount_clp || Math.round(order.amount_uf * ufValue);
+                                          const invoicedClp = Math.round(proportionalInvoiced * ufValue);
+                                          const pendingClp = Math.round(proportionalPending * ufValue);
                                           
                                           return (
                                             <TableRow key={order.id}>
@@ -2848,10 +2851,16 @@ const PurchaseOrdersDashboard = () => {
                                                 {order.contract_name}
                                               </TableCell>
                                               <TableCell className="text-sm py-1.5 text-right">
-                                                {formatUF(order.amount_uf)}
+                                                <div className="flex flex-col items-end">
+                                                  <span>{formatCLP(orderAmountClp)}</span>
+                                                  <span className="text-[10px] text-muted-foreground">{formatUF(order.amount_uf)}</span>
+                                                </div>
                                               </TableCell>
                                               <TableCell className="text-sm py-1.5 text-right text-green-600">
-                                                {formatUF(proportionalInvoiced)}
+                                                <div className="flex flex-col items-end">
+                                                  <span>{formatCLP(invoicedClp)}</span>
+                                                  <span className="text-[10px] text-muted-foreground">{formatUF(proportionalInvoiced)}</span>
+                                                </div>
                                               </TableCell>
                                               <TableCell className="text-sm py-1.5 text-right">
                                                 <Badge 
@@ -2862,7 +2871,10 @@ const PurchaseOrdersDashboard = () => {
                                                 </Badge>
                                               </TableCell>
                                               <TableCell className={`text-sm py-1.5 text-right ${proportionalPending < 0 ? 'text-red-600' : 'text-orange-600'}`}>
-                                                {formatUF(proportionalPending)}
+                                                <div className="flex flex-col items-end">
+                                                  <span>{formatCLP(pendingClp)}</span>
+                                                  <span className="text-[10px] text-muted-foreground">{formatUF(proportionalPending)}</span>
+                                                </div>
                                               </TableCell>
                                               <TableCell className="py-1.5">
                                                 <Button
