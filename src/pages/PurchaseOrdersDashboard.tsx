@@ -264,7 +264,7 @@ const PurchaseOrdersDashboard = () => {
     opex_category_id: "" as string | null,
   });
   const [editingOCId, setEditingOCId] = useState<string | null>(null);
-  const [editingOCContracts, setEditingOCContracts] = useState<{ contract_id: string; contract_name: string; amount_uf: number; amount_input: number; currency: "UF" | "CLP"; order_id?: string }[]>([]);
+  const [editingOCContracts, setEditingOCContracts] = useState<{ contract_id: string; contract_name: string; amount_uf: number; amount_clp: number; amount_input: number; currency: "UF" | "CLP"; order_id?: string }[]>([]);
   const [editingOCIsMulti, setEditingOCIsMulti] = useState(false);
   const [updatingOC, setUpdatingOC] = useState(false);
   const [editingOCOriginalOrderNumber, setEditingOCOriginalOrderNumber] = useState<string>("");
@@ -1397,7 +1397,7 @@ const PurchaseOrdersDashboard = () => {
   };
 
   // Handle edit OC
-  const handleOpenEditOCDialog = (groupedOrder: GroupedOrder) => {
+  const handleOpenEditOCDialog = async (groupedOrder: GroupedOrder) => {
     setEditingOCId(groupedOrder.orders[0].id);
     setEditingOCOriginalOrderNumber(groupedOrder.order_number);
     setEditingOCData({
@@ -1407,16 +1407,33 @@ const PurchaseOrdersDashboard = () => {
       order_date: groupedOrder.order_date || "",
       opex_category_id: groupedOrder.orders[0].opex_category_id || "",
     });
-    // Set multi-contract info with order_id for each contract
+    
+    // Fetch full order data including amount_clp for each contract
+    const orderIds = groupedOrder.orders.map(o => o.id);
+    const { data: fullOrders } = await supabase
+      .from("purchase_orders")
+      .select("id, contract_id, amount_uf, amount_clp")
+      .in("id", orderIds);
+    
+    const orderClpMap = new Map<string, number>();
+    (fullOrders || []).forEach(o => {
+      orderClpMap.set(o.contract_id, o.amount_clp || Math.round(o.amount_uf * ufValue));
+    });
+    
+    // Set multi-contract info with CLP as default display currency
     setEditingOCIsMulti(groupedOrder.is_multi_contract);
-    setEditingOCContracts(groupedOrder.contracts.map(c => ({
-      contract_id: c.contract_id,
-      contract_name: c.contract_name,
-      amount_uf: c.amount_uf,
-      amount_input: c.amount_uf, // Default to UF value
-      currency: "UF" as "UF" | "CLP",
-      order_id: c.order_id,
-    })));
+    setEditingOCContracts(groupedOrder.contracts.map(c => {
+      const amountClp = orderClpMap.get(c.contract_id) || Math.round(c.amount_uf * ufValue);
+      return {
+        contract_id: c.contract_id,
+        contract_name: c.contract_name,
+        amount_uf: c.amount_uf,
+        amount_clp: amountClp,
+        amount_input: amountClp, // Default to CLP display
+        currency: "CLP" as "UF" | "CLP",
+        order_id: c.order_id,
+      };
+    }));
     setShowEditOCDialog(true);
   };
 
@@ -1435,8 +1452,9 @@ const PurchaseOrdersDashboard = () => {
       contract_id: contractId,
       contract_name: contract.name,
       amount_uf: 0,
+      amount_clp: 0,
       amount_input: 0,
-      currency: "UF" as "UF" | "CLP",
+      currency: "CLP" as "UF" | "CLP",
     }]);
   };
 
@@ -1453,8 +1471,16 @@ const PurchaseOrdersDashboard = () => {
   const handleUpdateContractAmountInEditOC = (contractId: string, amount: number) => {
     setEditingOCContracts(prev => prev.map(c => {
       if (c.contract_id !== contractId) return c;
-      const newAmountUf = c.currency === "CLP" && ufValue > 0 ? amount / ufValue : amount;
-      return { ...c, amount_input: amount, amount_uf: newAmountUf };
+      let newAmountUf: number;
+      let newAmountClp: number;
+      if (c.currency === "CLP" && ufValue > 0) {
+        newAmountClp = Math.round(amount);
+        newAmountUf = amount / ufValue;
+      } else {
+        newAmountUf = amount;
+        newAmountClp = Math.round(amount * ufValue);
+      }
+      return { ...c, amount_input: amount, amount_uf: newAmountUf, amount_clp: newAmountClp };
     }));
   };
 
@@ -1533,6 +1559,9 @@ const PurchaseOrdersDashboard = () => {
             order_date: editingOCData.order_date || null,
             opex_category_id: editingOCData.opex_category_id || null,
             amount_uf: contractData.amount_uf,
+            amount_clp: contractData.amount_clp,
+            input_currency: contractData.currency,
+            uf_value_at_entry: ufValue,
             is_multi_contract: isMulti,
           })
           .eq("id", existingOrder.id);
@@ -1546,7 +1575,7 @@ const PurchaseOrdersDashboard = () => {
             purchase_order_id: existingOrder.id,
             contract_id: contractData.contract_id,
             amount_uf: contractData.amount_uf,
-            amount_clp: Math.round(contractData.amount_uf * ufValue),
+            amount_clp: contractData.amount_clp,
           }, { onConflict: "purchase_order_id,contract_id" });
       }
       
@@ -1560,7 +1589,9 @@ const PurchaseOrdersDashboard = () => {
           opex_category_id: editingOCData.opex_category_id || null,
           contract_id: contractData.contract_id,
           amount_uf: contractData.amount_uf,
-          amount_clp: Math.round(contractData.amount_uf * ufValue),
+          amount_clp: contractData.amount_clp,
+          input_currency: contractData.currency,
+          uf_value_at_entry: ufValue,
           year: firstExistingOrder?.year || new Date().getFullYear(),
           budget_classification: firstExistingOrder?.budget_classification || "OPEX",
           status: "abierta" as const,
@@ -1583,7 +1614,7 @@ const PurchaseOrdersDashboard = () => {
               purchase_order_id: newOrder.id,
               contract_id: contractData.contract_id,
               amount_uf: contractData.amount_uf,
-              amount_clp: Math.round(contractData.amount_uf * ufValue),
+              amount_clp: contractData.amount_clp,
             });
         }
       }

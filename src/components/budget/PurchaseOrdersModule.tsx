@@ -120,7 +120,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     supplier_id: "",
     order_date: getTodayDate(),
     amount: "",
-    currency: "UF" as "UF" | "CLP",
+    currency: "CLP" as "UF" | "CLP",
     budget_type: "capex" as "capex" | "opex",
     budget_line_id: "",
     opex_category_id: "",
@@ -136,7 +136,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     supplier_name: "",
     order_date: "",
     amount: "",
-    currency: "UF" as "UF" | "CLP",
+    currency: "CLP" as "UF" | "CLP",
     budget_type: "capex" as "capex" | "opex",
     budget_line_id: "",
     opex_category_id: "",
@@ -599,7 +599,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         supplier_id: "",
         order_date: getTodayDate(), 
         amount: "", 
-        currency: "UF", 
+        currency: "CLP", 
         budget_type: "capex",
         budget_line_id: "",
         opex_category_id: "",
@@ -676,16 +676,27 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     setDeleteStep(1);
   };
 
-  const handleEditClick = (e: React.MouseEvent, order: PurchaseOrder) => {
+  const handleEditClick = async (e: React.MouseEvent, order: PurchaseOrder) => {
     e.stopPropagation();
     setEditOrder(order);
     const budget = budgets.find(b => b.id === order.budget_id);
+    
+    // Fetch the full order data to get amount_clp
+    const { data: fullOrder } = await supabase
+      .from("purchase_orders")
+      .select("amount_clp, input_currency")
+      .eq("id", order.id)
+      .single();
+    
+    // Default to CLP display - use stored CLP amount if available
+    const displayAmount = fullOrder?.amount_clp || Math.round(order.amount_uf * ufValue);
+    
     setEditFormData({
       order_number: order.order_number,
       supplier_name: order.supplier_name || "",
       order_date: order.order_date,
-      amount: order.amount_uf.toString(),
-      currency: "UF",
+      amount: displayAmount.toString(),
+      currency: "CLP",
       budget_type: (budget?.budget_type || "capex") as "capex" | "opex",
       budget_line_id: order.budget_line_id || "",
       opex_category_id: order.opex_category_id || "",
