@@ -24,6 +24,9 @@ interface PurchaseOrder {
   supplier_name: string | null;
   order_date: string;
   amount_uf: number;
+  amount_clp?: number;
+  input_currency?: string;
+  uf_value_at_entry?: number;
   description: string | null;
   attachment_url: string | null;
   year: number;
@@ -1131,10 +1134,13 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                     </TableCell>
                     <TableCell className="text-right font-mono">
                       <div className="flex flex-col items-end">
-                        <span>{formatUF(order.amount_uf)}</span>
+                        <span>{formatCLP(order.amount_clp || Math.round(order.amount_uf * ufValue))}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {formatUF(order.amount_uf)}
+                        </span>
                         {order.is_multi_contract && order.total_order_amount_uf && (
                           <span className="text-[10px] text-muted-foreground">
-                            (Total: {formatUF(order.total_order_amount_uf)})
+                            (Total: {formatCLP(Math.round(order.total_order_amount_uf * ufValue))})
                           </span>
                         )}
                       </div>
