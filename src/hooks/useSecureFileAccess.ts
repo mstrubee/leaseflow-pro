@@ -20,22 +20,32 @@ export function useSecureFileAccess() {
     }
 
     try {
+      let finalUrl = url;
+      
       // If it's a storage URL, get a signed URL first
       if (isStorageUrl(url)) {
         const signedUrl = await getSignedUrl(url);
         if (signedUrl) {
-          window.open(signedUrl, "_blank");
+          finalUrl = signedUrl;
         } else {
           toast({
             variant: "destructive",
             title: "Error",
             description: "No se pudo acceder al archivo. Por favor, inicie sesión nuevamente.",
           });
+          return;
         }
-      } else {
-        // External URL (Google Drive, etc.) - open directly
-        window.open(url, "_blank");
       }
+      
+      // Use link click approach to avoid browser blocking
+      const link = document.createElement('a');
+      link.href = finalUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
     } catch (error) {
       console.error("Error opening file:", error);
       toast({
