@@ -347,16 +347,21 @@ export const CentralizedOrderCreator = ({
     setLoading(true);
     
     try {
-      // Calculate UF and CLP amounts
+      // Calculate UF and CLP amounts - ensure never NaN or null
       let totalAmountUf: number;
       let totalAmountClp: number;
       
       if (formData.currency === "CLP") {
-        totalAmountClp = Math.round(enteredAmount);
-        totalAmountUf = Math.round((enteredAmount / ufValue) * 10000) / 10000;
+        totalAmountClp = Math.round(enteredAmount) || 0;
+        totalAmountUf = ufValue > 0 ? Math.round((enteredAmount / ufValue) * 10000) / 10000 : 0;
       } else {
-        totalAmountUf = Math.round(enteredAmount * 10000) / 10000;
-        totalAmountClp = Math.round(enteredAmount * ufValue);
+        totalAmountUf = Math.round(enteredAmount * 10000) / 10000 || 0;
+        totalAmountClp = Math.round(enteredAmount * ufValue) || 0;
+      }
+      
+      // Final validation to prevent null/NaN
+      if (!totalAmountUf || isNaN(totalAmountUf) || totalAmountUf <= 0) {
+        throw new Error("El monto en UF calculado no es válido");
       }
       
       // Get master line id for selected category
