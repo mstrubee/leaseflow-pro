@@ -16,9 +16,11 @@ import {
   Plus,
   RefreshCw,
   Cloud,
-  AlertTriangle
+  AlertTriangle,
+  FolderInput
 } from "lucide-react";
 import { MultiFileUploadDialog } from "./MultiFileUploadDialog";
+import { MoveFilesDialog } from "./MoveFilesDialog";
 import { useToast } from "@/hooks/use-toast";
 import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
 import { deleteFileFromStorage, isStorageUrl } from "@/lib/storageUtils";
@@ -116,6 +118,7 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
   const [newFolderName, setNewFolderName] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [multiUploadDialogOpen, setMultiUploadDialogOpen] = useState(false);
+  const [moveFilesDialogOpen, setMoveFilesDialogOpen] = useState(false);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [driveWarning, setDriveWarning] = useState<string | null>(null);
   
@@ -755,6 +758,18 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
           />
         )}
 
+        {/* Move Files Dialog */}
+        {currentFolder && (
+          <MoveFilesDialog
+            open={moveFilesDialogOpen}
+            onOpenChange={setMoveFilesDialogOpen}
+            contractId={contractId}
+            currentFolderId={currentFolder.id}
+            files={files.map(f => ({ id: f.id, name: f.name, folder_id: currentFolder.id }))}
+            onMoveComplete={() => loadFolderContents(currentFolder.id)}
+          />
+        )}
+
         {/* Breadcrumb Navigation */}
         <div className="flex items-center gap-2 text-sm">
           <Button
@@ -839,6 +854,19 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
                 <Upload className="h-4 w-4" />
                 Subir Archivos
               </Button>
+
+              {/* Move Files Button - only show if there are files */}
+              {files.length > 0 && (
+                <Button 
+                  variant="outline"
+                  size="sm" 
+                  className="gap-1"
+                  onClick={() => setMoveFilesDialogOpen(true)}
+                >
+                  <FolderInput className="h-4 w-4" />
+                  Mover Archivos
+                </Button>
+              )}
 
               {/* Sync current folder with Drive */}
               {driveLinked && !currentFolder.drive_folder_id && (

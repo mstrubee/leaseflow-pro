@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, File, X, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { Upload, File, X, CheckCircle2, AlertCircle, Loader2, FolderUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
 import { cn } from "@/lib/utils";
@@ -30,6 +30,7 @@ interface FileUploadItem {
   status: "pending" | "uploading" | "success" | "error";
   progress: number;
   error?: string;
+  relativePath?: string; // For folder uploads
 }
 
 interface FolderStatus {
@@ -58,11 +59,13 @@ export function MultiFileUploadDialog({
 }: MultiFileUploadDialogProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   
   const [files, setFiles] = useState<FileUploadItem[]>([]);
   const [selectedStatus, setSelectedStatus] = useState("pendiente");
   const [isUploading, setIsUploading] = useState(false);
   const [overallProgress, setOverallProgress] = useState(0);
+  const [createdFolders, setCreatedFolders] = useState<Map<string, string>>(new Map());
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
@@ -84,11 +87,15 @@ export function MultiFileUploadDialog({
       }
       
       const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+      // Check for folder path from webkitRelativePath
+      const relativePath = (file as any).webkitRelativePath || "";
+      
       newFiles.push({
         file,
         name: sanitizeFileName(nameWithoutExt),
         status: "pending",
         progress: 0,
+        relativePath: relativePath || undefined,
       });
     }
     
@@ -96,6 +103,9 @@ export function MultiFileUploadDialog({
     
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
+    }
+    if (folderInputRef.current) {
+      folderInputRef.current.value = "";
     }
   };
 
@@ -109,6 +119,64 @@ export function MultiFileUploadDialog({
     ));
   };
 
+  // Get or create subfolder based on relative path
+  const getOrCreateSubfolder = async (relativePath: string, baseFolderId: string): Promise<string> => {
+    if (!relativePath) return baseFolderId;
+    
+    // Parse the path and remove the filename
+    const pathParts = relativePath.split('/').filter(p => p.length > 0);
+    pathParts.pop(); // Remove the filename
+    
+    if (pathParts.length === 0) return baseFolderId;
+    
+    let currentParentId = baseFolderId;
+    
+    for (const folderName of pathParts) {
+      const cacheKey = `${currentParentId}/${folderName}`;
+      
+      // Check cache first
+      if (createdFolders.has(cacheKey)) {
+        currentParentId = createdFolders.get(cacheKey)!;
+        continue;
+      }
+      
+      // Check if folder exists
+      const { data: existing } = await supabase
+        .from("repository_folders")
+        .select("id")
+        .eq("contract_id", contractId)
+        .eq("parent_id", currentParentId)
+        .eq("name", folderName)
+        .maybeSingle();
+      
+      if (existing) {
+        createdFolders.set(cacheKey, existing.id);
+        setCreatedFolders(new Map(createdFolders));
+        currentParentId = existing.id;
+      } else {
+        // Create the folder
+        const { data: newFolder, error } = await supabase
+          .from("repository_folders")
+          .insert({
+            contract_id: contractId,
+            name: folderName,
+            parent_id: currentParentId,
+            is_base_folder: false,
+          })
+          .select("id")
+          .single();
+        
+        if (error) throw error;
+        
+        createdFolders.set(cacheKey, newFolder.id);
+        setCreatedFolders(new Map(createdFolders));
+        currentParentId = newFolder.id;
+      }
+    }
+    
+    return currentParentId;
+  };
+
   const uploadSingleFile = async (fileItem: FileUploadItem, index: number): Promise<boolean> => {
     const ext = fileItem.file.name.split('.').pop() || '';
     const finalFileName = `${fileItem.name.trim()}.${ext}`;
@@ -117,6 +185,12 @@ export function MultiFileUploadDialog({
       setFiles(prev => prev.map((f, i) => 
         i === index ? { ...f, status: "uploading", progress: 10 } : f
       ));
+
+      // Determine target folder (handle subfolder creation for folder uploads)
+      let targetFolderId = folderId;
+      if (fileItem.relativePath) {
+        targetFolderId = await getOrCreateSubfolder(fileItem.relativePath, folderId);
+      }
 
       let driveFileId = null;
       let fileUrl = '';
@@ -158,7 +232,7 @@ export function MultiFileUploadDialog({
           i === index ? { ...f, progress: 30 } : f
         ));
         
-        const filePath = `contracts/${contractId}/${folderId}/${Date.now()}_${finalFileName}`;
+        const filePath = `contracts/${contractId}/${targetFolderId}/${Date.now()}_${finalFileName}`;
 
         const { error: uploadError } = await supabase.storage
           .from("repository-files")
@@ -177,7 +251,7 @@ export function MultiFileUploadDialog({
       const { error: dbError } = await supabase
         .from("repository_files")
         .insert({
-          folder_id: folderId,
+          folder_id: targetFolderId,
           name: finalFileName,
           url: fileUrl,
           file_type: ext,
@@ -255,6 +329,7 @@ export function MultiFileUploadDialog({
       setFiles([]);
       setSelectedStatus("pendiente");
       setOverallProgress(0);
+      setCreatedFolders(new Map());
       onOpenChange(false);
     }
   };
@@ -262,6 +337,7 @@ export function MultiFileUploadDialog({
   const pendingCount = files.filter(f => f.status === "pending").length;
   const successCount = files.filter(f => f.status === "success").length;
   const hasFiles = files.length > 0;
+  const hasFolderUploads = files.some(f => f.relativePath);
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -271,38 +347,72 @@ export function MultiFileUploadDialog({
           <DialogDescription>
             {driveFolderId 
               ? "Los archivos se subirán a Google Drive"
-              : "Selecciona uno o más archivos para subir"
+              : "Selecciona archivos o una carpeta completa para subir"
             }
           </DialogDescription>
         </DialogHeader>
         
         <div className="flex-1 overflow-y-auto space-y-4 py-4">
-          {/* File selector */}
-          <div 
-            className={cn(
-              "border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors",
-              "hover:border-primary hover:bg-muted/50",
-              isUploading && "pointer-events-none opacity-50"
-            )}
-            onClick={() => !isUploading && fileInputRef.current?.click()}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              onChange={handleFileSelect}
-              multiple
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.zip,.rar"
-              disabled={isUploading}
-            />
-            <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              Haz clic o arrastra archivos aquí
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Puedes seleccionar múltiples archivos
-            </p>
+          {/* File and Folder selectors */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* File selector */}
+            <div 
+              className={cn(
+                "border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors",
+                "hover:border-primary hover:bg-muted/50",
+                isUploading && "pointer-events-none opacity-50"
+              )}
+              onClick={() => !isUploading && fileInputRef.current?.click()}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={handleFileSelect}
+                multiple
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.zip,.rar"
+                disabled={isUploading}
+              />
+              <Upload className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
+              <p className="text-sm font-medium">Archivos</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Selección múltiple
+              </p>
+            </div>
+            
+            {/* Folder selector */}
+            <div 
+              className={cn(
+                "border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors",
+                "hover:border-primary hover:bg-muted/50",
+                isUploading && "pointer-events-none opacity-50"
+              )}
+              onClick={() => !isUploading && folderInputRef.current?.click()}
+            >
+              <input
+                ref={folderInputRef}
+                type="file"
+                className="hidden"
+                onChange={handleFileSelect}
+                // @ts-ignore - webkitdirectory is not in the types
+                webkitdirectory=""
+                directory=""
+                multiple
+                disabled={isUploading}
+              />
+              <FolderUp className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
+              <p className="text-sm font-medium">Carpeta</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Sube carpeta completa
+              </p>
+            </div>
           </div>
+          
+          {hasFolderUploads && (
+            <p className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 px-3 py-2 rounded-lg">
+              📁 Se crearán automáticamente las subcarpetas necesarias
+            </p>
+          )}
 
           {/* Status selector */}
           {hasFiles && folderStatuses.length > 0 && (
@@ -378,6 +488,9 @@ export function MultiFileUploadDialog({
                         </div>
                         
                         <p className="text-xs text-muted-foreground truncate">
+                          {fileItem.relativePath ? (
+                            <span className="text-blue-600 dark:text-blue-400">📁 {fileItem.relativePath.split('/').slice(0, -1).join('/')}/</span>
+                          ) : null}
                           {fileItem.file.name} ({(fileItem.file.size / 1024).toFixed(1)} KB)
                         </p>
                         
