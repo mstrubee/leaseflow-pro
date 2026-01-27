@@ -264,6 +264,8 @@ const PurchaseOrdersDashboard = () => {
     opex_category_id: "" as string | null,
   });
   const [editingOCId, setEditingOCId] = useState<string | null>(null);
+  const [editingOCContracts, setEditingOCContracts] = useState<{ contract_id: string; contract_name: string; amount_uf: number }[]>([]);
+  const [editingOCIsMulti, setEditingOCIsMulti] = useState(false);
   const [updatingOC, setUpdatingOC] = useState(false);
 
   // Credit notes storage
@@ -1403,6 +1405,9 @@ const PurchaseOrdersDashboard = () => {
       order_date: groupedOrder.order_date || "",
       opex_category_id: groupedOrder.orders[0].opex_category_id || "",
     });
+    // Set multi-contract info
+    setEditingOCIsMulti(groupedOrder.is_multi_contract);
+    setEditingOCContracts(groupedOrder.contracts);
     setShowEditOCDialog(true);
   };
 
@@ -3301,11 +3306,17 @@ const PurchaseOrdersDashboard = () => {
 
       {/* Edit OC Dialog */}
       <Dialog open={showEditOCDialog} onOpenChange={setShowEditOCDialog}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className={editingOCIsMulti && editingOCContracts.length > 0 ? "sm:max-w-2xl" : "sm:max-w-md"}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Pencil className="h-5 w-5" />
               Editar Orden de Compra
+              {editingOCIsMulti && (
+                <Badge variant="outline" className="text-xs gap-1">
+                  <Layers className="h-3 w-3" />
+                  Centralizado
+                </Badge>
+              )}
             </DialogTitle>
           </DialogHeader>
           
@@ -3366,6 +3377,39 @@ const PurchaseOrdersDashboard = () => {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Multi-contract allocations display */}
+            {editingOCIsMulti && editingOCContracts.length > 0 && (
+              <div className="space-y-2 pt-2 border-t">
+                <Label className="flex items-center gap-2">
+                  <Layers className="h-4 w-4" />
+                  Contratos asignados ({editingOCContracts.length})
+                </Label>
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead className="text-xs">Contrato</TableHead>
+                        <TableHead className="text-xs text-right">Monto (UF)</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {editingOCContracts.map((c) => (
+                        <TableRow key={c.contract_id}>
+                          <TableCell className="py-2 text-sm font-medium">{c.contract_name}</TableCell>
+                          <TableCell className="py-2 text-sm text-right font-mono">
+                            {c.amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <p className="text-xs text-muted-foreground text-right">
+                  Total: {editingOCContracts.reduce((sum, c) => sum + c.amount_uf, 0).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
+                </p>
+              </div>
+            )}
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0">

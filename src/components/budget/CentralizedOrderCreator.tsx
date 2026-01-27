@@ -475,6 +475,7 @@ export const CentralizedOrderCreator = ({
       } else {
         // Create Purchase Order directly
         const { number } = await generateNumber();
+        const orderNumber = formData.order_number || number;
         
         // Upload quotation file if present
         let quotationData: { url: string; fileName: string } | null = null;
@@ -482,63 +483,96 @@ export const CentralizedOrderCreator = ({
           quotationData = await uploadQuotationFile();
         }
         
-        const orderPayload: any = {
-          contract_id: primaryContractId,
-          budget_id: null,
-          budget_line_id: null,
-          opex_master_id: masterLine?.id || null,
-          opex_category_id: selectedCategoryId || null,
-          order_number: formData.order_number || number,
-          order_date: formData.order_date,
-          description: formData.description,
-          amount_uf: totalAmountUf,
-          amount_clp: totalAmountClp,
-          input_currency: formData.currency,
-          uf_value_at_entry: ufValue,
-          supplier_id: formData.supplier_id,
-          supplier_name: formData.supplier_name,
-          year: year,
-          status: "abierta",
-          budget_classification: "OPEX",
-          attachment_url: quotationData?.url || null
-        };
-        
-        const { data: orderData, error: orderError } = await supabase
-          .from("purchase_orders")
-          .insert(orderPayload)
-          .select()
-          .single();
-        
-        if (orderError) throw orderError;
-        
-        // Create contract allocations if multi-contract
-        if (isMultiContract && orderData) {
-          const allocations = contractAllocations.map(a => {
+        if (isMultiContract && contractAllocations.length > 0) {
+          // Multi-contract: Create a separate PO for EACH contract (like ConvertOCRequestDialog)
+          for (const alloc of contractAllocations) {
             let allocUf: number;
             let allocClp: number;
             if (formData.currency === "CLP") {
-              allocClp = Math.round(a.amount);
-              allocUf = Math.round((a.amount / ufValue) * 10000) / 10000;
+              allocClp = Math.round(alloc.amount);
+              allocUf = Math.round((alloc.amount / ufValue) * 10000) / 10000;
             } else {
-              allocUf = Math.round(a.amount * 10000) / 10000;
-              allocClp = Math.round(a.amount * ufValue);
+              allocUf = Math.round(alloc.amount * 10000) / 10000;
+              allocClp = Math.round(alloc.amount * ufValue);
             }
-            return {
-              purchase_order_id: orderData.id,
-              contract_id: a.contractId,
-              amount_uf: allocUf,
-              amount_clp: allocClp
-            };
-          });
+            
+            if (allocUf <= 0) {
+              console.warn(`Skipping allocation for contract ${alloc.contractId} with zero amount`);
+              continue;
+            }
+            
+            const { data: poData, error: poError } = await supabase
+              .from("purchase_orders")
+              .insert({
+                contract_id: alloc.contractId,
+                budget_id: null,
+                budget_line_id: null,
+                opex_master_id: masterLine?.id || null,
+                opex_category_id: selectedCategoryId || null,
+                order_number: orderNumber,
+                order_date: formData.order_date,
+                description: formData.description,
+                amount_uf: allocUf,
+                amount_clp: allocClp,
+                input_currency: formData.currency,
+                uf_value_at_entry: ufValue,
+                supplier_id: formData.supplier_id,
+                supplier_name: formData.supplier_name,
+                year: year,
+                status: "abierta",
+                budget_classification: "OPEX",
+                attachment_url: quotationData?.url || null,
+                is_multi_contract: true
+              })
+              .select("id")
+              .single();
+            
+            if (poError) throw poError;
+            
+            // Create allocation record for this PO
+            if (poData) {
+              await supabase.from("purchase_order_contract_allocations").insert({
+                purchase_order_id: poData.id,
+                contract_id: alloc.contractId,
+                amount_uf: allocUf,
+                amount_clp: allocClp
+              });
+            }
+          }
           
-          const { error: allocError } = await supabase
-            .from("purchase_order_contract_allocations")
-            .insert(allocations);
+          toast({ title: "Orden creada", description: `OC ${orderNumber} creada para ${contractAllocations.length} contratos` });
+        } else {
+          // Single contract: Create one PO
+          const orderPayload: any = {
+            contract_id: primaryContractId,
+            budget_id: null,
+            budget_line_id: null,
+            opex_master_id: masterLine?.id || null,
+            opex_category_id: selectedCategoryId || null,
+            order_number: orderNumber,
+            order_date: formData.order_date,
+            description: formData.description,
+            amount_uf: totalAmountUf,
+            amount_clp: totalAmountClp,
+            input_currency: formData.currency,
+            uf_value_at_entry: ufValue,
+            supplier_id: formData.supplier_id,
+            supplier_name: formData.supplier_name,
+            year: year,
+            status: "abierta",
+            budget_classification: "OPEX",
+            attachment_url: quotationData?.url || null,
+            is_multi_contract: false
+          };
           
-          if (allocError) throw allocError;
+          const { error: orderError } = await supabase
+            .from("purchase_orders")
+            .insert(orderPayload);
+          
+          if (orderError) throw orderError;
+          
+          toast({ title: "Orden creada", description: `OC ${orderNumber} creada exitosamente` });
         }
-        
-        toast({ title: "Orden creada", description: `OC ${formData.order_number || number} creada exitosamente` });
       }
       
       onSuccess();
