@@ -335,6 +335,8 @@ export type Database = {
           category_id: string | null
           created_at: string
           currency: string | null
+          deleted_at: string | null
+          deleted_by: string | null
           description: string | null
           display_order: number | null
           id: string
@@ -355,6 +357,8 @@ export type Database = {
           category_id?: string | null
           created_at?: string
           currency?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           description?: string | null
           display_order?: number | null
           id?: string
@@ -375,6 +379,8 @@ export type Database = {
           category_id?: string | null
           created_at?: string
           currency?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           description?: string | null
           display_order?: number | null
           id?: string
@@ -426,6 +432,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      budget_lines_audit: {
+        Row: {
+          action: string
+          budget_id: string
+          budget_line_id: string
+          changed_at: string | null
+          changed_by: string | null
+          id: string
+          new_values: Json | null
+          old_values: Json | null
+        }
+        Insert: {
+          action: string
+          budget_id: string
+          budget_line_id: string
+          changed_at?: string | null
+          changed_by?: string | null
+          id?: string
+          new_values?: Json | null
+          old_values?: Json | null
+        }
+        Update: {
+          action?: string
+          budget_id?: string
+          budget_line_id?: string
+          changed_at?: string | null
+          changed_by?: string | null
+          id?: string
+          new_values?: Json | null
+          old_values?: Json | null
+        }
+        Relationships: []
       }
       budget_reassignments: {
         Row: {
