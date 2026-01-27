@@ -31,11 +31,18 @@ interface FileUploadItem {
   progress: number;
   error?: string;
   relativePath?: string; // For folder uploads
+  rootFolder?: string; // Top-level folder name for grouping
 }
 
 interface FolderStatus {
   name: string;
   color: string;
+}
+
+interface AddedFolder {
+  name: string;
+  fileCount: number;
+  subfolderCount: number;
 }
 
 interface MultiFileUploadDialogProps {
@@ -62,6 +69,7 @@ export function MultiFileUploadDialog({
   const folderInputRef = useRef<HTMLInputElement>(null);
   
   const [files, setFiles] = useState<FileUploadItem[]>([]);
+  const [addedFolders, setAddedFolders] = useState<AddedFolder[]>([]);
   const [selectedStatus, setSelectedStatus] = useState("pendiente");
   const [isUploading, setIsUploading] = useState(false);
   const [overallProgress, setOverallProgress] = useState(0);
@@ -72,6 +80,7 @@ export function MultiFileUploadDialog({
     if (!selectedFiles || selectedFiles.length === 0) return;
 
     const newFiles: FileUploadItem[] = [];
+    const folderStats = new Map<string, { fileCount: number; subfolders: Set<string> }>();
     
     for (let i = 0; i < selectedFiles.length; i++) {
       const file = selectedFiles[i];
@@ -90,13 +99,50 @@ export function MultiFileUploadDialog({
       // Check for folder path from webkitRelativePath
       const relativePath = (file as any).webkitRelativePath || "";
       
+      // Extract root folder name for grouping
+      const pathParts = relativePath.split('/').filter((p: string) => p.length > 0);
+      const rootFolder = pathParts.length > 0 ? pathParts[0] : undefined;
+      
+      // Track folder statistics
+      if (rootFolder) {
+        if (!folderStats.has(rootFolder)) {
+          folderStats.set(rootFolder, { fileCount: 0, subfolders: new Set() });
+        }
+        const stats = folderStats.get(rootFolder)!;
+        stats.fileCount++;
+        // Track subfolders (excluding root and filename)
+        if (pathParts.length > 2) {
+          const subfolderPath = pathParts.slice(1, -1).join('/');
+          stats.subfolders.add(subfolderPath);
+        }
+      }
+      
       newFiles.push({
         file,
         name: sanitizeFileName(nameWithoutExt),
         status: "pending",
         progress: 0,
         relativePath: relativePath || undefined,
+        rootFolder,
       });
+    }
+    
+    // Update added folders list
+    const newAddedFolders: AddedFolder[] = [];
+    folderStats.forEach((stats, folderName) => {
+      // Check if folder already exists
+      const existingIndex = addedFolders.findIndex(f => f.name === folderName);
+      if (existingIndex === -1) {
+        newAddedFolders.push({
+          name: folderName,
+          fileCount: stats.fileCount,
+          subfolderCount: stats.subfolders.size,
+        });
+      }
+    });
+    
+    if (newAddedFolders.length > 0) {
+      setAddedFolders(prev => [...prev, ...newAddedFolders]);
     }
     
     setFiles(prev => [...prev, ...newFiles]);
@@ -107,6 +153,11 @@ export function MultiFileUploadDialog({
     if (folderInputRef.current) {
       folderInputRef.current.value = "";
     }
+  };
+
+  const handleRemoveFolder = (folderName: string) => {
+    setFiles(prev => prev.filter(f => f.rootFolder !== folderName));
+    setAddedFolders(prev => prev.filter(f => f.name !== folderName));
   };
 
   const handleRemoveFile = (index: number) => {
@@ -327,6 +378,7 @@ export function MultiFileUploadDialog({
   const handleClose = () => {
     if (!isUploading) {
       setFiles([]);
+      setAddedFolders([]);
       setSelectedStatus("pendiente");
       setOverallProgress(0);
       setCreatedFolders(new Map());
@@ -401,17 +453,53 @@ export function MultiFileUploadDialog({
                 disabled={isUploading}
               />
               <FolderUp className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
-              <p className="text-sm font-medium">Carpeta</p>
+              <p className="text-sm font-medium">Carpetas</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Sube carpeta completa
+                Agregar múltiples
               </p>
             </div>
           </div>
           
-          {hasFolderUploads && (
-            <p className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 px-3 py-2 rounded-lg">
-              📁 Se crearán automáticamente las subcarpetas necesarias
-            </p>
+          {/* Added folders summary */}
+          {addedFolders.length > 0 && (
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <FolderUp className="h-4 w-4" />
+                Carpetas agregadas ({addedFolders.length})
+              </Label>
+              <div className="space-y-1">
+                {addedFolders.map((folder) => (
+                  <div 
+                    key={folder.name}
+                    className="flex items-center justify-between p-2 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800"
+                  >
+                    <div className="flex items-center gap-2">
+                      <FolderUp className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      <div>
+                        <p className="text-sm font-medium text-blue-700 dark:text-blue-300">{folder.name}</p>
+                        <p className="text-xs text-blue-600/70 dark:text-blue-400/70">
+                          {folder.fileCount} archivo(s)
+                          {folder.subfolderCount > 0 && ` • ${folder.subfolderCount} subcarpeta(s)`}
+                        </p>
+                      </div>
+                    </div>
+                    {!isUploading && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-blue-600 hover:text-red-500 hover:bg-red-50"
+                        onClick={() => handleRemoveFolder(folder.name)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-blue-600 dark:text-blue-400">
+                📁 Se crearán automáticamente todas las subcarpetas
+              </p>
+            </div>
           )}
 
           {/* Status selector */}
@@ -442,21 +530,31 @@ export function MultiFileUploadDialog({
           {/* Files list */}
           {hasFiles && (
             <div className="space-y-2">
-              <Label>Archivos ({files.length})</Label>
-              <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+              <div className="flex items-center justify-between">
+                <Label>Archivos ({files.length})</Label>
+                {addedFolders.length > 0 && files.length > 10 && (
+                  <span className="text-xs text-muted-foreground">
+                    Vista compacta para {addedFolders.length} carpeta(s)
+                  </span>
+                )}
+              </div>
+              <div className={cn(
+                "space-y-2 overflow-y-auto pr-1",
+                addedFolders.length > 0 && files.length > 10 ? "max-h-[150px]" : "max-h-[250px]"
+              )}>
                 {files.map((fileItem, index) => (
                   <div 
                     key={index} 
                     className={cn(
-                      "p-3 rounded-lg border",
+                      "p-2 rounded-lg border",
                       fileItem.status === "success" && "bg-green-50 border-green-200 dark:bg-green-950/20 dark:border-green-800",
                       fileItem.status === "error" && "bg-red-50 border-red-200 dark:bg-red-950/20 dark:border-red-800",
                       fileItem.status === "uploading" && "bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-800",
                       fileItem.status === "pending" && "bg-card"
                     )}
                   >
-                    <div className="flex items-start gap-3">
-                      <div className="flex-shrink-0 mt-1">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-shrink-0">
                         {fileItem.status === "pending" && (
                           <File className="h-4 w-4 text-muted-foreground" />
                         )}
@@ -471,46 +569,46 @@ export function MultiFileUploadDialog({
                         )}
                       </div>
                       
-                      <div className="flex-1 min-w-0 space-y-2">
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          {fileItem.status === "pending" ? (
+                          {fileItem.status === "pending" && !fileItem.rootFolder ? (
                             <Input
                               value={fileItem.name}
                               onChange={(e) => handleUpdateFileName(index, e.target.value)}
-                              className="h-7 text-sm"
+                              className="h-6 text-xs"
                               disabled={isUploading}
                             />
                           ) : (
-                            <span className="text-sm font-medium truncate">
+                            <span className="text-xs font-medium truncate">
+                              {fileItem.relativePath ? (
+                                <span className="text-blue-600 dark:text-blue-400">{fileItem.relativePath.split('/').slice(0, -1).join('/')}/</span>
+                              ) : null}
                               {fileItem.name}.{fileItem.file.name.split('.').pop()}
                             </span>
                           )}
                         </div>
                         
-                        <p className="text-xs text-muted-foreground truncate">
-                          {fileItem.relativePath ? (
-                            <span className="text-blue-600 dark:text-blue-400">📁 {fileItem.relativePath.split('/').slice(0, -1).join('/')}/</span>
-                          ) : null}
-                          {fileItem.file.name} ({(fileItem.file.size / 1024).toFixed(1)} KB)
-                        </p>
-                        
                         {fileItem.status === "uploading" && (
-                          <Progress value={fileItem.progress} className="h-1" />
+                          <Progress value={fileItem.progress} className="h-1 mt-1" />
                         )}
                         
                         {fileItem.status === "error" && fileItem.error && (
-                          <p className="text-xs text-red-500">{fileItem.error}</p>
+                          <p className="text-xs text-red-500 mt-1">{fileItem.error}</p>
                         )}
                       </div>
                       
-                      {fileItem.status === "pending" && !isUploading && (
+                      <span className="text-xs text-muted-foreground flex-shrink-0">
+                        {(fileItem.file.size / 1024).toFixed(0)} KB
+                      </span>
+                      
+                      {fileItem.status === "pending" && !isUploading && !fileItem.rootFolder && (
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 flex-shrink-0"
+                          className="h-6 w-6 flex-shrink-0"
                           onClick={() => handleRemoveFile(index)}
                         >
-                          <X className="h-4 w-4" />
+                          <X className="h-3 w-3" />
                         </Button>
                       )}
                     </div>
