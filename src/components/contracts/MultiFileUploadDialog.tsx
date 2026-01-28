@@ -177,49 +177,79 @@ export function MultiFileUploadDialog({
     ));
   };
 
-  // Get or create subfolder based on relative path
-  const getOrCreateSubfolder = async (relativePath: string, baseFolderId: string): Promise<string> => {
-    if (!relativePath) return baseFolderId;
+  // Get or create subfolder based on relative path (both in DB and Drive)
+  const getOrCreateSubfolder = async (
+    relativePath: string, 
+    baseFolderId: string,
+    baseDriveFolderId: string | null
+  ): Promise<{ dbFolderId: string; driveFolderId: string | null }> => {
+    if (!relativePath) return { dbFolderId: baseFolderId, driveFolderId: baseDriveFolderId };
     
     // Parse the path and remove the filename
     const pathParts = relativePath.split('/').filter(p => p.length > 0);
     pathParts.pop(); // Remove the filename
     
-    if (pathParts.length === 0) return baseFolderId;
+    if (pathParts.length === 0) return { dbFolderId: baseFolderId, driveFolderId: baseDriveFolderId };
     
-    let currentParentId = baseFolderId;
+    let currentDbParentId = baseFolderId;
+    let currentDriveParentId = baseDriveFolderId;
     
     for (const folderName of pathParts) {
-      const cacheKey = `${currentParentId}/${folderName}`;
+      const cacheKey = `${currentDbParentId}/${folderName}`;
       
       // Check cache first
       if (createdFolders.has(cacheKey)) {
-        currentParentId = createdFolders.get(cacheKey)!;
+        const cached = createdFolders.get(cacheKey)!;
+        currentDbParentId = cached;
+        // Get drive folder id from DB
+        const { data: folderData } = await supabase
+          .from("repository_folders")
+          .select("drive_folder_id")
+          .eq("id", cached)
+          .single();
+        currentDriveParentId = folderData?.drive_folder_id || currentDriveParentId;
         continue;
       }
       
-      // Check if folder exists
+      // Check if folder exists in DB
       const { data: existing } = await supabase
         .from("repository_folders")
-        .select("id")
+        .select("id, drive_folder_id")
         .eq("contract_id", contractId)
-        .eq("parent_id", currentParentId)
+        .eq("parent_id", currentDbParentId)
         .eq("name", folderName)
         .maybeSingle();
       
       if (existing) {
         createdFolders.set(cacheKey, existing.id);
         setCreatedFolders(new Map(createdFolders));
-        currentParentId = existing.id;
+        currentDbParentId = existing.id;
+        currentDriveParentId = existing.drive_folder_id || currentDriveParentId;
       } else {
-        // Create the folder
+        // Create folder in Drive first (if connected)
+        let newDriveFolderId: string | null = null;
+        if (currentDriveParentId) {
+          const { data: driveData, error: driveError } = await supabase.functions.invoke('google-drive', {
+            body: { 
+              action: 'ensureSubfolderExists',
+              parentDriveFolderId: currentDriveParentId,
+              folderName
+            }
+          });
+          if (!driveError && driveData?.id) {
+            newDriveFolderId = driveData.id;
+          }
+        }
+        
+        // Create the folder in DB
         const { data: newFolder, error } = await supabase
           .from("repository_folders")
           .insert({
             contract_id: contractId,
             name: folderName,
-            parent_id: currentParentId,
+            parent_id: currentDbParentId,
             is_base_folder: false,
+            drive_folder_id: newDriveFolderId,
           })
           .select("id")
           .single();
@@ -228,11 +258,12 @@ export function MultiFileUploadDialog({
         
         createdFolders.set(cacheKey, newFolder.id);
         setCreatedFolders(new Map(createdFolders));
-        currentParentId = newFolder.id;
+        currentDbParentId = newFolder.id;
+        currentDriveParentId = newDriveFolderId;
       }
     }
     
-    return currentParentId;
+    return { dbFolderId: currentDbParentId, driveFolderId: currentDriveParentId };
   };
 
   const uploadSingleFile = async (fileItem: FileUploadItem, index: number): Promise<boolean> => {
@@ -240,76 +271,66 @@ export function MultiFileUploadDialog({
     const finalFileName = `${fileItem.name.trim()}.${ext}`;
     
     try {
+      // REQUIRED: Drive must be configured for uploads
+      if (!driveFolderId) {
+        throw new Error("Este contrato debe sincronizarse con Google Drive antes de subir archivos");
+      }
+
       setFiles(prev => prev.map((f, i) => 
         i === index ? { ...f, status: "uploading", progress: 10 } : f
       ));
 
       // Determine target folder (handle subfolder creation for folder uploads)
-      let targetFolderId = folderId;
+      let targetDbFolderId = folderId;
+      let targetDriveFolderId: string | null = driveFolderId;
+      
       if (fileItem.relativePath) {
-        targetFolderId = await getOrCreateSubfolder(fileItem.relativePath, folderId);
+        const result = await getOrCreateSubfolder(fileItem.relativePath, folderId, driveFolderId);
+        targetDbFolderId = result.dbFolderId;
+        targetDriveFolderId = result.driveFolderId;
       }
 
-      let driveFileId = null;
-      let fileUrl = '';
-
-      if (driveFolderId) {
-        // Upload to Google Drive
-        setFiles(prev => prev.map((f, i) => 
-          i === index ? { ...f, progress: 30 } : f
-        ));
-        
-        const arrayBuffer = await fileItem.file.arrayBuffer();
-        const base64Content = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-
-        setFiles(prev => prev.map((f, i) => 
-          i === index ? { ...f, progress: 50 } : f
-        ));
-
-        const { data: driveData, error: driveError } = await supabase.functions.invoke('google-drive', {
-          body: { 
-            action: 'uploadFile',
-            fileName: finalFileName,
-            fileContent: base64Content,
-            mimeType: fileItem.file.type || 'application/octet-stream',
-            driveFolderId
-          }
-        });
-
-        if (driveError) throw driveError;
-        
-        driveFileId = driveData.id;
-        fileUrl = driveData.webViewLink || driveData.webContentLink || '';
-        
-        setFiles(prev => prev.map((f, i) => 
-          i === index ? { ...f, progress: 80 } : f
-        ));
-      } else {
-        // Upload to Supabase Storage
-        setFiles(prev => prev.map((f, i) => 
-          i === index ? { ...f, progress: 30 } : f
-        ));
-        
-        const filePath = `contracts/${contractId}/${targetFolderId}/${Date.now()}_${finalFileName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("repository-files")
-          .upload(filePath, fileItem.file);
-
-        if (uploadError) throw uploadError;
-
-        fileUrl = `storage://repository-files/${filePath}`;
-        
-        setFiles(prev => prev.map((f, i) => 
-          i === index ? { ...f, progress: 70 } : f
-        ));
+      // Ensure we have a drive folder for the target
+      if (!targetDriveFolderId) {
+        throw new Error("No se pudo determinar la carpeta de destino en Drive");
       }
 
-      // Save file record to database
+      setFiles(prev => prev.map((f, i) => 
+        i === index ? { ...f, progress: 30 } : f
+      ));
+      
+      const arrayBuffer = await fileItem.file.arrayBuffer();
+      const base64Content = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+
+      setFiles(prev => prev.map((f, i) => 
+        i === index ? { ...f, progress: 50 } : f
+      ));
+
+      // Upload directly to Google Drive
+      const { data: driveData, error: driveError } = await supabase.functions.invoke('google-drive', {
+        body: { 
+          action: 'uploadFile',
+          fileName: finalFileName,
+          fileContent: base64Content,
+          mimeType: fileItem.file.type || 'application/octet-stream',
+          driveFolderId: targetDriveFolderId
+        }
+      });
+
+      if (driveError) throw driveError;
+      
+      const driveFileId = driveData.id;
+      const fileUrl = driveData.webViewLink || driveData.webContentLink || '';
+      
+      setFiles(prev => prev.map((f, i) => 
+        i === index ? { ...f, progress: 80 } : f
+      ));
+
+      // Save file record to database (Drive URL only, no Storage backup)
       const { error: dbError } = await supabase
         .from("repository_files")
         .insert({
-          folder_id: targetFolderId,
+          folder_id: targetDbFolderId,
           name: finalFileName,
           url: fileUrl,
           file_type: ext,
@@ -333,6 +354,16 @@ export function MultiFileUploadDialog({
   };
 
   const handleUploadAll = async () => {
+    // Validate Drive connection before starting
+    if (!driveFolderId) {
+      toast({
+        variant: "destructive",
+        title: "Drive no configurado",
+        description: "Este contrato debe sincronizarse con Google Drive antes de subir archivos",
+      });
+      return;
+    }
+
     const pendingFiles = files.filter(f => f.status === "pending");
     if (pendingFiles.length === 0) return;
 
@@ -362,7 +393,7 @@ export function MultiFileUploadDialog({
     
     if (successCount > 0) {
       toast({
-        title: "Archivos subidos",
+        title: "Archivos subidos a Drive",
         description: `${successCount} archivo(s) subido(s) correctamente${errorCount > 0 ? `, ${errorCount} con error` : ''}`,
       });
       onUploadComplete();
@@ -402,11 +433,11 @@ export function MultiFileUploadDialog({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Subir Archivos</DialogTitle>
+          <DialogTitle>Subir Archivos a Google Drive</DialogTitle>
           <DialogDescription>
             {driveFolderId 
-              ? "Los archivos se subirán a Google Drive"
-              : "Selecciona archivos o una carpeta completa para subir"
+              ? "Los archivos se almacenarán exclusivamente en Google Drive"
+              : "⚠️ Este contrato debe sincronizarse con Google Drive primero"
             }
           </DialogDescription>
         </DialogHeader>
