@@ -3522,8 +3522,10 @@ const PurchaseOrdersDashboard = () => {
       {/* Edit OC Dialog */}
       <Dialog open={showEditOCDialog} onOpenChange={setShowEditOCDialog}>
         <DialogContent className={cn(
+          // NOTE: `h-[90vh]` (not only `max-h`) is required so the internal ScrollArea
+          // gets a real height to scroll within.
           "overflow-hidden",
-          "max-h-[90vh] flex flex-col",
+          "h-[90vh] max-h-[90vh] flex flex-col",
           editingOCContracts.length > 0 ? "sm:max-w-2xl" : "sm:max-w-md"
         )}>
           <DialogHeader className="flex-shrink-0">
@@ -3539,7 +3541,11 @@ const PurchaseOrdersDashboard = () => {
             </DialogTitle>
           </DialogHeader>
           
-          <ScrollArea className="flex-1 min-h-0 -mx-6 px-6">
+          {/*
+            NOTE: Radix ScrollArea can fail to scroll if the layout/height chain breaks.
+            For this dialog we use a plain overflow container to guarantee scroll.
+          */}
+          <div className="flex-1 min-h-0 overflow-y-auto -mx-6 px-6">
             <div className="space-y-4 pb-4 pr-2">
             <div className="space-y-1.5">
               <Label htmlFor="oc_number">Número de OC</Label>
@@ -3797,7 +3803,7 @@ const PurchaseOrdersDashboard = () => {
               </div>
             </div>
             </div>
-          </ScrollArea>
+          </div>
 
           <DialogFooter className="flex-shrink-0 gap-2 sm:gap-0 pt-4 border-t">
             <Button variant="outline" onClick={() => setShowEditOCDialog(false)} disabled={updatingOC}>
