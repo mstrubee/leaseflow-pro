@@ -3522,6 +3522,7 @@ const PurchaseOrdersDashboard = () => {
       {/* Edit OC Dialog */}
       <Dialog open={showEditOCDialog} onOpenChange={setShowEditOCDialog}>
         <DialogContent className={cn(
+          "overflow-hidden",
           "max-h-[90vh] flex flex-col",
           editingOCContracts.length > 0 ? "sm:max-w-2xl" : "sm:max-w-md"
         )}>
