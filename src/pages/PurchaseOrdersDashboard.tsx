@@ -3539,8 +3539,8 @@ const PurchaseOrdersDashboard = () => {
             </DialogTitle>
           </DialogHeader>
           
-          <ScrollArea className="flex-1 -mx-6 px-6">
-            <div className="space-y-4 pb-2">
+          <ScrollArea className="flex-1 min-h-0 -mx-6 px-6">
+            <div className="space-y-4 pb-4 pr-2">
             <div className="space-y-1.5">
               <Label htmlFor="oc_number">Número de OC</Label>
               <Input
