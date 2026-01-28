@@ -171,7 +171,10 @@ function sanitizeForDriveQuery(name: string): string {
 
 // Check if a folder exists by name in a parent
 async function getFolderByName(accessToken: string, name: string, parentId?: string): Promise<{ id: string; webViewLink: string } | null> {
-  const sanitizedName = sanitizeForDriveQuery(name);
+  // IMPORTANT: must use the exact same sanitization as createDriveFolder,
+  // otherwise lookups will miss already-created folders and create duplicates.
+  const normalizedName = sanitizeDriveName(name);
+  const sanitizedName = sanitizeForDriveQuery(normalizedName);
   let query = `name='${sanitizedName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
   
   if (parentId) {
@@ -179,7 +182,7 @@ async function getFolderByName(accessToken: string, name: string, parentId?: str
   }
   
   const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink)`,
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink,createdTime)&orderBy=createdTime asc&pageSize=10`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -205,7 +208,7 @@ async function listChildFolders(
   const query = `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
 
   const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink)&pageSize=1000`,
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink,createdTime)&pageSize=1000`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -220,10 +223,34 @@ async function listChildFolders(
   }
 
   const data = await response.json();
-  const folders: Record<string, { id: string; webViewLink: string }> = {};
+
+  // Normalize keys to match createDriveFolder() behavior.
+  // This prevents duplicates when templates contain characters that get replaced/trimmed.
+  const folders: Record<string, { id: string; webViewLink: string; createdTime?: string }> = {};
+  const duplicates: Array<{ key: string; keptId: string; dupId: string }> = [];
+
   for (const f of data.files || []) {
-    if (f?.name && f?.id) folders[f.name] = { id: f.id, webViewLink: f.webViewLink };
+    if (!f?.name || !f?.id) continue;
+    const key = sanitizeDriveName(f.name);
+    const createdTime: string | undefined = f.createdTime;
+
+    const existing = folders[key];
+    if (!existing) {
+      folders[key] = { id: f.id, webViewLink: f.webViewLink, createdTime };
+      continue;
+    }
+
+    // Duplicate name under same parent. Keep the oldest folder for determinism.
+    duplicates.push({ key, keptId: existing.id, dupId: f.id });
+    if (createdTime && existing.createdTime && createdTime < existing.createdTime) {
+      folders[key] = { id: f.id, webViewLink: f.webViewLink, createdTime };
+    }
   }
+
+  if (duplicates.length > 0) {
+    console.warn(`Found ${duplicates.length} duplicate folder(s) under parent ${parentId}`, duplicates.slice(0, 25));
+  }
+
   return folders;
 }
 
@@ -269,10 +296,11 @@ async function ensureTemplateFolders(
     }
 
     for (const child of children) {
-      let folder = existing[child.name];
+      const driveKey = sanitizeDriveName(child.name);
+      let folder = existing[driveKey];
       if (!folder) {
         folder = await createDriveFolder(accessToken, child.name, parentDriveId);
-        existing[child.name] = folder;
+        existing[driveKey] = folder;
       }
       await ensureChildren(child.id, folder.id);
     }
