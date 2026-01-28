@@ -16,7 +16,7 @@ function getCorsHeaders(req: Request): Record<string, string> {
   
   return {
     'Access-Control-Allow-Origin': isAllowed ? origin : ALLOWED_ORIGINS[0],
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
     'Access-Control-Allow-Credentials': 'true',
   };
 }
@@ -195,6 +195,100 @@ async function getFolderByName(accessToken: string, name: string, parentId?: str
   
   const data = await response.json();
   return data.files && data.files.length > 0 ? data.files[0] : null;
+}
+
+// List child folders under a parent (name -> folder). Used to avoid N queries per template.
+async function listChildFolders(
+  accessToken: string,
+  parentId: string,
+): Promise<Record<string, { id: string; webViewLink: string }>> {
+  const query = `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink)&pageSize=1000`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("Child folder listing failed:", response.status, errorText);
+    throw new Error(`Failed to list child folders: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const folders: Record<string, { id: string; webViewLink: string }> = {};
+  for (const f of data.files || []) {
+    if (f?.name && f?.id) folders[f.name] = { id: f.id, webViewLink: f.webViewLink };
+  }
+  return folders;
+}
+
+type FolderTemplate = {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  display_order: number | null;
+};
+
+async function ensureTemplateFolders(
+  accessToken: string,
+  contractDriveFolderId: string,
+  templates: FolderTemplate[],
+): Promise<void> {
+  const byParent = new Map<string | null, FolderTemplate[]>();
+  for (const t of templates) {
+    const parentId = t.parent_id ?? null;
+    const arr = byParent.get(parentId) ?? [];
+    arr.push(t);
+    byParent.set(parentId, arr);
+  }
+
+  for (const [, arr] of byParent) {
+    arr.sort((a, b) => {
+      const ao = a.display_order ?? 0;
+      const bo = b.display_order ?? 0;
+      if (ao !== bo) return ao - bo;
+      return a.name.localeCompare(b.name);
+    });
+  }
+
+  const childrenCache = new Map<string, Record<string, { id: string; webViewLink: string }>>();
+
+  async function ensureChildren(parentTemplateId: string | null, parentDriveId: string): Promise<void> {
+    const children = byParent.get(parentTemplateId) ?? [];
+    if (children.length === 0) return;
+
+    let existing = childrenCache.get(parentDriveId);
+    if (!existing) {
+      existing = await listChildFolders(accessToken, parentDriveId);
+      childrenCache.set(parentDriveId, existing);
+    }
+
+    for (const child of children) {
+      let folder = existing[child.name];
+      if (!folder) {
+        folder = await createDriveFolder(accessToken, child.name, parentDriveId);
+        existing[child.name] = folder;
+      }
+      await ensureChildren(child.id, folder.id);
+    }
+  }
+
+  // Some rows might have broken parent_id references; treat them as root.
+  const rootTemplates = (byParent.get(null) ?? []).map((t) => t.id);
+  const knownTemplateIds = new Set(templates.map((t) => t.id));
+  const danglingRoots = templates.filter((t) => t.parent_id && !knownTemplateIds.has(t.parent_id));
+  if (danglingRoots.length > 0) {
+    const arr = byParent.get(null) ?? [];
+    for (const t of danglingRoots) arr.push({ ...t, parent_id: null });
+    byParent.set(null, arr);
+  }
+
+  await ensureChildren(null, contractDriveFolderId);
 }
 
 // Upload a file to Google Drive
@@ -383,6 +477,10 @@ serve(async (req) => {
       }
       
       case "syncAllContracts": {
+        const { offset = 0, limit = 2 } = params as { offset?: number; limit?: number };
+        const safeOffset = Math.max(0, Number(offset) || 0);
+        const safeLimit = Math.min(10, Math.max(1, Number(limit) || 2));
+
         const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
         const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
         const supabase = createClient(supabaseUrl, supabaseKey);
@@ -391,100 +489,110 @@ serve(async (req) => {
         const statusFolders = await ensureStatusFolders(accessToken, rootFolderId);
         console.log("Status folders ready:", Object.keys(statusFolders));
         
-        // Get all non-deleted contracts
-        const { data: contracts, error: contractsError } = await supabase
+        // Get contracts batch (pagination)
+        const { data: contracts, error: contractsError, count: total } = await supabase
           .from('contracts')
-          .select('id, name, status, drive_folder_id')
-          .is('deleted_at', null);
+          .select('id, name, status, drive_folder_id', { count: 'exact' })
+          .is('deleted_at', null)
+          .order('created_at', { ascending: true })
+          .range(safeOffset, safeOffset + safeLimit - 1);
         
         if (contractsError) throw contractsError;
-        
-        const syncResults: any[] = [];
-        
+
+        const errors: Array<{ contractId: string; contractName: string; error: string }> = [];
+        let processedCount = 0;
+        let syncedCount = 0;
+
         for (const contract of contracts || []) {
-          const statusFolderName = getStatusFolderName(contract.status);
-          const statusFolder = statusFolders[statusFolderName];
-          
-          if (!statusFolder) {
-            console.log(`No status folder found for ${contract.status}`);
-            continue;
-          }
-          
-          // Check if contract folder exists
-          let contractFolder = contract.drive_folder_id 
-            ? await getFolderByName(accessToken, contract.name, statusFolder.id)
-            : null;
-          
-          if (!contractFolder) {
-            // Check if folder exists in root (old location) or any status folder
-            let existingFolder = await getFolderByName(accessToken, contract.name, rootFolderId);
-            
-            if (existingFolder) {
-              // Move to correct status folder
-              await moveToFolder(accessToken, existingFolder.id, statusFolder.id, rootFolderId);
-              contractFolder = existingFolder;
-              console.log(`Moved ${contract.name} to ${statusFolderName}`);
-            } else {
-              // Check in other status folders
-              for (const [folderName, folder] of Object.entries(statusFolders)) {
-                if (folderName !== statusFolderName) {
-                  existingFolder = await getFolderByName(accessToken, contract.name, folder.id);
-                  if (existingFolder) {
-                    // Move to correct status folder
-                    await moveToFolder(accessToken, existingFolder.id, statusFolder.id, folder.id);
-                    contractFolder = existingFolder;
-                    console.log(`Moved ${contract.name} from ${folderName} to ${statusFolderName}`);
-                    break;
+          processedCount++;
+
+          try {
+            const statusFolderName = getStatusFolderName(contract.status);
+            const statusFolder = statusFolders[statusFolderName];
+
+            if (!statusFolder) {
+              console.log(`No status folder found for ${contract.status}`);
+              continue;
+            }
+
+            // Check if contract folder exists
+            let contractFolder = contract.drive_folder_id
+              ? await getFolderByName(accessToken, contract.name, statusFolder.id)
+              : null;
+
+            if (!contractFolder) {
+              // Check if folder exists in root (old location) or any status folder
+              let existingFolder = await getFolderByName(accessToken, contract.name, rootFolderId);
+
+              if (existingFolder) {
+                // Move to correct status folder
+                await moveToFolder(accessToken, existingFolder.id, statusFolder.id, rootFolderId);
+                contractFolder = existingFolder;
+                console.log(`Moved ${contract.name} to ${statusFolderName}`);
+              } else {
+                // Check in other status folders
+                for (const [folderName, folder] of Object.entries(statusFolders)) {
+                  if (folderName !== statusFolderName) {
+                    existingFolder = await getFolderByName(accessToken, contract.name, folder.id);
+                    if (existingFolder) {
+                      // Move to correct status folder
+                      await moveToFolder(accessToken, existingFolder.id, statusFolder.id, folder.id);
+                      contractFolder = existingFolder;
+                      console.log(`Moved ${contract.name} from ${folderName} to ${statusFolderName}`);
+                      break;
+                    }
                   }
                 }
               }
-            }
-            
-            if (!contractFolder) {
-              // Create new folder in correct status folder
-              contractFolder = await createDriveFolder(accessToken, contract.name, statusFolder.id);
-              console.log(`Created folder for ${contract.name} in ${statusFolderName}`);
-            }
-          }
-          
-          // Update contract with drive_folder_id
-          if (contractFolder && contractFolder.id !== contract.drive_folder_id) {
-            await supabase
-              .from('contracts')
-              .update({ drive_folder_id: contractFolder.id })
-              .eq('id', contract.id);
-          }
-          
-          // Get folder templates and create subfolders
-          const { data: templates } = await supabase
-            .from('folder_templates')
-            .select('*')
-            .order('display_order', { ascending: true });
-          
-          if (templates && templates.length > 0) {
-            for (const template of templates) {
-              const existingSubfolder = await getFolderByName(accessToken, template.name, contractFolder.id);
-              if (!existingSubfolder) {
-                await createDriveFolder(accessToken, template.name, contractFolder.id);
-                console.log(`Created subfolder ${template.name} for ${contract.name}`);
+
+              if (!contractFolder) {
+                // Create new folder in correct status folder
+                contractFolder = await createDriveFolder(accessToken, contract.name, statusFolder.id);
+                console.log(`Created folder for ${contract.name} in ${statusFolderName}`);
               }
             }
+
+            // Update contract with drive_folder_id
+            if (contractFolder && contractFolder.id !== contract.drive_folder_id) {
+              await supabase
+                .from('contracts')
+                .update({ drive_folder_id: contractFolder.id })
+                .eq('id', contract.id);
+            }
+
+            // Keep bulk sync fast: ensure only the essential folder needed for OC uploads.
+            // Other repository subfolders can be created on-demand via existing endpoints.
+            const ocFolderName = 'OC';
+            const existingOC = await getFolderByName(accessToken, ocFolderName, contractFolder.id);
+            if (!existingOC) {
+              await createDriveFolder(accessToken, ocFolderName, contractFolder.id);
+            }
+
+            syncedCount++;
+          } catch (e: any) {
+            console.error(`Failed syncing contract ${contract?.id} (${contract?.name})`, e);
+            errors.push({
+              contractId: contract.id,
+              contractName: contract.name,
+              error: e?.message || String(e),
+            });
           }
-          
-          syncResults.push({
-            contractId: contract.id,
-            contractName: contract.name,
-            status: contract.status,
-            driveFolderId: contractFolder.id,
-            statusFolder: statusFolderName
-          });
         }
-        
-        result = { 
-          success: true, 
-          syncedCount: syncResults.length,
-          contracts: syncResults,
-          statusFolders: Object.entries(statusFolders).map(([name, f]) => ({ name, id: f.id, webViewLink: f.webViewLink }))
+
+        const nextOffset = safeOffset + (contracts?.length || 0);
+        const totalCount = total ?? null;
+        const hasMore = totalCount !== null ? nextOffset < totalCount : (contracts?.length || 0) === safeLimit;
+
+        result = {
+          success: true,
+          offset: safeOffset,
+          limit: safeLimit,
+          nextOffset,
+          hasMore,
+          total: totalCount,
+          processedCount,
+          syncedCount,
+          errors,
         };
         break;
       }
@@ -554,19 +662,16 @@ serve(async (req) => {
           .update({ drive_folder_id: contractFolder.id })
           .eq('id', contract.id);
         
-        // Create subfolders from templates
-        const { data: templates } = await supabase
+        // Create subfolders from templates (recursive)
+        const { data: templatesRaw, error: templatesError } = await supabase
           .from('folder_templates')
-          .select('*')
+          .select('id, name, parent_id, display_order')
           .order('display_order', { ascending: true });
-        
-        if (templates) {
-          for (const template of templates) {
-            const existingSubfolder = await getFolderByName(accessToken, template.name, contractFolder.id);
-            if (!existingSubfolder) {
-              await createDriveFolder(accessToken, template.name, contractFolder.id);
-            }
-          }
+
+        if (templatesError) throw templatesError;
+        const templates = (templatesRaw || []) as FolderTemplate[];
+        if (templates.length > 0) {
+          await ensureTemplateFolders(accessToken, contractFolder.id, templates);
         }
         
         result = {
