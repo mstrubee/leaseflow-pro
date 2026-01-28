@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -69,6 +69,7 @@ import {
   Pencil,
   CreditCard,
   AlertTriangle,
+  Upload,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
@@ -80,6 +81,7 @@ import { CentralizedOrderCreator } from "@/components/budget/CentralizedOrderCre
 import { OCRequestViewDialog } from "@/components/budget/OCRequestViewDialog";
 import { ConvertOCRequestDialog } from "@/components/budget/ConvertOCRequestDialog";
 import { formatCLP } from "@/lib/utils";
+import { backupOCFileToRepository } from "@/lib/repositoryBackup";
 
 interface Invoice {
   id: string;
@@ -265,12 +267,15 @@ const PurchaseOrdersDashboard = () => {
     supplier_name: "",
     order_date: "",
     opex_category_id: "" as string | null,
+    attachment_url: "" as string | null,
   });
   const [editingOCId, setEditingOCId] = useState<string | null>(null);
   const [editingOCContracts, setEditingOCContracts] = useState<{ contract_id: string; contract_name: string; amount_uf: number; amount_clp: number; amount_input: number; currency: "UF" | "CLP"; order_id?: string }[]>([]);
   const [editingOCIsMulti, setEditingOCIsMulti] = useState(false);
   const [updatingOC, setUpdatingOC] = useState(false);
   const [editingOCOriginalOrderNumber, setEditingOCOriginalOrderNumber] = useState<string>("");
+  const [editingOCFile, setEditingOCFile] = useState<File | null>(null);
+  const editOCFileInputRef = useRef<HTMLInputElement>(null);
 
   // Credit notes storage
   const [creditNotes, setCreditNotes] = useState<Map<string, { id: string; credit_note_number: string; amount_uf: number; invoice_id: string; }[]>>(new Map());
@@ -1408,20 +1413,25 @@ const PurchaseOrdersDashboard = () => {
   const handleOpenEditOCDialog = async (groupedOrder: GroupedOrder) => {
     setEditingOCId(groupedOrder.orders[0].id);
     setEditingOCOriginalOrderNumber(groupedOrder.order_number);
+    setEditingOCFile(null);
+    
+    // Fetch full order data including amount_clp and attachment_url for each contract
+    const orderIds = groupedOrder.orders.map(o => o.id);
+    const { data: fullOrders } = await supabase
+      .from("purchase_orders")
+      .select("id, contract_id, amount_uf, amount_clp, attachment_url")
+      .in("id", orderIds);
+    
+    const firstOrderAttachment = fullOrders?.[0]?.attachment_url || null;
+    
     setEditingOCData({
       order_number: groupedOrder.order_number,
       description: groupedOrder.description || "",
       supplier_name: groupedOrder.supplier_name || "",
       order_date: groupedOrder.order_date || "",
       opex_category_id: groupedOrder.orders[0].opex_category_id || "",
+      attachment_url: firstOrderAttachment,
     });
-    
-    // Fetch full order data including amount_clp for each contract
-    const orderIds = groupedOrder.orders.map(o => o.id);
-    const { data: fullOrders } = await supabase
-      .from("purchase_orders")
-      .select("id, contract_id, amount_uf, amount_clp")
-      .in("id", orderIds);
     
     const orderClpMap = new Map<string, number>();
     (fullOrders || []).forEach(o => {
@@ -1518,12 +1528,31 @@ const PurchaseOrdersDashboard = () => {
     
     setUpdatingOC(true);
     try {
+      // Upload new file to Drive if selected
+      let newAttachmentUrl = editingOCData.attachment_url;
+      if (editingOCFile && editingOCContracts.length > 0) {
+        const firstContractId = editingOCContracts[0].contract_id;
+        const result = await backupOCFileToRepository(firstContractId, editingOCFile, editingOCData.order_number);
+        if (result.success && result.fileId) {
+          const { data: fileRecord } = await supabase
+            .from("repository_files")
+            .select("url")
+            .eq("id", result.fileId)
+            .single();
+          if (fileRecord?.url) {
+            newAttachmentUrl = fileRecord.url;
+          }
+          toast.success("Archivo subido a Drive");
+        } else {
+          toast.error("No se pudo subir el archivo: " + (result.error || "Error desconocido"));
+        }
+      }
+
       // Find all existing orders with the original order_number
       const existingOrders = orders.filter(o => o.order_number === editingOCOriginalOrderNumber);
       const existingContractIds = new Set(existingOrders.map(o => o.contract_id));
       const newContractIds = new Set(editingOCContracts.map(c => c.contract_id));
       
-      // Determine which contracts to add, update, or remove
       const contractsToAdd = editingOCContracts.filter(c => !existingContractIds.has(c.contract_id));
       const contractsToUpdate = editingOCContracts.filter(c => existingContractIds.has(c.contract_id));
       const contractsToRemove = existingOrders.filter(o => !newContractIds.has(o.contract_id));
@@ -1531,65 +1560,42 @@ const PurchaseOrdersDashboard = () => {
       const isMulti = editingOCContracts.length > 1;
       const firstExistingOrder = existingOrders[0];
       
-      // Remove contracts that were deleted
       for (const order of contractsToRemove) {
-        // Check if this order has invoices
         if (order.invoices && order.invoices.length > 0) {
           throw new Error(`No se puede eliminar el contrato ${order.contract_name} porque tiene facturas asociadas`);
         }
-        
-        // Soft delete the order
-        const { error } = await supabase
-          .from("purchase_orders")
-          .update({ deleted_at: new Date().toISOString() })
-          .eq("id", order.id);
-        
-        if (error) throw error;
-        
-        // Also delete allocation if exists
-        await supabase
-          .from("purchase_order_contract_allocations")
-          .delete()
-          .eq("purchase_order_id", order.id);
+        await supabase.from("purchase_orders").update({ deleted_at: new Date().toISOString() }).eq("id", order.id);
+        await supabase.from("purchase_order_contract_allocations").delete().eq("purchase_order_id", order.id);
       }
       
-      // Update existing contracts
       for (const contractData of contractsToUpdate) {
         const existingOrder = existingOrders.find(o => o.contract_id === contractData.contract_id);
         if (!existingOrder) continue;
         
-        const { error } = await supabase
-          .from("purchase_orders")
-          .update({
-            order_number: editingOCData.order_number,
-            description: editingOCData.description || null,
-            supplier_name: editingOCData.supplier_name || null,
-            order_date: editingOCData.order_date || null,
-            opex_category_id: editingOCData.opex_category_id || null,
-            amount_uf: contractData.amount_uf,
-            amount_clp: contractData.amount_clp,
-            input_currency: contractData.currency,
-            uf_value_at_entry: ufValue,
-            is_multi_contract: isMulti,
-          })
-          .eq("id", existingOrder.id);
-
-        if (error) throw error;
+        await supabase.from("purchase_orders").update({
+          order_number: editingOCData.order_number,
+          description: editingOCData.description || null,
+          supplier_name: editingOCData.supplier_name || null,
+          order_date: editingOCData.order_date || null,
+          opex_category_id: editingOCData.opex_category_id || null,
+          amount_uf: contractData.amount_uf,
+          amount_clp: contractData.amount_clp,
+          input_currency: contractData.currency,
+          uf_value_at_entry: ufValue,
+          is_multi_contract: isMulti,
+          attachment_url: newAttachmentUrl,
+        }).eq("id", existingOrder.id);
         
-        // Update allocation
-        await supabase
-          .from("purchase_order_contract_allocations")
-          .upsert({
-            purchase_order_id: existingOrder.id,
-            contract_id: contractData.contract_id,
-            amount_uf: contractData.amount_uf,
-            amount_clp: contractData.amount_clp,
-          }, { onConflict: "purchase_order_id,contract_id" });
+        await supabase.from("purchase_order_contract_allocations").upsert({
+          purchase_order_id: existingOrder.id,
+          contract_id: contractData.contract_id,
+          amount_uf: contractData.amount_uf,
+          amount_clp: contractData.amount_clp,
+        }, { onConflict: "purchase_order_id,contract_id" });
       }
       
-      // Add new contracts
       for (const contractData of contractsToAdd) {
-        const newOrderData: any = {
+        const insertData = {
           order_number: editingOCData.order_number,
           description: editingOCData.description || null,
           supplier_name: editingOCData.supplier_name || null,
@@ -1601,29 +1607,22 @@ const PurchaseOrdersDashboard = () => {
           input_currency: contractData.currency,
           uf_value_at_entry: ufValue,
           year: firstExistingOrder?.year || new Date().getFullYear(),
-          budget_classification: firstExistingOrder?.budget_classification || "OPEX",
+          budget_classification: (firstExistingOrder?.budget_classification || "OPEX") as "CAPEX" | "OPEX",
           status: "abierta" as const,
           is_multi_contract: isMulti,
+          attachment_url: newAttachmentUrl,
         };
-        
-        const { data: newOrder, error: insertError } = await supabase
-          .from("purchase_orders")
-          .insert(newOrderData)
-          .select()
-          .single();
+        const { data: newOrder, error: insertError } = await supabase.from("purchase_orders").insert(insertData).select().single();
 
         if (insertError) throw insertError;
         
-        // Create allocation for new order
         if (newOrder) {
-          await supabase
-            .from("purchase_order_contract_allocations")
-            .insert({
-              purchase_order_id: newOrder.id,
-              contract_id: contractData.contract_id,
-              amount_uf: contractData.amount_uf,
-              amount_clp: contractData.amount_clp,
-            });
+          await supabase.from("purchase_order_contract_allocations").insert({
+            purchase_order_id: newOrder.id,
+            contract_id: contractData.contract_id,
+            amount_uf: contractData.amount_uf,
+            amount_clp: contractData.amount_clp,
+          });
         }
       }
 
@@ -1631,6 +1630,7 @@ const PurchaseOrdersDashboard = () => {
       setShowEditOCDialog(false);
       setEditingOCId(null);
       setEditingOCOriginalOrderNumber("");
+      setEditingOCFile(null);
       loadData();
     } catch (error: any) {
       toast.error("Error al actualizar OC: " + error.message);
