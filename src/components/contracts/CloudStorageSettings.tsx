@@ -80,21 +80,59 @@ export const CloudStorageSettings = ({ defaultCollapsed = false }: CloudStorageS
         description: "Este proceso puede tomar unos minutos dependiendo del número de contratos.",
       });
 
-      const { data, error } = await supabase.functions.invoke('google-drive', {
-        body: { action: 'syncAllContracts' }
-      });
+      const limit = 2; // Mantener lotes pequeños para evitar timeouts
+      let offset = 0;
+      let totalSynced = 0;
+      let totalErrors = 0;
 
-      if (error) throw error;
+      const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-      if (data?.success) {
-        setLastSyncResult({ success: true, count: data.syncedCount || 0 });
-        toast({
-          title: "¡Sincronización completada!",
-          description: `Se sincronizaron ${data.syncedCount || 0} contratos con Google Drive.`,
-        });
-      } else {
-        throw new Error("Error en la sincronización");
+      const invokeWithRetry = async (body: any, maxAttempts = 3) => {
+        let lastErr: any = null;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            const res = await supabase.functions.invoke("google-drive", { body });
+            if (res.error) throw res.error;
+            return res;
+          } catch (e: any) {
+            lastErr = e;
+            // Small backoff to survive transient network/edge hiccups
+            if (attempt < maxAttempts) {
+              await sleep(500 * attempt);
+            }
+          }
+        }
+        throw lastErr;
+      };
+
+      // Safety guard to avoid infinite loops in case of unexpected backend response
+      for (let i = 0; i < 10000; i++) {
+        const { data } = await invokeWithRetry({ action: "syncAllContracts", offset, limit });
+        if (!data?.success) throw new Error(data?.error || "Error en la sincronización");
+
+        totalSynced += Number(data.syncedCount || 0);
+        totalErrors += Array.isArray(data.errors) ? data.errors.length : 0;
+
+        if (data.hasMore) {
+          const nextOffset = Number(data.nextOffset);
+          if (!Number.isFinite(nextOffset) || nextOffset <= offset) {
+            throw new Error("Sincronización detenida: no se pudo avanzar al siguiente lote");
+          }
+          offset = nextOffset;
+          continue;
+        }
+
+        break;
       }
+
+      setLastSyncResult({ success: true, count: totalSynced });
+      toast({
+        title: totalErrors > 0 ? "Sincronización completada con advertencias" : "¡Sincronización completada!",
+        description:
+          totalErrors > 0
+            ? `Se sincronizaron ${totalSynced} contratos. ${totalErrors} contrato(s) tuvieron errores (ver consola/logs).`
+            : `Se sincronizaron ${totalSynced} contratos con Google Drive.`,
+      });
     } catch (error: any) {
       console.error("Sync error:", error);
       setLastSyncResult({ success: false, count: 0 });
