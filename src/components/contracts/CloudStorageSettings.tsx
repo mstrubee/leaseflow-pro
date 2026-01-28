@@ -9,7 +9,10 @@ import {
   Cloud, 
   Plus, 
   Trash2, 
-  ExternalLink 
+  ExternalLink,
+  RefreshCw,
+  Loader2,
+  CheckCircle2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -54,6 +57,8 @@ export const CloudStorageSettings = ({ defaultCollapsed = false }: CloudStorageS
   const [connections, setConnections] = useState<CloudConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSyncResult, setLastSyncResult] = useState<{ success: boolean; count: number } | null>(null);
   
   // Form states
   const [newProvider, setNewProvider] = useState("");
@@ -64,6 +69,44 @@ export const CloudStorageSettings = ({ defaultCollapsed = false }: CloudStorageS
   useEffect(() => {
     loadConnections();
   }, []);
+
+  const handleSyncAllContracts = async () => {
+    setSyncing(true);
+    setLastSyncResult(null);
+    
+    try {
+      toast({
+        title: "Sincronizando contratos...",
+        description: "Este proceso puede tomar unos minutos dependiendo del número de contratos.",
+      });
+
+      const { data, error } = await supabase.functions.invoke('google-drive', {
+        body: { action: 'syncAllContracts' }
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        setLastSyncResult({ success: true, count: data.syncedCount || 0 });
+        toast({
+          title: "¡Sincronización completada!",
+          description: `Se sincronizaron ${data.syncedCount || 0} contratos con Google Drive.`,
+        });
+      } else {
+        throw new Error("Error en la sincronización");
+      }
+    } catch (error: any) {
+      console.error("Sync error:", error);
+      setLastSyncResult({ success: false, count: 0 });
+      toast({
+        variant: "destructive",
+        title: "Error de sincronización",
+        description: error.message || "No se pudo sincronizar con Google Drive",
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const loadConnections = async () => {
     try {
@@ -196,10 +239,28 @@ export const CloudStorageSettings = ({ defaultCollapsed = false }: CloudStorageS
         icon={<Cloud className="h-5 w-5" />}
         defaultOpen={!defaultCollapsed}
         headerActions={
-          <Button onClick={(e) => { e.stopPropagation(); setDialogOpen(true); }} className="gap-2" size="sm">
-            <Plus className="h-4 w-4" />
-            Agregar Conexión
-          </Button>
+          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            <Button 
+              onClick={handleSyncAllContracts} 
+              variant="outline"
+              className="gap-2" 
+              size="sm"
+              disabled={syncing}
+            >
+              {syncing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : lastSyncResult?.success ? (
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              {syncing ? "Sincronizando..." : "Sincronizar Contratos con Drive"}
+            </Button>
+            <Button onClick={() => setDialogOpen(true)} className="gap-2" size="sm">
+              <Plus className="h-4 w-4" />
+              Agregar Conexión
+            </Button>
+          </div>
         }
       >
           {connections.length > 0 ? (
