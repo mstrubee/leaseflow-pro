@@ -80,8 +80,9 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Ba
 import { CentralizedOrderCreator } from "@/components/budget/CentralizedOrderCreator";
 import { OCRequestViewDialog } from "@/components/budget/OCRequestViewDialog";
 import { ConvertOCRequestDialog } from "@/components/budget/ConvertOCRequestDialog";
-import { formatCLP } from "@/lib/utils";
-import { backupOCFileToRepository } from "@/lib/repositoryBackup";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn, formatCLP } from "@/lib/utils";
+import { backupOCFileToRepository, uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
 
 interface Invoice {
   id: string;
@@ -1528,23 +1529,30 @@ const PurchaseOrdersDashboard = () => {
     
     setUpdatingOC(true);
     try {
-      // Upload new file to Drive if selected
+      // Upload new file to Drive if selected - copy to ALL contracts in multi-contract OC
       let newAttachmentUrl = editingOCData.attachment_url;
       if (editingOCFile && editingOCContracts.length > 0) {
-        const firstContractId = editingOCContracts[0].contract_id;
-        const result = await backupOCFileToRepository(firstContractId, editingOCFile, editingOCData.order_number);
-        if (result.success && result.fileId) {
-          const { data: fileRecord } = await supabase
-            .from("repository_files")
-            .select("url")
-            .eq("id", result.fileId)
-            .single();
-          if (fileRecord?.url) {
-            newAttachmentUrl = fileRecord.url;
+        const contractIds = editingOCContracts.map(c => c.contract_id);
+        
+        // Use the new function to upload to all contracts at once
+        const uploadResult = await uploadFileToMultipleContracts(
+          editingOCFile,
+          contractIds,
+          editingOCData.order_number
+        );
+        
+        if (uploadResult.primaryUrl) {
+          newAttachmentUrl = uploadResult.primaryUrl;
+          const successCount = uploadResult.successful.length;
+          const totalCount = contractIds.length;
+          
+          if (successCount === totalCount) {
+            toast.success(`Archivo subido a ${successCount} contrato${successCount > 1 ? 's' : ''}`);
+          } else {
+            toast.warning(`Archivo subido a ${successCount} de ${totalCount} contratos`);
           }
-          toast.success("Archivo subido a Drive");
         } else {
-          toast.error("No se pudo subir el archivo: " + (result.error || "Error desconocido"));
+          toast.error("No se pudo subir el archivo a ningún contrato");
         }
       }
 
@@ -3513,8 +3521,11 @@ const PurchaseOrdersDashboard = () => {
 
       {/* Edit OC Dialog */}
       <Dialog open={showEditOCDialog} onOpenChange={setShowEditOCDialog}>
-        <DialogContent className={editingOCContracts.length > 0 ? "sm:max-w-2xl" : "sm:max-w-md"}>
-          <DialogHeader>
+        <DialogContent className={cn(
+          "max-h-[90vh] flex flex-col",
+          editingOCContracts.length > 0 ? "sm:max-w-2xl" : "sm:max-w-md"
+        )}>
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <Pencil className="h-5 w-5" />
               Editar Orden de Compra
@@ -3527,7 +3538,8 @@ const PurchaseOrdersDashboard = () => {
             </DialogTitle>
           </DialogHeader>
           
-          <div className="space-y-4">
+          <ScrollArea className="flex-1 -mx-6 px-6">
+            <div className="space-y-4 pb-2">
             <div className="space-y-1.5">
               <Label htmlFor="oc_number">Número de OC</Label>
               <Input
@@ -3783,9 +3795,10 @@ const PurchaseOrdersDashboard = () => {
                 </div>
               </div>
             </div>
-          </div>
+            </div>
+          </ScrollArea>
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="flex-shrink-0 gap-2 sm:gap-0 pt-4 border-t">
             <Button variant="outline" onClick={() => setShowEditOCDialog(false)} disabled={updatingOC}>
               Cancelar
             </Button>

@@ -40,7 +40,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { uploadFileToStorage } from "@/lib/storageUtils";
 import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
-import { backupOCToMultipleContracts } from "@/lib/repositoryBackup";
+import { backupOCToMultipleContracts, uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -190,14 +190,27 @@ export const ConvertOCRequestDialog = ({
 
     setConverting(true);
     try {
-      // Upload OC file if provided
-      let fileData: { url: string; fileName: string } | null = null;
+      // Determine which contracts will receive the OC
+      const contractIds = isMultiContract && request.allocations 
+        ? request.allocations.map(a => a.contract_id)
+        : [request.contract_id];
+      
+      // Upload OC file directly to all contracts' Drive folders if provided
+      let attachmentUrl: string | null = null;
       if (ocFile) {
-        fileData = await uploadOCFile();
+        const uploadResult = await uploadFileToMultipleContracts(ocFile, contractIds, orderNumber);
+        attachmentUrl = uploadResult.primaryUrl;
+        
+        if (uploadResult.successful.length > 0 && uploadResult.successful.length < contractIds.length) {
+          toast({
+            title: "Archivo subido parcialmente",
+            description: `Subido a ${uploadResult.successful.length} de ${contractIds.length} contratos`,
+          });
+        }
+      } else {
+        // No new file, use existing quotation URL
+        attachmentUrl = request.quotation_url || null;
       }
-
-      // Determine attachment URL (uploaded file takes priority, then quotation)
-      const attachmentUrl = fileData?.url || request.quotation_url || null;
 
       if (isMultiContract && request.allocations) {
         // Multi-contract: Create a PO for each allocation
@@ -275,15 +288,10 @@ export const ConvertOCRequestDialog = ({
         if (ocError) throw ocError;
       }
 
-      // Backup OC file to repository for all affected contracts
-      if (attachmentUrl) {
-        const fileName = fileData?.fileName || request.quotation_file_name || "documento_oc.pdf";
-        if (isMultiContract && request.allocations) {
-          const contractIds = request.allocations.map(a => a.contract_id);
-          await backupOCToMultipleContracts(contractIds, attachmentUrl, orderNumber, fileName);
-        } else {
-          await backupOCToMultipleContracts([request.contract_id], attachmentUrl, orderNumber, fileName);
-        }
+      // For existing quotation URLs that weren't uploaded fresh, backup to repository
+      if (attachmentUrl && !ocFile) {
+        const fileName = request.quotation_file_name || "documento_oc.pdf";
+        await backupOCToMultipleContracts(contractIds, attachmentUrl, orderNumber, fileName);
       }
 
       // Update the request status to converted
