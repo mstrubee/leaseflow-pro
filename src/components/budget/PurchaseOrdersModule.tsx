@@ -1282,11 +1282,12 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       </CardContent>
 
       <Dialog open={showNewDialog} onOpenChange={(open) => { setShowNewDialog(open); if (!open) setBudgetWarning(null); }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
+        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Nueva Orden de Compra</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <ScrollArea className="flex-1 -mx-6 px-6">
+            <div className="space-y-4 pb-2">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Nº OC</Label>
@@ -1591,8 +1592,9 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                 </div>
               </div>
             )}
-          </div>
-          <DialogFooter>
+            </div>
+          </ScrollArea>
+          <DialogFooter className="flex-shrink-0 pt-4 border-t">
             <Button variant="outline" onClick={() => { setShowNewDialog(false); setBudgetWarning(null); }}>Cancelar</Button>
             <Button 
               onClick={handleCreateOrder}
@@ -1611,11 +1613,12 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
 
       {/* Edit Order Dialog */}
       <Dialog open={showEditDialog} onOpenChange={(open) => { setShowEditDialog(open); if (!open) setBudgetWarning(null); }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
+        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Editar Orden de Compra</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <ScrollArea className="flex-1 -mx-6 px-6">
+            <div className="space-y-4 pb-2">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Nº OC</Label>
@@ -1801,8 +1804,9 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                 </div>
               </div>
             )}
-          </div>
-          <DialogFooter>
+            </div>
+          </ScrollArea>
+          <DialogFooter className="flex-shrink-0 pt-4 border-t">
             <Button variant="outline" onClick={() => { setShowEditDialog(false); setEditOcFile(null); setBudgetWarning(null); }}>Cancelar</Button>
             <Button 
               onClick={handleUpdateOrder}

@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { useAuth } from "@/hooks/useAuth";
 import { uploadFileToStorage } from "@/lib/storageUtils";
-import { backupOCToMultipleContracts, backupOCFromStorageUrl } from "@/lib/repositoryBackup";
+import { backupOCToMultipleContracts, backupOCFromStorageUrl, backupOCFileToRepository, uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
 interface Contract {
   id: string;
   name: string;
@@ -478,10 +478,29 @@ export const CentralizedOrderCreator = ({
         const { number } = await generateNumber();
         const orderNumber = formData.order_number || number;
         
-        // Upload quotation file if present
-        let quotationData: { url: string; fileName: string } | null = null;
-        if (quotationFile) {
-          quotationData = await uploadQuotationFile();
+        // For multi-contract OCs, upload file directly to each contract's Drive folder
+        let attachmentUrl: string | null = null;
+        if (quotationFile && isMultiContract && contractAllocations.length > 0) {
+          // Upload directly to all contracts' OC folders
+          const contractIds = contractAllocations.map(a => a.contractId);
+          const uploadResult = await uploadFileToMultipleContracts(quotationFile, contractIds, orderNumber);
+          attachmentUrl = uploadResult.primaryUrl;
+          
+          if (uploadResult.successful.length > 0) {
+            const successCount = uploadResult.successful.length;
+            const totalCount = contractIds.length;
+            if (successCount < totalCount) {
+              toast({ 
+                title: "Archivo subido parcialmente", 
+                description: `Subido a ${successCount} de ${totalCount} contratos`,
+                variant: "default"
+              });
+            }
+          }
+        } else if (quotationFile) {
+          // Single contract: upload to storage first, then backup to repository
+          const quotationData = await uploadQuotationFile();
+          attachmentUrl = quotationData?.url || null;
         }
         
         if (isMultiContract && contractAllocations.length > 0) {
@@ -522,7 +541,7 @@ export const CentralizedOrderCreator = ({
                 year: year,
                 status: "abierta",
                 budget_classification: "OPEX",
-                attachment_url: quotationData?.url || null,
+                attachment_url: attachmentUrl,
                 is_multi_contract: true
               })
               .select("id")
@@ -541,15 +560,14 @@ export const CentralizedOrderCreator = ({
             }
           }
           
-          // Backup OC file to repository for all contracts
-          if (quotationData?.url) {
-            const contractIds = contractAllocations.map(a => a.contractId);
-            await backupOCToMultipleContracts(contractIds, quotationData.url, orderNumber, quotationData.fileName);
-          }
-          
           toast({ title: "Orden creada", description: `OC ${orderNumber} creada para ${contractAllocations.length} contratos` });
         } else {
           // Single contract: Create one PO
+          // For single contract, backup file to repository after upload
+          if (attachmentUrl && primaryContractId && quotationFile) {
+            await backupOCFileToRepository(primaryContractId, quotationFile, orderNumber);
+          }
+          
           const orderPayload: any = {
             contract_id: primaryContractId,
             budget_id: null,
@@ -568,7 +586,7 @@ export const CentralizedOrderCreator = ({
             year: year,
             status: "abierta",
             budget_classification: "OPEX",
-            attachment_url: quotationData?.url || null,
+            attachment_url: attachmentUrl,
             is_multi_contract: false
           };
           
@@ -577,11 +595,6 @@ export const CentralizedOrderCreator = ({
             .insert(orderPayload);
           
           if (orderError) throw orderError;
-          
-          // Backup OC file to repository
-          if (quotationData?.url && primaryContractId) {
-            await backupOCFromStorageUrl(primaryContractId, quotationData.url, orderNumber, quotationData.fileName);
-          }
           
           toast({ title: "Orden creada", description: `OC ${orderNumber} creada exitosamente` });
         }

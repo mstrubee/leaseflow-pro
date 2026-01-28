@@ -208,6 +208,7 @@ export async function backupOCFromStorageUrl(
 
 /**
  * Backup OC file to multiple contract repositories (for multi-contract OCs).
+ * Uses URL-based backup which creates references in each contract's OC folder.
  */
 export async function backupOCToMultipleContracts(
   contractIds: string[],
@@ -234,4 +235,48 @@ export async function backupOCToMultipleContracts(
   }
 
   return { successful, failed };
+}
+
+/**
+ * Upload a file directly to multiple contracts' OC folders in Google Drive.
+ * This creates actual copies of the file in each contract's repository.
+ */
+export async function uploadFileToMultipleContracts(
+  file: File,
+  contractIds: string[],
+  orderNumber: string
+): Promise<{ 
+  successful: { contractId: string; url: string; fileId: string }[]; 
+  failed: { contractId: string; error: string }[];
+  primaryUrl: string | null;
+}> {
+  const successful: { contractId: string; url: string; fileId: string }[] = [];
+  const failed: { contractId: string; error: string }[] = [];
+
+  for (const contractId of contractIds) {
+    const result = await backupOCFileToRepository(contractId, file, orderNumber);
+    
+    if (result.success && result.fileId) {
+      // Get the file URL from the created record
+      const { data: fileRecord } = await supabase
+        .from("repository_files")
+        .select("url")
+        .eq("id", result.fileId)
+        .single();
+      
+      if (fileRecord?.url) {
+        successful.push({ contractId, url: fileRecord.url, fileId: result.fileId });
+      } else {
+        failed.push({ contractId, error: "No se pudo obtener la URL del archivo" });
+      }
+    } else {
+      failed.push({ contractId, error: result.error || "Error desconocido" });
+    }
+  }
+
+  return { 
+    successful, 
+    failed,
+    primaryUrl: successful.length > 0 ? successful[0].url : null
+  };
 }
