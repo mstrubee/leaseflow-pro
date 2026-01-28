@@ -1552,7 +1552,14 @@ const PurchaseOrdersDashboard = () => {
             toast.warning(`Archivo subido a ${successCount} de ${totalCount} contratos`);
           }
         } else {
-          toast.error("No se pudo subir el archivo a ningún contrato");
+          // Show more helpful error message
+          const firstError = uploadResult.failed[0]?.error || "Error desconocido";
+          const isDriveError = firstError.includes("Google Drive") || firstError.includes("sincronizado");
+          if (isDriveError) {
+            toast.error("Los contratos no tienen Google Drive configurado. Configure Drive en cada contrato antes de subir archivos.", { duration: 6000 });
+          } else {
+            toast.error(`No se pudo subir el archivo: ${firstError}`);
+          }
         }
       }
 
