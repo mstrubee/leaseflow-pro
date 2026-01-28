@@ -1,17 +1,16 @@
 import { supabase } from "@/integrations/supabase/client";
-import { uploadFileToStorage } from "./storageUtils";
 import { sanitizeFileName } from "./fileValidation";
 
 /**
  * Get or create the standard "OC" folder for a contract's repository.
- * Returns the folder ID for the OC folder.
+ * Returns the folder info including ID and drive_folder_id.
  */
-export async function getOrCreateOCFolder(contractId: string): Promise<string | null> {
+export async function getOrCreateOCFolder(contractId: string): Promise<{ id: string; driveFolderId: string | null } | null> {
   try {
     // First, try to find an existing OC folder for this contract
     const { data: existingFolder, error: findError } = await supabase
       .from("repository_folders")
-      .select("id")
+      .select("id, drive_folder_id")
       .eq("contract_id", contractId)
       .or("folder_type.eq.oc,name.ilike.OC")
       .is("parent_id", null)
@@ -19,7 +18,31 @@ export async function getOrCreateOCFolder(contractId: string): Promise<string | 
       .single();
 
     if (existingFolder) {
-      return existingFolder.id;
+      return { id: existingFolder.id, driveFolderId: existingFolder.drive_folder_id };
+    }
+
+    // Get contract's drive folder ID to create OC folder in Drive
+    const { data: contract } = await supabase
+      .from("contracts")
+      .select("drive_folder_id")
+      .eq("id", contractId)
+      .single();
+
+    let driveFolderId: string | null = null;
+
+    // Create OC folder in Drive if contract has Drive linked
+    if (contract?.drive_folder_id) {
+      const { data: driveData, error: driveError } = await supabase.functions.invoke('google-drive', {
+        body: { 
+          action: 'ensureSubfolderExists',
+          parentDriveFolderId: contract.drive_folder_id,
+          folderName: 'OC'
+        }
+      });
+
+      if (!driveError && driveData?.id) {
+        driveFolderId = driveData.id;
+      }
     }
 
     // If not found, create the OC folder
@@ -30,8 +53,9 @@ export async function getOrCreateOCFolder(contractId: string): Promise<string | 
         name: "OC",
         folder_type: "oc",
         parent_id: null,
+        drive_folder_id: driveFolderId,
       })
-      .select("id")
+      .select("id, drive_folder_id")
       .single();
 
     if (createError) {
@@ -39,7 +63,7 @@ export async function getOrCreateOCFolder(contractId: string): Promise<string | 
       return null;
     }
 
-    return newFolder?.id || null;
+    return newFolder ? { id: newFolder.id, driveFolderId: newFolder.drive_folder_id } : null;
   } catch (error) {
     console.error("Error in getOrCreateOCFolder:", error);
     return null;
@@ -47,7 +71,7 @@ export async function getOrCreateOCFolder(contractId: string): Promise<string | 
 }
 
 /**
- * Backup an OC file to the contract's repository OC folder.
+ * Backup an OC file to the contract's repository OC folder (Google Drive only).
  * This ensures all OC documents are centralized in the repository.
  */
 export async function backupOCFileToRepository(
@@ -56,33 +80,50 @@ export async function backupOCFileToRepository(
   orderNumber: string
 ): Promise<{ success: boolean; fileId?: string; error?: string }> {
   try {
-    const folderId = await getOrCreateOCFolder(contractId);
-    if (!folderId) {
+    const folderInfo = await getOrCreateOCFolder(contractId);
+    if (!folderInfo) {
       return { success: false, error: "No se pudo obtener o crear la carpeta OC" };
+    }
+
+    // REQUIRED: Drive must be configured for uploads
+    if (!folderInfo.driveFolderId) {
+      return { success: false, error: "El contrato debe estar sincronizado con Google Drive para guardar archivos OC" };
     }
 
     // Generate unique file name with order number prefix
     const fileExt = file.name.split(".").pop();
     const sanitizedName = sanitizeFileName(file.name);
-    const timestamp = Date.now();
-    const fileName = `${orderNumber}_${timestamp}_${sanitizedName}`;
-    const filePath = `${contractId}/${folderId}/${fileName}`;
+    const fileName = `OC_${orderNumber}_${sanitizedName}`;
 
-    // Upload to storage
-    const { path, error: uploadError } = await uploadFileToStorage(filePath, file);
+    // Convert file to base64 for Drive upload
+    const arrayBuffer = await file.arrayBuffer();
+    const base64Content = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
 
-    if (uploadError) {
-      return { success: false, error: uploadError.message };
+    // Upload directly to Google Drive
+    const { data: driveData, error: driveError } = await supabase.functions.invoke('google-drive', {
+      body: { 
+        action: 'uploadFile',
+        fileName,
+        fileContent: base64Content,
+        mimeType: file.type || 'application/octet-stream',
+        driveFolderId: folderInfo.driveFolderId
+      }
+    });
+
+    if (driveError) {
+      console.error("Error uploading to Drive:", driveError);
+      return { success: false, error: driveError.message };
     }
 
-    // Create record in repository_files
+    // Create record in repository_files with Drive URL
     const { data: fileRecord, error: dbError } = await supabase
       .from("repository_files")
       .insert({
-        folder_id: folderId,
-        name: `OC_${orderNumber}_${file.name}`,
-        url: path,
+        folder_id: folderInfo.id,
+        name: fileName,
+        url: driveData.webViewLink || driveData.webContentLink || '',
         file_type: fileExt || null,
+        drive_file_id: driveData.id,
       })
       .select("id")
       .single();
@@ -100,8 +141,9 @@ export async function backupOCFileToRepository(
 }
 
 /**
- * Backup an OC file from an existing storage URL to the contract's repository.
+ * Backup an OC file from an existing URL to the contract's repository (Drive only).
  * Used when converting OC requests that already have files uploaded.
+ * If the source is a Drive URL, creates a reference; otherwise needs re-upload.
  */
 export async function backupOCFromStorageUrl(
   contractId: string,
@@ -110,20 +152,44 @@ export async function backupOCFromStorageUrl(
   originalFileName: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const folderId = await getOrCreateOCFolder(contractId);
-    if (!folderId) {
+    const folderInfo = await getOrCreateOCFolder(contractId);
+    if (!folderInfo) {
       return { success: false, error: "No se pudo obtener o crear la carpeta OC" };
     }
 
     // Extract file extension
     const fileExt = originalFileName.split(".").pop() || "pdf";
+    const fileName = `OC_${orderNumber}_${originalFileName}`;
 
-    // Create a reference record in repository_files pointing to the same storage URL
+    // If the URL is already a Drive URL, just create the DB reference
+    const isDriveUrl = storageUrl.includes('drive.google.com') || storageUrl.includes('docs.google.com');
+    
+    if (isDriveUrl) {
+      // Create a reference record in repository_files pointing to the Drive URL
+      const { error: dbError } = await supabase
+        .from("repository_files")
+        .insert({
+          folder_id: folderInfo.id,
+          name: fileName,
+          url: storageUrl,
+          file_type: fileExt,
+        });
+
+      if (dbError) {
+        console.error("Error creating file record:", dbError);
+        return { success: false, error: dbError.message };
+      }
+
+      return { success: true };
+    }
+
+    // For non-Drive URLs, we can't copy the file to Drive without downloading it first
+    // Just create a reference with the existing URL (legacy support)
     const { error: dbError } = await supabase
       .from("repository_files")
       .insert({
-        folder_id: folderId,
-        name: `OC_${orderNumber}_${originalFileName}`,
+        folder_id: folderInfo.id,
+        name: fileName,
         url: storageUrl,
         file_type: fileExt,
       });

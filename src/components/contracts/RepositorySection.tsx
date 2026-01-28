@@ -1000,7 +1000,25 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
               <Button 
                 size="sm" 
                 className="gap-1"
-                onClick={() => setMultiUploadDialogOpen(true)}
+                onClick={() => {
+                  if (!driveLinked) {
+                    toast({
+                      variant: "destructive",
+                      title: "Drive no configurado",
+                      description: "Sincroniza este contrato con Google Drive primero usando el botón 'Sincronizar con Drive'",
+                    });
+                    return;
+                  }
+                  if (!currentFolder?.drive_folder_id) {
+                    toast({
+                      variant: "destructive",
+                      title: "Carpeta no sincronizada",
+                      description: "Sincroniza esta carpeta con Drive usando el botón 'Sincronizar Carpeta'",
+                    });
+                    return;
+                  }
+                  setMultiUploadDialogOpen(true);
+                }}
               >
                 <Upload className="h-4 w-4" />
                 Subir Archivos

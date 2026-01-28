@@ -625,6 +625,27 @@ serve(async (req) => {
         break;
       }
       
+      case "ensureSubfolderExists": {
+        // Get or create a subfolder in Drive (for repository subfolder sync)
+        const { parentDriveFolderId, folderName } = params;
+        
+        if (!parentDriveFolderId || !folderName) {
+          throw new Error("parentDriveFolderId and folderName are required");
+        }
+        
+        // Check if folder exists
+        let folder = await getFolderByName(accessToken, folderName, parentDriveFolderId);
+        
+        if (!folder) {
+          // Create the folder
+          folder = await createDriveFolder(accessToken, folderName, parentDriveFolderId);
+          console.log(`Created subfolder: ${folderName} in ${parentDriveFolderId}`);
+        }
+        
+        result = folder;
+        break;
+      }
+      
       case "createFolder": {
         const { name, parentDriveFolderId } = params;
         
