@@ -77,10 +77,10 @@ export const CloudStorageSettings = ({ defaultCollapsed = false }: CloudStorageS
     try {
       toast({
         title: "Sincronizando contratos...",
-        description: "Este proceso puede tomar unos minutos dependiendo del número de contratos.",
+        description: "Creando estructura completa de carpetas. Este proceso puede tomar varios minutos.",
       });
 
-      const limit = 2; // Mantener lotes pequeños para evitar timeouts
+      const limit = 1; // Procesar 1 contrato a la vez para evitar timeout (crea toda la jerarquía)
       let offset = 0;
       let totalSynced = 0;
       let totalErrors = 0;

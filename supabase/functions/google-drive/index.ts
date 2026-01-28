@@ -477,9 +477,10 @@ serve(async (req) => {
       }
       
       case "syncAllContracts": {
-        const { offset = 0, limit = 2 } = params as { offset?: number; limit?: number };
+        // Process 1 contract at a time to avoid timeout (full hierarchy takes time)
+        const { offset = 0, limit = 1 } = params as { offset?: number; limit?: number };
         const safeOffset = Math.max(0, Number(offset) || 0);
-        const safeLimit = Math.min(10, Math.max(1, Number(limit) || 2));
+        const safeLimit = Math.min(3, Math.max(1, Number(limit) || 1)); // Max 3 per batch
 
         const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
         const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -488,6 +489,16 @@ serve(async (req) => {
         // Ensure status folders exist
         const statusFolders = await ensureStatusFolders(accessToken, rootFolderId);
         console.log("Status folders ready:", Object.keys(statusFolders));
+
+        // Fetch folder templates ONCE per batch for the full hierarchy
+        const { data: templatesRaw, error: templatesError } = await supabase
+          .from('folder_templates')
+          .select('id, name, parent_id, display_order')
+          .order('display_order', { ascending: true });
+
+        if (templatesError) throw templatesError;
+        const templates = (templatesRaw || []) as FolderTemplate[];
+        console.log(`Loaded ${templates.length} folder templates`);
         
         // Get contracts batch (pagination)
         const { data: contracts, error: contractsError, count: total } = await supabase
@@ -560,12 +571,10 @@ serve(async (req) => {
                 .eq('id', contract.id);
             }
 
-            // Keep bulk sync fast: ensure only the essential folder needed for OC uploads.
-            // Other repository subfolders can be created on-demand via existing endpoints.
-            const ocFolderName = 'OC';
-            const existingOC = await getFolderByName(accessToken, ocFolderName, contractFolder.id);
-            if (!existingOC) {
-              await createDriveFolder(accessToken, ocFolderName, contractFolder.id);
+            // Create FULL hierarchical folder structure from templates
+            if (templates.length > 0) {
+              await ensureTemplateFolders(accessToken, contractFolder.id, templates);
+              console.log(`Created folder hierarchy for ${contract.name}`);
             }
 
             syncedCount++;
