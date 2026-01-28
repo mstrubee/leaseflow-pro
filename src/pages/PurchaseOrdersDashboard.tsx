@@ -3582,7 +3582,93 @@ const PurchaseOrdersDashboard = () => {
                     </SelectItem>
                   ))}
                 </SelectContent>
-              </Select>
+            </Select>
+            </div>
+
+            {/* OC File upload */}
+            <div className="space-y-1.5">
+              <Label>Archivo OC (PDF)</Label>
+              <input
+                ref={editOCFileInputRef}
+                type="file"
+                accept=".pdf,application/pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    // Validate file
+                    if (!file.type.includes('pdf') && !file.name.toLowerCase().endsWith('.pdf')) {
+                      toast.error("Solo se permiten archivos PDF");
+                      return;
+                    }
+                    if (file.size > 20 * 1024 * 1024) {
+                      toast.error("El archivo no debe superar 20MB");
+                      return;
+                    }
+                    setEditingOCFile(file);
+                  }
+                }}
+              />
+              
+              {/* Show existing file if present and no new file selected */}
+              {editingOCData.attachment_url && !editingOCFile && (
+                <div className="flex items-center gap-2 p-2 border rounded-lg bg-muted/30">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <a 
+                    href={editingOCData.attachment_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-sm text-primary hover:underline flex-1 truncate"
+                  >
+                    Ver archivo adjunto
+                  </a>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => editOCFileInputRef.current?.click()}
+                  >
+                    Reemplazar
+                  </Button>
+                </div>
+              )}
+              
+              {/* Show new file selected */}
+              {editingOCFile && (
+                <div className="flex items-center gap-2 p-2 border rounded-lg bg-green-50 dark:bg-green-900/20">
+                  <FileText className="h-4 w-4 text-green-600" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{editingOCFile.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {(editingOCFile.size / 1024).toFixed(1)} KB
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setEditingOCFile(null);
+                      if (editOCFileInputRef.current) editOCFileInputRef.current.value = "";
+                    }}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+              
+              {/* Upload button if no file */}
+              {!editingOCData.attachment_url && !editingOCFile && (
+                <div
+                  className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
+                  onClick={() => editOCFileInputRef.current?.click()}
+                >
+                  <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    Click para subir archivo OC (PDF)
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Contract allocations - editable */}
