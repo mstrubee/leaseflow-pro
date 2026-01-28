@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,13 +10,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, Plus, FileText, ChevronDown, ChevronRight, AlertTriangle, Paperclip, ExternalLink, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Search, X, Pencil, ArrowLeft } from "lucide-react";
+import { Loader2, Plus, FileText, ChevronDown, ChevronRight, AlertTriangle, Paperclip, ExternalLink, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Search, X, Pencil, ArrowLeft, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useBudgetContext } from "./BudgetContext";
 import { InvoiceList } from "./InvoiceList";
 import { RepositoryFilePicker } from "./RepositoryFilePicker";
 import { SupplierForm } from "@/components/suppliers/SupplierForm";
 import { cn } from "@/lib/utils";
+import { backupOCFileToRepository } from "@/lib/repositoryBackup";
 
 interface PurchaseOrder {
   id: string;
@@ -95,8 +96,6 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
   const [loading, setLoading] = useState(true);
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
-  const [showFilePicker, setShowFilePicker] = useState(false);
-  const [showEditFilePicker, setShowEditFilePicker] = useState(false);
   const [showCreateSupplierDialog, setShowCreateSupplierDialog] = useState(false);
   const [pendingOrderData, setPendingOrderData] = useState<typeof newOrder | null>(null);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
@@ -131,8 +130,12 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     attachment_name: "",
   });
   
+  // File upload states
+  const [ocFile, setOcFile] = useState<File | null>(null);
+  const [editOcFile, setEditOcFile] = useState<File | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
   
   const [editFormData, setEditFormData] = useState({
     order_number: "",
@@ -574,7 +577,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         ? selectedLine?.name || null 
         : selectedOpexCategory?.name || null;
 
-      const { error } = await supabase.from("purchase_orders").insert({
+      const { data: createdOrder, error } = await supabase.from("purchase_orders").insert({
         contract_id: contractId,
         order_number: newOrder.order_number,
         supplier_name: newOrder.supplier_name || null,
@@ -588,11 +591,50 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         budget_id: budget?.id || null,
         budget_line_id: newOrder.budget_type === "capex" ? (newOrder.budget_line_id || null) : null,
         opex_category_id: newOrder.budget_type === "opex" ? (newOrder.opex_category_id || null) : null,
-        attachment_url: newOrder.attachment_url || null,
+        attachment_url: null,
         budget_classification: newOrder.budget_type === "capex" ? "CAPEX" : "OPEX",
-      });
+      }).select().single();
 
       if (error) throw error;
+
+      // Upload OC file to Drive if selected
+      if (ocFile && createdOrder) {
+        setUploadingFile(true);
+        try {
+          const result = await backupOCFileToRepository(contractId, ocFile, newOrder.order_number);
+          if (result.success) {
+            // Get the Drive URL from repository_files
+            const { data: fileRecord } = await supabase
+              .from("repository_files")
+              .select("url")
+              .eq("id", result.fileId)
+              .single();
+
+            if (fileRecord?.url) {
+              await supabase
+                .from("purchase_orders")
+                .update({ attachment_url: fileRecord.url })
+                .eq("id", createdOrder.id);
+            }
+            toast({ title: "Archivo subido", description: "El archivo OC se guardó en Drive" });
+          } else {
+            toast({ 
+              variant: "default", 
+              title: "OC creada", 
+              description: `Advertencia: ${result.error || "El archivo no pudo subirse. Puede adjuntarlo después."}` 
+            });
+          }
+        } catch (fileError: any) {
+          console.error("Error uploading OC file:", fileError);
+          toast({ 
+            variant: "default", 
+            title: "OC creada", 
+            description: "Advertencia: El archivo no pudo subirse. Puede adjuntarlo después." 
+          });
+        } finally {
+          setUploadingFile(false);
+        }
+      }
 
       toast({ title: "OC creada", description: `Orden de compra ${newOrder.order_number} creada` });
       setShowNewDialog(false);
@@ -609,6 +651,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         attachment_url: "",
         attachment_name: "",
       });
+      setOcFile(null);
       setBudgetWarning(null);
       loadOrders();
       onRefresh?.();
@@ -744,6 +787,39 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         ? selectedLine?.name || null 
         : selectedOpexCategory?.name || null;
 
+      let newAttachmentUrl = editFormData.attachment_url || null;
+
+      // Upload new OC file to Drive if selected
+      if (editOcFile) {
+        setUploadingFile(true);
+        try {
+          const result = await backupOCFileToRepository(contractId, editOcFile, editFormData.order_number);
+          if (result.success) {
+            const { data: fileRecord } = await supabase
+              .from("repository_files")
+              .select("url")
+              .eq("id", result.fileId)
+              .single();
+
+            if (fileRecord?.url) {
+              newAttachmentUrl = fileRecord.url;
+            }
+            toast({ title: "Archivo subido", description: "El archivo OC se guardó en Drive" });
+          } else {
+            toast({ 
+              variant: "default", 
+              title: "Advertencia", 
+              description: result.error || "El archivo no pudo subirse." 
+            });
+          }
+        } catch (fileError: any) {
+          console.error("Error uploading OC file:", fileError);
+          toast({ variant: "default", title: "Advertencia", description: "El archivo no pudo subirse." });
+        } finally {
+          setUploadingFile(false);
+        }
+      }
+
       const { error } = await supabase
         .from("purchase_orders")
         .update({
@@ -758,7 +834,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
           budget_id: budget?.id || null,
           budget_line_id: editFormData.budget_type === "capex" ? (editFormData.budget_line_id || null) : null,
           opex_category_id: editFormData.budget_type === "opex" ? (editFormData.opex_category_id || null) : null,
-          attachment_url: editFormData.attachment_url || null,
+          attachment_url: newAttachmentUrl,
           budget_classification: editFormData.budget_type === "capex" ? "CAPEX" : "OPEX",
         })
         .eq("id", editOrder.id);
@@ -768,6 +844,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       toast({ title: "OC actualizada", description: `Orden de compra ${editFormData.order_number} actualizada` });
       setShowEditDialog(false);
       setEditOrder(null);
+      setEditOcFile(null);
       setBudgetWarning(null);
       loadOrders();
       onRefresh?.();
@@ -1436,166 +1513,72 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
               )}
             </div>
             <div className="space-y-2">
-              <Label>Archivo Adjunto</Label>
+              <Label>Archivo OC (PDF)</Label>
               <div className="flex flex-col gap-2">
                 <input
                   type="file"
                   ref={fileInputRef}
                   className="hidden"
-                  accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
-                  onChange={async (e) => {
+                  accept=".pdf"
+                  onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
                     
-                    setUploadingFile(true);
-                    try {
-                      // Find or create the "facturasyOC" folder and "OC" subfolder
-                      const { data: parentFolder } = await supabase
-                        .from("repository_folders")
-                        .select("id")
-                        .eq("contract_id", contractId)
-                        .eq("name", "facturasyOC")
-                        .is("parent_id", null)
-                        .maybeSingle();
-
-                      let ocFolderId: string | null = null;
-                      
-                      if (parentFolder) {
-                        const { data: ocFolder } = await supabase
-                          .from("repository_folders")
-                          .select("id")
-                          .eq("contract_id", contractId)
-                          .eq("name", "OC")
-                          .eq("parent_id", parentFolder.id)
-                          .maybeSingle();
-                        
-                        if (ocFolder) {
-                          ocFolderId = ocFolder.id;
-                        } else {
-                          // Create OC subfolder
-                          const { data: newOcFolder } = await supabase
-                            .from("repository_folders")
-                            .insert({
-                              contract_id: contractId,
-                              name: "OC",
-                              parent_id: parentFolder.id,
-                            })
-                            .select("id")
-                            .single();
-                          ocFolderId = newOcFolder?.id || null;
-                        }
-                      } else {
-                        // Create "facturasyOC" folder and "OC" subfolder
-                        const { data: newParentFolder } = await supabase
-                          .from("repository_folders")
-                          .insert({
-                            contract_id: contractId,
-                            name: "facturasyOC",
-                            parent_id: null,
-                          })
-                          .select("id")
-                          .single();
-                        
-                        if (newParentFolder) {
-                          const { data: newOcFolder } = await supabase
-                            .from("repository_folders")
-                            .insert({
-                              contract_id: contractId,
-                              name: "OC",
-                              parent_id: newParentFolder.id,
-                            })
-                            .select("id")
-                            .single();
-                          ocFolderId = newOcFolder?.id || null;
-                        }
-                      }
-
-                      // Generate suggested filename: yyyy.mm.dd_OC#xxxxxxx_Detalle
-                      const date = new Date(newOrder.order_date || new Date());
-                      const yyyy = date.getFullYear();
-                      const mm = String(date.getMonth() + 1).padStart(2, '0');
-                      const dd = String(date.getDate()).padStart(2, '0');
-                      const orderNum = newOrder.order_number || 'XXXXXXX';
-                      const ext = file.name.split('.').pop() || 'pdf';
-                      const suggestedName = `${yyyy}.${mm}.${dd}_OC#${orderNum}_Detalle.${ext}`;
-
-                      // Upload to Supabase storage
-                      const filePath = `contracts/${contractId}/oc/${Date.now()}_${suggestedName}`;
-                      const { error: uploadError } = await supabase.storage
-                        .from("repository-files")
-                        .upload(filePath, file);
-
-                      if (uploadError) throw uploadError;
-
-                      // Get public URL
-                      const { data: urlData } = supabase.storage
-                        .from("repository-files")
-                        .getPublicUrl(filePath);
-
-                      // Create file record in repository_files
-                      if (ocFolderId) {
-                        await supabase.from("repository_files").insert({
-                          folder_id: ocFolderId,
-                          name: suggestedName,
-                          url: `storage://repository-files/${filePath}`,
-                        });
-                      }
-
-                      setNewOrder({ 
-                        ...newOrder, 
-                        attachment_url: urlData.publicUrl, 
-                        attachment_name: suggestedName 
-                      });
-                      
-                      toast({ title: "Archivo subido", description: `${suggestedName} se guardó en facturasyOC/OC` });
-                    } catch (error: any) {
-                      console.error("Error uploading file:", error);
-                      toast({ variant: "destructive", title: "Error", description: error.message || "Error al subir archivo" });
-                    } finally {
-                      setUploadingFile(false);
+                    // Validate file type
+                    if (!file.type.includes('pdf') && !file.name.toLowerCase().endsWith('.pdf')) {
+                      toast({ variant: "destructive", title: "Error", description: "Solo se permiten archivos PDF" });
                       if (fileInputRef.current) fileInputRef.current.value = '';
+                      return;
                     }
+                    
+                    // Validate file size (20MB max)
+                    if (file.size > 20 * 1024 * 1024) {
+                      toast({ variant: "destructive", title: "Error", description: "El archivo no puede superar 20MB" });
+                      if (fileInputRef.current) fileInputRef.current.value = '';
+                      return;
+                    }
+                    
+                    setOcFile(file);
+                    setNewOrder({ ...newOrder, attachment_name: file.name });
+                    if (fileInputRef.current) fileInputRef.current.value = '';
                   }}
                 />
-                <div className="flex items-center gap-2">
+                {ocFile ? (
+                  <div className="flex items-center gap-2 p-2 border rounded-md bg-muted/50">
+                    <FileText className="h-4 w-4 text-red-500" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{ocFile.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {(ocFile.size / 1024).toFixed(1)} KB
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setOcFile(null);
+                        setNewOrder({ ...newOrder, attachment_name: "" });
+                      }}
+                      className="h-8 w-8 p-0"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
                   <Button 
                     type="button" 
                     variant="outline" 
                     size="sm"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={uploadingFile}
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 w-full justify-center border-dashed"
                   >
-                    {uploadingFile ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Paperclip className="h-4 w-4" />
-                    )}
-                    {uploadingFile ? "Subiendo..." : (newOrder.attachment_name || "Seleccionar archivo del PC")}
+                    <Upload className="h-4 w-4" />
+                    Click para subir archivo OC (PDF)
                   </Button>
-                  {newOrder.attachment_url && (
-                    <>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => window.open(newOrder.attachment_url, "_blank")}
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setNewOrder({ ...newOrder, attachment_url: "", attachment_name: "" })}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </>
-                  )}
-                </div>
+                )}
                 <p className="text-xs text-muted-foreground">
-                  El archivo se guardará en la carpeta facturasyOC/OC del repositorio
+                  El archivo se guardará en Google Drive (carpeta OC del contrato)
                 </p>
               </div>
             </div>
@@ -1726,28 +1709,87 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
               )}
             </div>
             <div className="space-y-2">
-              <Label>Archivo Adjunto</Label>
-              <div className="flex items-center gap-2">
+              <Label>Archivo OC (PDF)</Label>
+              <div className="flex flex-col gap-2">
+                <input
+                  type="file"
+                  ref={editFileInputRef}
+                  className="hidden"
+                  accept=".pdf"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    
+                    if (!file.type.includes('pdf') && !file.name.toLowerCase().endsWith('.pdf')) {
+                      toast({ variant: "destructive", title: "Error", description: "Solo se permiten archivos PDF" });
+                      if (editFileInputRef.current) editFileInputRef.current.value = '';
+                      return;
+                    }
+                    
+                    if (file.size > 20 * 1024 * 1024) {
+                      toast({ variant: "destructive", title: "Error", description: "El archivo no puede superar 20MB" });
+                      if (editFileInputRef.current) editFileInputRef.current.value = '';
+                      return;
+                    }
+                    
+                    setEditOcFile(file);
+                    setEditFormData({ ...editFormData, attachment_name: file.name });
+                    if (editFileInputRef.current) editFileInputRef.current.value = '';
+                  }}
+                />
+                
+                {/* Show existing file if no new file selected */}
+                {editFormData.attachment_url && !editOcFile && (
+                  <div className="flex items-center gap-2 p-2 border rounded-md bg-muted/50">
+                    <FileText className="h-4 w-4 text-red-500" />
+                    <span className="text-sm flex-1 truncate">{editFormData.attachment_name || "Archivo adjunto"}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => window.open(editFormData.attachment_url, "_blank")}
+                      className="h-7 w-7 p-0"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+                
+                {/* Show new file to upload */}
+                {editOcFile && (
+                  <div className="flex items-center gap-2 p-2 border rounded-md bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800">
+                    <FileText className="h-4 w-4 text-blue-500" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{editOcFile.name}</p>
+                      <p className="text-xs text-blue-600 dark:text-blue-400">Nuevo archivo (se subirá al guardar)</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setEditOcFile(null);
+                      }}
+                      className="h-8 w-8 p-0"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+                
                 <Button 
                   type="button" 
                   variant="outline" 
                   size="sm"
-                  onClick={() => setShowEditFilePicker(true)}
-                  className="flex items-center gap-2"
+                  onClick={() => editFileInputRef.current?.click()}
+                  className="flex items-center gap-2 w-full justify-center border-dashed"
                 >
-                  <Paperclip className="h-4 w-4" />
-                  {editFormData.attachment_name || "Seleccionar archivo"}
+                  <Upload className="h-4 w-4" />
+                  {editFormData.attachment_url || editOcFile ? "Reemplazar archivo" : "Subir archivo PDF"}
                 </Button>
-                {editFormData.attachment_url && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => window.open(editFormData.attachment_url, "_blank")}
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                  </Button>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  El archivo se guardará en Google Drive (carpeta OC del contrato)
+                </p>
               </div>
             </div>
 
@@ -1761,26 +1803,16 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowEditDialog(false); setBudgetWarning(null); }}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setShowEditDialog(false); setEditOcFile(null); setBudgetWarning(null); }}>Cancelar</Button>
             <Button 
               onClick={handleUpdateOrder}
-              disabled={!editFormData.budget_line_id || !editFormData.order_number}
+              disabled={!editFormData.budget_line_id || !editFormData.order_number || uploadingFile}
             >
-              Guardar
+              {uploadingFile ? "Subiendo archivo..." : "Guardar"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <RepositoryFilePicker
-        open={showEditFilePicker}
-        onOpenChange={setShowEditFilePicker}
-        contractId={contractId}
-        title="Seleccionar Archivo de OC"
-        onFileSelect={(file) => {
-          setEditFormData({ ...editFormData, attachment_url: file.url, attachment_name: file.name });
-        }}
-      />
 
       {/* Delete confirmation - Step 1 */}
       <AlertDialog open={deleteOrder !== null && deleteStep === 1}>
