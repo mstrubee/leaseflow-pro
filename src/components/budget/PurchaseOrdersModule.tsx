@@ -310,27 +310,40 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
 
   const loadBudgetLines = async () => {
     try {
-      // Get all budgets for this contract and year
+      // Get all CAPEX budgets for this contract and year
       const { data: budgetData, error: budgetError } = await supabase
         .from("contract_budgets")
         .select("id")
         .eq("contract_id", contractId)
-        .eq("year", selectedYear);
+        .eq("year", selectedYear)
+        .eq("budget_type", "capex");
 
       if (budgetError) throw budgetError;
 
       if (budgetData && budgetData.length > 0) {
         const budgetIds = budgetData.map(b => b.id);
         
+        // Load budget lines that are:
+        // 1. "autorizado" status (standard approval)
+        // 2. OR have amount_uf > 0 (manually approved by admin with budget assigned)
+        // This ensures lines approved manually are also available
         const { data: linesData, error: linesError } = await supabase
           .from("budget_lines")
           .select("id, name, amount_uf, budget_id, status")
           .in("budget_id", budgetIds)
-          .eq("status", "autorizado")
-          .is("parent_id", null); // Get only root lines (or adjust based on your needs)
+          .is("deleted_at", null)
+          .is("parent_id", null); // Get only root lines
 
         if (linesError) throw linesError;
-        setBudgetLines(linesData || []);
+        
+        // Filter to include autorizado OR lines with budget assigned (amount_uf > 0)
+        const validLines = (linesData || []).filter(line => 
+          line.status === "autorizado" || line.amount_uf > 0
+        );
+        
+        setBudgetLines(validLines);
+      } else {
+        setBudgetLines([]);
       }
     } catch (error) {
       console.error("Error loading budget lines:", error);
