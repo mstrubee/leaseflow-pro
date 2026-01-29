@@ -253,11 +253,10 @@ export const OCRequestsList = ({
 
     setConverting(true);
     try {
-      // Create the actual purchase order
+      // Create the actual purchase order using the budget_id from the request
       const { data: ocData, error: ocError } = await supabase.from("purchase_orders").insert({
-        contract_id: selectedRequest.id ? contractId : contractId,
-        budget_id: budgetId,
-        budget_line_id: selectedRequest.id, // This should be the original budget_line_id from request
+        contract_id: contractId,
+        budget_id: selectedRequest.budget_id || budgetId, // Use request's budget_id first
         order_number: convertForm.order_number,
         supplier_name: convertForm.supplier_name || selectedRequest.supplier_name,
         description: selectedRequest.description,
