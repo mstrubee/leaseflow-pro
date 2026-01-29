@@ -411,8 +411,9 @@ async function uploadFileToDrive(
   
   if (!response.ok) {
     const errorText = await response.text();
-    console.error("File upload failed:", response.status);
-    throw new Error(`Failed to upload file: ${response.status}`);
+    console.error("File upload failed:", response.status, errorText);
+    console.error("Upload details - folderId:", folderId, "fileName:", sanitizedFileName);
+    throw new Error(`Failed to upload file: ${response.status} - ${errorText}`);
   }
   
   return await response.json();
