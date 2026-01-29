@@ -729,15 +729,16 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     setEditOrder(order);
     const budget = budgets.find(b => b.id === order.budget_id);
     
-    // Fetch the full order data to get amount_clp
+    // Fetch the full order data to get amount_clp and attachment_url
     const { data: fullOrder } = await supabase
       .from("purchase_orders")
-      .select("amount_clp, input_currency")
+      .select("amount_clp, input_currency, attachment_url")
       .eq("id", order.id)
       .single();
     
     // Default to CLP display - use stored CLP amount if available
     const displayAmount = fullOrder?.amount_clp || Math.round(order.amount_uf * ufValue);
+    const attachmentUrl = fullOrder?.attachment_url || order.attachment_url || "";
     
     setEditFormData({
       order_number: order.order_number,
@@ -748,9 +749,10 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       budget_type: (budget?.budget_type || "capex") as "capex" | "opex",
       budget_line_id: order.budget_line_id || "",
       opex_category_id: order.opex_category_id || "",
-      attachment_url: order.attachment_url || "",
-      attachment_name: order.attachment_url ? "Archivo adjunto" : "",
+      attachment_url: attachmentUrl,
+      attachment_name: attachmentUrl ? "Archivo adjunto" : "",
     });
+    setEditOcFile(null); // Reset any previously selected file
     setShowEditDialog(true);
   };
 
@@ -1812,7 +1814,12 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
             <Button variant="outline" onClick={() => { setShowEditDialog(false); setEditOcFile(null); setBudgetWarning(null); }}>Cancelar</Button>
             <Button 
               onClick={handleUpdateOrder}
-              disabled={!editFormData.budget_line_id || !editFormData.order_number || uploadingFile}
+              disabled={
+                !editFormData.order_number || 
+                uploadingFile ||
+                (editFormData.budget_type === "capex" && !editFormData.budget_line_id) ||
+                (editFormData.budget_type === "opex" && !editFormData.opex_category_id)
+              }
             >
               {uploadingFile ? "Subiendo archivo..." : "Guardar"}
             </Button>

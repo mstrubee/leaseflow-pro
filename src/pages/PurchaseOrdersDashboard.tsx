@@ -3593,25 +3593,33 @@ const PurchaseOrdersDashboard = () => {
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="oc_category">Categoría OPEX</Label>
-              <Select
-                value={editingOCData.opex_category_id || "none"}
-                onValueChange={(v) => setEditingOCData({ ...editingOCData, opex_category_id: v === "none" ? null : v })}
-              >
-                <SelectTrigger id="oc_category">
-                  <SelectValue placeholder="Seleccionar categoría" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Sin categoría</SelectItem>
-                  {opexCategories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-            </Select>
-            </div>
+            {/* Only show OPEX category selector for OPEX orders (not CAPEX) */}
+            {(() => {
+              const firstOrder = orders.find(o => o.order_number === editingOCOriginalOrderNumber);
+              const isCAPEX = firstOrder?.budget_classification === "CAPEX";
+              if (isCAPEX) return null;
+              return (
+                <div className="space-y-1.5">
+                  <Label htmlFor="oc_category">Categoría OPEX</Label>
+                  <Select
+                    value={editingOCData.opex_category_id || "none"}
+                    onValueChange={(v) => setEditingOCData({ ...editingOCData, opex_category_id: v === "none" ? null : v })}
+                  >
+                    <SelectTrigger id="oc_category">
+                      <SelectValue placeholder="Seleccionar categoría" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Sin categoría</SelectItem>
+                      {opexCategories.map((cat) => (
+                        <SelectItem key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              );
+            })()}
 
             {/* OC File upload */}
             <div className="space-y-1.5">
