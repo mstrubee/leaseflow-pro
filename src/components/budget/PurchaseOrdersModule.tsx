@@ -125,7 +125,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     amount: "",
     currency: "CLP" as "UF" | "CLP",
     budget_type: "capex" as "capex" | "opex",
-    budget_line_id: "",
+    budget_line_ids: [] as string[], // Changed to array for multiple selection
     opex_category_id: "",
     attachment_url: "",
     attachment_name: "",
@@ -145,7 +145,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     amount: "",
     currency: "CLP" as "UF" | "CLP",
     budget_type: "capex" as "capex" | "opex",
-    budget_line_id: "",
+    budget_line_ids: [] as string[], // Changed to array for multiple selection
     opex_category_id: "",
     attachment_url: "",
     attachment_name: "",
@@ -562,11 +562,15 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         amountUF = convertPesosToUF(inputAmount);
       }
 
-      // Validate against budget line (CAPEX)
-      if (newOrder.budget_type === "capex" && newOrder.budget_line_id) {
-        const validation = validateOCAmount(newOrder.budget_line_id, amountUF);
-        if (!validation.valid) {
-          setBudgetWarning(validation.message);
+      // Validate against budget lines (CAPEX) - check each selected line
+      if (newOrder.budget_type === "capex" && newOrder.budget_line_ids.length > 0) {
+        // For now, validate total amount against sum of available in selected lines
+        const totalAvailable = newOrder.budget_line_ids.reduce((sum, lineId) => {
+          return sum + getAvailableBudgetForLine(lineId);
+        }, 0);
+        
+        if (amountUF > totalAvailable) {
+          setBudgetWarning(`OC supera el Presupuesto disponible. Disponible total: ${formatUF(totalAvailable)}`);
           return;
         }
       }
@@ -582,13 +586,16 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
 
       // Find budget for selected type and year
       const budget = budgets.find(b => b.budget_type === newOrder.budget_type);
-      const selectedLine = budgetLines.find(l => l.id === newOrder.budget_line_id);
+      const selectedLines = budgetLines.filter(l => newOrder.budget_line_ids.includes(l.id));
       const selectedOpexCategory = opexCategories.find(c => c.id === newOrder.opex_category_id);
       
-      // Description: use line name for CAPEX, category name for OPEX
+      // Description: use line names for CAPEX, category name for OPEX
       const description = newOrder.budget_type === "capex" 
-        ? selectedLine?.name || null 
+        ? selectedLines.map(l => l.name).join(", ") || null 
         : selectedOpexCategory?.name || null;
+
+      // For backwards compatibility, use first line id for budget_line_id column
+      const primaryBudgetLineId = newOrder.budget_line_ids.length > 0 ? newOrder.budget_line_ids[0] : null;
 
       const { data: createdOrder, error } = await supabase.from("purchase_orders").insert({
         contract_id: contractId,
@@ -602,13 +609,25 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         description: description,
         year: selectedYear,
         budget_id: budget?.id || null,
-        budget_line_id: newOrder.budget_type === "capex" ? (newOrder.budget_line_id || null) : null,
+        budget_line_id: newOrder.budget_type === "capex" ? primaryBudgetLineId : null,
         opex_category_id: newOrder.budget_type === "opex" ? (newOrder.opex_category_id || null) : null,
         attachment_url: null,
         budget_classification: newOrder.budget_type === "capex" ? "CAPEX" : "OPEX",
       }).select().single();
 
       if (error) throw error;
+
+      // Save multiple budget line associations
+      if (createdOrder && newOrder.budget_type === "capex" && newOrder.budget_line_ids.length > 0) {
+        const amountPerLine = amountUF / newOrder.budget_line_ids.length;
+        const lineInserts = newOrder.budget_line_ids.map(lineId => ({
+          purchase_order_id: createdOrder.id,
+          budget_line_id: lineId,
+          amount_uf: amountPerLine,
+        }));
+        
+        await supabase.from("purchase_order_budget_lines").insert(lineInserts);
+      }
 
       // Upload OC file to Drive if selected
       if (ocFile && createdOrder) {
@@ -659,7 +678,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         amount: "", 
         currency: "CLP", 
         budget_type: "capex",
-        budget_line_id: "",
+        budget_line_ids: [],
         opex_category_id: "",
         attachment_url: "",
         attachment_name: "",
@@ -751,6 +770,16 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     const displayAmount = fullOrder?.amount_clp || Math.round(order.amount_uf * ufValue);
     const attachmentUrl = fullOrder?.attachment_url || order.attachment_url || "";
     
+    // Load existing budget line associations
+    const { data: existingLineAssocs } = await supabase
+      .from("purchase_order_budget_lines")
+      .select("budget_line_id")
+      .eq("purchase_order_id", order.id);
+    
+    const lineIds = existingLineAssocs?.map(a => a.budget_line_id) || [];
+    // Fallback to single budget_line_id if no associations exist
+    const budgetLineIds = lineIds.length > 0 ? lineIds : (order.budget_line_id ? [order.budget_line_id] : []);
+    
     setEditFormData({
       order_number: order.order_number,
       supplier_name: order.supplier_name || "",
@@ -758,7 +787,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       amount: displayAmount.toString(),
       currency: "CLP",
       budget_type: (budget?.budget_type || "capex") as "capex" | "opex",
-      budget_line_id: order.budget_line_id || "",
+      budget_line_ids: budgetLineIds,
       opex_category_id: order.opex_category_id || "",
       attachment_url: attachmentUrl,
       attachment_name: attachmentUrl ? "Archivo adjunto" : "",
@@ -783,23 +812,32 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         amountUF = convertPesosToUF(inputAmount);
       }
 
-      // Validate against budget line (excluding current order)
-      if (editFormData.budget_line_id) {
-        const validation = validateOCAmount(editFormData.budget_line_id, amountUF, editOrder.id);
-        if (!validation.valid) {
-          setBudgetWarning(validation.message);
+      // Validate against budget lines (CAPEX) - check total available
+      if (editFormData.budget_type === "capex" && editFormData.budget_line_ids.length > 0) {
+        const totalAvailable = editFormData.budget_line_ids.reduce((sum, lineId) => {
+          // Calculate available excluding current order
+          const line = budgetLines.find(l => l.id === lineId);
+          if (!line) return sum;
+          const usedByOthers = orders
+            .filter(o => o.budget_line_id === lineId && o.id !== editOrder.id)
+            .reduce((s, o) => s + o.amount_uf, 0);
+          return sum + (line.amount_uf - usedByOthers);
+        }, 0);
+        
+        if (amountUF > totalAvailable) {
+          setBudgetWarning(`OC supera el Presupuesto disponible. Disponible total: ${formatUF(totalAvailable)}`);
           return;
         }
       }
 
       // Find budget for selected type and year
       const budget = budgets.find(b => b.budget_type === editFormData.budget_type);
-      const selectedLine = budgetLines.find(l => l.id === editFormData.budget_line_id);
+      const selectedLines = budgetLines.filter(l => editFormData.budget_line_ids.includes(l.id));
 
       // Update description based on budget type
       const selectedOpexCategory = opexCategories.find(c => c.id === editFormData.opex_category_id);
       const description = editFormData.budget_type === "capex" 
-        ? selectedLine?.name || null 
+        ? selectedLines.map(l => l.name).join(", ") || null 
         : selectedOpexCategory?.name || null;
 
       let newAttachmentUrl = editFormData.attachment_url || null;
@@ -835,6 +873,9 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         }
       }
 
+      // For backwards compatibility, use first line id for budget_line_id column
+      const primaryBudgetLineId = editFormData.budget_line_ids.length > 0 ? editFormData.budget_line_ids[0] : null;
+
       const { error } = await supabase
         .from("purchase_orders")
         .update({
@@ -847,7 +888,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
           uf_value_at_entry: ufValue,
           description: description,
           budget_id: budget?.id || null,
-          budget_line_id: editFormData.budget_type === "capex" ? (editFormData.budget_line_id || null) : null,
+          budget_line_id: editFormData.budget_type === "capex" ? primaryBudgetLineId : null,
           opex_category_id: editFormData.budget_type === "opex" ? (editFormData.opex_category_id || null) : null,
           attachment_url: newAttachmentUrl,
           budget_classification: editFormData.budget_type === "capex" ? "CAPEX" : "OPEX",
@@ -855,6 +896,27 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         .eq("id", editOrder.id);
 
       if (error) throw error;
+      
+      // Update budget line associations
+      if (editFormData.budget_type === "capex") {
+        // Delete existing associations
+        await supabase
+          .from("purchase_order_budget_lines")
+          .delete()
+          .eq("purchase_order_id", editOrder.id);
+        
+        // Insert new associations
+        if (editFormData.budget_line_ids.length > 0) {
+          const amountPerLine = amountUF / editFormData.budget_line_ids.length;
+          const lineInserts = editFormData.budget_line_ids.map(lineId => ({
+            purchase_order_id: editOrder.id,
+            budget_line_id: lineId,
+            amount_uf: amountPerLine,
+          }));
+          
+          await supabase.from("purchase_order_budget_lines").insert(lineInserts);
+        }
+      }
 
       toast({ title: "OC actualizada", description: `Orden de compra ${editFormData.order_number} actualizada` });
       setShowEditDialog(false);
@@ -1324,7 +1386,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
               <Label>Tipo de Presupuesto</Label>
               <Select 
                 value={newOrder.budget_type} 
-                onValueChange={(v) => setNewOrder({ ...newOrder, budget_type: v as "capex" | "opex", budget_line_id: "", opex_category_id: "" })}
+                onValueChange={(v) => setNewOrder({ ...newOrder, budget_type: v as "capex" | "opex", budget_line_ids: [], opex_category_id: "" })}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -1337,36 +1399,47 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
             </div>
             {newOrder.budget_type === "capex" ? (
               <div className="space-y-2">
-                <Label>Línea de Presupuesto CAPEX *</Label>
-                <Select 
-                  value={newOrder.budget_line_id} 
-                  onValueChange={(v) => setNewOrder({ ...newOrder, budget_line_id: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccione una línea autorizada" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getAuthorizedLinesForBudgetType("capex").map((line) => {
+                <Label>Líneas de Presupuesto CAPEX * (selección múltiple)</Label>
+                <div className="border rounded-md p-2 max-h-40 overflow-y-auto space-y-1">
+                  {getAuthorizedLinesForBudgetType("capex").length === 0 ? (
+                    <p className="text-xs text-amber-600 p-2">No hay líneas autorizadas para CAPEX</p>
+                  ) : (
+                    getAuthorizedLinesForBudgetType("capex").map((line) => {
                       const available = getAvailableBudgetForLine(line.id);
+                      const isSelected = newOrder.budget_line_ids.includes(line.id);
                       return (
-                        <SelectItem key={line.id} value={line.id}>
-                          <div className="flex items-center justify-between w-full gap-4">
-                            <span>{line.name}</span>
-                            <span className="text-xs text-muted-foreground">
-                              (Disponible: {formatUF(available)})
-                            </span>
-                          </div>
-                        </SelectItem>
+                        <label 
+                          key={line.id} 
+                          className={cn(
+                            "flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-accent",
+                            isSelected && "bg-accent"
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              const newIds = e.target.checked
+                                ? [...newOrder.budget_line_ids, line.id]
+                                : newOrder.budget_line_ids.filter(id => id !== line.id);
+                              setNewOrder({ ...newOrder, budget_line_ids: newIds });
+                            }}
+                            className="h-4 w-4"
+                          />
+                          <span className="flex-1">{line.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            (Disp: {formatUF(available)})
+                          </span>
+                        </label>
                       );
-                    })}
-                  </SelectContent>
-                </Select>
-                {getAuthorizedLinesForBudgetType("capex").length === 0 && (
-                  <p className="text-xs text-amber-600">No hay líneas autorizadas para CAPEX</p>
-                )}
-                {newOrder.budget_line_id && (
+                    })
+                  )}
+                </div>
+                {newOrder.budget_line_ids.length > 0 && (
                   <p className="text-xs text-muted-foreground">
-                    Presupuesto disponible: {formatUF(getAvailableBudgetForLine(newOrder.budget_line_id))}
+                    {newOrder.budget_line_ids.length} línea(s) seleccionada(s) - Disponible total: {formatUF(
+                      newOrder.budget_line_ids.reduce((sum, id) => sum + getAvailableBudgetForLine(id), 0)
+                    )}
                   </p>
                 )}
               </div>
@@ -1615,7 +1688,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
               onClick={handleCreateOrder}
               disabled={
                 !newOrder.order_number || 
-                (newOrder.budget_type === "capex" && !newOrder.budget_line_id) ||
+                (newOrder.budget_type === "capex" && newOrder.budget_line_ids.length === 0) ||
                 (newOrder.budget_type === "opex" && !newOrder.opex_category_id)
               }
             >
@@ -1654,7 +1727,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
               <Label>Tipo de Presupuesto</Label>
               <Select 
                 value={editFormData.budget_type} 
-                onValueChange={(v) => setEditFormData({ ...editFormData, budget_type: v as "capex" | "opex", budget_line_id: "" })}
+                onValueChange={(v) => setEditFormData({ ...editFormData, budget_type: v as "capex" | "opex", budget_line_ids: [] })}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -1665,35 +1738,54 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Línea de Presupuesto (Descripción) *</Label>
-              <Select 
-                value={editFormData.budget_line_id} 
-                onValueChange={(v) => setEditFormData({ ...editFormData, budget_line_id: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccione una línea autorizada" />
-                </SelectTrigger>
-                <SelectContent>
-                  {getAuthorizedLinesForBudgetType(editFormData.budget_type).map((line) => {
-                    const usedByOthers = orders
-                      .filter(o => o.budget_line_id === line.id && o.id !== editOrder?.id)
-                      .reduce((sum, o) => sum + o.amount_uf, 0);
-                    const available = line.amount_uf - usedByOthers;
-                    return (
-                      <SelectItem key={line.id} value={line.id}>
-                        <div className="flex items-center justify-between w-full gap-4">
-                          <span>{line.name}</span>
+            {editFormData.budget_type === "capex" && (
+              <div className="space-y-2">
+                <Label>Líneas de Presupuesto CAPEX * (selección múltiple)</Label>
+                <div className="border rounded-md p-2 max-h-40 overflow-y-auto space-y-1">
+                  {getAuthorizedLinesForBudgetType("capex").length === 0 ? (
+                    <p className="text-xs text-amber-600 p-2">No hay líneas autorizadas para CAPEX</p>
+                  ) : (
+                    getAuthorizedLinesForBudgetType("capex").map((line) => {
+                      const usedByOthers = orders
+                        .filter(o => o.budget_line_id === line.id && o.id !== editOrder?.id)
+                        .reduce((sum, o) => sum + o.amount_uf, 0);
+                      const available = line.amount_uf - usedByOthers;
+                      const isSelected = editFormData.budget_line_ids.includes(line.id);
+                      return (
+                        <label 
+                          key={line.id} 
+                          className={cn(
+                            "flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-accent",
+                            isSelected && "bg-accent"
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              const newIds = e.target.checked
+                                ? [...editFormData.budget_line_ids, line.id]
+                                : editFormData.budget_line_ids.filter(id => id !== line.id);
+                              setEditFormData({ ...editFormData, budget_line_ids: newIds });
+                            }}
+                            className="h-4 w-4"
+                          />
+                          <span className="flex-1">{line.name}</span>
                           <span className="text-xs text-muted-foreground">
-                            (Disponible: {formatUF(available)})
+                            (Disp: {formatUF(available)})
                           </span>
-                        </div>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+                {editFormData.budget_line_ids.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {editFormData.budget_line_ids.length} línea(s) seleccionada(s)
+                  </p>
+                )}
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Proveedor</Label>
               <Input value={editFormData.supplier_name} onChange={(e) => setEditFormData({ ...editFormData, supplier_name: e.target.value })} />
@@ -1828,7 +1920,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
               disabled={
                 !editFormData.order_number || 
                 uploadingFile ||
-                (editFormData.budget_type === "capex" && !editFormData.budget_line_id) ||
+                (editFormData.budget_type === "capex" && editFormData.budget_line_ids.length === 0) ||
                 (editFormData.budget_type === "opex" && !editFormData.opex_category_id)
               }
             >
