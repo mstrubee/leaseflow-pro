@@ -139,7 +139,8 @@ async function createDriveFolder(accessToken: string, name: string, parentId?: s
     metadata.parents = [parentId];
   }
   
-  const response = await fetch("https://www.googleapis.com/drive/v3/files?fields=id,webViewLink", {
+  // supportsAllDrives is required when the parent is in a Shared Drive; safe for My Drive too.
+  const response = await fetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id,webViewLink", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -181,8 +182,9 @@ async function getFolderByName(accessToken: string, name: string, parentId?: str
     query += ` and '${parentId}' in parents`;
   }
   
+  // includeItemsFromAllDrives/supportsAllDrives avoids missing results when folders live in a Shared Drive.
   const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink,createdTime)&orderBy=createdTime asc&pageSize=10`,
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink,createdTime)&orderBy=createdTime asc&pageSize=10&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -200,15 +202,15 @@ async function getFolderByName(accessToken: string, name: string, parentId?: str
   return data.files && data.files.length > 0 ? data.files[0] : null;
 }
 
-// List child folders under a parent (name -> folder). Used to avoid N queries per template.
-async function listChildFolders(
+// Get folder metadata by ID (preferred when we already have drive_folder_id)
+async function getFolderById(
   accessToken: string,
-  parentId: string,
-): Promise<Record<string, { id: string; webViewLink: string }>> {
-  const query = `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  folderId: string,
+): Promise<{ id: string; name: string; parents?: string[]; webViewLink: string; trashed?: boolean; mimeType?: string } | null> {
+  if (!folderId) return null;
 
   const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink,createdTime)&pageSize=1000`,
+    `https://www.googleapis.com/drive/v3/files/${folderId}?fields=id,name,parents,webViewLink,trashed,mimeType&supportsAllDrives=true`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -216,20 +218,58 @@ async function listChildFolders(
     },
   );
 
+  if (response.status === 404) return null;
+
   if (!response.ok) {
     const errorText = await response.text();
-    console.error("Child folder listing failed:", response.status, errorText);
-    throw new Error(`Failed to list child folders: ${response.status}`);
+    console.error("Folder get-by-id failed:", response.status, errorText);
+    throw new Error(`Failed to get folder by id: ${response.status}`);
   }
 
-  const data = await response.json();
+  return await response.json();
+}
+
+// List child folders under a parent (name -> folder). Used to avoid N queries per template.
+async function listChildFolders(
+  accessToken: string,
+  parentId: string,
+): Promise<Record<string, { id: string; webViewLink: string }>> {
+  const query = `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+
+  // Drive list is paginated and Shared Drives require supportsAllDrives/includeItemsFromAllDrives.
+  const allFiles: any[] = [];
+  let pageToken: string | undefined = undefined;
+  for (let i = 0; i < 50; i++) {
+    const url: string =
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}` +
+      `&fields=nextPageToken,files(id,name,webViewLink,createdTime)` +
+      `&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives` +
+      (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "");
+
+    const response: Response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Child folder listing failed:", response.status, errorText);
+      throw new Error(`Failed to list child folders: ${response.status}`);
+    }
+
+    const data: any = await response.json();
+    if (Array.isArray(data.files)) allFiles.push(...data.files);
+    pageToken = data.nextPageToken;
+    if (!pageToken) break;
+  }
 
   // Normalize keys to match createDriveFolder() behavior.
   // This prevents duplicates when templates contain characters that get replaced/trimmed.
   const folders: Record<string, { id: string; webViewLink: string; createdTime?: string }> = {};
   const duplicates: Array<{ key: string; keptId: string; dupId: string }> = [];
 
-  for (const f of data.files || []) {
+  for (const f of allFiles || []) {
     if (!f?.name || !f?.id) continue;
     const key = sanitizeDriveName(f.name);
     const createdTime: string | undefined = f.createdTime;
@@ -358,7 +398,7 @@ async function uploadFileToDrive(
   requestBody.set(closeBytes, metadataBytes.length + fileBytes.length);
   
   const response = await fetch(
-    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,webContentLink",
+    "https://www.googleapis.com/upload/drive/v3/files?supportsAllDrives=true&uploadType=multipart&fields=id,webViewLink,webContentLink",
     {
       method: "POST",
       headers: {
@@ -381,29 +421,40 @@ async function uploadFileToDrive(
 // List files in a folder
 async function listFilesInFolder(accessToken: string, folderId: string): Promise<any[]> {
   const query = `'${folderId}' in parents and trashed=false`;
-  
-  const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,webViewLink,webContentLink,createdTime,size)&orderBy=createdTime desc`,
-    {
+
+  const allFiles: any[] = [];
+  let pageToken: string | undefined = undefined;
+  for (let i = 0; i < 50; i++) {
+    const url: string =
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}` +
+      `&fields=nextPageToken,files(id,name,mimeType,webViewLink,webContentLink,createdTime,size)` +
+      `&orderBy=createdTime desc&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives` +
+      (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "");
+
+    const response: Response = await fetch(url, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("File listing failed:", response.status, errorText);
+      throw new Error(`Failed to list files: ${response.status}`);
     }
-  );
-  
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("File listing failed:", response.status);
-    throw new Error(`Failed to list files: ${response.status}`);
+
+    const data: any = await response.json();
+    if (Array.isArray(data.files)) allFiles.push(...data.files);
+    pageToken = data.nextPageToken;
+    if (!pageToken) break;
   }
-  
-  const data = await response.json();
-  return data.files || [];
+
+  return allFiles;
 }
 
 // Delete a file from Google Drive
 async function deleteFile(accessToken: string, fileId: string): Promise<void> {
-  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true`, {
     method: "DELETE",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -419,7 +470,7 @@ async function deleteFile(accessToken: string, fileId: string): Promise<void> {
 
 // Move a file/folder to a new parent
 async function moveToFolder(accessToken: string, fileId: string, newParentId: string, oldParentId?: string): Promise<void> {
-  let url = `https://www.googleapis.com/drive/v3/files/${fileId}?addParents=${newParentId}`;
+  let url = `https://www.googleapis.com/drive/v3/files/${fileId}?addParents=${newParentId}&supportsAllDrives=true`;
   if (oldParentId) {
     url += `&removeParents=${oldParentId}`;
   }
@@ -554,40 +605,57 @@ serve(async (req) => {
               continue;
             }
 
-            // Check if contract folder exists
-            let contractFolder = contract.drive_folder_id
-              ? await getFolderByName(accessToken, contract.name, statusFolder.id)
-              : null;
+            // Prefer drive_folder_id (idempotent). Name-based lookup is a fallback only.
+            let contractFolder: { id: string; webViewLink: string } | null = null;
+
+            if (contract.drive_folder_id) {
+              const meta = await getFolderById(accessToken, contract.drive_folder_id);
+              if (meta && meta.mimeType === "application/vnd.google-apps.folder" && !meta.trashed) {
+                const currentParent = meta.parents?.[0];
+                if (currentParent && currentParent !== statusFolder.id) {
+                  await moveToFolder(accessToken, meta.id, statusFolder.id, currentParent);
+                  console.log(`Moved ${contract.name} (by id) to ${statusFolderName}`);
+                }
+                contractFolder = { id: meta.id, webViewLink: meta.webViewLink };
+              }
+            }
 
             if (!contractFolder) {
-              // Check if folder exists in root (old location) or any status folder
-              let existingFolder = await getFolderByName(accessToken, contract.name, rootFolderId);
+              // First check if folder already exists in the correct status folder (by name)
+              let existingFolder = await getFolderByName(accessToken, contract.name, statusFolder.id);
 
               if (existingFolder) {
-                // Move to correct status folder
-                await moveToFolder(accessToken, existingFolder.id, statusFolder.id, rootFolderId);
                 contractFolder = existingFolder;
-                console.log(`Moved ${contract.name} to ${statusFolderName}`);
               } else {
-                // Check in other status folders
-                for (const [folderName, folder] of Object.entries(statusFolders)) {
-                  if (folderName !== statusFolderName) {
-                    existingFolder = await getFolderByName(accessToken, contract.name, folder.id);
-                    if (existingFolder) {
-                      // Move to correct status folder
-                      await moveToFolder(accessToken, existingFolder.id, statusFolder.id, folder.id);
-                      contractFolder = existingFolder;
-                      console.log(`Moved ${contract.name} from ${folderName} to ${statusFolderName}`);
-                      break;
+                // Check if folder exists in root (old location) or any status folder
+                existingFolder = await getFolderByName(accessToken, contract.name, rootFolderId);
+
+                if (existingFolder) {
+                  // Move to correct status folder
+                  await moveToFolder(accessToken, existingFolder.id, statusFolder.id, rootFolderId);
+                  contractFolder = existingFolder;
+                  console.log(`Moved ${contract.name} to ${statusFolderName}`);
+                } else {
+                  // Check in other status folders
+                  for (const [folderName, folder] of Object.entries(statusFolders)) {
+                    if (folderName !== statusFolderName) {
+                      existingFolder = await getFolderByName(accessToken, contract.name, folder.id);
+                      if (existingFolder) {
+                        // Move to correct status folder
+                        await moveToFolder(accessToken, existingFolder.id, statusFolder.id, folder.id);
+                        contractFolder = existingFolder;
+                        console.log(`Moved ${contract.name} from ${folderName} to ${statusFolderName}`);
+                        break;
+                      }
                     }
                   }
                 }
-              }
 
-              if (!contractFolder) {
-                // Create new folder in correct status folder
-                contractFolder = await createDriveFolder(accessToken, contract.name, statusFolder.id);
-                console.log(`Created folder for ${contract.name} in ${statusFolderName}`);
+                if (!contractFolder) {
+                  // Create new folder in correct status folder
+                  contractFolder = await createDriveFolder(accessToken, contract.name, statusFolder.id);
+                  console.log(`Created folder for ${contract.name} in ${statusFolderName}`);
+                }
               }
             }
 
@@ -656,12 +724,22 @@ serve(async (req) => {
         const statusFolderName = getStatusFolderName(contract.status);
         const statusFolder = statusFolders[statusFolderName];
         
-        // Check current folder location
-        let contractFolder = contract.drive_folder_id 
-          ? await getFolderByName(accessToken, contract.name, statusFolder.id)
-          : null;
+        // Prefer drive_folder_id (idempotent). Name-based lookup is a fallback only.
+        let contractFolder: { id: string; webViewLink: string } | null = null;
+
+        if (contract.drive_folder_id) {
+          const meta = await getFolderById(accessToken, contract.drive_folder_id);
+          if (meta && meta.mimeType === "application/vnd.google-apps.folder" && !meta.trashed) {
+            const currentParent = meta.parents?.[0];
+            if (currentParent && currentParent !== statusFolder.id) {
+              await moveToFolder(accessToken, meta.id, statusFolder.id, currentParent);
+              console.log(`Moved ${contract.name} (by id) to ${statusFolderName}`);
+            }
+            contractFolder = { id: meta.id, webViewLink: meta.webViewLink };
+          }
+        }
         
-        if (!contractFolder && contract.drive_folder_id) {
+        if (!contractFolder) {
           // Folder exists but might be in wrong location, find it
           for (const [folderName, folder] of Object.entries(statusFolders)) {
             const existingFolder = await getFolderByName(accessToken, contract.name, folder.id);
@@ -844,7 +922,7 @@ serve(async (req) => {
       case "testConnection": {
         // Test the connection by verifying the root folder exists
         const rootFolderResponse = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${rootFolderId}?fields=id,name,webViewLink`,
+          `https://www.googleapis.com/drive/v3/files/${rootFolderId}?fields=id,name,webViewLink&supportsAllDrives=true`,
           {
             headers: {
               Authorization: `Bearer ${accessToken}`,
