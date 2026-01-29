@@ -323,20 +323,18 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       if (budgetData && budgetData.length > 0) {
         const budgetIds = budgetData.map(b => b.id);
         
-        // Load budget lines that are:
-        // 1. "autorizado" status (standard approval)
-        // 2. OR have amount_uf > 0 (manually approved by admin with budget assigned)
-        // This ensures lines approved manually are also available
+        // Load ALL budget lines (including child lines) that have budget assigned
+        // Lines with amount_uf > 0 are the ones with actual budget available
         const { data: linesData, error: linesError } = await supabase
           .from("budget_lines")
-          .select("id, name, amount_uf, budget_id, status")
+          .select("id, name, amount_uf, budget_id, status, parent_id")
           .in("budget_id", budgetIds)
           .is("deleted_at", null)
-          .is("parent_id", null); // Get only root lines
+          .gt("amount_uf", 0); // Only lines with actual budget
 
         if (linesError) throw linesError;
         
-        // Filter to include autorizado OR lines with budget assigned (amount_uf > 0)
+        // Include lines that are autorizado OR have budget > 0
         const validLines = (linesData || []).filter(line => 
           line.status === "autorizado" || line.amount_uf > 0
         );
