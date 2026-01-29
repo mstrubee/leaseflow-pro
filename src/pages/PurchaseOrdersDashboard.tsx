@@ -73,6 +73,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
+import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
@@ -203,6 +204,7 @@ const PurchaseOrdersDashboard = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading, isAdmin } = useAuth();
   const { ufValue } = useEconomicIndicators();
+  const { openFile } = useSecureFileAccess();
 
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   
@@ -3640,14 +3642,13 @@ const PurchaseOrdersDashboard = () => {
               {editingOCData.attachment_url && !editingOCFile && (
                 <div className="flex items-center gap-2 p-2 border rounded-lg bg-muted/30">
                   <FileText className="h-4 w-4 text-muted-foreground" />
-                  <a 
-                    href={editingOCData.attachment_url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-sm text-primary hover:underline flex-1 truncate"
+                  <button
+                    type="button"
+                    onClick={() => void openFile(editingOCData.attachment_url)}
+                    className="text-sm text-primary hover:underline flex-1 truncate text-left"
                   >
                     Ver archivo adjunto
-                  </a>
+                  </button>
                   <Button
                     type="button"
                     variant="outline"

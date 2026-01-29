@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizeFileName } from "./fileValidation";
+import { uploadFileToStorage } from "./storageUtils";
 
 /**
  * Get or create the standard "OC" folder for a contract's repository.
@@ -72,16 +73,23 @@ export async function backupOCFileToRepository(
     const sanitizedName = sanitizeFileName(file.name);
     const fileName = `OC_${orderNumber}_${sanitizedName}`;
 
-    // NOTE: Drive upload is disabled. Service accounts lack storage quota.
-    // We create a DB record without uploading to Drive.
+    // Drive uploads disabled → store the file in Storage and reference it from repository_files
+    const datePrefix = new Date().toISOString().split("T")[0].replace(/-/g, "");
+    const unique = Date.now();
+    const storagePath = `oc-files/${datePrefix}/${contractId}/OC_${orderNumber}_${unique}_${sanitizedName}`;
 
-    // Create record in repository_files (no Drive URL)
+    const { path: storedUrl, error: uploadError } = await uploadFileToStorage(storagePath, file);
+    if (uploadError) {
+      return { success: false, error: uploadError.message };
+    }
+
+    // Create record in repository_files referencing Storage URL
     const { data: fileRecord, error: dbError } = await supabase
       .from("repository_files")
       .insert({
         folder_id: folderInfo.id,
         name: fileName,
-        url: '', // No Drive URL
+        url: storedUrl,
         file_type: fileExt || null,
         drive_file_id: null,
       })
@@ -109,7 +117,7 @@ export async function backupOCFromStorageUrl(
   storageUrl: string,
   orderNumber: string,
   originalFileName: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; fileId?: string; error?: string }> {
   try {
     const folderInfo = await getOrCreateOCFolder(contractId);
     if (!folderInfo) {
@@ -121,21 +129,24 @@ export async function backupOCFromStorageUrl(
     const fileName = `OC_${orderNumber}_${originalFileName}`;
 
     // Create a reference record in repository_files pointing to the URL
-    const { error: dbError } = await supabase
+    const { data: inserted, error: dbError } = await supabase
       .from("repository_files")
       .insert({
         folder_id: folderInfo.id,
         name: fileName,
         url: storageUrl,
         file_type: fileExt,
-      });
+        drive_file_id: null,
+      })
+      .select("id")
+      .single();
 
     if (dbError) {
       console.error("Error creating file record:", dbError);
       return { success: false, error: dbError.message };
     }
 
-    return { success: true };
+    return { success: true, fileId: inserted?.id };
   } catch (error: any) {
     console.error("Error backing up OC from URL:", error);
     return { success: false, error: error.message };
@@ -189,30 +200,35 @@ export async function uploadFileToMultipleContracts(
   const successful: { contractId: string; url: string; fileId: string }[] = [];
   const failed: { contractId: string; error: string }[] = [];
 
+  // Upload once to Storage, then create a reference in each contract's OC folder
+  let storedUrl: string;
+  try {
+    const datePrefix = new Date().toISOString().split("T")[0].replace(/-/g, "");
+    const unique = Date.now();
+    const sanitizedOriginal = sanitizeFileName(file.name);
+    const storagePath = `oc-files/${datePrefix}/shared/OC_${orderNumber}_${unique}_${sanitizedOriginal}`;
+    const { path, error } = await uploadFileToStorage(storagePath, file);
+    if (error) throw error;
+    storedUrl = path;
+  } catch (e: any) {
+    const message = e?.message || "Error al subir archivo";
+    for (const contractId of contractIds) {
+      failed.push({ contractId, error: message });
+    }
+    return { successful, failed, primaryUrl: null };
+  }
+
+  const originalFileName = sanitizeFileName(file.name);
+
   for (const contractId of contractIds) {
-    const result = await backupOCFileToRepository(contractId, file, orderNumber);
-    
-    if (result.success && result.fileId) {
-      // Get the file record (URL will be empty since Drive is disabled)
-      const { data: fileRecord } = await supabase
-        .from("repository_files")
-        .select("url")
-        .eq("id", result.fileId)
-        .single();
-      
-      successful.push({ 
-        contractId, 
-        url: fileRecord?.url || '', 
-        fileId: result.fileId 
-      });
+    const result = await backupOCFromStorageUrl(contractId, storedUrl, orderNumber, originalFileName);
+    if (result.success) {
+      // fileId is optional here; if needed, change backupOCFromStorageUrl to select('id')
+      successful.push({ contractId, url: storedUrl, fileId: result.fileId || "" });
     } else {
       failed.push({ contractId, error: result.error || "Error desconocido" });
     }
   }
 
-  return { 
-    successful, 
-    failed,
-    primaryUrl: successful.length > 0 ? successful[0].url : null
-  };
+  return { successful, failed, primaryUrl: storedUrl };
 }

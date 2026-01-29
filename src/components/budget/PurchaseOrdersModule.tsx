@@ -18,6 +18,7 @@ import { RepositoryFilePicker } from "./RepositoryFilePicker";
 import { SupplierForm } from "@/components/suppliers/SupplierForm";
 import { cn } from "@/lib/utils";
 import { backupOCFileToRepository } from "@/lib/repositoryBackup";
+import { useSecureFileAccess } from "@/hooks/useSecureFileAccess";
 
 interface PurchaseOrder {
   id: string;
@@ -151,6 +152,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
   });
   
   const { toast } = useToast();
+  const { openFile } = useSecureFileAccess();
   const { formatUF, formatCLP, convertUFToPesos, convertPesosToUF, ufValue } = useBudgetContext();
 
   useEffect(() => {
@@ -1205,7 +1207,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                             className="h-6 w-6 p-0"
                             onClick={(e) => {
                               e.stopPropagation();
-                              window.open(order.attachment_url!, "_blank");
+                              void openFile(order.attachment_url);
                             }}
                           >
                             <Paperclip className="h-3 w-3" />
@@ -1750,7 +1752,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                       type="button"
                       variant="ghost"
                       size="sm"
-                      onClick={() => window.open(editFormData.attachment_url, "_blank")}
+                      onClick={() => void openFile(editFormData.attachment_url)}
                       className="h-7 w-7 p-0"
                     >
                       <ExternalLink className="h-4 w-4" />
