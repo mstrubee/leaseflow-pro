@@ -26,6 +26,7 @@ interface UserProfile {
 interface ContractOption {
   id: string;
   name: string;
+  company_name: string | null;
 }
 
 const ALERT_TYPES = [
@@ -104,19 +105,24 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
   const [selectedContractId, setSelectedContractId] = useState<string>(contractId || "");
   const [loadingContracts, setLoadingContracts] = useState(false);
 
-  // Load available contracts
+  // Load available contracts with company name
   useEffect(() => {
     const loadContracts = async () => {
       setLoadingContracts(true);
       try {
         const { data, error } = await supabase
           .from("contracts")
-          .select("id, name")
+          .select("id, name, companies:company_id(name)")
           .is("deleted_at", null)
           .order("name");
         
         if (!error && data) {
-          setContracts(data);
+          const mapped = data.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            company_name: c.companies?.name || null,
+          }));
+          setContracts(mapped);
         }
       } catch (err) {
         console.error("Error loading contracts:", err);
@@ -409,7 +415,7 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
               <SelectContent>
                 {contracts.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
-                    {c.name}
+                    {c.name}{c.company_name ? ` - ${c.company_name}` : ""}
                   </SelectItem>
                 ))}
               </SelectContent>
