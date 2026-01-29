@@ -3487,6 +3487,45 @@ export type Database = {
           },
         ]
       }
+      purchase_order_budget_lines: {
+        Row: {
+          amount_uf: number
+          budget_line_id: string
+          created_at: string
+          id: string
+          purchase_order_id: string
+        }
+        Insert: {
+          amount_uf?: number
+          budget_line_id: string
+          created_at?: string
+          id?: string
+          purchase_order_id: string
+        }
+        Update: {
+          amount_uf?: number
+          budget_line_id?: string
+          created_at?: string
+          id?: string
+          purchase_order_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_order_budget_lines_budget_line_id_fkey"
+            columns: ["budget_line_id"]
+            isOneToOne: false
+            referencedRelation: "budget_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_order_budget_lines_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       purchase_order_contract_allocations: {
         Row: {
           amount_clp: number | null
