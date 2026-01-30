@@ -31,6 +31,7 @@ interface ContractVersion {
   gastos_comunes_uf_ml_frente?: number | null;
   gastos_comunes_prorrata_kwh_clima?: number | null;
   adicional_administracion_percentage?: number | null;
+  gastos_comunes_fixed_admin_uf?: number | null;
   has_extended_gastos_comunes?: boolean | null;
 
   // FP + Otros

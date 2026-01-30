@@ -60,6 +60,7 @@ interface ContractVersion {
   gastos_comunes_uf_m2: number | null;
   gastos_comunes_uf_ml_frente?: number | null;
   gastos_comunes_prorrata_kwh_clima?: number | null;
+  gastos_comunes_fixed_admin_uf?: number | null;
   adicional_administracion_percentage?: number | null;
   has_extended_gastos_comunes?: boolean | null;
 
@@ -282,6 +283,7 @@ const Contracts = () => {
           gastos_comunes_prorrata_kwh_clima,
           fondo_promocion_percentage,
           adicional_administracion_percentage,
+          gastos_comunes_fixed_admin_uf,
           has_extended_gastos_comunes,
           otros_egresos_amount,
           otros_egresos_description,
@@ -448,8 +450,9 @@ const Contracts = () => {
           const adicionalAdmin = hasExtended
             ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100)
             : 0;
+          const fixedAdminUf = hasExtended ? (currentVersion.gastos_comunes_fixed_admin_uf || 0) : 0;
 
-          gastosComunes = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
+          gastosComunes = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin + fixedAdminUf;
         }
 
         const fondoPromocion = currentVersion.regime_rent * ((currentVersion.fondo_promocion_percentage || 0) / 100);
@@ -537,7 +540,8 @@ const Contracts = () => {
             const adicionalAdmin = hasExtended
               ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100)
               : 0;
-            gastosComunes = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
+            const fixedAdminUf = hasExtended ? (currentVersion.gastos_comunes_fixed_admin_uf || 0) : 0;
+            gastosComunes = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin + fixedAdminUf;
           }
 
           const fondoPromocion = currentVersion.regime_rent * ((currentVersion.fondo_promocion_percentage || 0) / 100);

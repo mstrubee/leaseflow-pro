@@ -52,6 +52,7 @@ interface ContractVersion {
   gastos_comunes_tope_type?: string | null;
   fondo_promocion_percentage?: number | null;
   adicional_administracion_percentage?: number | null;
+  gastos_comunes_fixed_admin_uf?: number | null;
   has_extended_gastos_comunes?: boolean | null;
   grace_months?: number | null;
   notice_bilaterality?: string | null;
@@ -483,8 +484,9 @@ export function CommercialConditionsSummary({
       const gastosMlFrente = hasExtended && version.gastos_comunes_uf_ml_frente && metrosLinealesFrente ? version.gastos_comunes_uf_ml_frente * metrosLinealesFrente : 0;
       const gastosKwhClima = hasExtended ? version.gastos_comunes_prorrata_kwh_clima || 0 : 0;
       const adicionalAdminAmount = hasExtended && version.adicional_administracion_percentage ? version.adicional_administracion_percentage / 100 * actualRegimeRent : 0;
+      const fixedAdminUf = hasExtended ? version.gastos_comunes_fixed_admin_uf || 0 : 0;
       
-      const total = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdminAmount;
+      const total = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdminAmount + fixedAdminUf;
       return total > 0 ? total : null;
     }
   }, [version, superficieEdificadaLocal, metrosLinealesFrente, actualRegimeRent]);
