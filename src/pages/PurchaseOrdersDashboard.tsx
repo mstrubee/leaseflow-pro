@@ -2707,7 +2707,7 @@ const PurchaseOrdersDashboard = () => {
                                                             {consolidated.contracts.map((contract) => (
                                                               <div key={contract.id} className="flex justify-between items-center p-2 bg-background rounded border">
                                                                 <span className="font-medium">{contract.contract_name}</span>
-                                                                <span className="text-primary">{formatUF(contract.amount_uf)}</span>
+                                                                <span className="text-primary">{formatCLP(contract.amount_uf * ufValue)}</span>
                                                               </div>
                                                             ))}
                                                           </div>
@@ -2735,8 +2735,9 @@ const PurchaseOrdersDashboard = () => {
                                                   <TableCell className="text-sm py-1.5">
                                                     {format(parseISO(invoice.invoice_date), "dd MMM yyyy", { locale: es })}
                                                   </TableCell>
-                                                  <TableCell className="text-sm py-1.5 text-right font-medium">
-                                                    {formatUF(invoice.amount_uf)}
+                                                  <TableCell className="text-sm py-1.5 text-right">
+                                                    <div className="font-medium">{formatCLP(invoice.amount_uf * ufValue)}</div>
+                                                    <div className="text-xs text-muted-foreground">{formatUF(invoice.amount_uf)}</div>
                                                   </TableCell>
                                                   <TableCell className="py-1.5">
                                                     {invoiceCreditNotes.length > 0 ? (
@@ -2744,7 +2745,7 @@ const PurchaseOrdersDashboard = () => {
                                                         {invoiceCreditNotes.map((cn) => (
                                                           <div key={cn.id} className="flex items-center gap-1">
                                                             <Badge variant="outline" className="text-green-600 border-green-300 text-xs">
-                                                              NC {cn.credit_note_number}: -{formatUF(cn.amount_uf)}
+                                                              NC {cn.credit_note_number}: -{formatCLP(cn.amount_uf * ufValue)}
                                                             </Badge>
                                                             <Button
                                                               size="sm"
@@ -2757,7 +2758,7 @@ const PurchaseOrdersDashboard = () => {
                                                           </div>
                                                         ))}
                                                         <p className="text-xs text-muted-foreground">
-                                                          Neto: {formatUF(invoice.amount_uf - creditNotesTotal)}
+                                                          Neto: {formatCLP((invoice.amount_uf - creditNotesTotal) * ufValue)}
                                                         </p>
                                                       </div>
                                                     ) : (
@@ -2812,19 +2813,19 @@ const PurchaseOrdersDashboard = () => {
                                       {/* Summary */}
                                       <div className="flex items-center gap-4 text-sm pt-2 border-t">
                                         <span className="text-muted-foreground">
-                                          Total OC: <span className="font-medium text-foreground">{formatUF(groupedOrder.total_amount_uf)}</span>
+                                          Total OC: <span className="font-medium text-foreground">{formatCLP(groupedOrder.total_amount_uf * ufValue)}</span>
                                         </span>
                                         <span className="text-muted-foreground">
-                                          Facturado: <span className="font-medium text-green-600">{formatUF(groupedOrder.total_invoices_amount)}</span>
+                                          Facturado: <span className="font-medium text-green-600">{formatCLP(groupedOrder.total_invoices_amount * ufValue)}</span>
                                         </span>
                                         {statusInfo.totalCreditNotes > 0 && (
                                           <span className="text-muted-foreground">
-                                            NC: <span className="font-medium text-blue-600">-{formatUF(statusInfo.totalCreditNotes)}</span>
+                                            NC: <span className="font-medium text-blue-600">-{formatCLP(statusInfo.totalCreditNotes * ufValue)}</span>
                                           </span>
                                         )}
                                         <span className="text-muted-foreground">
                                           Pendiente: <span className={`font-medium ${statusInfo.pending < 0 ? 'text-red-600' : 'text-orange-600'}`}>
-                                            {formatUF(statusInfo.pending)}
+                                            {formatCLP(statusInfo.pending * ufValue)}
                                           </span>
                                         </span>
                                       </div>
