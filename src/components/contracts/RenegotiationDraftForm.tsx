@@ -90,6 +90,7 @@ export function RenegotiationDraftForm({
   const [gastosComunesTope, setGastosComunesTope] = useState("");
   const [gastosComunesTopeType, setGastosComunesTopeType] = useState<"fixed" | "uf_m2">("fixed");
   const [adicionalAdministracionPercentage, setAdicionalAdministracionPercentage] = useState("");
+  const [gastosComunesFixedAdminUf, setGastosComunesFixedAdminUf] = useState("");
   
   // Fondo promoción
   const [fondoPromocionPercentage, setFondoPromocionPercentage] = useState("");
@@ -139,6 +140,7 @@ export function RenegotiationDraftForm({
       setGastosComunesTopeType((draft as any).gastos_comunes_tope_type || "fixed");
       setHasExtendedGastosComunes((draft as any).has_extended_gastos_comunes || false);
       setAdicionalAdministracionPercentage((draft as any).adicional_administracion_percentage?.toString() || "");
+      setGastosComunesFixedAdminUf((draft as any).gastos_comunes_fixed_admin_uf?.toString() || "");
       
       setFondoPromocionPercentage(draft.fondo_promocion_percentage?.toString() || "");
       setOtrosEgresosAmount(draft.otros_egresos_amount?.toString() || "");
@@ -221,6 +223,7 @@ export function RenegotiationDraftForm({
       gastos_comunes_tope_type: gastosComunesTopeType,
       has_extended_gastos_comunes: hasExtendedGastosComunes,
       adicional_administracion_percentage: hasExtendedGastosComunes && adicionalAdministracionPercentage ? parseFloat(adicionalAdministracionPercentage) : null,
+      gastos_comunes_fixed_admin_uf: hasExtendedGastosComunes && gastosComunesFixedAdminUf ? parseFloat(gastosComunesFixedAdminUf) : null,
       fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
       otros_egresos_amount: otrosEgresosAmount ? parseFloat(otrosEgresosAmount) : null,
       otros_egresos_description: otrosEgresosDescription || null,
@@ -673,6 +676,18 @@ export function RenegotiationDraftForm({
                             placeholder="Ej: 5"
                             value={adicionalAdministracionPercentage}
                             onChange={(e) => setAdicionalAdministracionPercentage(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>Monto Fijo por Administración (UF)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="Ej: 10.00"
+                            value={gastosComunesFixedAdminUf}
+                            onChange={(e) => setGastosComunesFixedAdminUf(e.target.value)}
                           />
                         </div>
                       </div>

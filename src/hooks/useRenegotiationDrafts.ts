@@ -39,6 +39,7 @@ export interface RenegotiationDraft {
   gastos_comunes_tope_type: string | null;
   has_extended_gastos_comunes: boolean;
   adicional_administracion_percentage: number | null;
+  gastos_comunes_fixed_admin_uf?: number | null;
   
   // Other fields
   fondo_promocion_percentage: number | null;
