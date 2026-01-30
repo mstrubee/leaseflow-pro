@@ -1270,6 +1270,7 @@ export type Database = {
           metros_lineales_frente: number | null
           metros_lineales_frente_2: number | null
           name: string
+          negotiation_notes: string | null
           negotiation_subcategory: string | null
           num_estacionamientos: number | null
           obra_status: string | null
@@ -1306,6 +1307,7 @@ export type Database = {
           metros_lineales_frente?: number | null
           metros_lineales_frente_2?: number | null
           name: string
+          negotiation_notes?: string | null
           negotiation_subcategory?: string | null
           num_estacionamientos?: number | null
           obra_status?: string | null
@@ -1342,6 +1344,7 @@ export type Database = {
           metros_lineales_frente?: number | null
           metros_lineales_frente_2?: number | null
           name?: string
+          negotiation_notes?: string | null
           negotiation_subcategory?: string | null
           num_estacionamientos?: number | null
           obra_status?: string | null
