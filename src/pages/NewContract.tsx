@@ -86,6 +86,7 @@ const NewContract = () => {
   const [gastosComunesTopeType, setGastosComunesTopeType] = useState<"fixed" | "uf_m2">("fixed");
   const [fondoPromocionPercentage, setFondoPromocionPercentage] = useState("");
   const [adicionalAdministracionPercentage, setAdicionalAdministracionPercentage] = useState("");
+  const [gastosComunesFixedAdminUf, setGastosComunesFixedAdminUf] = useState("");
   const [otrosEgresosAmount, setOtrosEgresosAmount] = useState("");
   const [otrosEgresosDescription, setOtrosEgresosDescription] = useState("");
   
@@ -207,6 +208,7 @@ const NewContract = () => {
             gastos_comunes_tope_type: gastosComunesMethodology === "percentage" ? gastosComunesTopeType : null,
             fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
             adicional_administracion_percentage: adicionalAdministracionPercentage ? parseFloat(adicionalAdministracionPercentage) : null,
+            gastos_comunes_fixed_admin_uf: gastosComunesMethodology === "uf_m2" && gastosComunesFixedAdminUf ? parseFloat(gastosComunesFixedAdminUf) : null,
             has_extended_gastos_comunes: gastosComunesMethodology === "uf_m2" ? hasExtendedGastosComunes : false,
             grace_months: graceMonths || 0,
             otros_egresos_amount: otrosEgresosAmount ? getUFValue(otrosEgresosAmount) : null,
@@ -791,21 +793,40 @@ const NewContract = () => {
                             Porcentaje sobre el Canon en Régimen (se suma a Gastos Comunes)
                           </p>
                         </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="gastosComunesFixedAdminUfNew">Monto Fijo por Administración (UF)</Label>
+                          <Input
+                            id="gastosComunesFixedAdminUfNew"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="Ej: 10.00"
+                            value={gastosComunesFixedAdminUf}
+                            onChange={(e) => setGastosComunesFixedAdminUf(e.target.value)}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Monto fijo en UF por administración (se suma a Gastos Comunes)
+                          </p>
+                        </div>
                       </div>
                     )}
 
-                    {(gastosComunesUfM2 || (hasExtendedGastosComunes && (gastosComunesUfMlFrente || gastosComunesProrratKwhClima || adicionalAdministracionPercentage))) && (
+                    {(gastosComunesUfM2 || (hasExtendedGastosComunes && (gastosComunesUfMlFrente || gastosComunesProrratKwhClima || adicionalAdministracionPercentage || gastosComunesFixedAdminUf))) && (
                       <div className="bg-muted/50 border border-border rounded-lg p-3">
                         <p className="text-xs text-muted-foreground">
                           💡 El total de Gastos Comunes se calculará automáticamente al ingresar las superficies del local en la vista del contrato.
                         </p>
-                        {hasExtendedGastosComunes && (parseFloat(gastosComunesProrratKwhClima) > 0 || parseFloat(adicionalAdministracionPercentage) > 0) && (
+                        {hasExtendedGastosComunes && (parseFloat(gastosComunesProrratKwhClima) > 0 || parseFloat(adicionalAdministracionPercentage) > 0 || parseFloat(gastosComunesFixedAdminUf) > 0) && (
                           <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
                             {parseFloat(gastosComunesProrratKwhClima) > 0 && (
                               <div>• Prorrata KWH Clima: {gastosComunesProrratKwhClima} UF (fijo)</div>
                             )}
                             {parseFloat(adicionalAdministracionPercentage) > 0 && regimeRent && (
                               <div>• Adic. Admin ({adicionalAdministracionPercentage}%): {((parseFloat(regimeRent) || 0) * (parseFloat(adicionalAdministracionPercentage) / 100)).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF</div>
+                            )}
+                            {parseFloat(gastosComunesFixedAdminUf) > 0 && (
+                              <div>• Monto Fijo Admin: {gastosComunesFixedAdminUf} UF</div>
                             )}
                           </div>
                         )}

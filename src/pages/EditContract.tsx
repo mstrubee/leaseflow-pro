@@ -127,6 +127,7 @@ const EditContract = () => {
   const [gastosComunesTopeType, setGastosComunesTopeType] = useState<"fixed" | "uf_m2">("fixed");
   const [fondoPromocionPercentage, setFondoPromocionPercentage] = useState("");
   const [adicionalAdministracionPercentage, setAdicionalAdministracionPercentage] = useState("");
+  const [gastosComunesFixedAdminUf, setGastosComunesFixedAdminUf] = useState("");
   const [otrosEgresosAmount, setOtrosEgresosAmount] = useState("");
   const [otrosEgresosDescription, setOtrosEgresosDescription] = useState("");
   
@@ -318,6 +319,7 @@ const EditContract = () => {
         setGastosComunesProrratKwhClima((version as any).gastos_comunes_prorrata_kwh_clima?.toString() || "");
         setFondoPromocionPercentage(version.fondo_promocion_percentage?.toString() || "");
         setAdicionalAdministracionPercentage((version as any).adicional_administracion_percentage?.toString() || "");
+        setGastosComunesFixedAdminUf((version as any).gastos_comunes_fixed_admin_uf?.toString() || "");
         
         // Load extended gastos comunes preference from database
         setHasExtendedGastosComunes((version as any).has_extended_gastos_comunes ?? false);
@@ -524,6 +526,7 @@ const EditContract = () => {
             gastos_comunes_tope_type: gastosComunesMethodology === "percentage" ? gastosComunesTopeType : null,
             fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
             adicional_administracion_percentage: adicionalAdministracionPercentage ? parseFloat(adicionalAdministracionPercentage) : null,
+            gastos_comunes_fixed_admin_uf: gastosComunesMethodology === "uf_m2" && gastosComunesFixedAdminUf ? parseFloat(gastosComunesFixedAdminUf) : null,
             has_extended_gastos_comunes: gastosComunesMethodology === "uf_m2" ? hasExtendedGastosComunes : false,
             notice_bilaterality: noticeType === "sin_termino" ? contractEndNoticeBilaterality : noticeBilaterality,
             grace_months: graceMonths || 0,
@@ -575,6 +578,7 @@ const EditContract = () => {
             gastos_comunes_tope_type: gastosComunesMethodology === "percentage" ? gastosComunesTopeType : null,
             fondo_promocion_percentage: fondoPromocionPercentage ? parseFloat(fondoPromocionPercentage) : null,
             adicional_administracion_percentage: adicionalAdministracionPercentage ? parseFloat(adicionalAdministracionPercentage) : null,
+            gastos_comunes_fixed_admin_uf: gastosComunesMethodology === "uf_m2" && gastosComunesFixedAdminUf ? parseFloat(gastosComunesFixedAdminUf) : null,
             has_extended_gastos_comunes: gastosComunesMethodology === "uf_m2" ? hasExtendedGastosComunes : false,
             notice_bilaterality: noticeBilaterality,
             otros_egresos_amount: otrosEgresosAmount ? parseFloat(otrosEgresosAmount) : null,
@@ -1536,10 +1540,26 @@ const EditContract = () => {
                                             Porcentaje sobre el Canon en Régimen (se suma a Gastos Comunes)
                                           </p>
                                         </div>
+
+                                        <div className="space-y-2">
+                                          <Label htmlFor="gastosComunesFixedAdminUf">Monto Fijo por Administración (UF)</Label>
+                                          <Input
+                                            id="gastosComunesFixedAdminUf"
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            placeholder="Ej: 10.00"
+                                            value={gastosComunesFixedAdminUf}
+                                            onChange={(e) => setGastosComunesFixedAdminUf(e.target.value)}
+                                          />
+                                          <p className="text-xs text-muted-foreground">
+                                            Monto fijo en UF por administración (se suma a Gastos Comunes)
+                                          </p>
+                                        </div>
                                       </div>
                                     )}
 
-                                    {(gastosComunesUfM2 || (hasExtendedGastosComunes && (gastosComunesUfMlFrente || gastosComunesProrratKwhClima || adicionalAdministracionPercentage))) && (
+                                    {(gastosComunesUfM2 || (hasExtendedGastosComunes && (gastosComunesUfMlFrente || gastosComunesProrratKwhClima || adicionalAdministracionPercentage || gastosComunesFixedAdminUf))) && (
                                       <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 space-y-2">
                                         <p className="text-sm font-medium text-primary">Total Gastos Comunes Estimado:</p>
                                         {(() => {
@@ -1547,7 +1567,8 @@ const EditContract = () => {
                                           const gastosMlFrente = hasExtendedGastosComunes ? (parseFloat(gastosComunesUfMlFrente) || 0) * metrosLinealesFrente : 0;
                                           const gastosKwhClima = hasExtendedGastosComunes ? (parseFloat(gastosComunesProrratKwhClima) || 0) : 0;
                                           const adicionalAdmin = hasExtendedGastosComunes ? (parseFloat(regimeRent) || 0) * ((parseFloat(adicionalAdministracionPercentage) || 0) / 100) : 0;
-                                          const totalUF = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
+                                          const fixedAdminUf = hasExtendedGastosComunes ? (parseFloat(gastosComunesFixedAdminUf) || 0) : 0;
+                                          const totalUF = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin + fixedAdminUf;
                                           const totalCLP = totalUF * (ufValue || 0);
                                           
                                           return (
@@ -1567,6 +1588,7 @@ const EditContract = () => {
                                                 {gastosMlFrente > 0 && <div>UF/mL × {metrosLinealesFrente}mL = {gastosMlFrente.toFixed(2)} UF</div>}
                                                 {gastosKwhClima > 0 && <div>Prorrata KWH Clima = {gastosKwhClima.toFixed(2)} UF</div>}
                                                 {adicionalAdmin > 0 && <div>Adic. Admin ({adicionalAdministracionPercentage}%) = {adicionalAdmin.toFixed(2)} UF</div>}
+                                                {fixedAdminUf > 0 && <div>Monto Fijo Admin = {fixedAdminUf.toFixed(2)} UF</div>}
                                               </div>
                                             </div>
                                           );

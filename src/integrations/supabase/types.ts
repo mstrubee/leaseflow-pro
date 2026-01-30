@@ -1125,6 +1125,7 @@ export type Database = {
           effective_date: string | null
           first_adjustment_month: number | null
           fondo_promocion_percentage: number | null
+          gastos_comunes_fixed_admin_uf: number | null
           gastos_comunes_methodology: string | null
           gastos_comunes_percentage: number | null
           gastos_comunes_prorrata_kwh_clima: number | null
@@ -1169,6 +1170,7 @@ export type Database = {
           effective_date?: string | null
           first_adjustment_month?: number | null
           fondo_promocion_percentage?: number | null
+          gastos_comunes_fixed_admin_uf?: number | null
           gastos_comunes_methodology?: string | null
           gastos_comunes_percentage?: number | null
           gastos_comunes_prorrata_kwh_clima?: number | null
@@ -1213,6 +1215,7 @@ export type Database = {
           effective_date?: string | null
           first_adjustment_month?: number | null
           fondo_promocion_percentage?: number | null
+          gastos_comunes_fixed_admin_uf?: number | null
           gastos_comunes_methodology?: string | null
           gastos_comunes_percentage?: number | null
           gastos_comunes_prorrata_kwh_clima?: number | null
