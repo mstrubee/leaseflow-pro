@@ -71,8 +71,16 @@ export const useAuth = () => {
     const userPermission = permissions.find(p => p.resource === resource);
     if (!userPermission) return false;
     
+    // User has 'all' permission - grants full access
     if (userPermission.permission === "all") return true;
-    if (requiredPermission === "view") return true;
+    
+    // Check view permission - requires at least view or edit
+    if (requiredPermission === "view" && 
+        (userPermission.permission === "view" || userPermission.permission === "edit")) {
+      return true;
+    }
+    
+    // Check edit permission - requires edit permission
     if (requiredPermission === "edit" && userPermission.permission === "edit") return true;
     
     return false;
