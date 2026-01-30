@@ -1,9 +1,11 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-// Secure CORS configuration - only allow trusted origins
+// Secure CORS configuration - only allow explicit trusted origins
 const ALLOWED_ORIGINS = [
   'https://tgxiqvfpirwvhktgqqfa.lovable.app',
+  'https://id-preview--73a8d508-7010-4c00-aa8e-6eb117cc7286.lovable.app',
+  'https://rental-flow-desk.lovable.app',
   'http://localhost:5173',
   'http://localhost:8080',
   'http://localhost:3000',
@@ -11,15 +13,12 @@ const ALLOWED_ORIGINS = [
 
 function getCorsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get('origin') || '';
-  
-  // Check if origin is in allowed list or is a lovable.app subdomain
-  const isAllowed = ALLOWED_ORIGINS.includes(origin) || 
-    origin.endsWith('.lovable.app') ||
-    origin.endsWith('.lovableproject.com');
+  // Strict origin matching - no wildcard domain matching
+  const isAllowed = ALLOWED_ORIGINS.includes(origin);
   
   return {
     'Access-Control-Allow-Origin': isAllowed ? origin : ALLOWED_ORIGINS[0],
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Max-Age': '86400',
   };
