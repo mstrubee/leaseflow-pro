@@ -95,7 +95,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
   const [closingYear, setClosingYear] = useState(false);
 
   const { toast } = useToast();
-  const { formatPrimary, formatSecondary, formatUF, ufValue } = useBudgetContext();
+  const { formatPrimary, formatSecondary, formatUF, formatCLP, ufValue, convertUFToPesos } = useBudgetContext();
 
   // Refresh key to force BudgetModule to reload
   const [refreshKey, setRefreshKey] = useState(0);
@@ -755,8 +755,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                 <span className="text-muted-foreground">Total Presupuesto:</span>
               </div>
               <div className="text-right">
-                <span className="font-medium">{formatUF(capexSummary.authorized + opexSummary.authorized + carryover.total)}</span>
-                <span className="text-xs text-muted-foreground ml-1">({formatSecondary(capexSummary.authorized + opexSummary.authorized + carryover.total)})</span>
+                <span className="font-medium">{formatCLP(convertUFToPesos(capexSummary.authorized + opexSummary.authorized + carryover.total))}</span>
+                <span className="text-xs text-muted-foreground ml-1">({formatUF(capexSummary.authorized + opexSummary.authorized + carryover.total)})</span>
               </div>
               
               {carryover.total > 0 && (
@@ -766,8 +766,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                     <span className="text-muted-foreground">Arrastre Presup.:</span>
                   </div>
                   <div className="text-right">
-                    <span className="font-medium text-amber-600">{formatUF(carryover.total)}</span>
-                    <span className="text-xs text-muted-foreground ml-1">({formatSecondary(carryover.total)})</span>
+                    <span className="font-medium text-amber-600">{formatCLP(convertUFToPesos(carryover.total))}</span>
+                    <span className="text-xs text-muted-foreground ml-1">({formatUF(carryover.total)})</span>
                   </div>
                 </>
               )}
@@ -777,8 +777,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                 <span className="text-muted-foreground">Total OC:</span>
               </div>
               <div className="text-right">
-                <span className="font-medium">{formatUF(capexTotals.oc + opexTotals.oc)}</span>
-                <span className="text-xs text-muted-foreground ml-1">({formatSecondary(capexTotals.oc + opexTotals.oc)})</span>
+                <span className="font-medium">{formatCLP(convertUFToPesos(capexTotals.oc + opexTotals.oc))}</span>
+                <span className="text-xs text-muted-foreground ml-1">({formatUF(capexTotals.oc + opexTotals.oc)})</span>
               </div>
               
               <div className="flex items-center gap-1.5">
@@ -786,8 +786,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                 <span className="text-muted-foreground">Total Facturación:</span>
               </div>
               <div className="text-right">
-                <span className="font-medium">{formatUF(capexTotals.invoices + opexTotals.invoices)}</span>
-                <span className="text-xs text-muted-foreground ml-1">({formatSecondary(capexTotals.invoices + opexTotals.invoices)})</span>
+                <span className="font-medium">{formatCLP(convertUFToPesos(capexTotals.invoices + opexTotals.invoices))}</span>
+                <span className="text-xs text-muted-foreground ml-1">({formatUF(capexTotals.invoices + opexTotals.invoices)})</span>
               </div>
               
               <div className="flex items-center gap-1.5">
@@ -795,8 +795,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                 <span className="text-muted-foreground">Total No Facturado:</span>
               </div>
               <div className="text-right">
-                <span className="font-medium text-red-600">{formatUF((capexTotals.oc + opexTotals.oc) - (capexTotals.invoices + opexTotals.invoices))}</span>
-                <span className="text-xs text-muted-foreground ml-1">({formatSecondary((capexTotals.oc + opexTotals.oc) - (capexTotals.invoices + opexTotals.invoices))})</span>
+                <span className="font-medium text-red-600">{formatCLP(convertUFToPesos((capexTotals.oc + opexTotals.oc) - (capexTotals.invoices + opexTotals.invoices)))}</span>
+                <span className="text-xs text-muted-foreground ml-1">({formatUF((capexTotals.oc + opexTotals.oc) - (capexTotals.invoices + opexTotals.invoices))})</span>
               </div>
               
               {(capexSummary.unauthorized + opexSummary.unauthorized) > 0 && (
@@ -807,8 +807,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                     <span className="text-muted-foreground">Presup. No Autorizado:</span>
                   </div>
                   <div className="text-right">
-                    <span className="font-medium text-yellow-600">{formatUF(capexSummary.unauthorized + opexSummary.unauthorized)}</span>
-                    <span className="text-xs text-muted-foreground ml-1">({formatSecondary(capexSummary.unauthorized + opexSummary.unauthorized)})</span>
+                    <span className="font-medium text-yellow-600">{formatCLP(convertUFToPesos(capexSummary.unauthorized + opexSummary.unauthorized))}</span>
+                    <span className="text-xs text-muted-foreground ml-1">({formatUF(capexSummary.unauthorized + opexSummary.unauthorized)})</span>
                   </div>
                 </>
               )}
@@ -840,8 +840,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-lg font-bold">{formatUF(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized)}</p>
-                <p className="text-xs text-muted-foreground">{formatSecondary(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized)}</p>
+                <p className="text-lg font-bold">{formatCLP(convertUFToPesos(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized))}</p>
+                <p className="text-xs text-muted-foreground">{formatUF(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized)}</p>
               </div>
               <BudgetSemaphore budget={capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized} consumed={capexTotals.oc} showLabel={false} size="md" />
             </div>
@@ -850,26 +850,26 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                 <FileText className="h-3.5 w-3.5 text-orange-500" />
                 <span className="text-muted-foreground">OC:</span>
               </div>
-              <span className="font-medium text-right">{formatPrimary(capexTotals.oc)}</span>
+              <span className="font-medium text-right">{formatCLP(convertUFToPesos(capexTotals.oc))}</span>
               
               <div className="flex items-center gap-1.5">
                 <Receipt className="h-3.5 w-3.5 text-purple-500" />
                 <span className="text-muted-foreground">Facturación:</span>
               </div>
-              <span className="font-medium text-right">{formatPrimary(capexTotals.invoices)}</span>
+              <span className="font-medium text-right">{formatCLP(convertUFToPesos(capexTotals.invoices))}</span>
               
               <div className="flex items-center gap-1.5">
                 <Clock className="h-3.5 w-3.5 text-red-500" />
                 <span className="text-muted-foreground">No Facturado:</span>
               </div>
-              <span className="font-medium text-right text-red-600">{formatPrimary(capexTotals.oc - capexTotals.invoices)}</span>
+              <span className="font-medium text-right text-red-600">{formatCLP(convertUFToPesos(capexTotals.oc - capexTotals.invoices))}</span>
               
               <div className="flex items-center gap-1.5">
                 <DollarSign className="h-3.5 w-3.5 text-green-500" />
                 <span className="text-muted-foreground">Disponible:</span>
               </div>
               <span className={`font-medium text-right ${capexTotals.oc > (capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized) ? "text-destructive" : "text-green-600"}`}>
-                {formatPrimary((capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized) - capexTotals.oc)}
+                {formatCLP(convertUFToPesos((capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized) - capexTotals.oc))}
               </span>
               
               {capexSummary.unauthorized > 0 && (
@@ -878,7 +878,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                     <AlertCircle className="h-3.5 w-3.5 text-yellow-500" />
                     <span className="text-muted-foreground">Presup. No Autorizado:</span>
                   </div>
-                  <span className="font-medium text-right text-yellow-600">{formatPrimary(capexSummary.unauthorized)}</span>
+                  <span className="font-medium text-right text-yellow-600">{formatCLP(convertUFToPesos(capexSummary.unauthorized))}</span>
                 </>
               )}
             </div>
@@ -896,8 +896,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-lg font-bold">{formatUF(opexTotals.oc)}</p>
-                <p className="text-xs text-muted-foreground">{formatSecondary(opexTotals.oc)}</p>
+                <p className="text-lg font-bold">{formatCLP(convertUFToPesos(opexTotals.oc))}</p>
+                <p className="text-xs text-muted-foreground">{formatUF(opexTotals.oc)}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm border-t pt-2">
@@ -905,19 +905,19 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                 <FileText className="h-3.5 w-3.5 text-orange-500" />
                 <span className="text-muted-foreground">Total OC:</span>
               </div>
-              <span className="font-medium text-right">{formatPrimary(opexTotals.oc)}</span>
+              <span className="font-medium text-right">{formatCLP(convertUFToPesos(opexTotals.oc))}</span>
               
               <div className="flex items-center gap-1.5">
                 <Receipt className="h-3.5 w-3.5 text-purple-500" />
                 <span className="text-muted-foreground">Total Facturación:</span>
               </div>
-              <span className="font-medium text-right">{formatPrimary(opexTotals.invoices)}</span>
+              <span className="font-medium text-right">{formatCLP(convertUFToPesos(opexTotals.invoices))}</span>
               
               <div className="flex items-center gap-1.5">
                 <Clock className="h-3.5 w-3.5 text-red-500" />
                 <span className="text-muted-foreground">Total No Facturado:</span>
               </div>
-              <span className="font-medium text-right text-red-600">{formatPrimary(opexTotals.oc - opexTotals.invoices)}</span>
+              <span className="font-medium text-right text-red-600">{formatCLP(convertUFToPesos(opexTotals.oc - opexTotals.invoices))}</span>
               
               <div className="col-span-2 pt-2 border-t">
                 <p className="text-xs text-muted-foreground italic">
