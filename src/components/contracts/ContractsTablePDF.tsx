@@ -251,9 +251,14 @@ export const generateContractsListPDF = async (
             const fmtUFM2 = (n: number) => n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
             const lines: string[] = [`${fmtUF(breakdown.total)} UF`];
 
-            // If base is UF/m², keep that reference visible (3 decimals)
-            if (breakdown.regimeRentUfM2 != null && superficie > 0) {
-              lines.push(`(Canon ${fmtUFM2(breakdown.regimeRentUfM2)} UF/m²)`);
+            // Always show Canon in UF/m² when superficie is available:
+            // - If rent is stored as UF/m², use that exact rate
+            // - Otherwise, derive it from canon / superficie
+            if (superficie > 0) {
+              const ufM2Rate = breakdown.regimeRentUfM2 ?? (breakdown.canon / superficie);
+              if (Number.isFinite(ufM2Rate) && (ufM2Rate > 0 || breakdown.regimeRentUfM2 != null)) {
+                lines.push(`(Canon ${fmtUFM2(ufM2Rate)} UF/m²)`);
+              }
             }
 
             const extras: string[] = [];
