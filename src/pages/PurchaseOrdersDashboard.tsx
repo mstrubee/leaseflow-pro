@@ -90,6 +90,8 @@ interface Invoice {
   invoice_number: string;
   invoice_date: string;
   amount_uf: number;
+  amount_clp?: number | null;
+  uf_value_at_entry?: number | null;
   reception_status: string;
 }
 
@@ -281,7 +283,19 @@ const PurchaseOrdersDashboard = () => {
   const editOCFileInputRef = useRef<HTMLInputElement>(null);
 
   // Credit notes storage
-  const [creditNotes, setCreditNotes] = useState<Map<string, { id: string; credit_note_number: string; amount_uf: number; invoice_id: string; }[]>>(new Map());
+  const [creditNotes, setCreditNotes] = useState<
+    Map<
+      string,
+      {
+        id: string;
+        credit_note_number: string;
+        amount_uf: number;
+        amount_clp?: number | null;
+        uf_value_at_entry?: number | null;
+        invoice_id: string;
+      }[]
+    >
+  >(new Map());
 
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
@@ -2483,11 +2497,13 @@ const PurchaseOrdersDashboard = () => {
                                       invoice_number: string;
                                       invoice_date: string;
                                       total_amount_uf: number;
+                                      total_amount_clp: number;
                                       reception_status: string;
                                       contracts: Array<{
                                         id: string;
                                         contract_name: string;
                                         amount_uf: number;
+                                        amount_clp: number;
                                         order_id: string;
                                       }>;
                                       // Keep first invoice for operations
@@ -2496,13 +2512,19 @@ const PurchaseOrdersDashboard = () => {
                                     }>();
                                     
                                     allInvoices.forEach(inv => {
+                                      const invAmountClp =
+                                        inv.amount_clp ??
+                                        inv.amount_uf * (inv.uf_value_at_entry ?? ufValue);
+
                                       const existing = invoiceMap.get(inv.invoice_number);
                                       if (existing) {
                                         existing.total_amount_uf += inv.amount_uf;
+                                        existing.total_amount_clp += invAmountClp;
                                         existing.contracts.push({
                                           id: inv.id,
                                           contract_name: inv.contract_name,
                                           amount_uf: inv.amount_uf,
+                                          amount_clp: invAmountClp,
                                           order_id: inv.order_id,
                                         });
                                         existing.allInvoiceIds.push(inv.id);
@@ -2511,11 +2533,13 @@ const PurchaseOrdersDashboard = () => {
                                           invoice_number: inv.invoice_number,
                                           invoice_date: inv.invoice_date,
                                           total_amount_uf: inv.amount_uf,
+                                          total_amount_clp: invAmountClp,
                                           reception_status: inv.reception_status,
                                           contracts: [{
                                             id: inv.id,
                                             contract_name: inv.contract_name,
                                             amount_uf: inv.amount_uf,
+                                            amount_clp: invAmountClp,
                                             order_id: inv.order_id,
                                           }],
                                           firstInvoice: inv,
@@ -2574,18 +2598,31 @@ const PurchaseOrdersDashboard = () => {
                                                 consolidated.allInvoiceIds.includes(cn.invoice_id)
                                               );
                                               // Consolidate credit notes by number
-                                              const creditNoteMap = new Map<string, { number: string; total: number; ids: string[] }>();
+                                              const creditNoteMap = new Map<
+                                                string,
+                                                { number: string; total_uf: number; total_clp: number; ids: string[] }
+                                              >();
                                               invoiceCreditNotes.forEach(cn => {
+                                                const cnAmountClp =
+                                                  cn.amount_clp ??
+                                                  cn.amount_uf * (cn.uf_value_at_entry ?? ufValue);
+
                                                 const existing = creditNoteMap.get(cn.credit_note_number);
                                                 if (existing) {
-                                                  existing.total += cn.amount_uf;
+                                                  existing.total_uf += cn.amount_uf;
+                                                  existing.total_clp += cnAmountClp;
                                                   existing.ids.push(cn.id);
                                                 } else {
-                                                  creditNoteMap.set(cn.credit_note_number, { number: cn.credit_note_number, total: cn.amount_uf, ids: [cn.id] });
+                                                  creditNoteMap.set(cn.credit_note_number, {
+                                                    number: cn.credit_note_number,
+                                                    total_uf: cn.amount_uf,
+                                                    total_clp: cnAmountClp,
+                                                    ids: [cn.id],
+                                                  });
                                                 }
                                               });
                                               const consolidatedCreditNotes = Array.from(creditNoteMap.values());
-                                              const creditNotesTotal = consolidatedCreditNotes.reduce((sum, cn) => sum + cn.total, 0);
+                                              const creditNotesTotalCLP = consolidatedCreditNotes.reduce((sum, cn) => sum + cn.total_clp, 0);
                                               
                                               return (
                                                 <React.Fragment key={consolidated.invoice_number}>
@@ -2613,8 +2650,9 @@ const PurchaseOrdersDashboard = () => {
                                                     <TableCell className="text-sm py-1.5">
                                                       {format(parseISO(consolidated.invoice_date), "dd MMM yyyy", { locale: es })}
                                                     </TableCell>
-                                                    <TableCell className="text-sm py-1.5 text-right font-medium">
-                                                      {formatUF(consolidated.total_amount_uf)}
+                                                    <TableCell className="text-sm py-1.5 text-right">
+                                                      <div className="font-medium">{formatCLP(consolidated.total_amount_clp)}</div>
+                                                      <div className="text-xs text-muted-foreground">{formatUF(consolidated.total_amount_uf)}</div>
                                                     </TableCell>
                                                     <TableCell className="text-sm py-1.5 text-center">
                                                       <Badge variant="outline" className="text-xs">
@@ -2627,7 +2665,7 @@ const PurchaseOrdersDashboard = () => {
                                                           {consolidatedCreditNotes.map((cn) => (
                                                             <div key={cn.number} className="flex items-center gap-1">
                                                               <Badge variant="outline" className="text-green-600 border-green-300 text-xs">
-                                                                NC {cn.number}: -{formatUF(cn.total)}
+                                                                NC {cn.number}: -{formatCLP(cn.total_clp)}
                                                               </Badge>
                                                               <Button
                                                                 size="sm"
@@ -2645,7 +2683,7 @@ const PurchaseOrdersDashboard = () => {
                                                             </div>
                                                           ))}
                                                           <p className="text-xs text-muted-foreground">
-                                                            Neto: {formatUF(consolidated.total_amount_uf - creditNotesTotal)}
+                                                            Neto: {formatCLP(consolidated.total_amount_clp - creditNotesTotalCLP)}
                                                           </p>
                                                         </div>
                                                       ) : (
@@ -2707,7 +2745,7 @@ const PurchaseOrdersDashboard = () => {
                                                             {consolidated.contracts.map((contract) => (
                                                               <div key={contract.id} className="flex justify-between items-center p-2 bg-background rounded border">
                                                                 <span className="font-medium">{contract.contract_name}</span>
-                                                                <span className="text-primary">{formatCLP(contract.amount_uf * ufValue)}</span>
+                                                                <span className="text-primary">{formatCLP(contract.amount_clp)}</span>
                                                               </div>
                                                             ))}
                                                           </div>
@@ -2722,7 +2760,16 @@ const PurchaseOrdersDashboard = () => {
                                             // Single-contract: show invoices normally
                                             allInvoices.map((invoice) => {
                                               const invoiceCreditNotes = allCreditNotes.filter(cn => cn.invoice_id === invoice.id);
-                                              const creditNotesTotal = invoiceCreditNotes.reduce((sum, cn) => sum + cn.amount_uf, 0);
+                                              const creditNotesTotalCLP = invoiceCreditNotes.reduce((sum, cn) => {
+                                                const cnAmountClp =
+                                                  cn.amount_clp ??
+                                                  cn.amount_uf * (cn.uf_value_at_entry ?? ufValue);
+                                                return sum + cnAmountClp;
+                                              }, 0);
+
+                                              const invoiceAmountCLP =
+                                                invoice.amount_clp ??
+                                                invoice.amount_uf * (invoice.uf_value_at_entry ?? ufValue);
                                               
                                               return (
                                                 <TableRow key={invoice.id}>
@@ -2736,7 +2783,7 @@ const PurchaseOrdersDashboard = () => {
                                                     {format(parseISO(invoice.invoice_date), "dd MMM yyyy", { locale: es })}
                                                   </TableCell>
                                                   <TableCell className="text-sm py-1.5 text-right">
-                                                    <div className="font-medium">{formatCLP(invoice.amount_uf * ufValue)}</div>
+                                                    <div className="font-medium">{formatCLP(invoiceAmountCLP)}</div>
                                                     <div className="text-xs text-muted-foreground">{formatUF(invoice.amount_uf)}</div>
                                                   </TableCell>
                                                   <TableCell className="py-1.5">
@@ -2745,7 +2792,9 @@ const PurchaseOrdersDashboard = () => {
                                                         {invoiceCreditNotes.map((cn) => (
                                                           <div key={cn.id} className="flex items-center gap-1">
                                                             <Badge variant="outline" className="text-green-600 border-green-300 text-xs">
-                                                              NC {cn.credit_note_number}: -{formatCLP(cn.amount_uf * ufValue)}
+                                                              NC {cn.credit_note_number}: -{formatCLP(
+                                                                cn.amount_clp ?? cn.amount_uf * (cn.uf_value_at_entry ?? ufValue)
+                                                              )}
                                                             </Badge>
                                                             <Button
                                                               size="sm"
@@ -2758,7 +2807,7 @@ const PurchaseOrdersDashboard = () => {
                                                           </div>
                                                         ))}
                                                         <p className="text-xs text-muted-foreground">
-                                                          Neto: {formatCLP((invoice.amount_uf - creditNotesTotal) * ufValue)}
+                                                          Neto: {formatCLP(invoiceAmountCLP - creditNotesTotalCLP)}
                                                         </p>
                                                       </div>
                                                     ) : (
