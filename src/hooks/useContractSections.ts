@@ -53,19 +53,22 @@ export function useContractSections() {
 
   // Ensure all expected keys exist (handle new keys added after preferences were saved)
   const normalizedSections = useMemo(() => {
-    const storedKeys = new Set(sections.map(s => s.key));
+    // Handle undefined/null sections during loading
+    const safeSections = sections || getDefaultSections();
+    
+    const storedKeys = new Set(safeSections.map(s => s.key));
     const missingKeys = DEFAULT_ORDER.filter(k => !storedKeys.has(k));
     
     if (missingKeys.length > 0) {
-      const maxOrder = Math.max(...sections.map(s => s.order), -1);
+      const maxOrder = Math.max(...safeSections.map(s => s.order), -1);
       const newSections = missingKeys.map((key, idx) => ({
         key,
         order: maxOrder + 1 + idx,
         collapsed: false,
       }));
-      return [...sections, ...newSections];
+      return [...safeSections, ...newSections];
     }
-    return sections;
+    return safeSections;
   }, [sections]);
 
   const getSortedSections = useCallback(() => {
