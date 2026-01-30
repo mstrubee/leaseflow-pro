@@ -33,6 +33,7 @@ export interface ContractVersionLike {
   gastos_comunes_uf_m2?: number | null;
   gastos_comunes_uf_ml_frente?: number | null;
   gastos_comunes_prorrata_kwh_clima?: number | null;
+  gastos_comunes_fixed_admin_uf?: number | null;
   adicional_administracion_percentage?: number | null;
   has_extended_gastos_comunes?: boolean | null;
 
@@ -208,8 +209,9 @@ export const calculateGastosComunesUF = (params: {
   const adicionalAdminAmount = hasExtended
     ? baseRegimeRent * ((version.adicional_administracion_percentage || 0) / 100)
     : 0;
+  const fixedAdminUf = hasExtended ? (version.gastos_comunes_fixed_admin_uf || 0) : 0;
 
-  return gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdminAmount;
+  return gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdminAmount + fixedAdminUf;
 };
 
 export interface TotalArriendoBreakdown {
