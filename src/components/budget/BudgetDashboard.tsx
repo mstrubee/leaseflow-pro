@@ -1243,7 +1243,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
   );
 };
 
-export const BudgetDashboard = ({ contractId, displayCurrency = "UF", initialTab }: BudgetDashboardProps) => {
+export const BudgetDashboard = ({ contractId, displayCurrency = "CLP", initialTab }: BudgetDashboardProps) => {
   return (
     <BudgetProvider initialCurrency={displayCurrency}>
       <BudgetDashboardContent contractId={contractId} initialTab={initialTab} />
