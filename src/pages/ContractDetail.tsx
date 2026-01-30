@@ -992,6 +992,7 @@ const ContractDetail = () => {
                             gastos_comunes_prorrata_kwh_clima: (displayVersion as any).gastos_comunes_prorrata_kwh_clima,
                             fondo_promocion_percentage: (displayVersion as any).fondo_promocion_percentage,
                             adicional_administracion_percentage: (displayVersion as any).adicional_administracion_percentage,
+                            gastos_comunes_fixed_admin_uf: (displayVersion as any).gastos_comunes_fixed_admin_uf,
                             has_extended_gastos_comunes: (displayVersion as any).has_extended_gastos_comunes,
                             grace_months: (displayVersion as any).grace_months,
                             otros_egresos_amount: (displayVersion as any).otros_egresos_amount,
