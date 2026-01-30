@@ -53,6 +53,7 @@ interface Contract {
   status: string;
   signed_date: string | null;
   negotiation_subcategory?: string | null;
+  negotiation_notes?: string | null;
   venta_estimada?: number | null;
   venta_estimada_max?: number | null;
   clasificacion?: string | null;
@@ -92,7 +93,8 @@ export const getAvailableColumns = (isFirmadoView: boolean, isNegociacionView: b
       { key: "categoria", label: "Categoría" },
       { key: "clasificacion", label: "Clasificación" },
       { key: "origen", label: "Origen" },
-      { key: "venta_estimada", label: "Venta Est." }
+      { key: "venta_estimada", label: "Venta Est." },
+      { key: "notas_negociacion", label: "Notas Negociación" }
     );
   }
 
@@ -373,10 +375,13 @@ export const generateContractsListPDF = async (
               }
             }
             
-            rowData.push(lines.join('\n'));
+          rowData.push(lines.join('\n'));
           } else {
             rowData.push('-');
           }
+          break;
+        case "notas_negociacion":
+          rowData.push(contract.negotiation_notes || '-');
           break;
         default:
           rowData.push('-');
