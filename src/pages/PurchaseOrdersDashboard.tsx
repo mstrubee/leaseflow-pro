@@ -2434,28 +2434,26 @@ const PurchaseOrdersDashboard = () => {
                                     </Button>
                                   )}
                                   {/* Expandable toggles */}
-                                  {hasInvoices && (
-                                    <Button
-                                      variant={isInvoicesExpanded ? "secondary" : "ghost"}
-                                      size="sm"
-                                      onClick={() => {
-                                        setExpandedInvoiceSections(prev => {
-                                          const next = new Set(prev);
-                                          if (next.has(groupedOrder.order_number)) {
-                                            next.delete(groupedOrder.order_number);
-                                          } else {
-                                            next.add(groupedOrder.order_number);
-                                          }
-                                          return next;
-                                        });
-                                      }}
-                                      className="h-7 px-2 gap-1 text-xs"
-                                      title="Ver facturas"
-                                    >
-                                      <FileCheck className="h-3 w-3" />
-                                      {isInvoicesExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                                    </Button>
-                                  )}
+                                  <Button
+                                    variant={isInvoicesExpanded ? "secondary" : "ghost"}
+                                    size="sm"
+                                    onClick={() => {
+                                      setExpandedInvoiceSections(prev => {
+                                        const next = new Set(prev);
+                                        if (next.has(groupedOrder.order_number)) {
+                                          next.delete(groupedOrder.order_number);
+                                        } else {
+                                          next.add(groupedOrder.order_number);
+                                        }
+                                        return next;
+                                      });
+                                    }}
+                                    className="h-7 px-2 gap-1 text-xs"
+                                    title="Ver facturas"
+                                  >
+                                    <FileCheck className="h-3 w-3" />
+                                    {isInvoicesExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                  </Button>
                                   {groupedOrder.is_multi_contract && (
                                     <Button
                                       variant={isContractsExpanded ? "secondary" : "ghost"}
