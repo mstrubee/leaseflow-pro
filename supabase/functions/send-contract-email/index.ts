@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // Secure CORS configuration - only allow trusted origins
 const ALLOWED_ORIGINS = [
@@ -69,6 +70,42 @@ const handler = async (req: Request): Promise<Response> => {
       }
     );
   }
+
+  // Authentication check - require valid user
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return new Response(
+      JSON.stringify({ error: "No autorizado" }),
+      {
+        status: 401,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      }
+    );
+  }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  
+  const supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } }
+  });
+
+  const token = authHeader.replace('Bearer ', '');
+  const { data: claimsData, error: claimsError } = await supabaseClient.auth.getClaims(token);
+  
+  if (claimsError || !claimsData?.claims) {
+    console.error("Auth validation failed:", claimsError);
+    return new Response(
+      JSON.stringify({ error: "No autorizado" }),
+      {
+        status: 401,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      }
+    );
+  }
+
+  const userId = claimsData.claims.sub;
+  console.log("Authenticated user:", userId);
 
   try {
     const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
