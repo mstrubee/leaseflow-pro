@@ -729,23 +729,27 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         <div className="flex items-center gap-6">
           <div>
             <p className="text-xs text-muted-foreground">Monto OC</p>
-            <p className="font-bold">{formatUF(localAmountUF)}</p>
+            <p className="font-bold">{formatCLP(convertUFToPesos(localAmountUF))}</p>
+            <p className="text-xs text-muted-foreground">{formatUF(localAmountUF)}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Facturado</p>
-            <p className="font-bold">{formatUF(displayedNetInvoiced)}</p>
+            <p className="font-bold">{formatCLP(convertUFToPesos(displayedNetInvoiced))}</p>
+            <p className="text-xs text-muted-foreground">{formatUF(displayedNetInvoiced)}</p>
           </div>
           {displayedTotalCreditNotes > 0 && (
             <div>
               <p className="text-xs text-muted-foreground">Notas Crédito</p>
-              <p className="font-bold text-green-600">-{formatUF(displayedTotalCreditNotes)}</p>
+              <p className="font-bold text-green-600">-{formatCLP(convertUFToPesos(displayedTotalCreditNotes))}</p>
+              <p className="text-xs text-muted-foreground">-{formatUF(displayedTotalCreditNotes)}</p>
             </div>
           )}
           <div>
             <p className="text-xs text-muted-foreground">Pendiente</p>
             <p className={cn("font-bold", pendingAmount < 0 && "text-red-600")}>
-              {formatUF(pendingAmount)}
+              {formatCLP(convertUFToPesos(pendingAmount))}
             </p>
+            <p className="text-xs text-muted-foreground">{formatUF(pendingAmount)}</p>
           </div>
           <div className="flex items-center gap-2">
             {ocStatus === "ok" && (
@@ -833,14 +837,17 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                     </div>
                   </TableCell>
                   <TableCell>{new Date(invoice.invoice_date).toLocaleDateString("es-CL")}</TableCell>
-                  <TableCell className="text-right font-mono">{formatUF(invoice.amount_uf)}</TableCell>
+                  <TableCell className="text-right font-mono">
+                    <div>{formatCLP(convertUFToPesos(invoice.amount_uf))}</div>
+                    <div className="text-xs text-muted-foreground">{formatUF(invoice.amount_uf)}</div>
+                  </TableCell>
                   <TableCell>
                     {invoiceCreditNotes.length > 0 ? (
                       <div className="space-y-1">
                         {invoiceCreditNotes.map((cn) => (
                           <div key={cn.id} className="flex items-center gap-2 text-sm">
                             <Badge variant="outline" className="text-green-600 border-green-300">
-                              NC {cn.credit_note_number}: -{formatUF(cn.amount_uf)}
+                              NC {cn.credit_note_number}: -{formatCLP(convertUFToPesos(cn.amount_uf))}
                             </Badge>
                             <Button
                               size="sm"
@@ -853,7 +860,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                           </div>
                         ))}
                         <p className="text-xs text-muted-foreground">
-                          Neto: {formatUF(invoice.amount_uf - invoiceCreditTotal)}
+                          Neto: {formatCLP(convertUFToPesos(invoice.amount_uf - invoiceCreditTotal))}
                         </p>
                       </div>
                     ) : (
