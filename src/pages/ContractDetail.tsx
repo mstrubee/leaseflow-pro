@@ -14,6 +14,7 @@ import { RenegotiationDraftsPanel } from "@/components/contracts/RenegotiationDr
 import { VersionHistoryPanel } from "@/components/contracts/VersionHistoryPanel";
 import { RepositorySection } from "@/components/contracts/RepositorySection";
 import { CommercialConditionsSummary } from "@/components/contracts/CommercialConditionsSummary";
+import { NegotiationNotesCard } from "@/components/contracts/NegotiationNotesCard";
 import { EntryExpensesSection } from "@/components/contracts/EntryExpensesSection";
 import { ContractSurfacesSection } from "@/components/contracts/ContractSurfacesSection";
 import { ContractAlerts } from "@/components/alerts/ContractAlerts";
@@ -63,6 +64,7 @@ interface Contract {
   display_currency?: "UF" | "CLP";
   requires_special_attention?: boolean;
   special_attention_reason?: string | null;
+  negotiation_notes?: string | null;
   contract_companies?: Array<{
     companies: { name: string } | null;
   }>;
@@ -783,6 +785,15 @@ const ContractDetail = () => {
           </div>
         )}
 
+        {/* Negotiation Notes Banner - only for contracts in negotiation */}
+        {contract.status === "en_negociacion" && (
+          <NegotiationNotesCard
+            contractId={contract.id}
+            notes={contract.negotiation_notes || null}
+            isAdmin={isAdmin}
+            onUpdate={loadContract}
+          />
+        )}
         {/* Section controls for admin */}
         {isAdmin && (
           <div className="flex items-center justify-between gap-2 mb-4">
