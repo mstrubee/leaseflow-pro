@@ -210,6 +210,9 @@ const PurchaseOrdersDashboard = () => {
 
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   
+  // CAPEX budgets assigned by admin
+  const [capexBudgets, setCapexBudgets] = useState<{ contract_id: string; contract_name: string; amount_uf: number; year: number }[]>([]);
+  
   // Centralized creator dialogs
   const [showRequestCreator, setShowRequestCreator] = useState(false);
   const [showOrderCreator, setShowOrderCreator] = useState(false);
@@ -494,6 +497,21 @@ const PurchaseOrdersDashboard = () => {
       }));
 
       setOcRequests(processedRequests as unknown as OCRequest[]);
+
+      // Load CAPEX budgets assigned by admin (from contract_budgets table)
+      const { data: capexBudgetsData } = await supabase
+        .from("contract_budgets")
+        .select("contract_id, amount_uf, year, contracts(name)")
+        .eq("budget_type", "capex")
+        .gt("amount_uf", 0);
+
+      const processedCapexBudgets = (capexBudgetsData || []).map((budget: any) => ({
+        contract_id: budget.contract_id,
+        contract_name: budget.contracts?.name || "Sin contrato",
+        amount_uf: budget.amount_uf || 0,
+        year: budget.year,
+      }));
+      setCapexBudgets(processedCapexBudgets);
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
@@ -538,33 +556,22 @@ const PurchaseOrdersDashboard = () => {
     setShowConvertDialog(true);
   };
 
-  // Chart data for CAPEX by local
+  // Chart data for CAPEX budgets assigned by admin (from contract_budgets)
   const capexLocalChartData = useMemo(() => {
     const yearNum = parseInt(yearFilter);
-    // CAPEX: orders with budget_line_id OR budget_classification === "CAPEX", excluding OPEX
-    const filtered = orders.filter(o => 
-      o.year === yearNum && 
-      !o.opex_category_id && 
-      o.budget_classification !== "OPEX"
-    );
+    // Filter CAPEX budgets by year
+    const filtered = capexBudgets.filter(b => b.year === yearNum && b.amount_uf > 0);
     
-    const contractMap = new Map<string, { name: string; amount: number }>();
-    filtered.forEach(order => {
-      const existing = contractMap.get(order.contract_id) || { name: order.contract_name || "", amount: 0 };
-      existing.amount += order.amount_uf || 0;
-      contractMap.set(order.contract_id, existing);
-    });
-
-    return Array.from(contractMap.entries())
-      .map(([id, data], index) => ({
-        id,
-        name: data.name,
-        value: data.amount,
+    return filtered
+      .map((budget, index) => ({
+        id: budget.contract_id,
+        name: budget.contract_name,
+        value: budget.amount_uf,
         color: COLORS[index % COLORS.length],
       }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 10);
-  }, [orders, yearFilter]);
+  }, [capexBudgets, yearFilter]);
 
   // Chart data for OPEX by local
   const opexLocalChartData = useMemo(() => {
@@ -1838,14 +1845,14 @@ const PurchaseOrdersDashboard = () => {
         <div className="space-y-4">
           {/* Row 1: Bar Charts - CAPEX por Local y OPEX por Local */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Bar Chart - CAPEX por Local */}
+            {/* Bar Chart - CAPEX Autorizado por Local */}
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">OC CAPEX por Local</CardTitle>
+                <CardTitle className="text-base">CAPEX Autorizado por Local</CardTitle>
               </CardHeader>
               <CardContent>
                 {capexLocalChartData.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">Sin datos CAPEX para {yearFilter}</p>
+                  <p className="text-center text-muted-foreground py-8">Sin presupuesto CAPEX asignado para {yearFilter}</p>
                 ) : (
                   <div className="h-[250px]">
                     <ResponsiveContainer width="100%" height="100%">
@@ -1857,7 +1864,7 @@ const PurchaseOrdersDashboard = () => {
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                         <XAxis 
                           type="number" 
-                          tickFormatter={(value) => `${value.toFixed(0)} UF`}
+                          tickFormatter={(value) => `$${Math.round(value * ufValue).toLocaleString("es-CL")}`}
                           tick={{ fontSize: 10 }}
                         />
                         <YAxis 
@@ -1868,7 +1875,10 @@ const PurchaseOrdersDashboard = () => {
                           tickFormatter={(value) => value.length > 12 ? `${value.substring(0, 12)}...` : value}
                         />
                         <Tooltip
-                          formatter={(value: number) => formatUF(value)}
+                          formatter={(value: number) => [
+                            `${formatCLP(value * ufValue)} (${formatUF(value)})`,
+                            "Autorizado"
+                          ]}
                           contentStyle={{
                             backgroundColor: "hsl(var(--popover))",
                             border: "1px solid hsl(var(--border))",
