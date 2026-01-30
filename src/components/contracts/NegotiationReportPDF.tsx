@@ -60,6 +60,7 @@ interface NegotiationContract {
   name: string;
   signed_date?: string | null;
   negotiation_subcategory: string | null;
+  negotiation_notes?: string | null;
   venta_estimada: number | null;
   venta_estimada_max?: number | null;
   metros_lineales_frente?: number | null;
@@ -275,6 +276,7 @@ export const generateNegotiationReportPDF = (
         ? `${currentVersion.duration_months} meses` 
         : '-',
       ventaText,
+      contract.negotiation_notes || '-',
     ];
   });
 
@@ -290,32 +292,36 @@ export const generateNegotiationReportPDF = (
       'Arriendo Total',
       'Duración',
       'Venta Est.',
+      'Notas Negociación',
     ]],
     body: tableData,
     styles: {
-      fontSize: 8,
+      fontSize: 7,
       cellPadding: 2,
+      overflow: 'linebreak',
     },
     headStyles: {
       fillColor: [220, 38, 38],
       textColor: 255,
       fontStyle: 'bold',
       halign: 'center',
+      fontSize: 7,
     },
     columnStyles: {
-      0: { cellWidth: 45 },
-      1: { cellWidth: 35 },
-      2: { cellWidth: 35 },
-      3: { cellWidth: 45 },
-      4: { cellWidth: 25, halign: 'right' },
-      5: { cellWidth: 25, halign: 'right' },
-      6: { cellWidth: 25, halign: 'center' },
-      7: { cellWidth: 30, halign: 'right' },
+      0: { cellWidth: 35 },
+      1: { cellWidth: 28 },
+      2: { cellWidth: 28 },
+      3: { cellWidth: 35 },
+      4: { cellWidth: 20, halign: 'right' },
+      5: { cellWidth: 22, halign: 'right' },
+      6: { cellWidth: 18, halign: 'center' },
+      7: { cellWidth: 25, halign: 'right' },
+      8: { cellWidth: 55, halign: 'left' },
     },
     alternateRowStyles: {
       fillColor: [245, 247, 250],
     },
-    margin: { left: 14, right: 14 },
+    margin: { left: 10, right: 10 },
   });
 
   // Footer
