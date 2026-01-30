@@ -990,6 +990,10 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
   };
 
   const totalOC = orders.reduce((sum, o) => sum + o.amount_uf, 0);
+  const totalOCClp = orders.reduce(
+    (sum, o) => sum + (o.amount_clp ?? Math.round(o.amount_uf * ufValue)),
+    0
+  );
 
   // Handler for multi-contract OC warning
   const handleMultiContractWarning = (order: PurchaseOrder) => {
@@ -1144,8 +1148,8 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         <div className="mb-4 p-3 bg-muted/30 rounded-lg flex items-center justify-between">
           <span className="text-sm text-muted-foreground">Total OC {selectedYear}</span>
           <div className="text-right">
-            <p className="font-bold">{formatUF(totalOC)}</p>
-            <p className="text-xs text-muted-foreground">{formatCLP(convertUFToPesos(totalOC))}</p>
+            <p className="font-bold">{formatCLP(totalOCClp)}</p>
+            <p className="text-xs text-muted-foreground">{formatUF(totalOC)}</p>
           </div>
         </div>
 
