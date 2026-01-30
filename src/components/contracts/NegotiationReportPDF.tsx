@@ -158,8 +158,12 @@ export const generateNegotiationReportPDF = (
       const fmtUFM2 = (n: number) => n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
       const lines: string[] = [`${fmtUF(breakdown.total)} UF`];
 
-      if (breakdown.regimeRentUfM2 != null && superficie > 0) {
-        lines.push(`(Canon ${fmtUFM2(breakdown.regimeRentUfM2)} UF/m²)`);
+      // Show UF/m² rate - either from stored rate or calculated from total
+      if (superficie > 0) {
+        const ufM2Rate = breakdown.regimeRentUfM2 != null 
+          ? breakdown.regimeRentUfM2 
+          : breakdown.canon / superficie;
+        lines.push(`(Canon ${fmtUFM2(ufM2Rate)} UF/m²)`);
       }
 
       const extras: string[] = [];
