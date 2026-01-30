@@ -93,9 +93,35 @@ interface Contract {
     effective_date: string | null;
     created_at: string;
     guarantee_multiplier: number | null;
+    guarantee_type?: string | null;
+    guarantee_fixed_amount?: number | null;
+    guarantee_fixed_currency?: string | null;
     has_periodic_adjustments: boolean | null;
     first_adjustment_month: number | null;
     adjustment_periodicity_months: number | null;
+    adjustment_type?: string | null;
+    adjustment_value?: number | null;
+    gastos_comunes_uf_m2?: number | null;
+    gastos_comunes_uf_ml_frente?: number | null;
+    gastos_comunes_prorrata_kwh_clima?: number | null;
+    gastos_comunes_methodology?: string | null;
+    gastos_comunes_percentage?: number | null;
+    gastos_comunes_total_centro?: number | null;
+    gastos_comunes_tope?: number | null;
+    gastos_comunes_tope_type?: string | null;
+    gastos_comunes_fixed_admin_uf?: number | null;
+    adicional_administracion_percentage?: number | null;
+    has_extended_gastos_comunes?: boolean | null;
+    fondo_promocion_percentage?: number | null;
+    grace_months?: number | null;
+    notice_bilaterality?: string | null;
+    otros_egresos_amount?: number | null;
+    otros_egresos_description?: string | null;
+    regime_rent_is_uf_m2?: boolean | null;
+    initial_rent_is_uf_m2?: boolean | null;
+    auto_renewal?: boolean | null;
+    auto_renewal_type?: string | null;
+    auto_renewal_months?: number | null;
     rent_escalations: Array<{
       id: string;
       month_number: number;
@@ -104,6 +130,11 @@ interface Contract {
     notice_ranges?: Array<{
       start_month: number;
       end_month: number;
+    }>;
+    version_notices?: Array<{
+      notice_type: string;
+      notice_value: string;
+      notice_bilaterality: string;
     }>;
   }>;
   contract_documents: Array<{
