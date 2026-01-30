@@ -62,6 +62,7 @@ interface ContractVersion {
   gastos_comunes_tope_type?: string | null;
   fondo_promocion_percentage: number | null;
   adicional_administracion_percentage?: number | null;
+  gastos_comunes_fixed_admin_uf?: number | null;
   has_extended_gastos_comunes?: boolean | null;
   notice_ranges?: Array<{ start_month: number; end_month: number }>;
   otros_egresos_amount?: number | null;
@@ -849,7 +850,8 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                                   const gastosMlFrente = hasExtended ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente : 0;
                                   const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
                                   const adicionalAdmin = hasExtended ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100) : 0;
-                                  gastosComunesTotal = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
+                                  const fixedAdminUf = currentVersion.gastos_comunes_fixed_admin_uf || 0;
+                                  gastosComunesTotal = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin + fixedAdminUf;
                                 }
                                 
                                 // Calculate current rent
@@ -952,7 +954,8 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                       const gastosMlFrente = hasExtended ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente : 0;
                       const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
                       const adicionalAdmin = hasExtended ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100) : 0;
-                      gastosComunesTotal = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin;
+                      const fixedAdminUf = currentVersion.gastos_comunes_fixed_admin_uf || 0;
+                      gastosComunesTotal = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin + fixedAdminUf;
                     }
                     
                     // Calculate current rent (considering escalations, adjustments, and UF/m²)
