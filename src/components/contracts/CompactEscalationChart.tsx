@@ -46,6 +46,9 @@ interface CompactEscalationChartProps {
   noticeDeadlines?: NoticeDeadline[];
   // Contract end notice (for sin_termino type)
   contractEndNoticeMonths?: number;
+  // Auto-renewal info
+  autoRenewal?: boolean;
+  autoRenewalMonths?: number;
 }
 
 export function CompactEscalationChart({ 
@@ -68,21 +71,54 @@ export function CompactEscalationChart({
   superficieM2 = 0,
   noticeDeadlines = [],
   contractEndNoticeMonths = 0,
+  autoRenewal = false,
+  autoRenewalMonths = 0,
 }: CompactEscalationChartProps) {
   const { ufValue } = useEconomicIndicators();
   
-  // Calculate current month based on effective date
+  // Calculate auto-renewal status
+  const autoRenewalInfo = useMemo(() => {
+    if (!effectiveDate || !autoRenewal || autoRenewalMonths <= 0) return null;
+    
+    const startDate = new Date(effectiveDate);
+    const originalEndDate = addMonths(startDate, durationMonths);
+    const today = new Date();
+    
+    if (today > originalEndDate) {
+      const monthsPastOriginalEnd = Math.floor(
+        (today.getTime() - originalEndDate.getTime()) / (1000 * 60 * 60 * 24 * 30.44)
+      );
+      const currentRenewalNumber = Math.floor(monthsPastOriginalEnd / autoRenewalMonths) + 1;
+      const currentRenewalEndDate = addMonths(originalEndDate, currentRenewalNumber * autoRenewalMonths);
+      
+      return {
+        isInAutoRenewal: true,
+        originalEndMonth: durationMonths,
+        currentRenewalNumber,
+        currentRenewalEndDate,
+        extendedDurationMonths: durationMonths + (currentRenewalNumber * autoRenewalMonths)
+      };
+    }
+    
+    return null;
+  }, [effectiveDate, durationMonths, autoRenewal, autoRenewalMonths]);
+  
+  // Effective duration considering auto-renewal
+  const effectiveDurationMonths = autoRenewalInfo?.extendedDurationMonths || durationMonths;
+  
+  // Calculate current month based on effective date - extend to include auto-renewal period
   const currentMonth = useMemo(() => {
     if (!effectiveDate) return null;
     const startDate = new Date(effectiveDate);
     const today = new Date();
     const diffTime = today.getTime() - startDate.getTime();
     const diffMonths = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44)) + 1;
-    if (diffMonths >= 1 && diffMonths <= durationMonths) {
+    // Allow current month to extend into auto-renewal period
+    if (diffMonths >= 1 && diffMonths <= effectiveDurationMonths) {
       return diffMonths;
     }
     return null;
-  }, [effectiveDate, durationMonths]);
+  }, [effectiveDate, effectiveDurationMonths]);
 
   const { chartData, summaryPoints, showRegimeLine } = useMemo(() => {
     const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
@@ -152,10 +188,12 @@ export function CompactEscalationChart({
     });
     
     // Add final month to extend the line if not already present
-    if (!rentChangePoints.has(durationMonths)) {
+    // Use effectiveDurationMonths to include auto-renewal period
+    const finalMonth = autoRenewalInfo ? effectiveDurationMonths : durationMonths;
+    if (!rentChangePoints.has(finalMonth)) {
       const lastChange = changePointsSorted[changePointsSorted.length - 1];
       if (lastChange) {
-        data.push({ month: durationMonths, rent: lastChange[1].rent });
+        data.push({ month: finalMonth, rent: lastChange[1].rent });
       }
     }
     
@@ -179,7 +217,7 @@ export function CompactEscalationChart({
     });
     
     return { chartData: data, summaryPoints: summary, showRegimeLine: showRegime, totalRegimeRent };
-  }, [escalations, initialRent, regimeRent, durationMonths, graceMonths, hasPeriodicAdjustments, adjustmentType, adjustmentValue, firstAdjustmentMonth, adjustmentPeriodicityMonths, isUfM2Mode, superficieM2]);
+  }, [escalations, initialRent, regimeRent, durationMonths, graceMonths, hasPeriodicAdjustments, adjustmentType, adjustmentValue, firstAdjustmentMonth, adjustmentPeriodicityMonths, isUfM2Mode, superficieM2, autoRenewalInfo, effectiveDurationMonths]);
 
   // Calculate notice month based on type
   const noticeMonthInfo = useMemo(() => {
@@ -245,11 +283,11 @@ export function CompactEscalationChart({
   // If no chart data, show minimal chart with regime rent
   const displayData = chartData.length > 0 ? chartData : [
     { month: 1, rent: regimeRent },
-    { month: durationMonths, rent: regimeRent }
+    { month: effectiveDurationMonths, rent: regimeRent }
   ];
 
-  // Calculate domain
-  const xDomain: [number, number] = [1, durationMonths];
+  // Calculate domain - extend to include auto-renewal period if active
+  const xDomain: [number, number] = [1, effectiveDurationMonths];
 
   return (
     <div className="space-y-2">
@@ -404,6 +442,34 @@ export function CompactEscalationChart({
               />
             )}
             
+            {/* Original contract end - orange dashed line when in auto-renewal */}
+            {autoRenewalInfo?.isInAutoRenewal && effectiveDate && (
+              <ReferenceLine 
+                x={durationMonths} 
+                stroke="hsl(var(--warning))" 
+                strokeWidth={2}
+                strokeDasharray="6 4"
+                label={{ 
+                  value: `Término Original M${durationMonths}`, 
+                  fontSize: 9, 
+                  fontWeight: 600,
+                  fill: "hsl(var(--warning))",
+                  position: "insideTopLeft"
+                }}
+              />
+            )}
+            
+            {/* Auto-renewal period shaded area */}
+            {autoRenewalInfo?.isInAutoRenewal && (
+              <ReferenceArea
+                x1={durationMonths}
+                x2={effectiveDurationMonths}
+                fill="hsl(var(--warning))"
+                fillOpacity={0.1}
+                stroke="none"
+              />
+            )}
+            
             {/* Current month - green vertical line with clear label */}
             {currentMonth && (
               <ReferenceLine 
@@ -411,7 +477,7 @@ export function CompactEscalationChart({
                 stroke="hsl(142 76% 36%)" 
                 strokeWidth={2}
                 label={{ 
-                  value: "HOY", 
+                  value: autoRenewalInfo?.isInAutoRenewal ? `HOY (Ren. #${autoRenewalInfo.currentRenewalNumber})` : "HOY", 
                   fontSize: 10, 
                   fontWeight: 700,
                   fill: "hsl(142 76% 36%)",
@@ -425,6 +491,15 @@ export function CompactEscalationChart({
       
       {/* Legend */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs border-t pt-2 mt-2">
+        {/* Auto-renewal indicator */}
+        {autoRenewalInfo?.isInAutoRenewal && effectiveDate && (
+          <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+            <div className="w-3 h-2 bg-warning/20 border border-warning" />
+            <span className="text-amber-800 font-semibold">
+              Renovación #{autoRenewalInfo.currentRenewalNumber} - hasta {format(autoRenewalInfo.currentRenewalEndDate, "dd MMM yyyy", { locale: es })}
+            </span>
+          </div>
+        )}
         {currentMonth && effectiveDate && (
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-0.5 bg-[hsl(142_76%_36%)]" />
