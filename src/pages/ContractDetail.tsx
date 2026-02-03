@@ -1011,6 +1011,9 @@ const ContractDetail = () => {
                             notice_bilaterality: (displayVersion as any).notice_bilaterality,
                             regime_rent_is_uf_m2: (displayVersion as any).regime_rent_is_uf_m2,
                             initial_rent_is_uf_m2: (displayVersion as any).initial_rent_is_uf_m2,
+                            auto_renewal: (displayVersion as any).auto_renewal,
+                            auto_renewal_type: (displayVersion as any).auto_renewal_type,
+                            auto_renewal_months: (displayVersion as any).auto_renewal_months,
                             rent_escalations: displayVersion.rent_escalations || [],
                           }}
                           signedDate={contract.signed_date}
