@@ -228,7 +228,7 @@ export function CommercialConditionsSummary({
     return "";
   };
 
-  // Calculate dates
+  // Calculate dates and auto-renewal status
   const dates = useMemo(() => {
     // Find the start date: effective_date of current version, or signed_date for original
     let startDate: Date | null = null;
@@ -238,7 +238,28 @@ export function CommercialConditionsSummary({
       startDate = parseISO(signedDate);
     }
     if (!startDate) return null;
-    const endDate = addMonths(startDate, version.duration_months);
+    
+    const originalEndDate = addMonths(startDate, version.duration_months);
+    const today = new Date();
+    
+    // Check if we're in an auto-renewal period
+    let isInAutoRenewal = false;
+    let currentRenewalNumber = 0;
+    let currentRenewalEndDate: Date | null = null;
+    let endDate = originalEndDate;
+    
+    if (version.auto_renewal && version.auto_renewal_months && version.auto_renewal_months > 0) {
+      if (today > originalEndDate) {
+        isInAutoRenewal = true;
+        // Calculate which renewal period we're in
+        const monthsPastOriginalEnd = Math.floor(
+          (today.getTime() - originalEndDate.getTime()) / (1000 * 60 * 60 * 24 * 30.44)
+        );
+        currentRenewalNumber = Math.floor(monthsPastOriginalEnd / version.auto_renewal_months) + 1;
+        currentRenewalEndDate = addMonths(originalEndDate, currentRenewalNumber * version.auto_renewal_months);
+        endDate = currentRenewalEndDate;
+      }
+    }
 
     // Calculate notice date based on type
     let noticeDate: Date | null = null;
@@ -257,7 +278,6 @@ export function CommercialConditionsSummary({
       noticeDateLabel = `${version.notice_value} meses antes del vencimiento`;
     } else if (version.notice_type === "rangos" && noticeRanges.length > 0) {
       // Get the first non-expired range (a range is only expired if today > end_month date)
-      const today = new Date();
       const sortedRanges = [...noticeRanges].sort((a, b) => a.start_month - b.start_month);
       
       for (const range of sortedRanges) {
@@ -298,8 +318,12 @@ export function CommercialConditionsSummary({
     return {
       startDate,
       endDate,
+      originalEndDate,
       noticeDate,
-      noticeDateLabel
+      noticeDateLabel,
+      isInAutoRenewal,
+      currentRenewalNumber,
+      currentRenewalEndDate
     };
   }, [version, signedDate, noticeRanges]);
   const formatDateShort = (date: Date) => {
@@ -543,13 +567,23 @@ export function CommercialConditionsSummary({
             <p className="text-xs text-muted-foreground">
               ({version.duration_months} meses)
             </p>
-            {/* Renovación Automática indicator */}
-            {version.auto_renewal && (
+            {/* Auto-renewal status indicator */}
+            {dates?.isInAutoRenewal ? (
+              <div className="mt-1 space-y-1">
+                <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-800 border-amber-300">
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  En Renovación #{dates.currentRenewalNumber}
+                </Badge>
+                <p className="text-xs text-muted-foreground">
+                  Original: {dates.originalEndDate ? formatDateShort(dates.originalEndDate) : "-"}
+                </p>
+              </div>
+            ) : version.auto_renewal ? (
               <div className="flex items-center gap-1 mt-1">
                 <RefreshCw className="h-3 w-3 text-primary" />
                 <span className="text-xs text-primary font-medium">Con renovación</span>
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* Renovación Automática - Solo si está activa */}
@@ -853,7 +887,7 @@ export function CommercialConditionsSummary({
               <TrendingUp className="h-3 w-3" />
               {hasEscalations ? "Escalonamiento de Renta" : "Tendencia de Renta"}
             </div>
-            <CompactEscalationChart escalations={version.rent_escalations} initialRent={version.initial_rent} regimeRent={version.regime_rent} durationMonths={version.duration_months} effectiveDate={version.effective_date || signedDate || undefined} graceMonths={version.grace_months || 0} hasPeriodicAdjustments={version.has_periodic_adjustments || false} adjustmentType={version.adjustment_type || "percentage"} adjustmentValue={version.adjustment_value || 0} firstAdjustmentMonth={version.first_adjustment_month || 0} adjustmentPeriodicityMonths={version.adjustment_periodicity_months || 0} noticeRanges={noticeRanges} noticeType={version.notice_type} noticeValue={version.notice_value} displayCurrency={displayCurrency} isUfM2Mode={version.initial_rent_is_uf_m2 || version.regime_rent_is_uf_m2 || false} superficieM2={superficieEdificadaLocal || 0} noticeDeadlines={noticeDeadlines} contractEndNoticeMonths={version.notice_type === "sin_termino" ? parseInt(version.notice_value) || 0 : 0} />
+            <CompactEscalationChart escalations={version.rent_escalations} initialRent={version.initial_rent} regimeRent={version.regime_rent} durationMonths={version.duration_months} effectiveDate={version.effective_date || signedDate || undefined} graceMonths={version.grace_months || 0} hasPeriodicAdjustments={version.has_periodic_adjustments || false} adjustmentType={version.adjustment_type || "percentage"} adjustmentValue={version.adjustment_value || 0} firstAdjustmentMonth={version.first_adjustment_month || 0} adjustmentPeriodicityMonths={version.adjustment_periodicity_months || 0} noticeRanges={noticeRanges} noticeType={version.notice_type} noticeValue={version.notice_value} displayCurrency={displayCurrency} isUfM2Mode={version.initial_rent_is_uf_m2 || version.regime_rent_is_uf_m2 || false} superficieM2={superficieEdificadaLocal || 0} noticeDeadlines={noticeDeadlines} contractEndNoticeMonths={version.notice_type === "sin_termino" ? parseInt(version.notice_value) || 0 : 0} autoRenewal={version.auto_renewal || false} autoRenewalMonths={version.auto_renewal_months || 0} />
           </div>}
       </CardContent>
     </Card>;
