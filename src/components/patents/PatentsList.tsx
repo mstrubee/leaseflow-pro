@@ -111,7 +111,10 @@ export function PatentsList({
     // Filter by search
     if (search) {
       const lower = search.toLowerCase();
-      result = result.filter(c => c.name.toLowerCase().includes(lower));
+      result = result.filter(c => 
+        c.name.toLowerCase().includes(lower) || 
+        (c.cebe && c.cebe.toLowerCase().includes(lower))
+      );
     }
 
     // Filter by priority
@@ -196,7 +199,7 @@ export function PatentsList({
             <div className="flex flex-wrap gap-3">
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Buscar local..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
+                <Input placeholder="Buscar por local o CEBE..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
               </div>
               
               <Select value={priorityFilter} onValueChange={setPriorityFilter}>
@@ -304,7 +307,12 @@ export function PatentsList({
                           'Sin empresa'
                         )}
                       </TableCell>
-                      <TableCell className="font-medium">{contract.name}</TableCell>
+                      <TableCell className="font-medium">
+                        <div>{contract.name}</div>
+                        {contract.cebe && (
+                          <div className="text-xs text-muted-foreground mt-0.5">{contract.cebe}</div>
+                        )}
+                      </TableCell>
                       <TableCell className="text-muted-foreground text-sm">{fullAddress}</TableCell>
                       <TableCell className="text-muted-foreground">{commune}</TableCell>
                       <TableCell className="text-muted-foreground">{region}</TableCell>

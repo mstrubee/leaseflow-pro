@@ -100,6 +100,7 @@ export interface ContractWithPatent {
   contract_addresses?: Array<{ region: string; commune: string; street?: string; number?: string }>;
   contract_companies?: Array<{ companies: { name: string } | null }>;
   patent_documents?: PatentDocument[];
+  cebe?: string | null;
 }
 
 export const PRIORITY_CONFIG: Record<PatentPriority, { label: string; color: string; bgColor: string; textColor: string }> = {
