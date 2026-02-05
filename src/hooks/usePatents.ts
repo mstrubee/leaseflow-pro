@@ -5,12 +5,39 @@ import {
   PatentChecklistSection, 
   PatentChecklistItem, 
   PatentEmitter,
-  PatentDocument,
+  PatentDocument, 
   PatentPriority,
   PatentDocStatus,
   PatentItemEmitter,
   PatentStatus
 } from "@/components/patents/types";
+
+// Helper to get CEBE field value
+async function getCebeMap(): Promise<Map<string, string>> {
+  // Get CEBE field definition
+  const { data: cebeFieldData } = await supabase
+    .from("contract_custom_fields")
+    .select("id")
+    .ilike("field_name", "cebe")
+    .eq("is_active", true)
+    .limit(1)
+    .single();
+  
+  const cebeMap = new Map<string, string>();
+  
+  if (cebeFieldData) {
+    const { data: cebeValues } = await supabase
+      .from("contract_custom_field_values")
+      .select("contract_id, field_value")
+      .eq("field_id", cebeFieldData.id);
+    
+    (cebeValues || []).forEach(v => {
+      if (v.field_value) cebeMap.set(v.contract_id, v.field_value);
+    });
+  }
+  
+  return cebeMap;
+}
 
 export function usePatents() {
   const [contracts, setContracts] = useState<ContractWithPatent[]>([]);
@@ -31,7 +58,8 @@ export function usePatents() {
         itemsResult,
         emittersResult,
         itemEmittersResult,
-        statusesResult
+        statusesResult,
+        cebeMap
       ] = await Promise.all([
         supabase
           .from("contracts")
@@ -72,10 +100,17 @@ export function usePatents() {
           .from("patent_statuses")
           .select("*")
           .eq("is_active", true)
-          .order("display_order")
+          .order("display_order"),
+        getCebeMap()
       ]);
 
-      setContracts((contractsResult.data as any[]) || []);
+      // Add CEBE to contracts
+      const contractsWithCebe = ((contractsResult.data as any[]) || []).map(c => ({
+        ...c,
+        cebe: cebeMap.get(c.id) || null
+      }));
+
+      setContracts(contractsWithCebe);
       setSections((sectionsResult.data as PatentChecklistSection[]) || []);
       setItems((itemsResult.data as PatentChecklistItem[]) || []);
       setEmitters((emittersResult.data as PatentEmitter[]) || []);
