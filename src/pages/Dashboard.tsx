@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Plus, LogOut, Shield, Trash2, Bell, Upload, ShoppingCart, Wallet, FileText, BarChart3 } from "lucide-react";
 import { DashboardStats } from "@/components/dashboard/DashboardStats";
-import { SuppliersModule } from "@/components/suppliers/SuppliersModule";
 import { useAuth } from "@/hooks/useAuth";
 import { ReportsReturnButton } from "@/components/reports/ReportsReturnButton";
 import { useAppLogos } from "@/hooks/useAppLogos";
@@ -108,7 +107,6 @@ const Dashboard = () => {
 
       <main className="max-w-12xl mx-auto px-0.5 sm:px-6 lg:px-8 py-8 space-y-6">
         <DashboardStats />
-        <SuppliersModule />
       </main>
 
       {/* Floating return button when coming from Reports */}
