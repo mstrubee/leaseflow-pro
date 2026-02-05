@@ -13,30 +13,43 @@ import {
 } from "@/components/patents/types";
 
 // Helper to get CEBE field value
-async function getCebeMap(): Promise<Map<string, string>> {
-  // Get CEBE field definition
-  const { data: cebeFieldData } = await supabase
+async function getCustomFieldMaps(): Promise<{ cebeMap: Map<string, string>; codigoMap: Map<string, string> }> {
+  // Get CEBE and Codigo field definitions
+  const { data: customFields } = await supabase
     .from("contract_custom_fields")
-    .select("id")
-    .ilike("field_name", "cebe")
+    .select("id, field_name")
     .eq("is_active", true)
-    .limit(1)
-    .single();
+    .or("field_name.ilike.cebe,field_name.ilike.código,field_name.ilike.codigo");
   
   const cebeMap = new Map<string, string>();
+  const codigoMap = new Map<string, string>();
   
-  if (cebeFieldData) {
+  if (customFields && customFields.length > 0) {
+    const cebeField = customFields.find(f => f.field_name.toLowerCase() === 'cebe');
+    const codigoField = customFields.find(f => 
+      f.field_name.toLowerCase() === 'código' || f.field_name.toLowerCase() === 'codigo'
+    );
+    
+    const fieldIds = [cebeField?.id, codigoField?.id].filter(Boolean) as string[];
+    
     const { data: cebeValues } = await supabase
       .from("contract_custom_field_values")
-      .select("contract_id, field_value")
-      .eq("field_id", cebeFieldData.id);
+      .select("contract_id, field_id, field_value")
+      .in("field_id", fieldIds);
     
     (cebeValues || []).forEach(v => {
-      if (v.field_value) cebeMap.set(v.contract_id, v.field_value);
+      if (v.field_value) {
+        if (cebeField && v.field_id === cebeField.id) {
+          cebeMap.set(v.contract_id, v.field_value);
+        }
+        if (codigoField && v.field_id === codigoField.id) {
+          codigoMap.set(v.contract_id, v.field_value);
+        }
+      }
     });
   }
   
-  return cebeMap;
+  return { cebeMap, codigoMap };
 }
 
 export function usePatents() {
@@ -59,7 +72,7 @@ export function usePatents() {
         emittersResult,
         itemEmittersResult,
         statusesResult,
-        cebeMap
+        customFieldMaps
       ] = await Promise.all([
         supabase
           .from("contracts")
@@ -101,13 +114,14 @@ export function usePatents() {
           .select("*")
           .eq("is_active", true)
           .order("display_order"),
-        getCebeMap()
+        getCustomFieldMaps()
       ]);
 
-      // Add CEBE to contracts
+      // Add CEBE and Codigo to contracts
       const contractsWithCebe = ((contractsResult.data as any[]) || []).map(c => ({
         ...c,
-        cebe: cebeMap.get(c.id) || null
+        cebe: customFieldMaps.cebeMap.get(c.id) || null,
+        codigo: customFieldMaps.codigoMap.get(c.id) || null
       }));
 
       setContracts(contractsWithCebe);

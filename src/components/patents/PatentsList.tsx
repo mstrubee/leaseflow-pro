@@ -113,7 +113,8 @@ export function PatentsList({
       const lower = search.toLowerCase();
       result = result.filter(c => 
         c.name.toLowerCase().includes(lower) || 
-        (c.cebe && c.cebe.toLowerCase().includes(lower))
+        (c.cebe && c.cebe.toLowerCase().includes(lower)) ||
+        (c.codigo && c.codigo.toLowerCase().includes(lower))
       );
     }
 
@@ -309,8 +310,10 @@ export function PatentsList({
                       </TableCell>
                       <TableCell className="font-medium">
                         <div>{contract.name}</div>
-                        {contract.cebe && (
-                          <div className="text-xs text-muted-foreground mt-0.5">{contract.cebe}</div>
+                        {(contract.cebe || contract.codigo) && (
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {[contract.cebe, contract.codigo].filter(Boolean).join(' • ')}
+                          </div>
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">{fullAddress}</TableCell>
