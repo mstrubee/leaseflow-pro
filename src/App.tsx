@@ -23,6 +23,7 @@ import OpexDashboard from "./pages/OpexDashboard";
 import ReportsDashboard from "./pages/ReportsDashboard";
 import KPIDashboard from "./pages/KPIDashboard";
 import NotFound from "./pages/NotFound";
+import SuppliersDashboard from "./pages/SuppliersDashboard";
 
 const queryClient = new QueryClient();
 
@@ -55,6 +56,7 @@ const App = () => (
               <Route path="/opex" element={<ProtectedRoute><OpexDashboard /></ProtectedRoute>} />
               <Route path="/reports" element={<ProtectedRoute><ReportsDashboard /></ProtectedRoute>} />
               <Route path="/kpi" element={<ProtectedRoute><KPIDashboard /></ProtectedRoute>} />
+              <Route path="/suppliers" element={<ProtectedRoute><SuppliersDashboard /></ProtectedRoute>} />
               
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
