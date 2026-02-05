@@ -85,14 +85,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, formatCLP } from "@/lib/utils";
 import { backupOCFileToRepository, uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
 import { Building2 } from "lucide-react";
-import { SuppliersModule } from "@/components/suppliers/SuppliersModule";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
 
 interface Invoice {
   id: string;
@@ -293,9 +285,6 @@ const PurchaseOrdersDashboard = () => {
   const [editingOCOriginalOrderNumber, setEditingOCOriginalOrderNumber] = useState<string>("");
   const [editingOCFile, setEditingOCFile] = useState<File | null>(null);
   const editOCFileInputRef = useRef<HTMLInputElement>(null);
-
-  // Suppliers panel state
-  const [showSuppliersPanel, setShowSuppliersPanel] = useState(false);
 
   // Credit notes storage
   const [creditNotes, setCreditNotes] = useState<
@@ -1768,22 +1757,10 @@ const PurchaseOrdersDashboard = () => {
               <Button variant="outline" size="sm" onClick={collapseAll}>
                 Colapsar
               </Button>
-              <Sheet open={showSuppliersPanel} onOpenChange={setShowSuppliersPanel}>
-                <SheetTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <Building2 className="h-4 w-4 mr-1" />
-                    Proveedores
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
-                  <SheetHeader>
-                    <SheetTitle>Gestión de Proveedores</SheetTitle>
-                  </SheetHeader>
-                  <div className="mt-4">
-                    <SuppliersModule />
-                  </div>
-                </SheetContent>
-              </Sheet>
+              <Button variant="outline" size="sm" onClick={() => navigate("/suppliers")}>
+                <Building2 className="h-4 w-4 mr-1" />
+                Proveedores
+              </Button>
             </div>
           </div>
         </div>

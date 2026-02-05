@@ -2,8 +2,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, ChevronRight, Plus, Building2, Settings, Upload, Download } from "lucide-react";
+import { Plus, Building2, Settings, Upload, Download } from "lucide-react";
 import { SupplierForm } from "./SupplierForm";
 import { SuppliersList } from "./SuppliersList";
 import { SupplierBulkUpload } from "./SupplierBulkUpload";
@@ -16,7 +15,6 @@ import { generateSupplierTemplate } from "@/lib/generateSupplierTemplate";
 type DialogMode = "form" | "bulk";
 
 export const SuppliersModule = () => {
-  const [isOpen, setIsOpen] = useState(false);
   const [showDialog, setShowDialog] = useState(false);
   const [dialogMode, setDialogMode] = useState<DialogMode>("form");
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
@@ -62,55 +60,46 @@ export const SuppliersModule = () => {
     <>
       <SelectableElement elementId="suppliers.module" label="Módulo de Proveedores">
         <Card>
-          <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-            <CardHeader className="flex flex-row items-center justify-between py-3">
-              <CollapsibleTrigger asChild>
-                <Button variant="ghost" className="flex items-center gap-2 p-0 h-auto hover:bg-transparent">
-                  {isOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-                  <Building2 className="h-5 w-5 text-muted-foreground" />
-                  <CardTitle className="text-lg">Proveedores</CardTitle>
-                </Button>
-              </CollapsibleTrigger>
-              {isOpen && (
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={e => { e.stopPropagation(); generateSupplierTemplate(); }}
-                  >
-                    <Download className="h-4 w-4 mr-1" />
-                    Descargar Plantilla
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={e => { e.stopPropagation(); handleNewSupplier(); }}
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Nuevo Proveedor
-                  </Button>
-                </div>
-              )}
-            </CardHeader>
-            <CollapsibleContent>
-              <CardContent className="pt-0">
-                <Tabs defaultValue="list">
-                  <TabsList className="mb-4">
-                    <TabsTrigger value="list">Listado</TabsTrigger>
-                    <TabsTrigger value="categories" className="gap-1">
-                      <Settings className="h-3 w-3" />
-                      Rubros
-                    </TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="list">
-                    <SuppliersList onEdit={handleEdit} refreshKey={refreshKey} />
-                  </TabsContent>
-                  <TabsContent value="categories">
-                    <CategoryManager />
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </CollapsibleContent>
-          </Collapsible>
+          <CardHeader className="flex flex-row items-center justify-between py-3">
+            <div className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-muted-foreground" />
+              <CardTitle className="text-lg">Proveedores</CardTitle>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => generateSupplierTemplate()}
+              >
+                <Download className="h-4 w-4 mr-1" />
+                Descargar Plantilla
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => handleNewSupplier()}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Nuevo Proveedor
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <Tabs defaultValue="list">
+              <TabsList className="mb-4">
+                <TabsTrigger value="list">Listado</TabsTrigger>
+                <TabsTrigger value="categories" className="gap-1">
+                  <Settings className="h-3 w-3" />
+                  Rubros
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="list">
+                <SuppliersList onEdit={handleEdit} refreshKey={refreshKey} />
+              </TabsContent>
+              <TabsContent value="categories">
+                <CategoryManager />
+              </TabsContent>
+            </Tabs>
+          </CardContent>
         </Card>
       </SelectableElement>
 
