@@ -55,15 +55,7 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
     try {
       const { error } = await (supabase.from("maintenance_forms" as any) as any)
         .update({
-          form_number: formData.form_number,
           status: formData.status,
-          created_date: formData.created_date || null,
-          contract_name: formData.contract_name || null,
-          general_description: formData.general_description || null,
-          electrical_description: formData.electrical_description || null,
-          civil_description: formData.civil_description || null,
-          hvac_description: formData.hvac_description || null,
-          fixed_assets_description: formData.fixed_assets_description || null,
           additional_comments: formData.additional_comments || null,
           updated_at: new Date().toISOString(),
         })
@@ -93,7 +85,7 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label>N° FORM</Label>
-            <Input value={formData.form_number} onChange={e => set("form_number", e.target.value)} />
+            <Input value={formData.form_number} readOnly className="bg-muted" />
           </div>
           <div className="space-y-1.5">
             <Label>Estado</Label>
@@ -106,36 +98,46 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>Fecha</Label>
-            <Input type="date" value={formData.created_date} onChange={e => set("created_date", e.target.value)} />
+            <Label>Fecha de Creación</Label>
+            <Input type="date" value={formData.created_date} readOnly className="bg-muted" />
           </div>
           <div className="space-y-1.5">
             <Label>Contrato</Label>
-            <Input value={formData.contract_name} onChange={e => set("contract_name", e.target.value)} readOnly className="bg-muted" />
+            <Input value={formData.contract_name} readOnly className="bg-muted" />
           </div>
         </div>
 
         <div className="space-y-3 mt-2">
-          <div className="space-y-1.5">
-            <Label>Descripción General</Label>
-            <Textarea value={formData.general_description} onChange={e => set("general_description", e.target.value)} rows={2} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Requerimiento Eléctrico</Label>
-            <Textarea value={formData.electrical_description} onChange={e => set("electrical_description", e.target.value)} rows={2} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Requerimiento Obra Civil</Label>
-            <Textarea value={formData.civil_description} onChange={e => set("civil_description", e.target.value)} rows={2} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Requerimiento Climatización</Label>
-            <Textarea value={formData.hvac_description} onChange={e => set("hvac_description", e.target.value)} rows={2} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Requerimiento Activos Fijos</Label>
-            <Textarea value={formData.fixed_assets_description} onChange={e => set("fixed_assets_description", e.target.value)} rows={2} />
-          </div>
+          {formData.general_description && (
+            <div className="space-y-1.5">
+              <Label>Descripción General</Label>
+              <Textarea value={formData.general_description} readOnly className="bg-muted resize-none" rows={2} />
+            </div>
+          )}
+          {formData.electrical_description && (
+            <div className="space-y-1.5">
+              <Label>Requerimiento Eléctrico</Label>
+              <Textarea value={formData.electrical_description} readOnly className="bg-muted resize-none" rows={2} />
+            </div>
+          )}
+          {formData.civil_description && (
+            <div className="space-y-1.5">
+              <Label>Requerimiento Obra Civil</Label>
+              <Textarea value={formData.civil_description} readOnly className="bg-muted resize-none" rows={2} />
+            </div>
+          )}
+          {formData.hvac_description && (
+            <div className="space-y-1.5">
+              <Label>Requerimiento Climatización</Label>
+              <Textarea value={formData.hvac_description} readOnly className="bg-muted resize-none" rows={2} />
+            </div>
+          )}
+          {formData.fixed_assets_description && (
+            <div className="space-y-1.5">
+              <Label>Requerimiento Activos Fijos</Label>
+              <Textarea value={formData.fixed_assets_description} readOnly className="bg-muted resize-none" rows={2} />
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label>Comentarios Adicionales</Label>
             <Textarea value={formData.additional_comments} onChange={e => set("additional_comments", e.target.value)} rows={2} />
