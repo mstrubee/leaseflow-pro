@@ -39,7 +39,15 @@ interface MaintenanceFormOption {
   id: string;
   form_number: string;
   general_description: string | null;
+  electrical_description: string | null;
+  civil_description: string | null;
+  hvac_description: string | null;
+  fixed_assets_description: string | null;
   created_date: string | null;
+}
+
+function getFormDescription(f: MaintenanceFormOption): string {
+  return f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-";
 }
 
 interface ContractAllocation {
@@ -198,7 +206,7 @@ export const CentralizedOrderCreator = ({
     try {
       const { data } = await supabase
         .from("maintenance_forms")
-        .select("id, form_number, general_description, created_date")
+        .select("id, form_number, general_description, electrical_description, civil_description, hvac_description, fixed_assets_description, created_date")
         .eq("contract_id", contractId)
         .eq("status", "proceso")
         .is("deleted_at", null)
@@ -962,7 +970,7 @@ export const CentralizedOrderCreator = ({
                                         </TableCell>
                                         <TableCell className="text-xs font-mono px-2 py-1.5">{f.form_number}</TableCell>
                                         <TableCell className="text-xs px-2 py-1.5">{f.created_date || "-"}</TableCell>
-                                        <TableCell className="text-xs px-2 py-1.5 max-w-[180px] truncate">{f.general_description?.slice(0, 50) || "-"}</TableCell>
+                                        <TableCell className="text-xs px-2 py-1.5 max-w-[180px] truncate">{getFormDescription(f).slice(0, 50)}</TableCell>
                                       </TableRow>
                                     ))}
                                   </TableBody>
@@ -1064,8 +1072,10 @@ export const CentralizedOrderCreator = ({
                                             />
                                             <span className="whitespace-nowrap">FORM {f.form_number}</span>
                                             <span className="text-muted-foreground">{f.created_date || ""}</span>
+                                            <span className="text-muted-foreground truncate max-w-[120px]">{getFormDescription(f).slice(0, 40)}</span>
                                           </label>
                                         ))}
+
                                       </div>
                                     ) : (
                                       <span className="text-xs text-muted-foreground">—</span>
