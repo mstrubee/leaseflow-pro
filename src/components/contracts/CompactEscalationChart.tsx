@@ -335,11 +335,11 @@ export function CompactEscalationChart({
                 fillOpacity={0.15}
                 stroke="none"
                 label={{
-                  value: noticeMonthInfo.isFromSpecificMonth 
-                    ? `Término Anticipado desde M${range.start_month}`
+                    value: noticeMonthInfo.isFromSpecificMonth 
+                    ? `Salida desde M${range.start_month}`
                     : noticeMonthInfo.ranges && noticeMonthInfo.ranges.length > 1 
                       ? `Rango ${idx + 1}` 
-                      : "Rango Aviso Salida",
+                      : "Rango Salida",
                   fontSize: 12,
                   fontWeight: 600,
                   fill: "hsl(var(--warning))",
@@ -368,8 +368,8 @@ export function CompactEscalationChart({
               const isArrendador = deadline.bilaterality === "unilateral_arrendador";
               const strokeColor = isArrendador ? "#dc2626" : "hsl(var(--destructive))";
               const labelText = isArrendador 
-                ? `Arrendador: ${deadlineDateStr}` 
-                : `Aviso: ${deadlineDateStr} (${deadline.monthsBefore}m antes)`;
+                ? `Tope Arrendador: ${deadlineDateStr}` 
+                : `Tope Aviso: ${deadlineDateStr}`;
               
               return (
                 <ReferenceLine
@@ -520,7 +520,7 @@ export function CompactEscalationChart({
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-1.5">
               <div className="w-3 h-2 bg-warning/20 border border-warning" />
-              <span className="text-muted-foreground">Ventanas de término anticipado</span>
+              <span className="text-muted-foreground">Rango de salida (término anticipado)</span>
             </div>
             {noticeDeadlines.length > 0 && (
               <div className="flex flex-wrap gap-3 ml-4">
@@ -531,10 +531,10 @@ export function CompactEscalationChart({
                   return (
                     <div key={idx} className="text-xs">
                       <span className={isArrendador ? "text-[#dc2626] font-bold" : "text-destructive font-semibold"}>
-                        {isArrendador ? "Rango a favor Arrendador" : "Fecha tope aviso"}: {format(deadlineDate, "dd MMM yyyy", { locale: es })}
+                        {isArrendador ? "Tope aviso (Arrendador)" : "Tope aviso término anticipado"}: {format(deadlineDate, "dd MMM yyyy", { locale: es })}
                       </span>
                       <span className="text-muted-foreground ml-1">
-                        ({deadline.monthsBefore} meses antes de fin de rango: {format(rangeEndDate, "dd MMM yyyy", { locale: es })})
+                        ({deadline.monthsBefore}m antes del fin de rango: {format(rangeEndDate, "dd MMM yyyy", { locale: es })})
                       </span>
                     </div>
                   );
