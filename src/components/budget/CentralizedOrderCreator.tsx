@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ScrollArea } from "@/components/ui/scroll-area";
+
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2, Plus, Trash2, Upload, FileText, X, Wrench, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -701,15 +701,14 @@ export const CentralizedOrderCreator = ({
             <Loader2 className="h-6 w-6 animate-spin" />
           </div>
         ) : (
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 overflow-hidden flex flex-col">
-            <TabsList className="grid grid-cols-3">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <TabsList className="grid grid-cols-3 shrink-0">
               <TabsTrigger value="basic">Datos</TabsTrigger>
               <TabsTrigger value="contracts">Contratos</TabsTrigger>
               <TabsTrigger value="payments">Pagos</TabsTrigger>
             </TabsList>
             
-            <ScrollArea className="flex-1 min-h-0">
-              <div className="p-1">
+            <div className="flex-1 min-h-0 overflow-y-auto">
               <TabsContent value="basic" className="mt-4 space-y-4">
                 {/* Order number & date (first for "order" mode) */}
                 {mode === "order" && (
@@ -1197,8 +1196,7 @@ export const CentralizedOrderCreator = ({
                   </Table>
                 )}
               </TabsContent>
-              </div>
-            </ScrollArea>
+            </div>
           </Tabs>
         )}
         
