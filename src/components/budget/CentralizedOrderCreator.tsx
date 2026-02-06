@@ -46,7 +46,7 @@ interface ContractAllocation {
   contractName: string;
   cebe: string | null;
   amount: number;
-  maintenanceFormId: string | null;
+  maintenanceFormIds: string[];
 }
 
 interface PaymentPlanItem {
@@ -92,7 +92,7 @@ export const CentralizedOrderCreator = ({
   
   // Maintenance form assignment
   const [assignToForm, setAssignToForm] = useState(false);
-  const [singleFormId, setSingleFormId] = useState<string | null>(null);
+  const [singleFormIds, setSingleFormIds] = useState<string[]>([]);
   const [contractForms, setContractForms] = useState<Record<string, MaintenanceFormOption[]>>({});
   
   // Quotation file state
@@ -198,7 +198,7 @@ export const CentralizedOrderCreator = ({
         .from("maintenance_forms")
         .select("id, form_number, general_description")
         .eq("contract_id", contractId)
-        .eq("status", "En Proceso")
+        .eq("status", "proceso")
         .is("deleted_at", null)
         .order("form_number", { ascending: false });
       
@@ -241,7 +241,7 @@ export const CentralizedOrderCreator = ({
       loadFormsForContract(contract.id);
       setContractAllocations(prev => [
         ...prev,
-        { contractId: contract.id, contractName: contract.name, cebe: contract.cebe, amount: 0, maintenanceFormId: null }
+        { contractId: contract.id, contractName: contract.name, cebe: contract.cebe, amount: 0, maintenanceFormIds: [] }
       ]);
     }
   };
@@ -252,7 +252,7 @@ export const CentralizedOrderCreator = ({
       const updated = [...prev];
       if (field === "contractId") {
         const contract = contracts.find(c => c.id === value);
-        updated[index] = { ...updated[index], contractId: value, contractName: contract?.name || "", cebe: contract?.cebe || null, maintenanceFormId: null };
+        updated[index] = { ...updated[index], contractId: value, contractName: contract?.name || "", cebe: contract?.cebe || null, maintenanceFormIds: [] };
         // Load forms for new contract
         loadFormsForContract(value);
       } else {
@@ -576,7 +576,7 @@ export const CentralizedOrderCreator = ({
                 budget_classification: "OPEX",
                 attachment_url: attachmentUrl,
                 is_multi_contract: true,
-                maintenance_form_id: alloc.maintenanceFormId || null
+                maintenance_form_ids: alloc.maintenanceFormIds.length > 0 ? alloc.maintenanceFormIds : []
               })
               .select("id")
               .single();
@@ -622,7 +622,7 @@ export const CentralizedOrderCreator = ({
             budget_classification: "OPEX",
             attachment_url: attachmentUrl,
             is_multi_contract: false,
-            maintenance_form_id: (assignToForm && singleFormId) ? singleFormId : null
+            maintenance_form_ids: (assignToForm && singleFormIds.length > 0) ? singleFormIds : []
           };
           
           const { error: orderError } = await supabase
@@ -655,7 +655,7 @@ export const CentralizedOrderCreator = ({
     setContractAllocations([]);
     setPaymentPlan([]);
     setAssignToForm(false);
-    setSingleFormId(null);
+    setSingleFormIds([]);
     setContractForms({});
     setQuotationFile(null);
     if (fileInputRef.current) {
@@ -869,7 +869,7 @@ export const CentralizedOrderCreator = ({
                       <Label>Contrato *</Label>
                       <Select value={singleContractId} onValueChange={(v) => {
                         setSingleContractId(v);
-                        setSingleFormId(null);
+                        setSingleFormIds([]);
                         setAssignToForm(false);
                         loadFormsForContract(v);
                       }}>
@@ -906,7 +906,7 @@ export const CentralizedOrderCreator = ({
                             checked={assignToForm}
                             onCheckedChange={(checked) => {
                               setAssignToForm(checked === true);
-                              if (!checked) setSingleFormId(null);
+                              if (!checked) setSingleFormIds([]);
                             }}
                           />
                           <Label htmlFor="assign-form" className="cursor-pointer flex items-center gap-1.5">
@@ -917,25 +917,30 @@ export const CentralizedOrderCreator = ({
                         {assignToForm && (
                           <div className="space-y-1">
                             {(contractForms[singleContractId] || []).length > 0 ? (
-                              <Select value={singleFormId || ""} onValueChange={(v) => setSingleFormId(v || null)}>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Seleccionar Form..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {(contractForms[singleContractId] || []).map(f => (
-                                    <SelectItem key={f.id} value={f.id}>
-                                      <span className="font-medium">FORM {f.form_number}</span>
+                              <div className="max-h-[150px] overflow-y-auto border rounded-md p-2 space-y-1">
+                                {(contractForms[singleContractId] || []).map(f => (
+                                  <label key={f.id} className="flex items-start gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer">
+                                    <Checkbox
+                                      checked={singleFormIds.includes(f.id)}
+                                      onCheckedChange={(checked) => {
+                                        setSingleFormIds(prev => 
+                                          checked ? [...prev, f.id] : prev.filter(id => id !== f.id)
+                                        );
+                                      }}
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                      <span className="text-sm font-medium">FORM {f.form_number}</span>
                                       {f.general_description && (
-                                        <span className="text-xs text-muted-foreground ml-2">
-                                          — {f.general_description.slice(0, 50)}{f.general_description.length > 50 ? "..." : ""}
-                                        </span>
+                                        <p className="text-xs text-muted-foreground truncate">
+                                          {f.general_description.slice(0, 60)}
+                                        </p>
                                       )}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                                    </div>
+                                  </label>
+                                ))}
+                              </div>
                             ) : (
-                              <p className="text-xs text-muted-foreground">No hay Forms "En Proceso" para este contrato</p>
+                              <p className="text-xs text-muted-foreground">No hay Forms en proceso para este contrato</p>
                             )}
                           </div>
                         )}
@@ -1011,22 +1016,23 @@ export const CentralizedOrderCreator = ({
                                   </TableCell>
                                   <TableCell>
                                     {forms.length > 0 ? (
-                                      <Select 
-                                        value={alloc.maintenanceFormId || "none"} 
-                                        onValueChange={(v) => handleUpdateAllocation(idx, "maintenanceFormId", v === "none" ? null : v)}
-                                      >
-                                        <SelectTrigger className="w-full min-w-[120px]">
-                                          <SelectValue placeholder="Sin Form" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="none">Sin Form</SelectItem>
-                                          {forms.map(f => (
-                                            <SelectItem key={f.id} value={f.id}>
-                                              FORM {f.form_number}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
+                                      <div className="space-y-0.5 max-h-[100px] overflow-y-auto">
+                                        {forms.map(f => (
+                                          <label key={f.id} className="flex items-center gap-1.5 text-xs cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+                                            <Checkbox
+                                              className="h-3.5 w-3.5"
+                                              checked={alloc.maintenanceFormIds.includes(f.id)}
+                                              onCheckedChange={(checked) => {
+                                                const newIds = checked
+                                                  ? [...alloc.maintenanceFormIds, f.id]
+                                                  : alloc.maintenanceFormIds.filter(id => id !== f.id);
+                                                handleUpdateAllocation(idx, "maintenanceFormIds", newIds);
+                                              }}
+                                            />
+                                            <span>FORM {f.form_number}</span>
+                                          </label>
+                                        ))}
+                                      </div>
                                     ) : (
                                       <span className="text-xs text-muted-foreground">—</span>
                                     )}
