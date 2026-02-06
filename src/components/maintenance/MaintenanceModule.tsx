@@ -1,15 +1,19 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Upload, Search, ClipboardList, Clock, CheckCircle } from "lucide-react";
+import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { MaintenanceForm, detectMaintenanceType, MaintenanceType } from "./types";
+import { MaintenanceForm, detectMaintenanceType } from "./types";
 import { MaintenanceExcelUpload } from "./MaintenanceExcelUpload";
+import { MaintenanceEditDialog } from "./MaintenanceEditDialog";
+import { SortableTableHead, SortOrder } from "@/components/contracts/SortableTableHead";
+import { exportMaintenanceExcel, exportMaintenancePDF } from "./maintenanceExport";
 
 export function MaintenanceModule() {
   const [forms, setForms] = useState<MaintenanceForm[]>([]);
@@ -18,6 +22,9 @@ export function MaintenanceModule() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [editForm, setEditForm] = useState<MaintenanceForm | null>(null);
+  const [sortKey, setSortKey] = useState<string | null>("created_date");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
 
   const fetchForms = async () => {
     setLoading(true);
@@ -38,15 +45,21 @@ export function MaintenanceModule() {
 
   useEffect(() => { fetchForms(); }, []);
 
-  const filtered = useMemo(() => {
-    return forms.filter(f => {
-      if (statusFilter !== "all" && f.status !== statusFilter) return false;
-      
-      if (typeFilter !== "all") {
-        const type = detectMaintenanceType(f);
-        if (type !== typeFilter) return false;
+  const handleSort = useCallback((key: string) => {
+    setSortKey(prev => {
+      if (prev === key) {
+        setSortOrder(o => o === "asc" ? "desc" : "asc");
+        return key;
       }
+      setSortOrder("asc");
+      return key;
+    });
+  }, []);
 
+  const filtered = useMemo(() => {
+    let result = forms.filter(f => {
+      if (statusFilter !== "all" && f.status !== statusFilter) return false;
+      if (typeFilter !== "all" && detectMaintenanceType(f) !== typeFilter) return false;
       if (search) {
         const s = search.toLowerCase();
         const matches = [f.form_number, f.contract_name, f.general_description, f.electrical_description, f.civil_description, f.hvac_description, f.fixed_assets_description]
@@ -55,7 +68,26 @@ export function MaintenanceModule() {
       }
       return true;
     });
-  }, [forms, statusFilter, typeFilter, search]);
+
+    if (sortKey && sortOrder) {
+      result = [...result].sort((a, b) => {
+        let valA: any = (a as any)[sortKey];
+        let valB: any = (b as any)[sortKey];
+        if (sortKey === "created_date") {
+          valA = valA ? new Date(valA).getTime() : 0;
+          valB = valB ? new Date(valB).getTime() : 0;
+        } else {
+          valA = (valA ?? "").toString().toLowerCase();
+          valB = (valB ?? "").toString().toLowerCase();
+        }
+        if (valA < valB) return sortOrder === "asc" ? -1 : 1;
+        if (valA > valB) return sortOrder === "asc" ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return result;
+  }, [forms, statusFilter, typeFilter, search, sortKey, sortOrder]);
 
   const totalForms = forms.length;
   const enProceso = forms.filter(f => f.status === "proceso").length;
@@ -89,33 +121,45 @@ export function MaintenanceModule() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <div className="relative flex-1 min-w-48">
-          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar por N° FORM, contrato, descripción..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8" />
+      <div className="flex flex-wrap gap-3 items-end">
+        <div className="flex-1 min-w-48 space-y-1">
+          <Label className="text-xs text-muted-foreground">Buscar</Label>
+          <div className="relative">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="N° FORM, contrato, descripción..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8" />
+          </div>
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-40"><SelectValue placeholder="Estado" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos</SelectItem>
-            <SelectItem value="proceso">En Proceso</SelectItem>
-            <SelectItem value="solucionado">Solucionado</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-40"><SelectValue placeholder="Tipo" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos</SelectItem>
-            <SelectItem value="Eléctrico">Eléctrico</SelectItem>
-            <SelectItem value="Obra Civil">Obra Civil</SelectItem>
-            <SelectItem value="Climatización">Climatización</SelectItem>
-            <SelectItem value="Activos Fijos">Activos Fijos</SelectItem>
-            <SelectItem value="General">General</SelectItem>
-            <SelectItem value="Múltiple">Múltiple</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Estado</Label>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-40"><SelectValue placeholder="Estado" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="proceso">En Proceso</SelectItem>
+              <SelectItem value="solucionado">Solucionado</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Tipo</Label>
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger className="w-40"><SelectValue placeholder="Tipo" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="Eléctrico">Eléctrico</SelectItem>
+              <SelectItem value="Obra Civil">Obra Civil</SelectItem>
+              <SelectItem value="Climatización">Climatización</SelectItem>
+              <SelectItem value="Activos Fijos">Activos Fijos</SelectItem>
+              <SelectItem value="General">General</SelectItem>
+              <SelectItem value="Múltiple">Múltiple</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <Button onClick={() => setUploadOpen(true)} className="gap-2">
           <Upload className="h-4 w-4" /> Cargar Excel
+        </Button>
+        <Button variant="outline" onClick={() => exportMaintenanceExcel(filtered)} disabled={filtered.length === 0} className="gap-2">
+          <Download className="h-4 w-4" /> Descargar Excel
         </Button>
       </div>
 
@@ -126,20 +170,21 @@ export function MaintenanceModule() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-24">N° FORM</TableHead>
-                  <TableHead className="w-28">Estado</TableHead>
-                  <TableHead className="w-28">Fecha</TableHead>
-                  <TableHead>Contrato</TableHead>
+                  <SortableTableHead label="N° FORM" sortKey="form_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-24" />
+                  <SortableTableHead label="Estado" sortKey="status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
+                  <SortableTableHead label="Fecha" sortKey="created_date" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
+                  <SortableTableHead label="Contrato" sortKey="contract_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} />
                   <TableHead className="w-28">Tipo</TableHead>
                   <TableHead>Descripción</TableHead>
                   <TableHead>Comentarios</TableHead>
+                  <TableHead className="w-24 text-center">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Cargando...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Cargando...</TableCell></TableRow>
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No hay FORMs registrados</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No hay FORMs registrados</TableCell></TableRow>
                 ) : (
                   filtered.map(f => (
                     <TableRow key={f.id}>
@@ -156,6 +201,16 @@ export function MaintenanceModule() {
                         {f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-"}
                       </TableCell>
                       <TableCell className="text-xs max-w-32 truncate">{f.additional_comments || "-"}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-center gap-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditForm(f)} title="Editar">
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => exportMaintenancePDF(f)} title="Descargar PDF">
+                            <FileDown className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))
                 )}
@@ -166,6 +221,7 @@ export function MaintenanceModule() {
       </Card>
 
       <MaintenanceExcelUpload open={uploadOpen} onOpenChange={setUploadOpen} onSuccess={fetchForms} />
+      <MaintenanceEditDialog form={editForm} open={!!editForm} onOpenChange={v => { if (!v) setEditForm(null); }} onSuccess={fetchForms} />
     </div>
   );
 }
