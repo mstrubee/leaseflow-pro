@@ -1,0 +1,451 @@
+import { useState, useEffect, useMemo } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Download, CalendarDays, Clock, Timer, TrendingUp, Wrench } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
+import { MaintenanceForm, detectMaintenanceType } from "./types";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import logosHeader from "@/assets/logos-header.png";
+
+const CHART_COLORS = [
+  "hsl(220, 70%, 50%)", "hsl(142, 71%, 45%)", "hsl(48, 96%, 53%)",
+  "hsl(0, 84%, 60%)", "hsl(280, 65%, 60%)", "hsl(200, 80%, 50%)",
+  "hsl(25, 95%, 53%)", "hsl(160, 60%, 45%)", "hsl(340, 75%, 55%)",
+  "hsl(190, 80%, 42%)",
+];
+
+interface ContractStats {
+  contractName: string;
+  contractId: string | null;
+  total: number;
+  enProceso: number;
+  solucionados: number;
+}
+
+interface ResolutionStats {
+  avg: number | null;
+  min: number | null;
+  max: number | null;
+  count: number;
+}
+
+export function MaintenanceReports() {
+  const [forms, setForms] = useState<MaintenanceForm[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedYears, setSelectedYears] = useState<number[]>([]);
+
+  useEffect(() => {
+    fetchForms();
+  }, []);
+
+  const fetchForms = async () => {
+    setLoading(true);
+    let allData: MaintenanceForm[] = [];
+    let from = 0;
+    const batchSize = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from("maintenance_forms" as any)
+        .select("*")
+        .is("deleted_at", null)
+        .order("created_date", { ascending: false })
+        .range(from, from + batchSize - 1);
+
+      if (error) {
+        console.error(error);
+        toast({ title: "Error", description: "No se pudieron cargar los FORMs", variant: "destructive" });
+        hasMore = false;
+      } else {
+        const batch = (data as any as MaintenanceForm[]) || [];
+        allData = [...allData, ...batch];
+        hasMore = batch.length === batchSize;
+        from += batchSize;
+      }
+    }
+    setForms(allData);
+    setLoading(false);
+  };
+
+  const availableYears = useMemo(() => {
+    const years = new Set<number>();
+    forms.forEach(f => { if (f.year) years.add(f.year); });
+    return Array.from(years).sort((a, b) => b - a);
+  }, [forms]);
+
+  const toggleYear = (year: number) => {
+    setSelectedYears(prev =>
+      prev.includes(year) ? prev.filter(y => y !== year) : [...prev, year]
+    );
+  };
+
+  const filteredForms = useMemo(() => {
+    if (selectedYears.length === 0) return forms;
+    return forms.filter(f => f.year && selectedYears.includes(f.year));
+  }, [forms, selectedYears]);
+
+  // Stats by contract
+  const contractStats = useMemo((): ContractStats[] => {
+    const map = new Map<string, ContractStats>();
+    filteredForms.forEach(f => {
+      const key = f.contract_name || "Sin contrato";
+      const existing = map.get(key);
+      if (existing) {
+        existing.total++;
+        if (f.status === "proceso") existing.enProceso++;
+        else if (f.status === "solucionado") existing.solucionados++;
+      } else {
+        map.set(key, {
+          contractName: key,
+          contractId: f.contract_id,
+          total: 1,
+          enProceso: f.status === "proceso" ? 1 : 0,
+          solucionados: f.status === "solucionado" ? 1 : 0,
+        });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => b.total - a.total);
+  }, [filteredForms]);
+
+  // Top contracts for bar chart
+  const topContractsChart = useMemo(() => {
+    return contractStats.slice(0, 15).map(c => ({
+      name: c.contractName.length > 20 ? c.contractName.substring(0, 20) + "…" : c.contractName,
+      fullName: c.contractName,
+      "En Proceso": c.enProceso,
+      "Solucionados": c.solucionados,
+    }));
+  }, [contractStats]);
+
+  // Type distribution for pie chart
+  const typeDistribution = useMemo(() => {
+    const map = new Map<string, number>();
+    filteredForms.forEach(f => {
+      const type = detectMaintenanceType(f);
+      map.set(type, (map.get(type) || 0) + 1);
+    });
+    return Array.from(map.entries()).map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [filteredForms]);
+
+  // Resolution time stats
+  const resolutionStats = useMemo((): ResolutionStats => {
+    const resolved = filteredForms.filter(f =>
+      f.status === "solucionado" && f.created_date && f.resolution_date
+    );
+    if (resolved.length === 0) return { avg: null, min: null, max: null, count: 0 };
+
+    const days = resolved.map(f => {
+      const start = new Date(f.created_date!);
+      const end = new Date(f.resolution_date!);
+      return Math.max(0, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+    });
+
+    return {
+      avg: Math.round(days.reduce((a, b) => a + b, 0) / days.length),
+      min: Math.min(...days),
+      max: Math.max(...days),
+      count: resolved.length,
+    };
+  }, [filteredForms]);
+
+  // Status summary
+  const statusSummary = useMemo(() => {
+    const total = filteredForms.length;
+    const enProceso = filteredForms.filter(f => f.status === "proceso").length;
+    const solucionados = filteredForms.filter(f => f.status === "solucionado").length;
+    return { total, enProceso, solucionados };
+  }, [filteredForms]);
+
+  const exportPDF = async () => {
+    const doc = new jsPDF({ orientation: "landscape" });
+    const today = new Date().toLocaleDateString("es-CL");
+    const yearLabel = selectedYears.length > 0 ? selectedYears.sort((a,b) => b-a).join(", ") : "Todos";
+
+    // Logo
+    try {
+      const logoImg = new Image();
+      logoImg.src = logosHeader;
+      await new Promise((resolve, reject) => { logoImg.onload = resolve; logoImg.onerror = reject; });
+      doc.addImage(logoImg, "PNG", 14, 8, 50, 20);
+    } catch {}
+
+    doc.setFontSize(18);
+    doc.text("Informe de Mantenciones", 70, 18);
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Generado: ${today} | Año(s): ${yearLabel}`, 70, 25);
+    doc.setTextColor(0);
+
+    // Summary
+    let y = 35;
+    doc.setFontSize(12);
+    doc.text("Resumen General", 14, y);
+    y += 6;
+    autoTable(doc, {
+      startY: y,
+      head: [["Total FORMs", "En Proceso", "Solucionados"]],
+      body: [[
+        statusSummary.total.toString(),
+        statusSummary.enProceso.toString(),
+        statusSummary.solucionados.toString(),
+      ]],
+      styles: { fontSize: 10, cellPadding: 4 },
+      headStyles: { fillColor: [220, 38, 38] },
+    });
+
+    y = (doc as any).lastAutoTable.finalY + 10;
+
+    // Resolution stats
+    if (resolutionStats.count > 0) {
+      doc.setFontSize(12);
+      doc.text("Tiempos de Resolución (días)", 14, y);
+      y += 6;
+      autoTable(doc, {
+        startY: y,
+        head: [["FORMs con resolución", "Promedio", "Mínimo", "Máximo"]],
+        body: [[
+          resolutionStats.count.toString(),
+          resolutionStats.avg?.toString() || "-",
+          resolutionStats.min?.toString() || "-",
+          resolutionStats.max?.toString() || "-",
+        ]],
+        styles: { fontSize: 10, cellPadding: 4 },
+        headStyles: { fillColor: [220, 38, 38] },
+      });
+      y = (doc as any).lastAutoTable.finalY + 10;
+    }
+
+    // Type distribution
+    doc.setFontSize(12);
+    doc.text("Distribución por Tipo", 14, y);
+    y += 6;
+    autoTable(doc, {
+      startY: y,
+      head: [["Tipo", "Cantidad", "% del Total"]],
+      body: typeDistribution.map(t => [
+        t.name,
+        t.value.toString(),
+        ((t.value / statusSummary.total) * 100).toFixed(1) + "%",
+      ]),
+      styles: { fontSize: 9, cellPadding: 3 },
+      headStyles: { fillColor: [220, 38, 38] },
+    });
+
+    // New page for contracts table
+    doc.addPage();
+    doc.setFontSize(14);
+    doc.text("FORMs por Contrato", 14, 20);
+
+    autoTable(doc, {
+      startY: 28,
+      head: [["Contrato", "Total", "En Proceso", "Solucionados", "% Resolución"]],
+      body: contractStats.map(c => [
+        c.contractName,
+        c.total.toString(),
+        c.enProceso.toString(),
+        c.solucionados.toString(),
+        c.total > 0 ? ((c.solucionados / c.total) * 100).toFixed(1) + "%" : "0%",
+      ]),
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [220, 38, 38] },
+      columnStyles: { 0: { cellWidth: 80 } },
+    });
+
+    doc.save(`Informe_Mantenciones_${yearLabel.replace(/, /g, "_")}.pdf`);
+    toast({ title: "PDF generado", description: "El informe se descargó correctamente" });
+  };
+
+  if (loading) {
+    return <div className="text-center py-8 text-muted-foreground">Cargando datos de mantenciones...</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header with filters */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <Wrench className="h-5 w-5 text-primary" />
+          <h3 className="text-lg font-semibold">Informes de Mantenciones</h3>
+          <Badge variant="secondary">{filteredForms.length} FORMs</Badge>
+        </div>
+        <div className="flex items-center gap-2">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <CalendarDays className="h-4 w-4" />
+                {selectedYears.length === 0 ? "Todos los años" : selectedYears.sort((a,b) => b-a).join(", ")}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-2">
+              <div className="space-y-1">
+                {availableYears.map(year => (
+                  <label key={year} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent cursor-pointer text-sm">
+                    <Checkbox checked={selectedYears.includes(year)} onCheckedChange={() => toggleYear(year)} />
+                    {year}
+                  </label>
+                ))}
+                {selectedYears.length > 0 && (
+                  <Button variant="ghost" size="sm" className="w-full mt-1 text-xs" onClick={() => setSelectedYears([])}>Limpiar</Button>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+          <Button onClick={exportPDF} className="gap-2">
+            <Download className="h-4 w-4" /> Descargar PDF
+          </Button>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total FORMs</CardTitle>
+          </CardHeader>
+          <CardContent><div className="text-2xl font-bold">{statusSummary.total}</div></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">En Proceso</CardTitle>
+          </CardHeader>
+          <CardContent><div className="text-2xl font-bold text-yellow-600">{statusSummary.enProceso}</div></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Solucionados</CardTitle>
+          </CardHeader>
+          <CardContent><div className="text-2xl font-bold text-green-600">{statusSummary.solucionados}</div></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-1 text-muted-foreground"><Timer className="h-3.5 w-3.5" /> T. Promedio</CardTitle>
+          </CardHeader>
+          <CardContent><div className="text-2xl font-bold">{resolutionStats.avg !== null ? `${resolutionStats.avg}d` : "N/A"}</div></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">T. Mínimo</CardTitle>
+          </CardHeader>
+          <CardContent><div className="text-2xl font-bold text-green-600">{resolutionStats.min !== null ? `${resolutionStats.min}d` : "N/A"}</div></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">T. Máximo</CardTitle>
+          </CardHeader>
+          <CardContent><div className="text-2xl font-bold text-destructive">{resolutionStats.max !== null ? `${resolutionStats.max}d` : "N/A"}</div></CardContent>
+        </Card>
+      </div>
+
+      {/* Charts row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Bar chart: Forms by contract */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium">Top 15 Contratos por FORMs</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {topContractsChart.length > 0 ? (
+              <ResponsiveContainer width="100%" height={350}>
+                <BarChart data={topContractsChart} layout="vertical" margin={{ left: 10, right: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" />
+                  <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 10 }} />
+                  <Tooltip 
+                    formatter={(value: number, name: string) => [value, name]}
+                    labelFormatter={(label: string, payload: any[]) => payload?.[0]?.payload?.fullName || label}
+                  />
+                  <Legend />
+                  <Bar dataKey="En Proceso" stackId="a" fill="hsl(48, 96%, 53%)" />
+                  <Bar dataKey="Solucionados" stackId="a" fill="hsl(142, 71%, 45%)" />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">Sin datos</div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Pie chart: Type distribution */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium">Distribución por Tipo de Mantención</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {typeDistribution.length > 0 ? (
+              <ResponsiveContainer width="100%" height={350}>
+                <PieChart>
+                  <Pie
+                    data={typeDistribution}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={120}
+                    label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                    labelLine
+                  >
+                    {typeDistribution.map((_, idx) => (
+                      <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value: number) => [value, "FORMs"]} />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">Sin datos</div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Detailed table */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm font-medium">Detalle por Contrato ({contractStats.length} contratos)</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-auto max-h-[400px]">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Contrato</TableHead>
+                  <TableHead className="text-center w-20">Total</TableHead>
+                  <TableHead className="text-center w-24">En Proceso</TableHead>
+                  <TableHead className="text-center w-28">Solucionados</TableHead>
+                  <TableHead className="text-center w-28">% Resolución</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {contractStats.map(c => {
+                  const pct = c.total > 0 ? ((c.solucionados / c.total) * 100).toFixed(1) : "0";
+                  return (
+                    <TableRow key={c.contractName}>
+                      <TableCell className="text-xs font-medium">{c.contractName}</TableCell>
+                      <TableCell className="text-center text-xs">{c.total}</TableCell>
+                      <TableCell className="text-center">
+                        {c.enProceso > 0 && <Badge variant="secondary" className="text-xs">{c.enProceso}</Badge>}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {c.solucionados > 0 && <Badge variant="default" className="text-xs">{c.solucionados}</Badge>}
+                      </TableCell>
+                      <TableCell className="text-center text-xs">{pct}%</TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

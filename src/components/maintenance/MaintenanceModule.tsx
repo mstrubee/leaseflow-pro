@@ -6,7 +6,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm, detectMaintenanceType } from "./types";
@@ -21,6 +23,7 @@ export function MaintenanceModule() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [selectedYears, setSelectedYears] = useState<number[]>([]);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editForm, setEditForm] = useState<MaintenanceForm | null>(null);
   const [sortKey, setSortKey] = useState<string | null>("created_date");
@@ -60,6 +63,19 @@ export function MaintenanceModule() {
 
   useEffect(() => { fetchForms(); }, []);
 
+  // Available years for filtering
+  const availableYears = useMemo(() => {
+    const years = new Set<number>();
+    forms.forEach(f => { if (f.year) years.add(f.year); });
+    return Array.from(years).sort((a, b) => b - a);
+  }, [forms]);
+
+  const toggleYear = (year: number) => {
+    setSelectedYears(prev =>
+      prev.includes(year) ? prev.filter(y => y !== year) : [...prev, year]
+    );
+  };
+
   const handleSort = useCallback((key: string) => {
     setSortKey(prev => {
       if (prev === key) {
@@ -73,6 +89,7 @@ export function MaintenanceModule() {
 
   const filtered = useMemo(() => {
     let result = forms.filter(f => {
+      if (selectedYears.length > 0 && (!f.year || !selectedYears.includes(f.year))) return false;
       if (statusFilter !== "all" && f.status !== statusFilter) return false;
       if (typeFilter !== "all" && detectMaintenanceType(f) !== typeFilter) return false;
       if (search) {
@@ -102,7 +119,7 @@ export function MaintenanceModule() {
     }
 
     return result;
-  }, [forms, statusFilter, typeFilter, search, sortKey, sortOrder]);
+  }, [forms, statusFilter, typeFilter, search, selectedYears, sortKey, sortOrder]);
 
   const totalForms = forms.length;
   const enProceso = forms.filter(f => f.status === "proceso").length;
@@ -143,6 +160,35 @@ export function MaintenanceModule() {
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input placeholder="N° FORM, contrato, descripción..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8" />
           </div>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Año</Label>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="w-40 justify-start gap-2">
+                <CalendarDays className="h-4 w-4" />
+                {selectedYears.length === 0 ? "Todos" : selectedYears.sort((a,b) => b-a).join(", ")}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-2">
+              <div className="space-y-1">
+                {availableYears.map(year => (
+                  <label key={year} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent cursor-pointer text-sm">
+                    <Checkbox
+                      checked={selectedYears.includes(year)}
+                      onCheckedChange={() => toggleYear(year)}
+                    />
+                    {year}
+                  </label>
+                ))}
+                {selectedYears.length > 0 && (
+                  <Button variant="ghost" size="sm" className="w-full mt-1 text-xs" onClick={() => setSelectedYears([])}>
+                    Limpiar
+                  </Button>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Estado</Label>
