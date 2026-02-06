@@ -287,13 +287,13 @@ export function CommercialConditionsSummary({
         // Check if we're currently within this range
         if (today >= rangeStartDate && today <= rangeEndDate) {
           noticeDate = rangeStartDate;
-          noticeDateLabel = `En curso (vence ${format(rangeEndDate, "dd MMM yyyy", { locale: es })})`;
+          noticeDateLabel = `Rango Salida en curso (vence ${format(rangeEndDate, "dd MMM yyyy", { locale: es })})`;
           break;
         }
         // Check if this range is still in the future
         else if (rangeStartDate > today) {
           noticeDate = rangeStartDate;
-          noticeDateLabel = `${format(rangeStartDate, "dd MMM yyyy", { locale: es })} - ${format(rangeEndDate, "dd MMM yyyy", { locale: es })}`;
+          noticeDateLabel = `Rango Salida: ${format(rangeStartDate, "dd MMM yyyy", { locale: es })} - ${format(rangeEndDate, "dd MMM yyyy", { locale: es })}`;
           break;
         }
         // If we're past the end date, continue to check next range
@@ -305,7 +305,7 @@ export function CommercialConditionsSummary({
         const rangeStartDate = addMonths(startDate, lastRange.start_month - 1);
         const rangeEndDate = addMonths(startDate, lastRange.end_month - 1);
         noticeDate = rangeStartDate;
-        noticeDateLabel = `vencido (${format(rangeStartDate, "dd MMM yyyy", { locale: es })} - ${format(rangeEndDate, "dd MMM yyyy", { locale: es })})`;
+        noticeDateLabel = `vencido Rango Salida (${format(rangeStartDate, "dd MMM yyyy", { locale: es })} - ${format(rangeEndDate, "dd MMM yyyy", { locale: es })})`;
       }
     }
     
