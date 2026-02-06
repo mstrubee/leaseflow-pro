@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.summarize-text]
 verify_jwt = false
+
+[functions.refresh-economic-indicators]
+verify_jwt = false

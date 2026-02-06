@@ -1,199 +1,153 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { getCorsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 
-const ALLOWED_ORIGINS = [
-  'https://tgxiqvfpirwvhktgqqfa.lovable.app',
-  'https://id-preview--73a8d508-7010-4c00-aa8e-6eb117cc7286.lovable.app',
-  'https://rental-flow-desk.lovable.app',
-  'http://localhost:5173',
-  'http://localhost:8080',
-];
-
-function getCorsHeaders(req: Request): Record<string, string> {
-  const origin = req.headers.get('origin') || '';
-  const isAllowed = ALLOWED_ORIGINS.includes(origin);
-  return {
-    'Access-Control-Allow-Origin': isAllowed ? origin : ALLOWED_ORIGINS[0],
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-    'Access-Control-Allow-Credentials': 'true',
-  };
-}
-
-// Fetch with a hard timeout to avoid edge function timeouts
-async function fetchWithTimeout(url: string, timeoutMs = 8000): Promise<any> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    const text = await response.text();
-    clearTimeout(timer);
-    if (text.trim().startsWith('<')) {
-      throw new Error('API returned HTML error page');
-    }
-    return JSON.parse(text);
-  } catch (e) {
-    clearTimeout(timer);
-    throw e;
-  }
-}
-
-// Fallback values
-const FALLBACK_UF = 38500;
-const FALLBACK_DOLLAR = 980;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 serve(async (req) => {
-  const corsHeaders = getCorsHeaders(req);
+  const corsResponse = handleCorsPreflightRequest(req);
+  if (corsResponse) return corsResponse;
 
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsHeaders = getCorsHeaders(req);
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
     const url = new URL(req.url);
-    const historicalDateParam = url.searchParams.get('date');
+    const historicalDateParam = url.searchParams.get("date");
 
     // --- Historical UF request ---
     if (historicalDateParam) {
-      return await handleHistoricalUF(historicalDateParam, corsHeaders);
+      return handleHistoricalUF(supabase, historicalDateParam, corsHeaders);
     }
 
-    // --- Current indicators ---
+    // --- Current indicators (read from cache only) ---
     const today = new Date();
-    const currentYear = today.getFullYear();
-    const lastYear = currentYear - 1;
-
-    let ufData: any, dollarCurrentYear: any, dollarLastYear: any;
-    let usedFallback = false;
-
-    // Fetch all three in parallel with individual fallbacks
-    const [ufResult, dollarCurrent, dollarLast] = await Promise.allSettled([
-      fetchWithTimeout('https://mindicador.cl/api/uf'),
-      fetchWithTimeout(`https://mindicador.cl/api/dolar/${currentYear}`),
-      fetchWithTimeout(`https://mindicador.cl/api/dolar/${lastYear}`),
-    ]);
-
-    if (ufResult.status === 'fulfilled') {
-      ufData = ufResult.value;
-    } else {
-      console.warn('UF fetch failed:', ufResult.reason?.message);
-      usedFallback = true;
-      ufData = { serie: [{ valor: FALLBACK_UF, fecha: today.toISOString() }] };
-    }
-
-    if (dollarCurrent.status === 'fulfilled') {
-      dollarCurrentYear = dollarCurrent.value;
-    } else {
-      console.warn('Dollar current year fetch failed:', dollarCurrent.reason?.message);
-      usedFallback = true;
-      dollarCurrentYear = { serie: [{ valor: FALLBACK_DOLLAR, fecha: today.toISOString() }] };
-    }
-
-    if (dollarLast.status === 'fulfilled') {
-      dollarLastYear = dollarLast.value;
-    } else {
-      console.warn('Dollar last year fetch failed');
-      dollarLastYear = { serie: [] };
-    }
-
-    const currentUF = ufData.serie?.[0]?.valor || FALLBACK_UF;
-    const ufNext10Days = (ufData.serie?.slice(0, 10) || []).map((item: any) => ({
-      date: item.fecha,
-      value: item.valor,
-    }));
-
-    const allDollarData = [
-      ...(dollarCurrentYear.serie || []),
-      ...(dollarLastYear.serie || []),
-    ].map((item: any) => ({ date: item.fecha, value: item.valor }));
-
-    const currentDollar = dollarCurrentYear.serie?.[0]?.valor || FALLBACK_DOLLAR;
-
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-    sixMonthsAgo.setHours(0, 0, 0, 0);
-
     const oneYearAgo = new Date();
     oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-    oneYearAgo.setHours(0, 0, 0, 0);
 
-    const dollarSixMonths = allDollarData.filter((item: any) => new Date(item.date) >= sixMonthsAgo);
-    const dollarOneYear = allDollarData.filter((item: any) => new Date(item.date) >= oneYearAgo);
+    // Fetch latest UF values (last 31 days for the grid)
+    const { data: ufRows, error: ufError } = await supabase
+      .from("economic_indicators_cache")
+      .select("value, date, last_updated, is_stale")
+      .eq("indicator", "UF")
+      .order("date", { ascending: false })
+      .limit(31);
 
-    const sortByDate = (a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime();
+    if (ufError) throw ufError;
+
+    // Fetch USD data for charts (last year)
+    const { data: usdRows, error: usdError } = await supabase
+      .from("economic_indicators_cache")
+      .select("value, date, last_updated, is_stale")
+      .eq("indicator", "USD")
+      .gte("date", oneYearAgo.toISOString().split("T")[0])
+      .order("date", { ascending: true });
+
+    if (usdError) throw usdError;
+
+    // Build response
+    const currentUF = ufRows?.[0]?.value || 0;
+    const ufNext10Days = (ufRows || []).slice(0, 10).map((r: any) => ({
+      date: r.date,
+      value: r.value,
+    }));
+
+    const allDollarData = (usdRows || []).map((r: any) => ({
+      date: r.date,
+      value: r.value,
+    }));
+
+    const currentDollar = allDollarData.length > 0
+      ? allDollarData[allDollarData.length - 1].value
+      : 0;
+
+    const sixMonthsAgoStr = sixMonthsAgo.toISOString().split("T")[0];
+    const dollarSixMonths = allDollarData.filter((d: any) => d.date >= sixMonthsAgoStr);
+    const dollarOneYear = allDollarData;
+
+    // Determine staleness from the most recent records
+    const isStale = ufRows?.[0]?.is_stale || usdRows?.[usdRows.length - 1]?.is_stale || false;
+    const lastUpdated = ufRows?.[0]?.last_updated || null;
 
     return new Response(
       JSON.stringify({
-        uf: { current: currentUF, next10Days: [...ufNext10Days].sort(sortByDate), date: today.toISOString() },
-        dollar: {
-          current: currentDollar,
-          sixMonths: [...dollarSixMonths].sort(sortByDate),
-          oneYear: [...dollarOneYear].sort(sortByDate),
+        uf: {
+          current: currentUF,
+          next10Days: ufNext10Days.sort((a: any, b: any) => a.date.localeCompare(b.date)),
           date: today.toISOString(),
         },
-        usedFallback,
+        dollar: {
+          current: currentDollar,
+          sixMonths: dollarSixMonths,
+          oneYear: dollarOneYear,
+          date: today.toISOString(),
+        },
+        is_stale: isStale,
+        last_updated: lastUpdated,
+        source: "cache",
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
-  } catch (error) {
-    console.error('Error:', error);
-    // Return fallback data instead of error
+  } catch (error: any) {
+    console.error("Error reading from cache:", error);
     return new Response(
       JSON.stringify({
-        uf: { current: FALLBACK_UF, next10Days: [], date: new Date().toISOString() },
-        dollar: { current: FALLBACK_DOLLAR, sixMonths: [], oneYear: [], date: new Date().toISOString() },
-        usedFallback: true,
+        uf: { current: 0, next10Days: [], date: new Date().toISOString() },
+        dollar: { current: 0, sixMonths: [], oneYear: [], date: new Date().toISOString() },
+        is_stale: true,
+        last_updated: null,
+        source: "cache",
+        error: "Cache read failed",
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
   }
 });
 
-async function handleHistoricalUF(dateParam: string, corsHeaders: Record<string, string>): Promise<Response> {
-  const requestedDate = new Date(dateParam);
-  const year = requestedDate.getFullYear();
-  const month = String(requestedDate.getMonth() + 1).padStart(2, '0');
-  const day = String(requestedDate.getDate()).padStart(2, '0');
+async function handleHistoricalUF(
+  supabase: any,
+  dateParam: string,
+  corsHeaders: Record<string, string>
+): Promise<Response> {
+  const dateStr = dateParam.split("T")[0];
 
-  try {
-    const data = await fetchWithTimeout(`https://mindicador.cl/api/uf/${day}-${month}-${year}`, 6000);
-    const ufValue = data.serie?.[0]?.valor || null;
+  // Try exact date
+  const { data: exactRow } = await supabase
+    .from("economic_indicators_cache")
+    .select("value, date")
+    .eq("indicator", "UF")
+    .eq("date", dateStr)
+    .maybeSingle();
 
-    if (ufValue) {
-      return new Response(
-        JSON.stringify({ uf: { historical: ufValue, date: dateParam } }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
-      );
-    }
-  } catch {
-    // Try year fallback
+  if (exactRow) {
+    return new Response(
+      JSON.stringify({ uf: { historical: exactRow.value, date: dateParam } }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+    );
   }
 
-  // Fallback: fetch full year and find closest
-  try {
-    const yearData = await fetchWithTimeout(`https://mindicador.cl/api/uf/${year}`, 6000);
-    const targetTime = requestedDate.getTime();
-    let closestValue: number | null = null;
-    let closestDiff = Infinity;
+  // Find closest date (before the requested date)
+  const { data: closestRow } = await supabase
+    .from("economic_indicators_cache")
+    .select("value, date")
+    .eq("indicator", "UF")
+    .lte("date", dateStr)
+    .order("date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-    for (const item of yearData.serie || []) {
-      const diff = Math.abs(new Date(item.fecha).getTime() - targetTime);
-      if (diff < closestDiff) {
-        closestDiff = diff;
-        closestValue = item.valor;
-      }
-    }
-
-    if (closestValue) {
-      return new Response(
-        JSON.stringify({ uf: { historical: closestValue, date: dateParam } }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
-      );
-    }
-  } catch (e) {
-    console.error('Historical UF fallback failed:', e);
+  if (closestRow) {
+    return new Response(
+      JSON.stringify({ uf: { historical: closestRow.value, date: dateParam } }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+    );
   }
 
   return new Response(
-    JSON.stringify({ uf: { historical: null, date: dateParam, error: 'UF not found for date' } }),
-    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+    JSON.stringify({ uf: { historical: null, date: dateParam, error: "UF not found for date" } }),
+    { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
   );
 }
