@@ -556,10 +556,10 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
 
       if (newOrder.currency === "UF") {
         amountUF = inputAmount;
-        amountCLP = convertUFToPesos(inputAmount);
+        amountCLP = ufValue > 0 ? convertUFToPesos(inputAmount) : 0;
       } else {
         amountCLP = inputAmount;
-        amountUF = convertPesosToUF(inputAmount);
+        amountUF = ufValue > 0 ? convertPesosToUF(inputAmount) : 0;
       }
 
       // Validate against budget lines (CAPEX) - check each selected line
@@ -806,10 +806,10 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
 
       if (editFormData.currency === "UF") {
         amountUF = inputAmount;
-        amountCLP = convertUFToPesos(inputAmount);
+        amountCLP = ufValue > 0 ? convertUFToPesos(inputAmount) : 0;
       } else {
         amountCLP = inputAmount;
-        amountUF = convertPesosToUF(inputAmount);
+        amountUF = ufValue > 0 ? convertPesosToUF(inputAmount) : 0;
       }
 
       // Validate against budget lines (CAPEX) - check total available
@@ -1742,7 +1742,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                 </SelectContent>
               </Select>
             </div>
-            {editFormData.budget_type === "capex" && (
+            {editFormData.budget_type === "capex" ? (
               <div className="space-y-2">
                 <Label>Líneas de Presupuesto CAPEX * (selección múltiple)</Label>
                 <div className="border rounded-md p-2 max-h-40 overflow-y-auto space-y-1">
@@ -1789,11 +1789,95 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                   </p>
                 )}
               </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label>Categoría OPEX *</Label>
+                  <Select 
+                    value={editFormData.opex_category_id} 
+                    onValueChange={(v) => setEditFormData({ ...editFormData, opex_category_id: v, supplier_name: "" })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccione una categoría OPEX" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {opexCategories.map((category) => {
+                        const available = getAvailableOpexForCategory(category.id);
+                        const budgetEntry = opexMasterBudget.find(b => b.category_id === category.id);
+                        return (
+                          <SelectItem key={category.id} value={category.id}>
+                            <div className="flex items-center justify-between w-full gap-4">
+                              <span>{category.name}</span>
+                              {budgetEntry && (
+                                <span className="text-xs text-muted-foreground">
+                                  (Disponible: {formatUF(available)})
+                                </span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  {editFormData.opex_category_id && (
+                    <p className="text-xs text-muted-foreground">
+                      Presupuesto disponible: {formatUF(getAvailableOpexForCategory(editFormData.opex_category_id))}
+                    </p>
+                  )}
+                </div>
+
+                {/* Supplier selection for OPEX edit */}
+                {editFormData.opex_category_id && (
+                  <div className="space-y-2">
+                    <Label>Proveedor *</Label>
+                    <Select 
+                      value={suppliers.find(s => s.name === editFormData.supplier_name)?.id || ""}
+                      onValueChange={(v) => {
+                        const supplier = suppliers.find(s => s.id === v);
+                        setEditFormData({ ...editFormData, supplier_name: supplier?.name || "" });
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccione un proveedor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getSuppliersForOpexCategory(editFormData.opex_category_id).length > 0 && (
+                          <>
+                            <div className="px-2 py-1 text-xs font-medium text-muted-foreground bg-muted">
+                              Sugeridos para esta categoría
+                            </div>
+                            {getSuppliersForOpexCategory(editFormData.opex_category_id).map((supplier) => (
+                              <SelectItem key={supplier.id} value={supplier.id}>
+                                {supplier.name}
+                                {supplier.is_generic && <span className="text-xs text-muted-foreground ml-2">(Genérico)</span>}
+                              </SelectItem>
+                            ))}
+                          </>
+                        )}
+                        <div className="px-2 py-1 text-xs font-medium text-muted-foreground bg-muted">
+                          Todos los proveedores
+                        </div>
+                        {suppliers
+                          .filter(s => !getSuppliersForOpexCategory(editFormData.opex_category_id).some(suggested => suggested.id === s.id))
+                          .map((supplier) => (
+                            <SelectItem key={supplier.id} value={supplier.id}>
+                              {supplier.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </>
             )}
+
+            {/* Supplier for CAPEX edit - show all suppliers */}
+            {editFormData.budget_type === "capex" && (
             <div className="space-y-2">
               <Label>Proveedor</Label>
               <Input value={editFormData.supplier_name} onChange={(e) => setEditFormData({ ...editFormData, supplier_name: e.target.value })} />
             </div>
+            )}
             <div className="space-y-2">
               <Label>Monto</Label>
               <div className="flex gap-2">

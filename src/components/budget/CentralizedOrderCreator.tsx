@@ -931,8 +931,8 @@ export const CentralizedOrderCreator = ({
                       )}
                     </div>
                     
-                    {/* Form assignment for single contract */}
-                    {singleContractId && (
+                    {/* Form assignment for single contract (OPEX only) */}
+                    {singleContractId && budgetType === "opex" && (
                       <div className="space-y-2 border rounded-md p-3 bg-muted/30">
                         <div className="flex items-center space-x-2">
                           <Checkbox
@@ -1030,7 +1030,7 @@ export const CentralizedOrderCreator = ({
                               <TableHead>Contrato</TableHead>
                               <TableHead>CEBE</TableHead>
                               <TableHead>Monto ({formData.currency})</TableHead>
-                              <TableHead>Form</TableHead>
+                              {budgetType === "opex" && <TableHead>Form</TableHead>}
                               <TableHead className="w-10"></TableHead>
                             </TableRow>
                           </TableHeader>
@@ -1075,6 +1075,7 @@ export const CentralizedOrderCreator = ({
                                       step="1"
                                     />
                                   </TableCell>
+                                  {budgetType === "opex" && (
                                   <TableCell>
                                     {forms.length > 0 ? (
                                       <div className="space-y-0.5 max-h-[120px] overflow-y-auto">
@@ -1099,12 +1100,12 @@ export const CentralizedOrderCreator = ({
                                             <span className="text-muted-foreground truncate max-w-[120px]">{getFormDescription(f).slice(0, 40)}</span>
                                           </label>
                                         ))}
-
                                       </div>
                                     ) : (
                                       <span className="text-xs text-muted-foreground">—</span>
                                     )}
                                   </TableCell>
+                                  )}
                                   <TableCell>
                                     <Button
                                       type="button"
