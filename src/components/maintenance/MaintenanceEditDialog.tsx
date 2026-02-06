@@ -139,7 +139,7 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
             </div>
           )}
           <div className="space-y-1.5">
-            <Label>Comentarios Adicionales</Label>
+            <Label>Comentarios Técnicos (Jefe Mantenciones)</Label>
             <Textarea value={formData.additional_comments} onChange={e => set("additional_comments", e.target.value)} rows={2} />
           </div>
 
