@@ -111,7 +111,11 @@ export function TodayAlertsFloating() {
         .is("deleted_at", null)
         .order("title");
 
-      if (todayError) throw todayError;
+      if (todayError) {
+        console.error("[TodayAlertsFloating] Today query error:", todayError);
+        throw todayError;
+      }
+      console.log("[TodayAlertsFloating] Today alerts:", todayData?.length, "date:", todayStr);
       setTodayAlerts(todayData || []);
 
       // Load week's alerts
@@ -136,7 +140,11 @@ export function TodayAlertsFloating() {
         .order("due_date")
         .order("title");
 
-      if (weekError) throw weekError;
+      if (weekError) {
+        console.error("[TodayAlertsFloating] Week query error:", weekError);
+        throw weekError;
+      }
+      console.log("[TodayAlertsFloating] Week alerts:", weekData?.length, "range:", weekStart, "-", weekEnd);
       setWeekAlerts(weekData || []);
     } catch (error) {
       console.error("Error loading alerts:", error);
