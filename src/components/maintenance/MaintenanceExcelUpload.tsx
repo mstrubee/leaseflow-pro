@@ -1,0 +1,289 @@
+import { useState, useCallback } from "react";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Upload, AlertTriangle, CheckCircle, Loader2 } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { validateExcelFile } from "@/lib/excelFileValidation";
+import { ParsedMaintenanceRow, detectMaintenanceType } from "./types";
+import * as XLSX from "xlsx";
+
+interface Props {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess: () => void;
+}
+
+export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props) {
+  const [parsedRows, setParsedRows] = useState<ParsedMaintenanceRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [inserting, setInserting] = useState(false);
+  const [fileName, setFileName] = useState("");
+
+  const reset = () => {
+    setParsedRows([]);
+    setFileName("");
+  };
+
+  const handleFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validation = validateExcelFile(file);
+    if (!validation.valid) {
+      toast({ title: "Error", description: validation.error, variant: "destructive" });
+      return;
+    }
+
+    setLoading(true);
+    setFileName(file.name);
+
+    try {
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data, { type: "array", cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+
+      // Find header row (look for row containing "FORM" or similar in column A)
+      let headerIdx = 0;
+      for (let i = 0; i < Math.min(rows.length, 10); i++) {
+        const cellA = String(rows[i]?.[0] ?? "").toLowerCase();
+        if (cellA.includes("form") || cellA.includes("id") || cellA.includes("n°") || cellA.includes("numero")) {
+          headerIdx = i;
+          break;
+        }
+      }
+
+      // Fetch contracts for matching
+      const { data: contracts } = await supabase
+        .from("contracts")
+        .select("id, name")
+        .is("deleted_at", null);
+
+      const contractMap = new Map<string, string>();
+      contracts?.forEach(c => {
+        contractMap.set(c.name.toLowerCase().trim(), c.id);
+      });
+
+      const parsed: ParsedMaintenanceRow[] = [];
+      for (let i = headerIdx + 1; i < rows.length; i++) {
+        const row = rows[i];
+        const formNum = String(row[0] ?? "").trim();
+        if (!formNum) continue; // skip empty rows
+
+        const errors: string[] = [];
+        const warnings: string[] = [];
+
+        // Status validation
+        const rawStatus = String(row[1] ?? "").trim().toLowerCase();
+        let status = rawStatus;
+        if (rawStatus.includes("proceso")) status = "proceso";
+        else if (rawStatus.includes("solucionado")) status = "solucionado";
+        else if (rawStatus) errors.push(`Estado inválido: "${row[1]}"`);
+
+        // Date parsing
+        let createdDate: string | null = null;
+        const rawDate = row[2];
+        if (rawDate instanceof Date && !isNaN(rawDate.getTime())) {
+          createdDate = rawDate.toISOString().split("T")[0];
+        } else if (rawDate) {
+          const parsed = new Date(rawDate);
+          if (!isNaN(parsed.getTime())) {
+            createdDate = parsed.toISOString().split("T")[0];
+          } else {
+            warnings.push("Fecha no reconocida");
+          }
+        }
+
+        // Contract matching
+        const contractName = String(row[4] ?? "").trim();
+        let contractId: string | null = null;
+        if (contractName) {
+          contractId = contractMap.get(contractName.toLowerCase()) ?? null;
+          if (!contractId) {
+            // Try partial match
+            for (const [name, id] of contractMap.entries()) {
+              if (name.includes(contractName.toLowerCase()) || contractName.toLowerCase().includes(name)) {
+                contractId = id;
+                break;
+              }
+            }
+            if (!contractId) warnings.push("Contrato no encontrado");
+          }
+        }
+
+        parsed.push({
+          rowIndex: i,
+          form_number: formNum,
+          status: status || "proceso",
+          created_date: createdDate,
+          contract_name: contractName || null,
+          contract_id: contractId,
+          general_description: String(row[6] ?? "").trim() || null,
+          electrical_description: String(row[7] ?? "").trim() || null,
+          civil_description: String(row[8] ?? "").trim() || null,
+          hvac_description: String(row[9] ?? "").trim() || null,
+          fixed_assets_description: String(row[10] ?? "").trim() || null,
+          additional_comments: String(row[11] ?? "").trim() || null,
+          errors,
+          warnings,
+        });
+      }
+
+      setParsedRows(parsed);
+      if (parsed.length === 0) {
+        toast({ title: "Sin datos", description: "No se encontraron filas con datos válidos", variant: "destructive" });
+      }
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Error al procesar", description: "No se pudo leer el archivo Excel", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleInsert = async () => {
+    const validRows = parsedRows.filter(r => r.errors.length === 0);
+    if (validRows.length === 0) {
+      toast({ title: "Sin filas válidas", description: "Todas las filas tienen errores", variant: "destructive" });
+      return;
+    }
+
+    setInserting(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      const records = validRows.map(r => ({
+        form_number: r.form_number,
+        status: r.status,
+        created_date: r.created_date,
+        contract_id: r.contract_id,
+        contract_name: r.contract_name,
+        general_description: r.general_description,
+        electrical_description: r.electrical_description,
+        civil_description: r.civil_description,
+        hvac_description: r.hvac_description,
+        fixed_assets_description: r.fixed_assets_description,
+        additional_comments: r.additional_comments,
+        year: r.created_date ? new Date(r.created_date).getFullYear() : new Date().getFullYear(),
+        created_by: user?.id ?? null,
+      }));
+
+      // Insert in batches of 100
+      for (let i = 0; i < records.length; i += 100) {
+        const batch = records.slice(i, i + 100);
+        const { error } = await supabase.from("maintenance_forms" as any).insert(batch as any);
+        if (error) throw error;
+      }
+
+      toast({ title: "Carga exitosa", description: `${validRows.length} FORMs cargados correctamente` });
+      reset();
+      onOpenChange(false);
+      onSuccess();
+    } catch (err: any) {
+      console.error(err);
+      toast({ title: "Error al cargar", description: err.message, variant: "destructive" });
+    } finally {
+      setInserting(false);
+    }
+  };
+
+  const errorCount = parsedRows.filter(r => r.errors.length > 0).length;
+  const warningCount = parsedRows.filter(r => r.warnings.length > 0).length;
+  const validCount = parsedRows.filter(r => r.errors.length === 0).length;
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v); }}>
+      <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Carga Masiva de FORMs</DialogTitle>
+          <DialogDescription>
+            Sube un archivo Excel con las columnas: A (N° FORM), B (Estado), C (Fecha), E (Contrato), G-L (Descripciones)
+          </DialogDescription>
+        </DialogHeader>
+
+        {parsedRows.length === 0 ? (
+          <div className="flex flex-col items-center gap-4 py-8">
+            <Upload className="h-12 w-12 text-muted-foreground" />
+            <label className="cursor-pointer">
+              <input
+                type="file"
+                accept=".xls,.xlsx"
+                className="hidden"
+                onChange={handleFile}
+                disabled={loading}
+              />
+              <Button variant="outline" asChild disabled={loading}>
+                <span>{loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Procesando...</> : "Seleccionar archivo Excel"}</span>
+              </Button>
+            </label>
+            {fileName && <p className="text-sm text-muted-foreground">{fileName}</p>}
+          </div>
+        ) : (
+          <>
+            <div className="flex gap-4 text-sm">
+              <span className="flex items-center gap-1"><CheckCircle className="h-4 w-4 text-green-600" /> {validCount} válidos</span>
+              {warningCount > 0 && <span className="flex items-center gap-1"><AlertTriangle className="h-4 w-4 text-yellow-600" /> {warningCount} advertencias</span>}
+              {errorCount > 0 && <span className="flex items-center gap-1 text-destructive"><AlertTriangle className="h-4 w-4" /> {errorCount} errores</span>}
+            </div>
+
+            <div className="border rounded-md overflow-auto max-h-[50vh]">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-20">N° FORM</TableHead>
+                    <TableHead className="w-24">Estado</TableHead>
+                    <TableHead className="w-24">Fecha</TableHead>
+                    <TableHead>Contrato</TableHead>
+                    <TableHead className="w-24">Tipo</TableHead>
+                    <TableHead>Descripción</TableHead>
+                    <TableHead className="w-32">Validación</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {parsedRows.map((row) => (
+                    <TableRow key={row.rowIndex} className={row.errors.length > 0 ? "bg-destructive/10" : row.warnings.length > 0 ? "bg-yellow-50" : ""}>
+                      <TableCell className="font-mono text-xs">{row.form_number}</TableCell>
+                      <TableCell>
+                        <Badge variant={row.status === "solucionado" ? "default" : "secondary"} className="text-xs">
+                          {row.status === "solucionado" ? "Solucionado" : "Proceso"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs">{row.created_date || "-"}</TableCell>
+                      <TableCell className="text-xs">
+                        {row.contract_name || "-"}
+                        {row.contract_id && <CheckCircle className="h-3 w-3 text-green-600 inline ml-1" />}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">{detectMaintenanceType(row)}</Badge>
+                      </TableCell>
+                      <TableCell className="text-xs max-w-48 truncate">
+                        {row.general_description || row.electrical_description || row.civil_description || row.hvac_description || row.fixed_assets_description || "-"}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {row.errors.map((e, i) => <span key={i} className="text-destructive block">{e}</span>)}
+                        {row.warnings.map((w, i) => <span key={i} className="text-yellow-600 block">{w}</span>)}
+                        {row.errors.length === 0 && row.warnings.length === 0 && <CheckCircle className="h-4 w-4 text-green-600" />}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
+        )}
+
+        {parsedRows.length > 0 && (
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { reset(); }}>Cancelar</Button>
+            <Button onClick={handleInsert} disabled={inserting || validCount === 0}>
+              {inserting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Cargando...</> : `Cargar ${validCount} FORMs`}
+            </Button>
+          </DialogFooter>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
