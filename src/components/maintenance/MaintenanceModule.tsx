@@ -12,6 +12,7 @@ import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Do
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm, detectMaintenanceType } from "./types";
+import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { MaintenanceExcelUpload } from "./MaintenanceExcelUpload";
 import { MaintenanceEditDialog } from "./MaintenanceEditDialog";
 import { SortableTableHead, SortOrder } from "@/components/contracts/SortableTableHead";
@@ -30,6 +31,7 @@ export function MaintenanceModule() {
   const [editForm, setEditForm] = useState<MaintenanceForm | null>(null);
   const [sortKey, setSortKey] = useState<string | null>("created_date");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [contractCompanyMap, setContractCompanyMap] = useState<Record<string, string[]>>({});
 
   const fetchForms = async () => {
     setLoading(true);
@@ -68,6 +70,29 @@ export function MaintenanceModule() {
   };
 
   useEffect(() => { fetchForms(); }, []);
+
+  // Fetch contract-company mapping for logos
+  useEffect(() => {
+    const fetchCompanyMap = async () => {
+      const { data } = await supabase
+        .from("contract_companies")
+        .select("contracts!inner(name), companies!inner(name)")
+        .returns<Array<{ contracts: { name: string }, companies: { name: string } }>>();
+      if (data) {
+        const map: Record<string, string[]> = {};
+        data.forEach(row => {
+          const cName = row.contracts?.name;
+          const coName = row.companies?.name;
+          if (cName && coName) {
+            if (!map[cName]) map[cName] = [];
+            if (!map[cName].includes(coName)) map[cName].push(coName);
+          }
+        });
+        setContractCompanyMap(map);
+      }
+    };
+    fetchCompanyMap();
+  }, []);
 
   // Available years for filtering
   const availableYears = useMemo(() => {
@@ -257,6 +282,7 @@ export function MaintenanceModule() {
                         checked={selectedContracts.includes(name)}
                         onCheckedChange={() => toggleContract(name)}
                       />
+                      <CompanyLogo companyNames={contractCompanyMap[name] || []} size="sm" className="h-4 w-4" />
                       <span className="truncate">{name}</span>
                     </label>
                   ))}
