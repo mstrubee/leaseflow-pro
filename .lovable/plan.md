@@ -1,135 +1,117 @@
 
+# Modulo de Mantenciones - Paso 1: Carga desde Excel
 
-## Plan: Subida de Archivo OC en Creación/Edición de Órdenes de Compra
+## Resumen
+Crear la base del modulo de Mantenciones con la tabla en base de datos, la pagina principal y la funcionalidad de carga masiva desde Excel. El Excel tiene columnas fijas (A-L) que se mapean a los campos del FORM.
 
-### Resumen
+## Mapeo de columnas Excel
 
-Permitir subir un archivo PDF de OC (Orden de Compra) al crear o editar una orden, almacenándolo en la carpeta "OC" del repositorio del contrato en Google Drive.
+| Columna | Indice | Campo BD |
+|---------|--------|----------|
+| A | 0 | form_number (ID del FORM) |
+| B | 1 | status (Proceso / Solucionado) |
+| C | 2 | created_date (Fecha de creacion) |
+| D | 3 | (no especificado, se ignorara) |
+| E | 4 | contract_name (para vincular con contrato) |
+| F | 5 | (no especificado, se ignorara) |
+| G | 6 | general_description (Descripcion General) |
+| H | 7 | electrical_description (Requerimiento Electrico) |
+| I | 8 | civil_description (Requerimiento Obra Civil) |
+| J | 9 | hvac_description (Requerimiento Climatizacion) |
+| K | 10 | fixed_assets_description (Requerimiento Activos Fijos) |
+| L | 11 | additional_comments (Comentarios Adicionales) |
 
-### Componentes a Modificar
+## Cambios a implementar
+
+### 1. Base de datos
+Crear tabla `maintenance_forms` con:
+- id, form_number, status, created_date, resolution_date
+- contract_id (FK a contracts, nullable)
+- contract_name (text, para guardar el nombre original del Excel)
+- general_description, electrical_description, civil_description, hvac_description, fixed_assets_description, additional_comments
+- year, created_at, updated_at, deleted_at, created_by
+- Politicas RLS para usuarios autenticados (lectura y escritura)
+
+### 2. Archivos nuevos
+
+| Archivo | Proposito |
+|---------|-----------|
+| src/pages/MaintenanceDashboard.tsx | Pagina principal con tabla de FORMs y boton de carga Excel |
+| src/components/maintenance/MaintenanceModule.tsx | Tabla principal con filtros y busqueda |
+| src/components/maintenance/MaintenanceExcelUpload.tsx | Dialog de carga masiva: sube Excel, parsea columnas A-L, preview con validacion, vincula contratos por nombre, e inserta masivamente |
+| src/components/maintenance/types.ts | Interfaces TypeScript (MaintenanceForm, ParsedMaintenanceRow) |
+
+### 3. Archivos a modificar
 
 | Archivo | Cambio |
 |---------|--------|
-| `src/components/budget/PurchaseOrdersModule.tsx` | Agregar campo de upload en diálogos de nueva OC y edición OC |
-| `src/pages/PurchaseOrdersDashboard.tsx` | Agregar campo de upload en diálogo de edición centralizada |
-| `src/lib/repositoryBackup.ts` | Ya tiene `backupOCFileToRepository`, se usará directamente |
+| src/App.tsx | Agregar ruta /maintenance con ProtectedRoute |
+| src/pages/Dashboard.tsx | Agregar boton "Mantenciones" en la barra de navegacion |
 
-### Cambios Técnicos
+### 4. Logica de carga Excel
+- Parsear Excel usando libreria xlsx (ya instalada)
+- Validar archivo con excelFileValidation.ts existente
+- Detectar fila de encabezados automaticamente
+- Para cada fila: extraer columnas A-L segun mapeo
+- Validar status (debe ser "Proceso" o "Solucionado")
+- Parsear fecha de columna C
+- Buscar contrato por nombre (columna E) en la tabla contracts
+- Mostrar preview con tabla: N FORM, Estado, Fecha, Contrato, Descripcion General, validacion
+- Marcar filas con contrato no encontrado como advertencia (se cargan igual con contract_name guardado)
+- Boton "Cargar" para insercion masiva
 
-#### 1. PurchaseOrdersModule.tsx - Diálogo Nueva OC
+### 5. Tabla principal (MaintenanceModule)
+- Columnas visibles: N FORM, Estado (badge color), Fecha, Contrato, Descripcion General, Tipo detectado
+- El "tipo" se detecta automaticamente segun cual columna de descripcion tiene contenido (Electrico, Obra Civil, Climatizacion, Activos Fijos, o General)
+- Filtros: estado, tipo
+- Busqueda por N FORM, contrato, descripcion
+- Indicadores: Total FORMs, En Proceso, Solucionados
 
-**Agregar estado para manejo de archivo:**
-```typescript
-const [ocFile, setOcFile] = useState<File | null>(null);
-const [uploadingFile, setUploadingFile] = useState(false);
-const ocFileInputRef = useRef<HTMLInputElement>(null);
+## Seccion tecnica
+
+### Migracion SQL
+```sql
+CREATE TABLE public.maintenance_forms (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  form_number text NOT NULL,
+  status text NOT NULL DEFAULT 'proceso',
+  created_date date,
+  resolution_date date,
+  contract_id uuid REFERENCES public.contracts(id),
+  contract_name text,
+  general_description text,
+  electrical_description text,
+  civil_description text,
+  hvac_description text,
+  fixed_assets_description text,
+  additional_comments text,
+  year integer DEFAULT EXTRACT(YEAR FROM now()),
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  deleted_at timestamptz,
+  created_by uuid
+);
+
+ALTER TABLE public.maintenance_forms ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Authenticated users can read maintenance_forms"
+  ON public.maintenance_forms FOR SELECT
+  TO authenticated USING (true);
+
+CREATE POLICY "Authenticated users can insert maintenance_forms"
+  ON public.maintenance_forms FOR INSERT
+  TO authenticated WITH CHECK (true);
+
+CREATE POLICY "Authenticated users can update maintenance_forms"
+  ON public.maintenance_forms FOR UPDATE
+  TO authenticated USING (true) WITH CHECK (true);
 ```
 
-**Agregar UI de upload en el diálogo (después del selector de proveedor):**
-- Input file oculto con ref
-- Área de drop/click que muestra:
-  - Si no hay archivo: icono + texto "Click para subir archivo OC (PDF)"
-  - Si hay archivo: nombre del archivo + botón para eliminar
-- Acepta solo PDF
-
-**Modificar handleCreateOrder:**
-1. Después de crear la OC en BD, si hay archivo seleccionado:
-2. Llamar `backupOCFileToRepository(contractId, ocFile, orderNumber)`
-3. Obtener la URL de Drive devuelta
-4. Actualizar el campo `attachment_url` de la OC con esa URL
-
-#### 2. PurchaseOrdersModule.tsx - Diálogo Editar OC
-
-**Similar al anterior:**
-- Estado para archivo nuevo
-- Mostrar archivo existente si `attachment_url` está presente
-- Permitir reemplazar o mantener archivo existente
-
-**Modificar handleUpdateOrder:**
-- Si hay archivo nuevo, subirlo y actualizar `attachment_url`
-
-#### 3. PurchaseOrdersDashboard.tsx - Diálogo Editar OC Centralizado
-
-**Agregar en el estado editingOCData:**
-```typescript
-attachment_url: string;
-```
-
-**Agregar UI de upload en el diálogo:**
-- Mostrar archivo existente con link
-- Permitir subir nuevo archivo
-- Al guardar, subir a Drive y actualizar todos los POs del grupo
-
-**Modificar handleUpdateOC:**
-- Si hay archivo nuevo, subirlo a la carpeta OC del primer contrato
-- Actualizar `attachment_url` en todos los POs con el mismo `order_number`
-
-### Flujo de Upload
-
-```text
-┌─────────────────────┐
-│ Usuario selecciona  │
-│ archivo PDF         │
-└─────────┬───────────┘
-          │
-          v
-┌─────────────────────┐
-│ Crear/Actualizar OC │
-│ en BD (sin archivo) │
-└─────────┬───────────┘
-          │
-          v
-┌─────────────────────┐
-│ backupOCFileToRepository() │
-│ - Obtiene/crea carpeta OC  │
-│ - Sube a Google Drive      │
-│ - Crea registro en BD      │
-└─────────┬───────────┘
-          │
-          v
-┌─────────────────────┐
-│ Actualizar OC con   │
-│ attachment_url      │
-└─────────────────────┘
-```
-
-### UI del Campo de Upload
-
-```text
-┌─────────────────────────────────────────┐
-│ Archivo OC (PDF)                        │
-├─────────────────────────────────────────┤
-│  ┌───────────────────────────────────┐  │
-│  │  📄 OC_12345_documento.pdf       X│  │ <- Si hay archivo
-│  │     125.3 KB                      │  │
-│  └───────────────────────────────────┘  │
-│                                         │
-│  -- O bien --                           │
-│                                         │
-│  ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐  │
-│  │  ⬆️ Click para subir archivo OC  │  │ <- Si no hay archivo
-│  │     (PDF)                         │  │
-│  └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘  │
-└─────────────────────────────────────────┘
-```
-
-### Validaciones
-
-1. **Tipo de archivo**: Solo PDF (validar MIME type y extensión)
-2. **Tamaño**: Máximo 20MB
-3. **Drive requerido**: Si el contrato no tiene Drive vinculado, mostrar advertencia pero permitir crear OC sin archivo
-
-### Manejo de Errores
-
-- Si falla el upload a Drive:
-  - La OC ya está creada en BD
-  - Mostrar toast de advertencia: "OC creada, pero el archivo no pudo subirse. Puede adjuntarlo después."
-  - No bloquear la operación principal
-
-### Imports Necesarios
-
-```typescript
-import { backupOCFileToRepository } from "@/lib/repositoryBackup";
-import { validateFile } from "@/lib/fileValidation";
-```
-
+### Deteccion automatica de tipo
+Se determinara el tipo de mantencion segun cual campo de descripcion especifica tiene contenido:
+- Si electrical_description tiene texto: "Electrico"
+- Si civil_description tiene texto: "Obra Civil"
+- Si hvac_description tiene texto: "Climatizacion"
+- Si fixed_assets_description tiene texto: "Activos Fijos"
+- Si solo general_description tiene texto: "General"
+- Si hay multiples, se muestra el primero encontrado
