@@ -71,6 +71,13 @@ interface VersionNotice {
   notice_bilaterality: string;
 }
 
+interface TerminationNoticeForChart {
+  id: string;
+  notice_type: string; // "sent" | "received"
+  notice_date: string;
+  required_exit_date: string | null;
+}
+
 interface CommercialConditionsSummaryProps {
   version: ContractVersion;
   signedDate: string | null;
@@ -86,6 +93,7 @@ interface CommercialConditionsSummaryProps {
   showRenegotiationButton?: boolean;
   onRenegotiationSuccess?: () => void;
   displayCurrency?: "UF" | "CLP";
+  terminationNotices?: TerminationNoticeForChart[];
 }
 export function CommercialConditionsSummary({
   version,
@@ -98,7 +106,8 @@ export function CommercialConditionsSummary({
   contractId,
   showRenegotiationButton = false,
   onRenegotiationSuccess,
-  displayCurrency = "UF"
+  displayCurrency = "UF",
+  terminationNotices = []
 }: CommercialConditionsSummaryProps) {
   const {
     ufValue,
@@ -887,7 +896,7 @@ export function CommercialConditionsSummary({
               <TrendingUp className="h-3 w-3" />
               {hasEscalations ? "Escalonamiento de Renta" : "Tendencia de Renta"}
             </div>
-            <CompactEscalationChart escalations={version.rent_escalations} initialRent={version.initial_rent} regimeRent={version.regime_rent} durationMonths={version.duration_months} effectiveDate={version.effective_date || signedDate || undefined} graceMonths={version.grace_months || 0} hasPeriodicAdjustments={version.has_periodic_adjustments || false} adjustmentType={version.adjustment_type || "percentage"} adjustmentValue={version.adjustment_value || 0} firstAdjustmentMonth={version.first_adjustment_month || 0} adjustmentPeriodicityMonths={version.adjustment_periodicity_months || 0} noticeRanges={noticeRanges} noticeType={version.notice_type} noticeValue={version.notice_value} displayCurrency={displayCurrency} isUfM2Mode={version.initial_rent_is_uf_m2 || version.regime_rent_is_uf_m2 || false} superficieM2={superficieEdificadaLocal || 0} noticeDeadlines={noticeDeadlines} contractEndNoticeMonths={version.notice_type === "sin_termino" ? parseInt(version.notice_value) || 0 : 0} autoRenewal={version.auto_renewal || false} autoRenewalMonths={version.auto_renewal_months || 0} />
+            <CompactEscalationChart escalations={version.rent_escalations} initialRent={version.initial_rent} regimeRent={version.regime_rent} durationMonths={version.duration_months} effectiveDate={version.effective_date || signedDate || undefined} graceMonths={version.grace_months || 0} hasPeriodicAdjustments={version.has_periodic_adjustments || false} adjustmentType={version.adjustment_type || "percentage"} adjustmentValue={version.adjustment_value || 0} firstAdjustmentMonth={version.first_adjustment_month || 0} adjustmentPeriodicityMonths={version.adjustment_periodicity_months || 0} noticeRanges={noticeRanges} noticeType={version.notice_type} noticeValue={version.notice_value} displayCurrency={displayCurrency} isUfM2Mode={version.initial_rent_is_uf_m2 || version.regime_rent_is_uf_m2 || false} superficieM2={superficieEdificadaLocal || 0} noticeDeadlines={noticeDeadlines} contractEndNoticeMonths={version.notice_type === "sin_termino" ? parseInt(version.notice_value) || 0 : 0} autoRenewal={version.auto_renewal || false} autoRenewalMonths={version.auto_renewal_months || 0} terminationNotices={terminationNotices} />
           </div>}
       </CardContent>
     </Card>;

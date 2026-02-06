@@ -1024,6 +1024,7 @@ const ContractDetail = () => {
                           versionNotices={(displayVersion as any).version_notices || []}
                           contractId={contract.id}
                           displayCurrency={contract.display_currency}
+                          terminationNotices={contract.termination_notices || []}
                         />
                         {isNegotiating && currentVersion && (
                           <Card className="p-4 mt-6">
