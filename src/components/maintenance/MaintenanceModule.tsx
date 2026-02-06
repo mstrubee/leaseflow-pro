@@ -94,7 +94,9 @@ export function MaintenanceModule() {
   const filtered = useMemo(() => {
     let result = forms.filter(f => {
       if (selectedYears.length > 0 && (!f.year || !selectedYears.includes(f.year))) return false;
-      if (statusFilter !== "all" && f.status !== statusFilter) return false;
+      const normalizedStatus = (f.status || "").trim().toLowerCase();
+      const normalizedFilter = statusFilter.trim().toLowerCase();
+      if (normalizedFilter !== "all" && normalizedStatus !== normalizedFilter) return false;
       if (typeFilter !== "all" && detectMaintenanceType(f) !== typeFilter) return false;
       if (search) {
         const s = search.toLowerCase();
