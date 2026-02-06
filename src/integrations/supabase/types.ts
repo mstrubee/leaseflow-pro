@@ -3667,7 +3667,7 @@ export type Database = {
           id: string
           input_currency: string | null
           is_multi_contract: boolean | null
-          maintenance_form_id: string | null
+          maintenance_form_ids: string[] | null
           opex_category_id: string | null
           opex_master_id: string | null
           order_date: string
@@ -3698,7 +3698,7 @@ export type Database = {
           id?: string
           input_currency?: string | null
           is_multi_contract?: boolean | null
-          maintenance_form_id?: string | null
+          maintenance_form_ids?: string[] | null
           opex_category_id?: string | null
           opex_master_id?: string | null
           order_date?: string
@@ -3729,7 +3729,7 @@ export type Database = {
           id?: string
           input_currency?: string | null
           is_multi_contract?: boolean | null
-          maintenance_form_id?: string | null
+          maintenance_form_ids?: string[] | null
           opex_category_id?: string | null
           opex_master_id?: string | null
           order_date?: string
@@ -3762,13 +3762,6 @@ export type Database = {
             columns: ["contract_id"]
             isOneToOne: false
             referencedRelation: "contracts"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "purchase_orders_maintenance_form_id_fkey"
-            columns: ["maintenance_form_id"]
-            isOneToOne: false
-            referencedRelation: "maintenance_forms"
             referencedColumns: ["id"]
           },
           {
