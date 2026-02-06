@@ -2402,6 +2402,77 @@ export type Database = {
           },
         ]
       }
+      maintenance_forms: {
+        Row: {
+          additional_comments: string | null
+          civil_description: string | null
+          contract_id: string | null
+          contract_name: string | null
+          created_at: string | null
+          created_by: string | null
+          created_date: string | null
+          deleted_at: string | null
+          electrical_description: string | null
+          fixed_assets_description: string | null
+          form_number: string
+          general_description: string | null
+          hvac_description: string | null
+          id: string
+          resolution_date: string | null
+          status: string
+          updated_at: string | null
+          year: number | null
+        }
+        Insert: {
+          additional_comments?: string | null
+          civil_description?: string | null
+          contract_id?: string | null
+          contract_name?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          created_date?: string | null
+          deleted_at?: string | null
+          electrical_description?: string | null
+          fixed_assets_description?: string | null
+          form_number: string
+          general_description?: string | null
+          hvac_description?: string | null
+          id?: string
+          resolution_date?: string | null
+          status?: string
+          updated_at?: string | null
+          year?: number | null
+        }
+        Update: {
+          additional_comments?: string | null
+          civil_description?: string | null
+          contract_id?: string | null
+          contract_name?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          created_date?: string | null
+          deleted_at?: string | null
+          electrical_description?: string | null
+          fixed_assets_description?: string | null
+          form_number?: string
+          general_description?: string | null
+          hvac_description?: string | null
+          id?: string
+          resolution_date?: string | null
+          status?: string
+          updated_at?: string | null
+          year?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_forms_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notice_ranges: {
         Row: {
           created_at: string
