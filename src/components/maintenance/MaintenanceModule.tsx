@@ -167,7 +167,7 @@ export function MaintenanceModule() {
             <PopoverTrigger asChild>
               <Button variant="outline" className="w-40 justify-start gap-2">
                 <CalendarDays className="h-4 w-4" />
-                {selectedYears.length === 0 ? "Todos" : selectedYears.sort((a,b) => b-a).join(", ")}
+                {selectedYears.length === 0 ? "Todos" : [...selectedYears].sort((a,b) => b-a).join(", ")}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-48 p-2">
