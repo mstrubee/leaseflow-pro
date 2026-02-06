@@ -610,7 +610,7 @@ export function CommercialConditionsSummary({
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Bell className="h-3 w-3" />
-              Fecha Aviso
+              Fecha Tope Aviso
             </div>
             {dates?.noticeDateLabel?.startsWith("vencido") ? (
               <>
