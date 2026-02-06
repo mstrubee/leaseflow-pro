@@ -43,6 +43,7 @@ export function MaintenanceModule() {
         .select("*")
         .is("deleted_at", null)
         .order("created_date", { ascending: false })
+        .order("id", { ascending: true })
         .range(from, from + batchSize - 1);
 
       if (error) {
@@ -51,7 +52,10 @@ export function MaintenanceModule() {
         hasMore = false;
       } else {
         const batch = (data as any as MaintenanceForm[]) || [];
-        allData = [...allData, ...batch];
+        // Deduplicate by id to prevent overlapping ranges
+        const existingIds = new Set(allData.map(d => d.id));
+        const newBatch = batch.filter(b => !existingIds.has(b.id));
+        allData = [...allData, ...newBatch];
         hasMore = batch.length === batchSize;
         from += batchSize;
       }
@@ -121,9 +125,9 @@ export function MaintenanceModule() {
     return result;
   }, [forms, statusFilter, typeFilter, search, selectedYears, sortKey, sortOrder]);
 
-  const totalForms = forms.length;
-  const enProceso = forms.filter(f => f.status === "proceso").length;
-  const solucionados = forms.filter(f => f.status === "solucionado").length;
+  const totalForms = filtered.length;
+  const enProceso = filtered.filter(f => f.status === "proceso").length;
+  const solucionados = filtered.filter(f => f.status === "solucionado").length;
 
   return (
     <div className="space-y-4">
