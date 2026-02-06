@@ -1483,6 +1483,33 @@ export type Database = {
         }
         Relationships: []
       }
+      economic_indicators_cache: {
+        Row: {
+          date: string
+          indicator: string
+          is_stale: boolean
+          last_updated: string
+          source: string
+          value: number
+        }
+        Insert: {
+          date: string
+          indicator: string
+          is_stale?: boolean
+          last_updated?: string
+          source?: string
+          value: number
+        }
+        Update: {
+          date?: string
+          indicator?: string
+          is_stale?: boolean
+          last_updated?: string
+          source?: string
+          value?: number
+        }
+        Relationships: []
+      }
       entry_expenses: {
         Row: {
           amount_clp: number | null

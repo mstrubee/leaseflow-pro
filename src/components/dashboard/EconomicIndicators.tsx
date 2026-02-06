@@ -17,6 +17,8 @@ interface IndicatorData {
     oneYear: { date: string; value: number }[];
     date: string;
   };
+  is_stale?: boolean;
+  last_updated?: string;
 }
 
 export const EconomicIndicators = () => {
