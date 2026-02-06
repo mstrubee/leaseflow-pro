@@ -686,7 +686,7 @@ export const CentralizedOrderCreator = ({
   
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>
             {mode === "request" ? "Nueva Solicitud de OC" : "Nueva Orden de Compra"}
@@ -708,27 +708,69 @@ export const CentralizedOrderCreator = ({
               <TabsTrigger value="payments">Pagos</TabsTrigger>
             </TabsList>
             
-            <ScrollArea className="flex-1 p-1">
+            <ScrollArea className="flex-1 min-h-0">
+              <div className="p-1">
               <TabsContent value="basic" className="mt-4 space-y-4">
-                {/* Category Selection */}
+                {/* Order number & date (first for "order" mode) */}
+                {mode === "order" && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label>Número OC</Label>
+                      <Input
+                        value={formData.order_number}
+                        onChange={(e) => setFormData(prev => ({ ...prev, order_number: e.target.value }))}
+                        placeholder="Auto-generado si vacío"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Fecha OC</Label>
+                      <Input
+                        type="date"
+                        value={formData.order_date}
+                        onChange={(e) => setFormData(prev => ({ ...prev, order_date: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Budget Type: CAPEX / OPEX */}
                 <div className="space-y-2">
-                  <Label>Categoría OPEX *</Label>
-                  <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId}>
+                  <Label>Tipo de Presupuesto *</Label>
+                  <Select value={budgetType} onValueChange={(v: "capex" | "opex") => {
+                    setBudgetType(v);
+                    if (v === "capex") setSelectedCategoryId("");
+                  }}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar categoría" />
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {opexCategories.map(cat => (
-                        <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-                      ))}
+                      <SelectItem value="capex">CAPEX</SelectItem>
+                      <SelectItem value="opex">OPEX</SelectItem>
                     </SelectContent>
                   </Select>
-                  {selectedCategoryId && (
-                    <p className="text-xs text-muted-foreground">
-                      Presupuesto disponible: ${availableBudget.toLocaleString("es-CL")}
-                    </p>
-                  )}
                 </div>
+
+                {/* Category Selection (only for OPEX) */}
+                {budgetType === "opex" && (
+                  <div className="space-y-2">
+                    <Label>Categoría OPEX *</Label>
+                    <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar categoría" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {opexCategories.map(cat => (
+                          <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {selectedCategoryId && (
+                      <p className="text-xs text-muted-foreground">
+                        Presupuesto disponible: ${availableBudget.toLocaleString("es-CL")}
+                      </p>
+                    )}
+                  </div>
+                )}
                 
                 {/* Amount and Currency */}
                 <div className="grid grid-cols-2 gap-3">
@@ -836,28 +878,6 @@ export const CentralizedOrderCreator = ({
                     </div>
                   )}
                 </div>
-                
-                {/* Order specific fields */}
-                {mode === "order" && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label>Número OC</Label>
-                      <Input
-                        value={formData.order_number}
-                        onChange={(e) => setFormData(prev => ({ ...prev, order_number: e.target.value }))}
-                        placeholder="Auto-generado si vacío"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Fecha OC</Label>
-                      <Input
-                        type="date"
-                        value={formData.order_date}
-                        onChange={(e) => setFormData(prev => ({ ...prev, order_date: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-                )}
               </TabsContent>
               
               <TabsContent value="contracts" className="mt-4 space-y-4">
@@ -1177,6 +1197,7 @@ export const CentralizedOrderCreator = ({
                   </Table>
                 )}
               </TabsContent>
+              </div>
             </ScrollArea>
           </Tabs>
         )}
