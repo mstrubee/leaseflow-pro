@@ -28,18 +28,33 @@ export function MaintenanceModule() {
 
   const fetchForms = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("maintenance_forms" as any)
-      .select("*")
-      .is("deleted_at", null)
-      .order("created_date", { ascending: false });
+    // Fetch all records in batches to avoid the 1000-row default limit
+    let allData: MaintenanceForm[] = [];
+    let from = 0;
+    const batchSize = 1000;
+    let hasMore = true;
 
-    if (error) {
-      console.error(error);
-      toast({ title: "Error", description: "No se pudieron cargar los FORMs", variant: "destructive" });
-    } else {
-      setForms((data as any as MaintenanceForm[]) || []);
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from("maintenance_forms" as any)
+        .select("*")
+        .is("deleted_at", null)
+        .order("created_date", { ascending: false })
+        .range(from, from + batchSize - 1);
+
+      if (error) {
+        console.error(error);
+        toast({ title: "Error", description: "No se pudieron cargar los FORMs", variant: "destructive" });
+        hasMore = false;
+      } else {
+        const batch = (data as any as MaintenanceForm[]) || [];
+        allData = [...allData, ...batch];
+        hasMore = batch.length === batchSize;
+        from += batchSize;
+      }
     }
+
+    setForms(allData);
     setLoading(false);
   };
 
