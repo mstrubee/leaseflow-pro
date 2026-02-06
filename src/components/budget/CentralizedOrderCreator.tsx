@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, Trash2, Upload, FileText, X, Wrench } from "lucide-react";
+import { Loader2, Plus, Trash2, Upload, FileText, X, Wrench, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { useAuth } from "@/hooks/useAuth";
@@ -39,6 +39,7 @@ interface MaintenanceFormOption {
   id: string;
   form_number: string;
   general_description: string | null;
+  created_date: string | null;
 }
 
 interface ContractAllocation {
@@ -94,6 +95,7 @@ export const CentralizedOrderCreator = ({
   const [assignToForm, setAssignToForm] = useState(false);
   const [singleFormIds, setSingleFormIds] = useState<string[]>([]);
   const [contractForms, setContractForms] = useState<Record<string, MaintenanceFormOption[]>>({});
+  const [formsSortAsc, setFormsSortAsc] = useState(false);
   
   // Quotation file state
   const [quotationFile, setQuotationFile] = useState<File | null>(null);
@@ -196,11 +198,11 @@ export const CentralizedOrderCreator = ({
     try {
       const { data } = await supabase
         .from("maintenance_forms")
-        .select("id, form_number, general_description")
+        .select("id, form_number, general_description, created_date")
         .eq("contract_id", contractId)
         .eq("status", "proceso")
         .is("deleted_at", null)
-        .order("form_number", { ascending: false });
+        .order("created_date", { ascending: false });
       
       setContractForms(prev => ({ ...prev, [contractId]: data || [] }));
     } catch (error) {
@@ -917,27 +919,54 @@ export const CentralizedOrderCreator = ({
                         {assignToForm && (
                           <div className="space-y-1">
                             {(contractForms[singleContractId] || []).length > 0 ? (
-                              <div className="max-h-[150px] overflow-y-auto border rounded-md p-2 space-y-1">
-                                {(contractForms[singleContractId] || []).map(f => (
-                                  <label key={f.id} className="flex items-start gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer">
-                                    <Checkbox
-                                      checked={singleFormIds.includes(f.id)}
-                                      onCheckedChange={(checked) => {
-                                        setSingleFormIds(prev => 
-                                          checked ? [...prev, f.id] : prev.filter(id => id !== f.id)
+                              <div className="max-h-[200px] overflow-y-auto border rounded-md">
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead className="w-8 px-2"></TableHead>
+                                      <TableHead className="text-xs px-2">N° FORM</TableHead>
+                                      <TableHead className="text-xs px-2">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-6 px-1 -mx-1 text-xs font-medium gap-1"
+                                          onClick={() => setFormsSortAsc(prev => !prev)}
+                                        >
+                                          Fecha
+                                          {formsSortAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                                        </Button>
+                                      </TableHead>
+                                      <TableHead className="text-xs px-2">Descripción</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {[...(contractForms[singleContractId] || [])].sort((a, b) => {
+                                      const da = a.created_date ? new Date(a.created_date).getTime() : 0;
+                                      const db = b.created_date ? new Date(b.created_date).getTime() : 0;
+                                      return formsSortAsc ? da - db : db - da;
+                                    }).map(f => (
+                                      <TableRow key={f.id} className="cursor-pointer hover:bg-muted/50" onClick={() => {
+                                        setSingleFormIds(prev =>
+                                          prev.includes(f.id) ? prev.filter(id => id !== f.id) : [...prev, f.id]
                                         );
-                                      }}
-                                    />
-                                    <div className="flex-1 min-w-0">
-                                      <span className="text-sm font-medium">FORM {f.form_number}</span>
-                                      {f.general_description && (
-                                        <p className="text-xs text-muted-foreground truncate">
-                                          {f.general_description.slice(0, 60)}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </label>
-                                ))}
+                                      }}>
+                                        <TableCell className="px-2 py-1.5">
+                                          <Checkbox
+                                            checked={singleFormIds.includes(f.id)}
+                                            onCheckedChange={(checked) => {
+                                              setSingleFormIds(prev =>
+                                                checked ? [...prev, f.id] : prev.filter(id => id !== f.id)
+                                              );
+                                            }}
+                                          />
+                                        </TableCell>
+                                        <TableCell className="text-xs font-mono px-2 py-1.5">{f.form_number}</TableCell>
+                                        <TableCell className="text-xs px-2 py-1.5">{f.created_date || "-"}</TableCell>
+                                        <TableCell className="text-xs px-2 py-1.5 max-w-[180px] truncate">{f.general_description?.slice(0, 50) || "-"}</TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
                               </div>
                             ) : (
                               <p className="text-xs text-muted-foreground">No hay Forms en proceso para este contrato</p>
@@ -1016,8 +1045,12 @@ export const CentralizedOrderCreator = ({
                                   </TableCell>
                                   <TableCell>
                                     {forms.length > 0 ? (
-                                      <div className="space-y-0.5 max-h-[100px] overflow-y-auto">
-                                        {forms.map(f => (
+                                      <div className="space-y-0.5 max-h-[120px] overflow-y-auto">
+                                        {[...forms].sort((a, b) => {
+                                          const da = a.created_date ? new Date(a.created_date).getTime() : 0;
+                                          const db = b.created_date ? new Date(b.created_date).getTime() : 0;
+                                          return formsSortAsc ? da - db : db - da;
+                                        }).map(f => (
                                           <label key={f.id} className="flex items-center gap-1.5 text-xs cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
                                             <Checkbox
                                               className="h-3.5 w-3.5"
@@ -1029,7 +1062,8 @@ export const CentralizedOrderCreator = ({
                                                 handleUpdateAllocation(idx, "maintenanceFormIds", newIds);
                                               }}
                                             />
-                                            <span>FORM {f.form_number}</span>
+                                            <span className="whitespace-nowrap">FORM {f.form_number}</span>
+                                            <span className="text-muted-foreground">{f.created_date || ""}</span>
                                           </label>
                                         ))}
                                       </div>
