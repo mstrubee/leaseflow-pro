@@ -235,9 +235,9 @@ export const CentralizedOrderCreator = ({
   // Converted amount display
   const convertedAmount = useMemo(() => {
     if (formData.currency === "CLP") {
-      return ufValue > 0 ? (enteredAmount / ufValue).toFixed(4) : "0";
+      return ufValue > 0 ? (enteredAmount / ufValue).toFixed(2) : null;
     } else {
-      return Math.round(enteredAmount * ufValue).toLocaleString("es-CL");
+      return ufValue > 0 ? Math.round(enteredAmount * ufValue).toLocaleString("es-CL") : null;
     }
   }, [enteredAmount, formData.currency, ufValue]);
   
@@ -785,7 +785,9 @@ export const CentralizedOrderCreator = ({
                     />
                     {enteredAmount > 0 && (
                       <p className="text-xs text-muted-foreground">
-                        ≈ {formData.currency === "CLP" ? `${convertedAmount} UF` : `$${convertedAmount}`}
+                        {convertedAmount 
+                          ? `≈ ${formData.currency === "CLP" ? `${convertedAmount} UF` : `$${convertedAmount}`}`
+                          : "Cargando valor UF..."}
                       </p>
                     )}
                   </div>
