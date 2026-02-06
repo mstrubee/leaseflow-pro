@@ -121,6 +121,18 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
           }
         }
 
+        // Read resolution_date from column D (index 3)
+        let resolutionDate: string | null = null;
+        const rawResDate = row[3];
+        if (rawResDate instanceof Date && !isNaN(rawResDate.getTime())) {
+          resolutionDate = rawResDate.toISOString().split("T")[0];
+        } else if (rawResDate) {
+          const parsedRes = new Date(rawResDate);
+          if (!isNaN(parsedRes.getTime())) {
+            resolutionDate = parsedRes.toISOString().split("T")[0];
+          }
+        }
+
         const rawContractText = String(row[4] ?? "").trim();
         let contractId: string | null = null;
         let contractName: string | null = rawContractText || null;
@@ -151,6 +163,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
           form_number: formNum,
           status: status || "proceso",
           created_date: createdDate,
+          resolution_date: resolutionDate,
           contract_name: contractName || null,
           contract_id: contractId,
           general_description: String(row[6] ?? "").trim() || null,
@@ -192,6 +205,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         form_number: r.form_number,
         status: r.status,
         created_date: r.created_date,
+        resolution_date: r.resolution_date,
         contract_id: r.contract_id,
         contract_name: r.contract_name,
         general_description: r.general_description,

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ArrowLeft, FileText, Building2, CheckCircle2, AlertTriangle, Clock, XCircle, FileCheck, ExternalLink, ChevronDown, ChevronUp, ChevronRight, X, Download, Filter, MessageSquare, ArrowUpDown, Settings2, Check } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { MaintenanceReports } from "@/components/maintenance/MaintenanceReports";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
@@ -1454,6 +1455,13 @@ const ReportsDashboard = () => {
             </CollapsibleContent>
           </Card>
         </Collapsible>
+
+        {/* Maintenance Reports Section */}
+        <Card className="mt-6">
+          <CardContent className="pt-6">
+            <MaintenanceReports />
+          </CardContent>
+        </Card>
       </main>
     </div>
   );

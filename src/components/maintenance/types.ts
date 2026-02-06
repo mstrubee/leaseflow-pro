@@ -25,6 +25,7 @@ export interface ParsedMaintenanceRow {
   form_number: string;
   status: string;
   created_date: string | null;
+  resolution_date: string | null;
   contract_name: string | null;
   contract_id: string | null;
   general_description: string | null;
