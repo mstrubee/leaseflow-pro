@@ -1,7 +1,43 @@
+export const SUB_STATUS_ORDER = [
+  'solicitado',
+  'pre_aprobado',
+  'evaluado',
+  'cotizando',
+  'en_ejecucion',
+  'resuelto',
+] as const;
+
+export type SubStatus = typeof SUB_STATUS_ORDER[number];
+
+export const SUB_STATUS_LABELS: Record<SubStatus, string> = {
+  solicitado: 'Solicitado',
+  pre_aprobado: 'Pre Aprobado',
+  evaluado: 'Evaluado',
+  cotizando: 'Cotizando',
+  en_ejecucion: 'En Ejecución',
+  resuelto: 'Resuelto',
+};
+
+export const SUB_STATUS_INFO: Record<SubStatus, { description: string; responsible: string }> = {
+  solicitado: { description: 'La tienda ha solicitado el Form. Se requiere aprobación de Gerente Zonal y Gerente Operaciones para avanzar.', responsible: 'Control de Gestión' },
+  pre_aprobado: { description: 'Requiere Aprobación de Gerente Zonal y Gerente Operaciones para avanzar a Evaluación Técnica.', responsible: 'Control de Gestión' },
+  evaluado: { description: 'Preaprobado por Gerencia. Se requiere evaluación Técnica para avanzar a Cotización.', responsible: 'Jefe Mantenciones' },
+  cotizando: { description: 'Evaluación Técnica OK. Se requiere cotización para Avanzar a Ejecución.', responsible: 'Jefe Compras' },
+  en_ejecucion: { description: 'En ejecución. Se requiere recepción para marcar como Resuelto.', responsible: 'Jefe Mantenciones' },
+  resuelto: { description: 'Form Resuelto.', responsible: 'Control de Gestión' },
+};
+
+export function getNextSubStatus(current: SubStatus): SubStatus | null {
+  const idx = SUB_STATUS_ORDER.indexOf(current);
+  if (idx < 0 || idx >= SUB_STATUS_ORDER.length - 1) return null;
+  return SUB_STATUS_ORDER[idx + 1];
+}
+
 export interface MaintenanceForm {
   id: string;
   form_number: string;
   status: string;
+  sub_status: SubStatus;
   created_date: string | null;
   resolution_date: string | null;
   contract_id: string | null;

@@ -2421,6 +2421,7 @@ export type Database = {
           id: string
           resolution_date: string | null
           status: string
+          sub_status: string
           updated_at: string | null
           year: number | null
         }
@@ -2442,6 +2443,7 @@ export type Database = {
           id?: string
           resolution_date?: string | null
           status?: string
+          sub_status?: string
           updated_at?: string | null
           year?: number | null
         }
@@ -2463,6 +2465,7 @@ export type Database = {
           id?: string
           resolution_date?: string | null
           status?: string
+          sub_status?: string
           updated_at?: string | null
           year?: number | null
         }
