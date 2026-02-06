@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation, Eye, EyeOff, Upload } from "lucide-react";
 import { CloudStorageSettings } from "@/components/contracts/CloudStorageSettings";
 import { BudgetTemplateManager } from "@/components/budget/BudgetTemplateManager";
 import { GanttTemplateManager } from "@/components/gantt/GanttTemplateManager";
@@ -579,6 +579,20 @@ const AdminPanel = () => {
               <h1 className="text-2xl font-bold">Panel de Administración</h1>
               <p className="text-muted-foreground">Gestiona usuarios y permisos</p>
             </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => navigate("/contracts/new")} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Nuevo Contrato
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => navigate("/contracts/bulk-upload")} className="gap-2">
+              <Upload className="h-4 w-4" />
+              Carga Masiva
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => navigate("/deleted")} className="gap-2">
+              <Trash2 className="h-4 w-4" />
+              Eliminados
+            </Button>
           </div>
         </div>
 

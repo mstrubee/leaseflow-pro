@@ -48,6 +48,10 @@ const Dashboard = () => {
             <div className="flex flex-wrap items-center justify-end gap-2">
               {/* Línea 1: Navegación principal */}
               <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => navigate("/maintenance")} className="gap-2">
+                  <Wrench className="h-4 w-4" />
+                  Mantenciones
+                </Button>
                 <Button variant="outline" size="sm" onClick={() => navigate("/purchase-orders")} className="gap-2">
                   <ShoppingCart className="h-4 w-4" />
                   Órdenes de Compra
@@ -56,6 +60,12 @@ const Dashboard = () => {
                   <Wallet className="h-4 w-4" />
                   OPEX
                 </Button>
+                {isAdmin && (
+                  <Button variant="outline" size="sm" onClick={() => navigate("/alerts")} className="gap-2">
+                    <Bell className="h-4 w-4" />
+                    Alertas
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" onClick={() => navigate("/reports")} className="gap-2">
                   <FileText className="h-4 w-4" />
                   Informes
@@ -64,40 +74,11 @@ const Dashboard = () => {
                   <BarChart3 className="h-4 w-4" />
                   KPI
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => navigate("/maintenance")} className="gap-2">
-                  <Wrench className="h-4 w-4" />
-                  Mantenciones
-                </Button>
                 {isAdmin && (
-                  <>
-                    <Button variant="outline" size="sm" onClick={() => navigate("/alerts")} className="gap-2">
-                      <Bell className="h-4 w-4" />
-                      Alertas
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => navigate("/deleted")} className="gap-2">
-                      <Trash2 className="h-4 w-4" />
-                      Eliminados
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => navigate("/admin")} className="gap-2">
-                      <Shield className="h-4 w-4" />
-                      Admin
-                    </Button>
-                  </>
-                )}
-              </div>
-              {/* Línea 2: Acciones */}
-              <div className="flex items-center gap-2">
-                {isAdmin && (
-                  <>
-                    <Button variant="outline" size="sm" onClick={() => navigate("/contracts/bulk-upload")} className="gap-2">
-                      <Upload className="h-4 w-4" />
-                      Carga Masiva
-                    </Button>
-                    <Button size="sm" onClick={() => navigate("/contracts/new")} className="gap-2">
-                      <Plus className="h-4 w-4" />
-                      Nuevo Contrato
-                    </Button>
-                  </>
+                  <Button variant="outline" size="sm" onClick={() => navigate("/admin")} className="gap-2">
+                    <Shield className="h-4 w-4" />
+                    Admin
+                  </Button>
                 )}
                 <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2">
                   <LogOut className="h-4 w-4" />
