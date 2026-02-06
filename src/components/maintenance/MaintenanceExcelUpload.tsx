@@ -56,16 +56,42 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         }
       }
 
-      // Fetch contracts for matching
+      // Fetch contracts with CEBE custom field for matching
+      const { data: cebeField } = await supabase
+        .from("contract_custom_fields")
+        .select("id")
+        .ilike("field_name", "cebe")
+        .eq("is_active", true)
+        .limit(1)
+        .single();
+
       const { data: contracts } = await supabase
         .from("contracts")
         .select("id, name")
         .is("deleted_at", null);
 
-      const contractMap = new Map<string, string>();
-      contracts?.forEach(c => {
-        contractMap.set(c.name.toLowerCase().trim(), c.id);
-      });
+      // Build CEBE → contract map
+      const cebeToContract = new Map<string, { id: string; name: string }>();
+      if (cebeField && contracts) {
+        const { data: cebeValues } = await supabase
+          .from("contract_custom_field_values")
+          .select("contract_id, field_value")
+          .eq("field_id", cebeField.id);
+
+        const contractMap = new Map<string, string>();
+        contracts.forEach(c => contractMap.set(c.id, c.name));
+
+        cebeValues?.forEach(cv => {
+          if (cv.field_value) {
+            // Extract numeric parts from CEBE (e.g., "H0475P1290" → ["0475", "1290"])
+            const nums = cv.field_value.match(/\d+/g) || [];
+            nums.forEach(n => {
+              const name = contractMap.get(cv.contract_id);
+              if (name) cebeToContract.set(n, { id: cv.contract_id, name });
+            });
+          }
+        });
+      }
 
       const parsed: ParsedMaintenanceRow[] = [];
       for (let i = headerIdx + 1; i < rows.length; i++) {
@@ -97,21 +123,22 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
           }
         }
 
-        // Contract matching
-        const contractName = String(row[4] ?? "").trim();
+        // Contract matching by CEBE numbers
+        const rawContractText = String(row[4] ?? "").trim();
         let contractId: string | null = null;
-        if (contractName) {
-          contractId = contractMap.get(contractName.toLowerCase()) ?? null;
-          if (!contractId) {
-            // Try partial match
-            for (const [name, id] of contractMap.entries()) {
-              if (name.includes(contractName.toLowerCase()) || contractName.toLowerCase().includes(name)) {
-                contractId = id;
-                break;
-              }
+        let contractName: string | null = rawContractText || null;
+        if (rawContractText) {
+          // Extract numbers from the Excel text (e.g., "0475 TIENDA SAN PABLO" → ["0475"])
+          const extractedNums = rawContractText.match(/\d+/g) || [];
+          for (const num of extractedNums) {
+            const match = cebeToContract.get(num);
+            if (match) {
+              contractId = match.id;
+              contractName = match.name; // Use the known contract name from the system
+              break;
             }
-            if (!contractId) warnings.push("Contrato no encontrado");
           }
+          if (!contractId) warnings.push("Contrato no encontrado por CEBE");
         }
 
         parsed.push({
