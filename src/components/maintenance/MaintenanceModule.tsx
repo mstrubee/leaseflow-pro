@@ -71,21 +71,21 @@ export function MaintenanceModule() {
 
   useEffect(() => { fetchForms(); }, []);
 
-  // Fetch contract-company mapping for logos
+  // Fetch contract-company mapping for logos (keyed by contract_id)
   useEffect(() => {
     const fetchCompanyMap = async () => {
       const { data } = await supabase
         .from("contract_companies")
-        .select("contracts!inner(name), companies!inner(name)")
-        .returns<Array<{ contracts: { name: string }, companies: { name: string } }>>();
+        .select("contract_id, companies!inner(name)")
+        .returns<Array<{ contract_id: string, companies: { name: string } }>>();
       if (data) {
         const map: Record<string, string[]> = {};
         data.forEach(row => {
-          const cName = row.contracts?.name;
+          const cId = row.contract_id;
           const coName = row.companies?.name;
-          if (cName && coName) {
-            if (!map[cName]) map[cName] = [];
-            if (!map[cName].includes(coName)) map[cName].push(coName);
+          if (cId && coName) {
+            if (!map[cId]) map[cId] = [];
+            if (!map[cId].includes(coName)) map[cId].push(coName);
           }
         });
         setContractCompanyMap(map);
@@ -101,11 +101,25 @@ export function MaintenanceModule() {
     return Array.from(years).sort((a, b) => b - a);
   }, [forms]);
 
-  // Available contracts for filtering
-  const availableContracts = useMemo(() => {
+  // Available contracts for filtering - map name to contract_ids for logo lookup
+  const { availableContracts, contractNameToIds } = useMemo(() => {
     const names = new Set<string>();
-    forms.forEach(f => { if (f.contract_name) names.add(f.contract_name); });
-    return Array.from(names).sort((a, b) => a.localeCompare(b, "es"));
+    const nameToIds: Record<string, Set<string>> = {};
+    forms.forEach(f => {
+      if (f.contract_name) {
+        names.add(f.contract_name);
+        if (f.contract_id) {
+          if (!nameToIds[f.contract_name]) nameToIds[f.contract_name] = new Set();
+          nameToIds[f.contract_name].add(f.contract_id);
+        }
+      }
+    });
+    return {
+      availableContracts: Array.from(names).sort((a, b) => a.localeCompare(b, "es")),
+      contractNameToIds: Object.fromEntries(
+        Object.entries(nameToIds).map(([k, v]) => [k, Array.from(v)])
+      ),
+    };
   }, [forms]);
 
   const filteredContractOptions = useMemo(() => {
@@ -276,16 +290,22 @@ export function MaintenanceModule() {
                   </Button>
                 </div>
                 <div className="max-h-48 overflow-y-auto space-y-0.5">
-                  {filteredContractOptions.map(name => (
-                    <label key={name} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent cursor-pointer text-sm">
-                      <Checkbox
-                        checked={selectedContracts.includes(name)}
-                        onCheckedChange={() => toggleContract(name)}
-                      />
-                      <CompanyLogo companyNames={contractCompanyMap[name] || []} size="sm" className="h-4 w-4" />
-                      <span className="truncate">{name}</span>
-                    </label>
-                  ))}
+                  {filteredContractOptions.map(name => {
+                    // Get company names from all contract_ids linked to this name
+                    const ids = contractNameToIds[name] || [];
+                    const companies = ids.flatMap(id => contractCompanyMap[id] || []);
+                    const uniqueCompanies = [...new Set(companies)];
+                    return (
+                      <label key={name} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent cursor-pointer text-sm">
+                        <Checkbox
+                          checked={selectedContracts.includes(name)}
+                          onCheckedChange={() => toggleContract(name)}
+                        />
+                        <CompanyLogo companyNames={uniqueCompanies} size="sm" className="h-4 w-4" />
+                        <span className="truncate">{name}</span>
+                      </label>
+                    );
+                  })}
                   {filteredContractOptions.length === 0 && (
                     <p className="text-xs text-muted-foreground text-center py-2">Sin resultados</p>
                   )}
