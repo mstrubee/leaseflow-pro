@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter } from "lucide-react";
+import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm, detectMaintenanceType } from "./types";
@@ -32,6 +32,7 @@ export function MaintenanceModule() {
   const [sortKey, setSortKey] = useState<string | null>("created_date");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [contractCompanyMap, setContractCompanyMap] = useState<Record<string, string[]>>({});
+  const [companyFilter, setCompanyFilter] = useState("all");
 
   const fetchForms = async () => {
     setLoading(true);
@@ -93,6 +94,25 @@ export function MaintenanceModule() {
     };
     fetchCompanyMap();
   }, []);
+
+  // Available companies for filtering
+  const availableCompanies = useMemo(() => {
+    const companies = new Set<string>();
+    Object.values(contractCompanyMap).forEach(names => names.forEach(n => companies.add(n)));
+    return Array.from(companies).sort();
+  }, [contractCompanyMap]);
+
+  // Set of contract_ids that match the company filter
+  const companyFilteredContractIds = useMemo(() => {
+    if (companyFilter === "all") return null; // no filtering
+    const ids = new Set<string>();
+    for (const [contractId, companies] of Object.entries(contractCompanyMap)) {
+      if (companies.some(c => c.toLowerCase().includes(companyFilter.toLowerCase()))) {
+        ids.add(contractId);
+      }
+    }
+    return ids;
+  }, [companyFilter, contractCompanyMap]);
 
   // Available years for filtering
   const availableYears = useMemo(() => {
@@ -174,6 +194,9 @@ export function MaintenanceModule() {
   const filtered = useMemo(() => {
     let result = forms.filter(f => {
       if (selectedYears.length > 0 && (!f.year || !selectedYears.includes(f.year))) return false;
+      if (companyFilteredContractIds !== null) {
+        if (!f.contract_id || !companyFilteredContractIds.has(f.contract_id)) return false;
+      }
       if (selectedContracts.length > 0) {
         // Match by contract_id using the selected filter option keys
         const selectedIds = new Set<string>();
@@ -220,7 +243,7 @@ export function MaintenanceModule() {
     }
 
     return result;
-  }, [forms, statusFilter, typeFilter, search, selectedYears, selectedContracts, contractFilterOptions, sortKey, sortOrder]);
+  }, [forms, statusFilter, typeFilter, search, selectedYears, selectedContracts, companyFilteredContractIds, contractFilterOptions, sortKey, sortOrder]);
 
   const totalForms = filtered.length;
   const enProceso = filtered.filter(f => f.status === "proceso").length;
@@ -337,6 +360,18 @@ export function MaintenanceModule() {
               </div>
             </PopoverContent>
           </Popover>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Empresa</Label>
+          <Select value={companyFilter} onValueChange={setCompanyFilter}>
+            <SelectTrigger className="w-40"><SelectValue placeholder="Empresa" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas</SelectItem>
+              {availableCompanies.map(c => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Estado</Label>
