@@ -5,10 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Link } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Loader2, Link, Info, ArrowRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { MaintenanceForm } from "./types";
+import { MaintenanceForm, SubStatus, SUB_STATUS_ORDER, SUB_STATUS_LABELS, SUB_STATUS_INFO, getNextSubStatus } from "./types";
 
 interface Props {
   form: MaintenanceForm | null;
@@ -22,6 +23,7 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
   const [formData, setFormData] = useState({
     form_number: "",
     status: "proceso",
+    sub_status: "solicitado" as SubStatus,
     created_date: "",
     contract_name: "",
     general_description: "",
@@ -37,6 +39,7 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
       setFormData({
         form_number: form.form_number || "",
         status: form.status || "proceso",
+        sub_status: (form.sub_status as SubStatus) || "solicitado",
         created_date: form.created_date || "",
         contract_name: form.contract_name || "",
         general_description: form.general_description || "",
@@ -49,20 +52,28 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
     }
   }, [form]);
 
-  const handleSave = async () => {
+  const doSave = async (advance: boolean) => {
     if (!form) return;
     setSaving(true);
     try {
+      const newSubStatus = advance ? getNextSubStatus(formData.sub_status) : formData.sub_status;
+      if (advance && !newSubStatus) {
+        toast({ title: "Ya está en el último sub-estado", variant: "destructive" });
+        setSaving(false);
+        return;
+      }
+
       const { error } = await (supabase.from("maintenance_forms" as any) as any)
         .update({
           status: formData.status,
+          sub_status: newSubStatus || formData.sub_status,
           additional_comments: formData.additional_comments || null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", form.id);
 
       if (error) throw error;
-      toast({ title: "FORM actualizado correctamente" });
+      toast({ title: advance ? `Avanzado a ${SUB_STATUS_LABELS[newSubStatus as SubStatus]}` : "FORM actualizado correctamente" });
       onOpenChange(false);
       onSuccess();
     } catch (err: any) {
@@ -74,6 +85,8 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
   };
 
   const set = (key: string, val: string) => setFormData(p => ({ ...p, [key]: val }));
+
+  const nextStatus = getNextSubStatus(formData.sub_status);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -98,10 +111,42 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
             </Select>
           </div>
           <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <Label>Sub Estado</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-5 w-5 rounded-full">
+                    <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80 p-3" side="right">
+                  <p className="font-semibold text-sm mb-2">Sub Estados del FORM</p>
+                  <div className="space-y-2">
+                    {SUB_STATUS_ORDER.map(s => (
+                      <div key={s} className="text-xs">
+                        <span className="font-medium">{SUB_STATUS_LABELS[s]}</span>
+                        <span className="text-muted-foreground ml-1">({SUB_STATUS_INFO[s].responsible})</span>
+                        <p className="text-muted-foreground mt-0.5">{SUB_STATUS_INFO[s].description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+            <Select value={formData.sub_status} onValueChange={v => set("sub_status", v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {SUB_STATUS_ORDER.map(s => (
+                  <SelectItem key={s} value={s}>{SUB_STATUS_LABELS[s]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
             <Label>Fecha de Creación</Label>
             <Input type="date" value={formData.created_date} readOnly className="bg-muted" />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 col-span-2">
             <Label>Contrato</Label>
             <Input value={formData.contract_name} readOnly className="bg-muted" />
           </div>
@@ -158,11 +203,17 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={handleSave} disabled={saving}>
+          <Button variant="secondary" onClick={() => doSave(false)} disabled={saving}>
             {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Guardando...</> : "Guardar"}
           </Button>
+          {nextStatus && (
+            <Button onClick={() => doSave(true)} disabled={saving} className="gap-1.5">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+              Guardar y Avanzar
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -11,7 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { MaintenanceForm, detectMaintenanceType } from "./types";
+import { MaintenanceForm, detectMaintenanceType, SUB_STATUS_LABELS, SubStatus } from "./types";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { MaintenanceExcelUpload } from "./MaintenanceExcelUpload";
 import { MaintenanceEditDialog } from "./MaintenanceEditDialog";
@@ -416,6 +416,7 @@ export function MaintenanceModule() {
                 <TableRow>
                   <SortableTableHead label="N° FORM" sortKey="form_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-24" />
                   <SortableTableHead label="Estado" sortKey="status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
+                  <SortableTableHead label="Sub Estado" sortKey="sub_status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
                   <SortableTableHead label="Fecha" sortKey="created_date" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
                   <SortableTableHead label="Contrato" sortKey="contract_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} />
                   <TableHead className="w-28">Tipo</TableHead>
@@ -427,9 +428,9 @@ export function MaintenanceModule() {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Cargando...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Cargando...</TableCell></TableRow>
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No hay FORMs registrados</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No hay FORMs registrados</TableCell></TableRow>
                 ) : (
                   filtered.map(f => (
                     <TableRow key={f.id}>
@@ -437,6 +438,11 @@ export function MaintenanceModule() {
                       <TableCell>
                         <Badge variant={f.status === "solucionado" ? "default" : "secondary"} className="text-xs">
                           {f.status === "solucionado" ? "Solucionado" : "En Proceso"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {SUB_STATUS_LABELS[(f.sub_status as SubStatus)] || f.sub_status || "Solicitado"}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-xs">{f.created_date || "-"}</TableCell>
