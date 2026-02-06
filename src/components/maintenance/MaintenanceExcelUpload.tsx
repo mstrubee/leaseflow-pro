@@ -198,14 +198,15 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         created_by: user?.id ?? null,
       }));
 
-      // Insert in batches of 100
+      // Upsert in batches of 100 (update existing, insert new based on form_number)
       for (let i = 0; i < records.length; i += 100) {
         const batch = records.slice(i, i + 100);
-        const { error } = await supabase.from("maintenance_forms" as any).insert(batch as any);
+        const { error } = await (supabase.from("maintenance_forms" as any) as any)
+          .upsert(batch, { onConflict: "form_number" });
         if (error) throw error;
       }
 
-      toast({ title: "Carga exitosa", description: `${validRows.length} FORMs cargados correctamente` });
+      toast({ title: "Carga exitosa", description: `${validRows.length} FORMs cargados/actualizados correctamente` });
       reset();
       onOpenChange(false);
       onSuccess();

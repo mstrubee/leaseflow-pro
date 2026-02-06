@@ -1,0 +1,1 @@
+ALTER TABLE public.maintenance_forms ADD CONSTRAINT maintenance_forms_form_number_unique UNIQUE (form_number);
