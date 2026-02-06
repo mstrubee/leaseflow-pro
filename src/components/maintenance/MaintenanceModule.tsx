@@ -132,11 +132,11 @@ export function MaintenanceModule() {
         const companyNames = companyGroups[0]?.[0] === "__none__" ? [] : (companyGroups[0]?.[0]?.split(", ") || []);
         options.push({ key: name, label: name, contractIds: ids, companyNames });
       } else {
-        // Multiple companies - split into separate entries with company suffix
+        // Multiple companies - split into separate entries, use name as label (logo differentiates)
         for (const [companyKey, groupIds] of companyGroups) {
           const companyNames = companyKey === "__none__" ? [] : companyKey.split(", ");
-          const suffix = companyNames.length > 0 ? ` (${companyNames.join(", ")})` : "";
-          options.push({ key: `${name}${suffix}`, label: `${name}${suffix}`, contractIds: groupIds, companyNames });
+          const uniqueKey = `${name}__${companyKey}`;
+          options.push({ key: uniqueKey, label: name, contractIds: groupIds, companyNames });
         }
       }
     }
