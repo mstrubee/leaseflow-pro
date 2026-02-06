@@ -403,10 +403,13 @@ export const CentralizedOrderCreator = ({
         totalAmountClp = Math.round(enteredAmount * ufValue) || 0;
       }
       
-      // Final validation to prevent null/NaN
-      if (!totalAmountUf || isNaN(totalAmountUf) || totalAmountUf <= 0) {
+      // Final validation - only block if UF was the input currency and value is invalid
+      if (formData.currency === "UF" && (!totalAmountUf || isNaN(totalAmountUf) || totalAmountUf <= 0)) {
         throw new Error("El monto en UF calculado no es válido");
       }
+      // Ensure no NaN
+      if (isNaN(totalAmountUf)) totalAmountUf = 0;
+      if (isNaN(totalAmountClp)) totalAmountClp = 0;
       
       // Get master line id for selected category
       const masterLine = opexMasterLines.find(m => m.category_id === selectedCategoryId);
