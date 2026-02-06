@@ -101,36 +101,58 @@ export function MaintenanceModule() {
     return Array.from(years).sort((a, b) => b - a);
   }, [forms]);
 
-  // Available contracts for filtering - map name to contract_ids for logo lookup
-  const { availableContracts, contractNameToIds } = useMemo(() => {
-    const names = new Set<string>();
+  // Build filter options: when a contract_name maps to multiple companies, split into separate entries
+  // Each entry is { key, label, contractIds, companyNames }
+  const contractFilterOptions = useMemo(() => {
+    // Group contract_ids by name
     const nameToIds: Record<string, Set<string>> = {};
     forms.forEach(f => {
       if (f.contract_name) {
-        names.add(f.contract_name);
-        if (f.contract_id) {
-          if (!nameToIds[f.contract_name]) nameToIds[f.contract_name] = new Set();
-          nameToIds[f.contract_name].add(f.contract_id);
-        }
+        if (!nameToIds[f.contract_name]) nameToIds[f.contract_name] = new Set();
+        if (f.contract_id) nameToIds[f.contract_name].add(f.contract_id);
       }
     });
-    return {
-      availableContracts: Array.from(names).sort((a, b) => a.localeCompare(b, "es")),
-      contractNameToIds: Object.fromEntries(
-        Object.entries(nameToIds).map(([k, v]) => [k, Array.from(v)])
-      ),
-    };
-  }, [forms]);
+
+    const options: Array<{ key: string; label: string; contractIds: string[]; companyNames: string[] }> = [];
+
+    for (const [name, idSet] of Object.entries(nameToIds)) {
+      const ids = Array.from(idSet);
+      // Group ids by company
+      const companyToIds: Record<string, string[]> = {};
+      ids.forEach(id => {
+        const companies = contractCompanyMap[id] || [];
+        const companyKey = companies.length > 0 ? companies.sort().join(", ") : "__none__";
+        if (!companyToIds[companyKey]) companyToIds[companyKey] = [];
+        companyToIds[companyKey].push(id);
+      });
+
+      const companyGroups = Object.entries(companyToIds);
+      if (companyGroups.length <= 1) {
+        // Single company (or no company) - show as-is
+        const companyNames = companyGroups[0]?.[0] === "__none__" ? [] : (companyGroups[0]?.[0]?.split(", ") || []);
+        options.push({ key: name, label: name, contractIds: ids, companyNames });
+      } else {
+        // Multiple companies - split into separate entries with company suffix
+        for (const [companyKey, groupIds] of companyGroups) {
+          const companyNames = companyKey === "__none__" ? [] : companyKey.split(", ");
+          const suffix = companyNames.length > 0 ? ` (${companyNames.join(", ")})` : "";
+          options.push({ key: `${name}${suffix}`, label: `${name}${suffix}`, contractIds: groupIds, companyNames });
+        }
+      }
+    }
+
+    return options.sort((a, b) => a.label.localeCompare(b.label, "es"));
+  }, [forms, contractCompanyMap]);
 
   const filteredContractOptions = useMemo(() => {
-    if (!contractSearch) return availableContracts;
+    if (!contractSearch) return contractFilterOptions;
     const s = contractSearch.toLowerCase();
-    return availableContracts.filter(c => c.toLowerCase().includes(s));
-  }, [availableContracts, contractSearch]);
+    return contractFilterOptions.filter(c => c.label.toLowerCase().includes(s));
+  }, [contractFilterOptions, contractSearch]);
 
-  const toggleContract = (name: string) => {
+  const toggleContract = (key: string) => {
     setSelectedContracts(prev =>
-      prev.includes(name) ? prev.filter(c => c !== name) : [...prev, name]
+      prev.includes(key) ? prev.filter(c => c !== key) : [...prev, key]
     );
   };
 
@@ -152,7 +174,15 @@ export function MaintenanceModule() {
   const filtered = useMemo(() => {
     let result = forms.filter(f => {
       if (selectedYears.length > 0 && (!f.year || !selectedYears.includes(f.year))) return false;
-      if (selectedContracts.length > 0 && (!f.contract_name || !selectedContracts.includes(f.contract_name))) return false;
+      if (selectedContracts.length > 0) {
+        // Match by contract_id using the selected filter option keys
+        const selectedIds = new Set<string>();
+        selectedContracts.forEach(key => {
+          const opt = contractFilterOptions.find(o => o.key === key);
+          if (opt) opt.contractIds.forEach(id => selectedIds.add(id));
+        });
+        if (!f.contract_id || !selectedIds.has(f.contract_id)) return false;
+      }
       if (statusFilter !== "all" && f.status !== statusFilter) return false;
       if (typeFilter !== "all" && detectMaintenanceType(f) !== typeFilter) return false;
       if (search) {
@@ -190,7 +220,7 @@ export function MaintenanceModule() {
     }
 
     return result;
-  }, [forms, statusFilter, typeFilter, search, selectedYears, selectedContracts, sortKey, sortOrder]);
+  }, [forms, statusFilter, typeFilter, search, selectedYears, selectedContracts, contractFilterOptions, sortKey, sortOrder]);
 
   const totalForms = filtered.length;
   const enProceso = filtered.filter(f => f.status === "proceso").length;
@@ -282,7 +312,7 @@ export function MaintenanceModule() {
                   />
                 </div>
                 <div className="flex gap-1">
-                  <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setSelectedContracts(filteredContractOptions)}>
+                  <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setSelectedContracts(filteredContractOptions.map(o => o.key))}>
                     Todos
                   </Button>
                   <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setSelectedContracts([])}>
@@ -290,22 +320,16 @@ export function MaintenanceModule() {
                   </Button>
                 </div>
                 <div className="max-h-48 overflow-y-auto space-y-0.5">
-                  {filteredContractOptions.map(name => {
-                    // Get company names from all contract_ids linked to this name
-                    const ids = contractNameToIds[name] || [];
-                    const companies = ids.flatMap(id => contractCompanyMap[id] || []);
-                    const uniqueCompanies = [...new Set(companies)];
-                    return (
-                      <label key={name} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent cursor-pointer text-sm">
+                  {filteredContractOptions.map(opt => (
+                      <label key={opt.key} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent cursor-pointer text-sm">
                         <Checkbox
-                          checked={selectedContracts.includes(name)}
-                          onCheckedChange={() => toggleContract(name)}
+                          checked={selectedContracts.includes(opt.key)}
+                          onCheckedChange={() => toggleContract(opt.key)}
                         />
-                        <CompanyLogo companyNames={uniqueCompanies} size="sm" className="h-4 w-4" />
-                        <span className="truncate">{name}</span>
+                        <CompanyLogo companyNames={opt.companyNames} size="sm" className="h-4 w-4" />
+                        <span className="truncate">{opt.label}</span>
                       </label>
-                    );
-                  })}
+                  ))}
                   {filteredContractOptions.length === 0 && (
                     <p className="text-xs text-muted-foreground text-center py-2">Sin resultados</p>
                   )}
