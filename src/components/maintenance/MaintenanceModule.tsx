@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays } from "lucide-react";
+import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm, detectMaintenanceType } from "./types";
@@ -24,6 +24,8 @@ export function MaintenanceModule() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [selectedYears, setSelectedYears] = useState<number[]>([]);
+  const [selectedContracts, setSelectedContracts] = useState<string[]>([]);
+  const [contractSearch, setContractSearch] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editForm, setEditForm] = useState<MaintenanceForm | null>(null);
   const [sortKey, setSortKey] = useState<string | null>("created_date");
@@ -74,6 +76,25 @@ export function MaintenanceModule() {
     return Array.from(years).sort((a, b) => b - a);
   }, [forms]);
 
+  // Available contracts for filtering
+  const availableContracts = useMemo(() => {
+    const names = new Set<string>();
+    forms.forEach(f => { if (f.contract_name) names.add(f.contract_name); });
+    return Array.from(names).sort((a, b) => a.localeCompare(b, "es"));
+  }, [forms]);
+
+  const filteredContractOptions = useMemo(() => {
+    if (!contractSearch) return availableContracts;
+    const s = contractSearch.toLowerCase();
+    return availableContracts.filter(c => c.toLowerCase().includes(s));
+  }, [availableContracts, contractSearch]);
+
+  const toggleContract = (name: string) => {
+    setSelectedContracts(prev =>
+      prev.includes(name) ? prev.filter(c => c !== name) : [...prev, name]
+    );
+  };
+
   const toggleYear = (year: number) => {
     setSelectedYears(prev =>
       prev.includes(year) ? prev.filter(y => y !== year) : [...prev, year]
@@ -92,6 +113,7 @@ export function MaintenanceModule() {
   const filtered = useMemo(() => {
     let result = forms.filter(f => {
       if (selectedYears.length > 0 && (!f.year || !selectedYears.includes(f.year))) return false;
+      if (selectedContracts.length > 0 && (!f.contract_name || !selectedContracts.includes(f.contract_name))) return false;
       if (statusFilter !== "all" && f.status !== statusFilter) return false;
       if (typeFilter !== "all" && detectMaintenanceType(f) !== typeFilter) return false;
       if (search) {
@@ -129,7 +151,7 @@ export function MaintenanceModule() {
     }
 
     return result;
-  }, [forms, statusFilter, typeFilter, search, selectedYears, sortKey, sortOrder]);
+  }, [forms, statusFilter, typeFilter, search, selectedYears, selectedContracts, sortKey, sortOrder]);
 
   const totalForms = filtered.length;
   const enProceso = filtered.filter(f => f.status === "proceso").length;
@@ -196,6 +218,52 @@ export function MaintenanceModule() {
                     Limpiar
                   </Button>
                 )}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground block mb-1">Contrato</Label>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="w-48 justify-start gap-2 truncate">
+                <ListFilter className="h-4 w-4 shrink-0" />
+                <span className="truncate">{selectedContracts.length === 0 ? "Todos" : `${selectedContracts.length} seleccionados`}</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-64 p-2">
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-2 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar contrato..."
+                    value={contractSearch}
+                    onChange={e => setContractSearch(e.target.value)}
+                    className="pl-7 h-8 text-sm"
+                  />
+                </div>
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setSelectedContracts(filteredContractOptions)}>
+                    Todos
+                  </Button>
+                  <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setSelectedContracts([])}>
+                    Ninguno
+                  </Button>
+                </div>
+                <div className="max-h-48 overflow-y-auto space-y-0.5">
+                  {filteredContractOptions.map(name => (
+                    <label key={name} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent cursor-pointer text-sm">
+                      <Checkbox
+                        checked={selectedContracts.includes(name)}
+                        onCheckedChange={() => toggleContract(name)}
+                      />
+                      <span className="truncate">{name}</span>
+                    </label>
+                  ))}
+                  {filteredContractOptions.length === 0 && (
+                    <p className="text-xs text-muted-foreground text-center py-2">Sin resultados</p>
+                  )}
+                </div>
               </div>
             </PopoverContent>
           </Popover>
