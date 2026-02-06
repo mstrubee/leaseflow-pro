@@ -161,8 +161,8 @@ export function MaintenanceModule() {
             <Input placeholder="N° FORM, contrato, descripción..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8" />
           </div>
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">Año</Label>
+        <div>
+          <Label className="text-xs text-muted-foreground block mb-1">Año</Label>
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" className="w-40 justify-start gap-2">
