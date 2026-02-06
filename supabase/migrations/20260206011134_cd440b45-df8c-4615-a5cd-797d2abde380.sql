@@ -1,0 +1,1 @@
+ALTER TABLE public.maintenance_forms ADD COLUMN evidence_links text[] DEFAULT '{}';

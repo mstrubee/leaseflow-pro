@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
+import { Loader2, Link } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm } from "./types";
@@ -142,6 +142,20 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
             <Label>Comentarios Adicionales</Label>
             <Textarea value={formData.additional_comments} onChange={e => set("additional_comments", e.target.value)} rows={2} />
           </div>
+
+          {form?.evidence_links && form.evidence_links.length > 0 && (
+            <div className="space-y-1.5">
+              <Label>Evidencias</Label>
+              <div className="flex flex-col gap-1 p-3 rounded-md border bg-muted">
+                {form.evidence_links.map((link, idx) => (
+                  <a key={idx} href={link} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1.5">
+                    <Link className="h-3.5 w-3.5 shrink-0" />
+                    Evidencia {idx + 1}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <DialogFooter>

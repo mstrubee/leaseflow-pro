@@ -2413,6 +2413,7 @@ export type Database = {
           created_date: string | null
           deleted_at: string | null
           electrical_description: string | null
+          evidence_links: string[] | null
           fixed_assets_description: string | null
           form_number: string
           general_description: string | null
@@ -2433,6 +2434,7 @@ export type Database = {
           created_date?: string | null
           deleted_at?: string | null
           electrical_description?: string | null
+          evidence_links?: string[] | null
           fixed_assets_description?: string | null
           form_number: string
           general_description?: string | null
@@ -2453,6 +2455,7 @@ export type Database = {
           created_date?: string | null
           deleted_at?: string | null
           electrical_description?: string | null
+          evidence_links?: string[] | null
           fixed_assets_description?: string | null
           form_number?: string
           general_description?: string | null
