@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, Trash2, Upload, FileText, X } from "lucide-react";
+import { Loader2, Plus, Trash2, Upload, FileText, X, Wrench } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { useAuth } from "@/hooks/useAuth";
@@ -35,11 +35,18 @@ interface OpexMasterLine {
   year: number;
 }
 
+interface MaintenanceFormOption {
+  id: string;
+  form_number: string;
+  general_description: string | null;
+}
+
 interface ContractAllocation {
   contractId: string;
   contractName: string;
   cebe: string | null;
   amount: number;
+  maintenanceFormId: string | null;
 }
 
 interface PaymentPlanItem {
@@ -82,6 +89,11 @@ export const CentralizedOrderCreator = ({
   const [singleContractId, setSingleContractId] = useState("");
   const [contractAllocations, setContractAllocations] = useState<ContractAllocation[]>([]);
   const [paymentPlan, setPaymentPlan] = useState<PaymentPlanItem[]>([]);
+  
+  // Maintenance form assignment
+  const [assignToForm, setAssignToForm] = useState(false);
+  const [singleFormId, setSingleFormId] = useState<string | null>(null);
+  const [contractForms, setContractForms] = useState<Record<string, MaintenanceFormOption[]>>({});
   
   // Quotation file state
   const [quotationFile, setQuotationFile] = useState<File | null>(null);
@@ -178,7 +190,24 @@ export const CentralizedOrderCreator = ({
     }
   };
   
-  // Calculate available budget for selected category
+  // Load maintenance forms "En Proceso" for a given contract
+  const loadFormsForContract = async (contractId: string) => {
+    if (contractForms[contractId]) return; // Already loaded
+    try {
+      const { data } = await supabase
+        .from("maintenance_forms")
+        .select("id, form_number, general_description")
+        .eq("contract_id", contractId)
+        .eq("status", "En Proceso")
+        .is("deleted_at", null)
+        .order("form_number", { ascending: false });
+      
+      setContractForms(prev => ({ ...prev, [contractId]: data || [] }));
+    } catch (error) {
+      console.error("Error loading forms:", error);
+    }
+  };
+  
   const availableBudget = useMemo(() => {
     if (!selectedCategoryId) return 0;
     const masterLine = opexMasterLines.find(m => m.category_id === selectedCategoryId);
@@ -208,9 +237,11 @@ export const CentralizedOrderCreator = ({
       c => !contractAllocations.some(a => a.contractId === c.id)
     );
     if (availableContracts.length > 0) {
+      const contract = availableContracts[0];
+      loadFormsForContract(contract.id);
       setContractAllocations(prev => [
         ...prev,
-        { contractId: availableContracts[0].id, contractName: availableContracts[0].name, cebe: availableContracts[0].cebe, amount: 0 }
+        { contractId: contract.id, contractName: contract.name, cebe: contract.cebe, amount: 0, maintenanceFormId: null }
       ]);
     }
   };
@@ -221,7 +252,9 @@ export const CentralizedOrderCreator = ({
       const updated = [...prev];
       if (field === "contractId") {
         const contract = contracts.find(c => c.id === value);
-        updated[index] = { ...updated[index], contractId: value, contractName: contract?.name || "", cebe: contract?.cebe || null };
+        updated[index] = { ...updated[index], contractId: value, contractName: contract?.name || "", cebe: contract?.cebe || null, maintenanceFormId: null };
+        // Load forms for new contract
+        loadFormsForContract(value);
       } else {
         updated[index] = { ...updated[index], [field]: value };
       }
@@ -542,7 +575,8 @@ export const CentralizedOrderCreator = ({
                 status: "abierta",
                 budget_classification: "OPEX",
                 attachment_url: attachmentUrl,
-                is_multi_contract: true
+                is_multi_contract: true,
+                maintenance_form_id: alloc.maintenanceFormId || null
               })
               .select("id")
               .single();
@@ -587,7 +621,8 @@ export const CentralizedOrderCreator = ({
             status: "abierta",
             budget_classification: "OPEX",
             attachment_url: attachmentUrl,
-            is_multi_contract: false
+            is_multi_contract: false,
+            maintenance_form_id: (assignToForm && singleFormId) ? singleFormId : null
           };
           
           const { error: orderError } = await supabase
@@ -619,6 +654,9 @@ export const CentralizedOrderCreator = ({
     setSingleContractId("");
     setContractAllocations([]);
     setPaymentPlan([]);
+    setAssignToForm(false);
+    setSingleFormId(null);
+    setContractForms({});
     setQuotationFile(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -826,29 +864,81 @@ export const CentralizedOrderCreator = ({
                 </div>
                 
                 {!isMultiContract ? (
-                  <div className="space-y-2">
-                    <Label>Contrato *</Label>
-                    <Select value={singleContractId} onValueChange={setSingleContractId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar contrato" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {contracts.map(c => (
-                          <SelectItem key={c.id} value={c.id}>
-                            <div className="flex items-center gap-2">
-                              <span>{c.name}</span>
-                              {c.cebe && <span className="text-xs text-muted-foreground">({c.cebe})</span>}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Contrato *</Label>
+                      <Select value={singleContractId} onValueChange={(v) => {
+                        setSingleContractId(v);
+                        setSingleFormId(null);
+                        setAssignToForm(false);
+                        loadFormsForContract(v);
+                      }}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar contrato" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {contracts.map(c => (
+                            <SelectItem key={c.id} value={c.id}>
+                              <div className="flex items-center gap-2">
+                                <span>{c.name}</span>
+                                {c.cebe && <span className="text-xs text-muted-foreground">({c.cebe})</span>}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {singleContractId && (
+                        <div className="text-xs text-muted-foreground">
+                          {(() => {
+                            const selectedContract = contracts.find(c => c.id === singleContractId);
+                            return selectedContract?.cebe ? `CEBE: ${selectedContract.cebe}` : null;
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Form assignment for single contract */}
                     {singleContractId && (
-                      <div className="text-xs text-muted-foreground">
-                        {(() => {
-                          const selectedContract = contracts.find(c => c.id === singleContractId);
-                          return selectedContract?.cebe ? `CEBE: ${selectedContract.cebe}` : null;
-                        })()}
+                      <div className="space-y-2 border rounded-md p-3 bg-muted/30">
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="assign-form"
+                            checked={assignToForm}
+                            onCheckedChange={(checked) => {
+                              setAssignToForm(checked === true);
+                              if (!checked) setSingleFormId(null);
+                            }}
+                          />
+                          <Label htmlFor="assign-form" className="cursor-pointer flex items-center gap-1.5">
+                            <Wrench className="h-4 w-4" />
+                            Asignar a Form de Mantención
+                          </Label>
+                        </div>
+                        {assignToForm && (
+                          <div className="space-y-1">
+                            {(contractForms[singleContractId] || []).length > 0 ? (
+                              <Select value={singleFormId || ""} onValueChange={(v) => setSingleFormId(v || null)}>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Seleccionar Form..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(contractForms[singleContractId] || []).map(f => (
+                                    <SelectItem key={f.id} value={f.id}>
+                                      <span className="font-medium">FORM {f.form_number}</span>
+                                      {f.general_description && (
+                                        <span className="text-xs text-muted-foreground ml-2">
+                                          — {f.general_description.slice(0, 50)}{f.general_description.length > 50 ? "..." : ""}
+                                        </span>
+                                      )}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">No hay Forms "En Proceso" para este contrato</p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -867,67 +957,93 @@ export const CentralizedOrderCreator = ({
                         Agregue contratos para asignar montos
                       </p>
                     ) : (
-                      <div className="border rounded-md max-h-[200px] overflow-y-auto">
+                      <div className="border rounded-md max-h-[300px] overflow-y-auto">
                         <Table>
                           <TableHeader>
                             <TableRow>
                               <TableHead>Contrato</TableHead>
                               <TableHead>CEBE</TableHead>
                               <TableHead>Monto ({formData.currency})</TableHead>
+                              <TableHead>Form</TableHead>
                               <TableHead className="w-10"></TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {contractAllocations.map((alloc, idx) => (
-                              <TableRow key={idx}>
-                                <TableCell>
-                                  <Select 
-                                    value={alloc.contractId} 
-                                    onValueChange={(v) => handleUpdateAllocation(idx, "contractId", v)}
-                                  >
-                                    <SelectTrigger className="w-full">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {contracts.map(c => (
-                                        <SelectItem 
-                                          key={c.id} 
-                                          value={c.id}
-                                          disabled={contractAllocations.some((a, i) => i !== idx && a.contractId === c.id)}
-                                        >
-                                          <div className="flex items-center gap-2">
-                                            <span>{c.name}</span>
-                                            {c.cebe && <span className="text-xs text-muted-foreground">({c.cebe})</span>}
-                                          </div>
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </TableCell>
-                                <TableCell className="text-xs text-muted-foreground">
-                                  {alloc.cebe || "-"}
-                                </TableCell>
-                                <TableCell>
-                                  <Input
-                                    type="number"
-                                    value={alloc.amount || ""}
-                                    onChange={(e) => handleUpdateAllocation(idx, "amount", parseFloat(e.target.value) || 0)}
-                                    min="0"
-                                    step="1"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleRemoveAllocation(idx)}
-                                  >
-                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            ))}
+                            {contractAllocations.map((alloc, idx) => {
+                              const forms = contractForms[alloc.contractId] || [];
+                              return (
+                                <TableRow key={idx}>
+                                  <TableCell>
+                                    <Select 
+                                      value={alloc.contractId} 
+                                      onValueChange={(v) => handleUpdateAllocation(idx, "contractId", v)}
+                                    >
+                                      <SelectTrigger className="w-full">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {contracts.map(c => (
+                                          <SelectItem 
+                                            key={c.id} 
+                                            value={c.id}
+                                            disabled={contractAllocations.some((a, i) => i !== idx && a.contractId === c.id)}
+                                          >
+                                            <div className="flex items-center gap-2">
+                                              <span>{c.name}</span>
+                                              {c.cebe && <span className="text-xs text-muted-foreground">({c.cebe})</span>}
+                                            </div>
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </TableCell>
+                                  <TableCell className="text-xs text-muted-foreground">
+                                    {alloc.cebe || "-"}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Input
+                                      type="number"
+                                      value={alloc.amount || ""}
+                                      onChange={(e) => handleUpdateAllocation(idx, "amount", parseFloat(e.target.value) || 0)}
+                                      min="0"
+                                      step="1"
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    {forms.length > 0 ? (
+                                      <Select 
+                                        value={alloc.maintenanceFormId || "none"} 
+                                        onValueChange={(v) => handleUpdateAllocation(idx, "maintenanceFormId", v === "none" ? null : v)}
+                                      >
+                                        <SelectTrigger className="w-full min-w-[120px]">
+                                          <SelectValue placeholder="Sin Form" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="none">Sin Form</SelectItem>
+                                          {forms.map(f => (
+                                            <SelectItem key={f.id} value={f.id}>
+                                              FORM {f.form_number}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">—</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleRemoveAllocation(idx)}
+                                    >
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
                           </TableBody>
                         </Table>
                       </div>
