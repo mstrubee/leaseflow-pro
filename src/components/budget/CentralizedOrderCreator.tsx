@@ -757,7 +757,7 @@ export const CentralizedOrderCreator = ({
                 
                 {/* Project Name */}
                 <div className="space-y-2">
-                  <Label>Nombre Proyecto</Label>
+                  <Label>Descripción</Label>
                   <Input
                     value={formData.project_name}
                     onChange={(e) => setFormData(prev => ({ ...prev, project_name: e.target.value }))}
