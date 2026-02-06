@@ -24,6 +24,13 @@ interface NoticeDeadline {
   bilaterality?: "unilateral_gp" | "unilateral_arrendador" | "bilateral";
 }
 
+interface TerminationNoticeForChart {
+  id: string;
+  notice_type: string; // "sent" | "received"
+  notice_date: string;
+  required_exit_date: string | null;
+}
+
 interface CompactEscalationChartProps {
   escalations: Escalation[];
   initialRent?: number | null;
@@ -49,6 +56,7 @@ interface CompactEscalationChartProps {
   // Auto-renewal info
   autoRenewal?: boolean;
   autoRenewalMonths?: number;
+  terminationNotices?: TerminationNoticeForChart[];
 }
 
 export function CompactEscalationChart({ 
@@ -73,6 +81,7 @@ export function CompactEscalationChart({
   contractEndNoticeMonths = 0,
   autoRenewal = false,
   autoRenewalMonths = 0,
+  terminationNotices = [],
 }: CompactEscalationChartProps) {
   const { ufValue } = useEconomicIndicators();
   
@@ -260,7 +269,33 @@ export function CompactEscalationChart({
     return null;
   }, [effectiveDate, noticeType, noticeValue, noticeRanges, durationMonths, contractEndNoticeMonths]);
 
-  // Format amount based on display currency
+  // Compute termination notice positions on chart
+  const terminationNoticeMarkers = useMemo(() => {
+    if (!effectiveDate || terminationNotices.length === 0) return [];
+    const startDate = new Date(effectiveDate);
+    return terminationNotices.map(notice => {
+      const noticeDate = new Date(notice.notice_date);
+      const diffTime = noticeDate.getTime() - startDate.getTime();
+      const noticeMonth = Math.max(1, Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44)) + 1);
+      
+      let exitMonth: number | null = null;
+      if (notice.required_exit_date) {
+        const exitDate = new Date(notice.required_exit_date);
+        const exitDiff = exitDate.getTime() - startDate.getTime();
+        exitMonth = Math.max(1, Math.floor(exitDiff / (1000 * 60 * 60 * 24 * 30.44)) + 1);
+      }
+      
+      return {
+        id: notice.id,
+        type: notice.notice_type, // "sent" | "received"
+        noticeMonth,
+        exitMonth,
+        noticeDate: notice.notice_date,
+        exitDate: notice.required_exit_date,
+      };
+    });
+  }, [effectiveDate, terminationNotices]);
+
   const formatAmount = (value: number) => {
     if (displayCurrency === "CLP") {
       return `$${Math.round(value).toLocaleString("es-CL")}`;
@@ -485,6 +520,60 @@ export function CompactEscalationChart({
                 }}
               />
             )}
+            
+            {/* Termination notices - sent/received */}
+            {terminationNoticeMarkers.map((marker) => {
+              const isSent = marker.type === "sent";
+              const markerColor = isSent ? "hsl(262 83% 58%)" : "hsl(25 95% 53%)";
+              const typeLabel = isSent ? "Enviado" : "Recibido";
+              const noticeDateStr = format(new Date(marker.noticeDate), "dd MMM yy", { locale: es });
+              
+              return [
+                // Notice date line
+                <ReferenceLine
+                  key={`tn-notice-${marker.id}`}
+                  x={marker.noticeMonth}
+                  stroke={markerColor}
+                  strokeWidth={2}
+                  strokeDasharray="3 3"
+                  label={{
+                    value: `${isSent ? "✉" : "📩"} ${typeLabel}: ${noticeDateStr}`,
+                    fontSize: 9,
+                    fontWeight: 600,
+                    fill: markerColor,
+                    position: "insideBottomLeft"
+                  }}
+                />,
+                // Expected exit date line (if exists)
+                marker.exitMonth && marker.exitDate ? (
+                  <ReferenceLine
+                    key={`tn-exit-${marker.id}`}
+                    x={marker.exitMonth}
+                    stroke={markerColor}
+                    strokeWidth={3}
+                    strokeDasharray="8 4"
+                    label={{
+                      value: `Salida Esperada: ${format(new Date(marker.exitDate), "dd MMM yy", { locale: es })}`,
+                      fontSize: 9,
+                      fontWeight: 700,
+                      fill: markerColor,
+                      position: "insideTopLeft"
+                    }}
+                  />
+                ) : null,
+                // Shaded area between notice and exit
+                marker.exitMonth ? (
+                  <ReferenceArea
+                    key={`tn-area-${marker.id}`}
+                    x1={marker.noticeMonth}
+                    x2={marker.exitMonth}
+                    fill={markerColor}
+                    fillOpacity={0.08}
+                    stroke="none"
+                  />
+                ) : null,
+              ];
+            })}
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -541,6 +630,27 @@ export function CompactEscalationChart({
                 })}
               </div>
             )}
+          </div>
+        )}
+        {/* Termination notices legend */}
+        {terminationNoticeMarkers.length > 0 && effectiveDate && (
+          <div className="flex flex-col gap-1 mt-1">
+            {terminationNoticeMarkers.map((marker) => {
+              const isSent = marker.type === "sent";
+              return (
+                <div key={marker.id} className="flex items-center gap-1.5">
+                  <span className="text-sm">{isSent ? "✉️" : "📩"}</span>
+                  <span className="font-semibold" style={{ color: isSent ? "hsl(262 83% 58%)" : "hsl(25 95% 53%)" }}>
+                    Aviso {isSent ? "Enviado" : "Recibido"}: {format(new Date(marker.noticeDate), "dd MMM yyyy", { locale: es })}
+                  </span>
+                  {marker.exitDate && (
+                    <span className="text-muted-foreground">
+                      → Salida esperada: {format(new Date(marker.exitDate), "dd MMM yyyy", { locale: es })}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
