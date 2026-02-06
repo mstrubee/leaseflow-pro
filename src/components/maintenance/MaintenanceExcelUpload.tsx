@@ -97,19 +97,17 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
       for (let i = headerIdx + 1; i < rows.length; i++) {
         const row = rows[i];
         const formNum = String(row[0] ?? "").trim();
-        if (!formNum) continue; // skip empty rows
+        if (!formNum) continue;
 
         const errors: string[] = [];
         const warnings: string[] = [];
 
-        // Status validation
         const rawStatus = String(row[1] ?? "").trim().toLowerCase();
         let status = rawStatus;
         if (rawStatus.includes("proceso")) status = "proceso";
         else if (rawStatus.includes("solucionado")) status = "solucionado";
         else if (rawStatus) errors.push(`Estado inválido: "${row[1]}"`);
 
-        // Date parsing
         let createdDate: string | null = null;
         const rawDate = row[2];
         if (rawDate instanceof Date && !isNaN(rawDate.getTime())) {
@@ -123,22 +121,29 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
           }
         }
 
-        // Contract matching by CEBE numbers
         const rawContractText = String(row[4] ?? "").trim();
         let contractId: string | null = null;
         let contractName: string | null = rawContractText || null;
         if (rawContractText) {
-          // Extract numbers from the Excel text (e.g., "0475 TIENDA SAN PABLO" → ["0475"])
           const extractedNums = rawContractText.match(/\d+/g) || [];
           for (const num of extractedNums) {
             const match = cebeToContract.get(num);
             if (match) {
               contractId = match.id;
-              contractName = match.name; // Use the known contract name from the system
+              contractName = match.name;
               break;
             }
           }
           if (!contractId) warnings.push("Contrato no encontrado por CEBE");
+        }
+
+        // Extract evidence links from column N (index 13)
+        const rawColumnN = String(row[13] ?? "");
+        const evidenceLinks: string[] = [];
+        const linkRegex = /https?:\/\/[^\s"<>]+\.(?:jpeg|jpg|png|gif|pdf|docx?|xlsx?|pptx?|mp4|mov|zip)/gi;
+        let linkMatch;
+        while ((linkMatch = linkRegex.exec(rawColumnN)) !== null) {
+          evidenceLinks.push(linkMatch[0]);
         }
 
         parsed.push({
@@ -154,6 +159,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
           hvac_description: String(row[9] ?? "").trim() || null,
           fixed_assets_description: String(row[10] ?? "").trim() || null,
           additional_comments: String(row[11] ?? "").trim() || null,
+          evidence_links: evidenceLinks,
           errors,
           warnings,
         });
@@ -194,6 +200,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         hvac_description: r.hvac_description,
         fixed_assets_description: r.fixed_assets_description,
         additional_comments: r.additional_comments,
+        evidence_links: r.evidence_links,
         year: r.created_date ? new Date(r.created_date).getFullYear() : new Date().getFullYear(),
         created_by: user?.id ?? null,
       }));
@@ -267,6 +274,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
                     <TableHead>Contrato</TableHead>
                     <TableHead className="w-24">Tipo</TableHead>
                     <TableHead>Descripción</TableHead>
+                    <TableHead className="w-24">Evidencias</TableHead>
                     <TableHead className="w-32">Validación</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -289,6 +297,11 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
                       </TableCell>
                       <TableCell className="text-xs max-w-48 truncate">
                         {row.general_description || row.electrical_description || row.civil_description || row.hvac_description || row.fixed_assets_description || "-"}
+                      </TableCell>
+                      <TableCell className="text-xs text-center">
+                        {row.evidence_links.length > 0 ? (
+                          <Badge variant="outline" className="text-xs">{row.evidence_links.length} link{row.evidence_links.length > 1 ? "s" : ""}</Badge>
+                        ) : "-"}
                       </TableCell>
                       <TableCell className="text-xs">
                         {row.errors.map((e, i) => <span key={i} className="text-destructive block">{e}</span>)}

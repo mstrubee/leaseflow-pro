@@ -12,6 +12,7 @@ export interface MaintenanceForm {
   hvac_description: string | null;
   fixed_assets_description: string | null;
   additional_comments: string | null;
+  evidence_links: string[] | null;
   year: number | null;
   created_at: string;
   updated_at: string;
@@ -32,6 +33,7 @@ export interface ParsedMaintenanceRow {
   hvac_description: string | null;
   fixed_assets_description: string | null;
   additional_comments: string | null;
+  evidence_links: string[];
   errors: string[];
   warnings: string[];
 }

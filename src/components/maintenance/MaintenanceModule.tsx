@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download } from "lucide-react";
+import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm, detectMaintenanceType } from "./types";
@@ -177,14 +177,15 @@ export function MaintenanceModule() {
                   <TableHead className="w-28">Tipo</TableHead>
                   <TableHead>Descripción</TableHead>
                   <TableHead>Comentarios</TableHead>
+                  <TableHead className="w-28">Evidencia</TableHead>
                   <TableHead className="w-24 text-center">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Cargando...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Cargando...</TableCell></TableRow>
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No hay FORMs registrados</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No hay FORMs registrados</TableCell></TableRow>
                 ) : (
                   filtered.map(f => (
                     <TableRow key={f.id}>
@@ -201,6 +202,17 @@ export function MaintenanceModule() {
                         {f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-"}
                       </TableCell>
                       <TableCell className="text-xs max-w-32 truncate">{f.additional_comments || "-"}</TableCell>
+                      <TableCell className="text-xs">
+                        {f.evidence_links && f.evidence_links.length > 0 ? (
+                          <div className="flex flex-col gap-0.5">
+                            {f.evidence_links.map((link, idx) => (
+                              <a key={idx} href={link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1">
+                                <Link className="h-3 w-3" />Evidencia {idx + 1}
+                              </a>
+                            ))}
+                          </div>
+                        ) : "-"}
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-center gap-1">
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditForm(f)} title="Editar">
