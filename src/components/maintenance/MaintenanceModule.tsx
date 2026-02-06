@@ -81,22 +81,18 @@ export function MaintenanceModule() {
   };
 
   const handleSort = useCallback((key: string) => {
-    setSortKey(prev => {
-      if (prev === key) {
-        setSortOrder(o => o === "asc" ? "desc" : "asc");
-        return key;
-      }
+    if (sortKey === key) {
+      setSortOrder(o => o === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
       setSortOrder("asc");
-      return key;
-    });
-  }, []);
+    }
+  }, [sortKey]);
 
   const filtered = useMemo(() => {
     let result = forms.filter(f => {
       if (selectedYears.length > 0 && (!f.year || !selectedYears.includes(f.year))) return false;
-      const normalizedStatus = (f.status || "").trim().toLowerCase();
-      const normalizedFilter = statusFilter.trim().toLowerCase();
-      if (normalizedFilter !== "all" && normalizedStatus !== normalizedFilter) return false;
+      if (statusFilter !== "all" && f.status !== statusFilter) return false;
       if (typeFilter !== "all" && detectMaintenanceType(f) !== typeFilter) return false;
       if (search) {
         const s = search.toLowerCase();
@@ -106,6 +102,14 @@ export function MaintenanceModule() {
       }
       return true;
     });
+
+    // Debug: log any items that shouldn't pass the filter
+    if (statusFilter !== "all") {
+      const leaking = result.filter(f => f.status !== statusFilter);
+      if (leaking.length > 0) {
+        console.error("FILTER LEAK: items passing filter with wrong status", statusFilter, leaking.map(l => ({ id: l.id, form: l.form_number, status: l.status })));
+      }
+    }
 
     if (sortKey && sortOrder) {
       result = [...result].sort((a, b) => {
