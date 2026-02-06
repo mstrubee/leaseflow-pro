@@ -369,7 +369,7 @@ export function CompactEscalationChart({
               const strokeColor = isArrendador ? "#dc2626" : "hsl(var(--destructive))";
               const labelText = isArrendador 
                 ? `Arrendador: ${deadlineDateStr}` 
-                : `Límite ${idx + 1}: ${deadlineDateStr}`;
+                : `Aviso: ${deadlineDateStr} (${deadline.monthsBefore}m antes)`;
               
               return (
                 <ReferenceLine
@@ -531,10 +531,10 @@ export function CompactEscalationChart({
                   return (
                     <div key={idx} className="text-xs">
                       <span className={isArrendador ? "text-[#dc2626] font-bold" : "text-destructive font-semibold"}>
-                        {isArrendador ? "Rango a favor Arrendador" : `Límite ${idx + 1}`}: {format(deadlineDate, "dd MMM yyyy", { locale: es })}
+                        {isArrendador ? "Rango a favor Arrendador" : "Fecha tope aviso"}: {format(deadlineDate, "dd MMM yyyy", { locale: es })}
                       </span>
                       <span className="text-muted-foreground ml-1">
-                        ({deadline.monthsBefore}m antes de {format(rangeEndDate, "MMM yy", { locale: es })})
+                        ({deadline.monthsBefore} meses antes de fin de rango: {format(rangeEndDate, "dd MMM yyyy", { locale: es })})
                       </span>
                     </div>
                   );
