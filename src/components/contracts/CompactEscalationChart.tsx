@@ -326,9 +326,9 @@ export function CompactEscalationChart({
 
   return (
     <div className="space-y-2">
-      <div className="h-48 w-full">
+      <div className="h-56 w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={displayData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
+          <LineChart data={displayData} margin={{ top: 20, right: 20, left: 15, bottom: 25 }}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
             <XAxis 
               dataKey="month" 
@@ -553,11 +553,12 @@ export function CompactEscalationChart({
                     strokeWidth={3}
                     strokeDasharray="8 4"
                     label={{
-                      value: `Salida Esperada: ${format(new Date(marker.exitDate), "dd MMM yy", { locale: es })}`,
+                      value: `Salida esperada: ${format(new Date(marker.exitDate), "dd MMM yy", { locale: es })}`,
                       fontSize: 9,
                       fontWeight: 700,
                       fill: markerColor,
-                      position: "insideTopLeft"
+                      position: "insideBottomRight",
+                      offset: 15,
                     }}
                   />
                 ) : null,
