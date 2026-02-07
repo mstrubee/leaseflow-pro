@@ -193,7 +193,7 @@ export function MultipleNoticesSection({
                     placeholder="Ej: 6"
                   />
                   <p className="text-xs text-muted-foreground">
-                    El aviso debe darse {getMonthsBefore(notice)} {getMonthsBefore(notice) === 1 ? 'mes' : 'meses'} antes de la fecha de término anticipado
+                    La salida se ejecutará {getMonthsBefore(notice)} {getMonthsBefore(notice) === 1 ? 'mes' : 'meses'} después de dar el aviso
                   </p>
                 </div>
 
@@ -235,7 +235,7 @@ export function MultipleNoticesSection({
                       Aplicar a rangos de término *
                     </Label>
                     <p className="text-xs text-muted-foreground">
-                      Selecciona los rangos de término anticipado a los que aplica este aviso. Se creará una alerta para cada rango seleccionado.
+                      Selecciona los rangos de término anticipado a los que aplica este aviso. La salida se ejecutará {getMonthsBefore(notice)} {getMonthsBefore(notice) === 1 ? 'mes' : 'meses'} después de dar el aviso.
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                       {noticeRanges.map((range, rangeIndex) => {
@@ -266,7 +266,7 @@ export function MultipleNoticesSection({
                                   Rango {rangeIndex + 1}: M{range.start_month} - M{range.end_month}
                                 </p>
                                 <p className="text-xs text-muted-foreground mt-1">
-                                  Aviso tope: <span className="font-medium text-foreground">Mes {deadlineMonth}</span>
+                                  Tope aviso: <span className="font-medium text-foreground">Mes {deadlineMonth}</span> · Salida: M{deadlineMonth}+{getMonthsBefore(notice)}m
                                 </p>
                                 {deadlineDate && (
                                   <p className="text-xs text-muted-foreground">
@@ -306,9 +306,9 @@ export function MultipleNoticesSection({
                     </Label>
                     <p className="text-xs text-muted-foreground">
                       {hasRanges && (notice.selected_range_indices?.length || 0) > 0 ? (
-                        <>Se crearán {notice.selected_range_indices?.length} alerta{(notice.selected_range_indices?.length || 0) > 1 ? 's' : ''} (una por cada rango seleccionado)</>
+                        <>Se crearán {notice.selected_range_indices?.length} alerta{(notice.selected_range_indices?.length || 0) > 1 ? 's' : ''} (una por cada rango seleccionado). La salida se ejecutará {getMonthsBefore(notice)} meses después del aviso.</>
                       ) : (
-                        <>Se creará una alerta {getMonthsBefore(notice)} {getMonthsBefore(notice) === 1 ? 'mes' : 'meses'} antes de la fecha de término anticipado</>
+                        <>Se creará una alerta en la fecha tope de aviso. La salida se ejecutará {getMonthsBefore(notice)} {getMonthsBefore(notice) === 1 ? 'mes' : 'meses'} después de dar el aviso.</>
                       )}
                     </p>
                   </div>
@@ -460,7 +460,7 @@ export async function createAlertsFromNotices(
           const deadlineDate = format(addMonths(rangeEndDate, -monthsBefore), "yyyy-MM-dd");
           
           const alertTitle = `Aviso de Término Anticipado (Rango M${range.start_month}-M${range.end_month}): ${contractName}`;
-          const alertMessage = `Se debe dar aviso de término anticipado ${monthsBefore} ${monthsBefore === 1 ? 'mes' : 'meses'} antes del vencimiento del rango M${range.start_month}-M${range.end_month}. Fecha límite: ${format(parseISO(deadlineDate), "d 'de' MMMM 'de' yyyy", { locale: es })}`;
+          const alertMessage = `Dar aviso antes del ${format(parseISO(deadlineDate), "d 'de' MMMM 'de' yyyy", { locale: es })} para el rango M${range.start_month}-M${range.end_month}. La salida se ejecutará ${monthsBefore} ${monthsBefore === 1 ? 'mes' : 'meses'} después de la fecha en que se dé el aviso.`;
 
           const { error: alertError } = await supabase
             .from("alerts")
@@ -493,7 +493,7 @@ export async function createAlertsFromNotices(
         const deadlineDate = format(addMonths(terminationDate, -monthsBefore), "yyyy-MM-dd");
 
         const alertTitle = `Aviso de Término Anticipado: ${contractName}`;
-        const alertMessage = `Se debe dar aviso de término anticipado ${monthsBefore} ${monthsBefore === 1 ? 'mes' : 'meses'} antes de la fecha de término. Fecha límite: ${format(parseISO(deadlineDate), "d 'de' MMMM 'de' yyyy", { locale: es })}`;
+        const alertMessage = `Dar aviso antes del ${format(parseISO(deadlineDate), "d 'de' MMMM 'de' yyyy", { locale: es })}. La salida se ejecutará ${monthsBefore} ${monthsBefore === 1 ? 'mes' : 'meses'} después de la fecha en que se dé el aviso.`;
 
         const { error: alertError } = await supabase
           .from("alerts")

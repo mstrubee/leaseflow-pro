@@ -1226,6 +1226,13 @@ const ContractDetail = () => {
                               contractName={contract.name}
                               notices={contract.termination_notices || []}
                               onRefresh={loadContract}
+                              noticePeriodMonths={(() => {
+                                // Extract N months from version notices or notice_value
+                                const vn = displayVersion?.version_notices;
+                                if (vn && vn.length > 0) return parseInt(vn[0].notice_value) || undefined;
+                                if (displayVersion?.notice_type === "meses") return parseInt(displayVersion.notice_value) || undefined;
+                                return undefined;
+                              })()}
                             />
                           </div>
                         )}
