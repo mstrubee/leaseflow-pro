@@ -1,56 +1,88 @@
 
 
-# Fix: Indicadores Economicos no visibles por bloqueo CORS
+# Correccion de logica: Salida se ejecuta N meses desde el aviso, no dentro del rango
 
-## Problema detectado
+## Contexto del cambio
 
-La funcion backend `economic-indicators` funciona correctamente y devuelve datos (UF: 39.066, USD: 865.67), pero el navegador **bloquea la respuesta por CORS** cuando se accede desde el dominio de preview.
+Actualmente el sistema calcula la fecha tope de aviso como `rango.end_month - N meses`, implicando que la salida ocurre dentro del rango. La logica correcta es:
 
-El archivo `_shared/cors.ts` tiene una lista restrictiva de origenes permitidos que no incluye todos los dominios desde donde se accede a la aplicacion. Cuando el origen no coincide, el header `Access-Control-Allow-Origin` devuelve un valor incorrecto y el navegador rechaza la respuesta.
+- El **rango de salida** define la ventana donde se PUEDE ejecutar la salida
+- Para poder salir, se debe dar aviso con **N meses de anticipacion**
+- La **fecha tope de aviso** es el limite para dar el aviso (calculada como `rango.end_month - N`)
+- La **salida efectiva** ocurre **N meses despues de la fecha en que se da el aviso**, no necesariamente dentro del rango
 
-Error confirmado en consola:
+Ejemplo: Rango M60-M72, aviso de 12 meses. Si doy aviso en M55, la salida es en M67 (55+12). Si doy aviso en M60 (tope), la salida seria en M72.
+
+## Cambios requeridos
+
+### 1. MultipleNoticesSection.tsx - Corregir textos y calculo de "Salida Esperada"
+
+- Cambiar la descripcion de cada aviso: actualmente dice "X meses antes de la fecha de termino anticipado", debe decir "La salida se ejecutara X meses despues de dar el aviso"
+- Ajustar la etiqueta del rango seleccionado: en vez de solo "Aviso tope: Mes N", agregar contexto de que la salida sera N meses despues del aviso
+- Actualizar `createAlertsFromNotices`: el mensaje de alerta debe reflejar que la salida es N meses despues del aviso, no una fecha fija del rango
+
+### 2. TerminationNoticesSection.tsx - Auto-calcular fecha de salida
+
+- Cuando el usuario registra un aviso (sent/received) con fecha de aviso, **auto-calcular** la "Fecha de Salida Requerida" como `fecha_aviso + N meses`
+- Obtener el valor N del contrato (months_before del aviso configurado o notice_value de la version)
+- Pre-llenar el campo `requiredExitDate` al cambiar `noticeDate`, permitiendo override manual
+- Agregar props para recibir la configuracion de meses de aviso del contrato
+
+### 3. CompactEscalationChart.tsx - Actualizar visualizacion
+
+- Mantener las areas sombreadas como "Rango Salida" (correcto, son las ventanas de salida)
+- Mantener las lineas de "Tope Aviso" (correcto, son los limites para dar aviso)
+- Cuando hay un aviso registrado (terminationNotices), la "Salida Esperada" debe calcularse como `fecha_aviso + N meses`, no como un punto fijo del rango
+- Agregar prop para pasar los meses de aviso (N) para el calculo correcto de la linea de salida esperada
+
+### 4. CommercialConditionsSummary.tsx - Corregir label de fecha
+
+- En la seccion "Fecha Tope Aviso" para rangos, aclarar que es la fecha limite para dar aviso
+- Agregar texto explicativo: "La salida se ejecuta N meses despues del aviso"
+
+### 5. createAlertsFromNotices (en MultipleNoticesSection.tsx) - Corregir mensaje
+
+- Actualizar el mensaje de alerta para reflejar la logica correcta
+- En vez de "Fecha limite: [fecha tope]", incluir "Dar aviso antes del [fecha tope]. La salida se ejecutara [N] meses despues del aviso"
+
+## Seccion tecnica
+
+### Archivos a modificar
+
+| Archivo | Cambio |
+|---------|--------|
+| `src/components/contracts/MultipleNoticesSection.tsx` | Textos descriptivos, mensaje de alertas |
+| `src/components/contracts/TerminationNoticesSection.tsx` | Auto-calculo de exit date = notice_date + N meses |
+| `src/components/contracts/CompactEscalationChart.tsx` | Calculo de salida esperada basado en aviso + N |
+| `src/components/contracts/CommercialConditionsSummary.tsx` | Label explicativo en seccion de aviso |
+| `src/pages/ContractDetail.tsx` | Pasar meses de aviso como prop a TerminationNoticesSection |
+
+### Logica de calculo
+
+```text
+ANTES (incorrecto):
+  Tope Aviso = rango.end_month - N
+  Salida = dentro del rango (implicito)
+
+DESPUES (correcto):
+  Tope Aviso = rango.end_month - N  (no cambia)
+  Salida Esperada = fecha_aviso_real + N meses
+  
+  Si no hay aviso registrado, se muestra solo el Tope Aviso
+  Si hay aviso registrado, se calcula: salida = aviso + N
 ```
-Access to fetch blocked by CORS policy: The 'Access-Control-Allow-Origin' header 
-has a value that is not equal to the supplied origin.
+
+### Flujo al registrar aviso
+
+```text
+1. Usuario selecciona fecha de aviso (ej: 15-mar-2028)
+2. Sistema auto-calcula: Salida = 15-mar-2028 + 12 meses = 15-mar-2029
+3. Campo "Fecha de Salida" se pre-llena con 15-mar-2029
+4. Usuario puede modificar si es necesario
+5. Al guardar, el chart muestra la linea de "Salida Esperada" en la fecha correcta
 ```
 
-## Solucion
+### Sin cambios en base de datos
 
-Actualizar `supabase/functions/_shared/cors.ts` para usar `Access-Control-Allow-Origin: *` como indican las mejores practicas de Supabase para edge functions. Esto es seguro porque:
-
-- La autenticacion se maneja via JWT en el header `Authorization`, no via cookies/origen
-- Las funciones ya tienen `verify_jwt = false` con validacion manual cuando es necesario
-- El patron `*` es el estandar recomendado para APIs REST
-
-## Cambio tecnico
-
-**Archivo: `supabase/functions/_shared/cors.ts`**
-
-Simplificar la configuracion CORS para usar el wildcard estandar:
-
-```typescript
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-};
-
-export function getCorsHeaders(_req: Request): Record<string, string> {
-  return corsHeaders;
-}
-
-export function handleCorsPreflightRequest(req: Request): Response | null {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
-  return null;
-}
-```
-
-Esto corrige el problema sin modificar ninguna otra funcion, ya que todas importan desde `_shared/cors.ts`.
-
-## Impacto
-
-- Todas las edge functions se benefician del fix (no solo `economic-indicators`)
-- No requiere cambios en el frontend
-- No requiere redespliegue individual de cada funcion (el archivo compartido se incluye automaticamente)
+No se requieren migraciones. Los campos existentes (`required_exit_date`, `notice_date`) ya soportan esta logica. Solo cambia como se calculan y presentan.
 
