@@ -644,6 +644,12 @@ export function CommercialConditionsSummary({
                 )}
               </>
             )}
+            {/* Explanation about exit logic for range-based notices */}
+            {version.notice_type === "rangos" && versionNotices.length > 0 && (
+              <p className="text-xs text-muted-foreground italic">
+                Salida: {parseInt(versionNotices[0].notice_value) || 12}m después del aviso
+              </p>
+            )}
           </div>
 
           {/* Tipo de Aviso (Bilateralidad) */}

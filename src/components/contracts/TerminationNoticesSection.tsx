@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +22,7 @@ import {
   AlertTriangle,
   Pencil
 } from "lucide-react";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, addMonths } from "date-fns";
 import { es } from "date-fns/locale";
 import {
   Dialog,
@@ -76,6 +76,8 @@ interface TerminationNoticesSectionProps {
   contractName?: string;
   notices: TerminationNotice[];
   onRefresh: () => void;
+  /** Number of months of notice required by contract (N). Exit = notice_date + N months */
+  noticePeriodMonths?: number;
 }
 
 const DAYS_BEFORE_OPTIONS = [
@@ -86,7 +88,7 @@ const DAYS_BEFORE_OPTIONS = [
   { value: 90, label: "90 días" },
 ];
 
-export function TerminationNoticesSection({ contractId, contractName, notices, onRefresh }: TerminationNoticesSectionProps) {
+export function TerminationNoticesSection({ contractId, contractName, notices, onRefresh, noticePeriodMonths }: TerminationNoticesSectionProps) {
   const { toast } = useToast();
   const { isAdmin } = useAuth();
   const { openFile } = useSecureFileAccess();
@@ -497,7 +499,17 @@ export function TerminationNoticesSection({ contractId, contractName, notices, o
                       id="noticeDate"
                       type="date"
                       value={noticeDate}
-                      onChange={(e) => setNoticeDate(e.target.value)}
+                      onChange={(e) => {
+                        const newDate = e.target.value;
+                        setNoticeDate(newDate);
+                        // Auto-calculate exit date: notice_date + N months
+                        if (newDate && noticePeriodMonths && noticePeriodMonths > 0) {
+                          try {
+                            const calculated = addMonths(parseISO(newDate), noticePeriodMonths);
+                            setRequiredExitDate(format(calculated, "yyyy-MM-dd"));
+                          } catch { /* ignore parse errors */ }
+                        }
+                      }}
                       required
                     />
                   </div>
@@ -515,7 +527,9 @@ export function TerminationNoticesSection({ contractId, contractName, notices, o
                       onChange={(e) => setRequiredExitDate(e.target.value)}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Esta fecha modifica la fecha de término del contrato y se mostrará en el dashboard y listado de contratos
+                      {noticePeriodMonths && noticePeriodMonths > 0
+                        ? `Auto-calculada: fecha de aviso + ${noticePeriodMonths} meses. Puedes modificarla manualmente.`
+                        : "Fecha en que se ejecutará la salida del contrato"}
                     </p>
                   </div>
 

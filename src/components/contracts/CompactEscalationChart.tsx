@@ -624,7 +624,7 @@ export function CompactEscalationChart({
                         {isArrendador ? "Tope aviso (Arrendador)" : "Tope aviso término anticipado"}: {format(deadlineDate, "dd MMM yyyy", { locale: es })}
                       </span>
                       <span className="text-muted-foreground ml-1">
-                        ({deadline.monthsBefore}m antes del fin de rango: {format(rangeEndDate, "dd MMM yyyy", { locale: es })})
+                        (aviso de {deadline.monthsBefore}m · salida {deadline.monthsBefore}m después del aviso)
                       </span>
                     </div>
                   );
