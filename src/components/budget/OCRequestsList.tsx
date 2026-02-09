@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 // Card component removed - not in use currently
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Upload, Eye, Trash2, Download, Plus } from "lucide-react";
+import { Loader2, Upload, Eye, Trash2, Download, Plus, FileSpreadsheet } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
@@ -18,6 +18,7 @@ import { es } from "date-fns/locale";
 import { OCRequestViewDialog } from "./OCRequestViewDialog";
 import { MultipleLinesSelector } from "./MultipleLinesSelector";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
+import { generateOCRequestTemplate, parseOCRequestExcel } from "@/lib/generateOCRequestTemplate";
 
 interface OCRequest {
   id: string;
@@ -118,6 +119,8 @@ export const OCRequestsList = ({
   });
   const [creatingRequest, setCreatingRequest] = useState(false);
   const [projectName, setProjectName] = useState(contractName);
+  const [importingFile, setImportingFile] = useState(false);
+  const importFileRef = useRef<HTMLInputElement>(null);
   
   const { toast } = useToast();
 
@@ -649,6 +652,42 @@ export const OCRequestsList = ({
   const capexCount = visibleRequests.filter(r => r.budget_type === "capex").length;
   const opexCount = visibleRequests.filter(r => r.budget_type === "opex").length;
 
+  const handleImportOCRequest = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setImportingFile(true);
+    try {
+      const parsed = await parseOCRequestExcel(file);
+      
+      // Open the new request dialog and pre-fill with parsed data
+      await handleOpenNewRequestDialog();
+      
+      setNewRequestForm(prev => ({
+        ...prev,
+        description: parsed.description || prev.description,
+        amount: parsed.amount > 0 ? String(parsed.amount) : prev.amount,
+        currency: parsed.currency as "UF" | "CLP",
+        supplier_name: parsed.supplier_name || prev.supplier_name,
+      }));
+
+      if (parsed.paymentPlan.length > 0) {
+        setPaymentPlan(parsed.paymentPlan.map(p => ({
+          description: p.description,
+          amount: p.amount > 0 ? String(p.amount) : "",
+          due_date: p.due_date,
+        })));
+      }
+
+      toast({ title: "Datos importados", description: "Los campos se han completado con los datos del archivo" });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error al importar", description: error.message });
+    } finally {
+      setImportingFile(false);
+      if (importFileRef.current) importFileRef.current.value = "";
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -695,10 +734,40 @@ export const OCRequestsList = ({
         </div>
         
         {allowCreate && (
-          <Button size="sm" onClick={handleOpenNewRequestDialog} className="gap-2">
-            <Plus className="h-4 w-4" />
-            Nueva Solicitud
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button 
+              size="sm" 
+              variant="outline" 
+              onClick={() => generateOCRequestTemplate(contractName)}
+              title="Descargar plantilla Excel"
+              className="gap-1"
+            >
+              <Download className="h-4 w-4" />
+              <span className="hidden sm:inline">Plantilla</span>
+            </Button>
+            <Button 
+              size="sm" 
+              variant="outline" 
+              onClick={() => importFileRef.current?.click()}
+              disabled={importingFile}
+              title="Importar solicitud desde Excel"
+              className="gap-1"
+            >
+              {importingFile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              <span className="hidden sm:inline">Importar</span>
+            </Button>
+            <input
+              ref={importFileRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={handleImportOCRequest}
+            />
+            <Button size="sm" onClick={handleOpenNewRequestDialog} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Nueva Solicitud
+            </Button>
+          </div>
         )}
       </div>
 

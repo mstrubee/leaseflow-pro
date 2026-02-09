@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -7,11 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Download, FileSpreadsheet, Plus, Trash2, Upload } from "lucide-react";
+import { Loader2, Download, FileSpreadsheet, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { MultipleLinesSelector } from "./MultipleLinesSelector";
-import { generateOCRequestTemplate, parseOCRequestExcel } from "@/lib/generateOCRequestTemplate";
 
 interface SelectedLine {
   lineId: string;
@@ -73,8 +72,6 @@ export const OCRequestDialog = ({
   const [paymentPlan, setPaymentPlan] = useState<PaymentPlanItem[]>([]);
   const [templateUrl, setTemplateUrl] = useState<string | null>(null);
   const [templateFileName, setTemplateName] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   // Load active template
@@ -269,39 +266,6 @@ export const OCRequestDialog = ({
     setForm(prev => ({ ...prev, supplier_id: supplierId, supplier_name: supplierName }));
   };
 
-  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    setImporting(true);
-    try {
-      const parsed = await parseOCRequestExcel(file);
-      
-      setForm(prev => ({
-        ...prev,
-        description: parsed.description || prev.description,
-        amount: parsed.amount > 0 ? String(parsed.amount) : prev.amount,
-        currency: parsed.currency,
-        supplier_name: parsed.supplier_name || prev.supplier_name,
-      }));
-
-      if (parsed.paymentPlan.length > 0) {
-        setPaymentPlan(parsed.paymentPlan.map(p => ({
-          description: p.description,
-          amount: p.amount > 0 ? String(p.amount) : "",
-          due_date: p.due_date,
-        })));
-      }
-
-      toast({ title: "Datos importados", description: "Los campos se han completado con los datos del archivo" });
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Error al importar", description: error.message });
-    } finally {
-      setImporting(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  };
-
   const addPaymentItem = () => {
     setPaymentPlan(prev => [...prev, { description: `Pago ${prev.length + 1}`, amount: "", due_date: "" }]);
   };
@@ -341,47 +305,6 @@ export const OCRequestDialog = ({
           </TabsList>
 
           <TabsContent value="basic" className="space-y-4 mt-4">
-            {/* Template download & upload */}
-            <div className="p-3 rounded-md bg-muted/50 border space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <FileSpreadsheet className="h-4 w-4" />
-                  <span>Plantilla de Solicitud</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="gap-1"
-                    onClick={() => generateOCRequestTemplate(contractName, lineName)}
-                  >
-                    <Download className="h-3 w-3" />
-                    Descargar
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="gap-1"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={importing}
-                  >
-                    {importing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
-                    Importar
-                  </Button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".xlsx,.xls"
-                    className="hidden"
-                    onChange={handleImportFile}
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Descargue la plantilla, complétela y luego impórtela para llenar los campos automáticamente.
-              </p>
-            </div>
-
             {/* Admin template (if configured) */}
             {templateUrl && (
               <div className="p-3 rounded-md bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
