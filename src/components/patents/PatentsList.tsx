@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { useSingleCollapsible } from "@/hooks/useCollapsibleState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -299,10 +300,13 @@ export function PatentsList({
                 return <TableRow key={contract.id}>
                       <TableCell className="text-muted-foreground">
                         {companyNames.length > 0 ? (
-                          <div className="flex flex-col">
-                            {companyNames.map((name, idx) => (
-                              <span key={idx}>{name}</span>
-                            ))}
+                          <div className="flex items-center gap-2">
+                            <CompanyLogo companyNames={companyNames} size="sm" />
+                            <div className="flex flex-col">
+                              {companyNames.map((name, idx) => (
+                                <span key={idx}>{name}</span>
+                              ))}
+                            </div>
                           </div>
                         ) : (
                           'Sin empresa'
