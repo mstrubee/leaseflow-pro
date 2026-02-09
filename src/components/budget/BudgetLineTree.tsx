@@ -131,12 +131,15 @@ const BudgetLineItem = ({
   const [isEditingUnit, setIsEditingUnit] = useState(false);
   const [isEditingPrice, setIsEditingPrice] = useState(false);
   const [isEditingCurrency, setIsEditingCurrency] = useState(false);
+  const [isEditingTotal, setIsEditingTotal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [editName, setEditName] = useState(line.name);
   const [editQuantity, setEditQuantity] = useState((line.quantity || 0).toString());
   const [editUnitPrice, setEditUnitPrice] = useState((line.unit_price || 0).toString());
   const [editCurrency, setEditCurrency] = useState(line.currency || "UF");
   const [editUnit, setEditUnit] = useState(line.unit_type || "m2");
+  const [editTotal, setEditTotal] = useState("");
+  const [editTotalCurrency, setEditTotalCurrency] = useState<"UF" | "CLP">("UF");
   const {
     formatUF,
     formatCLP,
@@ -249,6 +252,40 @@ const BudgetLineItem = ({
     }
     setEditCurrency(newCurrency);
     setIsEditingCurrency(false);
+  };
+
+  // Save total amount: back-calculate unit_price from total
+  const handleSaveTotal = () => {
+    if (readOnly) return;
+    const totalVal = parseFloat(editTotal) || 0;
+    const qty = line.quantity || 0;
+    if (totalVal <= 0 || qty <= 0) {
+      setIsEditingTotal(false);
+      return;
+    }
+    // Convert total to same currency as line currency, then calc unit price
+    const lineCurrency = line.currency || "UF";
+    let totalInLineCurrency = totalVal;
+    if (editTotalCurrency !== lineCurrency) {
+      if (editTotalCurrency === "CLP" && lineCurrency === "UF" && ufValue > 0) {
+        totalInLineCurrency = totalVal / ufValue;
+      } else if (editTotalCurrency === "UF" && lineCurrency === "CLP" && ufValue > 0) {
+        totalInLineCurrency = totalVal * ufValue;
+      }
+    }
+    const newUnitPrice = totalInLineCurrency / qty;
+    const amountUf = calculateLineAmount(qty, newUnitPrice, lineCurrency);
+    onUpdateLine(line.id, {
+      unit_price: newUnitPrice,
+      amount_uf: amountUf,
+    });
+    setEditUnitPrice(newUnitPrice.toString());
+    setIsEditingTotal(false);
+  };
+
+  const handleTotalKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleSaveTotal();
+    else if (e.key === "Escape") setIsEditingTotal(false);
   };
 
   const handleSupplierChange = (supplierId: string | null, supplierName: string | null) => {
@@ -441,10 +478,74 @@ const BudgetLineItem = ({
               </span>
             )}
 
-            {/* Calculated total - read only */}
-            <span className="text-xs font-mono bg-primary/10 px-1.5 py-0.5 rounded min-w-[80px] text-center">
-              = {line.currency === "CLP" ? "$" : "UF"} {((line.quantity || 0) * (line.unit_price || 0)).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-            </span>
+            {/* Calculated total - editable on double click to enter total amount */}
+            {isEditingTotal && !readOnly ? (
+              <div className="flex items-center gap-1">
+                <Select value={editTotalCurrency} onValueChange={v => setEditTotalCurrency(v as "UF" | "CLP")}>
+                  <SelectTrigger className="h-6 w-16 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UF">UF</SelectItem>
+                    <SelectItem value="CLP">$</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  value={editTotal}
+                  onChange={e => setEditTotal(e.target.value)}
+                  onBlur={handleSaveTotal}
+                  onKeyDown={handleTotalKeyDown}
+                  className="h-6 w-24 text-xs"
+                  autoFocus
+                  min="0"
+                  step="0.01"
+                  placeholder="Monto total"
+                />
+              </div>
+            ) : (
+              <span 
+                className="text-xs font-mono bg-primary/10 px-1.5 py-0.5 rounded min-w-[80px] text-center cursor-text hover:bg-primary/20"
+                onDoubleClick={() => {
+                  if (!readOnly) {
+                    const rawTotal = (line.quantity || 0) * (line.unit_price || 0);
+                    setEditTotal(rawTotal > 0 ? rawTotal.toString() : "");
+                    setEditTotalCurrency(line.currency === "CLP" ? "CLP" : "UF");
+                    setIsEditingTotal(true);
+                  }
+                }}
+                title="Doble clic para ingresar monto total"
+              >
+                = {line.currency === "CLP" ? "$" : "UF"} {((line.quantity || 0) * (line.unit_price || 0)).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+              </span>
+            )}
+
+            {/* Show equivalent in the other currency */}
+            {(() => {
+              const rawTotal = (line.quantity || 0) * (line.unit_price || 0);
+              const qty = line.quantity || 0;
+              if (rawTotal <= 0 || qty <= 0 || ufValue <= 0) return null;
+              const lineCurrency = line.currency || "UF";
+              if (lineCurrency === "UF") {
+                const totalCLP = rawTotal * ufValue;
+                const clpPerUnit = totalCLP / qty;
+                const unitLabel = line.unit_type === "m2" ? "m²" : line.unit_type || "m²";
+                return (
+                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                    ({formatCLP(totalCLP)} · ${Math.round(clpPerUnit).toLocaleString("es-CL")}/{unitLabel})
+                  </span>
+                );
+              } else {
+                const totalUF = rawTotal / ufValue;
+                const ufPerUnit = totalUF / qty;
+                const unitLabel = line.unit_type === "m2" ? "m²" : line.unit_type || "m²";
+                return (
+                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                    (UF {totalUF.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · {ufPerUnit.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/{unitLabel})
+                  </span>
+                );
+              }
+            })()}
           </div>}
 
         {/* Parent line with children: show multiplier and subtotal - only for level 1+ */}
