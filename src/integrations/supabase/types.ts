@@ -716,6 +716,36 @@ export type Database = {
           },
         ]
       }
+      comite_gp_statuses: {
+        Row: {
+          color: string | null
+          created_at: string
+          display_order: number | null
+          id: string
+          is_active: boolean | null
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          display_order?: number | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          display_order?: number | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       companies: {
         Row: {
           created_at: string
@@ -1259,6 +1289,7 @@ export type Database = {
       contracts: {
         Row: {
           clasificacion: string | null
+          comite_gp_status: string | null
           company_id: string | null
           created_at: string
           deleted_at: string | null
@@ -1296,6 +1327,7 @@ export type Database = {
         }
         Insert: {
           clasificacion?: string | null
+          comite_gp_status?: string | null
           company_id?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -1333,6 +1365,7 @@ export type Database = {
         }
         Update: {
           clasificacion?: string | null
+          comite_gp_status?: string | null
           company_id?: string | null
           created_at?: string
           deleted_at?: string | null
