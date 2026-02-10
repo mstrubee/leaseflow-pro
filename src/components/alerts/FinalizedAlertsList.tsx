@@ -40,14 +40,18 @@ interface FinalizedAlert {
   contracts?: { name: string } | null;
 }
 
+type FinalizedSortKey = "due_date" | "completed_at";
+
 interface FinalizedAlertsListProps {
   contractId?: string;
   showAll?: boolean;
   defaultOpen?: boolean;
   onRefresh?: () => void;
+  contractSearch?: string;
+  sortBy?: FinalizedSortKey;
 }
 
-export function FinalizedAlertsList({ contractId, showAll = false, defaultOpen = false, onRefresh }: FinalizedAlertsListProps) {
+export function FinalizedAlertsList({ contractId, showAll = false, defaultOpen = false, onRefresh, contractSearch, sortBy = "due_date" }: FinalizedAlertsListProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const [alerts, setAlerts] = useState<FinalizedAlert[]>([]);
@@ -59,7 +63,7 @@ export function FinalizedAlertsList({ contractId, showAll = false, defaultOpen =
 
   useEffect(() => {
     loadFinalizedAlerts();
-  }, [contractId]);
+  }, [contractId, contractSearch, sortBy]);
 
   const loadFinalizedAlerts = async () => {
     setLoading(true);
@@ -97,11 +101,25 @@ export function FinalizedAlertsList({ contractId, showAll = false, defaultOpen =
         });
       }
 
-      const alertsWithProfiles = data?.map(alert => ({
+      let alertsWithProfiles = data?.map(alert => ({
         ...alert,
         completed_by_profile: alert.completed_by ? profiles[alert.completed_by] : null,
         deleted_by_profile: alert.deleted_by ? profiles[alert.deleted_by] : null,
       })) || [];
+
+      if (contractSearch && contractSearch.trim()) {
+        const search = contractSearch.toLowerCase().trim();
+        alertsWithProfiles = alertsWithProfiles.filter(a => a.contracts?.name?.toLowerCase().includes(search));
+      }
+
+      alertsWithProfiles.sort((a, b) => {
+        if (sortBy === "completed_at") {
+          const dateA = new Date(a.completed_at || a.deleted_at || a.due_date).getTime();
+          const dateB = new Date(b.completed_at || b.deleted_at || b.due_date).getTime();
+          return dateB - dateA;
+        }
+        return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+      });
 
       setAlerts(alertsWithProfiles);
       setSelectedAlerts(new Set());

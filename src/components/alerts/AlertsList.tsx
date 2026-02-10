@@ -51,15 +51,19 @@ interface Alert {
   } | null;
 }
 
+type AlertSortKey = "due_date" | "created_at";
+
 interface AlertsListProps {
   contractId?: string;
   showAll?: boolean;
   onRefresh?: () => void;
   showOnlyActive?: boolean;
   categoryFilter?: string;
+  contractSearch?: string;
+  sortBy?: AlertSortKey;
 }
 
-export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyActive = true, categoryFilter }: AlertsListProps) {
+export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyActive = true, categoryFilter, contractSearch, sortBy = "due_date" }: AlertsListProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const { navigateToContractFromAlerts } = useAlertsNavigation();
@@ -99,7 +103,18 @@ export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyAct
       const { data, error } = await query;
 
       if (error) throw error;
-      setAlerts(data || []);
+      let filtered = data || [];
+      if (contractSearch && contractSearch.trim()) {
+        const search = contractSearch.toLowerCase().trim();
+        filtered = filtered.filter(a => a.contracts?.name?.toLowerCase().includes(search));
+      }
+      // Sort
+      filtered.sort((a, b) => {
+        const dateA = new Date(sortBy === "created_at" ? (a as any).created_at : a.due_date).getTime();
+        const dateB = new Date(sortBy === "created_at" ? (b as any).created_at : b.due_date).getTime();
+        return dateA - dateB;
+      });
+      setAlerts(filtered);
       setSelectedAlerts(new Set());
     } catch (error: any) {
       console.error("Error loading alerts:", error);
@@ -115,7 +130,7 @@ export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyAct
 
   useEffect(() => {
     loadAlerts();
-  }, [contractId, showOnlyActive, categoryFilter]);
+  }, [contractId, showOnlyActive, categoryFilter, contractSearch, sortBy]);
 
   // Realtime subscription for alerts
   useEffect(() => {

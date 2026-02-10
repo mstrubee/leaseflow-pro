@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Bell, BellRing, Clock, CheckCircle, AlertTriangle, Plus, RefreshCw, Archive, Trash2, Filter, Tag } from "lucide-react";
+import { ArrowLeft, Bell, BellRing, Clock, CheckCircle, AlertTriangle, Plus, RefreshCw, Archive, Trash2, Filter, Tag, Search, ArrowUpDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useAlertCategories } from "@/hooks/useAlertCategories";
@@ -75,6 +75,13 @@ export default function AlertsDashboard() {
   
   // Filtering state
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  
+  // Search & sort state
+  const [activeSearch, setActiveSearch] = useState("");
+  const [activeSortBy, setActiveSortBy] = useState<"due_date" | "created_at">("due_date");
+  const [finalizedSearch, setFinalizedSearch] = useState("");
+  const [finalizedSortBy, setFinalizedSortBy] = useState<"due_date" | "completed_at">("due_date");
+  const [historySearch, setHistorySearch] = useState("");
   
   // History bulk delete state
   const [selectedHistory, setSelectedHistory] = useState<Set<string>>(new Set());
@@ -200,10 +207,10 @@ export default function AlertsDashboard() {
   };
 
   const toggleSelectAllHistory = () => {
-    if (selectedHistory.size === history.length) {
+    if (selectedHistory.size === filteredHistory.length) {
       setSelectedHistory(new Set());
     } else {
-      setSelectedHistory(new Set(history.map(h => h.id)));
+      setSelectedHistory(new Set(filteredHistory.map(h => h.id)));
     }
   };
 
@@ -232,6 +239,12 @@ export default function AlertsDashboard() {
       setBulkDeleteHistoryConfirmation("");
     }
   };
+
+  const filteredHistory = useMemo(() => {
+    if (!historySearch.trim()) return history;
+    const search = historySearch.toLowerCase().trim();
+    return history.filter(item => item.alerts?.contracts?.name?.toLowerCase().includes(search));
+  }, [history, historySearch]);
 
   if (authLoading) {
     return (
@@ -349,8 +362,8 @@ export default function AlertsDashboard() {
           </TabsList>
 
           <TabsContent value="all">
-            {/* Category Filter */}
-            <div className="flex items-center gap-3 mb-4">
+            {/* Filters Row */}
+            <div className="flex items-center gap-3 mb-4 flex-wrap">
               <Tag className="h-4 w-4 text-muted-foreground" />
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                 <SelectTrigger className="w-[220px]">
@@ -365,12 +378,33 @@ export default function AlertsDashboard() {
                   ))}
                 </SelectContent>
               </Select>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por contrato..."
+                  value={activeSearch}
+                  onChange={(e) => setActiveSearch(e.target.value)}
+                  className="pl-9 w-[220px]"
+                />
+              </div>
+              <Select value={activeSortBy} onValueChange={(v) => setActiveSortBy(v as "due_date" | "created_at")}>
+                <SelectTrigger className="w-[200px]">
+                  <ArrowUpDown className="h-4 w-4 mr-2" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="due_date">Ordenar por vencimiento</SelectItem>
+                  <SelectItem value="created_at">Ordenar por creación</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <AlertsList
               key={`${refreshKey}-${categoryFilter}`}
               showAll
               showOnlyActive={true}
               categoryFilter={categoryFilter !== "all" ? categoryFilter : undefined}
+              contractSearch={activeSearch}
+              sortBy={activeSortBy}
               onRefresh={() => setRefreshKey((k) => k + 1)}
             />
           </TabsContent>
@@ -384,10 +418,33 @@ export default function AlertsDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                <div className="flex items-center gap-3 mb-4 flex-wrap">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar por contrato..."
+                      value={finalizedSearch}
+                      onChange={(e) => setFinalizedSearch(e.target.value)}
+                      className="pl-9 w-[220px]"
+                    />
+                  </div>
+                  <Select value={finalizedSortBy} onValueChange={(v) => setFinalizedSortBy(v as "due_date" | "completed_at")}>
+                    <SelectTrigger className="w-[220px]">
+                      <ArrowUpDown className="h-4 w-4 mr-2" />
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="due_date">Ordenar por vencimiento</SelectItem>
+                      <SelectItem value="completed_at">Ordenar por finalización</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <FinalizedAlertsList 
                   key={`finalized-${refreshKey}`} 
                   showAll 
                   defaultOpen={true} 
+                  contractSearch={finalizedSearch}
+                  sortBy={finalizedSortBy}
                   onRefresh={() => setRefreshKey((k) => k + 1)}
                 />
               </CardContent>
@@ -400,11 +457,22 @@ export default function AlertsDashboard() {
                 <CardTitle>Historial de alertas enviadas</CardTitle>
               </CardHeader>
               <CardContent>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar por contrato..."
+                      value={historySearch}
+                      onChange={(e) => setHistorySearch(e.target.value)}
+                      className="pl-9 w-[220px]"
+                    />
+                  </div>
+                </div>
                 {loadingHistory ? (
                   <p className="text-center text-muted-foreground py-8">Cargando...</p>
-                ) : history.length === 0 ? (
+                ) : filteredHistory.length === 0 ? (
                   <p className="text-center text-muted-foreground py-8">
-                    No hay alertas enviadas aún
+                    {historySearch ? "No se encontraron resultados" : "No hay alertas enviadas aún"}
                   </p>
                 ) : (
                   <>
@@ -412,7 +480,7 @@ export default function AlertsDashboard() {
                     <div className="flex items-center justify-between mb-4 p-3 bg-muted/50 rounded-lg">
                       <div className="flex items-center gap-3">
                         <Checkbox
-                          checked={selectedHistory.size === history.length && history.length > 0}
+                          checked={selectedHistory.size === filteredHistory.length && filteredHistory.length > 0}
                           onCheckedChange={toggleSelectAllHistory}
                         />
                         <span className="text-sm text-muted-foreground">
@@ -434,7 +502,7 @@ export default function AlertsDashboard() {
                     </div>
 
                     <div className="space-y-3">
-                      {history.map((item) => (
+                      {filteredHistory.map((item) => (
                         <div
                           key={item.id}
                           className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
