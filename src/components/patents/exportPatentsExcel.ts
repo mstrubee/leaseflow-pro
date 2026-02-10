@@ -13,6 +13,10 @@ interface ExportRow {
   estado: string;
   responsable: string;
   emisor: string;
+  fecha_inicio: string;
+  plazo: string;
+  fecha_entrega: string;
+  notas: string;
 }
 
 // Fetch dynamic statuses from database
@@ -62,6 +66,9 @@ export async function exportPatentsToExcel(
     sectionItems.forEach(item => {
       const doc = (contract.patent_documents || []).find(d => d.checklist_item_id === item.id);
       
+      // Skip items with status "no_aplica"
+      if (doc?.status === 'no_aplica') return;
+
       // Get emitter - prefer document emitter, fallback to fixed emitter
       let emitterName = '';
       if (doc?.emitter_id) {
@@ -76,17 +83,21 @@ export async function exportPatentsToExcel(
         estado: doc?.status ? (statusMap[doc.status] || doc.status) : '',
         responsable: doc?.responsible || '',
         emisor: emitterName,
+        fecha_inicio: doc?.start_date || '',
+        plazo: doc?.deadline_days ? `${doc.deadline_days} días` : '',
+        fecha_entrega: doc?.end_date || '',
+        notas: doc?.notes || '',
       });
     });
   });
 
   // Generate CSV content with BOM for Excel UTF-8 compatibility
   const BOM = '\uFEFF';
-  const headers = ['Sección', 'Documento', 'Estado', 'Responsable', 'Emisor'];
+  const headers = ['Sección', 'Documento', 'Estado', 'Responsable', 'Emisor', 'Fecha Inicio', 'Plazo', 'Fecha Entrega', 'Notas'];
   const csvContent = BOM + [
     headers.join(';'),
     ...rows.map(row => 
-      [row.seccion, row.documento, row.estado, row.responsable, row.emisor]
+      [row.seccion, row.documento, row.estado, row.responsable, row.emisor, row.fecha_inicio, row.plazo, row.fecha_entrega, row.notas]
         .map(cell => `"${(cell || '').replace(/"/g, '""')}"`)
         .join(';')
     )
