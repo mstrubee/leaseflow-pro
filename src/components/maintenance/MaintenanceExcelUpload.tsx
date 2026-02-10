@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Upload, AlertTriangle, CheckCircle, Loader2 } from "lucide-react";
+import { Upload, AlertTriangle, CheckCircle, Loader2, Sparkles } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { validateExcelFile } from "@/lib/excelFileValidation";
@@ -17,8 +17,9 @@ interface Props {
 }
 
 export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props) {
-  const [parsedRows, setParsedRows] = useState<ParsedMaintenanceRow[]>([]);
+  const [parsedRows, setParsedRows] = useState<(ParsedMaintenanceRow & { aiMatched?: boolean })[]>([]);
   const [loading, setLoading] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
   const [inserting, setInserting] = useState(false);
   const [fileName, setFileName] = useState("");
 
@@ -207,6 +208,70 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         });
       }
 
+      // AI matching for unmatched rows
+      const unmatchedRows = parsed.filter(r => !r.contract_id && r.contract_name);
+      if (unmatchedRows.length > 0 && contracts?.length) {
+        setParsedRows(parsed);
+        setAiLoading(true);
+
+        try {
+          // Build contracts with CEBEs for AI
+          const contractsWithCebes: { id: string; name: string; cebe: string }[] = [];
+          if (cebeField) {
+            const { data: allCebeValues } = await supabase
+              .from("contract_custom_field_values")
+              .select("contract_id, field_value")
+              .eq("field_id", cebeField.id);
+
+            allCebeValues?.forEach(cv => {
+              if (cv.field_value) {
+                const cName = contracts.find(c => c.id === cv.contract_id)?.name;
+                if (cName) {
+                  contractsWithCebes.push({ id: cv.contract_id, name: cName, cebe: cv.field_value.trim() });
+                }
+              }
+            });
+          }
+
+          if (contractsWithCebes.length > 0) {
+            const unmatchedTexts = unmatchedRows.map(r => r.contract_name!);
+            const response = await fetch(
+              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/match-contracts`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+                },
+                body: JSON.stringify({ unmatchedTexts, contracts: contractsWithCebes }),
+              }
+            );
+
+            if (response.ok) {
+              const { matches } = await response.json();
+              if (matches?.length) {
+                const matchMap = new Map<string, { contractId: string; contractName: string }>();
+                matches.forEach((m: any) => matchMap.set(m.text, { contractId: m.contractId, contractName: m.contractName }));
+
+                for (const row of parsed) {
+                  if (!row.contract_id && row.contract_name && matchMap.has(row.contract_name)) {
+                    const match = matchMap.get(row.contract_name)!;
+                    row.contract_id = match.contractId;
+                    row.contract_name = match.contractName;
+                    row.warnings = row.warnings.filter(w => w !== "Contrato no encontrado");
+                    (row as any).aiMatched = true;
+                  }
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error("AI matching error:", err);
+        } finally {
+          setAiLoading(false);
+        }
+      }
+
       setParsedRows(parsed);
       if (parsed.length === 0) {
         toast({ title: "Sin datos", description: "No se encontraron filas con datos válidos", variant: "destructive" });
@@ -297,6 +362,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
                 <span>{loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Procesando...</> : "Seleccionar archivo Excel"}</span>
               </Button>
             </label>
+            {aiLoading && <p className="text-sm text-muted-foreground flex items-center gap-2"><Sparkles className="h-4 w-4 animate-pulse text-primary" /> Buscando contratos con IA...</p>}
             {fileName && <p className="text-sm text-muted-foreground">{fileName}</p>}
           </div>
         ) : (
@@ -333,7 +399,8 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
                       <TableCell className="text-xs">{row.created_date || "-"}</TableCell>
                       <TableCell className="text-xs">
                         {row.contract_name || "-"}
-                        {row.contract_id && <CheckCircle className="h-3 w-3 text-green-600 inline ml-1" />}
+                        {row.contract_id && !(row as any).aiMatched && <CheckCircle className="h-3 w-3 text-green-600 inline ml-1" />}
+                        {row.contract_id && (row as any).aiMatched && <span title="Matcheado por IA"><Sparkles className="h-3 w-3 text-primary inline ml-1" /></span>}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-xs">{detectMaintenanceType(row)}</Badge>
