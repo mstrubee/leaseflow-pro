@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, Trash2, Upload, FileText, X, Wrench, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Loader2, Plus, Trash2, Upload, FileText, X, Wrench, ArrowUpDown, ArrowUp, ArrowDown, Eye } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { useAuth } from "@/hooks/useAuth";
@@ -104,6 +104,7 @@ export const CentralizedOrderCreator = ({
   const [singleFormIds, setSingleFormIds] = useState<string[]>([]);
   const [contractForms, setContractForms] = useState<Record<string, MaintenanceFormOption[]>>({});
   const [formsSortAsc, setFormsSortAsc] = useState(false);
+  const [viewingForm, setViewingForm] = useState<MaintenanceFormOption | null>(null);
   
   // Quotation file state
   const [quotationFile, setQuotationFile] = useState<File | null>(null);
@@ -688,6 +689,7 @@ export const CentralizedOrderCreator = ({
   };
   
   return (
+    <>
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
@@ -1098,6 +1100,14 @@ export const CentralizedOrderCreator = ({
                                             <span className="whitespace-nowrap">FORM {f.form_number}</span>
                                             <span className="text-muted-foreground">{f.created_date || ""}</span>
                                             <span className="text-muted-foreground truncate max-w-[120px]">{getFormDescription(f).slice(0, 40)}</span>
+                                            <button
+                                              type="button"
+                                              className="ml-auto p-0.5 rounded hover:bg-muted"
+                                              title="Ver detalle del Form"
+                                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setViewingForm(f); }}
+                                            >
+                                              <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                                            </button>
                                           </label>
                                         ))}
                                       </div>
@@ -1217,5 +1227,51 @@ export const CentralizedOrderCreator = ({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <Dialog open={!!viewingForm} onOpenChange={(v) => { if (!v) setViewingForm(null); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Detalle FORM {viewingForm?.form_number}</DialogTitle>
+        </DialogHeader>
+        {viewingForm && (
+          <div className="space-y-3 text-sm max-h-[60vh] overflow-y-auto">
+            <div>
+              <span className="font-medium">Fecha:</span> {viewingForm.created_date || "—"}
+            </div>
+            {viewingForm.general_description && (
+              <div>
+                <span className="font-medium">Descripción General:</span>
+                <p className="mt-1 text-muted-foreground whitespace-pre-wrap">{viewingForm.general_description}</p>
+              </div>
+            )}
+            {viewingForm.electrical_description && (
+              <div>
+                <span className="font-medium">Eléctrico:</span>
+                <p className="mt-1 text-muted-foreground whitespace-pre-wrap">{viewingForm.electrical_description}</p>
+              </div>
+            )}
+            {viewingForm.civil_description && (
+              <div>
+                <span className="font-medium">Obra Civil:</span>
+                <p className="mt-1 text-muted-foreground whitespace-pre-wrap">{viewingForm.civil_description}</p>
+              </div>
+            )}
+            {viewingForm.hvac_description && (
+              <div>
+                <span className="font-medium">Climatización:</span>
+                <p className="mt-1 text-muted-foreground whitespace-pre-wrap">{viewingForm.hvac_description}</p>
+              </div>
+            )}
+            {viewingForm.fixed_assets_description && (
+              <div>
+                <span className="font-medium">Activos Fijos:</span>
+                <p className="mt-1 text-muted-foreground whitespace-pre-wrap">{viewingForm.fixed_assets_description}</p>
+              </div>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+    </>
   );
 };
