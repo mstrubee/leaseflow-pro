@@ -32,3 +32,6 @@ verify_jwt = false
 
 [functions.refresh-economic-indicators]
 verify_jwt = false
+
+[functions.match-contracts]
+verify_jwt = false
