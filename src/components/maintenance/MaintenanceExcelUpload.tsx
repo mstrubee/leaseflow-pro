@@ -10,6 +10,9 @@ import { validateExcelFile } from "@/lib/excelFileValidation";
 import { ParsedMaintenanceRow, detectMaintenanceType } from "./types";
 import * as XLSX from "xlsx";
 
+const normalize = (s: string) =>
+  s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -66,13 +69,14 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
       // Strategy 1: Build name-based lookup (normalized)
       const contractsByName = new Map<string, { id: string; name: string }>();
       contracts?.forEach(c => {
-        const normalized = c.name.toLowerCase().trim();
-        contractsByName.set(normalized, { id: c.id, name: c.name });
+        const n = normalize(c.name);
+        contractsByName.set(n, { id: c.id, name: c.name });
       });
 
       // Strategy 2: Build full-CEBE and prefix lookup
       const contractsByFullCEBE = new Map<string, { id: string; name: string }>();
       const contractsByPrefix = new Map<string, { id: string; name: string }>();
+      const contractsByDigits = new Map<string, Array<{ id: string; name: string }>>();
 
       const { data: cebeField } = await supabase
         .from("contract_custom_fields")
@@ -104,23 +108,57 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
             if (prefixMatch) {
               contractsByPrefix.set(prefixMatch[1], entry);
             }
+            // Extract 4 digits at positions 1-4 (e.g., "0410" from "H0410P1290")
+            if (fullCebe.length >= 5) {
+              const digits4 = fullCebe.substring(1, 5);
+              if (/^\d{4}$/.test(digits4)) {
+                if (!contractsByDigits.has(digits4)) {
+                  contractsByDigits.set(digits4, []);
+                }
+                contractsByDigits.get(digits4)!.push(entry);
+              }
+            }
           }
         });
       }
 
       // Helper: match Excel text to contract
       const matchContract = (rawText: string): { id: string; name: string } | null => {
-        const text = rawText.toLowerCase().trim();
-        // Priority 1: Direct name match
+        const normText = normalize(rawText);
+        // Priority 1: Direct name match (accent-normalized)
         for (const [name, contract] of contractsByName) {
-          if (text.includes(name) || name.includes(text)) return contract;
+          if (normText.includes(name) || name.includes(normText)) return contract;
         }
         // Priority 2: Full CEBE match (e.g., text contains "H04A2P1390")
         const upperText = rawText.toUpperCase();
         for (const [cebe, contract] of contractsByFullCEBE) {
           if (upperText.includes(cebe)) return contract;
         }
-        // Priority 3: CEBE prefix match (e.g., text contains "H04A2")
+        // Priority 3: 4-digit CEBE match (e.g., "0410" from "0410 TIENDA LA FLORIDA")
+        const excelDigits = rawText.trim().match(/^\d{4}/)?.[0];
+        if (excelDigits && contractsByDigits.has(excelDigits)) {
+          const candidates = contractsByDigits.get(excelDigits)!;
+          if (candidates.length === 1) return candidates[0];
+          // Disambiguate by name similarity
+          for (const c of candidates) {
+            if (normText.includes(normalize(c.name)) || normalize(c.name).includes(normText)) {
+              return c;
+            }
+          }
+          // Try partial word overlap
+          const words = normText.split(/\s+/).filter(w => w.length > 2);
+          let best: { id: string; name: string } | null = null;
+          let bestScore = 0;
+          for (const c of candidates) {
+            const cWords = normalize(c.name).split(/\s+/);
+            const score = words.filter(w => cWords.some(cw => cw.includes(w) || w.includes(cw))).length;
+            if (score > bestScore) { bestScore = score; best = c; }
+          }
+          if (best) return best;
+          // If still ambiguous, return first candidate
+          return candidates[0];
+        }
+        // Priority 4: CEBE prefix match (e.g., text contains "H04A2")
         for (const [prefix, contract] of contractsByPrefix) {
           if (upperText.includes(prefix)) return contract;
         }
