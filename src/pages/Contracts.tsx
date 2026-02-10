@@ -154,6 +154,7 @@ const Contracts = () => {
   const [contractToDelete, setContractToDelete] = useState<Contract | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [comiteGPStatuses, setComiteGPStatuses] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
 
   // Read filters from URL params
   const searchTerm = searchParams.get("search") || "";
@@ -166,6 +167,7 @@ const Contracts = () => {
   const companyFilter = searchParams.get("company") || "todos";
   const atencionEspecialFilter = searchParams.get("atencion_especial") === "true" ? "si" : (searchParams.get("atencion_especial") === "false" ? "no" : "todos");
   const negotiationSubcategoryFilter = searchParams.get("subcategory") || "todos";
+  const comiteGPFilter = searchParams.get("comite_gp") || "todos";
   const rechazadosFilter = searchParams.get("rechazados") === "true";
   const sortField = (searchParams.get("sort") as ContractSortField) || null;
   const sortDirection = (searchParams.get("dir") as SortDirection) || "asc";
@@ -186,6 +188,7 @@ const Contracts = () => {
   };
 
   const setNegotiationSubcategoryFilter = (value: string) => updateFilter("subcategory", value);
+  const setComiteGPFilter = (value: string) => updateFilter("comite_gp", value);
 
   const setSearchTerm = (value: string) => updateFilter("search", value);
   const setOperationFilter = (value: string) => updateFilter("operation", value);
@@ -238,8 +241,18 @@ const Contracts = () => {
     if (user) {
       loadContracts();
       loadCompanies();
+      loadComiteGPStatuses();
     }
   }, [user]);
+
+  const loadComiteGPStatuses = async () => {
+    const { data } = await supabase
+      .from("comite_gp_statuses")
+      .select("id, name, color")
+      .eq("is_active", true)
+      .order("display_order");
+    setComiteGPStatuses(data || []);
+  };
 
   const loadCompanies = async () => {
     const { data } = await supabase
@@ -251,7 +264,7 @@ const Contracts = () => {
 
   useEffect(() => {
     filterAndSortContracts();
-  }, [searchTerm, statusFilter, contracts, operationFilter, obraFilter, patenteFilter, proyectoFilter, ubicacionFilter, costoArriendoFilter, companyFilter, atencionEspecialFilter, negotiationSubcategoryFilter, rechazadosFilter, sortField, sortDirection]);
+  }, [searchTerm, statusFilter, contracts, operationFilter, obraFilter, patenteFilter, proyectoFilter, ubicacionFilter, costoArriendoFilter, companyFilter, atencionEspecialFilter, negotiationSubcategoryFilter, comiteGPFilter, rechazadosFilter, sortField, sortDirection]);
 
   const loadContracts = async () => {
     const { data } = await supabase
@@ -493,6 +506,13 @@ const Contracts = () => {
       );
     }
 
+    // Comité GP filter (only for en_negociacion)
+    if (comiteGPFilter !== "todos" && statusFilter === "en_negociacion") {
+      filtered = filtered.filter((contract) => 
+        (contract.comite_gp_status || "") === comiteGPFilter
+      );
+    }
+
     // Rechazados filter - show only rejected OR exclude rejected from main list
     if (statusFilter === "en_negociacion") {
       if (rechazadosFilter) {
@@ -656,6 +676,12 @@ const Contracts = () => {
             const clasifA = (a.clasificacion || "").toLowerCase();
             const clasifB = (b.clasificacion || "").toLowerCase();
             comparison = clasifA.localeCompare(clasifB, "es");
+            break;
+          }
+          case "comite_gp": {
+            const gpA = (a.comite_gp_status || "").toLowerCase();
+            const gpB = (b.comite_gp_status || "").toLowerCase();
+            comparison = gpA.localeCompare(gpB, "es");
             break;
           }
           case "venta_estimada": {
@@ -1007,15 +1033,33 @@ const Contracts = () => {
             {/* Negotiation Subcategory Filter - Only for en_negociacion */}
             {isNegociacionView && (
               <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-medium text-muted-foreground">Categoría</span>
+                <span className="text-[10px] font-medium text-muted-foreground">Estado</span>
                 <Select value={negotiationSubcategoryFilter} onValueChange={setNegotiationSubcategoryFilter}>
                   <SelectTrigger className="h-8 text-xs w-[180px]">
-                    <SelectValue placeholder="Todas" />
+                    <SelectValue placeholder="Todos" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="todos" className="text-xs">Todas las categorías</SelectItem>
-                    <SelectItem value="negociacion_contrato" className="text-xs">Negociación Contrato</SelectItem>
-                    <SelectItem value="ubicacion_preliminar" className="text-xs">Ubicación Preliminar</SelectItem>
+                    <SelectItem value="todos" className="text-xs">Todos los estados</SelectItem>
+                    <SelectItem value="negociacion_contrato" className="text-xs">Rev. Contrato</SelectItem>
+                    <SelectItem value="ubicacion_preliminar" className="text-xs">Preliminar</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Comité GP Filter - Only for en_negociacion */}
+            {isNegociacionView && comiteGPStatuses.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-medium text-muted-foreground">Comité GP</span>
+                <Select value={comiteGPFilter} onValueChange={setComiteGPFilter}>
+                  <SelectTrigger className="h-8 text-xs w-[160px]">
+                    <SelectValue placeholder="Todos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos" className="text-xs">Todos</SelectItem>
+                    {comiteGPStatuses.map(s => (
+                      <SelectItem key={s.id} value={s.name} className="text-xs">{s.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
