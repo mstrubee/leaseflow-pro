@@ -56,7 +56,23 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         }
       }
 
-      // Fetch contracts with CEBE custom field for matching
+      // Fetch contracts for matching
+      const { data: contracts } = await supabase
+        .from("contracts")
+        .select("id, name")
+        .is("deleted_at", null);
+
+      // Strategy 1: Build name-based lookup (normalized)
+      const contractsByName = new Map<string, { id: string; name: string }>();
+      contracts?.forEach(c => {
+        const normalized = c.name.toLowerCase().trim();
+        contractsByName.set(normalized, { id: c.id, name: c.name });
+      });
+
+      // Strategy 2: Build full-CEBE and prefix lookup
+      const contractsByFullCEBE = new Map<string, { id: string; name: string }>();
+      const contractsByPrefix = new Map<string, { id: string; name: string }>();
+
       const { data: cebeField } = await supabase
         .from("contract_custom_fields")
         .select("id")
@@ -65,13 +81,6 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         .limit(1)
         .single();
 
-      const { data: contracts } = await supabase
-        .from("contracts")
-        .select("id, name")
-        .is("deleted_at", null);
-
-      // Build CEBE → contract map
-      const cebeToContract = new Map<string, { id: string; name: string }>();
       if (cebeField && contracts) {
         const { data: cebeValues } = await supabase
           .from("contract_custom_field_values")
@@ -83,15 +92,39 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
 
         cebeValues?.forEach(cv => {
           if (cv.field_value) {
-            // Extract numeric parts from CEBE (e.g., "H0475P1290" → ["0475", "1290"])
-            const nums = cv.field_value.match(/\d+/g) || [];
-            nums.forEach(n => {
-              const name = contractMap.get(cv.contract_id);
-              if (name) cebeToContract.set(n, { id: cv.contract_id, name });
-            });
+            const name = contractMap.get(cv.contract_id);
+            if (!name) return;
+            const entry = { id: cv.contract_id, name };
+            // Full CEBE (e.g., "H04A2P1390")
+            const fullCebe = cv.field_value.trim().toUpperCase();
+            contractsByFullCEBE.set(fullCebe, entry);
+            // Extract prefix before 'P' (e.g., "H04A2" from "H04A2P1390")
+            const prefixMatch = fullCebe.match(/^(H\w+?)P\d+$/i);
+            if (prefixMatch) {
+              contractsByPrefix.set(prefixMatch[1], entry);
+            }
           }
         });
       }
+
+      // Helper: match Excel text to contract
+      const matchContract = (rawText: string): { id: string; name: string } | null => {
+        const text = rawText.toLowerCase().trim();
+        // Priority 1: Direct name match
+        for (const [name, contract] of contractsByName) {
+          if (text.includes(name) || name.includes(text)) return contract;
+        }
+        // Priority 2: Full CEBE match (e.g., text contains "H04A2P1390")
+        const upperText = rawText.toUpperCase();
+        for (const [cebe, contract] of contractsByFullCEBE) {
+          if (upperText.includes(cebe)) return contract;
+        }
+        // Priority 3: CEBE prefix match (e.g., text contains "H04A2")
+        for (const [prefix, contract] of contractsByPrefix) {
+          if (upperText.includes(prefix)) return contract;
+        }
+        return null;
+      };
 
       const parsed: ParsedMaintenanceRow[] = [];
       for (let i = headerIdx + 1; i < rows.length; i++) {
@@ -113,15 +146,14 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         if (rawDate instanceof Date && !isNaN(rawDate.getTime())) {
           createdDate = rawDate.toISOString().split("T")[0];
         } else if (rawDate) {
-          const parsed = new Date(rawDate);
-          if (!isNaN(parsed.getTime())) {
-            createdDate = parsed.toISOString().split("T")[0];
+          const pd = new Date(rawDate);
+          if (!isNaN(pd.getTime())) {
+            createdDate = pd.toISOString().split("T")[0];
           } else {
             warnings.push("Fecha no reconocida");
           }
         }
 
-        // Read resolution_date from column D (index 3)
         let resolutionDate: string | null = null;
         const rawResDate = row[3];
         if (rawResDate instanceof Date && !isNaN(rawResDate.getTime())) {
@@ -137,16 +169,13 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         let contractId: string | null = null;
         let contractName: string | null = rawContractText || null;
         if (rawContractText) {
-          const extractedNums = rawContractText.match(/\d+/g) || [];
-          for (const num of extractedNums) {
-            const match = cebeToContract.get(num);
-            if (match) {
-              contractId = match.id;
-              contractName = match.name;
-              break;
-            }
+          const match = matchContract(rawContractText);
+          if (match) {
+            contractId = match.id;
+            contractName = match.name;
+          } else {
+            warnings.push("Contrato no encontrado");
           }
-          if (!contractId) warnings.push("Contrato no encontrado por CEBE");
         }
 
         // Extract evidence links from column N (index 13)
