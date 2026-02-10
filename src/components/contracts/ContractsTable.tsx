@@ -142,6 +142,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   const [ventaMaxValue, setVentaMaxValue] = useState<string>("");
   const [comiteGPStatuses, setComiteGPStatuses] = useState<ComiteGPStatus[]>([]);
   const [comiteGPConfirm, setComiteGPConfirm] = useState<{ contractId: string; contractName: string } | null>(null);
+  const [rechazadaConfirm, setRechazadaConfirm] = useState<{ contractId: string; contractName: string } | null>(null);
   
   // Use external column widths if provided, otherwise use defaults from hook
   const columnWidths = externalColumnWidths || defaultColumnWidths;
@@ -176,6 +177,13 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     if (error) {
       toast.error('Error al actualizar Comité GP');
     } else {
+      // If set to "Rechazada", prompt to move to rejected list
+      if (value === 'Rechazada') {
+        const contract = contracts.find(c => c.id === contractId);
+        if (contract) {
+          setRechazadaConfirm({ contractId, contractName: contract.name });
+        }
+      }
       onRefresh();
     }
   };
@@ -1310,6 +1318,27 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
               setComiteGPConfirm(null);
             }}>
               Sí, Aceptada
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Rechazada confirmation dialog - move to rejected list */}
+      <AlertDialog open={!!rechazadaConfirm} onOpenChange={() => setRechazadaConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mover a listado de Rechazados</AlertDialogTitle>
+            <AlertDialogDescription>
+              El contrato "{rechazadaConfirm?.contractName}" fue marcado como "Rechazada" en Comité GP. ¿Desea moverlo al listado de Rechazados?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>No, mantener aquí</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              setRechazadaConfirm(null);
+              navigate('/contracts?status=en_negociacion&rechazados=true');
+            }}>
+              Sí, ver Rechazados
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
