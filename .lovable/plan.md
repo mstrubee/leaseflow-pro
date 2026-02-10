@@ -1,88 +1,58 @@
 
 
-# Correccion de logica: Salida se ejecuta N meses desde el aviso, no dentro del rango
+## Problem Analysis: CEBE Contract Matching is Fundamentally Broken
 
-## Contexto del cambio
+### Root Cause
 
-Actualmente el sistema calcula la fecha tope de aviso como `rango.end_month - N meses`, implicando que la salida ocurre dentro del rango. La logica correcta es:
+The `MaintenanceExcelUpload.tsx` builds a map to match Excel contract references to database contracts using CEBE codes. The algorithm:
 
-- El **rango de salida** define la ventana donde se PUEDE ejecutar la salida
-- Para poder salir, se debe dar aviso con **N meses de anticipacion**
-- La **fecha tope de aviso** es el limite para dar el aviso (calculada como `rango.end_month - N`)
-- La **salida efectiva** ocurre **N meses despues de la fecha en que se da el aviso**, no necesariamente dentro del rango
+1. Takes each CEBE value (e.g., `H0423P1290`)
+2. Extracts ALL numeric segments: `["0423", "1290"]`
+3. Stores each number as a separate key in a `Map<string, contract>`
 
-Ejemplo: Rango M60-M72, aviso de 12 meses. Si doy aviso en M55, la salida es en M67 (55+12). Si doy aviso en M60 (tope), la salida seria en M72.
+**The problem:** The suffix part (e.g., `1290`, `1390`) is shared across dozens of contracts:
+- `1290` appears in 40+ CEBEs (Autoplanet contracts)
+- `1390` appears in 15+ CEBEs (Agroplanet contracts)
 
-## Cambios requeridos
+This means the last contract processed with `1290` overwrites ALL previous entries for key `"1290"`. When the Excel row is parsed, if the raw text contains any number matching `"1290"`, it gets assigned to whichever contract happened to be processed last — completely wrong.
 
-### 1. MultipleNoticesSection.tsx - Corregir textos y calculo de "Salida Esperada"
+**Example:** Form 2247 should be "Puerto Varas" (CEBE `H04A2P1390`). The code extracts `["04", "2", "1390"]` from the Excel text. But `"1390"` maps to whichever Agroplanet contract was last inserted (e.g., "Melipilla (2026)"), and `"04"` is shared by every single contract.
 
-- Cambiar la descripcion de cada aviso: actualmente dice "X meses antes de la fecha de termino anticipado", debe decir "La salida se ejecutara X meses despues de dar el aviso"
-- Ajustar la etiqueta del rango seleccionado: en vez de solo "Aviso tope: Mes N", agregar contexto de que la salida sera N meses despues del aviso
-- Actualizar `createAlertsFromNotices`: el mensaje de alerta debe reflejar que la salida es N meses despues del aviso, no una fecha fija del rango
+### Fix: Two-Strategy Matching
 
-### 2. TerminationNoticesSection.tsx - Auto-calcular fecha de salida
+**Strategy 1 - Direct name matching (primary):** Compare the Excel text against contract names directly. This is reliable and handles most cases.
 
-- Cuando el usuario registra un aviso (sent/received) con fecha de aviso, **auto-calcular** la "Fecha de Salida Requerida" como `fecha_aviso + N meses`
-- Obtener el valor N del contrato (months_before del aviso configurado o notice_value de la version)
-- Pre-llenar el campo `requiredExitDate` al cambiar `noticeDate`, permitiendo override manual
-- Agregar props para recibir la configuracion de meses de aviso del contrato
+**Strategy 2 - Full CEBE code matching (fallback):** Instead of splitting into individual numbers, match the FULL CEBE code (e.g., `H04A2P1390`) or the first unique numeric part (the 3-4 digit identifier like `0423`, `04A2`) against the Excel text.
 
-### 3. CompactEscalationChart.tsx - Actualizar visualizacion
+### Technical Changes
 
-- Mantener las areas sombreadas como "Rango Salida" (correcto, son las ventanas de salida)
-- Mantener las lineas de "Tope Aviso" (correcto, son los limites para dar aviso)
-- Cuando hay un aviso registrado (terminationNotices), la "Salida Esperada" debe calcularse como `fecha_aviso + N meses`, no como un punto fijo del rango
-- Agregar prop para pasar los meses de aviso (N) para el calculo correcto de la linea de salida esperada
+**File: `src/components/maintenance/MaintenanceExcelUpload.tsx`**
 
-### 4. CommercialConditionsSummary.tsx - Corregir label de fecha
+1. **Build a name-based contract lookup map** — normalize contract names (lowercase, trim) and match against Excel column E text.
 
-- En la seccion "Fecha Tope Aviso" para rangos, aclarar que es la fecha limite para dar aviso
-- Agregar texto explicativo: "La salida se ejecuta N meses despues del aviso"
+2. **Build a full-CEBE lookup map** — map the complete CEBE string (e.g., `H04A2P1390`) to contract, and also map the unique prefix portion (e.g., `H04A2`, `H0423`) as a secondary key.
 
-### 5. createAlertsFromNotices (en MultipleNoticesSection.tsx) - Corregir mensaje
+3. **Remove the broken individual-number extraction** — delete the `nums.forEach(n => cebeToContract.set(n, ...))` logic entirely.
 
-- Actualizar el mensaje de alerta para reflejar la logica correcta
-- En vez de "Fecha limite: [fecha tope]", incluir "Dar aviso antes del [fecha tope]. La salida se ejecutara [N] meses despues del aviso"
+4. **Matching priority in row parsing:**
+   - First: exact/partial name match (Excel text vs contract name)
+   - Second: full CEBE code match (if Excel text contains a CEBE like `H04A2P1390`)
+   - Third: unique CEBE prefix match (first numeric group only, e.g., `0423`)
+   - If none match: warning as before
 
-## Seccion tecnica
+5. **Add a data repair step** — after fixing the upload logic, provide an option or query to identify and correct already-mismatched records in the database.
 
-### Archivos a modificar
+### Data Repair
 
-| Archivo | Cambio |
-|---------|--------|
-| `src/components/contracts/MultipleNoticesSection.tsx` | Textos descriptivos, mensaje de alertas |
-| `src/components/contracts/TerminationNoticesSection.tsx` | Auto-calculo de exit date = notice_date + N meses |
-| `src/components/contracts/CompactEscalationChart.tsx` | Calculo de salida esperada basado en aviso + N |
-| `src/components/contracts/CommercialConditionsSummary.tsx` | Label explicativo en seccion de aviso |
-| `src/pages/ContractDetail.tsx` | Pasar meses de aviso como prop a TerminationNoticesSection |
+A query to identify currently mismatched forms (forms where the stored `contract_name` doesn't correspond to the `contract_id`):
 
-### Logica de calculo
-
-```text
-ANTES (incorrecto):
-  Tope Aviso = rango.end_month - N
-  Salida = dentro del rango (implicito)
-
-DESPUES (correcto):
-  Tope Aviso = rango.end_month - N  (no cambia)
-  Salida Esperada = fecha_aviso_real + N meses
-  
-  Si no hay aviso registrado, se muestra solo el Tope Aviso
-  Si hay aviso registrado, se calcula: salida = aviso + N
+```sql
+SELECT mf.form_number, mf.contract_name as stored_name, c.name as actual_name
+FROM maintenance_forms mf
+JOIN contracts c ON c.id = mf.contract_id
+WHERE mf.deleted_at IS NULL
+AND mf.contract_name != c.name
 ```
 
-### Flujo al registrar aviso
-
-```text
-1. Usuario selecciona fecha de aviso (ej: 15-mar-2028)
-2. Sistema auto-calcula: Salida = 15-mar-2028 + 12 meses = 15-mar-2029
-3. Campo "Fecha de Salida" se pre-llena con 15-mar-2029
-4. Usuario puede modificar si es necesario
-5. Al guardar, el chart muestra la linea de "Salida Esperada" en la fecha correcta
-```
-
-### Sin cambios en base de datos
-
-No se requieren migraciones. Los campos existentes (`required_exit_date`, `notice_date`) ya soportan esta logica. Solo cambia como se calculan y presentan.
+This returned 0 rows (the contract_name is being overwritten with the matched name), meaning the wrong contract_id is silently stored with no way to detect it post-upload. The fix must prevent this at upload time by improving match accuracy and showing the user what each row will be matched to before confirming.
 
