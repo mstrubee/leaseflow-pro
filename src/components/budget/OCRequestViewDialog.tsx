@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Save, Trash2, Plus, Calendar, Check, AlertCircle, Layers, ExternalLink, FileText, Pencil, X } from "lucide-react";
+import { Loader2, Save, Trash2, Plus, Calendar, Check, AlertCircle, Layers, ExternalLink, FileText, Pencil, X, Wrench } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { format, isPast, isToday } from "date-fns";
@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 interface OCRequest {
   id: string;
+  contract_id: string;
   request_number: string;
   request_date: string;
   line_name: string;
@@ -54,6 +55,26 @@ interface EditableAllocation {
   contract_name: string;
   amount_uf: number;
   isNew?: boolean;
+}
+
+interface FormAssignment {
+  id?: string;
+  maintenance_form_id: string | null;
+  form_number: string;
+  amount_uf: number;
+  description: string;
+  isNew?: boolean;
+}
+
+interface AvailableForm {
+  id: string;
+  form_number: string;
+  general_description: string | null;
+  electrical_description: string | null;
+  civil_description: string | null;
+  hvac_description: string | null;
+  fixed_assets_description: string | null;
+  created_date: string | null;
 }
 
 interface Contract {
@@ -113,6 +134,12 @@ export const OCRequestViewDialog = ({
   const [editableAllocations, setEditableAllocations] = useState<EditableAllocation[]>([]);
   const [availableContracts, setAvailableContracts] = useState<Contract[]>([]);
   const [savingAllocations, setSavingAllocations] = useState(false);
+
+  // Form assignments state
+  const [formAssignments, setFormAssignments] = useState<FormAssignment[]>([]);
+  const [availableForms, setAvailableForms] = useState<AvailableForm[]>([]);
+  const [savingForms, setSavingForms] = useState(false);
+  const [loadingForms, setLoadingForms] = useState(false);
   
   const { toast } = useToast();
 
@@ -189,6 +216,33 @@ export const OCRequestViewDialog = ({
         .order("payment_number");
       
       setPaymentPlans((plansData || []) as PaymentPlan[]);
+
+      // Load form assignments
+      const { data: formsData } = await supabase
+        .from("oc_request_forms")
+        .select("id, maintenance_form_id, amount_uf, amount_clp, description")
+        .eq("oc_request_id", requestId);
+      
+      if (formsData && formsData.length > 0) {
+        // Get form numbers
+        const formIds = formsData.filter(f => f.maintenance_form_id).map(f => f.maintenance_form_id);
+        let formNumberMap = new Map<string, string>();
+        if (formIds.length > 0) {
+          const { data: formNames } = await (supabase.from("maintenance_forms" as any) as any)
+            .select("id, form_number")
+            .in("id", formIds);
+          formNames?.forEach((f: any) => formNumberMap.set(f.id, f.form_number));
+        }
+        setFormAssignments(formsData.map(f => ({
+          id: f.id,
+          maintenance_form_id: f.maintenance_form_id,
+          form_number: f.maintenance_form_id ? formNumberMap.get(f.maintenance_form_id) || "?" : "",
+          amount_uf: f.amount_uf || 0,
+          description: f.description || "",
+        })));
+      } else {
+        setFormAssignments([]);
+      }
     } catch (error) {
       console.error("Error loading request:", error);
       toast({ variant: "destructive", title: "Error", description: "No se pudo cargar la solicitud" });
@@ -317,6 +371,104 @@ export const OCRequestViewDialog = ({
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setSavingAllocations(false);
+    }
+  };
+
+  // Load available maintenance forms for the contract
+  const loadAvailableForms = async () => {
+    if (!request) return;
+    setLoadingForms(true);
+    try {
+      const { data } = await (supabase.from("maintenance_forms" as any) as any)
+        .select("id, form_number, general_description, electrical_description, civil_description, hvac_description, fixed_assets_description, created_date")
+        .eq("contract_id", request.contract_id || "")
+        .eq("status", "proceso")
+        .is("deleted_at", null)
+        .order("created_date", { ascending: false });
+      setAvailableForms(data || []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingForms(false);
+    }
+  };
+
+  const handleAddFormAssignment = () => {
+    setFormAssignments(prev => [
+      ...prev,
+      { maintenance_form_id: null, form_number: "", amount_uf: 0, description: "", isNew: true }
+    ]);
+  };
+
+  const handleRemoveFormAssignment = (index: number) => {
+    setFormAssignments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleUpdateFormAssignment = (index: number, field: keyof FormAssignment, value: any) => {
+    setFormAssignments(prev => {
+      const updated = [...prev];
+      if (field === "maintenance_form_id") {
+        if (value === "__none__") {
+          updated[index] = { ...updated[index], maintenance_form_id: null, form_number: "" };
+        } else {
+          const form = availableForms.find(f => f.id === value);
+          const desc = form ? (form.general_description || form.electrical_description || form.civil_description || form.hvac_description || form.fixed_assets_description || "") : "";
+          updated[index] = { 
+            ...updated[index], 
+            maintenance_form_id: value, 
+            form_number: form?.form_number || "",
+            description: updated[index].description || desc
+          };
+        }
+      } else if (field === "amount_uf") {
+        updated[index] = { ...updated[index], amount_uf: parseFloat(value) || 0 };
+      } else if (field === "description") {
+        updated[index] = { ...updated[index], description: value };
+      }
+      return updated;
+    });
+  };
+
+  const handleSaveFormAssignments = async () => {
+    if (!request) return;
+
+    // Validate: items without form must have description
+    for (const fa of formAssignments) {
+      if (!fa.maintenance_form_id && !fa.description.trim()) {
+        toast({ variant: "destructive", title: "Error", description: "Los items sin FORM deben tener una descripción" });
+        return;
+      }
+      if (fa.amount_uf <= 0) {
+        toast({ variant: "destructive", title: "Error", description: "Todos los items deben tener un monto mayor a 0" });
+        return;
+      }
+    }
+
+    setSavingForms(true);
+    try {
+      // Delete existing
+      await supabase.from("oc_request_forms").delete().eq("oc_request_id", request.id);
+
+      // Insert all
+      if (formAssignments.length > 0) {
+        const inserts = formAssignments.map(fa => ({
+          oc_request_id: request.id,
+          maintenance_form_id: fa.maintenance_form_id,
+          amount_uf: Math.round(fa.amount_uf * 10000) / 10000,
+          amount_clp: Math.round(fa.amount_uf * ufValue),
+          description: fa.description || null
+        }));
+        const { error } = await supabase.from("oc_request_forms").insert(inserts);
+        if (error) throw error;
+      }
+
+      toast({ title: "FORMs actualizados" });
+      loadRequest();
+      onRefresh?.();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setSavingForms(false);
     }
   };
 
@@ -454,7 +606,7 @@ export const OCRequestViewDialog = ({
           </div>
         ) : request ? (
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className={`grid w-full ${isMultiContract ? 'grid-cols-4' : 'grid-cols-3'}`}>
+            <TabsList className="grid w-full" style={{ gridTemplateColumns: `repeat(${(isMultiContract ? 4 : 3) + 1}, minmax(0, 1fr))` }}>
               <TabsTrigger value="info">Información</TabsTrigger>
               {isMultiContract && (
                 <TabsTrigger value="contracts" className="gap-1">
@@ -462,6 +614,10 @@ export const OCRequestViewDialog = ({
                   Contratos ({contractAllocations.length})
                 </TabsTrigger>
               )}
+              <TabsTrigger value="forms" className="gap-1" onClick={() => { if (availableForms.length === 0) loadAvailableForms(); }}>
+                <Wrench className="h-3 w-3" />
+                FORMs ({formAssignments.length})
+              </TabsTrigger>
               <TabsTrigger value="lines">Líneas ({budgetLines.length})</TabsTrigger>
               <TabsTrigger value="payments">Pagos ({paymentPlans.length})</TabsTrigger>
             </TabsList>
@@ -809,6 +965,137 @@ export const OCRequestViewDialog = ({
                 <div className="text-center py-4 text-muted-foreground text-sm">
                   Asignación simple a línea: {request.line_name}
                 </div>
+              )}
+            </TabsContent>
+
+            {/* FORMs Tab */}
+            <TabsContent value="forms" className="space-y-4 mt-4">
+              {loadingForms ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                </div>
+              ) : (
+                <>
+                  {formAssignments.length > 0 && (
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>FORM</TableHead>
+                            <TableHead>Descripción</TableHead>
+                            <TableHead className="text-right w-[130px]">Monto (UF)</TableHead>
+                            {!readOnly && request.status === "pending" && <TableHead className="w-[60px]" />}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {formAssignments.map((fa, index) => {
+                            const usedFormIds = formAssignments.filter((_, i) => i !== index).map(f => f.maintenance_form_id).filter(Boolean);
+                            const formsForRow = availableForms.filter(f => f.id === fa.maintenance_form_id || !usedFormIds.includes(f.id));
+                            
+                            return (
+                              <TableRow key={fa.id || `new-${index}`}>
+                                <TableCell className="w-[180px]">
+                                  {!readOnly && request.status === "pending" ? (
+                                    <Select
+                                      value={fa.maintenance_form_id || "__none__"}
+                                      onValueChange={(v) => handleUpdateFormAssignment(index, "maintenance_form_id", v)}
+                                    >
+                                      <SelectTrigger className="h-8 text-xs">
+                                        <SelectValue placeholder="Sin FORM" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="__none__">Sin FORM (libre)</SelectItem>
+                                        {formsForRow.map(f => (
+                                          <SelectItem key={f.id} value={f.id}>
+                                            FORM {f.form_number}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  ) : (
+                                    <span className="font-mono text-sm">
+                                      {fa.form_number ? `FORM ${fa.form_number}` : "Sin FORM"}
+                                    </span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {!readOnly && request.status === "pending" ? (
+                                    <Input
+                                      value={fa.description}
+                                      onChange={(e) => handleUpdateFormAssignment(index, "description", e.target.value)}
+                                      placeholder="Descripción del item"
+                                      className="h-8 text-xs"
+                                    />
+                                  ) : (
+                                    <span className="text-sm">{fa.description || "-"}</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {!readOnly && request.status === "pending" ? (
+                                    <Input
+                                      type="number"
+                                      step="0.01"
+                                      value={fa.amount_uf || ""}
+                                      onChange={(e) => handleUpdateFormAssignment(index, "amount_uf", e.target.value)}
+                                      className="h-8 text-right font-mono w-[120px] text-xs"
+                                      placeholder="0.00"
+                                    />
+                                  ) : (
+                                    <span className="font-mono text-sm">{formatUF(fa.amount_uf)}</span>
+                                  )}
+                                </TableCell>
+                                {!readOnly && request.status === "pending" && (
+                                  <TableCell>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleRemoveFormAssignment(index)}
+                                      className="h-7 px-2 text-destructive hover:text-destructive"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  </TableCell>
+                                )}
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  {formAssignments.length === 0 && (
+                    <div className="text-center py-4 text-muted-foreground text-sm">
+                      No hay FORMs asignados a esta solicitud
+                    </div>
+                  )}
+
+                  {/* Summary */}
+                  {formAssignments.length > 0 && (
+                    <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
+                      <span className="font-medium text-sm">Total FORMs</span>
+                      <span className="font-mono font-medium">
+                        {formatUF(formAssignments.reduce((sum, fa) => sum + fa.amount_uf, 0))}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  {!readOnly && request.status === "pending" && (
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={handleAddFormAssignment} className="gap-1">
+                        <Plus className="h-3 w-3" />
+                        Agregar Item
+                      </Button>
+                      {formAssignments.length > 0 && (
+                        <Button size="sm" onClick={handleSaveFormAssignments} disabled={savingForms} className="gap-1">
+                          {savingForms ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                          Guardar FORMs
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </TabsContent>
 

@@ -2814,6 +2814,44 @@ export type Database = {
           },
         ]
       }
+      oc_request_forms: {
+        Row: {
+          amount_clp: number
+          amount_uf: number
+          created_at: string
+          description: string | null
+          id: string
+          maintenance_form_id: string
+          oc_request_id: string
+        }
+        Insert: {
+          amount_clp?: number
+          amount_uf?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          maintenance_form_id: string
+          oc_request_id: string
+        }
+        Update: {
+          amount_clp?: number
+          amount_uf?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          maintenance_form_id?: string
+          oc_request_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "oc_request_forms_oc_request_id_fkey"
+            columns: ["oc_request_id"]
+            isOneToOne: false
+            referencedRelation: "oc_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       oc_request_templates: {
         Row: {
           created_at: string
