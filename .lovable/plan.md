@@ -1,58 +1,69 @@
 
 
-## Problem Analysis: CEBE Contract Matching is Fundamentally Broken
+## Matching de contratos con IA para carga de FORMs
 
-### Root Cause
+### Problema actual
+El matching actual falla porque muchos textos del Excel (columna E) no coinciden directamente con el nombre del contrato ni contienen el CEBE completo. Hay multiples "Contrato no encontrado".
 
-The `MaintenanceExcelUpload.tsx` builds a map to match Excel contract references to database contracts using CEBE codes. The algorithm:
+### Solucion propuesta
+Crear un edge function `match-contracts` que use IA (Lovable AI) para hacer matching inteligente. El flujo sera:
 
-1. Takes each CEBE value (e.g., `H0423P1290`)
-2. Extracts ALL numeric segments: `["0423", "1290"]`
-3. Stores each number as a separate key in a `Map<string, contract>`
+1. **Recopilar los no-matcheados**: Despues del matching local actual (nombre directo, CEBE completo, prefijo), las filas que queden sin match se envian en batch a la edge function.
 
-**The problem:** The suffix part (e.g., `1290`, `1390`) is shared across dozens of contracts:
-- `1290` appears in 40+ CEBEs (Autoplanet contracts)
-- `1390` appears in 15+ CEBEs (Agroplanet contracts)
+2. **Edge function `match-contracts`**: Recibe la lista de textos sin match + la lista completa de contratos con sus CEBEs. Usa el modelo `google/gemini-3-flash-preview` con tool calling para devolver un mapeo estructurado `{excelText -> contractId}`.
 
-This means the last contract processed with `1290` overwrites ALL previous entries for key `"1290"`. When the Excel row is parsed, if the raw text contains any number matching `"1290"`, it gets assigned to whichever contract happened to be processed last — completely wrong.
+3. **Prompt de la IA**: Le indica que compare los primeros 4 digitos del texto de tienda del Excel contra los digitos 2-5 del CEBE (e.g., CEBE `H0428P1290` -> `0428`), y que ademas valide coincidencia parcial del nombre de tienda con el nombre del contrato. Devuelve solo matches con alta confianza.
 
-**Example:** Form 2247 should be "Puerto Varas" (CEBE `H04A2P1390`). The code extracts `["04", "2", "1390"]` from the Excel text. But `"1390"` maps to whichever Agroplanet contract was last inserted (e.g., "Melipilla (2026)"), and `"04"` is shared by every single contract.
+4. **Integracion en `MaintenanceExcelUpload.tsx`**: Las filas sin match tras el paso local se agrupan y se envian a la edge function. Los resultados se aplican a las filas correspondientes.
 
-### Fix: Two-Strategy Matching
+### Cambios tecnicos
 
-**Strategy 1 - Direct name matching (primary):** Compare the Excel text against contract names directly. This is reliable and handles most cases.
+**Archivo nuevo: `supabase/functions/match-contracts/index.ts`**
+- Recibe: `{ unmatchedTexts: string[], contracts: {id, name, cebe}[] }`
+- Usa Lovable AI con tool calling para devolver `{ matches: [{text, contractId}] }`
+- Prompt en espanol indicando las reglas de matching: primeros 4 digitos del Excel vs posiciones 2-5 del CEBE + validacion de nombre
+- Manejo de errores 429/402
 
-**Strategy 2 - Full CEBE code matching (fallback):** Instead of splitting into individual numbers, match the FULL CEBE code (e.g., `H04A2P1390`) or the first unique numeric part (the 3-4 digit identifier like `0423`, `04A2`) against the Excel text.
+**Archivo modificado: `supabase/config.toml`**
+- Agregar `[functions.match-contracts]` con `verify_jwt = false`
 
-### Technical Changes
+**Archivo modificado: `src/components/maintenance/MaintenanceExcelUpload.tsx`**
+- Despues del matching local, recopilar filas sin `contract_id`
+- Llamar a la edge function con los textos no matcheados + lista de contratos/CEBEs
+- Aplicar los resultados de IA a las filas
+- Mostrar indicador visual (icono de IA) en las filas matcheadas por IA vs las matcheadas localmente
+- Agregar estado de loading "Buscando contratos con IA..." durante la llamada
 
-**File: `src/components/maintenance/MaintenanceExcelUpload.tsx`**
+### Flujo de matching (prioridad)
 
-1. **Build a name-based contract lookup map** — normalize contract names (lowercase, trim) and match against Excel column E text.
-
-2. **Build a full-CEBE lookup map** — map the complete CEBE string (e.g., `H04A2P1390`) to contract, and also map the unique prefix portion (e.g., `H04A2`, `H0423`) as a secondary key.
-
-3. **Remove the broken individual-number extraction** — delete the `nums.forEach(n => cebeToContract.set(n, ...))` logic entirely.
-
-4. **Matching priority in row parsing:**
-   - First: exact/partial name match (Excel text vs contract name)
-   - Second: full CEBE code match (if Excel text contains a CEBE like `H04A2P1390`)
-   - Third: unique CEBE prefix match (first numeric group only, e.g., `0423`)
-   - If none match: warning as before
-
-5. **Add a data repair step** — after fixing the upload logic, provide an option or query to identify and correct already-mismatched records in the database.
-
-### Data Repair
-
-A query to identify currently mismatched forms (forms where the stored `contract_name` doesn't correspond to the `contract_id`):
-
-```sql
-SELECT mf.form_number, mf.contract_name as stored_name, c.name as actual_name
-FROM maintenance_forms mf
-JOIN contracts c ON c.id = mf.contract_id
-WHERE mf.deleted_at IS NULL
-AND mf.contract_name != c.name
+```text
+Fila Excel (col E)
+    |
+    v
+1. Match por nombre directo
+    |-- Si: asignar contrato
+    |-- No: continuar
+    v
+2. Match por CEBE completo en texto
+    |-- Si: asignar contrato
+    |-- No: continuar
+    v  
+3. Match por prefijo CEBE
+    |-- Si: asignar contrato
+    |-- No: acumular para IA
+    v
+4. Batch a edge function (IA)
+    |-- Compara 4 primeros digitos del Excel
+    |   vs digitos 2-5 del CEBE
+    |-- Valida nombre de tienda
+    |-- Retorna matches con confianza
+    v
+5. Sin match -> warning "Contrato no encontrado"
 ```
 
-This returned 0 rows (the contract_name is being overwritten with the matched name), meaning the wrong contract_id is silently stored with no way to detect it post-upload. The fix must prevent this at upload time by improving match accuracy and showing the user what each row will be matched to before confirming.
+### Ejemplo concreto
+- Excel dice: `0428 - 10 De Julio`
+- CEBE: `H0428P1290` -> digitos 2-5 = `0428` (coincide)
+- Nombre contrato: `10 De Julio` (coincide)
+- Resultado: match con alta confianza
 
