@@ -1,69 +1,60 @@
 
 
-## Matching de contratos con IA para carga de FORMs
+## Fix: Contract Matching for "La Florida 1" and "Valparaiso"
 
-### Problema actual
-El matching actual falla porque muchos textos del Excel (columna E) no coinciden directamente con el nombre del contrato ni contienen el CEBE completo. Hay multiples "Contrato no encontrado".
+### Root Cause
 
-### Solucion propuesta
-Crear un edge function `match-contracts` que use IA (Lovable AI) para hacer matching inteligente. El flujo sera:
+Two bugs in the local matching logic in `MaintenanceExcelUpload.tsx`:
 
-1. **Recopilar los no-matcheados**: Despues del matching local actual (nombre directo, CEBE completo, prefijo), las filas que queden sin match se envian en batch a la edge function.
+1. **No accent normalization**: "Valparaíso" (Excel, with accent) does not match "Valparaiso" (contract, without accent) via `.includes()`.
+2. **No local 4-digit CEBE matching**: The Excel text "0410 TIENDA LA FLORIDA" contains `0410`, which corresponds to CEBE `H0410P1290` (digits 2-5 = `0410`). But the current prefix match looks for `H0410` which isn't in the Excel text. There's no step that extracts just the leading digits from the Excel and compares them to CEBE positions 2-5.
+3. **Ambiguous name match**: Three contracts contain "la florida", so name-only matching picks the wrong one.
 
-2. **Edge function `match-contracts`**: Recibe la lista de textos sin match + la lista completa de contratos con sus CEBEs. Usa el modelo `google/gemini-3-flash-preview` con tool calling para devolver un mapeo estructurado `{excelText -> contractId}`.
+### Solution
 
-3. **Prompt de la IA**: Le indica que compare los primeros 4 digitos del texto de tienda del Excel contra los digitos 2-5 del CEBE (e.g., CEBE `H0428P1290` -> `0428`), y que ademas valide coincidencia parcial del nombre de tienda con el nombre del contrato. Devuelve solo matches con alta confianza.
+Add two improvements to the local matching in `matchContract()`, before falling back to AI:
 
-4. **Integracion en `MaintenanceExcelUpload.tsx`**: Las filas sin match tras el paso local se agrupan y se envian a la edge function. Los resultados se aplican a las filas correspondientes.
+**1. Accent normalization utility**
 
-### Cambios tecnicos
-
-**Archivo nuevo: `supabase/functions/match-contracts/index.ts`**
-- Recibe: `{ unmatchedTexts: string[], contracts: {id, name, cebe}[] }`
-- Usa Lovable AI con tool calling para devolver `{ matches: [{text, contractId}] }`
-- Prompt en espanol indicando las reglas de matching: primeros 4 digitos del Excel vs posiciones 2-5 del CEBE + validacion de nombre
-- Manejo de errores 429/402
-
-**Archivo modificado: `supabase/config.toml`**
-- Agregar `[functions.match-contracts]` con `verify_jwt = false`
-
-**Archivo modificado: `src/components/maintenance/MaintenanceExcelUpload.tsx`**
-- Despues del matching local, recopilar filas sin `contract_id`
-- Llamar a la edge function con los textos no matcheados + lista de contratos/CEBEs
-- Aplicar los resultados de IA a las filas
-- Mostrar indicador visual (icono de IA) en las filas matcheadas por IA vs las matcheadas localmente
-- Agregar estado de loading "Buscando contratos con IA..." durante la llamada
-
-### Flujo de matching (prioridad)
-
-```text
-Fila Excel (col E)
-    |
-    v
-1. Match por nombre directo
-    |-- Si: asignar contrato
-    |-- No: continuar
-    v
-2. Match por CEBE completo en texto
-    |-- Si: asignar contrato
-    |-- No: continuar
-    v  
-3. Match por prefijo CEBE
-    |-- Si: asignar contrato
-    |-- No: acumular para IA
-    v
-4. Batch a edge function (IA)
-    |-- Compara 4 primeros digitos del Excel
-    |   vs digitos 2-5 del CEBE
-    |-- Valida nombre de tienda
-    |-- Retorna matches con confianza
-    v
-5. Sin match -> warning "Contrato no encontrado"
+Add a `normalize()` helper that strips diacritics:
+```typescript
+const normalize = (s: string) =>
+  s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 ```
 
-### Ejemplo concreto
-- Excel dice: `0428 - 10 De Julio`
-- CEBE: `H0428P1290` -> digitos 2-5 = `0428` (coincide)
-- Nombre contrato: `10 De Julio` (coincide)
-- Resultado: match con alta confianza
+Apply it in the name matching step so "valparaíso" matches "valparaiso".
 
+**2. New Priority 2.5: Local 4-digit CEBE match**
+
+Between the current full-CEBE match and the prefix match, add a step that:
+- Extracts the first 4-digit number from the Excel text (e.g., `0410` from "0410 TIENDA LA FLORIDA")
+- Compares it against digits 2-5 of each contract's CEBE (e.g., `H0410P1290` positions 1-4 = `0410`)
+- If exactly ONE contract matches on digits AND the name has partial overlap, return that contract
+- If multiple contracts match on digits (e.g., multiple "0410" CEBEs), use name similarity to disambiguate
+
+**3. Build a cebeDigits-to-contracts map**
+
+During the CEBE loading phase, also build a `Map<string, Array<{id, name}>>` keyed by the 4 digits at positions 2-5 of each CEBE. This allows fast lookup.
+
+### Technical Changes
+
+**File: `src/components/maintenance/MaintenanceExcelUpload.tsx`**
+
+- Add `normalize()` function for accent-insensitive comparison
+- Update Priority 1 (name matching) to use `normalize()` on both sides
+- Build `contractsByDigits` map (CEBE[1..5] as 4-char key to array of contracts)
+- Add Priority 2.5: extract leading 4 digits from Excel text, look up in `contractsByDigits`, disambiguate by normalized name if multiple matches
+- Keep existing AI fallback as last resort (unchanged)
+
+### Updated Matching Priority
+
+```text
+1. Name match (now accent-normalized)
+2. Full CEBE in text (e.g., "H04A2P1390")
+3. 4-digit CEBE match (NEW: "0410" vs CEBE[1..5])
+   - If 1 match: use it
+   - If multiple: pick best by name similarity
+4. CEBE prefix match (e.g., "H04A2")
+5. AI fallback (edge function)
+6. Warning: "Contrato no encontrado"
+```
