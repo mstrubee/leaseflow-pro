@@ -1016,7 +1016,7 @@ const Contracts = () => {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-4">
+      <main className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-4">
         {/* Search and Filters */}
         <Card className="p-4 space-y-4">
           <div className="flex flex-wrap items-end gap-3">
