@@ -155,6 +155,7 @@ const Contracts = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [comiteGPStatuses, setComiteGPStatuses] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
+  const [customFieldsByContract, setCustomFieldsByContract] = useState<Record<string, { cebe?: string; codigo?: string }>>({});
 
   // Read filters from URL params
   const searchTerm = searchParams.get("search") || "";
@@ -242,6 +243,7 @@ const Contracts = () => {
       loadContracts();
       loadCompanies();
       loadComiteGPStatuses();
+      loadCustomFields();
     }
   }, [user]);
 
@@ -262,9 +264,49 @@ const Contracts = () => {
     setCompanies(data || []);
   };
 
+  const loadCustomFields = async () => {
+    // Load CEBE and Codigo custom fields
+    const { data: fields } = await supabase
+      .from("contract_custom_fields")
+      .select("id, field_name")
+      .in("field_name", ["cebe", "codigo", "CEBE", "Codigo", "Código"])
+      .eq("is_active", true);
+
+    if (!fields || fields.length === 0) return;
+
+    const fieldIds = fields.map(f => f.id);
+    const fieldNameMap = new Map<string, string>();
+    fields.forEach(f => fieldNameMap.set(f.id, f.field_name.toLowerCase()));
+
+    // Fetch all values in batches
+    let allValues: Array<{ contract_id: string; field_id: string; field_value: string | null }> = [];
+    for (let i = 0; i < fieldIds.length; i += 5) {
+      const batch = fieldIds.slice(i, i + 5);
+      const { data: values } = await supabase
+        .from("contract_custom_field_values")
+        .select("contract_id, field_id, field_value")
+        .in("field_id", batch);
+      if (values) allValues = allValues.concat(values);
+    }
+
+    const result: Record<string, { cebe?: string; codigo?: string }> = {};
+    allValues.forEach(v => {
+      if (!v.field_value) return;
+      const fieldName = fieldNameMap.get(v.field_id);
+      if (!result[v.contract_id]) result[v.contract_id] = {};
+      if (fieldName === "cebe") {
+        result[v.contract_id].cebe = v.field_value;
+      } else if (fieldName === "codigo" || fieldName === "código") {
+        result[v.contract_id].codigo = v.field_value;
+      }
+    });
+
+    setCustomFieldsByContract(result);
+  };
+
   useEffect(() => {
     filterAndSortContracts();
-  }, [searchTerm, statusFilter, contracts, operationFilter, obraFilter, patenteFilter, proyectoFilter, ubicacionFilter, costoArriendoFilter, companyFilter, atencionEspecialFilter, negotiationSubcategoryFilter, comiteGPFilter, rechazadosFilter, sortField, sortDirection]);
+  }, [searchTerm, statusFilter, contracts, operationFilter, obraFilter, patenteFilter, proyectoFilter, ubicacionFilter, costoArriendoFilter, companyFilter, atencionEspecialFilter, negotiationSubcategoryFilter, comiteGPFilter, rechazadosFilter, sortField, sortDirection, customFieldsByContract]);
 
   const loadContracts = async () => {
     const { data } = await supabase
@@ -377,11 +419,19 @@ const Contracts = () => {
   const filterAndSortContracts = () => {
     let filtered = contracts;
 
-    // Text search
+    // Text search - includes name, CEBE, Codigo, address, commune
     if (searchTerm) {
-      filtered = filtered.filter((contract) =>
-        contract.name.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter((contract) => {
+        if (contract.name.toLowerCase().includes(term)) return true;
+        const address = contract.contract_addresses?.[0];
+        if (address?.commune?.toLowerCase().includes(term)) return true;
+        if (address?.street?.toLowerCase().includes(term)) return true;
+        const cf = customFieldsByContract[contract.id];
+        if (cf?.cebe?.toLowerCase().includes(term)) return true;
+        if (cf?.codigo?.toLowerCase().includes(term)) return true;
+        return false;
+      });
     }
 
     // Status filter - special handling for "firmado" to include expired but operating
@@ -1023,7 +1073,7 @@ const Contracts = () => {
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar contratos..."
+                placeholder="Buscar por nombre, CEBE, código o comuna..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -1283,6 +1333,7 @@ const Contracts = () => {
             sortOrder={sortDirection as SortOrder}
             onSort={handleSort}
             columnWidths={columnWidths}
+            customFieldsByContract={customFieldsByContract}
           />
         ) : (
           <Card className="p-12">
