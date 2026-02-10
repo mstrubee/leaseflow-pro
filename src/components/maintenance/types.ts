@@ -71,6 +71,7 @@ export interface ParsedMaintenanceRow {
   fixed_assets_description: string | null;
   additional_comments: string | null;
   evidence_links: string[];
+  ambiguousCandidates?: { id: string; name: string }[];
   errors: string[];
   warnings: string[];
 }

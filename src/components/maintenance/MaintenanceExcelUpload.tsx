@@ -123,26 +123,26 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
       }
 
       // Helper: match Excel text to contract
-      const matchContract = (rawText: string): { id: string; name: string } | null => {
+      const matchContract = (rawText: string): { match: { id: string; name: string } | null; ambiguous?: { id: string; name: string }[] } => {
         const normText = normalize(rawText);
         // Priority 1: Direct name match (accent-normalized)
         for (const [name, contract] of contractsByName) {
-          if (normText.includes(name) || name.includes(normText)) return contract;
+          if (normText.includes(name) || name.includes(normText)) return { match: contract };
         }
         // Priority 2: Full CEBE match (e.g., text contains "H04A2P1390")
         const upperText = rawText.toUpperCase();
         for (const [cebe, contract] of contractsByFullCEBE) {
-          if (upperText.includes(cebe)) return contract;
+          if (upperText.includes(cebe)) return { match: contract };
         }
         // Priority 3: 4-digit CEBE match (e.g., "0410" from "0410 TIENDA LA FLORIDA")
         const excelDigits = rawText.trim().match(/^\d{4}/)?.[0];
         if (excelDigits && contractsByDigits.has(excelDigits)) {
           const candidates = contractsByDigits.get(excelDigits)!;
-          if (candidates.length === 1) return candidates[0];
+          if (candidates.length === 1) return { match: candidates[0] };
           // Disambiguate by name similarity
           for (const c of candidates) {
             if (normText.includes(normalize(c.name)) || normalize(c.name).includes(normText)) {
-              return c;
+              return { match: c };
             }
           }
           // Try partial word overlap
@@ -154,15 +154,23 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
             const score = words.filter(w => cWords.some(cw => cw.includes(w) || w.includes(cw))).length;
             if (score > bestScore) { bestScore = score; best = c; }
           }
-          if (best) return best;
-          // If still ambiguous, return first candidate
-          return candidates[0];
+          // Only use best if score is significantly better than others
+          if (best && bestScore > 0) {
+            const scores = candidates.map(c => {
+              const cWords = normalize(c.name).split(/\s+/);
+              return words.filter(w => cWords.some(cw => cw.includes(w) || w.includes(cw))).length;
+            });
+            const tiedCount = scores.filter(s => s === bestScore).length;
+            if (tiedCount === 1) return { match: best };
+          }
+          // Ambiguous: return candidates for user resolution
+          return { match: null, ambiguous: candidates };
         }
         // Priority 4: CEBE prefix match (e.g., text contains "H04A2")
         for (const [prefix, contract] of contractsByPrefix) {
-          if (upperText.includes(prefix)) return contract;
+          if (upperText.includes(prefix)) return { match: contract };
         }
-        return null;
+        return { match: null };
       };
 
       const parsed: ParsedMaintenanceRow[] = [];
@@ -207,11 +215,15 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         const rawContractText = String(row[4] ?? "").trim();
         let contractId: string | null = null;
         let contractName: string | null = rawContractText || null;
+        let ambiguousCandidates: { id: string; name: string }[] | undefined;
         if (rawContractText) {
-          const match = matchContract(rawContractText);
-          if (match) {
-            contractId = match.id;
-            contractName = match.name;
+          const result = matchContract(rawContractText);
+          if (result.match) {
+            contractId = result.match.id;
+            contractName = result.match.name;
+          } else if (result.ambiguous) {
+            ambiguousCandidates = result.ambiguous;
+            warnings.push("CEBE duplicado — seleccione contrato");
           } else {
             warnings.push("Contrato no encontrado");
           }
@@ -234,6 +246,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
           resolution_date: resolutionDate,
           contract_name: contractName || null,
           contract_id: contractId,
+          ambiguousCandidates,
           general_description: String(row[6] ?? "").trim() || null,
           electrical_description: String(row[7] ?? "").trim() || null,
           civil_description: String(row[8] ?? "").trim() || null,
@@ -247,7 +260,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
       }
 
       // AI matching for unmatched rows
-      const unmatchedRows = parsed.filter(r => !r.contract_id && r.contract_name);
+      const unmatchedRows = parsed.filter(r => !r.contract_id && r.contract_name && !r.ambiguousCandidates);
       if (unmatchedRows.length > 0 && contracts?.length) {
         setParsedRows(parsed);
         setAiLoading(true);
@@ -371,9 +384,27 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
     }
   };
 
+  const ambiguousCount = parsedRows.filter(r => r.ambiguousCandidates && !r.contract_id).length;
   const errorCount = parsedRows.filter(r => r.errors.length > 0).length;
-  const warningCount = parsedRows.filter(r => r.warnings.length > 0).length;
-  const validCount = parsedRows.filter(r => r.errors.length === 0).length;
+  const warningCount = parsedRows.filter(r => r.warnings.length > 0 && !r.ambiguousCandidates).length;
+  const validCount = parsedRows.filter(r => r.errors.length === 0 && !(r.ambiguousCandidates && !r.contract_id)).length;
+
+  const resolveAmbiguous = (rowIndex: number, contract: { id: string; name: string }) => {
+    setParsedRows(prev => prev.map(r =>
+      r.rowIndex === rowIndex
+        ? { ...r, contract_id: contract.id, contract_name: contract.name, warnings: r.warnings.filter(w => w !== "CEBE duplicado — seleccione contrato") }
+        : r
+    ));
+  };
+
+  const resolveAllAmbiguous = (candidateIds: string[], contract: { id: string; name: string }) => {
+    setParsedRows(prev => prev.map(r => {
+      if (r.ambiguousCandidates && !r.contract_id && r.ambiguousCandidates.some(c => candidateIds.includes(c.id))) {
+        return { ...r, contract_id: contract.id, contract_name: contract.name, warnings: r.warnings.filter(w => w !== "CEBE duplicado — seleccione contrato") };
+      }
+      return r;
+    }));
+  };
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v); }}>
@@ -405,9 +436,10 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
           </div>
         ) : (
           <>
-            <div className="flex gap-4 text-sm">
+            <div className="flex gap-4 text-sm flex-wrap">
               <span className="flex items-center gap-1"><CheckCircle className="h-4 w-4 text-green-600" /> {validCount} válidos</span>
-              {warningCount > 0 && <span className="flex items-center gap-1"><AlertTriangle className="h-4 w-4 text-yellow-600" /> {warningCount} advertencias</span>}
+              {ambiguousCount > 0 && <span className="flex items-center gap-1 text-orange-600"><AlertTriangle className="h-4 w-4" /> {ambiguousCount} duplicados por resolver</span>}
+              {warningCount > 0 && <span className="flex items-center gap-1 text-yellow-600"><AlertTriangle className="h-4 w-4" /> {warningCount} advertencias</span>}
               {errorCount > 0 && <span className="flex items-center gap-1 text-destructive"><AlertTriangle className="h-4 w-4" /> {errorCount} errores</span>}
             </div>
 
@@ -427,7 +459,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
                 </TableHeader>
                 <TableBody>
                   {parsedRows.map((row) => (
-                    <TableRow key={row.rowIndex} className={row.errors.length > 0 ? "bg-destructive/10" : row.warnings.length > 0 ? "bg-yellow-50" : ""}>
+                    <TableRow key={row.rowIndex} className={row.errors.length > 0 ? "bg-destructive/10" : (row.ambiguousCandidates && !row.contract_id) ? "bg-orange-50" : row.warnings.length > 0 ? "bg-yellow-50" : ""}>
                       <TableCell className="font-mono text-xs">{row.form_number}</TableCell>
                       <TableCell>
                         <Badge variant={row.status === "solucionado" ? "default" : "secondary"} className="text-xs">
@@ -436,9 +468,50 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
                       </TableCell>
                       <TableCell className="text-xs">{row.created_date || "-"}</TableCell>
                       <TableCell className="text-xs">
-                        {row.contract_name || "-"}
-                        {row.contract_id && !(row as any).aiMatched && <CheckCircle className="h-3 w-3 text-green-600 inline ml-1" />}
-                        {row.contract_id && (row as any).aiMatched && <span title="Matcheado por IA"><Sparkles className="h-3 w-3 text-primary inline ml-1" /></span>}
+                        {row.ambiguousCandidates && !row.contract_id ? (
+                          <div className="space-y-1">
+                            <span className="text-orange-600 font-medium text-[11px] block">CEBE duplicado — Seleccione:</span>
+                            <div className="flex flex-col gap-1">
+                              {row.ambiguousCandidates.map(c => (
+                                <button
+                                  key={c.id}
+                                  onClick={() => resolveAmbiguous(row.rowIndex, c)}
+                                  className="text-left text-[11px] px-2 py-1 rounded border border-border hover:bg-accent hover:text-accent-foreground transition-colors"
+                                >
+                                  {c.name}
+                                </button>
+                              ))}
+                            </div>
+                            <button
+                              onClick={() => {
+                                const candidateIds = row.ambiguousCandidates!.map(c => c.id);
+                                // Show a small dialog-like choice for "apply all"
+                                const choice = row.ambiguousCandidates![0];
+                                // For "apply all", let user pick which one via a prompt-like approach
+                                // We'll use the first candidate as default — but show both options
+                                resolveAllAmbiguous(candidateIds, choice);
+                              }}
+                              className="text-[10px] text-muted-foreground underline hover:text-foreground"
+                            >
+                              Aplicar "{row.ambiguousCandidates[0].name}" a todos los similares
+                            </button>
+                            {row.ambiguousCandidates.length > 1 && (
+                              <button
+                                onClick={() => resolveAllAmbiguous(row.ambiguousCandidates!.map(c => c.id), row.ambiguousCandidates![1])}
+                                className="text-[10px] text-muted-foreground underline hover:text-foreground"
+                              >
+                                Aplicar "{row.ambiguousCandidates[1].name}" a todos los similares
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <>
+                            {row.contract_name || "-"}
+                            {row.contract_id && !(row as any).aiMatched && <CheckCircle className="h-3 w-3 text-green-600 inline ml-1" />}
+                            {row.contract_id && (row as any).aiMatched && <span title="Matcheado por IA"><Sparkles className="h-3 w-3 text-primary inline ml-1" /></span>}
+                            {row.contract_id && row.ambiguousCandidates && <span title="Resuelto manualmente" className="text-orange-600 text-[10px] ml-1">(manual)</span>}
+                          </>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-xs">{detectMaintenanceType(row)}</Badge>
@@ -465,9 +538,12 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         )}
 
         {parsedRows.length > 0 && (
-          <DialogFooter>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            {ambiguousCount > 0 && (
+              <p className="text-xs text-orange-600 mr-auto">⚠ Resuelva los {ambiguousCount} CEBE duplicados antes de cargar</p>
+            )}
             <Button variant="outline" onClick={() => { reset(); }}>Cancelar</Button>
-            <Button onClick={handleInsert} disabled={inserting || validCount === 0}>
+            <Button onClick={handleInsert} disabled={inserting || validCount === 0 || ambiguousCount > 0}>
               {inserting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Cargando...</> : `Cargar ${validCount} FORMs`}
             </Button>
           </DialogFooter>
