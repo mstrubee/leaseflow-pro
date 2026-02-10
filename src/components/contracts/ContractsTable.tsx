@@ -128,9 +128,10 @@ interface ContractsTableProps {
   sortOrder?: SortOrder;
   onSort?: (field: ContractSortField) => void;
   columnWidths?: Record<string, number>;
+  customFieldsByContract?: Record<string, { cebe?: string; codigo?: string }>;
 }
 
-export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateField, onRefresh, sortField, sortOrder, onSort, columnWidths: externalColumnWidths }: ContractsTableProps) {
+export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateField, onRefresh, sortField, sortOrder, onSort, columnWidths: externalColumnWidths, customFieldsByContract }: ContractsTableProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { ufValue, convertUFToPesos, convertPesosToUF } = useEconomicIndicators();
@@ -538,7 +539,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   };
 
   return (
-    <div className="rounded-md border overflow-hidden" style={{ width: "120%" }}>
+    <div className="rounded-md border overflow-hidden" style={{ width: "108%" }}>
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/50">
@@ -701,6 +702,15 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                     />
                     <div className="flex-1">
                       <div className="font-medium text-sm">{contract.name}</div>
+                      {(() => {
+                        const cf = customFieldsByContract?.[contract.id];
+                        const parts = [cf?.cebe, cf?.codigo].filter(Boolean);
+                        return parts.length > 0 ? (
+                          <div className="text-[10px] text-muted-foreground/70 font-mono">
+                            {parts.join(" · ")}
+                          </div>
+                        ) : null;
+                      })()}
                       {contract.contract_companies && contract.contract_companies.length > 0 && (
                         <div className="text-[10px] text-muted-foreground">
                           {contract.contract_companies.map(cc => cc.companies?.name).filter(Boolean).join(", ")}
