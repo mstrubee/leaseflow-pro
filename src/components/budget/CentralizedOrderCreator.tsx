@@ -689,7 +689,7 @@ export const CentralizedOrderCreator = ({
   
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>
             {mode === "request" ? "Nueva Solicitud de OC" : "Nueva Orden de Compra"}
