@@ -116,7 +116,7 @@ interface Contract {
   termination_notices?: TerminationNotice[];
 }
 
-export type ContractSortField = "name" | "empresa" | "ubicacion" | "costo_arriendo" | "duracion" | "termino" | "aviso" | "categoria" | "clasificacion" | "venta_estimada" | "end_date" | "notice_deadline" | null;
+export type ContractSortField = "name" | "empresa" | "ubicacion" | "costo_arriendo" | "duracion" | "termino" | "aviso" | "categoria" | "clasificacion" | "venta_estimada" | "comite_gp" | "end_date" | "notice_deadline" | null;
 
 interface ContractsTableProps {
   contracts: Contract[];
@@ -561,7 +561,16 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
             {isNegociacionView && (
               <>
                 <SortableTableHead
-                  label="Categoría"
+                  label="Comité GP"
+                  sortKey="comite_gp"
+                  currentSortKey={sortField || null}
+                  currentSortOrder={sortOrder || null}
+                  onSort={handleSort}
+                  align="center"
+                  style={getColStyle("comite_gp")}
+                />
+                <SortableTableHead
+                  label="Estado"
                   sortKey="categoria"
                   currentSortKey={sortField || null}
                   currentSortOrder={sortOrder || null}
@@ -588,7 +597,6 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   align="center"
                   style={getColStyle("venta_estimada")}
                 />
-                <TableHead className="font-semibold text-center" style={getColStyle("comite_gp")}>Comité GP</TableHead>
               </>
             )}
             <SortableTableHead
@@ -742,6 +750,28 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 </TableCell>
                 {isNegociacionView && (
                   <>
+                    <TableCell className="text-center min-w-[120px]" onClick={(e) => e.stopPropagation()}>
+                      <Select
+                        value={contract.comite_gp_status || ''}
+                        onValueChange={(value) => handleComiteGPChange(contract.id, value)}
+                      >
+                        <SelectTrigger
+                          className={`h-7 text-xs w-[110px] font-medium ${getComiteGPColor(contract.comite_gp_status || null)}`}
+                        >
+                          <SelectValue placeholder="Seleccionar" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {comiteGPStatuses.map(s => (
+                            <SelectItem key={s.id} value={s.name} className="text-xs">
+                              <span className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full bg-${s.color}-500`} />
+                                {s.name}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
                     <TableCell className="text-center min-w-[130px]" onClick={(e) => e.stopPropagation()}>
                       <Select 
                         value={contract.negotiation_subcategory || 'negociacion_contrato'} 
@@ -898,7 +928,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                                 const methodology = currentVersion.gastos_comunes_methodology || "uf_m2";
                                 
                                 // Gastos comunes
-                                let gastosComunesTotal = 0;
+                                let gastosComunes = 0;
                                 if (methodology === "percentage") {
                                   const totalCentro = currentVersion.gastos_comunes_total_centro || 0;
                                   const percentage = currentVersion.gastos_comunes_percentage || 0;
@@ -907,63 +937,48 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                                   const calculatedAmount = (totalCentro * percentage) / 100;
                                   if (topeValue && topeValue > 0) {
                                     const effectiveTope = topeType === "uf_m2" && superficie > 0 ? topeValue * superficie : topeValue;
-                                    gastosComunesTotal = Math.min(calculatedAmount, effectiveTope);
+                                    gastosComunes = Math.min(calculatedAmount, effectiveTope);
                                   } else {
-                                    gastosComunesTotal = calculatedAmount;
+                                    gastosComunes = calculatedAmount;
                                   }
                                 } else {
                                   const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
                                   const gastosMlFrente = hasExtended ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente : 0;
                                   const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
                                   const adicionalAdmin = hasExtended ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100) : 0;
-                                  const fixedAdminUf = currentVersion.gastos_comunes_fixed_admin_uf || 0;
-                                  gastosComunesTotal = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin + fixedAdminUf;
+                                  const fixedAdminUf = hasExtended ? (currentVersion.gastos_comunes_fixed_admin_uf || 0) : 0;
+                                  gastosComunes = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin + fixedAdminUf;
                                 }
                                 
-                                // Calculate current rent
-                                const { currentRent } = calculateCurrentRent(currentVersion, contract.signed_date, superficie);
-                                const fondoPromocionPct = currentVersion.fondo_promocion_percentage ?? 0;
-                                const fondoPromocion = currentRent * (fondoPromocionPct / 100);
+                                const fondoPromocion = currentVersion.regime_rent * ((currentVersion.fondo_promocion_percentage || 0) / 100);
                                 const otrosEgresos = currentVersion.otros_egresos_amount || 0;
-                                
-                                arriendoTotalMensual = currentRent + gastosComunesTotal + fondoPromocion + otrosEgresos;
+                                arriendoTotalMensual = currentVersion.regime_rent + gastosComunes + fondoPromocion + otrosEgresos;
                               }
+
+                              // Calculate venta in UF
+                              const ventaMin = contract.venta_estimada || 0;
+                              const ventaMax = contract.venta_estimada_max || ventaMin;
+                              const ventaMinUF = ufValue && ventaMin > 0 ? ventaMin / ufValue : 0;
+                              const ventaMaxUF = ufValue && ventaMax > 0 ? ventaMax / ufValue : 0;
                               
-                              // Ratio = arriendoTotalUF / (promedioVentas / valorUF) * 100
-                              // Formula: arriendoTotal / ((promedioVentas) / UF) * 100
-                              const ventaPromedio = contract.venta_estimada_max 
-                                ? (contract.venta_estimada + contract.venta_estimada_max) / 2 
-                                : contract.venta_estimada;
-                              const ventaPromedioEnUF = ufValue > 0 ? ventaPromedio / ufValue : 0;
-                              const ratioArrVta = ventaPromedioEnUF > 0 ? (arriendoTotalMensual / ventaPromedioEnUF) * 100 : 0;
-                              
+                              // Calculate ratio arr/vta (annual rent / annual sales)
+                              const arriendoAnual = arriendoTotalMensual * 12;
+                              const ventaAvgUF = (ventaMinUF + ventaMaxUF) / 2;
+                              const ventaAnualUF = ventaAvgUF * 12;
+                              const ratioArrVta = ventaAnualUF > 0 ? (arriendoAnual / ventaAnualUF) * 100 : 0;
+
                               return (
                                 <>
-                                  <span className="font-medium">
-                                    {(contract.venta_estimada / 1000000).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                    {contract.venta_estimada_max && `-${(contract.venta_estimada_max / 1000000).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`} MM$
-                                  </span>
-                                  {ufValue > 0 && (
+                                  <div className="font-medium text-foreground">
+                                    {ventaMin.toLocaleString('es-CL')}{ventaMax > ventaMin ? `-${ventaMax.toLocaleString('es-CL')}` : ''} MM$
+                                  </div>
+                                  {ufValue && (
                                     <div className="text-[10px] text-muted-foreground">
-                                      {(() => {
-                                        const minUF = convertPesosToUF(contract.venta_estimada);
-                                        const maxUF = contract.venta_estimada_max ? convertPesosToUF(contract.venta_estimada_max) : null;
-                                        const minUFStr = minUF.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-                                        const maxUFStr = maxUF ? `-${maxUF.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '';
-                                        
-                                        let ufM2Str = '';
-                                        if (superficie > 0) {
-                                          const minUFM2 = minUF / superficie;
-                                          const maxUFM2 = maxUF ? maxUF / superficie : null;
-                                          ufM2Str = ` · ${minUFM2.toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`;
-                                          if (maxUFM2) {
-                                            ufM2Str += `-${maxUFM2.toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`;
-                                          }
-                                          ufM2Str += ' UF/m²';
-                                        }
-                                        
-                                        return `${minUFStr}${maxUFStr} UF${ufM2Str}`;
-                                      })()}
+                                      {ventaMinUF.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                      {ventaMaxUF > ventaMinUF ? `-${ventaMaxUF.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : ''} UF
+                                      {superficie > 0 && (
+                                        <span> · {(ventaMinUF / superficie).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}{ventaMaxUF > ventaMinUF ? `-${(ventaMaxUF / superficie).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}` : ''} UF/m²</span>
+                                      )}
                                     </div>
                                   )}
                                   {ratioArrVta > 0 && (
@@ -979,28 +994,6 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                           )}
                         </button>
                       )}
-                    </TableCell>
-                    <TableCell className="text-center min-w-[120px]" onClick={(e) => e.stopPropagation()}>
-                      <Select
-                        value={contract.comite_gp_status || ''}
-                        onValueChange={(value) => handleComiteGPChange(contract.id, value)}
-                      >
-                        <SelectTrigger
-                          className={`h-7 text-xs w-[110px] font-medium ${getComiteGPColor(contract.comite_gp_status || null)}`}
-                        >
-                          <SelectValue placeholder="Seleccionar" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {comiteGPStatuses.map(s => (
-                            <SelectItem key={s.id} value={s.name} className="text-xs">
-                              <span className="flex items-center gap-2">
-                                <span className={`w-2 h-2 rounded-full bg-${s.color}-500`} />
-                                {s.name}
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
                     </TableCell>
                   </>
                 )}
