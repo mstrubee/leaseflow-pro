@@ -22,7 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, ArrowLeft, Trash2, ArrowUpDown, X, Cloud, Loader2, ExternalLink, AlertTriangle, Download, Plus } from "lucide-react";
+import { Search, ArrowLeft, Trash2, ArrowUpDown, X, Cloud, Loader2, ExternalLink, AlertTriangle, Download, Plus, XCircle } from "lucide-react";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { ContractsTable, ContractSortField } from "@/components/contracts/ContractsTable";
 import { ColumnSelector } from "@/components/contracts/ColumnSelector";
@@ -166,6 +166,7 @@ const Contracts = () => {
   const companyFilter = searchParams.get("company") || "todos";
   const atencionEspecialFilter = searchParams.get("atencion_especial") === "true" ? "si" : (searchParams.get("atencion_especial") === "false" ? "no" : "todos");
   const negotiationSubcategoryFilter = searchParams.get("subcategory") || "todos";
+  const rechazadosFilter = searchParams.get("rechazados") === "true";
   const sortField = (searchParams.get("sort") as ContractSortField) || null;
   const sortDirection = (searchParams.get("dir") as SortDirection) || "asc";
 
@@ -250,7 +251,7 @@ const Contracts = () => {
 
   useEffect(() => {
     filterAndSortContracts();
-  }, [searchTerm, statusFilter, contracts, operationFilter, obraFilter, patenteFilter, proyectoFilter, ubicacionFilter, costoArriendoFilter, companyFilter, atencionEspecialFilter, negotiationSubcategoryFilter, sortField, sortDirection]);
+  }, [searchTerm, statusFilter, contracts, operationFilter, obraFilter, patenteFilter, proyectoFilter, ubicacionFilter, costoArriendoFilter, companyFilter, atencionEspecialFilter, negotiationSubcategoryFilter, rechazadosFilter, sortField, sortDirection]);
 
   const loadContracts = async () => {
     const { data } = await supabase
@@ -490,6 +491,15 @@ const Contracts = () => {
       filtered = filtered.filter((contract) => 
         (contract as any).negotiation_subcategory === negotiationSubcategoryFilter
       );
+    }
+
+    // Rechazados filter - show only rejected OR exclude rejected from main list
+    if (statusFilter === "en_negociacion") {
+      if (rechazadosFilter) {
+        filtered = filtered.filter((contract) => contract.comite_gp_status === 'Rechazada');
+      } else {
+        filtered = filtered.filter((contract) => contract.comite_gp_status !== 'Rechazada');
+      }
     }
 
     // Sorting
@@ -824,6 +834,9 @@ const Contracts = () => {
   };
 
   const getPageTitle = () => {
+    if (statusFilter === "en_negociacion" && rechazadosFilter) {
+      return "Contratos Rechazados";
+    }
     switch (statusFilter) {
       case "firmado":
         return "Contratos Vigentes";
@@ -942,13 +955,34 @@ const Contracts = () => {
                   </>
                 )}
               </Button>
-              {isNegociacionView && (
+              {isNegociacionView && !rechazadosFilter && (
+                <div className="flex flex-col gap-1">
+                  <Button
+                    onClick={() => navigate("/contracts/new")}
+                    className="gap-2"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Nuevo Contrato
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 text-xs"
+                    onClick={() => navigate("/contracts?status=en_negociacion&rechazados=true")}
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                    Rechazados
+                  </Button>
+                </div>
+              )}
+              {isNegociacionView && rechazadosFilter && (
                 <Button
-                  onClick={() => navigate("/contracts/new")}
+                  variant="outline"
+                  onClick={() => navigate("/contracts?status=en_negociacion")}
                   className="gap-2"
                 >
-                  <Plus className="h-4 w-4" />
-                  Nuevo Contrato
+                  <ArrowLeft className="h-4 w-4" />
+                  Volver a Negociación
                 </Button>
               )}
             </div>
