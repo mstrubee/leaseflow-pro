@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Trash2, AlertTriangle, FileCheck, FilePlus, Bell, FileWarning, DollarSign, Check, X } from "lucide-react";
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
@@ -81,6 +82,12 @@ interface ContractCompany {
   companies: { id: string; name: string } | null;
 }
 
+interface ComiteGPStatus {
+  id: string;
+  name: string;
+  color: string;
+}
+
 interface Contract {
   id: string;
   name: string;
@@ -99,6 +106,7 @@ interface Contract {
   venta_estimada_max?: number | null;
   clasificacion?: string | null;
   origen?: string | null;
+  comite_gp_status?: string | null;
   contract_companies?: ContractCompany[];
   contract_addresses: Array<{ region: string; commune: string; street?: string; number?: string }>;
   contract_versions: ContractVersion[];
@@ -132,6 +140,8 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   const [editingVenta, setEditingVenta] = useState<string | null>(null);
   const [ventaMinValue, setVentaMinValue] = useState<string>("");
   const [ventaMaxValue, setVentaMaxValue] = useState<string>("");
+  const [comiteGPStatuses, setComiteGPStatuses] = useState<ComiteGPStatus[]>([]);
+  const [comiteGPConfirm, setComiteGPConfirm] = useState<{ contractId: string; contractName: string } | null>(null);
   
   // Use external column widths if provided, otherwise use defaults from hook
   const columnWidths = externalColumnWidths || defaultColumnWidths;
@@ -143,6 +153,46 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
       return { width: `${width}%`, minWidth: '80px' };
     }
     return getColumnStyle(columnKey);
+  };
+
+  // Load Comité GP statuses
+  useEffect(() => {
+    const loadComiteStatuses = async () => {
+      const { data } = await supabase
+        .from("comite_gp_statuses")
+        .select("id, name, color")
+        .eq("is_active", true)
+        .order("display_order");
+      if (data) setComiteGPStatuses(data);
+    };
+    loadComiteStatuses();
+  }, []);
+
+  const handleComiteGPChange = async (contractId: string, value: string) => {
+    const { error } = await supabase
+      .from('contracts')
+      .update({ comite_gp_status: value || null })
+      .eq('id', contractId);
+    if (error) {
+      toast.error('Error al actualizar Comité GP');
+    } else {
+      onRefresh();
+    }
+  };
+
+  const getComiteGPColor = (statusName: string | null) => {
+    if (!statusName) return '';
+    const status = comiteGPStatuses.find(s => s.name === statusName);
+    const colorMap: Record<string, string> = {
+      green: 'bg-green-100 text-green-800 border-green-300 hover:bg-green-200',
+      red: 'bg-red-100 text-red-800 border-red-300 hover:bg-red-200',
+      blue: 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200',
+      yellow: 'bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200',
+      purple: 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200',
+      orange: 'bg-orange-100 text-orange-800 border-orange-300 hover:bg-orange-200',
+      gray: 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200',
+    };
+    return colorMap[status?.color || 'gray'] || colorMap.gray;
   };
 
   const isNegociacionView = !isFirmadoView && contracts.some(c => c.status === 'en_negociacion');
@@ -188,6 +238,13 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     if (error) {
       toast.error('Error al actualizar la categoría');
     } else {
+      // If changed to "Rev. Contrato" (negociacion_contrato), prompt for Comité GP = Aceptada
+      if (value === 'negociacion_contrato') {
+        const contract = contracts.find(c => c.id === contractId);
+        if (contract && !contract.comite_gp_status) {
+          setComiteGPConfirm({ contractId, contractName: contract.name });
+        }
+      }
       onRefresh();
     }
   };
@@ -523,6 +580,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   align="center"
                   style={getColStyle("venta_estimada")}
                 />
+                <TableHead className="font-semibold text-center" style={getColStyle("comite_gp")}>Comité GP</TableHead>
               </>
             )}
             <SortableTableHead
@@ -914,6 +972,28 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                         </button>
                       )}
                     </TableCell>
+                    <TableCell className="text-center min-w-[120px]" onClick={(e) => e.stopPropagation()}>
+                      <Select
+                        value={contract.comite_gp_status || ''}
+                        onValueChange={(value) => handleComiteGPChange(contract.id, value)}
+                      >
+                        <SelectTrigger
+                          className={`h-7 text-xs w-[110px] font-medium ${getComiteGPColor(contract.comite_gp_status || null)}`}
+                        >
+                          <SelectValue placeholder="Seleccionar" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {comiteGPStatuses.map(s => (
+                            <SelectItem key={s.id} value={s.name} className="text-xs">
+                              <span className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full bg-${s.color}-500`} />
+                                {s.name}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
                   </>
                 )}
                 <TableCell className="text-center min-w-[140px]">
@@ -1211,6 +1291,29 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
           })}
         </TableBody>
       </Table>
+
+      {/* Comité GP confirmation dialog */}
+      <AlertDialog open={!!comiteGPConfirm} onOpenChange={() => setComiteGPConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clasificar como "Aceptada" en Comité GP</AlertDialogTitle>
+            <AlertDialogDescription>
+              El contrato "{comiteGPConfirm?.contractName}" se marcó como "Rev. Contrato". ¿Desea clasificarlo como "Aceptada" en la columna Comité GP?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>No</AlertDialogCancel>
+            <AlertDialogAction onClick={async () => {
+              if (comiteGPConfirm) {
+                await handleComiteGPChange(comiteGPConfirm.contractId, "Aceptada");
+              }
+              setComiteGPConfirm(null);
+            }}>
+              Sí, Aceptada
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

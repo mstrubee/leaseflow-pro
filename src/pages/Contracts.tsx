@@ -116,6 +116,7 @@ interface Contract {
   negotiation_subcategory: string | null;
   venta_estimada: number | null;
   clasificacion?: string | null;
+  comite_gp_status?: string | null;
   contract_companies: ContractCompany[];
   contract_addresses: Array<{ region: string; commune: string; street?: string; number?: string }>;
   contract_versions: ContractVersion[];

@@ -22,6 +22,7 @@ import { StorageMonitor } from "@/components/admin/StorageMonitor";
 import { OCRequestTemplateManager } from "@/components/admin/OCRequestTemplateManager";
 import { LogoManager } from "@/components/admin/LogoManager";
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
+import { ComiteGPStatusManager } from "@/components/admin/ComiteGPStatusManager";
 interface Profile {
   id: string;
   email: string;
@@ -886,6 +887,15 @@ const AdminPanel = () => {
 
         {/* Storage Provider Settings */}
         <StorageProviderSettings defaultCollapsed />
+
+        {/* Comité GP Statuses */}
+        <CollapsibleCard
+          title="Estados Comité GP"
+          description="Administra las opciones de estado para la columna Comité GP en contratos en negociación"
+          defaultOpen={false}
+        >
+          <ComiteGPStatusManager />
+        </CollapsibleCard>
 
         {/* Storage Monitor - Admin only */}
         <StorageMonitor defaultCollapsed />
