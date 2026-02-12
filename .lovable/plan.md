@@ -1,60 +1,93 @@
 
+# Reconfiguración del Sistema de Permisos por Módulo
 
-## Fix: Contract Matching for "La Florida 1" and "Valparaiso"
+## Problema Actual
+Los recursos de permisos definidos en el panel de administración solo cubren 4 módulos principales (Contratos, Dashboard, Repositorio, Proveedores), pero la aplicación tiene 7 módulos de navegación adicionales que no están controlados por permisos:
+- Mantenciones
+- Órdenes de Compra
+- OPEX
+- Alertas
+- Informes
+- KPI
+- Proveedores (ya existe pero no se aplica en la navegación)
 
-### Root Cause
+Los usuarios no-admin actualmente ven todos los botones de navegación y pueden acceder a todas las rutas sin restricción.
 
-Two bugs in the local matching logic in `MaintenanceExcelUpload.tsx`:
+## Solución
 
-1. **No accent normalization**: "Valparaíso" (Excel, with accent) does not match "Valparaiso" (contract, without accent) via `.includes()`.
-2. **No local 4-digit CEBE matching**: The Excel text "0410 TIENDA LA FLORIDA" contains `0410`, which corresponds to CEBE `H0410P1290` (digits 2-5 = `0410`). But the current prefix match looks for `H0410` which isn't in the Excel text. There's no step that extracts just the leading digits from the Excel and compares them to CEBE positions 2-5.
-3. **Ambiguous name match**: Three contracts contain "la florida", so name-only matching picks the wrong one.
+### 1. Ampliar los recursos de permisos
+Agregar los siguientes recursos al sistema de permisos en `AdminPanel.tsx`:
 
-### Solution
+| ID del Recurso | Etiqueta | Descripción |
+|---|---|---|
+| `maintenance` | Mantenciones | Módulo de mantenciones |
+| `purchase_orders` | Órdenes de Compra | Módulo de órdenes de compra |
+| `opex` | OPEX | Módulo presupuesto operacional |
+| `alerts` | Alertas | Dashboard de alertas |
+| `reports` | Informes | Dashboard de informes |
+| `kpi` | KPI | Módulo de indicadores |
 
-Add two improvements to the local matching in `matchContract()`, before falling back to AI:
+(Proveedores ya existe como `suppliers`)
 
-**1. Accent normalization utility**
+### 2. Filtrar navegación en Dashboard según permisos
+En `src/pages/Dashboard.tsx`:
+- Importar `useAuth` (ya importado) y usar `hasPermission` para cada botón
+- Cada botón de navegación solo se mostrará si el usuario tiene permiso `view` o `edit` para ese recurso
+- Admin sigue viendo todo
 
-Add a `normalize()` helper that strips diacritics:
-```typescript
-const normalize = (s: string) =>
-  s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-```
+### 3. Proteger rutas individuales
+En `src/components/auth/ProtectedRoute.tsx`:
+- Agregar prop opcional `resource` para validar permiso de acceso
+- Si el usuario no tiene permiso para el recurso, redirigir al Dashboard (/) en lugar de mostrar el módulo
 
-Apply it in the name matching step so "valparaíso" matches "valparaiso".
-
-**2. New Priority 2.5: Local 4-digit CEBE match**
-
-Between the current full-CEBE match and the prefix match, add a step that:
-- Extracts the first 4-digit number from the Excel text (e.g., `0410` from "0410 TIENDA LA FLORIDA")
-- Compares it against digits 2-5 of each contract's CEBE (e.g., `H0410P1290` positions 1-4 = `0410`)
-- If exactly ONE contract matches on digits AND the name has partial overlap, return that contract
-- If multiple contracts match on digits (e.g., multiple "0410" CEBEs), use name similarity to disambiguate
-
-**3. Build a cebeDigits-to-contracts map**
-
-During the CEBE loading phase, also build a `Map<string, Array<{id, name}>>` keyed by the 4 digits at positions 2-5 of each CEBE. This allows fast lookup.
-
-### Technical Changes
-
-**File: `src/components/maintenance/MaintenanceExcelUpload.tsx`**
-
-- Add `normalize()` function for accent-insensitive comparison
-- Update Priority 1 (name matching) to use `normalize()` on both sides
-- Build `contractsByDigits` map (CEBE[1..5] as 4-char key to array of contracts)
-- Add Priority 2.5: extract leading 4 digits from Excel text, look up in `contractsByDigits`, disambiguate by normalized name if multiple matches
-- Keep existing AI fallback as last resort (unchanged)
-
-### Updated Matching Priority
+Actualizar `src/App.tsx` para pasar el recurso correspondiente a cada `ProtectedRoute`:
 
 ```text
-1. Name match (now accent-normalized)
-2. Full CEBE in text (e.g., "H04A2P1390")
-3. 4-digit CEBE match (NEW: "0410" vs CEBE[1..5])
-   - If 1 match: use it
-   - If multiple: pick best by name similarity
-4. CEBE prefix match (e.g., "H04A2")
-5. AI fallback (edge function)
-6. Warning: "Contrato no encontrado"
+/maintenance      -> resource="maintenance"
+/purchase-orders  -> resource="purchase_orders"
+/opex             -> resource="opex"
+/alerts           -> resource="alerts"
+/reports          -> resource="reports"
+/kpi              -> resource="kpi"
+/suppliers        -> resource="suppliers"
+/contracts        -> resource="contracts"
 ```
+
+### 4. Actualizar el hook useAuth
+El `hasPermission` actual ya funciona correctamente: si el usuario es admin retorna `true`, si no, busca el permiso específico. No requiere cambios.
+
+Sin embargo, hay un detalle importante: actualmente si un usuario no tiene *ningún* permiso asignado para un recurso, `hasPermission` retorna `false`. Esto es el comportamiento correcto -- los usuarios solo ven los módulos que explícitamente se les asignan.
+
+### 5. Actualizar la lista MAIN_RESOURCES en AdminPanel
+Agregar los 6 nuevos recursos a `MAIN_RESOURCES` para que aparezcan en el formulario de creación/edición de usuarios.
+
+### 6. Actualizar permisos del usuario existente (Beatriz)
+Una vez implementado, será necesario editar los permisos de los usuarios existentes desde el panel de admin para asignarles acceso a los módulos que correspondan.
+
+---
+
+## Detalles Técnicos
+
+### Archivos a modificar:
+
+1. **`src/pages/AdminPanel.tsx`** -- Agregar los 6 nuevos recursos a `MAIN_RESOURCES`
+
+2. **`src/pages/Dashboard.tsx`** -- Envolver cada botón de navegación con verificación de `hasPermission(resource, "view")`
+
+3. **`src/components/auth/ProtectedRoute.tsx`** -- Agregar prop `resource?: string` y validar acceso con `hasPermission`
+
+4. **`src/App.tsx`** -- Pasar prop `resource` a las rutas protegidas que correspondan
+
+### Flujo resultante:
+
+```text
+Usuario no-admin inicia sesion
+  -> Dashboard muestra SOLO los botones de modulos permitidos
+  -> Si intenta acceder por URL directa a un modulo sin permiso -> redirige a /
+  -> Admin ve todo sin restriccion
+```
+
+### Sin cambios necesarios en:
+- Base de datos (la tabla `user_permissions` ya soporta cualquier string como `resource`)
+- Edge functions (ya validan admin correctamente)
+- `useAuth.tsx` (la logica de `hasPermission` ya es correcta)
