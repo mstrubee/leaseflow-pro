@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation, Eye, EyeOff, Upload } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation, Eye, EyeOff, Upload, Copy } from "lucide-react";
 import { CloudStorageSettings } from "@/components/contracts/CloudStorageSettings";
 import { BudgetTemplateManager } from "@/components/budget/BudgetTemplateManager";
 import { GanttTemplateManager } from "@/components/gantt/GanttTemplateManager";
@@ -779,6 +779,26 @@ const AdminPanel = () => {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const userPerms = getUserPermissions(profile.id);
+                            const permsMap: Record<string, "view" | "edit" | "none"> = {};
+                            userPerms.forEach(p => {
+                              permsMap[p.resource] = p.permission === "all" ? "edit" : p.permission;
+                            });
+                            setNewUserEmail("");
+                            setNewUserPassword("");
+                            setNewUserName("");
+                            setNewUserRole(getUserRole(profile.id) as "admin" | "user");
+                            setNewUserPermissions(permsMap);
+                            setDialogOpen(true);
+                          }}
+                          title="Crear usuario con mismos permisos"
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
