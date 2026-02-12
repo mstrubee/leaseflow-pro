@@ -4,10 +4,11 @@ import { useAuth } from "@/hooks/useAuth";
 
 interface ProtectedRouteProps {
   children: ReactNode;
+  resource?: string;
 }
 
-export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { user, loading, roleLoaded } = useAuth();
+export function ProtectedRoute({ children, resource }: ProtectedRouteProps) {
+  const { user, loading, roleLoaded, hasPermission } = useAuth();
 
   // Show loading spinner while checking authentication
   if (loading || !roleLoaded) {
@@ -21,6 +22,11 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   // Redirect to auth if not authenticated
   if (!user) {
     return <Navigate to="/auth" replace />;
+  }
+
+  // Redirect to dashboard if user lacks permission for this resource
+  if (resource && !hasPermission(resource, "view")) {
+    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;

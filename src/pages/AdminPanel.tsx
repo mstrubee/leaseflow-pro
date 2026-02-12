@@ -137,6 +137,12 @@ const MAIN_RESOURCES = [
   { id: "dashboard", label: "Dashboard", category: "principal" },
   { id: "repository", label: "Repositorio", category: "principal" },
   { id: "suppliers", label: "Proveedores", category: "principal" },
+  { id: "maintenance", label: "Mantenciones", category: "principal" },
+  { id: "purchase_orders", label: "Órdenes de Compra", category: "principal" },
+  { id: "opex", label: "OPEX", category: "principal" },
+  { id: "alerts", label: "Alertas", category: "principal" },
+  { id: "reports", label: "Informes", category: "principal" },
+  { id: "kpi", label: "KPI", category: "principal" },
 ];
 
 // Secciones del Dashboard
