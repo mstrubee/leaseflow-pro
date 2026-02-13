@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
+import { useSuppliersNavigation } from "./SuppliersReturnButton";
 import { useCollapsibleState } from "@/hooks/useCollapsibleState";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home, ArrowUpLeft, Eye, EyeOff, Users, Building2, UserPlus } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home, ArrowUpLeft, Eye, EyeOff, Users, Building2, UserPlus, ShoppingCart } from "lucide-react";
 import { SupplierForm } from "./SupplierForm";
 import { Supplier } from "./types";
 import {
@@ -317,6 +318,7 @@ export const CategoryManager = () => {
   const [addingParentId, setAddingParentId] = useState<string | null>(null);
   const { expandedIds, toggle: toggleExpand, expandAll, collapseAll, expand } = useCollapsibleState("category-manager-expanded");
   const [activeId, setActiveId] = useState<string | null>(null);
+  const { navigateToPurchaseOrdersFromSuppliers } = useSuppliersNavigation();
 
   // Suppliers viewer dialog state
   const [suppliersDialog, setSuppliersDialog] = useState<{
@@ -959,21 +961,37 @@ export const CategoryManager = () => {
                 </div>
               ) : (
                 <div className="space-y-1">
-                  {categorySuppliers.map(s => (
+                    {categorySuppliers.map(s => (
                     <div 
                       key={s.id} 
-                      className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 border cursor-pointer transition-colors"
-                      onClick={() => handleEditSupplier(s.id)}
-                      title="Pincha para editar"
+                      className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 border transition-colors"
                     >
-                      <div>
+                      <div 
+                        className="flex-1 cursor-pointer"
+                        onClick={() => handleEditSupplier(s.id)}
+                        title="Pincha para editar"
+                      >
                         <p className="text-sm font-medium">{s.name}</p>
                         <p className="text-xs text-muted-foreground">
                           {s.rut || "Sin RUT"}
                           {s.category_name && ` · ${s.category_name}`}
                         </p>
                       </div>
-                      <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100" />
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigateToPurchaseOrdersFromSuppliers(s.name);
+                          }}
+                          title="Ver Órdenes de Compra de este proveedor"
+                        >
+                          <ShoppingCart className="h-3.5 w-3.5 text-muted-foreground" />
+                        </Button>
+                        <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                      </div>
                     </div>
                   ))}
                   <p className="text-xs text-muted-foreground text-center pt-2">
