@@ -3,7 +3,7 @@ import { useCollapsibleState } from "@/hooks/useCollapsibleState";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home, ArrowUpLeft } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home, ArrowUpLeft, Eye, EyeOff, Users, Building2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -110,6 +110,7 @@ const SortableCategoryRow = ({
   onUpdate,
   onDelete,
   onToggleActive,
+  onShowSuppliers,
   onStartAddSub,
   onToggleExpand,
   onSetEditingId,
@@ -129,6 +130,7 @@ const SortableCategoryRow = ({
   onUpdate: (id: string, name: string) => void;
   onDelete: (id: string, hasChildren: boolean) => void;
   onToggleActive: (cat: SupplierCategory) => void;
+  onShowSuppliers: (catId: string, catName: string) => void;
   onStartAddSub: (parentId: string) => void;
   onToggleExpand: (id: string) => void;
   onSetEditingId: (id: string | null) => void;
@@ -224,13 +226,16 @@ const SortableCategoryRow = ({
                 colors.text,
                 level === 0 && "font-semibold"
               )}
-              onClick={() => onToggleActive(cat)}
-              title={cat.is_active ? "Clic para desactivar" : "Clic para activar"}
+              onClick={() => onShowSuppliers(cat.id, cat.name)}
+              title="Ver proveedores asociados"
             >
               {cat.name}
             </span>
             
             <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
+              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onToggleActive(cat)} title={cat.is_active ? "Desactivar" : "Activar"}>
+                {cat.is_active ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+              </Button>
               <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onStartAddSub(cat.id)} title="Agregar sub-rubro">
                 <Plus className="h-3 w-3" />
               </Button>
@@ -310,6 +315,15 @@ export const CategoryManager = () => {
   const [addingParentId, setAddingParentId] = useState<string | null>(null);
   const { expandedIds, toggle: toggleExpand, expandAll, collapseAll, expand } = useCollapsibleState("category-manager-expanded");
   const [activeId, setActiveId] = useState<string | null>(null);
+
+  // Suppliers viewer dialog state
+  const [suppliersDialog, setSuppliersDialog] = useState<{
+    open: boolean;
+    categoryId: string;
+    categoryName: string;
+  } | null>(null);
+  const [categorySuppliers, setCategorySuppliers] = useState<{ id: string; name: string; rut: string | null; category_name: string | null }[]>([]);
+  const [loadingSuppliers, setLoadingSuppliers] = useState(false);
 
   // Reassign dialog state
   const [reassignDialog, setReassignDialog] = useState<{
@@ -543,6 +557,33 @@ export const CategoryManager = () => {
     }
   };
 
+  const handleShowSuppliers = async (catId: string, catName: string) => {
+    setSuppliersDialog({ open: true, categoryId: catId, categoryName: catName });
+    setLoadingSuppliers(true);
+    try {
+      const allCatIds = [catId, ...getDescendants(catId)];
+      const { data, error } = await supabase
+        .from("suppliers")
+        .select("id, name, rut, category:supplier_categories(name)")
+        .in("category_id", allCatIds)
+        .order("name");
+      if (error) throw error;
+      setCategorySuppliers(
+        (data || []).map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          rut: s.rut,
+          category_name: s.category?.name || null,
+        }))
+      );
+    } catch {
+      toast.error("Error al cargar proveedores");
+      setCategorySuppliers([]);
+    } finally {
+      setLoadingSuppliers(false);
+    }
+  };
+
   const startAddingSubCategory = (parentId: string) => {
     setAddingParentId(parentId);
     setIsAdding(true);
@@ -773,6 +814,7 @@ export const CategoryManager = () => {
                 onUpdate={handleUpdate}
                 onDelete={handleDelete}
                 onToggleActive={handleToggleActive}
+                onShowSuppliers={handleShowSuppliers}
                 onStartAddSub={startAddingSubCategory}
                 onToggleExpand={toggleExpand}
                 onSetEditingId={setEditingId}
@@ -847,6 +889,50 @@ export const CategoryManager = () => {
               Reasignar y eliminar
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Suppliers viewer dialog */}
+      <Dialog open={suppliersDialog?.open ?? false} onOpenChange={(open) => !open && setSuppliersDialog(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-muted-foreground" />
+              Proveedores en "{suppliersDialog?.categoryName}"
+            </DialogTitle>
+            <DialogDescription>
+              Proveedores asociados a este rubro y sus sub-rubros.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[400px] overflow-y-auto">
+            {loadingSuppliers ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+              </div>
+            ) : categorySuppliers.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Building2 className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No hay proveedores en este rubro</p>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {categorySuppliers.map(s => (
+                  <div key={s.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 border">
+                    <div>
+                      <p className="text-sm font-medium">{s.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {s.rut || "Sin RUT"}
+                        {s.category_name && ` · ${s.category_name}`}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                <p className="text-xs text-muted-foreground text-center pt-2">
+                  {categorySuppliers.length} proveedor{categorySuppliers.length !== 1 ? "es" : ""}
+                </p>
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
