@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { SuppliersReturnButton } from "@/components/suppliers/SuppliersReturnButton";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -301,6 +302,9 @@ const PurchaseOrdersDashboard = () => {
     >
   >(new Map());
 
+  // URL search params for external navigation (e.g. from suppliers)
+  const [searchParams, setSearchParams] = useSearchParams();
+
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
   const [contractFilter, setContractFilter] = useState("todos");
@@ -355,6 +359,17 @@ const PurchaseOrdersDashboard = () => {
       loadData();
     }
   }, [user]);
+
+  // Apply supplier filter from URL params (e.g. navigating from Suppliers page)
+  useEffect(() => {
+    const supplierParam = searchParams.get("supplier");
+    if (supplierParam) {
+      setSearchTerm(supplierParam);
+      // Clean the URL param after applying
+      searchParams.delete("supplier");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, []);
 
   const loadData = async () => {
     setLoading(true);
@@ -3894,6 +3909,7 @@ const PurchaseOrdersDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <SuppliersReturnButton />
     </div>
   );
 };
