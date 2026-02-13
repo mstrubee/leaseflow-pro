@@ -4,7 +4,7 @@ import { useCollapsibleState } from "@/hooks/useCollapsibleState";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home, ArrowUpLeft, Eye, EyeOff, Users, Building2, UserPlus, ShoppingCart } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home, ArrowUpLeft, Eye, EyeOff, Users, Building2, UserPlus, ShoppingCart, Search } from "lucide-react";
 import { SupplierForm } from "./SupplierForm";
 import { Supplier } from "./types";
 import {
@@ -21,13 +21,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { toast } from "sonner";
 import { SupplierCategory } from "./types";
 import { cn } from "@/lib/utils";
@@ -303,6 +296,76 @@ const SortableCategoryRow = ({
             <X className="h-4 w-4" />
           </Button>
         </div>
+      )}
+    </div>
+  );
+};
+
+const ReassignCategoryPicker = ({
+  targets,
+  value,
+  onChange,
+}: {
+  targets: { id: string; name: string; level: number }[];
+  value: string;
+  onChange: (v: string) => void;
+}) => {
+  const [search, setSearch] = useState("");
+  const filtered = useMemo(() => {
+    if (!search.trim()) return targets;
+    const lower = search.toLowerCase();
+    return targets.filter(t => t.name.toLowerCase().includes(lower));
+  }, [targets, search]);
+
+  const selectedName = value === "__none__" 
+    ? "Sin rubro (quitar categoría)" 
+    : targets.find(t => t.id === value)?.name || "";
+
+  return (
+    <div className="py-4 space-y-2">
+      <div className="relative">
+        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Buscar rubro..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="pl-8 h-9"
+        />
+      </div>
+      <div className="border rounded-md max-h-48 overflow-y-auto">
+        <button
+          type="button"
+          className={cn(
+            "w-full text-left px-3 py-2 text-sm hover:bg-muted/50 transition-colors",
+            value === "__none__" && "bg-primary/10 font-medium"
+          )}
+          onClick={() => onChange("__none__")}
+        >
+          Sin rubro (quitar categoría)
+        </button>
+        {filtered.map(target => (
+          <button
+            key={target.id}
+            type="button"
+            className={cn(
+              "w-full text-left px-3 py-2 text-sm hover:bg-muted/50 transition-colors",
+              value === target.id && "bg-primary/10 font-medium"
+            )}
+            onClick={() => onChange(target.id)}
+          >
+            <span style={{ paddingLeft: target.level * 12 }}>
+              {"—".repeat(target.level)} {target.name}
+            </span>
+          </button>
+        ))}
+        {filtered.length === 0 && (
+          <p className="text-xs text-muted-foreground text-center py-3">Sin resultados</p>
+        )}
+      </div>
+      {selectedName && (
+        <p className="text-xs text-muted-foreground">
+          Destino: <strong>{selectedName}</strong>
+        </p>
       )}
     </div>
   );
@@ -890,21 +953,11 @@ export const CategoryManager = () => {
               Selecciona a qué rubro deseas moverlos antes de eliminar.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Select value={reassignTargetId} onValueChange={setReassignTargetId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar rubro destino" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">Sin rubro (quitar categoría)</SelectItem>
-                {reassignDialog && getReassignTargets(reassignDialog.categoryId).map(target => (
-                  <SelectItem key={target.id} value={target.id}>
-                    {"—".repeat(target.level)} {target.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <ReassignCategoryPicker
+            targets={reassignDialog ? getReassignTargets(reassignDialog.categoryId) : []}
+            value={reassignTargetId}
+            onChange={setReassignTargetId}
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => setReassignDialog(null)}>
               Cancelar
@@ -912,7 +965,6 @@ export const CategoryManager = () => {
             <Button 
               variant="destructive" 
               onClick={() => {
-                // Convert "__none__" to empty string for null handling
                 if (reassignTargetId === "__none__") setReassignTargetId("");
                 handleReassignAndDelete();
               }}
