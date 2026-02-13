@@ -3,7 +3,9 @@ import { useCollapsibleState } from "@/hooks/useCollapsibleState";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home, ArrowUpLeft, Eye, EyeOff, Users, Building2 } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home, ArrowUpLeft, Eye, EyeOff, Users, Building2, UserPlus } from "lucide-react";
+import { SupplierForm } from "./SupplierForm";
+import { Supplier } from "./types";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -324,6 +326,8 @@ export const CategoryManager = () => {
   } | null>(null);
   const [categorySuppliers, setCategorySuppliers] = useState<{ id: string; name: string; rut: string | null; category_name: string | null }[]>([]);
   const [loadingSuppliers, setLoadingSuppliers] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const [isCreatingSupplier, setIsCreatingSupplier] = useState(false);
 
   // Reassign dialog state
   const [reassignDialog, setReassignDialog] = useState<{
@@ -559,6 +563,8 @@ export const CategoryManager = () => {
 
   const handleShowSuppliers = async (catId: string, catName: string) => {
     setSuppliersDialog({ open: true, categoryId: catId, categoryName: catName });
+    setEditingSupplier(null);
+    setIsCreatingSupplier(false);
     setLoadingSuppliers(true);
     try {
       const allCatIds = [catId, ...getDescendants(catId)];
@@ -581,6 +587,29 @@ export const CategoryManager = () => {
       setCategorySuppliers([]);
     } finally {
       setLoadingSuppliers(false);
+    }
+  };
+
+  const handleEditSupplier = async (supplierId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("suppliers")
+        .select("*")
+        .eq("id", supplierId)
+        .single();
+      if (error) throw error;
+      setEditingSupplier(data as Supplier);
+      setIsCreatingSupplier(false);
+    } catch {
+      toast.error("Error al cargar proveedor");
+    }
+  };
+
+  const handleSupplierSaved = () => {
+    setEditingSupplier(null);
+    setIsCreatingSupplier(false);
+    if (suppliersDialog) {
+      handleShowSuppliers(suppliersDialog.categoryId, suppliersDialog.categoryName);
     }
   };
 
@@ -893,46 +922,67 @@ export const CategoryManager = () => {
       </Dialog>
 
       {/* Suppliers viewer dialog */}
-      <Dialog open={suppliersDialog?.open ?? false} onOpenChange={(open) => !open && setSuppliersDialog(null)}>
-        <DialogContent className="max-w-lg">
+      <Dialog open={suppliersDialog?.open ?? false} onOpenChange={(open) => { if (!open) { setSuppliersDialog(null); setEditingSupplier(null); setIsCreatingSupplier(false); } }}>
+        <DialogContent className={cn("max-w-lg", (editingSupplier || isCreatingSupplier) && "max-w-2xl max-h-[90vh] overflow-y-auto")}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Users className="h-5 w-5 text-muted-foreground" />
-              Proveedores en "{suppliersDialog?.categoryName}"
+              {editingSupplier ? `Editar: ${editingSupplier.name}` : isCreatingSupplier ? "Nuevo proveedor" : `Proveedores en "${suppliersDialog?.categoryName}"`}
             </DialogTitle>
             <DialogDescription>
-              Proveedores asociados a este rubro y sus sub-rubros.
+              {editingSupplier ? "Modifica los datos del proveedor." : isCreatingSupplier ? `Se asignará al rubro "${suppliersDialog?.categoryName}".` : "Proveedores asociados a este rubro y sus sub-rubros."}
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-[400px] overflow-y-auto">
-            {loadingSuppliers ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+
+          {editingSupplier || isCreatingSupplier ? (
+            <SupplierForm
+              supplier={editingSupplier}
+              onSave={handleSupplierSaved}
+              onCancel={() => { setEditingSupplier(null); setIsCreatingSupplier(false); }}
+              defaultCategoryId={isCreatingSupplier ? suppliersDialog?.categoryId : undefined}
+            />
+          ) : (
+            <div className="max-h-[400px] overflow-y-auto">
+              <div className="flex justify-end mb-2">
+                <Button size="sm" variant="outline" onClick={() => setIsCreatingSupplier(true)}>
+                  <UserPlus className="h-4 w-4 mr-1" /> Nuevo proveedor
+                </Button>
               </div>
-            ) : categorySuppliers.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <Building2 className="h-10 w-10 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No hay proveedores en este rubro</p>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                {categorySuppliers.map(s => (
-                  <div key={s.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 border">
-                    <div>
-                      <p className="text-sm font-medium">{s.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {s.rut || "Sin RUT"}
-                        {s.category_name && ` · ${s.category_name}`}
-                      </p>
+              {loadingSuppliers ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+                </div>
+              ) : categorySuppliers.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Building2 className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No hay proveedores en este rubro</p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {categorySuppliers.map(s => (
+                    <div 
+                      key={s.id} 
+                      className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 border cursor-pointer transition-colors"
+                      onClick={() => handleEditSupplier(s.id)}
+                      title="Pincha para editar"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">{s.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {s.rut || "Sin RUT"}
+                          {s.category_name && ` · ${s.category_name}`}
+                        </p>
+                      </div>
+                      <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100" />
                     </div>
-                  </div>
-                ))}
-                <p className="text-xs text-muted-foreground text-center pt-2">
-                  {categorySuppliers.length} proveedor{categorySuppliers.length !== 1 ? "es" : ""}
-                </p>
-              </div>
-            )}
-          </div>
+                  ))}
+                  <p className="text-xs text-muted-foreground text-center pt-2">
+                    {categorySuppliers.length} proveedor{categorySuppliers.length !== 1 ? "es" : ""}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
