@@ -410,6 +410,7 @@ export const CategoryManager = () => {
     setActiveId(null);
   };
 
+
   // Build list of possible move targets for a category
   const getMoveTargets = (catId: string): { id: string | null; name: string; level: number }[] => {
     const descendants = new Set(getDescendants(catId));
