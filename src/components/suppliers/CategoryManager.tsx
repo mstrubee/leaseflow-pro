@@ -3,13 +3,28 @@ import { useCollapsibleState } from "@/hooks/useCollapsibleState";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home, ArrowUpLeft } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import { SupplierCategory } from "./types";
 import { cn } from "@/lib/utils";
@@ -17,7 +32,6 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
-  KeyboardSensor,
   useSensor,
   useSensors,
   DragEndEvent,
@@ -31,7 +45,6 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-
 
 interface CategoryWithChildren extends SupplierCategory {
   children: CategoryWithChildren[];
@@ -86,7 +99,6 @@ const LEVEL_COLORS = [
   { bg: "bg-primary/5", border: "border-primary/10", text: "text-primary/70" },
 ];
 
-// Sortable row component - defined outside to avoid re-creation
 const SortableCategoryRow = ({
   item,
   editingId,
@@ -103,6 +115,7 @@ const SortableCategoryRow = ({
   onSetEditingId,
   onCancelAdd,
   onMove,
+  onPromote,
   getMoveTargets,
   dragDisabled,
 }: {
@@ -121,6 +134,7 @@ const SortableCategoryRow = ({
   onSetEditingId: (id: string | null) => void;
   onCancelAdd: () => void;
   onMove: (draggedId: string, targetId: string | null) => void;
+  onPromote: (catId: string) => void;
   getMoveTargets: (catId: string) => { id: string | null; name: string; level: number }[];
   dragDisabled: boolean;
 }) => {
@@ -145,6 +159,7 @@ const SortableCategoryRow = ({
   const colors = LEVEL_COLORS[Math.min(level, LEVEL_COLORS.length - 1)];
   const isAddingHere = isAdding && addingParentId === cat.id;
   const targets = getMoveTargets(cat.id);
+  const canPromote = cat.parent_id !== null;
 
   return (
     <div ref={setNodeRef} style={style} className={cn(isDragging && "z-50 relative")}>
@@ -157,18 +172,29 @@ const SortableCategoryRow = ({
         )}
         style={{ marginLeft: level * 24 }}
       >
-        {/* Drag handle */}
-        <button
-          {...attributes}
-          {...listeners}
-          className={cn(
-            "p-1 rounded hover:bg-accent/50 touch-none",
-            dragDisabled ? "cursor-not-allowed opacity-30" : "cursor-grab active:cursor-grabbing"
+        {/* Drag handle + promote button */}
+        <div className="flex items-center gap-0.5">
+          <button
+            {...attributes}
+            {...listeners}
+            className={cn(
+              "p-1 rounded hover:bg-accent/50 touch-none",
+              dragDisabled ? "cursor-not-allowed opacity-30" : "cursor-grab active:cursor-grabbing"
+            )}
+            title="Arrastrar para reordenar entre hermanos"
+          >
+            <GripVertical className="h-4 w-4 text-muted-foreground" />
+          </button>
+          {canPromote && (
+            <button
+              onClick={() => onPromote(cat.id)}
+              className="p-1 rounded hover:bg-accent/50 transition-colors"
+              title="Subir un nivel en la jerarquía"
+            >
+              <ArrowUpLeft className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
           )}
-          title="Arrastrar para reordenar entre hermanos"
-        >
-          <GripVertical className="h-4 w-4 text-muted-foreground" />
-        </button>
+        </div>
 
         {/* Expand/collapse */}
         <button
@@ -285,6 +311,16 @@ export const CategoryManager = () => {
   const { expandedIds, toggle: toggleExpand, expandAll, collapseAll, expand } = useCollapsibleState("category-manager-expanded");
   const [activeId, setActiveId] = useState<string | null>(null);
 
+  // Reassign dialog state
+  const [reassignDialog, setReassignDialog] = useState<{
+    open: boolean;
+    categoryId: string;
+    categoryName: string;
+    supplierCount: number;
+    hasChildren: boolean;
+  } | null>(null);
+  const [reassignTargetId, setReassignTargetId] = useState<string>("");
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 10 } }),
   );
@@ -315,7 +351,6 @@ export const CategoryManager = () => {
     return roots;
   };
 
-  // Flatten the tree into a single visible list (respecting expanded state)
   const flatVisibleItems = useMemo((): FlatVisibleItem[] => {
     const result: FlatVisibleItem[] = [];
     const walk = (nodes: CategoryWithChildren[], level: number) => {
@@ -417,8 +452,43 @@ export const CategoryManager = () => {
     return children.flatMap(c => [c.id, ...getDescendants(c.id)]);
   };
 
+  // Check supplier count before deleting - if suppliers exist, show reassign dialog
   const handleDelete = async (id: string, hasChildren: boolean) => {
-    if (hasChildren && !confirm("Este rubro tiene sub-rubros. ¿Eliminar todos?")) return;
+    const idsToCheck = [id, ...getDescendants(id)];
+    
+    try {
+      const { count, error } = await supabase
+        .from("suppliers")
+        .select("id", { count: "exact", head: true })
+        .in("category_id", idsToCheck);
+      
+      if (error) throw error;
+      
+      const supplierCount = count || 0;
+      const catName = flatCategories.find(c => c.id === id)?.name || "";
+      
+      if (supplierCount > 0) {
+        // Show reassign dialog
+        setReassignTargetId("");
+        setReassignDialog({
+          open: true,
+          categoryId: id,
+          categoryName: catName,
+          supplierCount,
+          hasChildren,
+        });
+        return;
+      }
+      
+      // No suppliers - proceed with simple confirmation
+      if (hasChildren && !confirm("Este rubro tiene sub-rubros. ¿Eliminar todos?")) return;
+      await executeDelete(id);
+    } catch {
+      toast.error("Error al verificar proveedores");
+    }
+  };
+
+  const executeDelete = async (id: string) => {
     const idsToRemove = [id, ...getDescendants(id)];
     const oldFlat = [...flatCategories];
     const updatedFlat = flatCategories.filter(c => !idsToRemove.includes(c.id));
@@ -432,6 +502,30 @@ export const CategoryManager = () => {
       setFlatCategories(oldFlat);
       setCategories(buildTree(oldFlat));
       toast.error("No se puede eliminar, hay proveedores o líneas asociadas");
+    }
+  };
+
+  const handleReassignAndDelete = async () => {
+    if (!reassignDialog) return;
+    const { categoryId, hasChildren } = reassignDialog;
+    const idsToReassign = [categoryId, ...getDescendants(categoryId)];
+    const targetId = reassignTargetId || null;
+
+    try {
+      // Reassign all suppliers from this category tree to the target
+      const { error: reassignError } = await supabase
+        .from("suppliers")
+        .update({ category_id: targetId })
+        .in("category_id", idsToReassign);
+      
+      if (reassignError) throw reassignError;
+
+      // Now delete the category
+      await executeDelete(categoryId);
+      setReassignDialog(null);
+      toast.success("Proveedores reasignados y rubro eliminado");
+    } catch {
+      toast.error("Error al reasignar proveedores");
     }
   };
 
@@ -471,7 +565,6 @@ export const CategoryManager = () => {
     const targetCat = flatCategories.find(c => c.id === targetId);
     if (!draggedCat || !targetCat) return;
 
-    // Only reorder among siblings
     if (draggedCat.parent_id !== targetCat.parent_id) {
       toast.info("Usa el botón '→' para mover entre niveles");
       return;
@@ -511,6 +604,42 @@ export const CategoryManager = () => {
     setActiveId(null);
   };
 
+  // Promote: move category up one level in hierarchy
+  const handlePromote = async (catId: string) => {
+    const cat = flatCategories.find(c => c.id === catId);
+    if (!cat || !cat.parent_id) return;
+
+    const parent = flatCategories.find(c => c.id === cat.parent_id);
+    if (!parent) return;
+
+    // New parent = grandparent (or null for root)
+    const newParentId = parent.parent_id;
+    const newSiblings = flatCategories.filter(c => c.parent_id === newParentId);
+    const maxOrder = newSiblings.length > 0 ? Math.max(...newSiblings.map(s => s.display_order)) : 0;
+
+    const updatedFlat = flatCategories.map(c =>
+      c.id === catId ? { ...c, parent_id: newParentId, display_order: maxOrder + 1 } : c
+    );
+    setFlatCategories(updatedFlat);
+    setCategories(buildTree(updatedFlat));
+
+    const targetName = newParentId
+      ? flatCategories.find(c => c.id === newParentId)?.name ?? ""
+      : "raíz";
+
+    try {
+      const { error } = await supabase
+        .from("supplier_categories")
+        .update({ parent_id: newParentId, display_order: maxOrder + 1 })
+        .eq("id", catId);
+      if (error) throw error;
+      toast.success(`"${cat.name}" subido a ${targetName}`);
+    } catch {
+      toast.error("Error al subir rubro");
+      loadCategories();
+    }
+  };
+
   const handleMove = async (draggedId: string, targetId: string | null) => {
     const draggedCat = flatCategories.find(c => c.id === draggedId);
     if (!draggedCat) return;
@@ -548,6 +677,22 @@ export const CategoryManager = () => {
     const addTargets = (nodes: CategoryWithChildren[], level: number) => {
       for (const node of nodes) {
         if (node.id !== catId && !descendants.has(node.id) && node.id !== currentCat?.parent_id) {
+          targets.push({ id: node.id, name: node.name, level });
+        }
+        if (node.children.length > 0) addTargets(node.children, level + 1);
+      }
+    };
+    addTargets(categories, 0);
+    return targets;
+  };
+
+  // Get all categories except the one being deleted and its descendants (for reassign dialog)
+  const getReassignTargets = (catId: string): { id: string; name: string; level: number }[] => {
+    const descendants = new Set(getDescendants(catId));
+    const targets: { id: string; name: string; level: number }[] = [];
+    const addTargets = (nodes: CategoryWithChildren[], level: number) => {
+      for (const node of nodes) {
+        if (node.id !== catId && !descendants.has(node.id)) {
           targets.push({ id: node.id, name: node.name, level });
         }
         if (node.children.length > 0) addTargets(node.children, level + 1);
@@ -633,6 +778,7 @@ export const CategoryManager = () => {
                 onSetEditingId={setEditingId}
                 onCancelAdd={() => { setIsAdding(false); setAddingParentId(null); }}
                 onMove={handleMove}
+                onPromote={handlePromote}
                 getMoveTargets={getMoveTargets}
                 dragDisabled={editingId !== null}
               />
@@ -660,6 +806,49 @@ export const CategoryManager = () => {
           No hay rubros definidos. Crea uno para comenzar.
         </p>
       )}
+
+      {/* Reassign suppliers dialog */}
+      <Dialog open={reassignDialog?.open ?? false} onOpenChange={(open) => !open && setReassignDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reasignar proveedores</DialogTitle>
+            <DialogDescription>
+              El rubro "{reassignDialog?.categoryName}" tiene <strong>{reassignDialog?.supplierCount}</strong> proveedor(es) asociado(s).
+              Selecciona a qué rubro deseas moverlos antes de eliminar.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Select value={reassignTargetId} onValueChange={setReassignTargetId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar rubro destino" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Sin rubro (quitar categoría)</SelectItem>
+                {reassignDialog && getReassignTargets(reassignDialog.categoryId).map(target => (
+                  <SelectItem key={target.id} value={target.id}>
+                    {"—".repeat(target.level)} {target.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReassignDialog(null)}>
+              Cancelar
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={() => {
+                // Convert "__none__" to empty string for null handling
+                if (reassignTargetId === "__none__") setReassignTargetId("");
+                handleReassignAndDelete();
+              }}
+            >
+              Reasignar y eliminar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
