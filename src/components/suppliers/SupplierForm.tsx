@@ -16,9 +16,10 @@ interface SupplierFormProps {
   supplier?: Supplier | null;
   onSave: () => void;
   onCancel: () => void;
+  defaultCategoryId?: string;
 }
 
-export const SupplierForm = ({ supplier, onSave, onCancel }: SupplierFormProps) => {
+export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: SupplierFormProps) => {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<SupplierFormData>({
     name: "",
@@ -32,7 +33,7 @@ export const SupplierForm = ({ supplier, onSave, onCancel }: SupplierFormProps) 
     contact_name: "",
     phone: "",
     emails: [""],
-    category_id: "",
+    category_id: defaultCategoryId || "",
     opex_category_ids: [],
     is_generic: false,
   });
