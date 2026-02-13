@@ -3,7 +3,14 @@ import { useCollapsibleState } from "@/hooks/useCollapsibleState";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { SupplierCategory } from "./types";
 import { cn } from "@/lib/utils";
@@ -308,98 +315,125 @@ export const CategoryManager = () => {
 
     if (!draggedCat || !targetCat) return;
 
-    // Check if they are siblings (same parent)
-    const areSiblings = draggedCat.parent_id === targetCat.parent_id;
+    // Only allow reordering among siblings (same parent)
+    if (draggedCat.parent_id !== targetCat.parent_id) return;
 
-    if (areSiblings) {
-      // Reorder within the same level
-      const siblings = flatCategories
-        .filter(c => c.parent_id === draggedCat.parent_id)
-        .sort((a, b) => a.display_order - b.display_order);
+    const siblings = flatCategories
+      .filter(c => c.parent_id === draggedCat.parent_id)
+      .sort((a, b) => a.display_order - b.display_order);
 
-      const oldIndex = siblings.findIndex(s => s.id === draggedId);
-      const newIndex = siblings.findIndex(s => s.id === targetId);
+    const oldIndex = siblings.findIndex(s => s.id === draggedId);
+    const newIndex = siblings.findIndex(s => s.id === targetId);
 
-      if (oldIndex === -1 || newIndex === -1) return;
+    if (oldIndex === -1 || newIndex === -1) return;
 
-      // Reorder the array
-      const reordered = [...siblings];
-      const [removed] = reordered.splice(oldIndex, 1);
-      reordered.splice(newIndex, 0, removed);
+    const reordered = [...siblings];
+    const [removed] = reordered.splice(oldIndex, 1);
+    reordered.splice(newIndex, 0, removed);
 
-      // Optimistic update - update state immediately
-      const updatedFlat = flatCategories.map(cat => {
-        const reorderedIndex = reordered.findIndex(r => r.id === cat.id);
-        if (reorderedIndex !== -1) {
-          return { ...cat, display_order: reorderedIndex + 1 };
-        }
-        return cat;
-      });
-      setFlatCategories(updatedFlat);
-      setCategories(buildTree(updatedFlat));
-
-      // Batch update in background
-      try {
-        const updates = reordered.map((cat, index) => ({
-          id: cat.id,
-          display_order: index + 1,
-        }));
-
-        await Promise.all(
-          updates.map(update =>
-            supabase
-              .from("supplier_categories")
-              .update({ display_order: update.display_order })
-              .eq("id", update.id)
-          )
-        );
-      } catch (error) {
-        toast.error("Error al reordenar");
-        loadCategories(); // Revert on error
+    // Optimistic update
+    const updatedFlat = flatCategories.map(cat => {
+      const reorderedIndex = reordered.findIndex(r => r.id === cat.id);
+      if (reorderedIndex !== -1) {
+        return { ...cat, display_order: reorderedIndex + 1 };
       }
-    } else {
-      // Reparent: make dragged item a child of target
-      // Prevent dropping on own descendants
-      if (getDescendants(draggedId).includes(targetId)) {
-        toast.error("No puedes mover un rubro dentro de sus propios sub-rubros");
-        return;
-      }
+      return cat;
+    });
+    setFlatCategories(updatedFlat);
+    setCategories(buildTree(updatedFlat));
 
-      // Prevent dropping on current parent (no change needed)
-      if (draggedCat.parent_id === targetId) {
-        return;
-      }
+    try {
+      const updates = reordered.map((cat, index) => ({
+        id: cat.id,
+        display_order: index + 1,
+      }));
 
-      const newSiblings = flatCategories.filter(c => c.parent_id === targetId);
-      const maxOrder = newSiblings.length > 0 ? Math.max(...newSiblings.map(s => s.display_order)) : 0;
-
-      // Optimistic update
-      const updatedFlat = flatCategories.map(cat => 
-        cat.id === draggedId 
-          ? { ...cat, parent_id: targetId, display_order: maxOrder + 1 }
-          : cat
+      await Promise.all(
+        updates.map(update =>
+          supabase
+            .from("supplier_categories")
+            .update({ display_order: update.display_order })
+            .eq("id", update.id)
+        )
       );
-      setFlatCategories(updatedFlat);
-      setCategories(buildTree(updatedFlat));
-      expand(targetId);
+    } catch (error) {
+      toast.error("Error al reordenar");
+      loadCategories();
+    }
+  };
 
-      try {
-        const { error } = await supabase
-          .from("supplier_categories")
-          .update({ parent_id: targetId, display_order: maxOrder + 1 })
-          .eq("id", draggedId);
+  const handleMove = async (draggedId: string, targetId: string | null) => {
+    const draggedCat = flatCategories.find(c => c.id === draggedId);
+    if (!draggedCat) return;
 
-        if (error) throw error;
-        toast.success(`"${draggedCat.name}" movido dentro de "${targetCat.name}"`);
-      } catch (error) {
-        toast.error("Error al mover rubro");
-        loadCategories(); // Revert on error
-      }
+    // Prevent moving to current parent
+    if (draggedCat.parent_id === targetId) return;
+
+    // Prevent moving into own descendants
+    if (targetId && getDescendants(draggedId).includes(targetId)) {
+      toast.error("No puedes mover un rubro dentro de sus propios sub-rubros");
+      return;
+    }
+
+    const newSiblings = flatCategories.filter(c => c.parent_id === targetId);
+    const maxOrder = newSiblings.length > 0 ? Math.max(...newSiblings.map(s => s.display_order)) : 0;
+
+    // Optimistic update
+    const updatedFlat = flatCategories.map(cat =>
+      cat.id === draggedId
+        ? { ...cat, parent_id: targetId, display_order: maxOrder + 1 }
+        : cat
+    );
+    setFlatCategories(updatedFlat);
+    setCategories(buildTree(updatedFlat));
+    if (targetId) expand(targetId);
+
+    const targetName = targetId
+      ? flatCategories.find(c => c.id === targetId)?.name ?? ""
+      : "raíz";
+
+    try {
+      const { error } = await supabase
+        .from("supplier_categories")
+        .update({ parent_id: targetId, display_order: maxOrder + 1 })
+        .eq("id", draggedId);
+
+      if (error) throw error;
+      toast.success(`"${draggedCat.name}" movido a ${targetName}`);
+    } catch (error) {
+      toast.error("Error al mover rubro");
+      loadCategories();
     }
   };
 
   const handleDragCancel = () => {
     setActiveId(null);
+  };
+
+  // Build list of possible move targets for a category
+  const getMoveTargets = (catId: string): { id: string | null; name: string; level: number }[] => {
+    const descendants = new Set(getDescendants(catId));
+    const currentCat = flatCategories.find(c => c.id === catId);
+    const targets: { id: string | null; name: string; level: number }[] = [];
+    
+    // Option to move to root
+    if (currentCat?.parent_id !== null) {
+      targets.push({ id: null, name: "Raíz (sin padre)", level: 0 });
+    }
+    
+    // Add all categories except self and descendants
+    const addTargets = (nodes: CategoryWithChildren[], level: number) => {
+      for (const node of nodes) {
+        if (node.id !== catId && !descendants.has(node.id) && node.id !== currentCat?.parent_id) {
+          targets.push({ id: node.id, name: node.name, level });
+        }
+        if (node.children.length > 0) {
+          addTargets(node.children, level + 1);
+        }
+      }
+    };
+    addTargets(categories, 0);
+    return targets;
   };
 
   const activeCat = activeId ? flatCategories.find(c => c.id === activeId) : null;
@@ -493,6 +527,40 @@ export const CategoryManager = () => {
                 >
                   <Plus className="h-3 w-3" />
                 </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6"
+                      title="Mover a otro rubro"
+                    >
+                      <MoveRight className="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto min-w-[200px]">
+                    {getMoveTargets(cat.id).length === 0 ? (
+                      <DropdownMenuItem disabled>No hay destinos disponibles</DropdownMenuItem>
+                    ) : (
+                      getMoveTargets(cat.id).map(target => (
+                        <DropdownMenuItem
+                          key={target.id ?? "root"}
+                          onClick={() => handleMove(cat.id, target.id)}
+                          className="cursor-pointer"
+                        >
+                          <span className="flex items-center gap-1.5">
+                            {target.id === null ? (
+                              <Home className="h-3 w-3 text-muted-foreground" />
+                            ) : (
+                              <CornerDownRight className="h-3 w-3 text-muted-foreground" style={{ marginLeft: target.level * 8 }} />
+                            )}
+                            <span className="text-sm">{target.name}</span>
+                          </span>
+                        </DropdownMenuItem>
+                      ))
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button
                   size="icon"
                   variant="ghost"
