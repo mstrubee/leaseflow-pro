@@ -3,34 +3,16 @@ import { useCollapsibleState } from "@/hooks/useCollapsibleState";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home, ArrowUp, ArrowDown } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { SupplierCategory } from "./types";
 import { cn } from "@/lib/utils";
-import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-  DragStartEvent,
-  closestCenter,
-  MeasuringStrategy,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 
 interface CategoryWithChildren extends SupplierCategory {
   children: CategoryWithChildren[];
@@ -62,7 +44,7 @@ const EditableNameInput = ({
         }}
       />
       <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onSave(value)}>
-        <Check className="h-4 w-4 text-green-600" />
+        <Check className="h-4 w-4 text-primary" />
       </Button>
       <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onCancel}>
         <X className="h-4 w-4" />
@@ -87,12 +69,7 @@ export const CategoryManager = () => {
   const [newName, setNewName] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [addingParentId, setAddingParentId] = useState<string | null>(null);
-  const { expandedIds, setExpandedIds, toggle: toggleExpand, expandAll, collapseAll, expand } = useCollapsibleState("category-manager-expanded");
-  const [activeId, setActiveId] = useState<string | null>(null);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
-  );
+  const { expandedIds, toggle: toggleExpand, expandAll, collapseAll, expand } = useCollapsibleState("category-manager-expanded");
 
   useEffect(() => {
     loadCategories();
@@ -134,7 +111,6 @@ export const CategoryManager = () => {
       const cats = data || [];
       setFlatCategories(cats);
       setCategories(buildTree(cats));
-      // Don't override expandedIds - let the hook manage persistence
     } catch (error) {
       console.error("Error loading categories:", error);
     } finally {
@@ -149,7 +125,6 @@ export const CategoryManager = () => {
     const maxOrder = siblings.length > 0 ? Math.max(...siblings.map(s => s.display_order)) : 0;
     const tempId = `temp-${Date.now()}`;
     
-    // Optimistic update
     const newCat: SupplierCategory = {
       id: tempId,
       name: newName.trim(),
@@ -181,13 +156,11 @@ export const CategoryManager = () => {
       
       if (error) throw error;
       
-      // Replace temp ID with real ID
       const finalFlat = updatedFlat.map(c => c.id === tempId ? { ...c, id: data.id } : c);
       setFlatCategories(finalFlat);
       setCategories(buildTree(finalFlat));
       toast.success(parentId ? "Sub-rubro creado" : "Rubro creado");
     } catch (error: any) {
-      // Revert on error
       setFlatCategories(flatCategories);
       setCategories(buildTree(flatCategories));
       if (error.code === "23505") {
@@ -204,7 +177,6 @@ export const CategoryManager = () => {
     const oldCat = flatCategories.find(c => c.id === id);
     if (!oldCat) return;
     
-    // Optimistic update
     const updatedFlat = flatCategories.map(c => 
       c.id === id ? { ...c, name: newName.trim() } : c
     );
@@ -220,7 +192,6 @@ export const CategoryManager = () => {
       if (error) throw error;
       toast.success("Rubro actualizado");
     } catch (error: any) {
-      // Revert on error
       setFlatCategories(flatCategories);
       setCategories(buildTree(flatCategories));
       setEditingId(id);
@@ -237,11 +208,9 @@ export const CategoryManager = () => {
       if (!confirm("Este rubro tiene sub-rubros. ¿Eliminar todos?")) return;
     }
     
-    // Get all IDs to remove (including descendants)
     const idsToRemove = [id, ...getDescendants(id)];
     const oldFlat = [...flatCategories];
     
-    // Optimistic update
     const updatedFlat = flatCategories.filter(c => !idsToRemove.includes(c.id));
     setFlatCategories(updatedFlat);
     setCategories(buildTree(updatedFlat));
@@ -254,7 +223,6 @@ export const CategoryManager = () => {
       if (error) throw error;
       toast.success("Rubro eliminado");
     } catch (error) {
-      // Revert on error
       setFlatCategories(oldFlat);
       setCategories(buildTree(oldFlat));
       toast.error("No se puede eliminar, hay proveedores o líneas asociadas");
@@ -262,7 +230,6 @@ export const CategoryManager = () => {
   };
 
   const handleToggleActive = async (category: CategoryWithChildren) => {
-    // Optimistic update
     const updatedFlat = flatCategories.map(c => 
       c.id === category.id ? { ...c, is_active: !c.is_active } : c
     );
@@ -276,13 +243,11 @@ export const CategoryManager = () => {
         .eq("id", category.id);
       if (error) throw error;
     } catch (error) {
-      // Revert on error
       setFlatCategories(flatCategories);
       setCategories(buildTree(flatCategories));
       toast.error("Error al actualizar rubro");
     }
   };
-
 
   const startAddingSubCategory = (parentId: string) => {
     setAddingParentId(parentId);
@@ -291,71 +256,40 @@ export const CategoryManager = () => {
     expand(parentId);
   };
 
-  // Get all descendants of a category
   const getDescendants = (parentId: string): string[] => {
     const children = flatCategories.filter(c => c.parent_id === parentId);
     return children.flatMap(c => [c.id, ...getDescendants(c.id)]);
   };
 
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-  };
-
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveId(null);
-
-    if (!over || active.id === over.id) return;
-
-    const draggedId = active.id as string;
-    const targetId = over.id as string;
-
-    const draggedCat = flatCategories.find(c => c.id === draggedId);
-    const targetCat = flatCategories.find(c => c.id === targetId);
-
-    if (!draggedCat || !targetCat) return;
-
-    // Only allow reordering among siblings (same parent)
-    if (draggedCat.parent_id !== targetCat.parent_id) return;
+  const handleReorder = async (catId: string, direction: "up" | "down") => {
+    const cat = flatCategories.find(c => c.id === catId);
+    if (!cat) return;
 
     const siblings = flatCategories
-      .filter(c => c.parent_id === draggedCat.parent_id)
+      .filter(c => c.parent_id === cat.parent_id)
       .sort((a, b) => a.display_order - b.display_order);
 
-    const oldIndex = siblings.findIndex(s => s.id === draggedId);
-    const newIndex = siblings.findIndex(s => s.id === targetId);
+    const currentIndex = siblings.findIndex(s => s.id === catId);
+    const swapIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
 
-    if (oldIndex === -1 || newIndex === -1) return;
+    if (swapIndex < 0 || swapIndex >= siblings.length) return;
 
-    const reordered = [...siblings];
-    const [removed] = reordered.splice(oldIndex, 1);
-    reordered.splice(newIndex, 0, removed);
+    const swapCat = siblings[swapIndex];
 
-    // Optimistic update
-    const updatedFlat = flatCategories.map(cat => {
-      const reorderedIndex = reordered.findIndex(r => r.id === cat.id);
-      if (reorderedIndex !== -1) {
-        return { ...cat, display_order: reorderedIndex + 1 };
-      }
-      return cat;
+    // Swap display_order values
+    const updatedFlat = flatCategories.map(c => {
+      if (c.id === catId) return { ...c, display_order: swapCat.display_order };
+      if (c.id === swapCat.id) return { ...c, display_order: cat.display_order };
+      return c;
     });
     setFlatCategories(updatedFlat);
     setCategories(buildTree(updatedFlat));
 
     try {
-      const updates = reordered.map((cat, index) => ({
-        id: cat.id,
-        display_order: index + 1,
-      }));
-
-      await Promise.all(
-        updates.map(update =>
-          supabase
-            .from("supplier_categories")
-            .update({ display_order: update.display_order })
-            .eq("id", update.id)
-        )
-      );
+      await Promise.all([
+        supabase.from("supplier_categories").update({ display_order: swapCat.display_order }).eq("id", catId),
+        supabase.from("supplier_categories").update({ display_order: cat.display_order }).eq("id", swapCat.id),
+      ]);
     } catch (error) {
       toast.error("Error al reordenar");
       loadCategories();
@@ -366,10 +300,8 @@ export const CategoryManager = () => {
     const draggedCat = flatCategories.find(c => c.id === draggedId);
     if (!draggedCat) return;
 
-    // Prevent moving to current parent
     if (draggedCat.parent_id === targetId) return;
 
-    // Prevent moving into own descendants
     if (targetId && getDescendants(draggedId).includes(targetId)) {
       toast.error("No puedes mover un rubro dentro de sus propios sub-rubros");
       return;
@@ -378,7 +310,6 @@ export const CategoryManager = () => {
     const newSiblings = flatCategories.filter(c => c.parent_id === targetId);
     const maxOrder = newSiblings.length > 0 ? Math.max(...newSiblings.map(s => s.display_order)) : 0;
 
-    // Optimistic update
     const updatedFlat = flatCategories.map(cat =>
       cat.id === draggedId
         ? { ...cat, parent_id: targetId, display_order: maxOrder + 1 }
@@ -406,23 +337,15 @@ export const CategoryManager = () => {
     }
   };
 
-  const handleDragCancel = () => {
-    setActiveId(null);
-  };
-
-
-  // Build list of possible move targets for a category
   const getMoveTargets = (catId: string): { id: string | null; name: string; level: number }[] => {
     const descendants = new Set(getDescendants(catId));
     const currentCat = flatCategories.find(c => c.id === catId);
     const targets: { id: string | null; name: string; level: number }[] = [];
     
-    // Option to move to root
     if (currentCat?.parent_id !== null) {
       targets.push({ id: null, name: "Raíz (sin padre)", level: 0 });
     }
     
-    // Add all categories except self and descendants
     const addTargets = (nodes: CategoryWithChildren[], level: number) => {
       for (const node of nodes) {
         if (node.id !== catId && !descendants.has(node.id) && node.id !== currentCat?.parent_id) {
@@ -437,52 +360,57 @@ export const CategoryManager = () => {
     return targets;
   };
 
-  const activeCat = activeId ? flatCategories.find(c => c.id === activeId) : null;
+  const getSiblingPosition = (catId: string): { isFirst: boolean; isLast: boolean } => {
+    const cat = flatCategories.find(c => c.id === catId);
+    if (!cat) return { isFirst: true, isLast: true };
+    const siblings = flatCategories
+      .filter(c => c.parent_id === cat.parent_id)
+      .sort((a, b) => a.display_order - b.display_order);
+    const index = siblings.findIndex(s => s.id === catId);
+    return { isFirst: index === 0, isLast: index === siblings.length - 1 };
+  };
 
-  // Sortable Category Item
   const CategoryItem = ({ cat, level }: { cat: CategoryWithChildren; level: number }) => {
-    const {
-      attributes,
-      listeners,
-      setNodeRef,
-      transform,
-      transition,
-      isDragging,
-    } = useSortable({ id: cat.id });
-
-    const style = {
-      transform: CSS.Transform.toString(transform),
-      transition,
-    };
-
     const hasChildren = cat.children.length > 0;
     const isExpanded = expandedIds.has(cat.id);
     const isAddingHere = isAdding && addingParentId === cat.id;
     const colors = LEVEL_COLORS[Math.min(level, LEVEL_COLORS.length - 1)];
+    const { isFirst, isLast } = getSiblingPosition(cat.id);
 
     return (
-      <div 
-        ref={setNodeRef}
-        style={style}
-        className={cn("space-y-1", isDragging && "opacity-50 z-50")}
-      >
+      <div className="space-y-1">
         <div 
           className={cn(
             "group flex items-center gap-2 p-2 rounded-lg border transition-all",
             colors.bg, colors.border,
             !cat.is_active && "opacity-50",
-            isDragging && "shadow-lg"
           )}
         >
-          {/* Drag handle */}
-          <button
-            {...attributes}
-            {...listeners}
-            className="p-1 rounded cursor-grab active:cursor-grabbing hover:bg-accent/50"
-            title="Arrastrar para reordenar o mover a otra jerarquía"
-          >
-            <GripVertical className="h-4 w-4 text-muted-foreground" />
-          </button>
+          {/* Reorder arrows */}
+          <div className="flex flex-col">
+            <button
+              onClick={() => handleReorder(cat.id, "up")}
+              disabled={isFirst}
+              className={cn(
+                "p-0.5 rounded hover:bg-accent/50 transition-colors",
+                isFirst && "opacity-30 cursor-not-allowed"
+              )}
+              title="Subir"
+            >
+              <ArrowUp className="h-3 w-3 text-muted-foreground" />
+            </button>
+            <button
+              onClick={() => handleReorder(cat.id, "down")}
+              disabled={isLast}
+              className={cn(
+                "p-0.5 rounded hover:bg-accent/50 transition-colors",
+                isLast && "opacity-30 cursor-not-allowed"
+              )}
+              title="Bajar"
+            >
+              <ArrowDown className="h-3 w-3 text-muted-foreground" />
+            </button>
+          </div>
 
           {/* Expand/collapse */}
           <button
@@ -600,7 +528,7 @@ export const CategoryManager = () => {
               }}
             />
             <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleAdd(cat.id)}>
-              <Check className="h-4 w-4 text-green-600" />
+              <Check className="h-4 w-4 text-primary" />
             </Button>
             <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setIsAdding(false); setAddingParentId(null); }}>
               <X className="h-4 w-4" />
@@ -611,11 +539,9 @@ export const CategoryManager = () => {
         {/* Children */}
         {hasChildren && isExpanded && (
           <div className="ml-6 border-l-2 border-border pl-2 space-y-1">
-            <SortableContext items={cat.children.map(c => c.id)} strategy={verticalListSortingStrategy}>
-              {cat.children.map(child => (
-                <CategoryItem key={child.id} cat={child} level={level + 1} />
-              ))}
-            </SortableContext>
+            {cat.children.map(child => (
+              <CategoryItem key={child.id} cat={child} level={level + 1} />
+            ))}
           </div>
         )}
       </div>
@@ -674,7 +600,7 @@ export const CategoryManager = () => {
             }}
           />
           <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleAdd(null)}>
-            <Check className="h-4 w-4 text-green-600" />
+            <Check className="h-4 w-4 text-primary" />
           </Button>
           <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setIsAdding(false)}>
             <X className="h-4 w-4" />
@@ -682,37 +608,11 @@ export const CategoryManager = () => {
         </div>
       )}
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onDragCancel={handleDragCancel}
-        measuring={{
-          droppable: {
-            strategy: MeasuringStrategy.Always,
-          },
-        }}
-      >
-        <SortableContext items={categories.map(c => c.id)} strategy={verticalListSortingStrategy}>
-          <div className="space-y-2">
-            {categories.map(cat => (
-              <CategoryItem key={cat.id} cat={cat} level={0} />
-            ))}
-          </div>
-        </SortableContext>
-
-        <DragOverlay>
-          {activeCat && (
-            <div className="p-2 rounded-lg border bg-card shadow-xl opacity-90">
-              <div className="flex items-center gap-2">
-                <GripVertical className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium">{activeCat.name}</span>
-              </div>
-            </div>
-          )}
-        </DragOverlay>
-      </DndContext>
+      <div className="space-y-2">
+        {categories.map(cat => (
+          <CategoryItem key={cat.id} cat={cat} level={0} />
+        ))}
+      </div>
 
       {categories.length === 0 && (
         <p className="text-sm text-muted-foreground text-center py-4">
