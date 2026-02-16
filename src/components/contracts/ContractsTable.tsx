@@ -1051,7 +1051,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                         <span className="text-sm font-medium">{formatAmount(hasMultiplePeriods ? promedio : (currentRentVal2 + gastosComunesTotal + fondoP + otros), contract.display_currency)}</span>
                         {hasMultiplePeriods ? (
                           <div className="text-[9px] text-muted-foreground whitespace-nowrap">
-                            <div className="font-medium">Promedio</div>
+                            <div className="font-medium">Promedio. Incluye GGCC, FP y Otros</div>
                           </div>
                         ) : (
                           <div className="text-[9px] text-muted-foreground whitespace-nowrap">
