@@ -407,16 +407,17 @@ export function CommercialConditionsSummary({
         : null;
     
     if (!startDate) {
-      return actualRegimeRent;
+      // If escalations exist, show initial rent; otherwise regime rent
+      return hasEscalations && actualInitialRent ? actualInitialRent : actualRegimeRent;
     }
     
     const today = new Date();
     const diffTime = today.getTime() - startDate.getTime();
     const currentMonth = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44)) + 1;
     
-    // For contracts that haven't started yet, return regime rent (projected)
+    // For contracts that haven't started yet, show initial rent if escalations exist
     if (currentMonth < 1) {
-      return actualRegimeRent;
+      return hasEscalations && actualInitialRent ? actualInitialRent : actualRegimeRent;
     }
     
     // Check grace period - only apply for active contracts
