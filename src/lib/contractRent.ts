@@ -155,7 +155,7 @@ export const calculateCurrentRentUF = (params: {
     }
   }
 
-  // Periodic adjustments
+  // Periodic adjustments - compound from the last paid rent
   if (hasAdjustments) {
     const firstAdjMonth = version.first_adjustment_month || 0;
     const periodicity = version.adjustment_periodicity_months || 12;
@@ -163,15 +163,38 @@ export const calculateCurrentRentUF = (params: {
     const adjType = version.adjustment_type || "percentage";
 
     if (currentMonth >= firstAdjMonth) {
-      const monthsSinceFirst = currentMonth - firstAdjMonth;
-      const numAdjustments = Math.floor(monthsSinceFirst / periodicity) + 1;
+      // Apply adjustments sequentially, checking if escalations reset the base between them
+      const sortedEscalations = hasEscalations
+        ? [...escalations].sort((a, b) => a.month_number - b.month_number)
+        : [];
 
-      for (let i = 0; i < numAdjustments; i++) {
+      let adjMonth = firstAdjMonth;
+      while (adjMonth <= currentMonth) {
+        // Check if an escalation happened between last adjustment and this one,
+        // resetting the base rent
+        if (sortedEscalations.length > 0) {
+          const prevAdjMonth = adjMonth === firstAdjMonth ? 0 : adjMonth - periodicity;
+          const escalationBetween = sortedEscalations
+            .filter(e => e.month_number > prevAdjMonth && e.month_number <= adjMonth);
+          if (escalationBetween.length > 0) {
+            const lastEsc = escalationBetween[escalationBetween.length - 1];
+            if (lastEsc.is_uf_m2) {
+              currentRent = lastEsc.amount * superficie;
+            } else if (isRentUfM2) {
+              currentRent = lastEsc.amount * superficie;
+            } else {
+              currentRent = lastEsc.amount;
+            }
+          }
+        }
+
         if (adjType === "percentage") {
           currentRent = currentRent * (1 + adjValue / 100);
         } else {
           currentRent = currentRent + adjValue;
         }
+
+        adjMonth += periodicity;
       }
     }
   }

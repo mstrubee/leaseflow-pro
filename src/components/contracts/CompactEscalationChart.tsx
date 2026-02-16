@@ -170,27 +170,66 @@ export function CompactEscalationChart({
       }
     });
     
-    // Add periodic adjustments
-    // Note: if no periodicity, apply just once
+    // Add periodic adjustments - based on last paid rent (from escalations)
     if (hasPeriodicAdjustments && adjustmentValue > 0 && firstAdjustmentMonth > 0) {
-      const baseRent = (regimeRent || initialRent || 0) * surfaceMultiplier;
-      let currentRent = baseRent;
+      // Helper: find the rent being paid just before a given month
+      // by looking at escalation points and initial rent
+      const getRentAtMonth = (targetMonth: number): number => {
+        // Collect all rent-setting points before targetMonth (grace, initial, escalations)
+        const priorPoints = Array.from(rentChangePoints.entries())
+          .filter(([m]) => m <= targetMonth && !rentChangePoints.get(m)?.isAdjustment)
+          .sort((a, b) => a[0] - b[0]);
+        if (priorPoints.length > 0) {
+          return priorPoints[priorPoints.length - 1][1].rent;
+        }
+        // Fallback to initial/regime rent
+        const rawStartRent = initialRent || regimeRent;
+        return rawStartRent * surfaceMultiplier;
+      };
+
       let month = firstAdjustmentMonth;
-      
       const periodicity = adjustmentPeriodicityMonths > 0 ? adjustmentPeriodicityMonths : durationMonths + 1;
+      let lastAdjustedRent: number | null = null;
       
       while (month <= durationMonths) {
+        // Base for this adjustment: use previous adjusted rent if available,
+        // otherwise use the rent from escalations at this month
+        const baseForAdj = lastAdjustedRent !== null ? lastAdjustedRent : getRentAtMonth(month);
+        
+        let newRent: number;
         if (adjustmentType === "percentage") {
-          currentRent = currentRent * (1 + adjustmentValue / 100);
+          newRent = baseForAdj * (1 + adjustmentValue / 100);
         } else {
-          currentRent = currentRent + (adjustmentValue * surfaceMultiplier);
+          newRent = baseForAdj + (adjustmentValue * surfaceMultiplier);
         }
         
-        if (!rentChangePoints.has(month)) {
-          rentChangePoints.set(month, { rent: currentRent, isAdjustment: true });
+        // Check if an escalation resets rent at this month - if so, adjustment applies on top of escalation
+        const existingPoint = rentChangePoints.get(month);
+        if (existingPoint && !existingPoint.isAdjustment) {
+          // Escalation at same month: adjust from escalation value
+          if (adjustmentType === "percentage") {
+            newRent = existingPoint.rent * (1 + adjustmentValue / 100);
+          } else {
+            newRent = existingPoint.rent + (adjustmentValue * surfaceMultiplier);
+          }
         }
         
-        month += periodicity;
+        rentChangePoints.set(month, { rent: newRent, isAdjustment: true });
+        lastAdjustedRent = newRent;
+        
+        // If there's an escalation between this and next adjustment, reset lastAdjustedRent
+        const nextMonth = month + periodicity;
+        const escalationBetween = sortedEscalations.find(e => {
+          const escMonth = e.month_number;
+          return escMonth > month && escMonth < nextMonth;
+        });
+        if (escalationBetween) {
+          // Next adjustment will use escalation rent as base
+          const escMultiplier = (escalationBetween.is_uf_m2 && superficieM2 > 0) ? superficieM2 : 1;
+          lastAdjustedRent = escalationBetween.amount * escMultiplier;
+        }
+        
+        month = nextMonth;
       }
     }
     
