@@ -292,3 +292,112 @@ export const calculateTotalArriendoUF = (params: {
     regimeRentUfM2: isRentUfM2 ? version.regime_rent : null,
   };
 };
+
+/**
+ * Calculate the weighted average Total Arriendo across escalation/adjustment periods.
+ * Returns the simple total if no escalations exist.
+ */
+export const calculateWeightedAverageTotalArriendo = (params: {
+  version: ContractVersionLike & { duration_months: number };
+  signedDate: string | null;
+  superficie: number;
+  metrosLinealesFrente?: number;
+}): { promedio: number; hasMultiplePeriods: boolean } => {
+  const { version, superficie } = params;
+  const metrosLinealesFrente = params.metrosLinealesFrente || 0;
+
+  const escalations = version.rent_escalations || [];
+  const hasEscalations = escalations.length > 0;
+  const hasAdjustments =
+    version.has_periodic_adjustments === true &&
+    (version.adjustment_value || 0) > 0 &&
+    (version.first_adjustment_month || 0) > 0;
+
+  // Fall back to simple total if no escalations/adjustments
+  if (!hasEscalations && !hasAdjustments) {
+    const breakdown = calculateTotalArriendoUF(params);
+    return { promedio: breakdown.total, hasMultiplePeriods: false };
+  }
+
+  const isRentUfM2 = version.regime_rent_is_uf_m2 === true;
+  const isInitialRentUfM2 = version.initial_rent_is_uf_m2 === true;
+  const baseRegimeRent = isRentUfM2 ? version.regime_rent * superficie : version.regime_rent;
+  const actualInitialRent = version.initial_rent != null
+    ? (isInitialRentUfM2 ? version.initial_rent * superficie : version.initial_rent)
+    : baseRegimeRent;
+
+  const sortedEsc = [...escalations].sort((a, b) => a.month_number - b.month_number);
+  const graceMonths = version.grace_months || 0;
+  const durationMonths = version.duration_months;
+  const fondoPct = version.fondo_promocion_percentage || 0;
+  const otros = version.otros_egresos_amount || 0;
+
+  const ggcc = calculateGastosComunesUF({
+    version,
+    superficie,
+    metrosLinealesFrente,
+    baseRegimeRent,
+  });
+
+  // Build milestones
+  const milestones = new Set<number>();
+  const initialStart = graceMonths > 0 ? graceMonths + 1 : 1;
+  milestones.add(initialStart);
+  for (const esc of sortedEsc) {
+    if (esc.month_number <= durationMonths) milestones.add(esc.month_number);
+  }
+  if (hasAdjustments) {
+    const firstAdj = version.first_adjustment_month || 0;
+    const period = version.adjustment_periodicity_months || 12;
+    let m = firstAdj;
+    while (m <= durationMonths) { milestones.add(m); m += period; }
+  }
+
+  const sortedMilestones = Array.from(milestones).sort((a, b) => a - b);
+  if (sortedMilestones.length <= 1) {
+    const breakdown = calculateTotalArriendoUF(params);
+    return { promedio: breakdown.total, hasMultiplePeriods: false };
+  }
+
+  // Walk milestones
+  let runningCanon = actualInitialRent;
+  const firstAdj = hasAdjustments ? (version.first_adjustment_month || 0) : Infinity;
+  const period = version.adjustment_periodicity_months || 12;
+  const adjValue = version.adjustment_value || 0;
+  const adjType = version.adjustment_type || "percentage";
+
+  let weightedSum = 0;
+  for (let i = 0; i < sortedMilestones.length; i++) {
+    const ms = sortedMilestones[i];
+    const escAtMs = sortedEsc.filter(e => e.month_number === ms);
+    if (escAtMs.length > 0) {
+      const esc = escAtMs[escAtMs.length - 1];
+      const needsMultiply = esc.is_uf_m2 || (isRentUfM2 && !esc.is_uf_m2);
+      runningCanon = needsMultiply && superficie > 0 ? esc.amount * superficie : esc.amount;
+    }
+    const isAdjMs = hasAdjustments && ms >= firstAdj && (ms - firstAdj) % period === 0;
+    if (isAdjMs && escAtMs.length === 0) {
+      const prevAdjMonth = ms - period;
+      const escBetween = sortedEsc.filter(e => e.month_number > prevAdjMonth && e.month_number <= ms);
+      if (escBetween.length > 0) {
+        const last = escBetween[escBetween.length - 1];
+        const needsMultiply = last.is_uf_m2 || (isRentUfM2 && !last.is_uf_m2);
+        runningCanon = needsMultiply && superficie > 0 ? last.amount * superficie : last.amount;
+      }
+      runningCanon = adjType === "percentage"
+        ? runningCanon * (1 + adjValue / 100)
+        : runningCanon + adjValue;
+    }
+
+    const endMonth = i < sortedMilestones.length - 1 ? sortedMilestones[i + 1] - 1 : durationMonths;
+    const months = endMonth - ms + 1;
+    const periodFProm = runningCanon * (fondoPct / 100);
+    const periodTotal = runningCanon + ggcc + periodFProm + otros;
+    weightedSum += periodTotal * months;
+  }
+
+  const totalMonths = durationMonths - (initialStart - 1);
+  const promedio = totalMonths > 0 ? weightedSum / totalMonths : 0;
+
+  return { promedio, hasMultiplePeriods: true };
+};

@@ -12,7 +12,7 @@ import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useContractColumnWidths } from "@/hooks/useContractColumnWidths";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { calculateTotalArriendoUF } from "@/lib/contractRent";
+import { calculateTotalArriendoUF, calculateWeightedAverageTotalArriendo } from "@/lib/contractRent";
 import { addMonths, format, subMonths, parseISO, differenceInMonths, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
@@ -1029,28 +1029,38 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                       gastosComunesTotal = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin + fixedAdminUf;
                     }
                     
-                    // Calculate current rent (considering escalations, adjustments, and UF/m²)
-                    const { currentRent, hasEscalations, hasAdjustments, isContractNotStarted } = calculateCurrentRent(currentVersion, contract.signed_date, superficie);
-                    // For contracts not started, always show "Canon" (regime rent), not "Canon actual"
+                    // Calculate weighted average total arriendo
+                    const { promedio, hasMultiplePeriods } = calculateWeightedAverageTotalArriendo({
+                      version: { ...currentVersion, duration_months: currentVersion.duration_months },
+                      signedDate: contract.signed_date,
+                      superficie,
+                      metrosLinealesFrente: metrosFrente,
+                    });
+
+                    // Calculate current rent for label purposes
+                    const { hasEscalations, hasAdjustments, isContractNotStarted, currentRent: currentRentVal2 } = calculateCurrentRent(currentVersion, contract.signed_date, superficie);
                     const showCurrentLabel = !isContractNotStarted && (hasEscalations || hasAdjustments);
-                    
-                    // Fondo promoción - use currentRent for calculation
-                    const fondoPromocionPct = currentVersion.fondo_promocion_percentage ?? 0;
-                    const fondoPromocion = currentRent * (fondoPromocionPct / 100);
-                    
-                    // Otros egresos
-                    const otrosEgresos = currentVersion.otros_egresos_amount || 0;
-                    
-                    const total = currentRent + gastosComunesTotal + fondoPromocion + otrosEgresos;
+
+                    // Individual components for non-averaged display
+                    const fondoPct = currentVersion.fondo_promocion_percentage ?? 0;
+                    const fondoP = currentRentVal2 * (fondoPct / 100);
+                    const otros = currentVersion.otros_egresos_amount || 0;
+
                     return (
                       <div className="flex flex-col items-center">
-                        <span className="text-sm font-medium">{formatAmount(total, contract.display_currency)}</span>
-                        <div className="text-[9px] text-muted-foreground whitespace-nowrap">
-                          <div>Canon{showCurrentLabel ? " actual" : ""}: {formatAmount(currentRent, contract.display_currency)}</div>
-                          <div>GC: {formatAmount(gastosComunesTotal, contract.display_currency)}{methodology === "percentage" && currentVersion.gastos_comunes_tope && currentVersion.gastos_comunes_tope > 0 ? " (c/tope)" : ""}</div>
-                          <div>F. Prom: {fondoPromocionPct > 0 ? formatAmount(fondoPromocion, contract.display_currency) : "-"}</div>
-                          {otrosEgresos > 0 && <div>Otros: {formatAmount(otrosEgresos, contract.display_currency)}</div>}
-                        </div>
+                        <span className="text-sm font-medium">{formatAmount(hasMultiplePeriods ? promedio : (currentRentVal2 + gastosComunesTotal + fondoP + otros), contract.display_currency)}</span>
+                        {hasMultiplePeriods ? (
+                          <div className="text-[9px] text-muted-foreground whitespace-nowrap">
+                            <div className="font-medium">Promedio</div>
+                          </div>
+                        ) : (
+                          <div className="text-[9px] text-muted-foreground whitespace-nowrap">
+                            <div>Canon{showCurrentLabel ? " actual" : ""}: {formatAmount(currentRentVal2, contract.display_currency)}</div>
+                            <div>GC: {formatAmount(gastosComunesTotal, contract.display_currency)}{methodology === "percentage" && currentVersion.gastos_comunes_tope && currentVersion.gastos_comunes_tope > 0 ? " (c/tope)" : ""}</div>
+                            <div>F. Prom: {fondoPct > 0 ? formatAmount(fondoP, contract.display_currency) : "-"}</div>
+                            {otros > 0 && <div>Otros: {formatAmount(otros, contract.display_currency)}</div>}
+                          </div>
+                        )}
                       </div>
                     );
                   })() : "-"}
