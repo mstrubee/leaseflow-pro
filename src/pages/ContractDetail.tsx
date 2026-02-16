@@ -791,7 +791,9 @@ const ContractDetail = () => {
         {(contract.termination_notices?.length || 0) > 0 && (
           <ClosingProcessBanner
             contractId={contract.id}
+            contractName={contract.name}
             refreshKey={closingNotesRefresh}
+            onNotesChange={() => setClosingNotesRefresh((p) => p + 1)}
           />
         )}
 
