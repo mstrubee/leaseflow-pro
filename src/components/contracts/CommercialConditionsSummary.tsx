@@ -650,6 +650,27 @@ export function CommercialConditionsSummary({
     return periods;
   }, [hasEscalations, hasAdjustments, version, superficieEdificadaLocal, gastosComunesTotalUF, actualInitialRent, actualRegimeRent]);
 
+  // Weighted average total arriendo across all escalation periods
+  const totalArriendoPromedio = useMemo(() => {
+    if (!hasEscalations || escalationPeriods.length <= 1) return totalArriendo;
+    const durationMonths = version.duration_months;
+    if (durationMonths <= 0) return totalArriendo;
+    const graceMonths = version.grace_months || 0;
+    const initialStart = graceMonths > 0 ? graceMonths + 1 : 1;
+    
+    let weightedSum = 0;
+    for (const p of escalationPeriods) {
+      const match = p.label.match(/M(\d+)-M(\d+)/);
+      if (match) {
+        const months = parseInt(match[2]) - parseInt(match[1]) + 1;
+        weightedSum += p.total * months;
+      }
+    }
+    
+    const totalMonths = durationMonths - (initialStart - 1);
+    return totalMonths > 0 ? weightedSum / totalMonths : totalArriendo;
+  }, [hasEscalations, escalationPeriods, totalArriendo, version.duration_months, version.grace_months]);
+
   // Format adjustment value based on type
   const formatAdjustmentValue = () => {
     if (!version.has_periodic_adjustments || !version.adjustment_value) return null;
@@ -689,14 +710,17 @@ export function CommercialConditionsSummary({
     // Summary
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    const totalLabel = `Total Arriendo: ${formatPrimary(totalArriendo)}`;
+    const pdfDisplayTotal = hasEscalations && escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo;
+    const totalLabel = hasEscalations && escalationPeriods.length > 1
+      ? `Total Arriendo Promedio: ${formatPrimary(pdfDisplayTotal)}`
+      : `Total Arriendo: ${formatPrimary(pdfDisplayTotal)}`;
     doc.text(totalLabel, 14, y);
     y += 5;
     
     if (superficieEdificadaLocal && superficieEdificadaLocal > 0) {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
-      doc.text(`(${(totalArriendo / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)`, 14, y);
+      doc.text(`(${(pdfDisplayTotal / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)`, 14, y);
       y += 5;
     }
 
@@ -866,20 +890,27 @@ export function CommercialConditionsSummary({
           <div className="space-y-1 col-span-2 md:col-span-1 bg-primary/5 rounded-lg p-3 -m-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <DollarSign className="h-3 w-3" />
-              Total Arriendo
+              {hasEscalations && escalationPeriods.length > 1 ? "Total Arriendo Promedio" : "Total Arriendo"}
             </div>
             <p className="text-lg font-bold text-primary">
-              {formatPrimary(totalArriendo)}
+              {formatPrimary(hasEscalations && escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo)}
             </p>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span>{formatSecondary(totalArriendo)}</span>
-              {superficieEdificadaLocal && superficieEdificadaLocal > 0 && (
-                <span>
-                  ({displayCurrency === "CLP" 
-                    ? `$${Math.round(totalArriendo / superficieEdificadaLocal).toLocaleString("es-CL")}/m²` 
-                    : `${(totalArriendo / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²`})
-                </span>
-              )}
+              {(() => {
+                const displayTotal = hasEscalations && escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo;
+                return (
+                  <>
+                    <span>{formatSecondary(displayTotal)}</span>
+                    {superficieEdificadaLocal && superficieEdificadaLocal > 0 && (
+                      <span>
+                        ({displayCurrency === "CLP" 
+                          ? `$${Math.round(displayTotal / superficieEdificadaLocal).toLocaleString("es-CL")}/m²` 
+                          : `${(displayTotal / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²`})
+                      </span>
+                    )}
+                  </>
+                );
+              })()}
             </div>
             {/* Composición colapsable */}
             <div className="flex items-center justify-between pt-1 border-t border-border/50">
@@ -916,29 +947,9 @@ export function CommercialConditionsSummary({
             </div>
             {totalArriendoExpanded && (
               <div className="text-[10px] text-muted-foreground space-y-0.5 animate-in slide-in-from-top-1 duration-200">
-                <div className="flex justify-between">
-                  <span>{canonLabel === "Canon Actual" ? "Canon actual" : "Canon"}:</span>
-                  <span>{formatPrimary(currentRent)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>GGCC:</span>
-                  <span>{gastosComunesTotalUF ? formatPrimary(gastosComunesTotalUF) : "-"}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>F. Prom:</span>
-                  <span>{fondoPromocionAmount ? formatPrimary(fondoPromocionAmount) : "-"}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Otros:</span>
-                  <span>{otrosEgresosAmount > 0 ? formatPrimary(otrosEgresosAmount) : "-"}</span>
-                </div>
-                <div className="flex justify-between text-primary font-medium">
-                  <span>Variable:</span>
-                  <span>{version.variable_rent_percentage !== null && version.variable_rent_percentage > 0 ? `${version.variable_rent_percentage}%` : "-"}</span>
-                </div>
-                {/* Escalation periods breakdown */}
-                {escalationPeriods.length > 1 && (
-                  <div className="mt-2 pt-2 border-t border-border/50">
+                {/* When escalations exist, only show per-period breakdown */}
+                {hasEscalations && escalationPeriods.length > 1 ? (
+                  <div>
                     <p className="text-[10px] font-medium text-foreground mb-1">Arriendo por periodo</p>
                     <table className="w-full text-[10px]">
                       <thead>
@@ -970,7 +981,36 @@ export function CommercialConditionsSummary({
                         ))}
                       </tbody>
                     </table>
+                    {version.variable_rent_percentage !== null && version.variable_rent_percentage > 0 && (
+                      <div className="flex justify-between mt-1 pt-1 border-t border-border/30 text-primary font-medium">
+                        <span>Variable:</span>
+                        <span>{version.variable_rent_percentage}%</span>
+                      </div>
+                    )}
                   </div>
+                ) : (
+                  <>
+                    <div className="flex justify-between">
+                      <span>{canonLabel === "Canon Actual" ? "Canon actual" : "Canon"}:</span>
+                      <span>{formatPrimary(currentRent)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>GGCC:</span>
+                      <span>{gastosComunesTotalUF ? formatPrimary(gastosComunesTotalUF) : "-"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>F. Prom:</span>
+                      <span>{fondoPromocionAmount ? formatPrimary(fondoPromocionAmount) : "-"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Otros:</span>
+                      <span>{otrosEgresosAmount > 0 ? formatPrimary(otrosEgresosAmount) : "-"}</span>
+                    </div>
+                    <div className="flex justify-between text-primary font-medium">
+                      <span>Variable:</span>
+                      <span>{version.variable_rent_percentage !== null && version.variable_rent_percentage > 0 ? `${version.variable_rent_percentage}%` : "-"}</span>
+                    </div>
+                  </>
                 )}
               </div>
             )}
