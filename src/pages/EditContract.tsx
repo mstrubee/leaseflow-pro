@@ -1895,39 +1895,54 @@ const EditContract = () => {
                                             const firstMonth = parseInt(firstAdjustmentMonth);
                                             const periodicity = parseInt(adjustmentPeriodicityMonths);
                                             const durationMonths = parseInt(duration) || 120;
-                                            const adjustments: { month: number; rent: number }[] = [];
+                                            const superficie = superficieEdificadaLocal || 0;
+                                            const isUfM2 = isRegimeRentUfM2;
+                                            const adjustments: { month: number; rent: number; prevRent: number; isFirst: boolean }[] = [];
                                             
                                             // Add initial rent at month 1
-                                            adjustments.push({ month: 1, rent: baseRent });
+                                            const totalBaseRent = isUfM2 && superficie > 0 ? baseRent * superficie : baseRent;
+                                            adjustments.push({ month: 1, rent: totalBaseRent, prevRent: 0, isFirst: true });
                                             
-                                            let currentRent = baseRent;
+                                            let currentRent = totalBaseRent;
                                             let month = firstMonth;
                                             
                                             // Calculate ALL adjustments until contract end
                                             while (month <= durationMonths) {
+                                              const prevRent = currentRent;
                                               if (adjustmentType === "percentage") {
                                                 currentRent = currentRent * (1 + adjValue / 100);
                                               } else {
                                                 currentRent = currentRent + adjValue;
                                               }
-                                              adjustments.push({ month, rent: currentRent });
+                                              adjustments.push({ month, rent: currentRent, prevRent, isFirst: false });
                                               month += periodicity;
                                             }
                                             
                                             // Add final month if not already included
                                             const lastAdjMonth = adjustments[adjustments.length - 1]?.month;
                                             if (lastAdjMonth < durationMonths) {
-                                              adjustments.push({ month: durationMonths, rent: currentRent });
+                                              adjustments.push({ month: durationMonths, rent: currentRent, prevRent: currentRent, isFirst: false });
                                             }
                                             
-                                            return adjustments.map((adj, idx) => (
-                                              <div key={idx} className="flex justify-between py-0.5">
-                                                <span className={adj.month === 1 ? "font-medium" : ""}>
-                                                  {adj.month === 1 ? "Inicio (Mes 1):" : `Mes ${adj.month}:`}
-                                                </span>
-                                                <span className="font-medium">{adj.rent.toFixed(2)} UF</span>
-                                              </div>
-                                            ));
+                                            return adjustments.map((adj, idx) => {
+                                              const calcDetail = adj.isFirst
+                                                ? (isUfM2 && superficie > 0 ? `${baseRent.toFixed(3)} × ${superficie} m²` : "Renta base")
+                                                : adjustmentType === "percentage"
+                                                  ? `${adj.prevRent.toFixed(2)} × ${(1 + adjValue / 100).toFixed(4)}`
+                                                  : `${adj.prevRent.toFixed(2)} + ${adjValue.toFixed(2)}`;
+                                              const ufM2 = isUfM2 && superficie > 0 ? ` (${(adj.rent / superficie).toFixed(3)} UF/m²)` : "";
+                                              return (
+                                                <div key={idx} className="flex flex-col py-0.5 border-b border-border/30 last:border-0">
+                                                  <div className="flex justify-between">
+                                                    <span className={adj.isFirst ? "font-medium" : ""}>
+                                                      {adj.isFirst ? "Inicio (Mes 1):" : `Mes ${adj.month}:`}
+                                                    </span>
+                                                    <span className="font-medium">{adj.rent.toFixed(2)} UF{ufM2}</span>
+                                                  </div>
+                                                  <span className="text-muted-foreground text-[10px]">{calcDetail}</span>
+                                                </div>
+                                              );
+                                            });
                                           })()}
                                         </div>
                                         <p className="text-muted-foreground mt-2 italic text-xs">
