@@ -1,40 +1,44 @@
 
+# Desglose de Arriendo Total por Periodo de Escalonamiento
 
-# Corregir escritura erratica en filtros del listado de contratos
+## Objetivo
+Agregar una tabla compacta dentro de la seccion "Total Arriendo" (en el area colapsable "Ver detalle") que muestre el **Total Arriendo por cada periodo del escalonamiento**, incluyendo Canon, GGCC, Fondo de Promocion y Otros Egresos.
 
-## Problema identificado
+## Comportamiento
+- Solo se muestra cuando el contrato tiene escalones definidos (`hasEscalations = true`)
+- Se ubica dentro del area expandible del "Total Arriendo", debajo del desglose actual (Canon, GGCC, F.Prom, Otros, Variable)
+- Para cada periodo de escalonamiento se calcula:
+  - **Canon**: monto del escalon (multiplicado por superficie si es UF/m2)
+  - **GGCC**: se mantiene fijo (no depende del canon)
+  - **F. Prom**: porcentaje aplicado sobre el canon de ese periodo
+  - **Otros**: monto fijo
+  - **Total**: suma de los anteriores
 
-El campo de busqueda y los filtros del listado de contratos actualizan los parametros de la URL (`searchParams`) en cada tecla presionada. Esto provoca:
-
-1. Re-renderizado completo de la pagina en cada caracter
-2. Re-ejecucion de `filterAndSortContracts` que procesa todos los contratos
-3. Perdida de foco o texto por la actualizacion constante de la URL
-
-## Solucion
-
-Introducir un estado local para el campo de busqueda con un **debounce** que sincronice hacia la URL solo despues de que el usuario deje de escribir (300ms).
-
-## Cambios planificados
-
-### Archivo: `src/pages/Contracts.tsx`
-
-1. Agregar un estado local `localSearchTerm` para el Input de busqueda
-2. Sincronizar `localSearchTerm` desde la URL al montar (y cuando cambie externamente)
-3. Usar un `useEffect` con `setTimeout` de 300ms para hacer debounce de la escritura hacia la URL
-4. Cambiar el Input para usar `localSearchTerm` y `setLocalSearchTerm` en lugar de `searchTerm` y `setSearchTerm`
-
-### Detalle tecnico
+## Ejemplo visual
 
 ```text
-Estado actual:
-  Input onChange -> updateFilter("search", value) -> setSearchParams() -> re-render completo
-
-Estado propuesto:
-  Input onChange -> setLocalSearchTerm(value) -> [render solo del input]
-                                              -> useEffect con debounce 300ms
-                                              -> updateFilter("search", value)
-                                              -> setSearchParams() -> re-render completo
+Periodo 1 (M1-M12):    Canon 158,80 + GGCC 59,55 + F.Prom 0 + Otros 0 = 218,35 UF  (0,55 UF/m2)
+Periodo 2 (M13-M24):   Canon 174,70 + GGCC 59,55 + ...                 = 234,25 UF  (0,59 UF/m2)
+Periodo 3 (M25-M36):   ...
 ```
 
-Esto permite que el usuario escriba fluidamente sin esperar el ciclo completo de filtrado en cada tecla.
+Se mostrara en formato tabla compacta con columnas: Periodo, Canon, GGCC, F.Prom, Otros, Total, y opcionalmente UF/m2.
 
+## Cambios tecnicos
+
+### `src/components/contracts/CommercialConditionsSummary.tsx`
+
+1. **Nuevo `useMemo` para calcular los periodos**: Iterar sobre los escalones ordenados por `month_number`, construyendo un array de periodos con:
+   - Mes inicio / mes fin de cada tramo
+   - Canon del periodo (considerando `is_uf_m2` y superficie)
+   - GGCC (fijo, ya calculado como `gastosComunesTotalUF`)
+   - Fondo Promocion = canon_periodo * (fondo_promocion_percentage / 100)
+   - Otros egresos (fijo)
+   - Total = canon + GGCC + F.Prom + Otros
+   - Total UF/m2 = Total / superficie
+
+2. **Incluir el periodo inicial** (desde mes 1 o fin de gracia hasta el primer escalon) usando `initial_rent` o `regime_rent` como canon base.
+
+3. **Renderizar la tabla** dentro del bloque `totalArriendoExpanded`, despues del desglose actual, separado por un borde superior sutil. Formato compacto con `text-[10px]`.
+
+4. **Condicional**: Solo renderizar si `hasEscalations && escalationPeriods.length > 1`.
