@@ -541,6 +541,70 @@ export function CommercialConditionsSummary({
   // Total arriendo calculation (Canon actual + GGCC + FP + Otros)
   const totalArriendo = currentRent + (gastosComunesTotalUF || 0) + (fondoPromocionAmount || 0) + otrosEgresosAmount;
 
+  // Escalation periods breakdown for Total Arriendo detail
+  const escalationPeriods = useMemo(() => {
+    if (!hasEscalations) return [];
+    const escalations = version.rent_escalations || [];
+    const sortedEsc = [...escalations].sort((a, b) => a.month_number - b.month_number);
+    const superficie = superficieEdificadaLocal || 0;
+    const graceMonths = version.grace_months || 0;
+    const fondoPct = version.fondo_promocion_percentage || 0;
+    const otros = version.otros_egresos_amount || 0;
+    const ggcc = gastosComunesTotalUF || 0;
+
+    const periods: Array<{
+      label: string;
+      canon: number;
+      ggcc: number;
+      fProm: number;
+      otros: number;
+      total: number;
+      ufM2: number | null;
+    }> = [];
+
+    // Initial period: from grace end (or M1) to first escalation
+    const initialStart = graceMonths > 0 ? graceMonths + 1 : 1;
+    const firstEscMonth = sortedEsc[0]?.month_number || version.duration_months + 1;
+    
+    // Calculate initial canon
+    const initialCanon = actualInitialRent || actualRegimeRent;
+    const initialFProm = initialCanon * (fondoPct / 100);
+    const initialTotal = initialCanon + ggcc + initialFProm + otros;
+    
+    periods.push({
+      label: `M${initialStart}-M${firstEscMonth - 1}`,
+      canon: initialCanon,
+      ggcc,
+      fProm: initialFProm,
+      otros,
+      total: initialTotal,
+      ufM2: superficie > 0 ? initialTotal / superficie : null,
+    });
+
+    // Each escalation period
+    for (let i = 0; i < sortedEsc.length; i++) {
+      const esc = sortedEsc[i];
+      const nextMonth = i < sortedEsc.length - 1 ? sortedEsc[i + 1].month_number : version.duration_months + 1;
+      
+      const needsMultiply = esc.is_uf_m2 || (version.regime_rent_is_uf_m2 && !esc.is_uf_m2);
+      const periodCanon = needsMultiply && superficie > 0 ? esc.amount * superficie : esc.amount;
+      const periodFProm = periodCanon * (fondoPct / 100);
+      const periodTotal = periodCanon + ggcc + periodFProm + otros;
+
+      periods.push({
+        label: `M${esc.month_number}-M${nextMonth - 1}`,
+        canon: periodCanon,
+        ggcc,
+        fProm: periodFProm,
+        otros,
+        total: periodTotal,
+        ufM2: superficie > 0 ? periodTotal / superficie : null,
+      });
+    }
+
+    return periods;
+  }, [hasEscalations, version, superficieEdificadaLocal, gastosComunesTotalUF, actualInitialRent, actualRegimeRent]);
+
   // Format adjustment value based on type
   const formatAdjustmentValue = () => {
     if (!version.has_periodic_adjustments || !version.adjustment_value) return null;
@@ -730,6 +794,42 @@ export function CommercialConditionsSummary({
                   <span>Variable:</span>
                   <span>{version.variable_rent_percentage !== null && version.variable_rent_percentage > 0 ? `${version.variable_rent_percentage}%` : "-"}</span>
                 </div>
+                {/* Escalation periods breakdown */}
+                {hasEscalations && escalationPeriods.length > 1 && (
+                  <div className="mt-2 pt-2 border-t border-border/50">
+                    <p className="text-[10px] font-medium text-foreground mb-1">Arriendo por periodo</p>
+                    <table className="w-full text-[10px]">
+                      <thead>
+                        <tr className="text-muted-foreground">
+                          <th className="text-left font-normal pb-0.5">Periodo</th>
+                          <th className="text-right font-normal pb-0.5">Canon</th>
+                          <th className="text-right font-normal pb-0.5">GGCC</th>
+                          <th className="text-right font-normal pb-0.5">F.Prom</th>
+                          <th className="text-right font-normal pb-0.5">Otros</th>
+                          <th className="text-right font-normal pb-0.5">Total</th>
+                          {superficieEdificadaLocal && superficieEdificadaLocal > 0 && (
+                            <th className="text-right font-normal pb-0.5">UF/m²</th>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {escalationPeriods.map((p, idx) => (
+                          <tr key={idx} className="border-t border-border/30">
+                            <td className="py-0.5 text-muted-foreground">{p.label}</td>
+                            <td className="py-0.5 text-right">{p.canon.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td className="py-0.5 text-right">{p.ggcc > 0 ? p.ggcc.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}</td>
+                            <td className="py-0.5 text-right">{p.fProm > 0 ? p.fProm.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}</td>
+                            <td className="py-0.5 text-right">{p.otros > 0 ? p.otros.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}</td>
+                            <td className="py-0.5 text-right font-medium text-foreground">{p.total.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            {superficieEdificadaLocal && superficieEdificadaLocal > 0 && (
+                              <td className="py-0.5 text-right text-muted-foreground">{p.ufM2?.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })}</td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
           </div>
