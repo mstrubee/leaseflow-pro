@@ -258,8 +258,8 @@ export function CompactEscalationChart({
     // Calculate total regime rent for reference line
     const totalRegimeRent = regimeRent * surfaceMultiplier;
     
-    // Only show regime line if regimeRent > 0 (not for escalation-only contracts)
-    const showRegime = regimeRent > 0;
+    // Only show regime line if regimeRent > 0 AND no escalations defined
+    const showRegime = regimeRent > 0 && sortedEscalations.length === 0;
     
     // Build summary points - first few key points
     const sortedData = [...data].slice(0, 4);
