@@ -587,7 +587,14 @@ export const RentEscalations = ({
             {sortedEscalations.map((escalation, idx) => (
               <div
                 key={escalation.month_number}
-                className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border"
+                className={`flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border ${!readOnly ? "cursor-pointer hover:bg-muted/80 transition-colors" : ""}`}
+                onClick={() => {
+                  if (readOnly) return;
+                  setEditStartMonth(escalation.month_number);
+                  setEditEndMonth(escalation.end_month || escalation.month_number);
+                  setEditAmount(escalation.amount.toString());
+                  setEditDialogOpen(true);
+                }}
               >
                 <div className="flex items-center gap-4">
                   <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold">
@@ -620,7 +627,7 @@ export const RentEscalations = ({
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => handleRemove(escalation.month_number)}
+                    onClick={(e) => { e.stopPropagation(); handleRemove(escalation.month_number); }}
                     className="h-8 w-8 text-destructive hover:text-destructive"
                   >
                     <Trash2 className="h-4 w-4" />
