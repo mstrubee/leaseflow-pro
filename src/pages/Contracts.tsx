@@ -156,6 +156,7 @@ const Contracts = () => {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [comiteGPStatuses, setComiteGPStatuses] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
   const [customFieldsByContract, setCustomFieldsByContract] = useState<Record<string, { cebe?: string; codigo?: string }>>({});
+  const [localSearchTerm, setLocalSearchTerm] = useState(searchParams.get("search") || "");
 
   // Read filters from URL params
   const searchTerm = searchParams.get("search") || "";
@@ -191,7 +192,21 @@ const Contracts = () => {
   const setNegotiationSubcategoryFilter = (value: string) => updateFilter("subcategory", value);
   const setComiteGPFilter = (value: string) => updateFilter("comite_gp", value);
 
-  const setSearchTerm = (value: string) => updateFilter("search", value);
+  // Debounce: sync local search to URL after 300ms of inactivity
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      updateFilter("search", localSearchTerm);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [localSearchTerm]);
+
+  // Sync URL -> local when search param changes externally (e.g. clear filters)
+  useEffect(() => {
+    const urlSearch = searchParams.get("search") || "";
+    if (urlSearch !== localSearchTerm) {
+      setLocalSearchTerm(urlSearch);
+    }
+  }, [searchParams.get("search")]);
   const setOperationFilter = (value: string) => updateFilter("operation", value);
   const setObraFilter = (value: string) => updateFilter("obra", value);
   const setPatenteFilter = (value: string) => updateFilter("patente", value);
@@ -1074,8 +1089,8 @@ const Contracts = () => {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Buscar por nombre, CEBE, código o comuna..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={localSearchTerm}
+                onChange={(e) => setLocalSearchTerm(e.target.value)}
                 className="pl-10"
               />
             </div>
