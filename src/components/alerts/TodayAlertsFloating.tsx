@@ -2,14 +2,18 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Bell, ChevronDown, ChevronUp, X, ExternalLink, Calendar, CalendarDays, CheckCircle } from "lucide-react";
+import { Bell, ChevronDown, ChevronUp, X, ExternalLink, Calendar, CalendarDays, CheckCircle, Plus, CalendarIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
-import { format, startOfWeek, endOfWeek } from "date-fns";
+import { format, startOfWeek, endOfWeek, addDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,6 +24,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 interface TodayAlert {
   id: string;
@@ -28,6 +39,7 @@ interface TodayAlert {
   alert_type: string;
   contract_id: string | null;
   assigned_to: string | null;
+  category_id: string | null;
   contracts?: {
     name: string;
   } | null;
@@ -53,6 +65,13 @@ export function TodayAlertsFloating() {
   const [isDismissed, setIsDismissed] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("today");
   const [completingAlertId, setCompletingAlertId] = useState<string | null>(null);
+
+  // Dependent alert state
+  const [showFollowUpDialog, setShowFollowUpDialog] = useState(false);
+  const [completedAlert, setCompletedAlert] = useState<TodayAlert | null>(null);
+  const [followUpTitle, setFollowUpTitle] = useState("");
+  const [followUpDate, setFollowUpDate] = useState<Date | undefined>(undefined);
+  const [creatingFollowUp, setCreatingFollowUp] = useState(false);
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -91,16 +110,10 @@ export function TodayAlertsFloating() {
       const weekStart = format(startOfWeek(today, { weekStartsOn: 1 }), "yyyy-MM-dd");
       const weekEnd = format(endOfWeek(today, { weekStartsOn: 1 }), "yyyy-MM-dd");
       
-      // Load today's alerts - for admins show all, for regular users show assigned only
       const { data: todayData, error: todayError } = await supabase
         .from("alerts")
         .select(`
-          id,
-          title,
-          due_date,
-          alert_type,
-          contract_id,
-          assigned_to,
+          id, title, due_date, alert_type, contract_id, assigned_to, category_id,
           contracts (name),
           alert_categories (name),
           profiles!alerts_assigned_to_fkey (full_name, email)
@@ -111,23 +124,13 @@ export function TodayAlertsFloating() {
         .is("deleted_at", null)
         .order("title");
 
-      if (todayError) {
-        console.error("[TodayAlertsFloating] Today query error:", todayError);
-        throw todayError;
-      }
-      console.log("[TodayAlertsFloating] Today alerts:", todayData?.length, "date:", todayStr);
+      if (todayError) throw todayError;
       setTodayAlerts(todayData || []);
 
-      // Load week's alerts
       const { data: weekData, error: weekError } = await supabase
         .from("alerts")
         .select(`
-          id,
-          title,
-          due_date,
-          alert_type,
-          contract_id,
-          assigned_to,
+          id, title, due_date, alert_type, contract_id, assigned_to, category_id,
           contracts (name),
           alert_categories (name),
           profiles!alerts_assigned_to_fkey (full_name, email)
@@ -140,11 +143,7 @@ export function TodayAlertsFloating() {
         .order("due_date")
         .order("title");
 
-      if (weekError) {
-        console.error("[TodayAlertsFloating] Week query error:", weekError);
-        throw weekError;
-      }
-      console.log("[TodayAlertsFloating] Week alerts:", weekData?.length, "range:", weekStart, "-", weekEnd);
+      if (weekError) throw weekError;
       setWeekAlerts(weekData || []);
     } catch (error) {
       console.error("Error loading alerts:", error);
@@ -155,6 +154,9 @@ export function TodayAlertsFloating() {
 
   const handleCompleteAlert = async (alertId: string) => {
     try {
+      // Find the alert before completing it
+      const alert = [...todayAlerts, ...weekAlerts].find(a => a.id === alertId);
+      
       const { error } = await supabase
         .from("alerts")
         .update({
@@ -166,7 +168,7 @@ export function TodayAlertsFloating() {
 
       if (error) throw error;
 
-      // Immediately remove the completed alert from local state for instant UI feedback
+      // Immediately remove from local state
       setTodayAlerts(prev => prev.filter(a => a.id !== alertId));
       setWeekAlerts(prev => prev.filter(a => a.id !== alertId));
 
@@ -174,6 +176,14 @@ export function TodayAlertsFloating() {
         title: "Alerta completada",
         description: "La alerta ha sido marcada como completada",
       });
+
+      // Offer to create follow-up alert
+      if (alert) {
+        setCompletedAlert(alert);
+        setFollowUpTitle(`Seguimiento: ${alert.title}`);
+        setFollowUpDate(addDays(new Date(), 7));
+        setShowFollowUpDialog(true);
+      }
     } catch (error: any) {
       toast({
         title: "Error",
@@ -182,6 +192,45 @@ export function TodayAlertsFloating() {
       });
     } finally {
       setCompletingAlertId(null);
+    }
+  };
+
+  const handleCreateFollowUp = async () => {
+    if (!completedAlert || !followUpTitle.trim() || !followUpDate) return;
+    setCreatingFollowUp(true);
+    try {
+      const { error } = await supabase.from("alerts").insert({
+        title: followUpTitle.trim(),
+        message: `Alerta dependiente de: ${completedAlert.title}`,
+        alert_type: completedAlert.alert_type as any,
+        due_date: format(followUpDate, "yyyy-MM-dd"),
+        channels: ["email"] as any,
+        days_before: [7, 1, 0],
+        contract_id: completedAlert.contract_id,
+        category_id: completedAlert.category_id,
+        assigned_to: completedAlert.assigned_to || user?.id,
+        is_active: true,
+        created_by: user?.id,
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Alerta de seguimiento creada",
+        description: `Nueva alerta para el ${format(followUpDate, "dd/MM/yyyy")}`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo crear la alerta de seguimiento",
+        variant: "destructive",
+      });
+    } finally {
+      setCreatingFollowUp(false);
+      setShowFollowUpDialog(false);
+      setCompletedAlert(null);
+      setFollowUpTitle("");
+      setFollowUpDate(undefined);
     }
   };
 
@@ -196,7 +245,6 @@ export function TodayAlertsFloating() {
   const currentAlerts = viewMode === "today" ? todayAlerts : weekAlerts;
   const hasAnyAlerts = todayAlerts.length > 0 || weekAlerts.length > 0;
 
-  // Don't show if dismissed, loading, no user, or no alerts at all
   if (isDismissed || loading || authLoading || !user || !hasAnyAlerts) {
     return null;
   }
@@ -346,7 +394,7 @@ export function TodayAlertsFloating() {
           <AlertDialogHeader>
             <AlertDialogTitle>¿Completar alerta?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción marcará la alerta como completada y la desactivará. ¿Deseas continuar?
+              Esta acción marcará la alerta como completada y la desactivará. Al confirmar, podrás crear una alerta de seguimiento si lo necesitas.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -357,6 +405,75 @@ export function TodayAlertsFloating() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Follow-up / Dependent Alert Dialog */}
+      <Dialog open={showFollowUpDialog} onOpenChange={(open) => {
+        if (!open) {
+          setShowFollowUpDialog(false);
+          setCompletedAlert(null);
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="h-5 w-5" />
+              Crear alerta de seguimiento
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              ¿Deseas crear una alerta de seguimiento para esta tarea?
+            </p>
+            {completedAlert?.contracts?.name && (
+              <p className="text-xs text-muted-foreground">
+                Local: <span className="font-medium text-foreground">{completedAlert.contracts.name}</span>
+              </p>
+            )}
+            <div className="space-y-2">
+              <Label>Título</Label>
+              <Input
+                value={followUpTitle}
+                onChange={(e) => setFollowUpTitle(e.target.value)}
+                placeholder="Título de la alerta de seguimiento"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Fecha de vencimiento</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-start">
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {followUpDate ? format(followUpDate, "dd/MM/yyyy") : "Seleccionar fecha"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarPicker
+                    mode="single"
+                    selected={followUpDate}
+                    onSelect={setFollowUpDate}
+                    locale={es}
+                    disabled={(date) => date < new Date()}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => {
+              setShowFollowUpDialog(false);
+              setCompletedAlert(null);
+            }}>
+              No, gracias
+            </Button>
+            <Button
+              onClick={handleCreateFollowUp}
+              disabled={creatingFollowUp || !followUpTitle.trim() || !followUpDate}
+            >
+              {creatingFollowUp ? "Creando..." : "Crear alerta"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
