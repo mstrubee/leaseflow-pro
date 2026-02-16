@@ -12,6 +12,7 @@ import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useContractColumnWidths } from "@/hooks/useContractColumnWidths";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { calculateTotalArriendoUF } from "@/lib/contractRent";
 import { addMonths, format, subMonths, parseISO, differenceInMonths, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
@@ -932,38 +933,16 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                               const superficie = contract.superficie_edificada_local || 0;
                               const metrosFrente = contract.metros_lineales_frente || 0;
                               
-                              // Calculate arriendo total mensual for ratio
+                              // Use centralized calculation for accurate total rent
                               let arriendoTotalMensual = 0;
                               if (currentVersion) {
-                                const hasExtended = currentVersion.has_extended_gastos_comunes ?? false;
-                                const methodology = currentVersion.gastos_comunes_methodology || "uf_m2";
-                                
-                                // Gastos comunes
-                                let gastosComunes = 0;
-                                if (methodology === "percentage") {
-                                  const totalCentro = currentVersion.gastos_comunes_total_centro || 0;
-                                  const percentage = currentVersion.gastos_comunes_percentage || 0;
-                                  const topeValue = currentVersion.gastos_comunes_tope;
-                                  const topeType = currentVersion.gastos_comunes_tope_type || "fixed";
-                                  const calculatedAmount = (totalCentro * percentage) / 100;
-                                  if (topeValue && topeValue > 0) {
-                                    const effectiveTope = topeType === "uf_m2" && superficie > 0 ? topeValue * superficie : topeValue;
-                                    gastosComunes = Math.min(calculatedAmount, effectiveTope);
-                                  } else {
-                                    gastosComunes = calculatedAmount;
-                                  }
-                                } else {
-                                  const gastosM2 = (currentVersion.gastos_comunes_uf_m2 || 0) * superficie;
-                                  const gastosMlFrente = hasExtended ? (currentVersion.gastos_comunes_uf_ml_frente || 0) * metrosFrente : 0;
-                                  const gastosKwhClima = hasExtended ? (currentVersion.gastos_comunes_prorrata_kwh_clima || 0) : 0;
-                                  const adicionalAdmin = hasExtended ? currentVersion.regime_rent * ((currentVersion.adicional_administracion_percentage || 0) / 100) : 0;
-                                  const fixedAdminUf = hasExtended ? (currentVersion.gastos_comunes_fixed_admin_uf || 0) : 0;
-                                  gastosComunes = gastosM2 + gastosMlFrente + gastosKwhClima + adicionalAdmin + fixedAdminUf;
-                                }
-                                
-                                const fondoPromocion = currentVersion.regime_rent * ((currentVersion.fondo_promocion_percentage || 0) / 100);
-                                const otrosEgresos = currentVersion.otros_egresos_amount || 0;
-                                arriendoTotalMensual = currentVersion.regime_rent + gastosComunes + fondoPromocion + otrosEgresos;
+                                const breakdown = calculateTotalArriendoUF({
+                                  version: currentVersion,
+                                  signedDate: contract.signed_date,
+                                  superficie,
+                                  metrosLinealesFrente: metrosFrente,
+                                });
+                                arriendoTotalMensual = breakdown.total;
                               }
 
                               // Calculate venta in UF
