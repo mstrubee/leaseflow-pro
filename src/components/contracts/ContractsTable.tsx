@@ -933,16 +933,16 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                               const superficie = contract.superficie_edificada_local || 0;
                               const metrosFrente = contract.metros_lineales_frente || 0;
                               
-                              // Use centralized calculation for accurate total rent
+                              // Use weighted average total rent for ratio
                               let arriendoTotalMensual = 0;
                               if (currentVersion) {
-                                const breakdown = calculateTotalArriendoUF({
-                                  version: currentVersion,
+                                const { promedio } = calculateWeightedAverageTotalArriendo({
+                                  version: { ...currentVersion, duration_months: currentVersion.duration_months },
                                   signedDate: contract.signed_date,
                                   superficie,
                                   metrosLinealesFrente: metrosFrente,
                                 });
-                                arriendoTotalMensual = breakdown.total;
+                                arriendoTotalMensual = promedio;
                               }
 
                               // Calculate venta in UF
