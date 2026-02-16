@@ -671,6 +671,27 @@ export function CommercialConditionsSummary({
     return totalMonths > 0 ? weightedSum / totalMonths : totalArriendo;
   }, [hasEscalations, escalationPeriods, totalArriendo, version.duration_months, version.grace_months]);
 
+  // Weighted average Fondo Promoción across escalation periods
+  const fondoPromocionPromedio = useMemo(() => {
+    if (!hasEscalations || escalationPeriods.length <= 1 || !fondoPromocionAmount) return fondoPromocionAmount;
+    const durationMonths = version.duration_months;
+    if (durationMonths <= 0) return fondoPromocionAmount;
+    const graceMonths = version.grace_months || 0;
+    const initialStart = graceMonths > 0 ? graceMonths + 1 : 1;
+
+    let weightedSum = 0;
+    for (const p of escalationPeriods) {
+      const match = p.label.match(/M(\d+)-M(\d+)/);
+      if (match) {
+        const months = parseInt(match[2]) - parseInt(match[1]) + 1;
+        weightedSum += p.fProm * months;
+      }
+    }
+
+    const totalMonths = durationMonths - (initialStart - 1);
+    return totalMonths > 0 ? weightedSum / totalMonths : fondoPromocionAmount;
+  }, [hasEscalations, escalationPeriods, fondoPromocionAmount, version.duration_months, version.grace_months]);
+
   // Format adjustment value based on type
   const formatAdjustmentValue = () => {
     if (!version.has_periodic_adjustments || !version.adjustment_value) return null;
@@ -1131,13 +1152,13 @@ export function CommercialConditionsSummary({
           {fondoPromocionAmount !== null && fondoPromocionAmount > 0 && <div className="space-y-1">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Megaphone className="h-3 w-3" />
-                Fondo Promoción
+                Fondo Promoción{hasEscalations && escalationPeriods.length > 1 ? " (Promedio)" : ""}
               </div>
               <p className="text-sm font-medium">
-                {formatPrimary(fondoPromocionAmount)}
+                {formatPrimary(hasEscalations && escalationPeriods.length > 1 ? (fondoPromocionPromedio || 0) : fondoPromocionAmount)}
               </p>
               <p className="text-xs text-muted-foreground">
-                {formatSecondary(fondoPromocionAmount)}
+                {formatSecondary(hasEscalations && escalationPeriods.length > 1 ? (fondoPromocionPromedio || 0) : fondoPromocionAmount)}
               </p>
               <p className="text-xs text-muted-foreground">
                 ({version.fondo_promocion_percentage}% del canon)
