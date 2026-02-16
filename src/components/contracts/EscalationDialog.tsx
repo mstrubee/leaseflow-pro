@@ -10,12 +10,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Trash2, TrendingUp, Loader2 } from "lucide-react";
 
 export interface Escalation {
   id?: string;
   month_number: number;
   amount: number;
+  is_uf_m2?: boolean;
 }
 
 interface EscalationDialogProps {
@@ -25,6 +27,7 @@ interface EscalationDialogProps {
   durationMonths: number;
   onSave: (escalations: Escalation[]) => Promise<void>;
   trigger?: React.ReactNode;
+  superficieM2?: number;
 }
 
 export const EscalationDialog = ({
@@ -34,14 +37,19 @@ export const EscalationDialog = ({
   durationMonths,
   onSave,
   trigger,
+  superficieM2 = 0,
 }: EscalationDialogProps) => {
   const [open, setOpen] = useState(false);
   const [escalations, setEscalations] = useState<Escalation[]>(initialEscalations);
   const [newMonth, setNewMonth] = useState("");
   const [newAmount, setNewAmount] = useState("");
+  const [newIsUfM2, setNewIsUfM2] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: number, isUfM2: boolean = false) => {
+    if (isUfM2) {
+      return `${amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²`;
+    }
     return new Intl.NumberFormat("es-CL", {
       style: "currency",
       currency: "CLP",
@@ -60,12 +68,13 @@ export const EscalationDialog = ({
       return;
     }
 
-    const newEscalations = [...escalations, { month_number: month, amount }]
+    const newEscalations = [...escalations, { month_number: month, amount, is_uf_m2: newIsUfM2 }]
       .sort((a, b) => a.month_number - b.month_number);
     
     setEscalations(newEscalations);
     setNewMonth("");
     setNewAmount("");
+    setNewIsUfM2(false);
   };
 
   const handleRemove = (monthNumber: number) => {
@@ -141,8 +150,13 @@ export const EscalationDialog = ({
                       <div className="text-sm">
                         <span className="text-muted-foreground">Canon: </span>
                         <span className="font-semibold text-primary">
-                          {formatCurrency(escalation.amount)}
+                          {formatCurrency(escalation.amount, escalation.is_uf_m2)}
                         </span>
+                        {escalation.is_uf_m2 && superficieM2 > 0 && (
+                          <span className="text-muted-foreground ml-2">
+                            (Total: UF {(escalation.amount * superficieM2).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                          </span>
+                        )}
                       </div>
                     </div>
                     <Button
@@ -166,11 +180,11 @@ export const EscalationDialog = ({
           {/* Add new escalation */}
           <div className="space-y-3 pt-4 border-t border-border">
             <Label>Agregar nuevo escalón</Label>
-            <div className="flex gap-3">
+            <div className="flex gap-3 items-end">
               <div className="flex-1">
                 <Input
                   type="number"
-                  placeholder="Mes (1-{durationMonths})"
+                  placeholder={`Mes (1-${durationMonths})`}
                   value={newMonth}
                   onChange={(e) => setNewMonth(e.target.value)}
                   min={1}
@@ -180,12 +194,24 @@ export const EscalationDialog = ({
               <div className="flex-1">
                 <Input
                   type="number"
-                  placeholder="Monto (CLP)"
+                  placeholder={newIsUfM2 ? "UF/m²" : "Monto"}
                   value={newAmount}
                   onChange={(e) => setNewAmount(e.target.value)}
                   min={0}
+                  step="0.001"
                 />
               </div>
+              {superficieM2 > 0 && (
+                <Select value={newIsUfM2 ? "uf_m2" : "fixed"} onValueChange={(v) => setNewIsUfM2(v === "uf_m2")}>
+                  <SelectTrigger className="w-[80px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="fixed">Fijo</SelectItem>
+                    <SelectItem value="uf_m2">UF/m²</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
               <Button
                 type="button"
                 onClick={handleAdd}
@@ -196,6 +222,11 @@ export const EscalationDialog = ({
                 Agregar
               </Button>
             </div>
+            {newIsUfM2 && superficieM2 > 0 && parseFloat(newAmount) > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Total: UF {(parseFloat(newAmount) * superficieM2).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({superficieM2.toLocaleString("es-CL")} m²)
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">
               Indica el mes (1-{durationMonths}) en que cambia el canon y el nuevo monto
             </p>

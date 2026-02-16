@@ -312,6 +312,7 @@ const NewContract = () => {
               version_id: version.id,
               month_number: e.month_number,
               amount: currency === "CLP" && ufValue > 0 ? convertPesosToUF(e.amount) : e.amount,
+              is_uf_m2: e.is_uf_m2 || false,
             }))
           );
 

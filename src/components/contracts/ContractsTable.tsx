@@ -39,6 +39,7 @@ interface RentEscalation {
   id: string;
   month_number: number;
   amount: number;
+  is_uf_m2?: boolean;
 }
 
 interface ContractVersion {
@@ -469,9 +470,9 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
       currentRent = baseInitialRent;
       for (const esc of sortedEscalations) {
         if (esc.month_number <= currentMonth) {
-          // Escalation amounts: if stored in UF/m² mode, multiply by superficie
-          const escalationAmount = isRentUfM2 ? esc.amount * superficie : esc.amount;
-          currentRent = escalationAmount;
+          // Per-escalation UF/m²: own flag or legacy regime flag
+          const needsMultiply = esc.is_uf_m2 || (isRentUfM2 && !esc.is_uf_m2);
+          currentRent = needsMultiply ? esc.amount * superficie : esc.amount;
         } else {
           break;
         }

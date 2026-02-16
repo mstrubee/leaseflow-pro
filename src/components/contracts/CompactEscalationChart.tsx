@@ -7,6 +7,7 @@ import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 interface Escalation {
   month_number: number;
   amount: number;
+  is_uf_m2?: boolean;
 }
 
 interface NoticeRange {
@@ -150,16 +151,22 @@ export function CompactEscalationChart({
       }
     }
     
-    // Determine the starting rent after grace period (convert to total if UF/m²)
+    // Determine the starting rent after grace period (per-escalation UF/m² handling)
     const month1Escalation = sortedEscalations.find(e => e.month_number === firstPayingMonth);
-    const rawStartRent = month1Escalation?.amount || initialRent || regimeRent;
-    const startRent = rawStartRent * surfaceMultiplier;
-    rentChangePoints.set(firstPayingMonth, { rent: startRent });
+    if (month1Escalation) {
+      const escMultiplier = (month1Escalation.is_uf_m2 && superficieM2 > 0) ? superficieM2 : 1;
+      rentChangePoints.set(firstPayingMonth, { rent: month1Escalation.amount * escMultiplier });
+    } else {
+      const rawStartRent = initialRent || regimeRent;
+      const startRent = rawStartRent * surfaceMultiplier;
+      rentChangePoints.set(firstPayingMonth, { rent: startRent });
+    }
     
-    // Add escalation points (convert to total if UF/m²)
+    // Add escalation points (per-escalation UF/m² handling)
     sortedEscalations.forEach(e => {
       if (e.month_number > firstPayingMonth) {
-        rentChangePoints.set(e.month_number, { rent: e.amount * surfaceMultiplier });
+        const escMultiplier = (e.is_uf_m2 && superficieM2 > 0) ? superficieM2 : 1;
+        rentChangePoints.set(e.month_number, { rent: e.amount * escMultiplier });
       }
     });
     

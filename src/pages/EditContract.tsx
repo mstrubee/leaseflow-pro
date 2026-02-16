@@ -101,7 +101,7 @@ const EditContract = () => {
   const [contractEndNoticeBilaterality, setContractEndNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">("bilateral");
   const [noticeValue, setNoticeValue] = useState("");
   const [noticeRanges, setNoticeRanges] = useState<Array<{ id?: string; start_month: number; end_month: number }>>([]);
-  const [escalations, setEscalations] = useState<Array<{ id?: string; month_number: number; amount: number }>>([]);
+  const [escalations, setEscalations] = useState<Array<{ id?: string; month_number: number; amount: number; is_uf_m2?: boolean }>>([]);
   const [noticeBilaterality, setNoticeBilaterality] = useState<"unilateral_gp" | "bilateral">("unilateral_gp");
   const [multipleNotices, setMultipleNotices] = useState<NoticeEntry[]>([]);
   
@@ -613,6 +613,7 @@ const EditContract = () => {
                   version_id: currentVersionId,
                   month_number: e.month_number,
                   amount: e.amount,
+                  is_uf_m2: e.is_uf_m2 || false,
                 }))
               );
 
