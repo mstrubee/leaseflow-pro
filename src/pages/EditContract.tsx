@@ -1925,6 +1925,10 @@ const EditContract = () => {
                                             }
                                             
                                             return adjustments.map((adj, idx) => {
+                                              const nextMonth = idx < adjustments.length - 1 ? adjustments[idx + 1].month - 1 : durationMonths;
+                                              const rangeLabel = adj.isFirst
+                                                ? `M1 - M${nextMonth}`
+                                                : `M${adj.month} - M${nextMonth}`;
                                               const calcDetail = adj.isFirst
                                                 ? (isUfM2 && superficie > 0 ? `${baseRent.toFixed(3)} × ${superficie} m²` : "Renta base")
                                                 : adjustmentType === "percentage"
@@ -1935,7 +1939,7 @@ const EditContract = () => {
                                                 <div key={idx} className="flex flex-col py-0.5 border-b border-border/30 last:border-0">
                                                   <div className="flex justify-between">
                                                     <span className={adj.isFirst ? "font-medium" : ""}>
-                                                      {adj.isFirst ? "Inicio (Mes 1):" : `Mes ${adj.month}:`}
+                                                      {rangeLabel}:
                                                     </span>
                                                     <span className="font-medium">{adj.rent.toFixed(2)} UF{ufM2}</span>
                                                   </div>
