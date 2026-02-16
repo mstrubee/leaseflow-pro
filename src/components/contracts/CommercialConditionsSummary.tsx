@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DollarSign, Calendar, Bell, TrendingUp, Percent, Shield, Building2, Megaphone, Users, Receipt, Wallet, ChevronDown, ChevronRight, RefreshCw, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import logosHeader from "@/assets/logos-header.png";
 import { CompactEscalationChart } from "./CompactEscalationChart";
 import { RenegotiationDialog } from "./RenegotiationDialog";
 import { addMonths, format, subMonths, parseISO } from "date-fns";
@@ -625,7 +626,16 @@ export function CommercialConditionsSummary({
     
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const pageWidth = doc.internal.pageSize.getWidth();
-    let y = 20;
+    let y = 10;
+
+    // Logo
+    try {
+      const logoImg = new Image();
+      logoImg.src = logosHeader;
+      await new Promise((resolve, reject) => { logoImg.onload = resolve; logoImg.onerror = reject; });
+      doc.addImage(logoImg, "PNG", 14, y, 50, 20);
+    } catch {}
+    y += 25;
 
     // Title
     doc.setFontSize(14);
@@ -671,7 +681,7 @@ export function CommercialConditionsSummary({
 
     y = (doc as any).lastAutoTable.finalY + 8;
 
-    // Escalation periods table
+    // Escalation periods table - all periods together (including initial)
     if (hasEscalations && escalationPeriods.length > 1) {
       doc.setFontSize(10);
       doc.setFont("helvetica", "bold");
@@ -686,14 +696,7 @@ export function CommercialConditionsSummary({
       const fmt3 = (v: number | null) => v != null ? v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 }) : "-";
 
       const periodBody = escalationPeriods.map(p => {
-        const row = [
-          p.label,
-          fmt2(p.canon),
-          p.ggcc > 0 ? fmt2(p.ggcc) : "-",
-          p.fProm > 0 ? fmt2(p.fProm) : "-",
-          p.otros > 0 ? fmt2(p.otros) : "-",
-          fmt2(p.total),
-        ];
+        const row = [p.label, fmt2(p.canon), p.ggcc > 0 ? fmt2(p.ggcc) : "-", p.fProm > 0 ? fmt2(p.fProm) : "-", p.otros > 0 ? fmt2(p.otros) : "-", fmt2(p.total)];
         if (hasSurface) row.push(fmt3(p.ufM2));
         return row;
       });
