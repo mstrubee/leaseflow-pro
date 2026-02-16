@@ -747,7 +747,7 @@ export function CommercialConditionsSummary({
             {/* Show UF/m² breakdown when user entered value in UF/m² mode */}
             {version.regime_rent_is_uf_m2 && superficieEdificadaLocal && (
               <p className="text-xs text-muted-foreground">
-                ({superficieEdificadaLocal.toLocaleString("es-CL", { maximumFractionDigits: 2 })} m² × {version.regime_rent.toLocaleString("es-CL", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} UF/m²)
+                ({superficieEdificadaLocal.toLocaleString("es-CL", { maximumFractionDigits: 2 })} m² × {(currentRent / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} UF/m²)
               </p>
             )}
             {/* Show calculated UF/m² when NOT in UF/m² mode */}
