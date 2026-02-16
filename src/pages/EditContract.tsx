@@ -1928,8 +1928,8 @@ const EditContract = () => {
                                               const calcDetail = adj.isFirst
                                                 ? (isUfM2 && superficie > 0 ? `${baseRent.toFixed(3)} × ${superficie} m²` : "Renta base")
                                                 : adjustmentType === "percentage"
-                                                  ? `${adj.prevRent.toFixed(2)} × ${(1 + adjValue / 100).toFixed(4)}`
-                                                  : `${adj.prevRent.toFixed(2)} + ${adjValue.toFixed(2)}`;
+                                                  ? `${adjValue}% adicional a periodo anterior`
+                                                  : `+${adjValue.toFixed(2)} UF adicional a periodo anterior`;
                                               const ufM2 = isUfM2 && superficie > 0 ? ` (${(adj.rent / superficie).toFixed(3)} UF/m²)` : "";
                                               return (
                                                 <div key={idx} className="flex flex-col py-0.5 border-b border-border/30 last:border-0">
