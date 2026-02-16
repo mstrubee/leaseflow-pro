@@ -1349,14 +1349,15 @@ const EditContract = () => {
                                       />
                                       <span className="text-sm text-muted-foreground">×</span>
                                       <span className="text-sm text-muted-foreground">
-                                        {regimeRent || "0"} {currency}{isRegimeRentUfM2 ? "/m²" : ""}
+                                        {(hasEscalation ? initialRent : regimeRent) || "0"} {currency}{isRegimeRentUfM2 ? "/m²" : ""}
                                         {isRegimeRentUfM2 && superficieEdificadaLocal ? ` × ${superficieEdificadaLocal} m²` : ""}
                                       </span>
                                       <span className="text-sm text-muted-foreground">=</span>
                                       <span className="text-sm font-medium">
                                         {(() => {
-                                          if (!guaranteeMultiplier || !regimeRent) return `0 ${currency}`;
-                                          const baseRent = parseFloat(regimeRent);
+                                          const rentSource = hasEscalation ? initialRent : regimeRent;
+                                          if (!guaranteeMultiplier || !rentSource) return `0 ${currency}`;
+                                          const baseRent = parseFloat(rentSource);
                                           const actualRent = isRegimeRentUfM2 && superficieEdificadaLocal 
                                             ? baseRent * superficieEdificadaLocal 
                                             : baseRent;
@@ -1365,10 +1366,10 @@ const EditContract = () => {
                                         })()}
                                       </span>
                                     </div>
-                                    {currency === "CLP" && ufValue > 0 && guaranteeMultiplier && regimeRent && (
+                                    {currency === "CLP" && ufValue > 0 && guaranteeMultiplier && (hasEscalation ? initialRent : regimeRent) && (
                                       <p className="text-xs text-muted-foreground">
                                         {(() => {
-                                          const baseRent = parseFloat(regimeRent);
+                                          const baseRent = parseFloat(hasEscalation ? initialRent : regimeRent);
                                           const actualRent = isRegimeRentUfM2 && superficieEdificadaLocal 
                                             ? baseRent * superficieEdificadaLocal 
                                             : baseRent;
@@ -1377,10 +1378,10 @@ const EditContract = () => {
                                         })()}
                                       </p>
                                     )}
-                                    {currency === "UF" && ufValue > 0 && guaranteeMultiplier && regimeRent && (
+                                    {currency === "UF" && ufValue > 0 && guaranteeMultiplier && (hasEscalation ? initialRent : regimeRent) && (
                                       <p className="text-xs text-muted-foreground">
                                         {(() => {
-                                          const baseRent = parseFloat(regimeRent);
+                                          const baseRent = parseFloat(hasEscalation ? initialRent : regimeRent);
                                           const actualRent = isRegimeRentUfM2 && superficieEdificadaLocal 
                                             ? baseRent * superficieEdificadaLocal 
                                             : baseRent;
