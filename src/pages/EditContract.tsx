@@ -1890,60 +1890,116 @@ const EditContract = () => {
                                         </p>
                                         <div className="text-xs space-y-1 max-h-48 overflow-y-auto">
                                           {(() => {
-                                            const baseRent = parseFloat(regimeRent);
                                             const adjValue = parseFloat(adjustmentValue);
                                             const firstMonth = parseInt(firstAdjustmentMonth);
                                             const periodicity = parseInt(adjustmentPeriodicityMonths);
                                             const durationMonths = parseInt(duration) || 120;
                                             const superficie = superficieEdificadaLocal || 0;
                                             const isUfM2 = isRegimeRentUfM2;
-                                            const adjustments: { month: number; rent: number; prevRent: number; isFirst: boolean }[] = [];
-                                            
-                                            // Add initial rent at month 1
-                                            const totalBaseRent = isUfM2 && superficie > 0 ? baseRent * superficie : baseRent;
-                                            adjustments.push({ month: 1, rent: totalBaseRent, prevRent: 0, isFirst: true });
-                                            
-                                            let currentRent = totalBaseRent;
-                                            let month = firstMonth;
-                                            
-                                            // Calculate ALL adjustments until contract end
-                                            while (month <= durationMonths) {
-                                              const prevRent = currentRent;
-                                              if (adjustmentType === "percentage") {
-                                                currentRent = currentRent * (1 + adjValue / 100);
-                                              } else {
-                                                currentRent = currentRent + adjValue;
+                                            const graceM = graceMonths || 0;
+
+                                            // Build sorted escalation steps
+                                            const sortedEsc = [...(escalations || [])].sort((a, b) => a.month_number - b.month_number);
+
+                                            // Determine initial rent
+                                            const initRentRaw = parseFloat(initialRent) || parseFloat(regimeRent) || 0;
+                                            const initRentTotal = isUfM2 && superficie > 0 ? initRentRaw * superficie : initRentRaw;
+
+                                            // Collect all milestones (months where rent changes)
+                                            const milestones = new Set<number>();
+                                            const startMonth = graceM > 0 ? graceM + 1 : 1;
+                                            milestones.add(startMonth);
+
+                                            for (const esc of sortedEsc) {
+                                              if (esc.month_number > startMonth) milestones.add(esc.month_number);
+                                            }
+
+                                            let adjMonth = firstMonth;
+                                            while (adjMonth <= durationMonths) {
+                                              milestones.add(adjMonth);
+                                              adjMonth += periodicity;
+                                            }
+
+                                            const sortedMilestones = Array.from(milestones).sort((a, b) => a - b);
+
+                                            // Walk through milestones computing rent
+                                            const periods: { month: number; rent: number; detail: string }[] = [];
+                                            let currentRent = initRentTotal;
+                                            let lastEscIdx = -1;
+
+                                            for (const m of sortedMilestones) {
+                                              // Check if an escalation applies at this month
+                                              const escAtMonth = sortedEsc.filter(e => e.month_number === m);
+                                              if (escAtMonth.length > 0) {
+                                                const esc = escAtMonth[escAtMonth.length - 1];
+                                                currentRent = esc.is_uf_m2 && superficie > 0
+                                                  ? esc.amount * superficie
+                                                  : isUfM2 && superficie > 0
+                                                    ? esc.amount * superficie
+                                                    : esc.amount;
+                                                lastEscIdx = sortedEsc.indexOf(esc);
                                               }
-                                              adjustments.push({ month, rent: currentRent, prevRent, isFirst: false });
-                                              month += periodicity;
-                                            }
-                                            
-                                            // Add final month if not already included
-                                            const lastAdjMonth = adjustments[adjustments.length - 1]?.month;
-                                            if (lastAdjMonth < durationMonths) {
-                                              adjustments.push({ month: durationMonths, rent: currentRent, prevRent: currentRent, isFirst: false });
-                                            }
-                                            
-                                            return adjustments.map((adj, idx) => {
-                                              const nextMonth = idx < adjustments.length - 1 ? adjustments[idx + 1].month - 1 : durationMonths;
-                                              const rangeLabel = adj.isFirst
-                                                ? `M1 - M${nextMonth}`
-                                                : `M${adj.month} - M${nextMonth}`;
-                                              const calcDetail = adj.isFirst
-                                                ? (isUfM2 && superficie > 0 ? `${baseRent.toFixed(3)} × ${superficie} m²` : "Renta base")
-                                                : adjustmentType === "percentage"
+
+                                              // Check if an adjustment applies at this month
+                                              const isAdjMonth = m >= firstMonth && (m - firstMonth) % periodicity === 0;
+                                              if (isAdjMonth && !escAtMonth.length) {
+                                                // Check if escalation happened since last adjustment
+                                                const prevAdj = periods.length > 0 ? periods[periods.length - 1].month : startMonth;
+                                                const escBetween = sortedEsc.filter(e => e.month_number > prevAdj && e.month_number <= m);
+                                                if (escBetween.length > 0) {
+                                                  const lastEsc = escBetween[escBetween.length - 1];
+                                                  currentRent = lastEsc.is_uf_m2 && superficie > 0
+                                                    ? lastEsc.amount * superficie
+                                                    : isUfM2 && superficie > 0
+                                                      ? lastEsc.amount * superficie
+                                                      : lastEsc.amount;
+                                                }
+                                                if (adjustmentType === "percentage") {
+                                                  currentRent = currentRent * (1 + adjValue / 100);
+                                                } else {
+                                                  currentRent = currentRent + adjValue;
+                                                }
+                                              }
+
+                                              // Build detail label
+                                              let detail: string;
+                                              if (m === startMonth && !escAtMonth.length) {
+                                                detail = isUfM2 && superficie > 0 ? `${initRentRaw.toFixed(3)} UF/m² × ${superficie} m²` : "Renta base";
+                                              } else if (escAtMonth.length > 0) {
+                                                const esc = escAtMonth[escAtMonth.length - 1];
+                                                const rate = esc.is_uf_m2 || isUfM2 ? esc.amount.toFixed(3) + " UF/m²" : esc.amount.toFixed(2) + " UF";
+                                                detail = `Escalón: ${rate}`;
+                                              } else {
+                                                detail = adjustmentType === "percentage"
                                                   ? `${adjValue}% adicional a periodo anterior`
                                                   : `+${adjValue.toFixed(2)} UF adicional a periodo anterior`;
-                                              const ufM2 = isUfM2 && superficie > 0 ? ` (${(adj.rent / superficie).toFixed(3)} UF/m²)` : "";
+                                              }
+
+                                              periods.push({ month: m, rent: currentRent, detail });
+                                            }
+
+                                            // If first milestone isn't startMonth (e.g. starts with escalation), prepend initial
+                                            if (periods.length === 0 || periods[0].month > startMonth) {
+                                              periods.unshift({
+                                                month: startMonth,
+                                                rent: initRentTotal,
+                                                detail: isUfM2 && superficie > 0 ? `${initRentRaw.toFixed(3)} UF/m² × ${superficie} m²` : "Renta base",
+                                              });
+                                            }
+
+                                            return periods.map((p, idx) => {
+                                              const nextMonth = idx < periods.length - 1 ? periods[idx + 1].month - 1 : durationMonths;
+                                              const rangeLabel = `M${p.month} - M${nextMonth}`;
+                                              const ufM2 = superficie > 0 ? ` (${(p.rent / superficie).toFixed(3)} UF/m²)` : "";
                                               return (
                                                 <div key={idx} className="flex flex-col py-0.5 border-b border-border/30 last:border-0">
                                                   <div className="flex justify-between">
-                                                    <span className={adj.isFirst ? "font-medium" : ""}>
+                                                    <span className={idx === 0 ? "font-medium" : ""}>
                                                       {rangeLabel}:
                                                     </span>
-                                                    <span className="font-medium">{adj.rent.toFixed(2)} UF{ufM2}</span>
+                                                    <span className="font-medium">{p.rent.toFixed(2)} UF{ufM2}</span>
                                                   </div>
-                                                  <span className="text-muted-foreground text-[10px]">{calcDetail}</span>
+                                                  <span className="text-muted-foreground text-[10px]">{p.detail}</span>
                                                 </div>
                                               );
                                             });
