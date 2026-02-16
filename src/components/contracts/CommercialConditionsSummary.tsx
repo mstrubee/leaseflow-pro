@@ -479,8 +479,12 @@ export function CommercialConditionsSummary({
     return rent;
   }, [version, signedDate, hasEscalations, hasAdjustments, actualRegimeRent, actualInitialRent, superficieEdificadaLocal]);
 
-  // For contracts not started, always show "Canon en Régimen", not "Canon Actual"
+  // Label: "Canon Actual" when contract is active with escalations/adjustments,
+  // "Canon Inicial" when not started but has escalations, otherwise "Canon de Arriendo"
   const showCurrentLabel = !isContractNotStarted && (hasEscalations || hasAdjustments);
+  const canonLabel = showCurrentLabel 
+    ? "Canon Actual" 
+    : (isContractNotStarted && hasEscalations ? "Canon Inicial" : "Canon de Arriendo");
 
   // Canon per m2 - use currentRent for escalated contracts
   const canonPerM2 = superficieEdificadaLocal && superficieEdificadaLocal > 0 ? currentRent / superficieEdificadaLocal : null;
@@ -707,7 +711,7 @@ export function CommercialConditionsSummary({
             {totalArriendoExpanded && (
               <div className="text-[10px] text-muted-foreground space-y-0.5 animate-in slide-in-from-top-1 duration-200">
                 <div className="flex justify-between">
-                  <span>Canon{showCurrentLabel ? " actual" : ""}:</span>
+                  <span>{canonLabel === "Canon Actual" ? "Canon actual" : "Canon"}:</span>
                   <span>{formatPrimary(currentRent)}</span>
                 </div>
                 <div className="flex justify-between">
@@ -734,7 +738,7 @@ export function CommercialConditionsSummary({
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <DollarSign className="h-3 w-3" />
-              {showCurrentLabel ? "Canon Actual" : "Canon de Arriendo"}
+              {canonLabel}
               {version.regime_rent_is_uf_m2 && (
                 <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">UF/m²</Badge>
               )}
