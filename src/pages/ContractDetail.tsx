@@ -23,6 +23,7 @@ import { GanttModule } from "@/components/gantt/GanttModule";
 
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { TerminationNoticesSection } from "@/components/contracts/TerminationNoticesSection";
+import { ClosingProcessBanner } from "@/components/contracts/ClosingProcessBanner";
 import { AlertsReturnButton } from "@/components/alerts/AlertsReturnButton";
 import { OpexReturnButton } from "@/components/opex/OpexReturnButton";
 import { ReportsReturnButton } from "@/components/reports/ReportsReturnButton";
@@ -224,6 +225,7 @@ const ContractDetail = () => {
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
   const [signingContract, setSigningContract] = useState(false);
+  const [closingNotesRefresh, setClosingNotesRefresh] = useState(0);
 
   // DnD sensors
   const sensors = useSensors(
@@ -764,7 +766,7 @@ const ContractDetail = () => {
               )}
             </div>
             <div className="flex items-center gap-2">
-              {isAdmin && (isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} requiresSpecialAttention={contract.requires_special_attention} specialAttentionReason={contract.special_attention_reason} onStatusChange={loadContract} />}
+              {isAdmin && (isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} requiresSpecialAttention={contract.requires_special_attention} specialAttentionReason={contract.special_attention_reason} hasTerminationNotices={(contract.termination_notices?.length || 0) > 0} onStatusChange={() => { loadContract(); setClosingNotesRefresh(p => p + 1); }} />}
               {isAdmin && (
                 <Button variant="outline" onClick={() => navigate(`/contracts/${contract.id}/edit`)} className="gap-2">
                   <Edit className="h-4 w-4" />
@@ -783,6 +785,14 @@ const ContractDetail = () => {
             <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0" />
             <p className="font-bold text-foreground">{contract.special_attention_reason}</p>
           </div>
+        )}
+
+        {/* Closing Process Banner - for contracts with termination notices */}
+        {(contract.termination_notices?.length || 0) > 0 && (
+          <ClosingProcessBanner
+            contractId={contract.id}
+            refreshKey={closingNotesRefresh}
+          />
         )}
 
         {/* Negotiation Notes Banner - only for contracts in negotiation */}

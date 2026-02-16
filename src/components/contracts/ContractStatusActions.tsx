@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { ClosingProcessDialog } from "./ClosingProcessDialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -32,7 +33,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Loader2, MoreVertical, AlertTriangle, Clock, XCircle, CheckCircle, Upload, FileText, Pencil } from "lucide-react";
+import { Loader2, MoreVertical, AlertTriangle, Clock, XCircle, CheckCircle, Upload, FileText, Pencil, ClipboardList } from "lucide-react";
 
 interface ContractStatusActionsProps {
   contractId: string;
@@ -41,6 +42,7 @@ interface ContractStatusActionsProps {
   isExpiredButOperating: boolean;
   requiresSpecialAttention?: boolean;
   specialAttentionReason?: string | null;
+  hasTerminationNotices?: boolean;
   onStatusChange: () => void;
 }
 
@@ -51,6 +53,7 @@ export function ContractStatusActions({
   isExpiredButOperating,
   requiresSpecialAttention = false,
   specialAttentionReason = null,
+  hasTerminationNotices = false,
   onStatusChange,
 }: ContractStatusActionsProps) {
   const [loading, setLoading] = useState(false);
@@ -62,6 +65,7 @@ export function ContractStatusActions({
   const [showFiniquitoWarning, setShowFiniquitoWarning] = useState(false);
   const [showSpecialAttentionDialog, setShowSpecialAttentionDialog] = useState(false);
   const [specialAttentionDescription, setSpecialAttentionDescription] = useState(specialAttentionReason || "");
+  const [showClosingProcess, setShowClosingProcess] = useState(false);
 
   const handleMarkAsExpired = async () => {
     // Check if finiquito is attached
@@ -329,6 +333,15 @@ export function ContractStatusActions({
                   </DropdownMenuItem>
                 </>
               )}
+              {hasTerminationNotices && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setShowClosingProcess(true)}>
+                    <ClipboardList className="h-4 w-4 mr-2 text-amber-500" />
+                    Proceso Cierre
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -464,6 +477,14 @@ export function ContractStatusActions({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <ClosingProcessDialog
+          open={showClosingProcess}
+          onOpenChange={setShowClosingProcess}
+          contractId={contractId}
+          contractName={contractName}
+          onNotesChange={onStatusChange}
+        />
       </>
     );
   }
