@@ -577,48 +577,45 @@ export function CommercialConditionsSummary({
 
     const sortedMilestones = Array.from(milestones).sort((a, b) => a - b);
 
-    // For each milestone, compute canon considering escalations + adjustments up to that month
-    const getCanonAtMonth = (month: number): number => {
-      let canon = actualInitialRent || actualRegimeRent;
+    // Walk milestones sequentially to compute canon at each point
+    const canonByMilestone = new Map<number, number>();
+    let runningCanon = actualInitialRent || actualRegimeRent;
 
-      // Apply escalations
-      if (sortedEsc.length > 0) {
-        for (const esc of sortedEsc) {
-          if (esc.month_number <= month) {
-            const needsMultiply = esc.is_uf_m2 || (isRentUfM2 && !esc.is_uf_m2);
-            canon = needsMultiply && superficie > 0 ? esc.amount * superficie : esc.amount;
-          } else break;
+    // Track adjustment state
+    const firstAdj = hasAdjustments ? (version.first_adjustment_month || 0) : Infinity;
+    const period = version.adjustment_periodicity_months || 12;
+    const adjValue = version.adjustment_value || 0;
+    const adjType = version.adjustment_type || "percentage";
+
+    for (const ms of sortedMilestones) {
+      // Check if an escalation applies at this milestone
+      const escAtMs = sortedEsc.filter(e => e.month_number === ms);
+      if (escAtMs.length > 0) {
+        const esc = escAtMs[escAtMs.length - 1];
+        const needsMultiply = esc.is_uf_m2 || (isRentUfM2 && !esc.is_uf_m2);
+        runningCanon = needsMultiply && superficie > 0 ? esc.amount * superficie : esc.amount;
+      }
+
+      // Check if a periodic adjustment applies at this milestone
+      const isAdjMs = hasAdjustments && ms >= firstAdj && (ms - firstAdj) % period === 0;
+      if (isAdjMs && escAtMs.length === 0) {
+        // If an escalation happened between previous adjustment and this one, reset base
+        const prevAdjMonth = ms - period;
+        const escBetween = sortedEsc.filter(e => e.month_number > prevAdjMonth && e.month_number <= ms);
+        if (escBetween.length > 0) {
+          const last = escBetween[escBetween.length - 1];
+          const needsMultiply = last.is_uf_m2 || (isRentUfM2 && !last.is_uf_m2);
+          runningCanon = needsMultiply && superficie > 0 ? last.amount * superficie : last.amount;
+        }
+        if (adjType === "percentage") {
+          runningCanon = runningCanon * (1 + adjValue / 100);
+        } else {
+          runningCanon = runningCanon + adjValue;
         }
       }
 
-      // Apply periodic adjustments
-      if (hasAdjustments) {
-        const firstAdj = version.first_adjustment_month || 0;
-        const period = version.adjustment_periodicity_months || 12;
-        const adjValue = version.adjustment_value || 0;
-        const adjType = version.adjustment_type || "percentage";
-
-        let adjMonth = firstAdj;
-        while (adjMonth <= month) {
-          // Check if an escalation resets the base between previous adj and this one
-          const prevAdj = adjMonth === firstAdj ? 0 : adjMonth - period;
-          const escBetween = sortedEsc.filter(e => e.month_number > prevAdj && e.month_number <= adjMonth);
-          if (escBetween.length > 0) {
-            const last = escBetween[escBetween.length - 1];
-            const needsMultiply = last.is_uf_m2 || (isRentUfM2 && !last.is_uf_m2);
-            canon = needsMultiply && superficie > 0 ? last.amount * superficie : last.amount;
-          }
-          if (adjType === "percentage") {
-            canon = canon * (1 + adjValue / 100);
-          } else {
-            canon = canon + adjValue;
-          }
-          adjMonth += period;
-        }
-      }
-
-      return canon;
-    };
+      canonByMilestone.set(ms, runningCanon);
+    }
 
     const periods: Array<{
       label: string;
@@ -635,7 +632,7 @@ export function CommercialConditionsSummary({
       const endMonth = i < sortedMilestones.length - 1 ? sortedMilestones[i + 1] - 1 : durationMonths;
       if (startMonth > durationMonths) break;
 
-      const periodCanon = getCanonAtMonth(startMonth);
+      const periodCanon = canonByMilestone.get(startMonth) || (actualInitialRent || actualRegimeRent);
       const periodFProm = periodCanon * (fondoPct / 100);
       const periodTotal = periodCanon + ggcc + periodFProm + otros;
 
