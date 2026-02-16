@@ -543,9 +543,9 @@ export function CommercialConditionsSummary({
   // Total arriendo calculation (Canon actual + GGCC + FP + Otros)
   const totalArriendo = currentRent + (gastosComunesTotalUF || 0) + (fondoPromocionAmount || 0) + otrosEgresosAmount;
 
-  // Escalation periods breakdown for Total Arriendo detail
+  // Full periods breakdown: escalations + periodic adjustments through contract end
   const escalationPeriods = useMemo(() => {
-    if (!hasEscalations) return [];
+    if (!hasEscalations && !hasAdjustments) return [];
     const escalations = version.rent_escalations || [];
     const sortedEsc = [...escalations].sort((a, b) => a.month_number - b.month_number);
     const superficie = superficieEdificadaLocal || 0;
@@ -553,6 +553,72 @@ export function CommercialConditionsSummary({
     const fondoPct = version.fondo_promocion_percentage || 0;
     const otros = version.otros_egresos_amount || 0;
     const ggcc = gastosComunesTotalUF || 0;
+    const durationMonths = version.duration_months;
+    const isRentUfM2 = version.regime_rent_is_uf_m2 === true;
+
+    // Build milestones: months where rent changes (escalations or adjustments)
+    const milestones = new Set<number>();
+    const initialStart = graceMonths > 0 ? graceMonths + 1 : 1;
+    milestones.add(initialStart);
+
+    for (const esc of sortedEsc) {
+      if (esc.month_number <= durationMonths) milestones.add(esc.month_number);
+    }
+
+    if (hasAdjustments) {
+      const firstAdj = version.first_adjustment_month || 0;
+      const period = version.adjustment_periodicity_months || 12;
+      let m = firstAdj;
+      while (m <= durationMonths) {
+        milestones.add(m);
+        m += period;
+      }
+    }
+
+    const sortedMilestones = Array.from(milestones).sort((a, b) => a - b);
+
+    // For each milestone, compute canon considering escalations + adjustments up to that month
+    const getCanonAtMonth = (month: number): number => {
+      let canon = actualInitialRent || actualRegimeRent;
+
+      // Apply escalations
+      if (sortedEsc.length > 0) {
+        for (const esc of sortedEsc) {
+          if (esc.month_number <= month) {
+            const needsMultiply = esc.is_uf_m2 || (isRentUfM2 && !esc.is_uf_m2);
+            canon = needsMultiply && superficie > 0 ? esc.amount * superficie : esc.amount;
+          } else break;
+        }
+      }
+
+      // Apply periodic adjustments
+      if (hasAdjustments) {
+        const firstAdj = version.first_adjustment_month || 0;
+        const period = version.adjustment_periodicity_months || 12;
+        const adjValue = version.adjustment_value || 0;
+        const adjType = version.adjustment_type || "percentage";
+
+        let adjMonth = firstAdj;
+        while (adjMonth <= month) {
+          // Check if an escalation resets the base between previous adj and this one
+          const prevAdj = adjMonth === firstAdj ? 0 : adjMonth - period;
+          const escBetween = sortedEsc.filter(e => e.month_number > prevAdj && e.month_number <= adjMonth);
+          if (escBetween.length > 0) {
+            const last = escBetween[escBetween.length - 1];
+            const needsMultiply = last.is_uf_m2 || (isRentUfM2 && !last.is_uf_m2);
+            canon = needsMultiply && superficie > 0 ? last.amount * superficie : last.amount;
+          }
+          if (adjType === "percentage") {
+            canon = canon * (1 + adjValue / 100);
+          } else {
+            canon = canon + adjValue;
+          }
+          adjMonth += period;
+        }
+      }
+
+      return canon;
+    };
 
     const periods: Array<{
       label: string;
@@ -564,37 +630,17 @@ export function CommercialConditionsSummary({
       ufM2: number | null;
     }> = [];
 
-    // Initial period: from grace end (or M1) to first escalation
-    const initialStart = graceMonths > 0 ? graceMonths + 1 : 1;
-    const firstEscMonth = sortedEsc[0]?.month_number || version.duration_months + 1;
-    
-    // Calculate initial canon
-    const initialCanon = actualInitialRent || actualRegimeRent;
-    const initialFProm = initialCanon * (fondoPct / 100);
-    const initialTotal = initialCanon + ggcc + initialFProm + otros;
-    
-    periods.push({
-      label: `M${initialStart}-M${firstEscMonth - 1}`,
-      canon: initialCanon,
-      ggcc,
-      fProm: initialFProm,
-      otros,
-      total: initialTotal,
-      ufM2: superficie > 0 ? initialTotal / superficie : null,
-    });
+    for (let i = 0; i < sortedMilestones.length; i++) {
+      const startMonth = sortedMilestones[i];
+      const endMonth = i < sortedMilestones.length - 1 ? sortedMilestones[i + 1] - 1 : durationMonths;
+      if (startMonth > durationMonths) break;
 
-    // Each escalation period
-    for (let i = 0; i < sortedEsc.length; i++) {
-      const esc = sortedEsc[i];
-      const nextMonth = i < sortedEsc.length - 1 ? sortedEsc[i + 1].month_number : version.duration_months + 1;
-      
-      const needsMultiply = esc.is_uf_m2 || (version.regime_rent_is_uf_m2 && !esc.is_uf_m2);
-      const periodCanon = needsMultiply && superficie > 0 ? esc.amount * superficie : esc.amount;
+      const periodCanon = getCanonAtMonth(startMonth);
       const periodFProm = periodCanon * (fondoPct / 100);
       const periodTotal = periodCanon + ggcc + periodFProm + otros;
 
       periods.push({
-        label: `M${esc.month_number}-M${nextMonth - 1}`,
+        label: `M${startMonth}-M${endMonth}`,
         canon: periodCanon,
         ggcc,
         fProm: periodFProm,
@@ -605,7 +651,7 @@ export function CommercialConditionsSummary({
     }
 
     return periods;
-  }, [hasEscalations, version, superficieEdificadaLocal, gastosComunesTotalUF, actualInitialRent, actualRegimeRent]);
+  }, [hasEscalations, hasAdjustments, version, superficieEdificadaLocal, gastosComunesTotalUF, actualInitialRent, actualRegimeRent]);
 
   // Format adjustment value based on type
   const formatAdjustmentValue = () => {
@@ -657,35 +703,12 @@ export function CommercialConditionsSummary({
       y += 5;
     }
 
-    // Breakdown table
-    y += 3;
-    const breakdownData = [
-      [canonLabel === "Canon Actual" ? "Canon actual" : "Canon", formatPrimary(currentRent)],
-      ["GGCC", gastosComunesTotalUF ? formatPrimary(gastosComunesTotalUF) : "-"],
-      ["F. Promoción", fondoPromocionAmount ? formatPrimary(fondoPromocionAmount) : "-"],
-      ["Otros Egresos", otrosEgresosAmount > 0 ? formatPrimary(otrosEgresosAmount) : "-"],
-      ["Variable", version.variable_rent_percentage !== null && version.variable_rent_percentage > 0 ? `${version.variable_rent_percentage}%` : "-"],
-      ["Total", formatPrimary(totalArriendo)],
-    ];
-
-    autoTable(doc, {
-      startY: y,
-      head: [["Concepto", "Monto"]],
-      body: breakdownData,
-      theme: "grid",
-      styles: { fontSize: 9, cellPadding: 2 },
-      headStyles: { fillColor: [220, 38, 38], textColor: 255, fontStyle: "bold" },
-      columnStyles: { 1: { halign: "right" } },
-      margin: { left: 14, right: 14 },
-    });
-
-    y = (doc as any).lastAutoTable.finalY + 8;
-
-    // Escalation periods table - all periods together (including initial)
-    if (hasEscalations && escalationPeriods.length > 1) {
+    // Periods table (escalation + adjustment periods)
+    if (escalationPeriods.length > 0) {
+      y += 3;
       doc.setFontSize(10);
       doc.setFont("helvetica", "bold");
-      doc.text("Arriendo por Periodo de Escalonamiento", 14, y);
+      doc.text("Detalle por Periodo", 14, y);
       y += 4;
 
       const hasSurface = superficieEdificadaLocal && superficieEdificadaLocal > 0;
@@ -720,7 +743,6 @@ export function CommercialConditionsSummary({
         margin: { left: 14, right: 14 },
       });
     }
-
     doc.save("total-arriendo.pdf");
   };
 
@@ -918,7 +940,7 @@ export function CommercialConditionsSummary({
                   <span>{version.variable_rent_percentage !== null && version.variable_rent_percentage > 0 ? `${version.variable_rent_percentage}%` : "-"}</span>
                 </div>
                 {/* Escalation periods breakdown */}
-                {hasEscalations && escalationPeriods.length > 1 && (
+                {escalationPeriods.length > 1 && (
                   <div className="mt-2 pt-2 border-t border-border/50">
                     <p className="text-[10px] font-medium text-foreground mb-1">Arriendo por periodo</p>
                     <table className="w-full text-[10px]">
