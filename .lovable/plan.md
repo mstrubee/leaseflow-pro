@@ -1,93 +1,40 @@
 
-# Reconfiguración del Sistema de Permisos por Módulo
 
-## Problema Actual
-Los recursos de permisos definidos en el panel de administración solo cubren 4 módulos principales (Contratos, Dashboard, Repositorio, Proveedores), pero la aplicación tiene 7 módulos de navegación adicionales que no están controlados por permisos:
-- Mantenciones
-- Órdenes de Compra
-- OPEX
-- Alertas
-- Informes
-- KPI
-- Proveedores (ya existe pero no se aplica en la navegación)
+# Corregir escritura erratica en filtros del listado de contratos
 
-Los usuarios no-admin actualmente ven todos los botones de navegación y pueden acceder a todas las rutas sin restricción.
+## Problema identificado
 
-## Solución
+El campo de busqueda y los filtros del listado de contratos actualizan los parametros de la URL (`searchParams`) en cada tecla presionada. Esto provoca:
 
-### 1. Ampliar los recursos de permisos
-Agregar los siguientes recursos al sistema de permisos en `AdminPanel.tsx`:
+1. Re-renderizado completo de la pagina en cada caracter
+2. Re-ejecucion de `filterAndSortContracts` que procesa todos los contratos
+3. Perdida de foco o texto por la actualizacion constante de la URL
 
-| ID del Recurso | Etiqueta | Descripción |
-|---|---|---|
-| `maintenance` | Mantenciones | Módulo de mantenciones |
-| `purchase_orders` | Órdenes de Compra | Módulo de órdenes de compra |
-| `opex` | OPEX | Módulo presupuesto operacional |
-| `alerts` | Alertas | Dashboard de alertas |
-| `reports` | Informes | Dashboard de informes |
-| `kpi` | KPI | Módulo de indicadores |
+## Solucion
 
-(Proveedores ya existe como `suppliers`)
+Introducir un estado local para el campo de busqueda con un **debounce** que sincronice hacia la URL solo despues de que el usuario deje de escribir (300ms).
 
-### 2. Filtrar navegación en Dashboard según permisos
-En `src/pages/Dashboard.tsx`:
-- Importar `useAuth` (ya importado) y usar `hasPermission` para cada botón
-- Cada botón de navegación solo se mostrará si el usuario tiene permiso `view` o `edit` para ese recurso
-- Admin sigue viendo todo
+## Cambios planificados
 
-### 3. Proteger rutas individuales
-En `src/components/auth/ProtectedRoute.tsx`:
-- Agregar prop opcional `resource` para validar permiso de acceso
-- Si el usuario no tiene permiso para el recurso, redirigir al Dashboard (/) en lugar de mostrar el módulo
+### Archivo: `src/pages/Contracts.tsx`
 
-Actualizar `src/App.tsx` para pasar el recurso correspondiente a cada `ProtectedRoute`:
+1. Agregar un estado local `localSearchTerm` para el Input de busqueda
+2. Sincronizar `localSearchTerm` desde la URL al montar (y cuando cambie externamente)
+3. Usar un `useEffect` con `setTimeout` de 300ms para hacer debounce de la escritura hacia la URL
+4. Cambiar el Input para usar `localSearchTerm` y `setLocalSearchTerm` en lugar de `searchTerm` y `setSearchTerm`
+
+### Detalle tecnico
 
 ```text
-/maintenance      -> resource="maintenance"
-/purchase-orders  -> resource="purchase_orders"
-/opex             -> resource="opex"
-/alerts           -> resource="alerts"
-/reports          -> resource="reports"
-/kpi              -> resource="kpi"
-/suppliers        -> resource="suppliers"
-/contracts        -> resource="contracts"
+Estado actual:
+  Input onChange -> updateFilter("search", value) -> setSearchParams() -> re-render completo
+
+Estado propuesto:
+  Input onChange -> setLocalSearchTerm(value) -> [render solo del input]
+                                              -> useEffect con debounce 300ms
+                                              -> updateFilter("search", value)
+                                              -> setSearchParams() -> re-render completo
 ```
 
-### 4. Actualizar el hook useAuth
-El `hasPermission` actual ya funciona correctamente: si el usuario es admin retorna `true`, si no, busca el permiso específico. No requiere cambios.
+Esto permite que el usuario escriba fluidamente sin esperar el ciclo completo de filtrado en cada tecla.
 
-Sin embargo, hay un detalle importante: actualmente si un usuario no tiene *ningún* permiso asignado para un recurso, `hasPermission` retorna `false`. Esto es el comportamiento correcto -- los usuarios solo ven los módulos que explícitamente se les asignan.
-
-### 5. Actualizar la lista MAIN_RESOURCES en AdminPanel
-Agregar los 6 nuevos recursos a `MAIN_RESOURCES` para que aparezcan en el formulario de creación/edición de usuarios.
-
-### 6. Actualizar permisos del usuario existente (Beatriz)
-Una vez implementado, será necesario editar los permisos de los usuarios existentes desde el panel de admin para asignarles acceso a los módulos que correspondan.
-
----
-
-## Detalles Técnicos
-
-### Archivos a modificar:
-
-1. **`src/pages/AdminPanel.tsx`** -- Agregar los 6 nuevos recursos a `MAIN_RESOURCES`
-
-2. **`src/pages/Dashboard.tsx`** -- Envolver cada botón de navegación con verificación de `hasPermission(resource, "view")`
-
-3. **`src/components/auth/ProtectedRoute.tsx`** -- Agregar prop `resource?: string` y validar acceso con `hasPermission`
-
-4. **`src/App.tsx`** -- Pasar prop `resource` a las rutas protegidas que correspondan
-
-### Flujo resultante:
-
-```text
-Usuario no-admin inicia sesion
-  -> Dashboard muestra SOLO los botones de modulos permitidos
-  -> Si intenta acceder por URL directa a un modulo sin permiso -> redirige a /
-  -> Admin ve todo sin restriccion
-```
-
-### Sin cambios necesarios en:
-- Base de datos (la tabla `user_permissions` ya soporta cualquier string como `resource`)
-- Edge functions (ya validan admin correctamente)
-- `useAuth.tsx` (la logica de `hasPermission` ya es correcta)
