@@ -1124,7 +1124,7 @@ export function CommercialConditionsSummary({
                   {formatSecondary(version.adjustment_value)}
                 </p>}
               <p className="text-xs text-muted-foreground">
-                cada {version.adjustment_periodicity_months} meses
+                cada {version.adjustment_periodicity_months} meses a partir del mes {version.first_adjustment_month}
               </p>
             </div>}
 
