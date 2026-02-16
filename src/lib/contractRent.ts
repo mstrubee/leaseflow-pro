@@ -3,6 +3,7 @@ import { parseISO } from "date-fns";
 export interface RentEscalationLike {
   month_number: number;
   amount: number;
+  is_uf_m2?: boolean;
 }
 
 export interface ContractVersionLike {
@@ -139,7 +140,15 @@ export const calculateCurrentRentUF = (params: {
 
     for (const esc of sortedEscalations) {
       if (esc.month_number <= currentMonth) {
-        currentRent = isRentUfM2 ? esc.amount * superficie : esc.amount;
+        // Per-escalation UF/m² handling
+        if (esc.is_uf_m2) {
+          currentRent = esc.amount * superficie;
+        } else if (isRentUfM2) {
+          // Legacy: if regime is UF/m² and escalation doesn't have its own flag, multiply
+          currentRent = esc.amount * superficie;
+        } else {
+          currentRent = esc.amount;
+        }
       } else {
         break;
       }

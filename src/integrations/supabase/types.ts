@@ -4133,6 +4133,7 @@ export type Database = {
           amount: number
           created_at: string
           id: string
+          is_uf_m2: boolean
           month_number: number
           version_id: string
         }
@@ -4140,6 +4141,7 @@ export type Database = {
           amount: number
           created_at?: string
           id?: string
+          is_uf_m2?: boolean
           month_number: number
           version_id: string
         }
@@ -4147,6 +4149,7 @@ export type Database = {
           amount?: number
           created_at?: string
           id?: string
+          is_uf_m2?: boolean
           month_number?: number
           version_id?: string
         }

@@ -129,6 +129,7 @@ interface Contract {
       id: string;
       month_number: number;
       amount: number;
+      is_uf_m2?: boolean;
     }>;
     notice_ranges?: Array<{
       start_month: number;
@@ -544,7 +545,8 @@ const ContractDetail = () => {
         } = await supabase.from("rent_escalations").insert(escalations.map(e => ({
           version_id: currentVersion.id,
           month_number: e.month_number,
-          amount: e.amount
+          amount: e.amount,
+          is_uf_m2: e.is_uf_m2 || false,
         })));
         if (insertError) throw insertError;
       }
@@ -1048,11 +1050,13 @@ const ContractDetail = () => {
                                     id: e.id,
                                     month_number: e.month_number,
                                     amount: e.amount,
+                                    is_uf_m2: e.is_uf_m2,
                                   })) || []}
                                   initialRent={currentVersion.initial_rent || currentVersion.regime_rent}
                                   regimeRent={currentVersion.regime_rent}
                                   durationMonths={currentVersion.duration_months}
                                   onSave={handleSaveEscalations}
+                                  superficieM2={contract.superficie_edificada_local || 0}
                                 />
                               </div>
                             </div>

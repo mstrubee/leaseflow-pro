@@ -117,6 +117,10 @@ const EscalationMonthInput = ({
   graceMonths,
   durationMonths,
   currency,
+  isUfM2,
+  onUfM2Change,
+  superficieM2,
+  showUfM2Toggle,
 }: {
   startMonth: string;
   endMonth: string;
@@ -128,6 +132,10 @@ const EscalationMonthInput = ({
   graceMonths: number;
   durationMonths: number;
   currency: "UF" | "CLP";
+  isUfM2: boolean;
+  onUfM2Change: (value: boolean) => void;
+  superficieM2: number;
+  showUfM2Toggle: boolean;
 }) => {
   const [startUnit, setStartUnit] = useState<DurationUnit>("months");
   const [endUnit, setEndUnit] = useState<DurationUnit>("months");
@@ -153,6 +161,7 @@ const EscalationMonthInput = ({
 
   const startMonthNum = parseInt(startMonth) || 0;
   const endMonthNum = parseInt(endMonth) || 0;
+  const numericAmount = parseFloat(amount) || 0;
 
   return (
     <div className="space-y-2">
@@ -213,14 +222,32 @@ const EscalationMonthInput = ({
         </div>
         <div className="flex-1 min-w-[100px]">
           <Label className="text-xs text-muted-foreground">Monto</Label>
-          <Input
-            type="number"
-            placeholder={currency === "UF" ? "UF" : "CLP"}
-            value={amount}
-            onChange={(e) => onAmountChange(e.target.value)}
-            min={0}
-            step="0.001"
-          />
+          <div className="flex gap-1 items-center">
+            <Input
+              type="number"
+              placeholder={isUfM2 ? "UF/m²" : (currency === "UF" ? "UF" : "CLP")}
+              value={amount}
+              onChange={(e) => onAmountChange(e.target.value)}
+              min={0}
+              step="0.001"
+            />
+            {showUfM2Toggle && superficieM2 > 0 && (
+              <Select value={isUfM2 ? "uf_m2" : "fixed"} onValueChange={(v) => onUfM2Change(v === "uf_m2")}>
+                <SelectTrigger className="w-[80px] px-2 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fixed">Fijo</SelectItem>
+                  <SelectItem value="uf_m2">UF/m²</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+          {isUfM2 && superficieM2 > 0 && numericAmount > 0 && (
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              Total: {(numericAmount * superficieM2).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
+            </p>
+          )}
         </div>
         <Button
           type="button"
@@ -240,6 +267,7 @@ export interface Escalation {
   month_number: number;
   end_month?: number;
   amount: number;
+  is_uf_m2?: boolean;
 }
 
 interface RentEscalationsProps {
@@ -312,6 +340,7 @@ export const RentEscalations = ({
   const [newStartMonth, setNewStartMonth] = useState("");
   const [newEndMonth, setNewEndMonth] = useState("");
   const [newAmount, setNewAmount] = useState("");
+  const [newIsUfM2, setNewIsUfM2] = useState(false);
   
   // Edit dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -343,9 +372,9 @@ export const RentEscalations = ({
     }).format(amount);
   };
 
-  // Format total when in UF/m² mode (for display in escalation list)
-  const formatTotal = (amount: number) => {
-    if (isUfM2Mode && superficieM2 > 0) {
+  // Format total for display in escalation list
+  const formatTotal = (amount: number, escIsUfM2: boolean) => {
+    if (escIsUfM2 && superficieM2 > 0) {
       const total = amount * superficieM2;
       return `UF ${total.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
@@ -372,13 +401,14 @@ export const RentEscalations = ({
       return;
     }
 
-    const newEscalations = [...escalations, { month_number: startMonth, end_month: endMonth, amount }]
+    const newEscalations = [...escalations, { month_number: startMonth, end_month: endMonth, amount, is_uf_m2: newIsUfM2 }]
       .sort((a, b) => a.month_number - b.month_number);
     
     onChange(newEscalations);
     setNewStartMonth("");
     setNewEndMonth("");
     setNewAmount("");
+    setNewIsUfM2(false);
   };
   
   // Calculate current month based on effective date
@@ -433,7 +463,7 @@ export const RentEscalations = ({
     const data: { month: number; rent: number; isEditable: boolean; isGrace?: boolean; isAdjustment?: boolean }[] = [];
     const sortedEscalations = [...escalations].sort((a, b) => a.month_number - b.month_number);
     
-    // Multiplier for converting UF/m² to total UF
+    // Global multiplier for regime/initial rent UF/m² mode
     const surfaceMultiplier = (isUfM2Mode && superficieM2 > 0) ? superficieM2 : 1;
     
     // Build a map of all rent changes (always store as TOTAL rent for display)
@@ -450,14 +480,20 @@ export const RentEscalations = ({
     // Start with initial rent at first paying month (convert to total if UF/m²)
     const firstPayingMonth = graceMonths + 1;
     const month1Escalation = sortedEscalations.find(e => e.month_number === firstPayingMonth);
-    const rawStartRent = month1Escalation?.amount || initialRent || regimeRent;
-    const startRent = rawStartRent * surfaceMultiplier;
-    rentChanges.set(firstPayingMonth, { rent: startRent, isEditable: !!month1Escalation });
+    if (month1Escalation) {
+      const escMultiplier = (month1Escalation.is_uf_m2 && superficieM2 > 0) ? superficieM2 : 1;
+      rentChanges.set(firstPayingMonth, { rent: month1Escalation.amount * escMultiplier, isEditable: true });
+    } else {
+      const rawStartRent = initialRent || regimeRent;
+      const startRent = rawStartRent * surfaceMultiplier;
+      rentChanges.set(firstPayingMonth, { rent: startRent, isEditable: false });
+    }
     
-    // Add all defined escalation points (convert to total if UF/m²)
+    // Add all defined escalation points (per-escalation UF/m² handling)
     sortedEscalations.forEach((esc) => {
       if (esc.month_number > firstPayingMonth) {
-        rentChanges.set(esc.month_number, { rent: esc.amount * surfaceMultiplier, isEditable: true });
+        const escMultiplier = (esc.is_uf_m2 && superficieM2 > 0) ? superficieM2 : 1;
+        rentChanges.set(esc.month_number, { rent: esc.amount * escMultiplier, isEditable: true });
       }
     });
     
@@ -541,11 +577,13 @@ export const RentEscalations = ({
                   <div className="text-sm">
                     <span className="text-muted-foreground">Canon: </span>
                     <span className="font-semibold text-primary">
-                      {formatCurrency(escalation.amount)}
+                      {escalation.is_uf_m2 
+                        ? formatCurrency(escalation.amount, true)
+                        : formatCurrency(escalation.amount)}
                     </span>
-                    {isUfM2Mode && superficieM2 > 0 && (
+                    {escalation.is_uf_m2 && superficieM2 > 0 && (
                       <span className="text-muted-foreground ml-2">
-                        (Total: {formatTotal(escalation.amount)})
+                        (Total: {formatTotal(escalation.amount, true)})
                       </span>
                     )}
                   </div>
@@ -597,6 +635,10 @@ export const RentEscalations = ({
               graceMonths={graceMonths}
               durationMonths={durationMonths}
               currency={currency}
+              isUfM2={newIsUfM2}
+              onUfM2Change={setNewIsUfM2}
+              superficieM2={superficieM2}
+              showUfM2Toggle={currency === "UF"}
             />
             <p className="text-xs text-muted-foreground">
               {graceMonths > 0 

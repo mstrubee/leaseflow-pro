@@ -20,6 +20,7 @@ interface Escalation {
   id: string;
   month_number: number;
   amount: number;
+  is_uf_m2?: boolean;
 }
 interface ContractVersion {
   id: string;
@@ -437,12 +438,12 @@ export function CommercialConditionsSummary({
       rent = actualInitialRent || actualRegimeRent;
       for (const esc of sortedEscalations) {
         if (esc.month_number <= currentMonth) {
-          // Escalations are stored as absolute values, but if regime_rent is UF/m², 
-          // escalations are also in UF/m² and need to be multiplied by surface
-          const escalationAmount = version.regime_rent_is_uf_m2 && superficieEdificadaLocal 
+          // Per-escalation UF/m²: if the escalation itself is UF/m², multiply by surface
+          // Otherwise, if the contract regime is UF/m², escalations without own flag are also UF/m² (legacy)
+          const needsMultiply = esc.is_uf_m2 || (version.regime_rent_is_uf_m2 && !esc.is_uf_m2);
+          rent = needsMultiply && superficieEdificadaLocal 
             ? esc.amount * superficieEdificadaLocal 
             : esc.amount;
-          rent = escalationAmount;
         } else {
           break;
         }
