@@ -509,47 +509,8 @@ const BudgetLineItem = ({
               </span>
             )}
 
-            {/* Calculated total - editable on double click to enter total amount */}
-            {isEditingTotal && !readOnly ? (
-              <div className="flex items-center gap-1">
-                <Select value={editTotalCurrency} onValueChange={v => setEditTotalCurrency(v as "UF" | "CLP")}>
-                  <SelectTrigger className="h-6 w-16 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="UF">UF</SelectItem>
-                    <SelectItem value="CLP">$</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Input
-                  type="number"
-                  value={editTotal}
-                  onChange={e => setEditTotal(e.target.value)}
-                  onBlur={handleSaveTotal}
-                  onKeyDown={handleTotalKeyDown}
-                  className="h-6 w-24 text-xs"
-                  autoFocus
-                  min="0"
-                  step="0.01"
-                  placeholder="Monto total"
-                />
-              </div>
-            ) : (
-              <span 
-                className="text-xs font-mono bg-primary/10 px-1.5 py-0.5 rounded min-w-[80px] text-center cursor-text hover:bg-primary/20"
-                onDoubleClick={() => {
-                  if (!readOnly) {
-                    const rawTotal = (line.quantity || 0) * (line.unit_price || 0);
-                    setEditTotal(rawTotal > 0 ? rawTotal.toString() : "");
-                    setEditTotalCurrency(line.currency === "CLP" ? "CLP" : "UF");
-                    setIsEditingTotal(true);
-                  }
-                }}
-                title="Doble clic para ingresar monto total"
-              >
-                = {line.currency === "CLP" ? "$" : "UF"} {((line.quantity || 0) * (line.unit_price || 0)).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-              </span>
-            )}
+
+
 
             {/* Show equivalent in the other currency */}
             {(() => {
