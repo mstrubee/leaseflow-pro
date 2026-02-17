@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
+import { QUANTITY_SOURCE_OPTIONS } from "./BudgetTemplateLineTree";
 
 interface BudgetTemplate {
   id: string;
@@ -96,14 +97,44 @@ export const BudgetTemplateSelector = ({
   );
 };
 
+// Helper to resolve quantity from contract surfaces
+const resolveQuantityFromContract = (
+  quantitySource: string | null | undefined,
+  contractData: Record<string, any>,
+  fallbackQuantity: number
+): number => {
+  if (!quantitySource || quantitySource === "manual") return fallbackQuantity;
+  const validSources = QUANTITY_SOURCE_OPTIONS.map(o => o.value);
+  if (validSources.includes(quantitySource)) {
+    return contractData[quantitySource] ?? 0;
+  }
+  return fallbackQuantity;
+};
+
+// Helper to fetch contract surface data
+const fetchContractSurfaces = async (contractId: string): Promise<Record<string, any>> => {
+  const { data, error } = await supabase
+    .from("contracts")
+    .select("superficie_terreno, superficie_showroom, superficie_bodega_backoffice, superficie_edificada_local, superficie_exterior_cubierto, superficie_exterior_descubierto, num_estacionamientos, metros_lineales_frente")
+    .eq("id", contractId)
+    .single();
+  if (error || !data) return {};
+  return data;
+};
+
 // Helper function to apply a template to a budget
 // Copies template structure including quantity, unit_type, currency fields
 // Uses default_amount_uf from template as starting values
+// When contractId is provided, resolves quantity_source references from contract surfaces
 export const applyBudgetTemplate = async (
   templateId: string,
-  budgetId: string
+  budgetId: string,
+  contractId?: string
 ): Promise<boolean> => {
   try {
+    // Fetch contract surfaces if needed
+    const contractData = contractId ? await fetchContractSurfaces(contractId) : {};
+
     // 1. Get template lines
     const { data: templateLines, error: linesError } = await supabase
       .from("budget_template_lines")
@@ -122,8 +153,12 @@ export const applyBudgetTemplate = async (
 
     // First pass: create all lines without parent_id
     for (const line of templateLines) {
-      // Calculate unit_price from default_amount_uf and quantity
-      const quantity = line.quantity || 0;
+      // Resolve quantity from contract if indexed
+      const quantity = resolveQuantityFromContract(
+        (line as any).quantity_source,
+        contractData,
+        line.quantity || 0
+      );
       const defaultAmount = line.default_amount_uf || 0;
       const unitPrice = quantity > 0 ? defaultAmount / quantity : defaultAmount;
       
@@ -137,14 +172,13 @@ export const applyBudgetTemplate = async (
           display_order: line.display_order,
           status: "no_autorizado",
           parent_id: null,
-          // Copy template fields
           quantity: quantity,
           unit_type: line.unit_type || "m2",
           currency: line.currency || "UF",
-          unit_price: unitPrice, // Calculate from default amount
-          template_line_id: line.id, // Reference to original template line
-          supplier_name: line.supplier_name || null, // Copy supplier from template
-          category_id: line.category_id || null, // Copy category from template
+          unit_price: unitPrice,
+          template_line_id: line.id,
+          supplier_name: line.supplier_name || null,
+          category_id: line.category_id || null,
         })
         .select()
         .single();
@@ -203,9 +237,13 @@ export const getCurrentTemplateId = async (budgetId: string): Promise<string | n
 // Helper function to update template preserving user values
 export const updateBudgetTemplatePreservingValues = async (
   templateId: string,
-  budgetId: string
+  budgetId: string,
+  contractId?: string
 ): Promise<boolean> => {
   try {
+    // Fetch contract surfaces if needed
+    const contractData = contractId ? await fetchContractSurfaces(contractId) : {};
+
     // 1. Get existing budget lines with their values
     const { data: existingLines, error: existingError } = await supabase
       .from("budget_lines")
@@ -214,7 +252,7 @@ export const updateBudgetTemplatePreservingValues = async (
 
     if (existingError) throw existingError;
 
-    // Create a map of template_line_id -> existing values (only if user has entered values)
+    // Create a map of template_line_id -> existing values
     const existingValuesMap = new Map<string, {
       quantity: number;
       unit_price: number;
@@ -225,7 +263,6 @@ export const updateBudgetTemplatePreservingValues = async (
 
     (existingLines || []).forEach((line: any) => {
       if (line.template_line_id) {
-        // Check if user has entered values (any value > 0)
         const hasUserValues = (line.quantity > 0 || line.unit_price > 0 || line.amount_uf > 0);
         existingValuesMap.set(line.template_line_id, {
           quantity: line.quantity || 0,
@@ -265,8 +302,12 @@ export const updateBudgetTemplatePreservingValues = async (
       const existingValues = existingValuesMap.get(line.id);
       const hasUserValues = existingValues?.hasUserValues || false;
       
-      // Calculate template defaults
-      const templateQuantity = line.quantity || 0;
+      // Resolve quantity from contract if indexed
+      const templateQuantity = resolveQuantityFromContract(
+        (line as any).quantity_source,
+        contractData,
+        line.quantity || 0
+      );
       const templateAmount = line.default_amount_uf || 0;
       const templateUnitPrice = templateQuantity > 0 ? templateAmount / templateQuantity : templateAmount;
       
@@ -276,19 +317,17 @@ export const updateBudgetTemplatePreservingValues = async (
           budget_id: budgetId,
           name: line.name,
           description: line.description,
-          // Preserve user values if they exist, otherwise use template defaults
           quantity: hasUserValues ? existingValues!.quantity : templateQuantity,
           unit_price: hasUserValues ? existingValues!.unit_price : templateUnitPrice,
           amount_uf: hasUserValues ? existingValues!.amount_uf : templateAmount,
           status: existingValues?.status ?? "no_autorizado",
-          // Always use template values for structure
           display_order: line.display_order,
           unit_type: line.unit_type || "m2",
           currency: line.currency || "UF",
           template_line_id: line.id,
           parent_id: null,
-          supplier_name: line.supplier_name || null, // Copy supplier from template
-          category_id: line.category_id || null, // Copy category from template
+          supplier_name: line.supplier_name || null,
+          category_id: line.category_id || null,
         })
         .select()
         .single();

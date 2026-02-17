@@ -1,0 +1,1 @@
+ALTER TABLE public.budget_template_lines ADD COLUMN quantity_source text DEFAULT NULL;

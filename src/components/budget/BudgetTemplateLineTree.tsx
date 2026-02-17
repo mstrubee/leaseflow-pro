@@ -1,11 +1,25 @@
 import { useState, createContext, useContext } from "react";
-import { ChevronRight, ChevronDown, Plus, Trash2, GripVertical, CornerDownRight, ArrowRight } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, GripVertical, CornerDownRight, ArrowRight, Ruler } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { CategorySelect } from "@/components/suppliers/CategorySelect";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
+
+// Surface source options that can be indexed from the contract
+export const QUANTITY_SOURCE_OPTIONS: { value: string; label: string; unit: string }[] = [
+  { value: "superficie_terreno", label: "Terreno", unit: "m²" },
+  { value: "superficie_showroom", label: "Showroom", unit: "m²" },
+  { value: "superficie_bodega_backoffice", label: "Bodega & Backoffice", unit: "m²" },
+  { value: "superficie_edificada_local", label: "Edificada Local", unit: "m²" },
+  { value: "superficie_exterior_cubierto", label: "Ext. Cubierto", unit: "m²" },
+  { value: "superficie_exterior_descubierto", label: "Ext. Descubierto", unit: "m²" },
+  { value: "num_estacionamientos", label: "Estacionamientos", unit: "un" },
+  { value: "metros_lineales_frente", label: "mL Frente", unit: "mL" },
+];
 import {
   DndContext,
   closestCenter,
@@ -40,6 +54,7 @@ export interface TemplateLine {
   currency?: string;
   supplier_name?: string;
   category_id?: string | null;
+  quantity_source?: string | null;
   children?: TemplateLine[];
 }
 
@@ -606,8 +621,44 @@ const SortableTemplateLineItem = ({
         {/* Leaf node columns */}
         {!hasChildren && (
           <>
-            {/* Col 4: Quantity */}
-            {isEditingQuantity ? (
+            {/* Col 4: Quantity - manual or surface-indexed */}
+            {line.quantity_source && line.quantity_source !== "manual" ? (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="cursor-pointer" title="Cantidad indexada a superficie del contrato">
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 font-normal whitespace-nowrap">
+                      <Ruler className="h-3 w-3 mr-0.5" />
+                      {QUANTITY_SOURCE_OPTIONS.find(o => o.value === line.quantity_source)?.label || line.quantity_source}
+                    </Badge>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-52 p-2 z-50" align="start">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">Fuente de cantidad</p>
+                    <button
+                      className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-accent"
+                      onClick={() => onUpdateLine(line.id, { quantity_source: null })}
+                    >
+                      Manual (valor fijo)
+                    </button>
+                    <div className="border-t my-1" />
+                    <p className="text-[10px] text-muted-foreground px-2">Desde superficie</p>
+                    {QUANTITY_SOURCE_OPTIONS.map(opt => (
+                      <button
+                        key={opt.value}
+                        className={cn(
+                          "w-full text-left text-xs px-2 py-1.5 rounded hover:bg-accent",
+                          line.quantity_source === opt.value && "bg-primary/10 font-medium"
+                        )}
+                        onClick={() => onUpdateLine(line.id, { quantity_source: opt.value })}
+                      >
+                        {opt.label} ({opt.unit})
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            ) : isEditingQuantity ? (
               <Input
                 type="number"
                 value={editQuantity}
@@ -619,16 +670,47 @@ const SortableTemplateLineItem = ({
                 min="0"
               />
             ) : (
-              <span 
-                className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded text-center cursor-text hover:bg-accent/50"
-                onDoubleClick={() => {
-                  setEditQuantity((line.quantity ?? 0) === 0 ? "" : (line.quantity ?? 0).toString());
-                  setIsEditingQuantity(true);
-                }}
-                title="Doble clic para editar"
-              >
-                {line.quantity || 0}
-              </span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <span 
+                    className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded text-center cursor-pointer hover:bg-accent/50"
+                    onDoubleClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setEditQuantity((line.quantity ?? 0) === 0 ? "" : (line.quantity ?? 0).toString());
+                      setIsEditingQuantity(true);
+                    }}
+                    title="Clic para opciones, doble clic para editar"
+                  >
+                    {line.quantity || 0}
+                  </span>
+                </PopoverTrigger>
+                <PopoverContent className="w-52 p-2 z-50" align="start">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">Fuente de cantidad</p>
+                    <button
+                      className={cn("w-full text-left text-xs px-2 py-1.5 rounded hover:bg-accent", !line.quantity_source && "bg-primary/10 font-medium")}
+                      onClick={() => {
+                        setEditQuantity((line.quantity ?? 0) === 0 ? "" : (line.quantity ?? 0).toString());
+                        setIsEditingQuantity(true);
+                      }}
+                    >
+                      Manual (valor fijo)
+                    </button>
+                    <div className="border-t my-1" />
+                    <p className="text-[10px] text-muted-foreground px-2">Desde superficie</p>
+                    {QUANTITY_SOURCE_OPTIONS.map(opt => (
+                      <button
+                        key={opt.value}
+                        className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-accent"
+                        onClick={() => onUpdateLine(line.id, { quantity_source: opt.value })}
+                      >
+                        {opt.label} ({opt.unit})
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
             )}
             
             {/* Col 5: Unit type */}
