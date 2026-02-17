@@ -715,7 +715,7 @@ const SortableTemplateLineItem = ({
             
             {/* Col 5: Unit type */}
             {isEditingUnit ? (
-              <Select value={editUnit} onValueChange={handleSaveUnit} open={true}>
+              <Select value={editUnit} onValueChange={handleSaveUnit} defaultOpen>
                 <SelectTrigger className="h-6 text-xs">
                   <SelectValue />
                 </SelectTrigger>
@@ -740,7 +740,7 @@ const SortableTemplateLineItem = ({
             
             {/* Col 7: Currency */}
             {isEditingCurrency ? (
-              <Select value={editCurrency} onValueChange={handleSaveCurrency} open={true}>
+              <Select value={editCurrency} onValueChange={handleSaveCurrency} defaultOpen>
                 <SelectTrigger className="h-6 text-xs">
                   <SelectValue />
                 </SelectTrigger>
