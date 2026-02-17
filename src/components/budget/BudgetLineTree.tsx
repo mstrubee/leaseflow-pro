@@ -526,10 +526,10 @@ const BudgetLineItem = ({
                 step="0.01"
               />
             ) : (
-              <div className="flex flex-col items-center">
+              <div className="flex flex-col items-end">
                 <span 
                   className={cn(
-                    "text-xs font-mono px-1.5 py-0.5 rounded min-w-[70px] text-center cursor-text hover:bg-accent/50",
+                    "text-xs font-mono px-1.5 py-0.5 rounded min-w-[70px] text-right cursor-text hover:bg-accent/50",
                     templateUnitPrice !== null ? "bg-primary/10" : "bg-muted/50"
                   )}
                   onDoubleClick={() => {
@@ -546,7 +546,7 @@ const BudgetLineItem = ({
                     const displayPrice = localP > 0 ? localP : (templateUnitPrice ?? 0);
                     return line.currency === "CLP" 
                       ? Math.round(displayPrice).toLocaleString("es-CL")
-                      : displayPrice.toLocaleString("es-CL", { minimumFractionDigits: 2 });
+                      : displayPrice.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 });
                   })()}
                 </span>
                 {(() => {
@@ -555,9 +555,9 @@ const BudgetLineItem = ({
                   if (displayPrice <= 0 || ufValue <= 0) return null;
                   const lineCurrency = line.currency || "UF";
                   if (lineCurrency === "UF") {
-                    return <span className="text-[9px] text-muted-foreground">$ {Math.round(displayPrice * ufValue).toLocaleString("es-CL")}</span>;
+                    return <span className="text-[9px] text-muted-foreground text-right w-full">$ {Math.round(displayPrice * ufValue).toLocaleString("es-CL")}</span>;
                   }
-                  return <span className="text-[9px] text-muted-foreground">UF {(displayPrice / ufValue).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })}</span>;
+                  return <span className="text-[9px] text-muted-foreground text-right w-full">UF {(displayPrice / ufValue).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })}</span>;
                 })()}
               </div>
             )}
@@ -632,7 +632,7 @@ const BudgetLineItem = ({
 
         {/* Totals and status */}
         <div className="flex items-center mx-[3px] gap-[50px] text-destructive ml-auto flex-shrink-0">
-          <span className="text-xs text-center font-sans font-medium whitespace-nowrap min-w-[80px]">
+          <span className="text-xs text-right font-sans font-medium whitespace-nowrap min-w-[80px]">
             {(() => {
               const qty = line.quantity || 0;
               const localP = line.unit_price || 0;
