@@ -502,9 +502,10 @@ const BudgetLineItem = ({
               >
                 {(() => {
                   const displayPrice = templateUnitPrice !== null ? templateUnitPrice : (line.unit_price || 0);
+                  const prefix = line.currency === "CLP" ? "$ " : "UF ";
                   return line.currency === "CLP" 
-                    ? Math.round(displayPrice).toLocaleString("es-CL")
-                    : displayPrice.toLocaleString("es-CL", { minimumFractionDigits: 2 });
+                    ? prefix + Math.round(displayPrice).toLocaleString("es-CL")
+                    : prefix + displayPrice.toLocaleString("es-CL", { minimumFractionDigits: 2 });
                 })()}
               </span>
             )}
@@ -584,7 +585,14 @@ const BudgetLineItem = ({
 
         {/* Totals and status */}
         <div className="flex items-center mx-[3px] gap-[50px] text-destructive ml-auto flex-shrink-0">
-          <span className="text-xs text-center font-sans font-medium whitespace-nowrap min-w-[80px]">{formatUF(calculatedAmount)}</span>
+          <span className="text-xs text-center font-sans font-medium whitespace-nowrap min-w-[80px]">
+            {(() => {
+              const qty = line.quantity || 0;
+              const price = line.unit_price || 0;
+              const lineTotal = qty * price;
+              return formatUF(isParent ? calculatedAmount : (line.currency === "CLP" && ufValue > 0 ? lineTotal / ufValue : lineTotal));
+            })()}
+          </span>
           <span className="text-[12px] text-muted-foreground font-mono whitespace-nowrap min-w-[100px] text-right">
             {formatCLP(convertUFToPesos(calculatedAmount))}
           </span>
