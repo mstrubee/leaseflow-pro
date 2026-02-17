@@ -508,10 +508,6 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
   // Handle new year creation - Only CAPEX
   const handleCreateNewYear = async () => {
     const numAmount = parseFloat(capexAmount) || 0;
-    if (numAmount <= 0) {
-      toast({ variant: "destructive", title: "Error", description: "Debe ingresar un monto CAPEX válido" });
-      return;
-    }
 
     setCreatingYear(true);
     try {
@@ -546,7 +542,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
         // (Similar to what was in BudgetModule)
       }
 
-      toast({ title: "Año CAPEX creado", description: `Presupuesto CAPEX para ${newYear} creado exitosamente con ${formatUF(amountUf)}` });
+      toast({ title: "Año CAPEX creado", description: amountUf > 0 ? `Presupuesto CAPEX para ${newYear} creado exitosamente con ${formatUF(amountUf)}` : `Presupuesto CAPEX para ${newYear} creado (sin monto asignado)` });
       setShowNewYearDialog(false);
       setCapexAmount("");
       setCapexCurrency("UF");
@@ -1089,7 +1085,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
             </Button>
             <Button 
               onClick={handleCreateNewYear} 
-              disabled={creatingYear || !capexAmount || parseFloat(capexAmount) <= 0}
+              disabled={creatingYear}
             >
               {creatingYear && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Crear CAPEX
