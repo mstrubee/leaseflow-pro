@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, Save, X, Palette, GripVertical, Folder } from "lucide-react";
+import { Plus, Pencil, Trash2, Save, X, Palette, GripVertical, Folder, Download } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { PatentChecklistSection, PatentChecklistItem, PatentEmitter, PatentStatus, PatentItemEmitter } from "./types";
@@ -660,12 +660,57 @@ export function PatentAdminPanel({
   const sortedEmitters = [...localEmitters].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
   const sortedStatuses = [...statuses].sort((a, b) => a.display_order - b.display_order);
 
+  const handleExportChecklist = () => {
+    const emitterLookup: Record<string, string> = {};
+    localEmitters.forEach(e => { emitterLookup[e.id] = e.name; });
+
+    const BOM = '\uFEFF';
+    const headers = ['Sección', 'Código Sección', 'Documento', 'Emisores Fijos'];
+    const rows: string[][] = [];
+
+    sortedSections.forEach(section => {
+      const sectionItems = localItems
+        .filter(i => i.section_id === section.id)
+        .sort((a, b) => a.display_order - b.display_order);
+
+      if (sectionItems.length === 0) {
+        rows.push([section.name, section.code, '', '']);
+      } else {
+        sectionItems.forEach(item => {
+          const emitterIds = getItemEmitterIds(item.id);
+          const emitterNames = emitterIds.map(id => emitterLookup[id] || '').filter(Boolean).join(', ');
+          rows.push([section.name, section.code, item.name, emitterNames]);
+        });
+      }
+    });
+
+    const csvContent = BOM + [
+      headers.join(';'),
+      ...rows.map(row => row.map(cell => `"${(cell || '').replace(/"/g, '""')}"`).join(';'))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'checklist_patentes.csv';
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+    toast.success("Checklist exportado");
+  };
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-5xl max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader>
+          <DialogHeader className="flex flex-row items-center justify-between pr-8">
             <DialogTitle>Administrar Checklist de Patentes</DialogTitle>
+            <Button variant="outline" size="sm" onClick={handleExportChecklist}>
+              <Download className="h-4 w-4 mr-1" />
+              Exportar
+            </Button>
           </DialogHeader>
 
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 overflow-hidden flex flex-col">
