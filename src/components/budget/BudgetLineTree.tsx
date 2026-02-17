@@ -587,7 +587,7 @@ const BudgetLineItem = ({
           <span className="text-xs text-center font-sans font-medium whitespace-nowrap min-w-[80px]">
             {(() => {
               const qty = line.quantity || 0;
-              const price = line.unit_price || 0;
+              const price = templateUnitPrice !== null ? templateUnitPrice : (line.unit_price || 0);
               const lineTotal = qty * price;
               return formatUF(isParent ? calculatedAmount : (line.currency === "CLP" && ufValue > 0 ? lineTotal / ufValue : lineTotal));
             })()}
