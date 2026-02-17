@@ -160,7 +160,8 @@ export const applyBudgetTemplate = async (
         line.quantity || 0
       );
       const defaultAmount = line.default_amount_uf || 0;
-      const unitPrice = quantity > 0 ? defaultAmount / quantity : defaultAmount;
+      const unitPrice = defaultAmount; // unit_price = template price per unit
+      const totalAmount = quantity > 0 ? quantity * unitPrice : 0; // amount_uf = total
       
       const { data: newLine, error } = await supabase
         .from("budget_lines")
@@ -168,7 +169,7 @@ export const applyBudgetTemplate = async (
           budget_id: budgetId,
           name: line.name,
           description: line.description,
-          amount_uf: defaultAmount, // Use template default value
+          amount_uf: totalAmount, // Total = quantity × unit_price
           display_order: line.display_order,
           status: "no_autorizado",
           parent_id: null,
