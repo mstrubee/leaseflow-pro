@@ -621,7 +621,10 @@ const SortableTemplateLineItem = ({
             ) : (
               <span 
                 className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded text-center cursor-text hover:bg-accent/50"
-                onDoubleClick={() => setIsEditingQuantity(true)}
+                onDoubleClick={() => {
+                  setEditQuantity((line.quantity ?? 0) === 0 ? "" : (line.quantity ?? 0).toString());
+                  setIsEditingQuantity(true);
+                }}
                 title="Doble clic para editar"
               >
                 {line.quantity || 0}
@@ -750,7 +753,11 @@ const SortableTemplateLineItem = ({
                   ) : (
                     <span 
                       className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[30px] text-center cursor-text hover:bg-accent/50"
-                      onDoubleClick={() => setIsEditingQuantity(true)}
+                      onDoubleClick={() => {
+                        const val = line.quantity ?? 1;
+                        setEditQuantity(val === 0 ? "" : val.toString());
+                        setIsEditingQuantity(true);
+                      }}
                       title="Doble clic para editar"
                     >
                       {multiplier}
