@@ -150,22 +150,47 @@ const BudgetLineItem = ({
   
   // Fetch template unit_price if line has a template_line_id
   const [templateUnitPrice, setTemplateUnitPrice] = useState<number | null>(null);
+  // Map of template prices for all descendant lines (for parent subtotal calculation)
+  const [templatePricesMap, setTemplatePricesMap] = useState<Record<string, number>>({});
+
   useEffect(() => {
-    if (!line.template_line_id) {
+    // Collect all template_line_ids from this line and its descendants
+    const collectTemplateIds = (l: BudgetLine): { lineId: string; templateId: string }[] => {
+      const result: { lineId: string; templateId: string }[] = [];
+      if (l.template_line_id) result.push({ lineId: l.id, templateId: l.template_line_id });
+      if (l.children) l.children.forEach(c => result.push(...collectTemplateIds(c)));
+      return result;
+    };
+    const allMappings = collectTemplateIds(line);
+    
+    if (allMappings.length === 0) {
       setTemplateUnitPrice(null);
+      setTemplatePricesMap({});
       return;
     }
+
+    const uniqueTemplateIds = [...new Set(allMappings.map(m => m.templateId))];
     supabase
       .from("budget_template_lines")
-      .select("default_amount_uf")
-      .eq("id", line.template_line_id)
-      .single()
+      .select("id, default_amount_uf")
+      .in("id", uniqueTemplateIds)
       .then(({ data }) => {
         if (data) {
-          setTemplateUnitPrice(data.default_amount_uf || 0);
+          const templateMap: Record<string, number> = {};
+          const pricesMap: Record<string, number> = {};
+          data.forEach(t => { templateMap[t.id] = t.default_amount_uf || 0; });
+          allMappings.forEach(m => { pricesMap[m.lineId] = templateMap[m.templateId] ?? 0; });
+          
+          // Set own template price
+          if (line.template_line_id && templateMap[line.template_line_id] !== undefined) {
+            setTemplateUnitPrice(templateMap[line.template_line_id]);
+          } else {
+            setTemplateUnitPrice(null);
+          }
+          setTemplatePricesMap(pricesMap);
         }
       });
-  }, [line.template_line_id]);
+  }, [line.template_line_id, line.children]);
 
   const descendantCount = countDescendants(line);
 
@@ -181,20 +206,24 @@ const BudgetLineItem = ({
   const hasChildren = line.children && line.children.length > 0;
   const isParent = hasChildren;
 
-  // Calculate subtotal of children recursively (for parent lines)
+  // Calculate subtotal of children recursively (for parent lines) using template prices when available
   const calculateChildrenSubtotal = (children: BudgetLine[]): number => {
     return children.reduce((sum, child) => {
       if (child.children && child.children.length > 0) {
-        // Child is a parent: get its total (subtotal * multiplier)
         const childSubtotal = calculateChildrenSubtotal(child.children);
         const childMultiplier = child.quantity || 1;
         return sum + (childSubtotal * childMultiplier);
       }
-      // Leaf: qty * price
+      // Leaf: qty * price (prefer template price)
       const qty = child.quantity || 0;
-      const price = child.unit_price || 0;
+      const price = templatePricesMap[child.id] !== undefined ? templatePricesMap[child.id] : (child.unit_price || 0);
       if (qty <= 0 || price <= 0) return sum;
-      return sum + (child.amount_uf || 0);
+      const leafTotal = qty * price;
+      // Convert CLP to UF if needed
+      if (child.currency === "CLP" && ufValue > 0) {
+        return sum + (leafTotal / ufValue);
+      }
+      return sum + leafTotal;
     }, 0);
   };
 
