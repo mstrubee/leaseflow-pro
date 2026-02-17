@@ -216,7 +216,7 @@ const BudgetLineItem = ({
       }
       // Leaf: qty * price (prefer template price)
       const qty = child.quantity || 0;
-      const price = templatePricesMap[child.id] !== undefined ? templatePricesMap[child.id] : (child.unit_price || 0);
+      const price = (child.unit_price || 0) > 0 ? child.unit_price! : (templatePricesMap[child.id] !== undefined ? templatePricesMap[child.id] : 0);
       if (qty <= 0 || price <= 0) return sum;
       const leafTotal = qty * price;
       // Convert CLP to UF if needed
@@ -524,13 +524,13 @@ const BudgetLineItem = ({
               <span 
                 className={cn(
                   "text-xs font-mono px-1.5 py-0.5 rounded min-w-[70px] text-center cursor-text hover:bg-accent/50",
-                  templateUnitPrice !== null ? "bg-primary/10" : "bg-muted/50"
+                  (!line.unit_price && templateUnitPrice !== null) ? "bg-primary/10" : "bg-muted/50"
                 )}
                 onDoubleClick={() => !readOnly && setIsEditingPrice(true)}
-                title={templateUnitPrice !== null ? "Valor desde plantilla — Doble clic para editar" : "Doble clic para editar"}
+                title={(!line.unit_price && templateUnitPrice !== null) ? "Valor desde plantilla — Doble clic para editar" : "Doble clic para editar"}
               >
                 {(() => {
-                  const displayPrice = templateUnitPrice !== null ? templateUnitPrice : (line.unit_price || 0);
+                  const displayPrice = (line.unit_price || 0) > 0 ? line.unit_price! : (templateUnitPrice !== null ? templateUnitPrice : 0);
                   return line.currency === "CLP" 
                     ? Math.round(displayPrice).toLocaleString("es-CL")
                     : displayPrice.toLocaleString("es-CL", { minimumFractionDigits: 2 });
@@ -616,7 +616,7 @@ const BudgetLineItem = ({
           <span className="text-xs text-center font-sans font-medium whitespace-nowrap min-w-[80px]">
             {(() => {
               const qty = line.quantity || 0;
-              const price = templateUnitPrice !== null ? templateUnitPrice : (line.unit_price || 0);
+              const price = (line.unit_price || 0) > 0 ? line.unit_price! : (templateUnitPrice !== null ? templateUnitPrice : 0);
               const lineTotal = qty * price;
               return formatUF(isParent ? calculatedAmount : (line.currency === "CLP" && ufValue > 0 ? lineTotal / ufValue : lineTotal));
             })()}
