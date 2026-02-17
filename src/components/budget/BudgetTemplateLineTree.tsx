@@ -795,17 +795,30 @@ const SortableTemplateLineItem = ({
       </div>
 
       {hasChildren && isExpanded && (
-        <BudgetTemplateLineTree
-          lines={line.children!}
-          level={level + 1}
-          onAddLine={onAddLine}
-          onUpdateLine={onUpdateLine}
-          onDeleteLine={onDeleteLine}
-          onReorder={onReorder}
-          onReparent={onReparent}
-          allLines={allLines}
-          isRoot={false}
-        />
+        <>
+          <BudgetTemplateLineTree
+            lines={line.children!}
+            level={level + 1}
+            onAddLine={onAddLine}
+            onUpdateLine={onUpdateLine}
+            onDeleteLine={onDeleteLine}
+            onReorder={onReorder}
+            onReparent={onReparent}
+            allLines={allLines}
+            isRoot={false}
+          />
+          <div className={cn("ml-6 border-l border-border pl-4")}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onAddLine(line.id)}
+              className="text-muted-foreground hover:text-foreground text-xs h-7"
+            >
+              <Plus className="h-3 w-3 mr-1" />
+              Línea
+            </Button>
+          </div>
+        </>
       )}
     </div>
   );
