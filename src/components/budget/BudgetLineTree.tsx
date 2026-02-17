@@ -443,8 +443,10 @@ const BudgetLineItem = ({
           </TooltipProvider>
         )}
 
-        {/* For non-parent lines: show quantity/unit and price inputs - editable on double click */}
-        {!isParent && <div className="flex items-center gap-1 w-[320px] min-w-[320px] max-w-[320px]">
+        {/* For non-parent lines: show quantity/unit, ×, and price inputs */}
+        {!isParent && <>
+          {/* Quantity + Unit block */}
+          <div className="flex items-center gap-1 w-[120px] min-w-[120px] max-w-[120px] justify-end">
             {/* Quantity - editable on double click */}
             {isEditingQuantity && !readOnly ? (
               <Input 
@@ -459,7 +461,7 @@ const BudgetLineItem = ({
               />
             ) : (
               <span 
-                className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[40px] text-center cursor-text hover:bg-accent/50"
+                className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[40px] text-right cursor-text hover:bg-accent/50"
                 onDoubleClick={() => !readOnly && setIsEditingQuantity(true)}
                 title="Doble clic para editar"
               >
@@ -488,9 +490,13 @@ const BudgetLineItem = ({
                 {line.unit_type === "m2" ? "m²" : line.unit_type || "m²"}
               </span>
             )}
+          </div>
 
-            <span className="text-xs text-muted-foreground mx-0.5">×</span>
+          {/* × separator - fixed width column for alignment */}
+          <span className="text-xs text-muted-foreground w-[16px] min-w-[16px] text-center flex-shrink-0">×</span>
 
+          {/* Currency + Price block */}
+          <div className="flex items-center gap-1 w-[180px] min-w-[180px] max-w-[180px]">
             {/* Currency - editable on double click */}
             {isEditingCurrency && !readOnly ? (
               <Select value={editCurrency} onValueChange={handleSaveCurrency} open={true}>
@@ -526,7 +532,7 @@ const BudgetLineItem = ({
                 step="0.01"
               />
             ) : (
-              <div className="flex flex-col items-end">
+              <div className="flex flex-col items-end ml-auto">
                 <span 
                   className={cn(
                     "text-xs font-mono px-1.5 py-0.5 rounded min-w-[70px] text-right cursor-text hover:bg-accent/50",
@@ -561,10 +567,8 @@ const BudgetLineItem = ({
                 })()}
               </div>
             )}
-
-
-
-          </div>}
+          </div>
+        </>}
 
         {/* Parent line with children: show multiplier and subtotal - only for level 1+ */}
         {isParent && level >= 1 && (
