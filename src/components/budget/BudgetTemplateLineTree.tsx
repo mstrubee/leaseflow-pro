@@ -526,8 +526,11 @@ const SortableTemplateLineItem = ({
     <div ref={setNodeRef} style={style} className={cn(isDragging && "opacity-30")}>
       <div
         className={cn(
-          "flex items-center gap-2 py-2 px-2 rounded-md hover:bg-accent/50 group transition-all duration-200",
-          // Color hierarchy: parents darker than children, same color range
+          "grid items-center py-2 px-2 rounded-md hover:bg-accent/50 group transition-all duration-200",
+          // Grid columns: drag(32px) expand(28px) name(minmax) qty(60px) unit(40px) x(16px) currency(60px) price(80px) total(100px) supplier(auto) actions(60px)
+          !hasChildren 
+            ? "grid-cols-[32px_28px_minmax(200px,1fr)_60px_40px_16px_60px_80px_100px_auto_60px]"
+            : "grid-cols-[32px_28px_minmax(200px,1fr)_1fr_60px]",
           level === 0 && hasChildren && "bg-muted/60",
           level === 0 && !hasChildren && "bg-muted/20",
           level === 1 && hasChildren && "bg-muted/50",
@@ -540,7 +543,7 @@ const SortableTemplateLineItem = ({
           isReorderTarget && "border-t-2 border-primary"
         )}
       >
-        {/* Drag handle */}
+        {/* Col 1: Drag handle */}
         <button
           {...attributes}
           {...listeners}
@@ -554,6 +557,7 @@ const SortableTemplateLineItem = ({
           <GripVertical className="h-4 w-4 text-muted-foreground" />
         </button>
 
+        {/* Col 2: Expand/collapse */}
         <button
           onClick={() => setIsExpanded(!isExpanded)}
           className="p-1 hover:bg-accent rounded transition-colors"
@@ -570,21 +574,21 @@ const SortableTemplateLineItem = ({
           )}
         </button>
 
-        {/* Line name - fixed width for alignment, editable inline */}
+        {/* Col 3: Line name - takes available space */}
         {isEditingName ? (
           <Input
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
             onBlur={handleSaveName}
             onKeyDown={handleNameKeyDown}
-            className="h-7 min-w-[180px] max-w-[250px] flex-shrink-0 text-sm"
+            className="h-7 text-sm"
             placeholder="Nombre de la línea"
             autoFocus
           />
         ) : (
           <span 
             className={cn(
-              "text-sm font-medium min-w-[180px] flex-shrink-0 cursor-text hover:bg-accent/50 px-1 py-0.5 rounded -ml-1",
+              "text-sm font-medium truncate cursor-text hover:bg-accent/50 px-1 py-0.5 rounded",
               level === 0 && "font-semibold"
             )}
             onDoubleClick={() => {
@@ -593,16 +597,16 @@ const SortableTemplateLineItem = ({
               }
               setIsEditingName(true);
             }}
-            title="Doble clic para editar"
+            title={line.name + " — Doble clic para editar"}
           >
             {line.name}
           </span>
         )}
         
-        {/* Inputs section for leaf nodes - editable on double click */}
+        {/* Leaf node columns */}
         {!hasChildren && (
-          <div className="flex items-center gap-1">
-            {/* Quantity - editable */}
+          <>
+            {/* Col 4: Quantity */}
             {isEditingQuantity ? (
               <Input
                 type="number"
@@ -610,13 +614,13 @@ const SortableTemplateLineItem = ({
                 onChange={(e) => setEditQuantity(e.target.value)}
                 onBlur={handleSaveQuantity}
                 onKeyDown={handleQuantityKeyDown}
-                className="h-6 w-14 text-xs"
+                className="h-6 text-xs"
                 autoFocus
                 min="0"
               />
             ) : (
               <span 
-                className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[40px] text-center cursor-text hover:bg-accent/50"
+                className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded text-center cursor-text hover:bg-accent/50"
                 onDoubleClick={() => setIsEditingQuantity(true)}
                 title="Doble clic para editar"
               >
@@ -624,10 +628,10 @@ const SortableTemplateLineItem = ({
               </span>
             )}
             
-            {/* Unit type - editable dropdown */}
+            {/* Col 5: Unit type */}
             {isEditingUnit ? (
               <Select value={editUnit} onValueChange={handleSaveUnit} open={true}>
-                <SelectTrigger className="h-6 w-14 text-xs">
+                <SelectTrigger className="h-6 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -638,7 +642,7 @@ const SortableTemplateLineItem = ({
               </Select>
             ) : (
               <span 
-                className="text-xs text-muted-foreground min-w-[24px] cursor-pointer hover:bg-accent/50 px-1 py-0.5 rounded"
+                className="text-xs text-muted-foreground text-center cursor-pointer hover:bg-accent/50 px-1 py-0.5 rounded"
                 onDoubleClick={() => setIsEditingUnit(true)}
                 title="Doble clic para editar"
               >
@@ -646,12 +650,13 @@ const SortableTemplateLineItem = ({
               </span>
             )}
             
-            <span className="text-xs text-muted-foreground mx-0.5">×</span>
+            {/* Col 6: × separator */}
+            <span className="text-xs text-muted-foreground text-center">×</span>
             
-            {/* Currency - editable dropdown */}
+            {/* Col 7: Currency */}
             {isEditingCurrency ? (
               <Select value={editCurrency} onValueChange={handleSaveCurrency} open={true}>
-                <SelectTrigger className="h-6 w-12 text-xs">
+                <SelectTrigger className="h-6 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -661,7 +666,7 @@ const SortableTemplateLineItem = ({
               </Select>
             ) : (
               <span 
-                className="text-xs text-muted-foreground cursor-pointer hover:bg-accent/50 px-0.5 py-0.5 rounded"
+                className="text-xs text-muted-foreground text-center cursor-pointer hover:bg-accent/50 px-0.5 py-0.5 rounded"
                 onDoubleClick={() => setIsEditingCurrency(true)}
                 title="Doble clic para editar"
               >
@@ -669,7 +674,7 @@ const SortableTemplateLineItem = ({
               </span>
             )}
             
-            {/* Amount - editable */}
+            {/* Col 8: Price/Amount */}
             {isEditingAmount ? (
               <Input
                 type="number"
@@ -677,14 +682,14 @@ const SortableTemplateLineItem = ({
                 onChange={(e) => setEditAmount(e.target.value)}
                 onBlur={handleSaveAmount}
                 onKeyDown={handleAmountKeyDown}
-                className="h-6 w-20 text-xs"
+                className="h-6 text-xs"
                 autoFocus
                 min="0"
                 step="0.01"
               />
             ) : (
               <span 
-                className="text-xs font-mono bg-muted/50 px-1.5 py-0.5 rounded min-w-[60px] text-center cursor-text hover:bg-accent/50"
+                className="text-xs font-mono bg-muted/50 px-1.5 py-0.5 rounded text-center cursor-text hover:bg-accent/50"
                 onDoubleClick={() => setIsEditingAmount(true)}
                 title="Doble clic para editar"
               >
@@ -692,48 +697,44 @@ const SortableTemplateLineItem = ({
               </span>
             )}
             
-            {/* Calculated total - read only */}
-            <span className="text-xs font-mono bg-primary/10 px-1.5 py-0.5 rounded min-w-[70px] text-center">
+            {/* Col 9: Calculated total */}
+            <span className="text-xs font-mono bg-primary/10 px-1.5 py-0.5 rounded text-center">
               = {line.currency === "CLP" ? "$" : "UF"} {((line.quantity || 0) * line.default_amount_uf).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
             </span>
             
-            {/* Supplier - select from list */}
-            <div className="flex items-center gap-1 ml-2 border-l border-border pl-2">
-              <span className="text-xs text-muted-foreground">Proveedor:</span>
+            {/* Col 10: Supplier */}
+            <div className="flex items-center gap-1 border-l border-border pl-2">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">Prov:</span>
               <SupplierSelect
                 value={null}
                 onChange={handleSupplierChange}
                 categoryId={line.category_id}
               />
               {line.supplier_name && (
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-muted-foreground truncate max-w-[80px]">
                   ({line.supplier_name})
                 </span>
               )}
             </div>
-          </div>
+          </>
         )}
         
-        {/* Parent line with children: show category selector (only for non-root), multiplier and subtotal */}
+        {/* Parent line with children: merged area for category, multiplier, subtotals */}
         {hasChildren && (
-          <>
-            {/* Category selector only for non-root parent lines (level >= 1) */}
-            {level >= 1 && (
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-muted-foreground">Rubro:</span>
-                <CategorySelect
-                  value={line.category_id}
-                  onChange={(categoryId) => onUpdateLine(line.id, { category_id: categoryId })}
-                  placeholder="Seleccionar"
-                  size="sm"
-                />
-              </div>
-            )}
-            
+          <div className="flex items-center gap-3 flex-wrap">
             {level >= 1 && (
               <>
-                <div className="flex items-center gap-2 flex-1">
-                  {/* Multiplier - editable */}
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-muted-foreground">Rubro:</span>
+                  <CategorySelect
+                    value={line.category_id}
+                    onChange={(categoryId) => onUpdateLine(line.id, { category_id: categoryId })}
+                    placeholder="Seleccionar"
+                    size="sm"
+                  />
+                </div>
+                
+                <div className="flex items-center gap-1">
                   <span className="text-xs text-muted-foreground">×</span>
                   {isEditingQuantity ? (
                     <Input
@@ -755,25 +756,23 @@ const SortableTemplateLineItem = ({
                       {multiplier}
                     </span>
                   )}
-                  <span className="text-xs text-muted-foreground">unidades</span>
+                  <span className="text-xs text-muted-foreground">un</span>
                 </div>
                 
-                {/* Total with multiplier on its own line */}
-                <div className="text-xs font-mono bg-primary/10 px-2 py-0.5 rounded font-semibold pl-6">
+                <span className="text-xs font-mono bg-primary/10 px-2 py-0.5 rounded font-semibold">
                   = UF {parentTotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-                </div>
+                </span>
                 
-                {/* Subtotal Unitario on two lines */}
-                <div className="text-xs text-muted-foreground pl-6 flex flex-col">
-                  <span>Subtotal Unitario:</span>
-                  <span>UF {childrenSubtotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}</span>
-                </div>
+                <span className="text-xs text-muted-foreground">
+                  (Unit: UF {childrenSubtotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })})
+                </span>
               </>
             )}
-          </>
+          </div>
         )}
         
-        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
+        {/* Last col: Actions */}
+        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity justify-end">
           <Button
             size="sm"
             variant="ghost"
