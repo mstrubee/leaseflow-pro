@@ -396,6 +396,7 @@ const SortableTemplateLineItem = ({
 
   const [isExpanded, setIsExpanded] = useState(true);
   const [isEditingName, setIsEditingName] = useState(false);
+  const [hasBeenEdited, setHasBeenEdited] = useState(line.name !== "Nueva línea");
   const [isEditingQuantity, setIsEditingQuantity] = useState(false);
   const [isEditingUnit, setIsEditingUnit] = useState(false);
   const [isEditingAmount, setIsEditingAmount] = useState(false);
@@ -476,6 +477,9 @@ const SortableTemplateLineItem = ({
   const handleSaveName = () => {
     if (editName.trim() && editName !== line.name) {
       onUpdateLine(line.id, { name: editName.trim() });
+      setHasBeenEdited(true);
+    } else if (!editName.trim()) {
+      setEditName(line.name);
     } else {
       setEditName(line.name);
     }
@@ -574,6 +578,7 @@ const SortableTemplateLineItem = ({
             onBlur={handleSaveName}
             onKeyDown={handleNameKeyDown}
             className="h-7 min-w-[180px] max-w-[250px] flex-shrink-0 text-sm"
+            placeholder="Nombre de la línea"
             autoFocus
           />
         ) : (
@@ -582,7 +587,12 @@ const SortableTemplateLineItem = ({
               "text-sm font-medium min-w-[180px] flex-shrink-0 cursor-text hover:bg-accent/50 px-1 py-0.5 rounded -ml-1",
               level === 0 && "font-semibold"
             )}
-            onDoubleClick={() => setIsEditingName(true)}
+            onDoubleClick={() => {
+              if (!hasBeenEdited) {
+                setEditName("");
+              }
+              setIsEditingName(true);
+            }}
             title="Doble clic para editar"
           >
             {line.name}
