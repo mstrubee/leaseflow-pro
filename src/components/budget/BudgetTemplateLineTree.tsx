@@ -690,7 +690,7 @@ const SortableTemplateLineItem = ({
             ) : (
               <span 
                 className="text-xs font-mono bg-muted/50 px-1.5 py-0.5 rounded text-center cursor-text hover:bg-accent/50"
-                onDoubleClick={() => setIsEditingAmount(true)}
+                onDoubleClick={() => { setEditAmount(line.default_amount_uf === 0 ? "" : line.default_amount_uf.toString()); setIsEditingAmount(true); }}
                 title="Doble clic para editar"
               >
                 {line.default_amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
