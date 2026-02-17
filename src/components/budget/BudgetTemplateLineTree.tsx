@@ -529,8 +529,8 @@ const SortableTemplateLineItem = ({
           "grid items-center py-2 px-2 rounded-md hover:bg-accent/50 group transition-all duration-200",
           // Grid columns: drag(32px) expand(28px) name(minmax) qty(60px) unit(40px) x(16px) currency(60px) price(80px) total(100px) supplier(auto) actions(60px)
           !hasChildren 
-            ? "grid-cols-[32px_28px_minmax(200px,1fr)_60px_40px_16px_60px_80px_100px_auto_60px]"
-            : "grid-cols-[32px_28px_minmax(200px,1fr)_1fr_60px]",
+            ? "grid-cols-[32px_28px_minmax(240px,1.2fr)_60px_40px_16px_60px_80px_100px_auto_60px]"
+            : "grid-cols-[32px_28px_minmax(240px,1.2fr)_1fr_60px]",
           level === 0 && hasChildren && "bg-muted/60",
           level === 0 && !hasChildren && "bg-muted/20",
           level === 1 && hasChildren && "bg-muted/50",
