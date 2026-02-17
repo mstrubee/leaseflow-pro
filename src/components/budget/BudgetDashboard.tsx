@@ -417,11 +417,27 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
       return { budget: 0, authorized: 0, unauthorized: 0 };
     }
 
-    // Obtener líneas del presupuesto específico con quantity y unit_price
+    // Obtener líneas del presupuesto específico con quantity, unit_price y template_line_id
     const { data: lines } = await supabase
       .from("budget_lines")
-      .select("id, amount_uf, status, parent_id, quantity, unit_price")
+      .select("id, amount_uf, status, parent_id, quantity, unit_price, template_line_id")
       .eq("budget_id", budget.id);
+
+    // Fetch template prices for lines with template_line_id
+    const linesWithTemplate = (lines || []).filter(l => l.template_line_id);
+    let tPricesMap: Record<string, number> = {};
+    if (linesWithTemplate.length > 0) {
+      const uniqueTemplateIds = [...new Set(linesWithTemplate.map(l => l.template_line_id!))];
+      const { data: templateData } = await supabase
+        .from("budget_template_lines")
+        .select("id, default_amount_uf")
+        .in("id", uniqueTemplateIds);
+      if (templateData) {
+        const tMap: Record<string, number> = {};
+        templateData.forEach(t => { tMap[t.id] = t.default_amount_uf || 0; });
+        linesWithTemplate.forEach(l => { tPricesMap[l.id] = tMap[l.template_line_id!] ?? 0; });
+      }
+    }
 
     // Get all line IDs to identify which are parents
     const parentIds = new Set((lines || []).filter(l => l.parent_id).map(l => l.parent_id));
@@ -429,13 +445,14 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
     // Only count leaf nodes (lines that are not parents of other lines) to avoid double counting
     const leafLines = (lines || []).filter(l => !parentIds.has(l.id));
     
-    // Helper to get effective amount - only count lines with valid quantity AND unit_price
-    const getEffectiveAmount = (line: { quantity?: number | null; unit_price?: number | null; amount_uf: number }) => {
+    // Helper to get effective amount - uses template price as fallback
+    const getEffectiveAmount = (line: { id: string; quantity?: number | null; unit_price?: number | null; amount_uf: number }) => {
       const qty = line.quantity || 0;
-      const price = line.unit_price || 0;
-      // Only return amount if both quantity and price are set
+      const localPrice = line.unit_price || 0;
+      const templatePrice = tPricesMap[line.id] ?? 0;
+      const price = localPrice > 0 ? localPrice : templatePrice;
       if (qty <= 0 || price <= 0) return 0;
-      return line.amount_uf || 0;
+      return qty * price;
     };
     
     const authorized = leafLines

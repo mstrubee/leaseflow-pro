@@ -44,6 +44,7 @@ interface BudgetModuleProps {
 export const BudgetModule = ({ contractId, contractName = "", contractCebe, budgetType, title, selectedYear, ocTotal = 0, onRefresh }: BudgetModuleProps) => {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [lines, setLines] = useState<BudgetLine[]>([]);
+  const [templatePricesMap, setTemplatePricesMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   
   // Update template state
@@ -164,11 +165,35 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
         .from("budget_lines")
         .select("*")
         .eq("budget_id", budgetId)
-        .is("deleted_at", null)  // Only load non-deleted lines
+        .is("deleted_at", null)
         .order("display_order");
 
       if (error) throw error;
-      setLines(buildTree((data || []) as BudgetLine[]));
+      const flatLines = (data || []) as BudgetLine[];
+      setLines(buildTree(flatLines));
+      
+      // Fetch template prices for lines with template_line_id
+      const templateLineIds = flatLines
+        .filter(l => l.template_line_id)
+        .map(l => ({ lineId: l.id, templateId: l.template_line_id! }));
+      
+      if (templateLineIds.length > 0) {
+        const uniqueTemplateIds = [...new Set(templateLineIds.map(m => m.templateId))];
+        const { data: templateData } = await supabase
+          .from("budget_template_lines")
+          .select("id, default_amount_uf")
+          .in("id", uniqueTemplateIds);
+        
+        if (templateData) {
+          const tMap: Record<string, number> = {};
+          templateData.forEach(t => { tMap[t.id] = t.default_amount_uf || 0; });
+          const pricesMap: Record<string, number> = {};
+          templateLineIds.forEach(m => { pricesMap[m.lineId] = tMap[m.templateId] ?? 0; });
+          setTemplatePricesMap(pricesMap);
+        }
+      } else {
+        setTemplatePricesMap({});
+      }
     } catch (error) {
       console.error("Error loading lines:", error);
     }
@@ -643,8 +668,8 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   };
 
   const currentBudget = budgets.find((b) => b.year === selectedYear);
-  const authorizedTotal = calculateAuthorizedTotal(lines);
-  const unauthorizedTotal = calculateUnauthorizedTotal(lines);
+  const authorizedTotal = calculateAuthorizedTotal(lines, templatePricesMap);
+  const unauthorizedTotal = calculateUnauthorizedTotal(lines, templatePricesMap);
   const budgetAmount = currentBudget?.amount_uf || 0;
   const isClosed = currentBudget?.is_closed || false;
   const unauthorizedCount = getUnauthorizedLines(lines).length;
