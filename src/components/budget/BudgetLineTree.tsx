@@ -360,31 +360,37 @@ const BudgetLineItem = ({
                 setIsEditingName(false);
               }
             }}
-            className="h-6 w-[240px] text-sm" 
+            className="h-6 w-[280px] text-sm" 
             autoFocus
           />
         ) : (
-          <span 
-            className={cn(
-              "text-sm flex-shrink-0 min-w-[250px]", 
-              level === 0 ? "font-semibold" : "font-medium",
-              !readOnly && "cursor-text hover:bg-accent/30 px-1 py-0.5 rounded"
-            )}
-            onDoubleClick={(e) => {
-              e.stopPropagation();
-              if (!readOnly) {
-                setEditName(line.name);
-                setIsEditingName(true);
-              }
-            }}
-            title={!readOnly ? "Doble clic para editar nombre" : undefined}
-          >
-            {line.name}
-          </span>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span 
+                  className={cn(
+                    "text-sm flex-shrink-0 w-[280px] min-w-[280px] max-w-[280px] truncate", 
+                    level === 0 ? "font-semibold" : "font-medium",
+                    !readOnly && "cursor-text hover:bg-accent/30 px-1 py-0.5 rounded"
+                  )}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    if (!readOnly) {
+                      setEditName(line.name);
+                      setIsEditingName(true);
+                    }
+                  }}
+                >
+                  {line.name}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">{line.name}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
 
         {/* For non-parent lines: show quantity/unit and price inputs - editable on double click */}
-        {!isParent && <div className="flex items-center gap-1 min-w-[320px]">
+        {!isParent && <div className="flex items-center gap-1 w-[320px] min-w-[320px] max-w-[320px]">
             {/* Quantity - editable on double click */}
             {isEditingQuantity && !readOnly ? (
               <Input 
@@ -591,7 +597,7 @@ const BudgetLineItem = ({
         )}
 
         {/* Totals and status */}
-        <div className="flex items-center mx-[3px] gap-[50px] text-destructive">
+        <div className="flex items-center mx-[3px] gap-[50px] text-destructive ml-auto flex-shrink-0">
           <span className="text-xs text-center font-sans font-medium whitespace-nowrap min-w-[80px]">{formatUF(calculatedAmount)}</span>
           <span className="text-[12px] text-muted-foreground font-mono whitespace-nowrap min-w-[100px] text-right">
             {formatCLP(convertUFToPesos(calculatedAmount))}
