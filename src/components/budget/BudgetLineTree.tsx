@@ -564,28 +564,6 @@ const BudgetLineItem = ({
 
 
 
-
-            {/* Show total equivalent in the other currency */}
-            {(() => {
-              const localP = line.unit_price || 0;
-              const displayPrice = localP > 0 ? localP : (templateUnitPrice ?? 0);
-              const rawTotal = (line.quantity || 0) * displayPrice;
-              if (rawTotal <= 0 || ufValue <= 0) return null;
-              const lineCurrency = line.currency || "UF";
-              if (lineCurrency === "UF") {
-                return (
-                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                    ({formatCLP(rawTotal * ufValue)})
-                  </span>
-                );
-              } else {
-                return (
-                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                    (UF {(rawTotal / ufValue).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
-                  </span>
-                );
-              }
-            })()}
           </div>}
 
         {/* Parent line with children: show multiplier and subtotal - only for level 1+ */}
