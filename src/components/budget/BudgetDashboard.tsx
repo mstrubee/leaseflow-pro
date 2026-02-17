@@ -450,7 +450,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
       const qty = line.quantity || 0;
       const localPrice = line.unit_price || 0;
       const templatePrice = tPricesMap[line.id] ?? 0;
-      const price = templatePrice > 0 ? templatePrice : localPrice;
+      const price = localPrice > 0 ? localPrice : templatePrice;
       if (qty <= 0 || price <= 0) return 0;
       return qty * price;
     };
