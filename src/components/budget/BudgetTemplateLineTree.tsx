@@ -1,4 +1,5 @@
-import { useState, createContext, useContext } from "react";
+import { useState, createContext, useContext, useMemo } from "react";
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { ChevronRight, ChevronDown, Plus, Trash2, GripVertical, CornerDownRight, ArrowRight, Ruler } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -393,6 +394,7 @@ const SortableTemplateLineItem = ({
   allLines,
 }: SortableTemplateLineItemProps) => {
   const { activeId, overId } = useContext(DragStateContext);
+  const { ufValue } = useEconomicIndicators();
   
   const {
     attributes,
@@ -783,9 +785,16 @@ const SortableTemplateLineItem = ({
             )}
             
             {/* Col 9: Calculated total */}
-            <span className="text-xs font-mono bg-primary/10 px-1.5 py-0.5 rounded text-center">
-              = {line.currency === "CLP" ? "$" : "UF"} {((line.quantity || 0) * line.default_amount_uf).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-            </span>
+            <div className="text-center">
+              <span className="text-xs font-mono bg-primary/10 px-1.5 py-0.5 rounded">
+                = {line.currency === "CLP" ? "$" : "UF"} {((line.quantity || 0) * line.default_amount_uf).toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+              </span>
+              {line.currency !== "CLP" && ufValue > 0 && ((line.quantity || 0) * line.default_amount_uf) > 0 && (
+                <div className="text-[9px] text-muted-foreground mt-0.5">
+                  $ {Math.round(((line.quantity || 0) * line.default_amount_uf) * ufValue).toLocaleString("es-CL")}
+                </div>
+              )}
+            </div>
             
             {/* Col 10: Supplier */}
             <div className="flex items-center gap-1 border-l border-border pl-2">
@@ -848,9 +857,16 @@ const SortableTemplateLineItem = ({
                   <span className="text-xs text-muted-foreground">un</span>
                 </div>
                 
-                <span className="text-xs font-mono bg-primary/10 px-2 py-0.5 rounded font-semibold">
-                  = UF {parentTotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-                </span>
+                <div>
+                  <span className="text-xs font-mono bg-primary/10 px-2 py-0.5 rounded font-semibold">
+                    = UF {parentTotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+                  </span>
+                  {ufValue > 0 && parentTotal > 0 && (
+                    <span className="text-[9px] text-muted-foreground ml-1">
+                      ($ {Math.round(parentTotal * ufValue).toLocaleString("es-CL")})
+                    </span>
+                  )}
+                </div>
                 
                 <span className="text-xs text-muted-foreground">
                   (Unit: UF {childrenSubtotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })})
