@@ -675,7 +675,10 @@ const SortableTemplateLineItem = ({
               <Popover>
                 <PopoverTrigger asChild>
                   <span 
-                    className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded text-center cursor-pointer hover:bg-accent/50"
+                    className={cn(
+                      "text-xs font-mono px-1.5 py-0.5 rounded text-center cursor-pointer hover:bg-accent/50",
+                      (line.quantity || 0) === 0 ? "bg-destructive/15 text-destructive" : "bg-muted/30"
+                    )}
                     onDoubleClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -777,7 +780,10 @@ const SortableTemplateLineItem = ({
             ) : (
               <div className="text-center">
                 <span 
-                  className="text-xs font-mono bg-muted/50 px-1.5 py-0.5 rounded cursor-text hover:bg-accent/50"
+                  className={cn(
+                    "text-xs font-mono px-1.5 py-0.5 rounded cursor-text hover:bg-accent/50",
+                    line.default_amount_uf === 0 ? "bg-destructive/15 text-destructive" : "bg-muted/50"
+                  )}
                   onDoubleClick={() => { setEditAmount(line.default_amount_uf === 0 ? "" : line.default_amount_uf.toString()); setIsEditingAmount(true); }}
                   title="Doble clic para editar"
                 >
