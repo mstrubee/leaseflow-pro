@@ -1,44 +1,66 @@
 
-# Desglose de Arriendo Total por Periodo de Escalonamiento
 
-## Objetivo
-Agregar una tabla compacta dentro de la seccion "Total Arriendo" (en el area colapsable "Ver detalle") que muestre el **Total Arriendo por cada periodo del escalonamiento**, incluyendo Canon, GGCC, Fondo de Promocion y Otros Egresos.
+## Plan: Cantidad indexada a superficies del contrato en plantillas de presupuesto
 
-## Comportamiento
-- Solo se muestra cuando el contrato tiene escalones definidos (`hasEscalations = true`)
-- Se ubica dentro del area expandible del "Total Arriendo", debajo del desglose actual (Canon, GGCC, F.Prom, Otros, Variable)
-- Para cada periodo de escalonamiento se calcula:
-  - **Canon**: monto del escalon (multiplicado por superficie si es UF/m2)
-  - **GGCC**: se mantiene fijo (no depende del canon)
-  - **F. Prom**: porcentaje aplicado sobre el canon de ese periodo
-  - **Otros**: monto fijo
-  - **Total**: suma de los anteriores
+### Objetivo
+Permitir que cada linea de plantilla pueda definir su cantidad de dos formas:
+1. **Manual**: el usuario escribe un valor fijo (comportamiento actual)
+2. **Indexada a superficie**: la cantidad se obtiene automaticamente del campo de superficie del contrato al momento de aplicar la plantilla
 
-## Ejemplo visual
+### Cambios en base de datos
+
+Agregar columna `quantity_source` a la tabla `budget_template_lines`:
+- Tipo: `text`, nullable, default `null`
+- Valores posibles:
+  - `null` o `"manual"` = cantidad manual (comportamiento actual)
+  - `"superficie_terreno"` = Terreno (m2)
+  - `"superficie_showroom"` = Showroom (m2)
+  - `"superficie_bodega_backoffice"` = Bodega & Backoffice (m2)
+  - `"superficie_edificada_local"` = Edificada Local (m2, calculado)
+  - `"superficie_exterior_cubierto"` = Exterior Cubierto (m2)
+  - `"superficie_exterior_descubierto"` = Exterior Descubierto (m2, calculado)
+  - `"num_estacionamientos"` = Estacionamientos (unidades)
+  - `"metros_lineales_frente"` = Metros Lineales Frente (mL)
+
+### Cambios en la interfaz (BudgetTemplateLineTree)
+
+En la columna de **Cantidad** de cada linea hoja:
+- Reemplazar el campo numerico por un selector que permita elegir entre:
+  - **Valor manual**: muestra el input numerico actual
+  - **Campo de superficie**: muestra un dropdown con las 8 opciones de superficie del contrato
+- Cuando se selecciona un campo de superficie, la cantidad muestra una etiqueta como `[Terreno]` en vez de un numero, indicando que se resolvera al aplicar la plantilla
+- El campo numerico de cantidad se oculta cuando hay una fuente indexada seleccionada
+
+### Cambios en la logica de aplicacion (BudgetTemplateSelector)
+
+En la funcion `applyBudgetTemplate`:
+1. Recibir un parametro adicional `contractId`
+2. Al encontrar una linea con `quantity_source` distinto de `null`/`"manual"`, consultar el campo correspondiente de la tabla `contracts` para obtener el valor de superficie
+3. Usar ese valor como `quantity` en la linea del presupuesto creada
+
+### Detalles tecnicos
 
 ```text
-Periodo 1 (M1-M12):    Canon 158,80 + GGCC 59,55 + F.Prom 0 + Otros 0 = 218,35 UF  (0,55 UF/m2)
-Periodo 2 (M13-M24):   Canon 174,70 + GGCC 59,55 + ...                 = 234,25 UF  (0,59 UF/m2)
-Periodo 3 (M25-M36):   ...
+budget_template_lines
++-------------------+------+----------+
+| quantity_source   | text | nullable |
++-------------------+------+----------+
+
+Valores: null, "manual", "superficie_terreno", "superficie_showroom",
+         "superficie_bodega_backoffice", "superficie_edificada_local",
+         "superficie_exterior_cubierto", "superficie_exterior_descubierto",
+         "num_estacionamientos", "metros_lineales_frente"
 ```
 
-Se mostrara en formato tabla compacta con columnas: Periodo, Canon, GGCC, F.Prom, Otros, Total, y opcionalmente UF/m2.
+**Archivos a modificar:**
+- `src/components/budget/BudgetTemplateLineTree.tsx`: agregar UI para seleccionar fuente de cantidad (manual vs campo de superficie), mostrar etiqueta visual cuando es indexada
+- `src/components/budget/BudgetTemplateSelector.tsx`: actualizar `applyBudgetTemplate` y `updateBudgetTemplatePreservingValues` para resolver referencias de superficie desde el contrato
+- `src/components/budget/BudgetTemplateManager.tsx`: pasar `quantity_source` en duplicacion de plantillas
+- Migracion SQL: agregar columna `quantity_source`
 
-## Cambios tecnicos
+**Interfaz del selector de cantidad:**
+- Al hacer doble clic en la cantidad, se muestra un pequeno popover o dropdown con dos secciones:
+  - "Manual" (input numerico)
+  - "Desde superficie" (lista de campos disponibles)
+- Cuando hay una fuente indexada, la celda muestra un badge con el nombre del campo (ej: `[Terreno m2]`) en lugar de un numero
 
-### `src/components/contracts/CommercialConditionsSummary.tsx`
-
-1. **Nuevo `useMemo` para calcular los periodos**: Iterar sobre los escalones ordenados por `month_number`, construyendo un array de periodos con:
-   - Mes inicio / mes fin de cada tramo
-   - Canon del periodo (considerando `is_uf_m2` y superficie)
-   - GGCC (fijo, ya calculado como `gastosComunesTotalUF`)
-   - Fondo Promocion = canon_periodo * (fondo_promocion_percentage / 100)
-   - Otros egresos (fijo)
-   - Total = canon + GGCC + F.Prom + Otros
-   - Total UF/m2 = Total / superficie
-
-2. **Incluir el periodo inicial** (desde mes 1 o fin de gracia hasta el primer escalon) usando `initial_rent` o `regime_rent` como canon base.
-
-3. **Renderizar la tabla** dentro del bloque `totalArriendoExpanded`, despues del desglose actual, separado por un borde superior sutil. Formato compacto con `text-[10px]`.
-
-4. **Condicional**: Solo renderizar si `hasEscalations && escalationPeriods.length > 1`.
