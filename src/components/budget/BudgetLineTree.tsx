@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -147,6 +148,25 @@ const BudgetLineItem = ({
     ufValue
   } = useBudgetContext();
   
+  // Fetch template unit_price if line has a template_line_id
+  const [templateUnitPrice, setTemplateUnitPrice] = useState<number | null>(null);
+  useEffect(() => {
+    if (!line.template_line_id) {
+      setTemplateUnitPrice(null);
+      return;
+    }
+    supabase
+      .from("budget_template_lines")
+      .select("default_amount_uf")
+      .eq("id", line.template_line_id)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setTemplateUnitPrice(data.default_amount_uf || 0);
+        }
+      });
+  }, [line.template_line_id]);
+
   const descendantCount = countDescendants(line);
 
   // Respond to global expand/collapse state
@@ -473,14 +493,19 @@ const BudgetLineItem = ({
               />
             ) : (
               <span 
-                className="text-xs font-mono bg-muted/50 px-1.5 py-0.5 rounded min-w-[70px] text-center cursor-text hover:bg-accent/50"
+                className={cn(
+                  "text-xs font-mono px-1.5 py-0.5 rounded min-w-[70px] text-center cursor-text hover:bg-accent/50",
+                  templateUnitPrice !== null ? "bg-primary/10" : "bg-muted/50"
+                )}
                 onDoubleClick={() => !readOnly && setIsEditingPrice(true)}
-                title="Doble clic para editar"
+                title={templateUnitPrice !== null ? "Valor desde plantilla — Doble clic para editar" : "Doble clic para editar"}
               >
-                {line.currency === "CLP" 
-                  ? Math.round(line.unit_price || 0).toLocaleString("es-CL")
-                  : (line.unit_price || 0).toLocaleString("es-CL", { minimumFractionDigits: 2 })
-                }
+                {(() => {
+                  const displayPrice = templateUnitPrice !== null ? templateUnitPrice : (line.unit_price || 0);
+                  return line.currency === "CLP" 
+                    ? Math.round(displayPrice).toLocaleString("es-CL")
+                    : displayPrice.toLocaleString("es-CL", { minimumFractionDigits: 2 });
+                })()}
               </span>
             )}
 
