@@ -553,6 +553,7 @@ export type Database = {
           name: string
           parent_id: string | null
           quantity: number | null
+          quantity_source: string | null
           supplier_name: string | null
           template_id: string
           unit_type: string | null
@@ -568,6 +569,7 @@ export type Database = {
           name: string
           parent_id?: string | null
           quantity?: number | null
+          quantity_source?: string | null
           supplier_name?: string | null
           template_id: string
           unit_type?: string | null
@@ -583,6 +585,7 @@ export type Database = {
           name?: string
           parent_id?: string | null
           quantity?: number | null
+          quantity_source?: string | null
           supplier_name?: string | null
           template_id?: string
           unit_type?: string | null

@@ -231,6 +231,12 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
               description: line.description,
               default_amount_uf: line.default_amount_uf,
               display_order: line.display_order,
+              quantity: line.quantity,
+              unit_type: line.unit_type,
+              currency: line.currency,
+              supplier_name: line.supplier_name,
+              category_id: line.category_id,
+              quantity_source: (line as any).quantity_source,
               parent_id: null,
             })
             .select()

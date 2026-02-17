@@ -537,7 +537,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
       
       // Apply template only if one is selected
       if (capexTemplateId && capexTemplateId !== "none") {
-        await applyBudgetTemplate(capexTemplateId, capBudget.id);
+        await applyBudgetTemplate(capexTemplateId, capBudget.id, contractId);
       }
 
       // Handle carryover if closing previous year

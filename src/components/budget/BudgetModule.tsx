@@ -621,7 +621,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     setUpdatingTemplate(true);
     try {
       // Use the new function that preserves user values
-      const success = await updateBudgetTemplatePreservingValues(updateTemplateId, budget.id);
+      const success = await updateBudgetTemplatePreservingValues(updateTemplateId, budget.id, contractId);
       if (!success) {
         throw new Error("Error al aplicar la plantilla");
       }
