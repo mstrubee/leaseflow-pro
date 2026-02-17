@@ -229,12 +229,13 @@ const BudgetLineItem = ({
     }, 0);
   };
 
-  // For leaf lines: show 0 if missing quantity or price
+  // For leaf lines: use amount_uf (already = qty * unit_price)
   const getLeafAmount = (): number => {
     const qty = line.quantity || 0;
-    const price = line.unit_price || 0;
+    const localPrice = line.unit_price || 0;
+    const price = localPrice > 0 ? localPrice : (templateUnitPrice ?? 0);
     if (qty <= 0 || price <= 0) return 0;
-    return line.amount_uf || 0;
+    return qty * price;
   };
 
   // For parents: subtotal * multiplier
