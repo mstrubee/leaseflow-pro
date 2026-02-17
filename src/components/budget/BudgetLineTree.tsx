@@ -214,9 +214,11 @@ const BudgetLineItem = ({
         const childMultiplier = child.quantity || 1;
         return sum + (childSubtotal * childMultiplier);
       }
-      // Leaf: qty * price (prefer template price)
+      // Leaf: qty * price (prefer local unit_price, fallback to template)
       const qty = child.quantity || 0;
-      const price = templatePricesMap[child.id] !== undefined ? templatePricesMap[child.id] : (child.unit_price || 0);
+      const localPrice = child.unit_price || 0;
+      const tplPrice = templatePricesMap[child.id] ?? 0;
+      const price = localPrice > 0 ? localPrice : tplPrice;
       if (qty <= 0 || price <= 0) return sum;
       const leafTotal = qty * price;
       // Convert CLP to UF if needed
@@ -259,9 +261,11 @@ const BudgetLineItem = ({
       setIsEditingQuantity(false);
       return;
     }
-    const price = line.unit_price || 0;
+    // Use effective price: local if set, else template
+    const localPrice = line.unit_price || 0;
+    const effectivePrice = localPrice > 0 ? localPrice : (templateUnitPrice ?? 0);
     const currency = line.currency || "UF";
-    const amountUf = calculateLineAmount(qty, price, currency);
+    const amountUf = calculateLineAmount(qty, effectivePrice, currency);
     onUpdateLine(line.id, {
       quantity: qty,
       amount_uf: amountUf
@@ -527,18 +531,26 @@ const BudgetLineItem = ({
                     "text-xs font-mono px-1.5 py-0.5 rounded min-w-[70px] text-center cursor-text hover:bg-accent/50",
                     templateUnitPrice !== null ? "bg-primary/10" : "bg-muted/50"
                   )}
-                  onDoubleClick={() => !readOnly && setIsEditingPrice(true)}
+                  onDoubleClick={() => {
+                    if (readOnly) return;
+                    const localP = line.unit_price || 0;
+                    const dp = localP > 0 ? localP : (templateUnitPrice ?? 0);
+                    setEditUnitPrice(dp.toString());
+                    setIsEditingPrice(true);
+                  }}
                   title={templateUnitPrice !== null ? "Valor desde plantilla — Doble clic para editar" : "Doble clic para editar"}
                 >
                   {(() => {
-                    const displayPrice = templateUnitPrice !== null ? templateUnitPrice : (line.unit_price || 0);
+                    const localP = line.unit_price || 0;
+                    const displayPrice = localP > 0 ? localP : (templateUnitPrice ?? 0);
                     return line.currency === "CLP" 
                       ? Math.round(displayPrice).toLocaleString("es-CL")
                       : displayPrice.toLocaleString("es-CL", { minimumFractionDigits: 2 });
                   })()}
                 </span>
                 {(() => {
-                  const displayPrice = templateUnitPrice !== null ? templateUnitPrice : (line.unit_price || 0);
+                  const localP = line.unit_price || 0;
+                  const displayPrice = localP > 0 ? localP : (templateUnitPrice ?? 0);
                   if (displayPrice <= 0 || ufValue <= 0) return null;
                   const lineCurrency = line.currency || "UF";
                   if (lineCurrency === "UF") {
@@ -554,7 +566,8 @@ const BudgetLineItem = ({
 
             {/* Show total equivalent in the other currency */}
             {(() => {
-              const displayPrice = templateUnitPrice !== null ? templateUnitPrice : (line.unit_price || 0);
+              const localP = line.unit_price || 0;
+              const displayPrice = localP > 0 ? localP : (templateUnitPrice ?? 0);
               const rawTotal = (line.quantity || 0) * displayPrice;
               if (rawTotal <= 0 || ufValue <= 0) return null;
               const lineCurrency = line.currency || "UF";
@@ -621,7 +634,8 @@ const BudgetLineItem = ({
           <span className="text-xs text-center font-sans font-medium whitespace-nowrap min-w-[80px]">
             {(() => {
               const qty = line.quantity || 0;
-              const price = templateUnitPrice !== null ? templateUnitPrice : (line.unit_price || 0);
+              const localP = line.unit_price || 0;
+              const price = localP > 0 ? localP : (templateUnitPrice ?? 0);
               const lineTotal = qty * price;
               return formatUF(isParent ? calculatedAmount : (line.currency === "CLP" && ufValue > 0 ? lineTotal / ufValue : lineTotal));
             })()}
@@ -786,8 +800,8 @@ const getEffectiveAmount = (item: BudgetLine, templatePricesMap?: Record<string,
   const qty = item.quantity || 0;
   const localPrice = item.unit_price || 0;
   const templatePrice = templatePricesMap && item.template_line_id ? (templatePricesMap[item.id] ?? 0) : 0;
-  // Prefer template price when available (local unit_price may be corrupted from import)
-  const price = templatePrice > 0 ? templatePrice : localPrice;
+  // Prefer local unit_price (user-edited), fallback to template price
+  const price = localPrice > 0 ? localPrice : templatePrice;
   if (qty <= 0 || price <= 0) return 0;
   return qty * price;
 };
