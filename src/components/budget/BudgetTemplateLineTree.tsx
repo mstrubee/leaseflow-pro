@@ -775,13 +775,20 @@ const SortableTemplateLineItem = ({
                 step="0.01"
               />
             ) : (
-              <span 
-                className="text-xs font-mono bg-muted/50 px-1.5 py-0.5 rounded text-center cursor-text hover:bg-accent/50"
-                onDoubleClick={() => { setEditAmount(line.default_amount_uf === 0 ? "" : line.default_amount_uf.toString()); setIsEditingAmount(true); }}
-                title="Doble clic para editar"
-              >
-                {line.default_amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-              </span>
+              <div className="text-center">
+                <span 
+                  className="text-xs font-mono bg-muted/50 px-1.5 py-0.5 rounded cursor-text hover:bg-accent/50"
+                  onDoubleClick={() => { setEditAmount(line.default_amount_uf === 0 ? "" : line.default_amount_uf.toString()); setIsEditingAmount(true); }}
+                  title="Doble clic para editar"
+                >
+                  {line.default_amount_uf.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+                </span>
+                {line.currency !== "CLP" && ufValue > 0 && line.default_amount_uf > 0 && (
+                  <div className="text-[9px] text-muted-foreground mt-0.5">
+                    $ {Math.round(line.default_amount_uf * ufValue).toLocaleString("es-CL")}
+                  </div>
+                )}
+              </div>
             )}
             
             {/* Col 9: Calculated total */}
