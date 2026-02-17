@@ -521,48 +521,53 @@ const BudgetLineItem = ({
                 step="0.01"
               />
             ) : (
-              <span 
-                className={cn(
-                  "text-xs font-mono px-1.5 py-0.5 rounded min-w-[70px] text-center cursor-text hover:bg-accent/50",
-                  (!line.unit_price && templateUnitPrice !== null) ? "bg-primary/10" : "bg-muted/50"
-                )}
-                onDoubleClick={() => !readOnly && setIsEditingPrice(true)}
-                title={(!line.unit_price && templateUnitPrice !== null) ? "Valor desde plantilla — Doble clic para editar" : "Doble clic para editar"}
-              >
+              <div className="flex flex-col items-center">
+                <span 
+                  className={cn(
+                    "text-xs font-mono px-1.5 py-0.5 rounded min-w-[70px] text-center cursor-text hover:bg-accent/50",
+                    (!line.unit_price && templateUnitPrice !== null) ? "bg-primary/10" : "bg-muted/50"
+                  )}
+                  onDoubleClick={() => !readOnly && setIsEditingPrice(true)}
+                  title={(!line.unit_price && templateUnitPrice !== null) ? "Valor desde plantilla — Doble clic para editar" : "Doble clic para editar"}
+                >
+                  {(() => {
+                    const displayPrice = (line.unit_price || 0) > 0 ? line.unit_price! : (templateUnitPrice !== null ? templateUnitPrice : 0);
+                    return line.currency === "CLP" 
+                      ? Math.round(displayPrice).toLocaleString("es-CL")
+                      : displayPrice.toLocaleString("es-CL", { minimumFractionDigits: 2 });
+                  })()}
+                </span>
                 {(() => {
                   const displayPrice = (line.unit_price || 0) > 0 ? line.unit_price! : (templateUnitPrice !== null ? templateUnitPrice : 0);
-                  return line.currency === "CLP" 
-                    ? Math.round(displayPrice).toLocaleString("es-CL")
-                    : displayPrice.toLocaleString("es-CL", { minimumFractionDigits: 2 });
+                  if (displayPrice <= 0 || ufValue <= 0) return null;
+                  const lineCurrency = line.currency || "UF";
+                  if (lineCurrency === "UF") {
+                    return <span className="text-[9px] text-muted-foreground">$ {Math.round(displayPrice * ufValue).toLocaleString("es-CL")}</span>;
+                  }
+                  return <span className="text-[9px] text-muted-foreground">UF {(displayPrice / ufValue).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })}</span>;
                 })()}
-              </span>
+              </div>
             )}
 
 
 
 
-            {/* Show equivalent in the other currency */}
+            {/* Show total equivalent in the other currency */}
             {(() => {
-              const rawTotal = (line.quantity || 0) * (line.unit_price || 0);
-              const qty = line.quantity || 0;
-              if (rawTotal <= 0 || qty <= 0 || ufValue <= 0) return null;
+              const displayPrice = (line.unit_price || 0) > 0 ? line.unit_price! : (templateUnitPrice !== null ? templateUnitPrice : 0);
+              const rawTotal = (line.quantity || 0) * displayPrice;
+              if (rawTotal <= 0 || ufValue <= 0) return null;
               const lineCurrency = line.currency || "UF";
               if (lineCurrency === "UF") {
-                const totalCLP = rawTotal * ufValue;
-                const clpPerUnit = totalCLP / qty;
-                const unitLabel = line.unit_type === "m2" ? "m²" : line.unit_type || "m²";
                 return (
                   <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                    ({formatCLP(totalCLP)} · ${Math.round(clpPerUnit).toLocaleString("es-CL")}/{unitLabel})
+                    ({formatCLP(rawTotal * ufValue)})
                   </span>
                 );
               } else {
-                const totalUF = rawTotal / ufValue;
-                const ufPerUnit = totalUF / qty;
-                const unitLabel = line.unit_type === "m2" ? "m²" : line.unit_type || "m²";
                 return (
                   <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                    (UF {totalUF.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · {ufPerUnit.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/{unitLabel})
+                    (UF {(rawTotal / ufValue).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                   </span>
                 );
               }
