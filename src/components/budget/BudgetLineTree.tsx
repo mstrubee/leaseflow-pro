@@ -502,10 +502,9 @@ const BudgetLineItem = ({
               >
                 {(() => {
                   const displayPrice = templateUnitPrice !== null ? templateUnitPrice : (line.unit_price || 0);
-                  const prefix = line.currency === "CLP" ? "$ " : "UF ";
                   return line.currency === "CLP" 
-                    ? prefix + Math.round(displayPrice).toLocaleString("es-CL")
-                    : prefix + displayPrice.toLocaleString("es-CL", { minimumFractionDigits: 2 });
+                    ? Math.round(displayPrice).toLocaleString("es-CL")
+                    : displayPrice.toLocaleString("es-CL", { minimumFractionDigits: 2 });
                 })()}
               </span>
             )}
