@@ -446,7 +446,14 @@ export function MaintenanceModule() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-xs">{f.created_date || "-"}</TableCell>
-                      <TableCell className="text-xs">{f.contract_name || "-"}</TableCell>
+                      <TableCell className="text-xs">
+                        <div className="flex items-center gap-1.5">
+                          {f.contract_id && contractCompanyMap[f.contract_id] && (
+                            <CompanyLogo companyNames={contractCompanyMap[f.contract_id]} size="sm" className="h-4 w-4 shrink-0" />
+                          )}
+                          <span className="truncate">{f.contract_name || "-"}</span>
+                        </div>
+                      </TableCell>
                       <TableCell><Badge variant="outline" className="text-xs">{detectMaintenanceType(f)}</Badge></TableCell>
                       <TableCell className="text-xs max-w-48 truncate">
                         {f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-"}
