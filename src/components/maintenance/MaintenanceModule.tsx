@@ -468,7 +468,7 @@ export function MaintenanceModule() {
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditForm(f)} title="Editar">
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => exportMaintenancePDF(f)} title="Descargar PDF">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => exportMaintenancePDF(f, f.contract_id ? (contractCompanyMap[f.contract_id] || []).join(", ") : undefined)} title="Descargar PDF">
                             <FileDown className="h-3.5 w-3.5" />
                           </Button>
                         </div>
