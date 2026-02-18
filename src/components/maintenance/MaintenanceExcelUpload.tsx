@@ -134,8 +134,11 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         for (const [cebe, contract] of contractsByFullCEBE) {
           if (upperText.includes(cebe)) return { match: contract };
         }
-        // Priority 3: 4-digit CEBE match (e.g., "0410" from "0410 TIENDA LA FLORIDA")
-        const excelDigits = rawText.trim().match(/^\d{4}/)?.[0];
+        // Priority 3: 4-digit CEBE match
+        // Supports formats: "H0440P1290 ..." or "0440 TIENDA ..." 
+        const cebeMatch = rawText.trim().match(/^H(\d{4})P\d+/i);
+        const plainDigitsMatch = rawText.trim().match(/^(\d{4})/);
+        const excelDigits = cebeMatch?.[1] || plainDigitsMatch?.[1];
         if (excelDigits && contractsByDigits.has(excelDigits)) {
           const candidates = contractsByDigits.get(excelDigits)!;
           if (candidates.length === 1) return { match: candidates[0] };
