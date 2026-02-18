@@ -24,6 +24,7 @@ interface LogoUrls {
 let cachedLogos: LogoUrls | null = null;
 let cacheTimestamp: number = 0;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+let pendingPromise: Promise<LogoUrls> | null = null;
 
 export function useAppLogos() {
   const [logos, setLogos] = useState<LogoUrls>({
@@ -45,41 +46,53 @@ export function useAppLogos() {
       return;
     }
 
-    try {
-      const { data, error } = await supabase
-        .from("app_logos")
-        .select("logo_key, storage_path")
-        .eq("is_active", true);
+    // Deduplicate concurrent requests
+    if (!pendingPromise) {
+      pendingPromise = (async (): Promise<LogoUrls> => {
+        try {
+          const { data, error } = await supabase
+            .from("app_logos")
+            .select("logo_key, storage_path")
+            .eq("is_active", true);
 
-      if (error) throw error;
+          if (error) throw error;
 
-      const newLogos: LogoUrls = {
-        agroplanet: logoAgroplanetFallback,
-        autoplanet: logoAutoplanetFallback,
-        dashboard_header: logosHeaderFallback,
-      };
+          const newLogos: LogoUrls = {
+            agroplanet: logoAgroplanetFallback,
+            autoplanet: logoAutoplanetFallback,
+            dashboard_header: logosHeaderFallback,
+          };
 
-      for (const logo of data || []) {
-        if (logo.storage_path) {
-          const { data: urlData } = supabase.storage
-            .from("logos")
-            .getPublicUrl(logo.storage_path);
-          
-          if (urlData?.publicUrl) {
-            if (logo.logo_key === "agroplanet") {
-              newLogos.agroplanet = urlData.publicUrl;
-            } else if (logo.logo_key === "autoplanet") {
-              newLogos.autoplanet = urlData.publicUrl;
-            } else if (logo.logo_key === "dashboard_header") {
-              newLogos.dashboard_header = urlData.publicUrl;
+          for (const logo of data || []) {
+            if (logo.storage_path) {
+              const { data: urlData } = supabase.storage
+                .from("logos")
+                .getPublicUrl(logo.storage_path);
+              
+              if (urlData?.publicUrl) {
+                if (logo.logo_key === "agroplanet") {
+                  newLogos.agroplanet = urlData.publicUrl;
+                } else if (logo.logo_key === "autoplanet") {
+                  newLogos.autoplanet = urlData.publicUrl;
+                } else if (logo.logo_key === "dashboard_header") {
+                  newLogos.dashboard_header = urlData.publicUrl;
+                }
+              }
             }
           }
-        }
-      }
 
-      cachedLogos = newLogos;
-      cacheTimestamp = Date.now();
-      setLogos(newLogos);
+          cachedLogos = newLogos;
+          cacheTimestamp = Date.now();
+          return newLogos;
+        } finally {
+          pendingPromise = null;
+        }
+      })();
+    }
+
+    try {
+      const result = await pendingPromise;
+      setLogos(result);
     } catch (error) {
       console.error("Error loading logos:", error);
       // Keep fallback logos
