@@ -1005,7 +1005,15 @@ const EditContract = () => {
                 <div className="space-y-2">
                   <Label htmlFor="phone">Teléfono (opcional)</Label>
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-muted-foreground min-w-[45px]">{countryCode}</span>
+                    <Input
+                      value={countryCode}
+                      onChange={(e) => {
+                        setCountryCode(e.target.value);
+                        setHasUnsavedChanges(true);
+                      }}
+                      placeholder="+56"
+                      className="w-[70px] text-center"
+                    />
                     <Input
                       id="phone"
                       value={phoneDigits}
@@ -1018,7 +1026,6 @@ const EditContract = () => {
                       maxLength={9}
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground">9 dígitos máximo</p>
                 </div>
               </div>
               
