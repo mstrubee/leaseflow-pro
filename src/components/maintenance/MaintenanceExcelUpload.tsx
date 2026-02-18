@@ -125,17 +125,14 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
       // Helper: match Excel text to contract
       const matchContract = (rawText: string): { match: { id: string; name: string } | null; ambiguous?: { id: string; name: string }[] } => {
         const normText = normalize(rawText);
-        // Priority 1: Direct name match (accent-normalized)
-        for (const [name, contract] of contractsByName) {
-          if (normText.includes(name) || name.includes(normText)) return { match: contract };
-        }
-        // Priority 2: Full CEBE match (e.g., text contains "H04A2P1390")
         const upperText = rawText.toUpperCase();
+
+        // Priority 1: Full CEBE match (e.g., text contains "H0440P1290") — most precise
         for (const [cebe, contract] of contractsByFullCEBE) {
           if (upperText.includes(cebe)) return { match: contract };
         }
-        // Priority 3: 4-digit CEBE match
-        // Supports formats: "H0440P1290 ..." or "0440 TIENDA ..." 
+
+        // Priority 2: 4-digit CEBE match from H####P#### or plain ####
         const cebeMatch = rawText.trim().match(/^H(\d{4})P\d+/i);
         const plainDigitsMatch = rawText.trim().match(/^(\d{4})/);
         const excelDigits = cebeMatch?.[1] || plainDigitsMatch?.[1];
@@ -157,7 +154,6 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
             const score = words.filter(w => cWords.some(cw => cw.includes(w) || w.includes(cw))).length;
             if (score > bestScore) { bestScore = score; best = c; }
           }
-          // Only use best if score is significantly better than others
           if (best && bestScore > 0) {
             const scores = candidates.map(c => {
               const cWords = normalize(c.name).split(/\s+/);
@@ -166,12 +162,17 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
             const tiedCount = scores.filter(s => s === bestScore).length;
             if (tiedCount === 1) return { match: best };
           }
-          // Ambiguous: return candidates for user resolution
           return { match: null, ambiguous: candidates };
         }
-        // Priority 4: CEBE prefix match (e.g., text contains "H04A2")
+
+        // Priority 3: CEBE prefix match (e.g., text contains "H04A2")
         for (const [prefix, contract] of contractsByPrefix) {
           if (upperText.includes(prefix)) return { match: contract };
+        }
+
+        // Priority 4: Direct name match (accent-normalized) — least precise, last resort
+        for (const [name, contract] of contractsByName) {
+          if (normText.includes(name) || name.includes(normText)) return { match: contract };
         }
         return { match: null };
       };
