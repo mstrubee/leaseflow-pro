@@ -24,7 +24,7 @@ export function exportMaintenanceExcel(forms: MaintenanceForm[], fileName = "man
   XLSX.writeFile(wb, fileName);
 }
 
-export function exportMaintenancePDF(form: MaintenanceForm) {
+export function exportMaintenancePDF(form: MaintenanceForm, companyName?: string) {
   const doc = new jsPDF();
   const type = detectMaintenanceType(form);
 
@@ -35,8 +35,9 @@ export function exportMaintenancePDF(form: MaintenanceForm) {
   doc.setTextColor(100);
   doc.text(`Estado: ${form.status === "solucionado" ? "Solucionado" : "En Proceso"}`, 14, 28);
   doc.text(`Fecha: ${form.created_date || "N/A"}`, 14, 34);
-  doc.text(`Contrato: ${form.contract_name || "N/A"}`, 14, 40);
-  doc.text(`Tipo: ${type}`, 14, 46);
+  doc.text(`Empresa: ${companyName || "N/A"}`, 14, 40);
+  doc.text(`Local: ${form.contract_name || "N/A"}`, 14, 46);
+  doc.text(`Tipo: ${type}`, 14, 52);
   doc.setTextColor(0);
 
   const rows: [string, string][] = [];
@@ -45,16 +46,16 @@ export function exportMaintenancePDF(form: MaintenanceForm) {
   if (form.civil_description) rows.push(["Req. Obra Civil", form.civil_description]);
   if (form.hvac_description) rows.push(["Req. Climatización", form.hvac_description]);
   if (form.fixed_assets_description) rows.push(["Req. Activos Fijos", form.fixed_assets_description]);
-  if (form.additional_comments) rows.push(["Comentarios", form.additional_comments]);
+  if (form.additional_comments) rows.push(["Comentarios Técnicos (Jefe Mantenciones)", form.additional_comments]);
 
   if (rows.length > 0) {
     autoTable(doc, {
-      startY: 52,
+      startY: 58,
       head: [["Campo", "Detalle"]],
       body: rows,
       styles: { fontSize: 9, cellPadding: 3 },
       headStyles: { fillColor: [220, 38, 38] },
-      columnStyles: { 0: { cellWidth: 45, fontStyle: "bold" } },
+      columnStyles: { 0: { cellWidth: 55, fontStyle: "bold" } },
     });
   }
 
