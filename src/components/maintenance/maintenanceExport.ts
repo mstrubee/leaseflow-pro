@@ -2,6 +2,7 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { MaintenanceForm, detectMaintenanceType } from "./types";
+import logosHeader from "@/assets/logos-header.png";
 
 export function exportMaintenanceExcel(forms: MaintenanceForm[], fileName = "mantenciones.xlsx") {
   const data = forms.map(f => ({
@@ -24,20 +25,31 @@ export function exportMaintenanceExcel(forms: MaintenanceForm[], fileName = "man
   XLSX.writeFile(wb, fileName);
 }
 
-export function exportMaintenancePDF(form: MaintenanceForm, companyName?: string) {
+export async function exportMaintenancePDF(form: MaintenanceForm, companyName?: string) {
   const doc = new jsPDF();
   const type = detectMaintenanceType(form);
 
+  // Logo
+  let logoHeight = 0;
+  try {
+    const logoImg = new Image();
+    logoImg.src = logosHeader;
+    await new Promise((resolve, reject) => { logoImg.onload = resolve; logoImg.onerror = reject; });
+    doc.addImage(logoImg, "PNG", 14, 8, 50, 20);
+    logoHeight = 22;
+  } catch {}
+
+  const startY = 10 + logoHeight;
   doc.setFontSize(16);
-  doc.text(`FORM ${form.form_number}`, 14, 20);
+  doc.text(`FORM ${form.form_number}`, logoHeight > 0 ? 70 : 14, startY);
   
   doc.setFontSize(10);
   doc.setTextColor(100);
-  doc.text(`Estado: ${form.status === "solucionado" ? "Solucionado" : "En Proceso"}`, 14, 28);
-  doc.text(`Fecha: ${form.created_date || "N/A"}`, 14, 34);
-  doc.text(`Empresa: ${companyName || "N/A"}`, 14, 40);
-  doc.text(`Local: ${form.contract_name || "N/A"}`, 14, 46);
-  doc.text(`Tipo: ${type}`, 14, 52);
+  doc.text(`Estado: ${form.status === "solucionado" ? "Solucionado" : "En Proceso"}`, 14, startY + 8);
+  doc.text(`Fecha: ${form.created_date || "N/A"}`, 14, startY + 14);
+  doc.text(`Empresa: ${companyName || "N/A"}`, 14, startY + 20);
+  doc.text(`Local: ${form.contract_name || "N/A"}`, 14, startY + 26);
+  doc.text(`Tipo: ${type}`, 14, startY + 32);
   doc.setTextColor(0);
 
   const rows: [string, string][] = [];
@@ -50,7 +62,7 @@ export function exportMaintenancePDF(form: MaintenanceForm, companyName?: string
 
   if (rows.length > 0) {
     autoTable(doc, {
-      startY: 58,
+      startY: startY + 38,
       head: [["Campo", "Detalle"]],
       body: rows,
       styles: { fontSize: 9, cellPadding: 3 },
