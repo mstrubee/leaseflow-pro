@@ -225,11 +225,11 @@ export function PatentBulkUploadDialog({ open, onOpenChange, onComplete }: Paten
             >
               {/* Status icon */}
               <div className="mt-1 flex-shrink-0">
-                {entry.status === "done" ? (
+              {entry.status === "done" ? (
                   <CheckCircle2 className="h-4 w-4 text-green-500" />
                 ) : entry.status === "error" ? (
                   <AlertCircle className="h-4 w-4 text-destructive" />
-                ) : entry.matchedFolder ? (
+                ) : (entry.matchedFolder || entry.selectedFolderId) ? (
                   <CheckCircle2 className="h-4 w-4 text-green-500/60" />
                 ) : (
                   <AlertCircle className="h-4 w-4 text-yellow-500" />
@@ -247,6 +247,18 @@ export function PatentBulkUploadDialog({ open, onOpenChange, onComplete }: Paten
                   <p className="text-xs text-green-600">
                     → {entry.matchedFolder.name}
                   </p>
+                ) : entry.selectedFolderId ? (
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-blue-600">
+                      → {folders.find((f) => f.id === entry.selectedFolderId)?.name || "Carpeta seleccionada"}
+                    </p>
+                    <button
+                      className="text-xs text-muted-foreground underline hover:text-foreground"
+                      onClick={() => updateEntry(idx, "")}
+                    >
+                      Cambiar
+                    </button>
+                  </div>
                 ) : (
                   <div className="space-y-1">
                     <p className="text-xs text-yellow-600">Sin clasificar — selecciona carpeta:</p>
