@@ -3329,6 +3329,42 @@ export type Database = {
           },
         ]
       }
+      org_member_companies: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          org_member_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          org_member_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          org_member_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "org_member_companies_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "org_member_companies_org_member_id_fkey"
+            columns: ["org_member_id"]
+            isOneToOne: false
+            referencedRelation: "org_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       org_member_contracts: {
         Row: {
           contract_id: string
@@ -3367,7 +3403,7 @@ export type Database = {
       }
       org_members: {
         Row: {
-          company_id: string
+          company_id: string | null
           created_at: string | null
           display_order: number | null
           email: string | null
@@ -3378,7 +3414,7 @@ export type Database = {
           position: string | null
         }
         Insert: {
-          company_id: string
+          company_id?: string | null
           created_at?: string | null
           display_order?: number | null
           email?: string | null
@@ -3389,7 +3425,7 @@ export type Database = {
           position?: string | null
         }
         Update: {
-          company_id?: string
+          company_id?: string | null
           created_at?: string | null
           display_order?: number | null
           email?: string | null
