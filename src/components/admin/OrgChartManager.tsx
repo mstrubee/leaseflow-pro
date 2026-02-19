@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, Users, Loader2, Phone, Mail } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Loader2, Phone, Mail, ChevronLeft, ChevronRight } from "lucide-react";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 
 interface OrgMember {
@@ -80,6 +80,11 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
 
   // Selected member for detail panel
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+
+  // Auto-scale refs
+  const containerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<HTMLDivElement>(null);
+  const [chartScale, setChartScale] = useState(1);
 
   useEffect(() => {
     loadAll();
@@ -155,8 +160,8 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
   };
 
   // Tree helpers
-  const getRootMembers = () => members.filter(m => !m.parent_id);
-  const getChildren = (parentId: string) => members.filter(m => m.parent_id === parentId);
+  const getRootMembers = () => members.filter(m => !m.parent_id).sort((a, b) => a.display_order - b.display_order);
+  const getChildren = (parentId: string) => members.filter(m => m.parent_id === parentId).sort((a, b) => a.display_order - b.display_order);
 
   // Resolve effective companies for a member (inherit from parent if none assigned)
   const getEffectiveCompanyIds = useCallback((memberId: string): string[] => {
@@ -188,6 +193,49 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
       return cCompanies.some(id => effectiveIds.includes(id));
     });
   }, [allContracts, contractCompanyMap, formCompanyIds, formParentId, getEffectiveCompanyIds]);
+
+  // Reorder sibling: move member left or right among siblings
+  const moveMember = async (memberId: string, direction: "left" | "right") => {
+    const member = members.find(m => m.id === memberId);
+    if (!member) return;
+    const siblings = member.parent_id ? getChildren(member.parent_id) : getRootMembers();
+    const idx = siblings.findIndex(s => s.id === memberId);
+    const swapIdx = direction === "left" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= siblings.length) return;
+
+    const updates = [
+      { id: siblings[idx].id, display_order: siblings[swapIdx].display_order },
+      { id: siblings[swapIdx].id, display_order: siblings[idx].display_order },
+    ];
+    if (siblings[idx].display_order === siblings[swapIdx].display_order) {
+      updates[0].display_order = swapIdx;
+      updates[1].display_order = idx;
+    }
+
+    await Promise.all(
+      updates.map(u => supabase.from("org_members").update({ display_order: u.display_order }).eq("id", u.id))
+    );
+    await loadMembers();
+  };
+
+  // Auto-scale chart to fit container
+  useEffect(() => {
+    const updateScale = () => {
+      if (!containerRef.current || !chartRef.current) return;
+      const containerW = containerRef.current.clientWidth;
+      const chartW = chartRef.current.scrollWidth;
+      if (chartW > containerW) {
+        setChartScale(Math.max(0.3, containerW / chartW));
+      } else {
+        setChartScale(1);
+      }
+    };
+    updateScale();
+    const observer = new ResizeObserver(updateScale);
+    if (containerRef.current) observer.observe(containerRef.current);
+    const timer = setTimeout(updateScale, 100);
+    return () => { observer.disconnect(); clearTimeout(timer); };
+  }, [members, selectedMemberId]);
 
   // CRUD
   const openCreate = (parentId?: string) => {
@@ -321,7 +369,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
   };
 
   // Render org chart node
-  const renderOrgNode = (member: OrgMember) => {
+  const renderOrgNode = (member: OrgMember, siblingIndex?: number, siblingCount?: number) => {
     const children = getChildren(member.id);
     const isSelected = selectedMemberId === member.id;
     const contracts = memberContractMap[member.id] || [];
@@ -332,6 +380,9 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
     const effectiveCompanyNames = getEffectiveCompanyNames(member.id);
     const ownCompanies = memberCompanyMap[member.id] || [];
     const isInherited = ownCompanies.length === 0 && effectiveCompanyNames.length > 0;
+
+    const canMoveLeft = siblingIndex !== undefined && siblingIndex > 0;
+    const canMoveRight = siblingIndex !== undefined && siblingCount !== undefined && siblingIndex < siblingCount - 1;
 
     return (
       <div key={member.id} className="flex flex-col items-center">
@@ -352,8 +403,18 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
           {member.position && (
             <p className="text-[11px] text-muted-foreground truncate mt-0.5">{member.position}</p>
           )}
-          {/* Add subordinate button on hover */}
+          {/* Action buttons on hover */}
           <div className="absolute -top-2 -right-2 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            {canMoveLeft && (
+              <Button variant="secondary" size="icon" className="h-5 w-5 rounded-full shadow-sm" onClick={(e) => { e.stopPropagation(); moveMember(member.id, "left"); }} title="Mover a la izquierda">
+                <ChevronLeft className="h-3 w-3" />
+              </Button>
+            )}
+            {canMoveRight && (
+              <Button variant="secondary" size="icon" className="h-5 w-5 rounded-full shadow-sm" onClick={(e) => { e.stopPropagation(); moveMember(member.id, "right"); }} title="Mover a la derecha">
+                <ChevronRight className="h-3 w-3" />
+              </Button>
+            )}
             <Button variant="secondary" size="icon" className="h-5 w-5 rounded-full shadow-sm" onClick={(e) => { e.stopPropagation(); openCreate(member.id); }} title="Agregar subordinado">
               <Plus className="h-3 w-3" />
             </Button>
@@ -410,7 +471,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
             <div className="w-px h-4 bg-border" />
             {children.length === 1 ? (
               <div className="flex flex-col items-center">
-                {renderOrgNode(children[0])}
+                {renderOrgNode(children[0], 0, 1)}
               </div>
             ) : (
               <div className="relative">
@@ -418,10 +479,10 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                   <div className="w-full h-px bg-border" style={{ marginLeft: `${100 / (children.length * 2)}%`, marginRight: `${100 / (children.length * 2)}%` }} />
                 </div>
                 <div className="flex gap-2 pt-0">
-                  {children.map(child => (
+                  {children.map((child, idx) => (
                     <div key={child.id} className="flex flex-col items-center">
                       <div className="w-px h-4 bg-border" />
-                      {renderOrgNode(child)}
+                      {renderOrgNode(child, idx, children.length)}
                     </div>
                   ))}
                 </div>
@@ -466,9 +527,13 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
         ) : members.length === 0 ? (
           <p className="text-muted-foreground text-center py-8 text-sm">No hay miembros en el organigrama</p>
         ) : (
-          <div className="overflow-x-auto pb-4">
-            <div className="flex gap-6 justify-center items-start pt-4 min-w-fit">
-              {getRootMembers().map(m => renderOrgNode(m))}
+          <div ref={containerRef} className="overflow-hidden pb-4">
+            <div
+              ref={chartRef}
+              className="flex gap-6 justify-center items-start pt-4 origin-top"
+              style={{ transform: `scale(${chartScale})`, transformOrigin: "top center" }}
+            >
+              {getRootMembers().map((m, idx, arr) => renderOrgNode(m, idx, arr.length))}
             </div>
           </div>
         )}
