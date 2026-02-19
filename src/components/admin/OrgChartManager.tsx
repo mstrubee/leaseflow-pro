@@ -521,7 +521,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                     <div className="relative">
                       {/* Horizontal bar connecting siblings */}
                       <div className="absolute top-0 h-[2px] bg-primary/30 rounded-full" style={{ left: `${100 / (children.length * 2)}%`, right: `${100 / (children.length * 2)}%` }} />
-                      <div className="flex gap-0 pt-0">
+                      <div className="flex gap-3 pt-0">
                         {children.map(child => (
                           <div key={child.id} className="flex flex-col items-center">
                             <div className="w-[2px] h-5 bg-primary/30" />
@@ -584,7 +584,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
               <SortableContext items={getRootMembers().map(m => m.id)} strategy={horizontalListSortingStrategy}>
                 <div
                   ref={chartRef}
-                  className="flex gap-1 justify-center items-start pt-4 origin-top"
+                  className="flex gap-3 justify-center items-start pt-4 origin-top"
                   style={{ transform: `scale(${chartScale})`, transformOrigin: "top center" }}
                 >
                   {getRootMembers().map(m => renderOrgNode(m))}
