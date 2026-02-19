@@ -395,7 +395,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
               <div className="mt-2 pt-2 border-t">
                 <p className="text-[11px] font-medium text-muted-foreground mb-1">Contratos ({contractNames.length})</p>
                 <div className="max-h-24 overflow-y-auto space-y-0.5">
-                  {contractNames.map((name, i) => (
+                  {[...contractNames].sort((a, b) => a.localeCompare(b)).map((name, i) => (
                     <p key={i} className="text-[11px] text-muted-foreground">• {name}</p>
                   ))}
                 </div>
