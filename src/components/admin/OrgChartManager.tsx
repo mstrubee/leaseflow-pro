@@ -9,7 +9,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, Users, Loader2, Phone, Mail, GripHorizontal } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Loader2, Phone, Mail, GripHorizontal, Download } from "lucide-react";
+import { toPng } from "html-to-image";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
@@ -398,6 +399,23 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
     );
   };
 
+  const handleDownloadImage = async () => {
+    if (!chartRef.current) return;
+    try {
+      const dataUrl = await toPng(chartRef.current, {
+        backgroundColor: "#ffffff",
+        pixelRatio: 2,
+        style: { transform: "none" },
+      });
+      const link = document.createElement("a");
+      link.download = "organigrama.png";
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      toast({ variant: "destructive", title: "Error al generar imagen" });
+    }
+  };
+
   // Render org chart node (wrapped in sortable)
   const renderOrgNode = (member: OrgMember) => {
     const children = getChildren(member.id);
@@ -416,7 +434,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
         <div className="flex flex-col items-center">
           {/* Node card */}
           <div
-            className={`relative border rounded-lg px-4 py-2.5 cursor-pointer transition-all text-center min-w-[140px] max-w-[220px] shadow-sm hover:shadow-md group ${
+            className={`relative border rounded-lg px-4 py-2.5 cursor-pointer transition-all text-center min-w-[120px] shadow-sm hover:shadow-md group ${
               isSelected ? "ring-2 ring-primary border-primary bg-primary/5" : "bg-card hover:border-primary/50"
             }`}
             onClick={() => setSelectedMemberId(isSelected ? null : member.id)}
@@ -427,9 +445,9 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                 <CompanyLogo companyNames={effectiveCompanyNames} size="sm" />
               </div>
             )}
-            <p className="font-medium text-sm truncate">{member.name}</p>
+             <p className="font-medium text-sm whitespace-nowrap">{member.name}</p>
             {member.position && (
-              <p className="text-[11px] text-muted-foreground truncate mt-0.5">{member.position}</p>
+              <p className="text-[11px] text-muted-foreground whitespace-nowrap mt-0.5">{member.position}</p>
             )}
             {/* Action buttons on hover */}
             <div className="absolute -top-2 -right-2 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -543,10 +561,16 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
         icon={<Users className="h-5 w-5" />}
         defaultOpen={!defaultCollapsed}
         headerActions={
-          <Button onClick={(e) => { e.stopPropagation(); openCreate(); }} size="sm">
-            <Plus className="h-4 w-4 mr-1" />
-            Nuevo Miembro
-          </Button>
+          <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+            <Button variant="outline" size="sm" onClick={handleDownloadImage} title="Descargar como imagen">
+              <Download className="h-4 w-4 mr-1" />
+              Imagen
+            </Button>
+            <Button onClick={() => openCreate()} size="sm">
+              <Plus className="h-4 w-4 mr-1" />
+              Nuevo Miembro
+            </Button>
+          </div>
         }
       >
         {loading ? (
