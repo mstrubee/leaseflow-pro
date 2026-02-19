@@ -1,72 +1,109 @@
 
+# Repositorio Comun de Patentes
 
-# Registrar Proveedor y OC en cada FORM de Mantencion
-
-## Objetivo
-Cada formulario de mantencion debe poder registrar:
-- **Proveedor asignado** (con link para navegar a `/suppliers`)
-- **Orden de Compra (OC) asignada** (con link para navegar a `/purchase-orders?search=OC-XXXX`)
-
-Estas asignaciones se muestran como informacion de solo lectura con enlaces de navegacion directa.
+## Resumen
+Crear un repositorio compartido accesible desde el modulo de patentes, donde se almacenan documentos comunes a todos los contratos (ej: Constitucion de Sociedad, RUT Empresa, etc.). Las lineas del checklist que correspondan a estos documentos mostraran/subiran archivos desde este repositorio en lugar de hacerlo por contrato individual.
 
 ## Cambios
 
-### 1. Migracion de base de datos
+### 1. Base de datos
 
-Agregar dos columnas a `maintenance_forms`:
-- `supplier_id` (uuid, nullable, FK a `suppliers`)
-- `supplier_name` (text, nullable) -- cache del nombre para evitar joins
-- `purchase_order_id` (uuid, nullable, FK a `purchase_orders`)
-- `purchase_order_number` (text, nullable) -- cache del numero de OC
+La tabla `repository_folders` ya permite `contract_id = NULL`. Se usara esta condicion para identificar carpetas del repositorio comun. Se crearan las carpetas iniciales via migracion:
 
-### 2. Sincronizacion automatica desde OC
+- **Documentacion Legal** (carpeta raiz, `contract_id = NULL`)
+  - Constitucion de Sociedad
+  - Vigencia de Sociedad
+  - Poderes de Rep. Legal
+  - Vigencia de Poderes
+  - RUT Empresa
+  - RUT Rep. Legal
 
-Cuando se crea una OC que referencia forms (campo `maintenance_form_ids` en `purchase_orders`), actualizar automaticamente los forms referenciados con el `purchase_order_id`, `purchase_order_number`, `supplier_id` y `supplier_name` de esa OC. Esto se hara:
-- En `CentralizedOrderCreator.tsx`: despues de crear la OC, actualizar los forms vinculados.
+Adicionalmente se creara una tabla `patent_shared_items` que mapee cuales `patent_checklist_items` usan el repositorio comun (vinculando item_id con el folder_id del repositorio compartido). Esto permite que en el futuro se agreguen o quiten items compartidos sin tocar codigo.
 
-### 3. Cambios en el dialogo de edicion (`MaintenanceEditDialog.tsx`)
+### 2. Nuevo componente: `PatentSharedRepository.tsx`
 
-Agregar una seccion de solo lectura debajo de "Contrato" que muestre:
-- **Proveedor**: nombre con icono de link que navega a `/suppliers`
-- **OC**: numero de orden con icono de link que navega a `/purchase-orders?search=OC-XXXX`
+Un dialog/panel que se abre desde un boton "Repositorio" ubicado entre "Administrar" y el boton de salir en el header del modulo de patentes.
 
-Si no tiene proveedor/OC asignada, mostrar "Sin asignar" en gris.
+Caracteristicas:
+- Navegacion por carpetas y subcarpetas (igual que RepositorySection)
+- Crear carpetas y subcarpetas
+- Subir archivos a carpetas
+- Eliminar archivos y carpetas
+- Renombrar carpetas (editables como se solicito)
+- Sin dependencia de Google Drive (archivos en Supabase Storage)
 
-### 4. Columnas en la tabla principal (`MaintenanceModule.tsx`)
+Se reutilizara la logica de `repository_folders` y `repository_files` existente, filtrando por `contract_id IS NULL`.
 
-Agregar columnas opcionales en la tabla de listado:
-- **Proveedor** (nombre, clickeable)
-- **OC** (numero, clickeable)
+### 3. Cambios en `PatentChecklist.tsx` (columna Archivo)
 
-### 5. Tipos (`types.ts`)
+Para las 6 lineas compartidas:
+- La columna "Archivo" mostrara los archivos del repositorio comun (consultando `repository_files` de la subcarpeta correspondiente).
+- El boton de subir archivo subira directamente a la subcarpeta del repositorio comun que coincida con el nombre de la linea.
+- Se usara un icono o badge distinto para indicar visualmente que el archivo proviene del repositorio comun.
 
-Agregar los campos al tipo `MaintenanceForm`:
-- `supplier_id: string | null`
-- `supplier_name: string | null`
-- `purchase_order_id: string | null`
-- `purchase_order_number: string | null`
+### 4. Cambios en `PatentsModule.tsx`
+
+Agregar el boton "Repositorio" en el header, entre "Administrar" y el extremo derecho:
+
+```text
+[Patentes]                    [Repositorio] [Administrar (admin)]
+```
+
+### 5. Tabla nueva: `patent_shared_items`
+
+```text
+patent_shared_items
++--------------------+----------------------------------------------+
+| id                 | uuid (PK)                                    |
+| checklist_item_id  | uuid (FK patent_checklist_items, UNIQUE)      |
+| shared_folder_id   | uuid (FK repository_folders)                 |
++--------------------+----------------------------------------------+
+```
+
+Esto permite determinar programaticamente que items usan el repositorio comun y hacia que carpeta apuntan.
 
 ## Seccion Tecnica
 
 ### Migracion SQL
 
 ```sql
-ALTER TABLE public.maintenance_forms
-  ADD COLUMN supplier_id uuid REFERENCES public.suppliers(id) ON DELETE SET NULL,
-  ADD COLUMN supplier_name text,
-  ADD COLUMN purchase_order_id uuid REFERENCES public.purchase_orders(id) ON DELETE SET NULL,
-  ADD COLUMN purchase_order_number text;
+-- 1. Crear carpeta raiz del repositorio comun
+INSERT INTO public.repository_folders (id, contract_id, parent_id, name, is_base_folder, folder_type)
+VALUES (gen_random_uuid(), NULL, NULL, 'Documentación Legal', true, 'patent_shared_legal');
+
+-- 2. Crear subcarpetas (usando subquery para parent_id)
+-- Constitucion de Sociedad, Vigencia de Sociedad, etc.
+
+-- 3. Tabla de mapeo items compartidos
+CREATE TABLE public.patent_shared_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  checklist_item_id uuid NOT NULL UNIQUE REFERENCES public.patent_checklist_items(id) ON DELETE CASCADE,
+  shared_folder_id uuid NOT NULL REFERENCES public.repository_folders(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.patent_shared_items ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Authenticated read" ON public.patent_shared_items
+  FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Admin manage" ON public.patent_shared_items
+  FOR ALL USING (has_role(auth.uid(), 'admin'));
+
+-- 4. Insertar mapeos para las 6 lineas
+-- (INSERT patent_shared_items vinculando cada item_id con su subcarpeta)
 ```
 
+### Archivos a crear
+1. **`src/components/patents/PatentSharedRepository.tsx`** -- Componente del repositorio comun (Dialog con navegacion de carpetas, subida de archivos, CRUD de carpetas)
+
 ### Archivos a modificar
+1. **`src/components/patents/PatentsModule.tsx`** -- Agregar boton "Repositorio" en el header
+2. **`src/components/patents/PatentChecklist.tsx`** -- En la columna "Archivo", para items compartidos: mostrar archivos del repositorio comun y subir a la carpeta compartida correspondiente
+3. **`src/hooks/usePatents.ts`** -- Cargar `patent_shared_items` para saber cuales items son compartidos y sus folder_ids
+4. **`src/components/patents/types.ts`** -- Agregar tipo `PatentSharedItem`
 
-1. **`src/components/maintenance/types.ts`** -- Agregar 4 campos nuevos al tipo MaintenanceForm
-2. **`src/components/maintenance/MaintenanceEditDialog.tsx`** -- Seccion de solo lectura con links de navegacion a proveedor y OC
-3. **`src/components/maintenance/MaintenanceModule.tsx`** -- Columnas de Proveedor y OC en la tabla (con links)
-4. **`src/components/budget/CentralizedOrderCreator.tsx`** -- Al crear OC, actualizar los forms vinculados con supplier_id, supplier_name, purchase_order_id, purchase_order_number
+### Flujo de uso
 
-### Navegacion
-
-- Click en proveedor: `navigate("/suppliers")` (con filtro de busqueda si es posible)
-- Click en OC: `navigate("/purchase-orders?search=OC-XXXX")`
-
+1. Admin sube "Constitucion de Sociedad.pdf" al repositorio comun (carpeta Documentacion Legal > Constitucion de Sociedad)
+2. Al abrir cualquier contrato en patentes, la linea "Constitucion de Sociedad" muestra automaticamente ese archivo
+3. Si un usuario sube un archivo desde la linea del checklist, este se sube a la subcarpeta correspondiente del repositorio comun (no al contrato individual)
+4. Todos los contratos ven el mismo archivo actualizado
