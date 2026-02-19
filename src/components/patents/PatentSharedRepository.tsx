@@ -372,7 +372,7 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
               </Button>
               <Button variant="outline" size="sm" onClick={handleDownloadEmptyFolders}>
                 <Download className="h-4 w-4 mr-1" />
-                Carpetas Vacías
+                Excel Sin Docum
               </Button>
             </div>
           )}
