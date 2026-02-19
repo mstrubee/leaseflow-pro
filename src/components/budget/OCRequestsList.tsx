@@ -580,14 +580,20 @@ export const OCRequestsList = ({
         if (paymentPlan.length > 0) {
           const planEntries = paymentPlan
             .filter(p => parseFloat(p.amount) > 0)
-            .map((p, idx) => ({
-              oc_request_id: requestData.id,
-              payment_number: idx + 1,
-              description: p.description || `Pago ${idx + 1}`,
-              amount_uf: parseFloat(p.amount),
-              due_date: p.due_date || null,
-              status: "pending"
-            }));
+            .map((p, idx) => {
+              const pAmount = parseFloat(p.amount);
+              const amountUf = inputCurrency === "CLP" && currentUfValue > 0 
+                ? Math.round((pAmount / currentUfValue) * 10000) / 10000 
+                : pAmount;
+              return {
+                oc_request_id: requestData.id,
+                payment_number: idx + 1,
+                description: p.description || `Pago ${idx + 1}`,
+                amount_uf: amountUf,
+                due_date: p.due_date || null,
+                status: "pending"
+              };
+            });
           if (planEntries.length > 0) {
             await supabase.from("oc_payment_plans").insert(planEntries);
           }
@@ -639,11 +645,8 @@ export const OCRequestsList = ({
   const convertedRequests = filteredRequests.filter(r => r.status === "converted");
 
   const totalPlanned = paymentPlan.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-  // Use form amount (converted to UF for display consistency)
-  const formAmountUf = newRequestForm.currency === "CLP" && ufValue > 0 
-    ? (parseFloat(newRequestForm.amount) || 0) / ufValue 
-    : parseFloat(newRequestForm.amount) || 0;
-  const totalSelected = formAmountUf;
+  // totalSelected in same currency as form input
+  const totalSelected = parseFloat(newRequestForm.amount) || 0;
 
   const capexBudget = availableBudgets.find(b => b.type === "capex");
   const opexBudget = availableBudgets.find(b => b.type === "opex");
@@ -1212,7 +1215,7 @@ export const OCRequestsList = ({
                           />
                         </div>
                         <div className="col-span-3 space-y-1">
-                          <Label className="text-xs">Monto (UF)</Label>
+                          <Label className="text-xs">Monto ({newRequestForm.currency})</Label>
                           <Input
                             type="number"
                             value={item.amount}
@@ -1246,12 +1249,12 @@ export const OCRequestsList = ({
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Total planificado:</span>
                         <span className={`font-medium ${totalPlanned > totalSelected ? 'text-destructive' : ''}`}>
-                          {formatUF(totalPlanned)}
+                          {newRequestForm.currency === "CLP" ? formatCLP(totalPlanned) : formatUF(totalPlanned)}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Total solicitud:</span>
-                        <span className="font-medium">{formatUF(totalSelected)}</span>
+                        <span className="font-medium">{newRequestForm.currency === "CLP" ? formatCLP(totalSelected) : formatUF(totalSelected)}</span>
                       </div>
                     </div>
                   </div>
