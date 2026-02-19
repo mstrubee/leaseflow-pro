@@ -95,15 +95,16 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
 
       const { data: folderData } = await folderQuery;
       
-      // Get file counts for each folder
-      const foldersWithCounts: RepoFolder[] = [];
-      for (const folder of folderData || []) {
-        const { count } = await supabase
-          .from("repository_files")
-          .select("id", { count: 'exact', head: true })
-          .eq("folder_id", folder.id);
-        foldersWithCounts.push({ ...folder, fileCount: count ?? 0 });
+      // Get file counts in a single RPC call
+      const folderIds = (folderData || []).map((f: any) => f.id);
+      const countMap: Record<string, number> = {};
+      if (folderIds.length > 0) {
+        const { data: counts } = await supabase.rpc("get_folder_file_counts", { p_folder_ids: folderIds });
+        for (const row of counts || []) {
+          countMap[row.folder_id] = Number(row.file_count);
+        }
       }
+      const foldersWithCounts = (folderData || []).map((f: any) => ({ ...f, fileCount: countMap[f.id] || 0 }));
       setFolders(foldersWithCounts);
 
       if (parentId) {
