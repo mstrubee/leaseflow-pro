@@ -13,7 +13,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import logosHeader from "@/assets/logos-header.png";
-
+import { useAppLogos } from "@/hooks/useAppLogos";
 const CHART_COLORS = [
   "hsl(220, 70%, 50%)", "hsl(142, 71%, 45%)", "hsl(48, 96%, 53%)",
   "hsl(0, 84%, 60%)", "hsl(280, 65%, 60%)", "hsl(200, 80%, 50%)",
@@ -40,10 +40,28 @@ export function MaintenanceReports() {
   const [forms, setForms] = useState<MaintenanceForm[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedYears, setSelectedYears] = useState<number[]>([]);
+  const [contractCompanyMap, setContractCompanyMap] = useState<Map<string, string>>(new Map());
+  const { logos } = useAppLogos();
 
   useEffect(() => {
     fetchForms();
+    fetchContractCompanies();
   }, []);
+
+  const fetchContractCompanies = async () => {
+    const { data } = await supabase
+      .from("contract_companies")
+      .select("contract_id, companies(name)");
+    if (data) {
+      const map = new Map<string, string>();
+      data.forEach((row: any) => {
+        if (row.contract_id && row.companies?.name) {
+          map.set(row.contract_id, row.companies.name);
+        }
+      });
+      setContractCompanyMap(map);
+    }
+  };
 
   const fetchForms = async () => {
     setLoading(true);
@@ -117,12 +135,19 @@ export function MaintenanceReports() {
 
   // Top contracts for bar chart
   const topContractsChart = useMemo(() => {
-    return contractStats.slice(0, 15).map(c => ({
-      name: c.contractName,
-      "En Proceso": c.enProceso,
-      "Solucionados": c.solucionados,
-    }));
-  }, [contractStats]);
+    return contractStats.slice(0, 15).map(c => {
+      const companyName = c.contractId ? contractCompanyMap.get(c.contractId) || "" : "";
+      let logoUrl = "";
+      if (companyName.toLowerCase().includes("agroplanet")) logoUrl = logos.agroplanet;
+      else if (companyName.toLowerCase().includes("autoplanet")) logoUrl = logos.autoplanet;
+      return {
+        name: c.contractName,
+        logoUrl,
+        "En Proceso": c.enProceso,
+        "Solucionados": c.solucionados,
+      };
+    });
+  }, [contractStats, contractCompanyMap, logos]);
 
   // Type distribution for pie chart
   const typeDistribution = useMemo(() => {
@@ -357,7 +382,40 @@ export function MaintenanceReports() {
                 <BarChart data={topContractsChart} layout="vertical" margin={{ left: 10, right: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis type="number" />
-                  <YAxis type="category" dataKey="name" width={220} tick={{ fontSize: 9 }} />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    width={250}
+                    tick={(props: any) => {
+                      const { x, y, payload } = props;
+                      const item = topContractsChart.find(c => c.name === payload.value);
+                      const logoSrc = item?.logoUrl;
+                      return (
+                        <g transform={`translate(${x},${y})`}>
+                          {logoSrc && (
+                            <image
+                              href={logoSrc}
+                              x={-250}
+                              y={-9}
+                              width={18}
+                              height={18}
+                              preserveAspectRatio="xMidYMid meet"
+                            />
+                          )}
+                          <text
+                            x={logoSrc ? -228 : -5}
+                            y={0}
+                            dy={4}
+                            textAnchor={logoSrc ? "start" : "end"}
+                            fontSize={9}
+                            fill="currentColor"
+                          >
+                            {payload.value}
+                          </text>
+                        </g>
+                      );
+                    }}
+                  />
                   <Tooltip 
                     formatter={(value: number, name: string) => [value, name]}
                   />
