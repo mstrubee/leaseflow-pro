@@ -118,8 +118,7 @@ export function MaintenanceReports() {
   // Top contracts for bar chart
   const topContractsChart = useMemo(() => {
     return contractStats.slice(0, 15).map(c => ({
-      name: c.contractName.length > 20 ? c.contractName.substring(0, 20) + "…" : c.contractName,
-      fullName: c.contractName,
+      name: c.contractName,
       "En Proceso": c.enProceso,
       "Solucionados": c.solucionados,
     }));
@@ -354,14 +353,13 @@ export function MaintenanceReports() {
           </CardHeader>
           <CardContent>
             {topContractsChart.length > 0 ? (
-              <ResponsiveContainer width="100%" height={350}>
+              <ResponsiveContainer width="100%" height={Math.max(400, topContractsChart.length * 32)}>
                 <BarChart data={topContractsChart} layout="vertical" margin={{ left: 10, right: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis type="number" />
-                  <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 10 }} />
+                  <YAxis type="category" dataKey="name" width={220} tick={{ fontSize: 9 }} />
                   <Tooltip 
                     formatter={(value: number, name: string) => [value, name]}
-                    labelFormatter={(label: string, payload: any[]) => payload?.[0]?.payload?.fullName || label}
                   />
                   <Legend />
                   <Bar dataKey="En Proceso" stackId="a" fill="hsl(48, 96%, 53%)" />
