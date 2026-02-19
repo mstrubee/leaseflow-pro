@@ -1,85 +1,86 @@
 
-
-# Carpeta "Patentes" con Subcarpetas por Contrato Vigente
+# Subida masiva de patentes con auto-clasificacion y busqueda de carpetas
 
 ## Objetivo
-Crear una carpeta "Patentes" en el repositorio comun con subcarpetas por cada contrato vigente. El nombre de cada subcarpeta sigue el formato:
+Agregar dos funcionalidades al Repositorio Comun de Patentes:
 
-```text
-[AG|AP] - [Codigo] - [CEBE] - [Nombre Contrato]
-```
+1. **Busqueda de carpetas por nombre**: Un campo de busqueda en el repositorio que filtre las carpetas visibles en tiempo real.
+2. **Subida masiva con auto-clasificacion**: Un boton "Subida Masiva" que permita subir multiples archivos de patentes, los intente asociar automaticamente a la carpeta correcta segun el nombre del archivo, y permita al usuario elegir manualmente la carpeta destino para los que no se puedan clasificar.
 
-Ejemplos reales:
-- `AG - AG0007 - H0489P1390 - Talca AG`
-- `AP - AP0006 - H0415P1290 - Quilicura`
-- `AG - AG0027 - H04A1P1390 / H0480P1290 - Parral`
+## Logica de auto-clasificacion
 
-Si falta CEBE o Codigo, se omiten del nombre (ej: `AP - Autoplanet - 10 de Julio`).
+Dado un archivo como `Patente_AP_Angol.jpeg`:
+1. Extraer el prefijo (`AP` o `AG`) del nombre del archivo.
+2. Extraer el nombre del local (ej: `Angol`, `10_de_Julio` -> `10 de Julio`, `Rotonda_Atenas` -> `Rotonda Atenas`).
+3. Buscar en las subcarpetas de "Patentes" aquella que:
+   - Comience con el mismo prefijo (AP/AG)
+   - Contenga el nombre del local (busqueda case-insensitive, reemplazando guiones bajos por espacios)
+4. Si hay match unico, asignar automaticamente.
+5. Si no hay match o hay multiples matches, marcar como "sin clasificar" y permitir seleccion manual con un buscador de carpetas.
 
 ## Cambios
 
-### Migracion SQL (unico cambio)
+### 1. PatentSharedRepository.tsx
 
-No se modifica ningun archivo de codigo. Todo se resuelve con una migracion SQL que:
+**Busqueda de carpetas:**
+- Agregar un campo `Input` con icono de busqueda (Search) debajo del breadcrumb / toolbar.
+- Filtrar `folders` en el render segun el texto de busqueda (case-insensitive, match parcial).
+- Solo se muestra cuando hay carpetas visibles (no en carpetas vacias).
 
-1. **Crea la carpeta raiz "Patentes"** en `repository_folders` con `contract_id = NULL`, `folder_type = 'patent_shared_contracts'`, `is_base_folder = true`.
+**Boton de subida masiva:**
+- Agregar un boton "Subida Masiva" en la barra de herramientas del nivel raiz o dentro de la carpeta "Patentes".
+- Al hacer clic, abre un nuevo componente/dialog `PatentBulkUploadDialog`.
 
-2. **Genera subcarpetas iniciales** para todos los contratos con `status = 'firmado'`, construyendo el nombre con:
-   - Prefijo: se determina buscando el nombre de la empresa en `contract_companies` + `companies`. Si contiene "agroplanet" => `AG`, si contiene "autoplanet" => `AP`, sino vacio.
-   - Codigo y CEBE: se obtienen de `contract_custom_field_values` cruzando con `contract_custom_fields` por nombre de campo.
-   - Nombre del contrato.
+### 2. Nuevo componente: PatentBulkUploadDialog.tsx
 
-3. **Crea la funcion `create_patent_contract_folder()`** que:
-   - Busca la carpeta raiz "Patentes" por `folder_type = 'patent_shared_contracts'`.
-   - Determina el prefijo de empresa (AG/AP) consultando `contract_companies` y `companies`.
-   - Obtiene CEBE y Codigo de `contract_custom_field_values`.
-   - Construye el nombre con el formato `[Prefijo] - [Codigo] - [CEBE] - [Nombre]`, omitiendo partes vacias.
-   - Verifica que no exista ya una subcarpeta con ese nombre.
-   - Inserta la subcarpeta.
+Dialogo modal que:
+1. Permite seleccionar multiples archivos (drag & drop o input file).
+2. Muestra una tabla con cada archivo y su carpeta destino asignada:
+   - Columna "Archivo" con el nombre del archivo.
+   - Columna "Carpeta destino" con la carpeta auto-detectada o un selector.
+   - Indicador visual: verde si fue auto-clasificado, amarillo si necesita seleccion manual.
+3. Para archivos sin match automatico, muestra un `Select` o combobox con busqueda que lista todas las subcarpetas de "Patentes".
+4. Boton "Subir Todos" que sube cada archivo a la carpeta asignada (usando la misma logica de storage existente: subir a `repository-files` bucket y crear registro en `repository_files`).
+5. Barra de progreso durante la subida.
 
-4. **Crea dos triggers**:
-   - `AFTER UPDATE ON contracts`: se dispara cuando `NEW.status = 'firmado' AND OLD.status IS DISTINCT FROM 'firmado'`.
-   - `AFTER INSERT ON contracts`: se dispara cuando `NEW.status = 'firmado'`.
-
-### Detalle tecnico de la funcion del trigger
-
+**Logica de matching (frontend):**
 ```text
-create_patent_contract_folder()
-  Variables:
-    v_parent_id  -- ID de carpeta "Patentes"
-    v_prefix     -- 'AG' o 'AP' o ''
-    v_cebe       -- valor del campo custom CEBE
-    v_codigo     -- valor del campo custom Codigo
-    v_folder_name -- nombre final construido
-
-  1. SELECT id INTO v_parent_id FROM repository_folders
-     WHERE folder_type = 'patent_shared_contracts' AND contract_id IS NULL
+function matchFileToFolder(fileName, folders):
+  // Limpiar nombre: quitar extension y "Patente_"
+  cleanName = fileName.replace(/\.(pdf|jpeg|jpg|png)$/i, '').replace(/^Patente_/, '')
   
-  2. Si no existe v_parent_id, salir (RETURN NEW)
-
-  3. Determinar prefijo:
-     SELECT company.name INTO v_company
-     FROM contract_companies cc JOIN companies company ON ...
-     WHERE cc.contract_id = NEW.id LIMIT 1
-     
-     Si contiene 'agroplanet' => 'AG'
-     Si contiene 'autoplanet' => 'AP'
-
-  4. Obtener CEBE y Codigo desde contract_custom_field_values
-
-  5. Construir nombre: concatenar partes no vacias con ' - '
-     Ejemplo: 'AG' || ' - ' || 'AG0007' || ' - ' || 'H0489P1390' || ' - ' || 'Talca AG'
-
-  6. Verificar que no exista subcarpeta con ese nombre bajo v_parent_id
-
-  7. INSERT INTO repository_folders (name, parent_id, contract_id, folder_type, is_base_folder)
-     VALUES (v_folder_name, v_parent_id, NULL, 'patent_contract_sub', false)
+  // Extraer prefijo: AP o AG (primeras 2 letras)
+  prefix = cleanName.substring(0, 2)  // "AP" o "AG"
+  localName = cleanName.substring(3).replace(/_/g, ' ')  // "Angol", "10 de Julio", etc.
+  
+  // Buscar carpeta que empiece con el prefijo y contenga el nombre
+  matches = folders.filter(f => 
+    f.name.startsWith(prefix) && 
+    f.name.toLowerCase().includes(localName.toLowerCase())
+  )
+  
+  return matches.length === 1 ? matches[0] : null
 ```
 
-### Inicializacion
+### 3. Datos necesarios
 
-La migracion genera las ~50 subcarpetas existentes con un solo INSERT...SELECT que aplica la misma logica de nombre (prefijo + codigo + cebe + nombre).
+El dialogo de subida masiva necesita cargar todas las subcarpetas de la carpeta "Patentes" (folder_type = 'patent_contract_sub'). Se obtienen con una sola query:
 
-### Interfaz
+```text
+SELECT id, name FROM repository_folders 
+WHERE folder_type = 'patent_contract_sub' AND contract_id IS NULL
+ORDER BY name
+```
 
-No requiere cambios. El repositorio comun ya muestra todas las carpetas con `contract_id IS NULL`, por lo que la carpeta "Patentes" y sus subcarpetas apareceran automaticamente.
+## Secuencia de implementacion
+
+1. Agregar campo de busqueda en `PatentSharedRepository.tsx`
+2. Crear `PatentBulkUploadDialog.tsx` con la logica de auto-clasificacion
+3. Integrar el boton de subida masiva en `PatentSharedRepository.tsx`
+
+## Detalle tecnico
+
+- Cada archivo subido se almacena en `repository-files` bucket con path `shared-patents/{folder_id}/{timestamp}_{sanitizedName}`.
+- Se crea un registro en `repository_files` con `folder_id`, `name`, `url` (storage path), y `file_type`.
+- La busqueda de carpetas en el repositorio es un filtro local (no requiere cambios de base de datos).
+- No se requieren migraciones SQL.
