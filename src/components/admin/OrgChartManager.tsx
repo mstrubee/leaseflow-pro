@@ -9,8 +9,11 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, Users, Loader2, Phone, Mail, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Loader2, Phone, Mail, GripHorizontal } from "lucide-react";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface OrgMember {
   id: string;
@@ -39,6 +42,29 @@ interface ContractOption {
 interface OrgChartManagerProps {
   defaultCollapsed?: boolean;
 }
+
+// Sortable wrapper for org nodes
+const SortableOrgItem = ({ id, children }: { id: string; children: React.ReactNode }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : undefined,
+  };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      {children}
+    </div>
+  );
+};
+
+// Drag handle indicator
+const DragHandle = () => (
+  <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-60 transition-opacity">
+    <GripHorizontal className="h-3 w-3 text-muted-foreground" />
+  </div>
+);
 
 export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerProps) => {
   const { toast } = useToast();
@@ -194,26 +220,30 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
     });
   }, [allContracts, contractCompanyMap, formCompanyIds, formParentId, getEffectiveCompanyIds]);
 
-  // Reorder sibling: move member left or right among siblings
-  const moveMember = async (memberId: string, direction: "left" | "right") => {
-    const member = members.find(m => m.id === memberId);
-    if (!member) return;
-    const siblings = member.parent_id ? getChildren(member.parent_id) : getRootMembers();
-    const idx = siblings.findIndex(s => s.id === memberId);
-    const swapIdx = direction === "left" ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= siblings.length) return;
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-    const updates = [
-      { id: siblings[idx].id, display_order: siblings[swapIdx].display_order },
-      { id: siblings[swapIdx].id, display_order: siblings[idx].display_order },
-    ];
-    if (siblings[idx].display_order === siblings[swapIdx].display_order) {
-      updates[0].display_order = swapIdx;
-      updates[1].display_order = idx;
-    }
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const activeId = active.id as string;
+    const overId = over.id as string;
+    const activeMember = members.find(m => m.id === activeId);
+    const overMember = members.find(m => m.id === overId);
+    if (!activeMember || !overMember) return;
+    if (activeMember.parent_id !== overMember.parent_id) return;
+
+    const siblings = activeMember.parent_id ? getChildren(activeMember.parent_id) : getRootMembers();
+    const oldIdx = siblings.findIndex(s => s.id === activeId);
+    const newIdx = siblings.findIndex(s => s.id === overId);
+    if (oldIdx === -1 || newIdx === -1) return;
+
+    const reordered = [...siblings];
+    const [moved] = reordered.splice(oldIdx, 1);
+    reordered.splice(newIdx, 0, moved);
 
     await Promise.all(
-      updates.map(u => supabase.from("org_members").update({ display_order: u.display_order }).eq("id", u.id))
+      reordered.map((m, i) => supabase.from("org_members").update({ display_order: i }).eq("id", m.id))
     );
     await loadMembers();
   };
@@ -368,8 +398,8 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
     );
   };
 
-  // Render org chart node
-  const renderOrgNode = (member: OrgMember, siblingIndex?: number, siblingCount?: number) => {
+  // Render org chart node (wrapped in sortable)
+  const renderOrgNode = (member: OrgMember) => {
     const children = getChildren(member.id);
     const isSelected = selectedMemberId === member.id;
     const contracts = memberContractMap[member.id] || [];
@@ -381,116 +411,115 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
     const ownCompanies = memberCompanyMap[member.id] || [];
     const isInherited = ownCompanies.length === 0 && effectiveCompanyNames.length > 0;
 
-    const canMoveLeft = siblingIndex !== undefined && siblingIndex > 0;
-    const canMoveRight = siblingIndex !== undefined && siblingCount !== undefined && siblingIndex < siblingCount - 1;
-
     return (
-      <div key={member.id} className="flex flex-col items-center">
-        {/* Node card */}
-        <div
-          className={`relative border rounded-lg px-4 py-2.5 cursor-pointer transition-all text-center min-w-[140px] max-w-[220px] shadow-sm hover:shadow-md group ${
-            isSelected ? "ring-2 ring-primary border-primary bg-primary/5" : "bg-card hover:border-primary/50"
-          }`}
-          onClick={() => setSelectedMemberId(isSelected ? null : member.id)}
-        >
-          {/* Company logos */}
-          {effectiveCompanyNames.length > 0 && (
-            <div className={`flex justify-center gap-1 mb-1 ${isInherited ? "opacity-50" : ""}`}>
-              <CompanyLogo companyNames={effectiveCompanyNames} size="sm" />
-            </div>
-          )}
-          <p className="font-medium text-sm truncate">{member.name}</p>
-          {member.position && (
-            <p className="text-[11px] text-muted-foreground truncate mt-0.5">{member.position}</p>
-          )}
-          {/* Action buttons on hover */}
-          <div className="absolute -top-2 -right-2 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            {canMoveLeft && (
-              <Button variant="secondary" size="icon" className="h-5 w-5 rounded-full shadow-sm" onClick={(e) => { e.stopPropagation(); moveMember(member.id, "left"); }} title="Mover a la izquierda">
-                <ChevronLeft className="h-3 w-3" />
-              </Button>
-            )}
-            {canMoveRight && (
-              <Button variant="secondary" size="icon" className="h-5 w-5 rounded-full shadow-sm" onClick={(e) => { e.stopPropagation(); moveMember(member.id, "right"); }} title="Mover a la derecha">
-                <ChevronRight className="h-3 w-3" />
-              </Button>
-            )}
-            <Button variant="secondary" size="icon" className="h-5 w-5 rounded-full shadow-sm" onClick={(e) => { e.stopPropagation(); openCreate(member.id); }} title="Agregar subordinado">
-              <Plus className="h-3 w-3" />
-            </Button>
-          </div>
-        </div>
-
-        {/* Detail panel (shown on click) */}
-        {isSelected && (
-          <div className="mt-2 border rounded-lg bg-card shadow-lg p-3 w-[280px] text-left z-10 relative">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                {effectiveCompanyNames.length > 0 && (
-                  <CompanyLogo companyNames={effectiveCompanyNames} size="sm" />
-                )}
-                <span className="font-semibold text-sm">{member.name}</span>
+      <SortableOrgItem id={member.id}>
+        <div className="flex flex-col items-center">
+          {/* Node card */}
+          <div
+            className={`relative border rounded-lg px-4 py-2.5 cursor-pointer transition-all text-center min-w-[140px] max-w-[220px] shadow-sm hover:shadow-md group ${
+              isSelected ? "ring-2 ring-primary border-primary bg-primary/5" : "bg-card hover:border-primary/50"
+            }`}
+            onClick={() => setSelectedMemberId(isSelected ? null : member.id)}
+          >
+            {/* Company logos */}
+            {effectiveCompanyNames.length > 0 && (
+              <div className={`flex justify-center gap-1 mb-1 ${isInherited ? "opacity-50" : ""}`}>
+                <CompanyLogo companyNames={effectiveCompanyNames} size="sm" />
               </div>
-              <div className="flex gap-1">
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit(member)}>
-                  <Pencil className="h-3 w-3" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openDelete(member)}>
-                  <Trash2 className="h-3 w-3 text-destructive" />
-                </Button>
-              </div>
-            </div>
+            )}
+            <p className="font-medium text-sm truncate">{member.name}</p>
             {member.position && (
-              <p className="text-xs text-muted-foreground mb-1.5">{member.position}</p>
+              <p className="text-[11px] text-muted-foreground truncate mt-0.5">{member.position}</p>
             )}
-            {isInherited && effectiveCompanyNames.length > 0 && (
-              <p className="text-[10px] text-muted-foreground italic mb-1">Empresa heredada del superior</p>
-            )}
-            {member.phone && (
-              <p className="text-xs flex items-center gap-1.5 mb-1"><Phone className="h-3 w-3 text-muted-foreground" />{member.phone}</p>
-            )}
-            {member.email && (
-              <p className="text-xs flex items-center gap-1.5 mb-1"><Mail className="h-3 w-3 text-muted-foreground" />{member.email}</p>
-            )}
-            {contractNames.length > 0 && (
-              <div className="mt-2 pt-2 border-t">
-                <p className="text-[11px] font-medium text-muted-foreground mb-1">Contratos ({contractNames.length})</p>
-                <div className="max-h-24 overflow-y-auto space-y-0.5">
-                  {[...contractNames].sort((a, b) => a.localeCompare(b)).map((name, i) => (
-                    <p key={i} className="text-[11px] text-muted-foreground">• {name}</p>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* Action buttons on hover */}
+            <div className="absolute -top-2 -right-2 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+              <Button variant="secondary" size="icon" className="h-5 w-5 rounded-full shadow-sm" onClick={(e) => { e.stopPropagation(); openCreate(member.id); }} title="Agregar subordinado">
+                <Plus className="h-3 w-3" />
+              </Button>
+            </div>
+            {/* Drag handle */}
+            <DragHandle />
           </div>
-        )}
 
-        {/* Children */}
-        {children.length > 0 && (
-          <div className="flex flex-col items-center mt-0">
-            <div className="w-px h-4 bg-border" />
-            {children.length === 1 ? (
-              <div className="flex flex-col items-center">
-                {renderOrgNode(children[0], 0, 1)}
-              </div>
-            ) : (
-              <div className="relative">
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 flex" style={{ width: "100%" }}>
-                  <div className="w-full h-px bg-border" style={{ marginLeft: `${100 / (children.length * 2)}%`, marginRight: `${100 / (children.length * 2)}%` }} />
+          {/* Detail panel (shown on click) */}
+          {isSelected && (
+            <div className="mt-2 border rounded-lg bg-card shadow-lg p-3 w-[280px] text-left z-10 relative">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  {effectiveCompanyNames.length > 0 && (
+                    <CompanyLogo companyNames={effectiveCompanyNames} size="sm" />
+                  )}
+                  <span className="font-semibold text-sm">{member.name}</span>
                 </div>
-                <div className="flex gap-2 pt-0">
-                  {children.map((child, idx) => (
-                    <div key={child.id} className="flex flex-col items-center">
-                      <div className="w-px h-4 bg-border" />
-                      {renderOrgNode(child, idx, children.length)}
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit(member)}>
+                    <Pencil className="h-3 w-3" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openDelete(member)}>
+                    <Trash2 className="h-3 w-3 text-destructive" />
+                  </Button>
+                </div>
+              </div>
+              {member.position && (
+                <p className="text-xs text-muted-foreground mb-1.5">{member.position}</p>
+              )}
+              {isInherited && effectiveCompanyNames.length > 0 && (
+                <p className="text-[10px] text-muted-foreground italic mb-1">Empresa heredada del superior</p>
+              )}
+              {member.phone && (
+                <p className="text-xs flex items-center gap-1.5 mb-1"><Phone className="h-3 w-3 text-muted-foreground" />{member.phone}</p>
+              )}
+              {member.email && (
+                <p className="text-xs flex items-center gap-1.5 mb-1"><Mail className="h-3 w-3 text-muted-foreground" />{member.email}</p>
+              )}
+              {contractNames.length > 0 && (
+                <div className="mt-2 pt-2 border-t">
+                  <p className="text-[11px] font-medium text-muted-foreground mb-1">Contratos ({contractNames.length})</p>
+                  <div className="max-h-24 overflow-y-auto space-y-0.5">
+                    {[...contractNames].sort((a, b) => a.localeCompare(b)).map((name, i) => (
+                      <p key={i} className="text-[11px] text-muted-foreground">• {name}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Children */}
+          {children.length > 0 && (
+            <div className="flex flex-col items-center mt-0">
+              <div className="w-px h-4 bg-border" />
+              {children.length === 1 ? (
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                  <SortableContext items={children.map(c => c.id)} strategy={horizontalListSortingStrategy}>
+                    <div className="flex flex-col items-center">
+                      {renderOrgNode(children[0])}
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+                  </SortableContext>
+                </DndContext>
+              ) : (
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                  <SortableContext items={children.map(c => c.id)} strategy={horizontalListSortingStrategy}>
+                    <div className="relative">
+                      <div className="absolute top-0 left-1/2 -translate-x-1/2 flex" style={{ width: "100%" }}>
+                        <div className="w-full h-px bg-border" style={{ marginLeft: `${100 / (children.length * 2)}%`, marginRight: `${100 / (children.length * 2)}%` }} />
+                      </div>
+                      <div className="flex gap-2 pt-0">
+                        {children.map(child => (
+                          <div key={child.id} className="flex flex-col items-center">
+                            <div className="w-px h-4 bg-border" />
+                            {renderOrgNode(child)}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </SortableContext>
+                </DndContext>
+              )}
+            </div>
+          )}
+        </div>
+      </SortableOrgItem>
     );
   };
 
@@ -528,13 +557,17 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
           <p className="text-muted-foreground text-center py-8 text-sm">No hay miembros en el organigrama</p>
         ) : (
           <div ref={containerRef} className="overflow-hidden pb-4">
-            <div
-              ref={chartRef}
-              className="flex gap-6 justify-center items-start pt-4 origin-top"
-              style={{ transform: `scale(${chartScale})`, transformOrigin: "top center" }}
-            >
-              {getRootMembers().map((m, idx, arr) => renderOrgNode(m, idx, arr.length))}
-            </div>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={getRootMembers().map(m => m.id)} strategy={horizontalListSortingStrategy}>
+                <div
+                  ref={chartRef}
+                  className="flex gap-6 justify-center items-start pt-4 origin-top"
+                  style={{ transform: `scale(${chartScale})`, transformOrigin: "top center" }}
+                >
+                  {getRootMembers().map(m => renderOrgNode(m))}
+                </div>
+              </SortableContext>
+            </DndContext>
           </div>
         )}
       </CollapsibleCard>
