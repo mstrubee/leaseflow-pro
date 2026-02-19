@@ -5,8 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { 
   Folder, FolderPlus, FileText, ChevronRight, ArrowLeft, 
-  Upload, Trash2, ExternalLink, Pencil, Check, X, Search, PackagePlus
+  Upload, Trash2, ExternalLink, Pencil, Check, X, Search, PackagePlus, Download
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import { PatentBulkUploadDialog } from "./PatentBulkUploadDialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -62,6 +63,21 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
   // Search & bulk upload
   const [folderSearchQuery, setFolderSearchQuery] = useState("");
   const [showBulkUpload, setShowBulkUpload] = useState(false);
+
+  const handleDownloadEmptyFolders = useCallback(() => {
+    const emptyFolders = folders.filter((f) => (f.fileCount ?? 0) === 0);
+    if (emptyFolders.length === 0) {
+      toast.info("Todas las carpetas tienen archivos cargados");
+      return;
+    }
+    const data = emptyFolders.map((f) => ({ "Carpeta": f.name, "Archivos": 0 }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws["!cols"] = [{ wch: 50 }, { wch: 12 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Carpetas Vacías");
+    XLSX.writeFile(wb, "carpetas-sin-archivos.xlsx");
+    toast.success(`${emptyFolders.length} carpetas sin archivos exportadas`);
+  }, [folders]);
 
   const loadContents = useCallback(async (parentId: string | null) => {
     setLoading(true);
@@ -353,6 +369,10 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
               <Button variant="outline" size="sm" onClick={() => setShowBulkUpload(true)}>
                 <PackagePlus className="h-4 w-4 mr-1" />
                 Subida Masiva
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleDownloadEmptyFolders}>
+                <Download className="h-4 w-4 mr-1" />
+                Carpetas Vacías
               </Button>
             </div>
           )}
