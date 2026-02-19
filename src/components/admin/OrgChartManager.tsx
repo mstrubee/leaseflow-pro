@@ -1,21 +1,20 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, Users, Loader2, ChevronDown, ChevronRight, Phone, Mail } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Loader2, Phone, Mail } from "lucide-react";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 
 interface OrgMember {
   id: string;
-  company_id: string;
+  company_id: string | null;
   name: string;
   position: string | null;
   phone: string | null;
@@ -44,13 +43,14 @@ interface OrgChartManagerProps {
 export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerProps) => {
   const { toast } = useToast();
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [loading, setLoading] = useState(false);
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  // Contracts for selected company
-  const [companyContracts, setCompanyContracts] = useState<ContractOption[]>([]);
+  // Member -> companies map
+  const [memberCompanyMap, setMemberCompanyMap] = useState<Record<string, string[]>>({});
+
+  // All contracts (for assignment)
+  const [allContracts, setAllContracts] = useState<ContractOption[]>([]);
 
   // Member contract assignments
   const [memberContractMap, setMemberContractMap] = useState<Record<string, string[]>>({});
@@ -69,6 +69,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
   const [formEmail, setFormEmail] = useState("");
   const [formParentId, setFormParentId] = useState<string>("none");
   const [formContractIds, setFormContractIds] = useState<string[]>([]);
+  const [formCompanyIds, setFormCompanyIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   // Delete dialogs
@@ -77,20 +78,18 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
   const [memberToDelete, setMemberToDelete] = useState<OrgMember | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    loadCompanies();
-  }, []);
+  // Selected member for detail panel
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (selectedCompanyId) {
-      loadMembers();
-      loadCompanyContracts();
-    } else {
-      setMembers([]);
-      setCompanyContracts([]);
-      setMemberContractMap({});
-    }
-  }, [selectedCompanyId]);
+    loadAll();
+  }, []);
+
+  const loadAll = async () => {
+    setLoading(true);
+    await Promise.all([loadCompanies(), loadMembers(), loadAllContracts()]);
+    setLoading(false);
+  };
 
   const loadCompanies = async () => {
     const { data } = await supabase.from("companies").select("id, name").order("name");
@@ -98,59 +97,35 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
   };
 
   const loadMembers = async () => {
-    if (!selectedCompanyId) return;
-    setLoading(true);
-
-    const [membersRes, contractsRes] = await Promise.all([
-      supabase
-        .from("org_members")
-        .select("*")
-        .eq("company_id", selectedCompanyId)
-        .order("display_order"),
-      supabase
-        .from("org_member_contracts")
-        .select("org_member_id, contract_id"),
+    const [membersRes, contractsRes, companiesRes] = await Promise.all([
+      supabase.from("org_members").select("*").order("display_order"),
+      supabase.from("org_member_contracts").select("org_member_id, contract_id"),
+      supabase.from("org_member_companies").select("org_member_id, company_id"),
     ]);
 
     setMembers((membersRes.data as OrgMember[]) || []);
 
-    // Build member->contracts map filtered to this company's members
-    const memberIds = new Set((membersRes.data || []).map((m: any) => m.id));
-    const map: Record<string, string[]> = {};
+    // Build member->contracts map
+    const cMap: Record<string, string[]> = {};
     (contractsRes.data || []).forEach((row: any) => {
-      if (memberIds.has(row.org_member_id)) {
-        if (!map[row.org_member_id]) map[row.org_member_id] = [];
-        map[row.org_member_id].push(row.contract_id);
-      }
+      if (!cMap[row.org_member_id]) cMap[row.org_member_id] = [];
+      cMap[row.org_member_id].push(row.contract_id);
     });
-    setMemberContractMap(map);
-    setLoading(false);
+    setMemberContractMap(cMap);
+
+    // Build member->companies map
+    const coMap: Record<string, string[]> = {};
+    (companiesRes.data || []).forEach((row: any) => {
+      if (!coMap[row.org_member_id]) coMap[row.org_member_id] = [];
+      coMap[row.org_member_id].push(row.company_id);
+    });
+    setMemberCompanyMap(coMap);
   };
 
-  const loadCompanyContracts = async () => {
-    if (!selectedCompanyId) return;
-    const { data: cc } = await supabase
-      .from("contract_companies")
-      .select("contract_id")
-      .eq("company_id", selectedCompanyId);
-
-    const ids = (cc || []).map((r: any) => r.contract_id);
-    if (ids.length === 0) {
-      setCompanyContracts([]);
-      return;
-    }
-
+  const loadAllContracts = async () => {
     const [contractsResult, addressesResult] = await Promise.all([
-      supabase
-        .from("contracts")
-        .select("id, name")
-        .in("id", ids)
-        .is("deleted_at", null)
-        .order("name"),
-      supabase
-        .from("contract_addresses")
-        .select("contract_id, region, commune")
-        .in("contract_id", ids),
+      supabase.from("contracts").select("id, name").is("deleted_at", null).order("name"),
+      supabase.from("contract_addresses").select("contract_id, region, commune"),
     ]);
 
     const addressMap: Record<string, { region: string | null; commune: string | null }> = {};
@@ -165,20 +140,30 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
       commune: addressMap[c.id]?.commune || null,
     }));
 
-    setCompanyContracts(enriched);
+    setAllContracts(enriched);
   };
 
   // Tree helpers
   const getRootMembers = () => members.filter(m => !m.parent_id);
   const getChildren = (parentId: string) => members.filter(m => m.parent_id === parentId);
 
-  const toggleExpand = (id: string) => {
-    setExpandedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
+  // Resolve effective companies for a member (inherit from parent if none assigned)
+  const getEffectiveCompanyIds = useCallback((memberId: string): string[] => {
+    const own = memberCompanyMap[memberId];
+    if (own && own.length > 0) return own;
+
+    // Find parent and inherit
+    const member = members.find(m => m.id === memberId);
+    if (member?.parent_id) {
+      return getEffectiveCompanyIds(member.parent_id);
+    }
+    return [];
+  }, [members, memberCompanyMap]);
+
+  const getEffectiveCompanyNames = useCallback((memberId: string): string[] => {
+    const ids = getEffectiveCompanyIds(memberId);
+    return ids.map(id => companies.find(c => c.id === id)?.name).filter(Boolean) as string[];
+  }, [getEffectiveCompanyIds, companies]);
 
   // CRUD
   const openCreate = (parentId?: string) => {
@@ -189,6 +174,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
     setFormEmail("");
     setFormParentId(parentId || "none");
     setFormContractIds([]);
+    setFormCompanyIds([]);
     setDialogOpen(true);
   };
 
@@ -200,6 +186,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
     setFormEmail(member.email || "");
     setFormParentId(member.parent_id || "none");
     setFormContractIds(memberContractMap[member.id] || []);
+    setFormCompanyIds(memberCompanyMap[member.id] || []);
     setDialogOpen(true);
   };
 
@@ -213,8 +200,9 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
     const parentId = formParentId === "none" ? null : formParentId;
 
     try {
+      let memberId: string;
+
       if (editingMember) {
-        // Update
         const { error } = await supabase
           .from("org_members")
           .update({
@@ -225,24 +213,12 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
             parent_id: parentId,
           })
           .eq("id", editingMember.id);
-
         if (error) throw error;
-
-        // Sync contracts
-        await supabase.from("org_member_contracts").delete().eq("org_member_id", editingMember.id);
-        if (formContractIds.length > 0) {
-          await supabase.from("org_member_contracts").insert(
-            formContractIds.map(cid => ({ org_member_id: editingMember.id, contract_id: cid }))
-          );
-        }
-
-        toast({ title: "Miembro actualizado" });
+        memberId = editingMember.id;
       } else {
-        // Create
         const { data: newMember, error } = await supabase
           .from("org_members")
           .insert({
-            company_id: selectedCompanyId,
             name: formName.trim(),
             position: formPosition.trim() || null,
             phone: formPhone.trim() || null,
@@ -251,19 +227,27 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
           })
           .select("id")
           .single();
-
         if (error) throw error;
-
-        // Assign contracts
-        if (formContractIds.length > 0 && newMember) {
-          await supabase.from("org_member_contracts").insert(
-            formContractIds.map(cid => ({ org_member_id: newMember.id, contract_id: cid }))
-          );
-        }
-
-        toast({ title: "Miembro creado" });
+        memberId = newMember.id;
       }
 
+      // Sync contracts
+      await supabase.from("org_member_contracts").delete().eq("org_member_id", memberId);
+      if (formContractIds.length > 0) {
+        await supabase.from("org_member_contracts").insert(
+          formContractIds.map(cid => ({ org_member_id: memberId, contract_id: cid }))
+        );
+      }
+
+      // Sync companies
+      await supabase.from("org_member_companies").delete().eq("org_member_id", memberId);
+      if (formCompanyIds.length > 0) {
+        await supabase.from("org_member_companies").insert(
+          formCompanyIds.map(cid => ({ org_member_id: memberId, company_id: cid }))
+        );
+      }
+
+      toast({ title: editingMember ? "Miembro actualizado" : "Miembro creado" });
       setDialogOpen(false);
       loadMembers();
     } catch (err: any) {
@@ -306,8 +290,11 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
     );
   };
 
-  // Selected member for detail popover
-  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const toggleFormCompany = (companyId: string) => {
+    setFormCompanyIds(prev =>
+      prev.includes(companyId) ? prev.filter(id => id !== companyId) : [...prev, companyId]
+    );
+  };
 
   // Render org chart node
   const renderOrgNode = (member: OrgMember) => {
@@ -315,24 +302,34 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
     const isSelected = selectedMemberId === member.id;
     const contracts = memberContractMap[member.id] || [];
     const contractNames = contracts
-      .map(cid => companyContracts.find(c => c.id === cid)?.name)
+      .map(cid => allContracts.find(c => c.id === cid)?.name)
       .filter(Boolean);
+
+    const effectiveCompanyNames = getEffectiveCompanyNames(member.id);
+    const ownCompanies = memberCompanyMap[member.id] || [];
+    const isInherited = ownCompanies.length === 0 && effectiveCompanyNames.length > 0;
 
     return (
       <div key={member.id} className="flex flex-col items-center">
         {/* Node card */}
         <div
-          className={`relative border rounded-lg px-4 py-2.5 cursor-pointer transition-all text-center min-w-[140px] max-w-[200px] shadow-sm hover:shadow-md ${
+          className={`relative border rounded-lg px-4 py-2.5 cursor-pointer transition-all text-center min-w-[140px] max-w-[220px] shadow-sm hover:shadow-md group ${
             isSelected ? "ring-2 ring-primary border-primary bg-primary/5" : "bg-card hover:border-primary/50"
           }`}
           onClick={() => setSelectedMemberId(isSelected ? null : member.id)}
         >
+          {/* Company logos */}
+          {effectiveCompanyNames.length > 0 && (
+            <div className={`flex justify-center gap-1 mb-1 ${isInherited ? "opacity-50" : ""}`}>
+              <CompanyLogo companyNames={effectiveCompanyNames} size="sm" />
+            </div>
+          )}
           <p className="font-medium text-sm truncate">{member.name}</p>
           {member.position && (
             <p className="text-[11px] text-muted-foreground truncate mt-0.5">{member.position}</p>
           )}
-          {/* Actions on hover */}
-          <div className="absolute -top-2 -right-2 flex gap-0.5 opacity-0 hover:opacity-100 group-hover:opacity-100 transition-opacity">
+          {/* Add subordinate button on hover */}
+          <div className="absolute -top-2 -right-2 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
             <Button variant="secondary" size="icon" className="h-5 w-5 rounded-full shadow-sm" onClick={(e) => { e.stopPropagation(); openCreate(member.id); }} title="Agregar subordinado">
               <Plus className="h-3 w-3" />
             </Button>
@@ -343,7 +340,12 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
         {isSelected && (
           <div className="mt-2 border rounded-lg bg-card shadow-lg p-3 w-[280px] text-left z-10 relative">
             <div className="flex items-center justify-between mb-2">
-              <span className="font-semibold text-sm">{member.name}</span>
+              <div className="flex items-center gap-2">
+                {effectiveCompanyNames.length > 0 && (
+                  <CompanyLogo companyNames={effectiveCompanyNames} size="sm" />
+                )}
+                <span className="font-semibold text-sm">{member.name}</span>
+              </div>
               <div className="flex gap-1">
                 <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit(member)}>
                   <Pencil className="h-3 w-3" />
@@ -355,6 +357,9 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
             </div>
             {member.position && (
               <p className="text-xs text-muted-foreground mb-1.5">{member.position}</p>
+            )}
+            {isInherited && effectiveCompanyNames.length > 0 && (
+              <p className="text-[10px] text-muted-foreground italic mb-1">Empresa heredada del superior</p>
             )}
             {member.phone && (
               <p className="text-xs flex items-center gap-1.5 mb-1"><Phone className="h-3 w-3 text-muted-foreground" />{member.phone}</p>
@@ -378,16 +383,13 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
         {/* Children */}
         {children.length > 0 && (
           <div className="flex flex-col items-center mt-0">
-            {/* Vertical connector from parent */}
             <div className="w-px h-4 bg-border" />
-            {/* Horizontal connector + children */}
             {children.length === 1 ? (
               <div className="flex flex-col items-center">
                 {renderOrgNode(children[0])}
               </div>
             ) : (
               <div className="relative">
-                {/* Horizontal line spanning all children */}
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 flex" style={{ width: "100%" }}>
                   <div className="w-full h-px bg-border" style={{ marginLeft: `${100 / (children.length * 2)}%`, marginRight: `${100 / (children.length * 2)}%` }} />
                 </div>
@@ -423,36 +425,17 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
     <>
       <CollapsibleCard
         title="Organigrama"
-        description="Gestionar gerencias y jefaturas por empresa"
+        description="Gestionar gerencias y jefaturas"
         icon={<Users className="h-5 w-5" />}
         defaultOpen={!defaultCollapsed}
         headerActions={
-          selectedCompanyId ? (
-            <Button onClick={(e) => { e.stopPropagation(); openCreate(); }} size="sm">
-              <Plus className="h-4 w-4 mr-1" />
-              Nuevo Miembro
-            </Button>
-          ) : null
+          <Button onClick={(e) => { e.stopPropagation(); openCreate(); }} size="sm">
+            <Plus className="h-4 w-4 mr-1" />
+            Nuevo Miembro
+          </Button>
         }
       >
-        {/* Company selector */}
-        <div className="mb-4">
-          <Label>Empresa</Label>
-          <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
-            <SelectTrigger className="w-full max-w-xs mt-1">
-              <SelectValue placeholder="Seleccionar empresa..." />
-            </SelectTrigger>
-            <SelectContent>
-              {companies.map(c => (
-                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {!selectedCompanyId ? (
-          <p className="text-muted-foreground text-center py-8 text-sm">Selecciona una empresa para ver su organigrama</p>
-        ) : loading ? (
+        {loading ? (
           <div className="flex justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin" />
           </div>
@@ -512,8 +495,27 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
               </Select>
             </div>
 
+            {/* Company assignment */}
+            <div className="space-y-2">
+              <Label>Empresas asignadas</Label>
+              <p className="text-[11px] text-muted-foreground">Si no se asigna ninguna, se heredan del nivel superior.</p>
+              <div className="flex flex-wrap gap-2">
+                {companies.map(c => (
+                  <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer bg-muted/60 px-3 py-1.5 rounded-md hover:bg-muted">
+                    <Checkbox
+                      checked={formCompanyIds.includes(c.id)}
+                      onCheckedChange={() => toggleFormCompany(c.id)}
+                      className="h-4 w-4"
+                    />
+                    <CompanyLogo companyName={c.name} size="sm" />
+                    <span>{c.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
             {/* Contract assignment */}
-            {companyContracts.length > 0 && (
+            {allContracts.length > 0 && (
               <div className="space-y-2">
                 <Label>Contratos asignados</Label>
                 {/* Filters */}
@@ -530,7 +532,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                   </Select>
                   {contractFilter === "region" && (
                     <div className="flex flex-wrap gap-1.5 items-center">
-                      {[...new Set(companyContracts.map(c => c.region).filter(Boolean))].sort().map(r => (
+                      {[...new Set(allContracts.map(c => c.region).filter(Boolean))].sort().map(r => (
                         <label key={r!} className="flex items-center gap-1 text-xs cursor-pointer bg-muted/60 px-2 py-1 rounded-md hover:bg-muted">
                           <Checkbox
                             checked={selectedRegions.includes(r!)}
@@ -548,7 +550,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                   )}
                   {contractFilter === "commune" && (
                     <div className="flex flex-wrap gap-1.5 items-center max-h-24 overflow-y-auto">
-                      {[...new Set(companyContracts.map(c => c.commune).filter(Boolean))].sort().map(c => (
+                      {[...new Set(allContracts.map(c => c.commune).filter(Boolean))].sort().map(c => (
                         <label key={c!} className="flex items-center gap-1 text-xs cursor-pointer bg-muted/60 px-2 py-1 rounded-md hover:bg-muted">
                           <Checkbox
                             checked={selectedCommunes.includes(c!)}
@@ -570,7 +572,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                     size="sm"
                     className="h-8 text-xs"
                     onClick={() => {
-                      const filtered = companyContracts
+                      const filtered = allContracts
                         .filter(c => {
                           if (contractFilter === "region" && selectedRegions.length > 0) return c.region != null && selectedRegions.includes(c.region);
                           if (contractFilter === "commune" && selectedCommunes.length > 0) return c.commune != null && selectedCommunes.includes(c.commune);
@@ -596,37 +598,30 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                 </div>
                 {/* Contract list */}
                 <div className="border rounded-md overflow-hidden">
-                  {/* Header */}
-                  <div className="grid grid-cols-[auto_24px_1fr_120px_120px] gap-2 px-2 py-1.5 bg-muted/60 border-b text-[11px] font-medium text-muted-foreground">
-                    <span></span>
+                  <div className="grid grid-cols-[auto_1fr_120px_120px] gap-2 px-2 py-1.5 bg-muted/60 border-b text-[11px] font-medium text-muted-foreground">
                     <span></span>
                     <span>Contrato</span>
                     <span>Región</span>
                     <span>Comuna</span>
                   </div>
-                  {/* Rows */}
                   <div className="max-h-48 overflow-y-auto">
-                    {companyContracts
+                    {allContracts
                       .filter(c => {
                         if (contractFilter === "region" && selectedRegions.length > 0) return c.region != null && selectedRegions.includes(c.region);
                         if (contractFilter === "commune" && selectedCommunes.length > 0) return c.commune != null && selectedCommunes.includes(c.commune);
                         return true;
                       })
-                      .map(c => {
-                        const selectedCompanyName = companies.find(co => co.id === selectedCompanyId)?.name;
-                        return (
-                          <label key={c.id} className="grid grid-cols-[auto_24px_1fr_120px_120px] gap-2 items-center text-sm cursor-pointer hover:bg-muted/50 px-2 py-1 border-b last:border-b-0">
-                            <Checkbox
-                              checked={formContractIds.includes(c.id)}
-                              onCheckedChange={() => toggleContract(c.id)}
-                            />
-                            <CompanyLogo companyName={selectedCompanyName} size="sm" />
-                            <span className="truncate">{c.name}</span>
-                            <span className="text-[11px] text-muted-foreground truncate">{c.region || ''}</span>
-                            <span className="text-[11px] text-muted-foreground truncate">{c.commune || ''}</span>
-                          </label>
-                        );
-                      })}
+                      .map(c => (
+                        <label key={c.id} className="grid grid-cols-[auto_1fr_120px_120px] gap-2 items-center text-sm cursor-pointer hover:bg-muted/50 px-2 py-1 border-b last:border-b-0">
+                          <Checkbox
+                            checked={formContractIds.includes(c.id)}
+                            onCheckedChange={() => toggleContract(c.id)}
+                          />
+                          <span className="truncate">{c.name}</span>
+                          <span className="text-[11px] text-muted-foreground truncate">{c.region || ''}</span>
+                          <span className="text-[11px] text-muted-foreground truncate">{c.commune || ''}</span>
+                        </label>
+                      ))}
                   </div>
                 </div>
               </div>
