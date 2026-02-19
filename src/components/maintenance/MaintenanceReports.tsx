@@ -410,7 +410,9 @@ export function MaintenanceReports() {
       {/* Detailed table */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium">Detalle por Contrato ({contractStats.length} contratos)</CardTitle>
+          <CardTitle className="text-sm font-medium">
+            Detalle por Contrato ({contractStats.length} contratos) — Tasa de resolución general: {statusSummary.total > 0 ? ((statusSummary.solucionados / statusSummary.total) * 100).toFixed(1) : "0"}%
+          </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-auto max-h-[400px]">
