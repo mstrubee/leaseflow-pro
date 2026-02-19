@@ -1245,16 +1245,36 @@ export const OCRequestsList = ({
                       </div>
                     ))}
 
-                    <div className="p-3 bg-muted/50 rounded-lg text-sm">
+                    <div className="p-3 bg-muted/50 rounded-lg text-sm space-y-1">
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Total planificado:</span>
-                        <span className={`font-medium ${totalPlanned > totalSelected ? 'text-destructive' : ''}`}>
-                          {newRequestForm.currency === "CLP" ? formatCLP(totalPlanned) : formatUF(totalPlanned)}
-                        </span>
+                        <div className="text-right">
+                          <span className={`font-medium ${totalPlanned > totalSelected ? 'text-destructive' : ''}`}>
+                            {newRequestForm.currency === "CLP" 
+                              ? formatCLP(totalPlanned) 
+                              : formatCLP(totalPlanned * (ufValue > 0 ? ufValue : 38000))}
+                          </span>
+                          <div className="text-[11px] text-muted-foreground">
+                            {newRequestForm.currency === "CLP" 
+                              ? formatUF(ufValue > 0 ? totalPlanned / ufValue : 0)
+                              : formatUF(totalPlanned)}
+                          </div>
+                        </div>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Total solicitud:</span>
-                        <span className="font-medium">{newRequestForm.currency === "CLP" ? formatCLP(totalSelected) : formatUF(totalSelected)}</span>
+                        <div className="text-right">
+                          <span className="font-medium">
+                            {newRequestForm.currency === "CLP" 
+                              ? formatCLP(totalSelected) 
+                              : formatCLP(totalSelected * (ufValue > 0 ? ufValue : 38000))}
+                          </span>
+                          <div className="text-[11px] text-muted-foreground">
+                            {newRequestForm.currency === "CLP" 
+                              ? formatUF(ufValue > 0 ? totalSelected / ufValue : 0)
+                              : formatUF(totalSelected)}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
