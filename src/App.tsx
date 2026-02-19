@@ -20,6 +20,7 @@ import AlertsDashboard from "./pages/AlertsDashboard";
 import BulkContractUpload from "./pages/BulkContractUpload";
 import PurchaseOrdersDashboard from "./pages/PurchaseOrdersDashboard";
 import OpexDashboard from "./pages/OpexDashboard";
+import CapexDashboard from "./pages/CapexDashboard";
 import ReportsDashboard from "./pages/ReportsDashboard";
 import KPIDashboard from "./pages/KPIDashboard";
 import NotFound from "./pages/NotFound";
@@ -55,6 +56,7 @@ const App = () => (
               <Route path="/patents" element={<ProtectedRoute><Index /></ProtectedRoute>} />
               <Route path="/purchase-orders" element={<ProtectedRoute resource="purchase_orders"><PurchaseOrdersDashboard /></ProtectedRoute>} />
               <Route path="/opex" element={<ProtectedRoute resource="opex"><OpexDashboard /></ProtectedRoute>} />
+              <Route path="/capex" element={<ProtectedRoute resource="purchase_orders"><CapexDashboard /></ProtectedRoute>} />
               <Route path="/reports" element={<ProtectedRoute resource="reports"><ReportsDashboard /></ProtectedRoute>} />
               <Route path="/kpi" element={<ProtectedRoute resource="kpi"><KPIDashboard /></ProtectedRoute>} />
               <Route path="/suppliers" element={<ProtectedRoute resource="suppliers"><SuppliersDashboard /></ProtectedRoute>} />
