@@ -577,7 +577,7 @@ const AdminPanel = () => {
 
   return (
     <div className="min-h-screen bg-background p-6">
-      <div className="max-w-[90rem] mx-auto space-y-6">
+      <div className="max-w-[108rem] mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
