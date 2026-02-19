@@ -4596,6 +4596,38 @@ export type Database = {
           },
         ]
       }
+      supplier_influence_zones: {
+        Row: {
+          commune: string | null
+          created_at: string
+          id: string
+          region: string
+          supplier_id: string
+        }
+        Insert: {
+          commune?: string | null
+          created_at?: string
+          id?: string
+          region: string
+          supplier_id: string
+        }
+        Update: {
+          commune?: string | null
+          created_at?: string
+          id?: string
+          region?: string
+          supplier_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_influence_zones_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       supplier_opex_categories: {
         Row: {
           created_at: string
