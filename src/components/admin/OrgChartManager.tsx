@@ -435,7 +435,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingMember ? "Editar Miembro" : "Nuevo Miembro"}</DialogTitle>
             <DialogDescription>
@@ -520,28 +520,39 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                   )}
                 </div>
                 {/* Contract list */}
-                <div className="max-h-48 overflow-y-auto border rounded-md p-2 space-y-0.5">
-                  {companyContracts
-                    .filter(c => {
-                      if (contractFilter === "region" && selectedRegion) return c.region === selectedRegion;
-                      if (contractFilter === "commune" && selectedCommune) return c.commune === selectedCommune;
-                      return true;
-                    })
-                    .map(c => {
-                      const selectedCompanyName = companies.find(co => co.id === selectedCompanyId)?.name;
-                      return (
-                        <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 px-1 py-0.5 rounded">
-                          <Checkbox
-                            checked={formContractIds.includes(c.id)}
-                            onCheckedChange={() => toggleContract(c.id)}
-                          />
-                          <CompanyLogo companyName={selectedCompanyName} size="sm" />
-                          <span className="flex-1 truncate">{c.name}</span>
-                          <span className="text-[10px] text-muted-foreground truncate max-w-[80px]">{c.region || ''}</span>
-                          <span className="text-[10px] text-muted-foreground truncate max-w-[80px]">{c.commune || ''}</span>
-                        </label>
-                      );
-                    })}
+                <div className="border rounded-md overflow-hidden">
+                  {/* Header */}
+                  <div className="grid grid-cols-[auto_24px_1fr_120px_120px] gap-2 px-2 py-1.5 bg-muted/60 border-b text-[11px] font-medium text-muted-foreground">
+                    <span></span>
+                    <span></span>
+                    <span>Contrato</span>
+                    <span>Región</span>
+                    <span>Comuna</span>
+                  </div>
+                  {/* Rows */}
+                  <div className="max-h-48 overflow-y-auto">
+                    {companyContracts
+                      .filter(c => {
+                        if (contractFilter === "region" && selectedRegion) return c.region === selectedRegion;
+                        if (contractFilter === "commune" && selectedCommune) return c.commune === selectedCommune;
+                        return true;
+                      })
+                      .map(c => {
+                        const selectedCompanyName = companies.find(co => co.id === selectedCompanyId)?.name;
+                        return (
+                          <label key={c.id} className="grid grid-cols-[auto_24px_1fr_120px_120px] gap-2 items-center text-sm cursor-pointer hover:bg-muted/50 px-2 py-1 border-b last:border-b-0">
+                            <Checkbox
+                              checked={formContractIds.includes(c.id)}
+                              onCheckedChange={() => toggleContract(c.id)}
+                            />
+                            <CompanyLogo companyName={selectedCompanyName} size="sm" />
+                            <span className="truncate">{c.name}</span>
+                            <span className="text-[11px] text-muted-foreground truncate">{c.region || ''}</span>
+                            <span className="text-[11px] text-muted-foreground truncate">{c.commune || ''}</span>
+                          </label>
+                        );
+                      })}
+                  </div>
                 </div>
               </div>
             )}
