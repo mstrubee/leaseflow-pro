@@ -2519,7 +2519,14 @@ export type Database = {
           id: string
           resolution_date: string | null
           status: string
+          status_changed_at: string | null
           sub_status: string
+          sub_status_cotizando_at: string | null
+          sub_status_en_ejecucion_at: string | null
+          sub_status_evaluado_at: string | null
+          sub_status_pre_aprobado_at: string | null
+          sub_status_resuelto_at: string | null
+          sub_status_solicitado_at: string | null
           updated_at: string | null
           year: number | null
         }
@@ -2541,7 +2548,14 @@ export type Database = {
           id?: string
           resolution_date?: string | null
           status?: string
+          status_changed_at?: string | null
           sub_status?: string
+          sub_status_cotizando_at?: string | null
+          sub_status_en_ejecucion_at?: string | null
+          sub_status_evaluado_at?: string | null
+          sub_status_pre_aprobado_at?: string | null
+          sub_status_resuelto_at?: string | null
+          sub_status_solicitado_at?: string | null
           updated_at?: string | null
           year?: number | null
         }
@@ -2563,7 +2577,14 @@ export type Database = {
           id?: string
           resolution_date?: string | null
           status?: string
+          status_changed_at?: string | null
           sub_status?: string
+          sub_status_cotizando_at?: string | null
+          sub_status_en_ejecucion_at?: string | null
+          sub_status_evaluado_at?: string | null
+          sub_status_pre_aprobado_at?: string | null
+          sub_status_resuelto_at?: string | null
+          sub_status_solicitado_at?: string | null
           updated_at?: string | null
           year?: number | null
         }
@@ -2573,6 +2594,44 @@ export type Database = {
             columns: ["contract_id"]
             isOneToOne: false
             referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      maintenance_status_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          field_changed: string
+          form_id: string
+          id: string
+          new_value: string
+          old_value: string | null
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          field_changed: string
+          form_id: string
+          id?: string
+          new_value: string
+          old_value?: string | null
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          field_changed?: string
+          form_id?: string
+          id?: string
+          new_value?: string
+          old_value?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_status_history_form_id_fkey"
+            columns: ["form_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_forms"
             referencedColumns: ["id"]
           },
         ]

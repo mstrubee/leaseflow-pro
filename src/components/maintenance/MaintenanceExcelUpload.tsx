@@ -388,6 +388,8 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         evidence_links: r.evidence_links,
         year: r.created_date ? new Date(r.created_date).getFullYear() : new Date().getFullYear(),
         created_by: user?.id ?? null,
+        sub_status: 'solicitado',
+        sub_status_solicitado_at: new Date().toISOString(),
       }));
 
       // Insert in batches of 100 (only new forms)

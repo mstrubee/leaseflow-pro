@@ -54,6 +54,13 @@ export interface MaintenanceForm {
   updated_at: string;
   deleted_at: string | null;
   created_by: string | null;
+  status_changed_at: string | null;
+  sub_status_solicitado_at: string | null;
+  sub_status_pre_aprobado_at: string | null;
+  sub_status_evaluado_at: string | null;
+  sub_status_cotizando_at: string | null;
+  sub_status_en_ejecucion_at: string | null;
+  sub_status_resuelto_at: string | null;
 }
 
 export interface ParsedMaintenanceRow {
