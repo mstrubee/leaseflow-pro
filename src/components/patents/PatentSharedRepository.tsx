@@ -22,6 +22,7 @@ interface RepoFolder {
   name: string;
   parent_id: string | null;
   is_base_folder: boolean;
+  fileCount?: number;
 }
 
 interface RepoFile {
@@ -72,7 +73,17 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
       }
 
       const { data: folderData } = await folderQuery;
-      setFolders(folderData || []);
+      
+      // Get file counts for each folder
+      const foldersWithCounts: RepoFolder[] = [];
+      for (const folder of folderData || []) {
+        const { count } = await supabase
+          .from("repository_files")
+          .select("id", { count: 'exact', head: true })
+          .eq("folder_id", folder.id);
+        foldersWithCounts.push({ ...folder, fileCount: count ?? 0 });
+      }
+      setFolders(foldersWithCounts);
 
       if (parentId) {
         const { data: fileData } = await supabase
@@ -398,6 +409,11 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
                         >
                           <Folder className="h-4 w-4 text-primary flex-shrink-0" />
                           <span className="text-sm font-medium">{folder.name}</span>
+                          {(folder.fileCount ?? 0) > 0 && (
+                            <span className="text-xs text-muted-foreground bg-muted rounded-full px-1.5 py-0.5 min-w-[20px] text-center">
+                              {folder.fileCount}
+                            </span>
+                          )}
                         </button>
                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <Button
