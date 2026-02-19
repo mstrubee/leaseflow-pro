@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -73,6 +73,46 @@ export function TodayAlertsFloating() {
   const [followUpTitle, setFollowUpTitle] = useState("");
   const [followUpDate, setFollowUpDate] = useState<Date | undefined>(undefined);
   const [creatingFollowUp, setCreatingFollowUp] = useState(false);
+
+  // Drag state
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartPos = useRef({ x: 0, y: 0 });
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    // Only drag from header area
+    const target = e.target as HTMLElement;
+    if (target.closest("button") || target.closest("a")) return;
+    setIsDragging(true);
+    dragStartPos.current = { x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }, [dragOffset]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging) return;
+    const newX = e.clientX - dragStartPos.current.x;
+    const newY = e.clientY - dragStartPos.current.y;
+    setDragOffset({ x: newX, y: newY });
+  }, [isDragging]);
+
+  const handlePointerUp = useCallback(() => {
+    if (!isDragging) return;
+    setIsDragging(false);
+    // Reset to original position after 10 seconds
+    if (dragOffset.x !== 0 || dragOffset.y !== 0) {
+      if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = setTimeout(() => {
+        setDragOffset({ x: 0, y: 0 });
+      }, 10000);
+    }
+  }, [isDragging, dragOffset]);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -273,10 +313,21 @@ export function TodayAlertsFloating() {
 
   return (
     <>
-      <div className="fixed bottom-4 right-4 z-50 max-w-sm w-full animate-in slide-in-from-bottom-5 duration-300">
+      <div
+        className="fixed bottom-4 right-4 z-50 max-w-sm w-full animate-in slide-in-from-bottom-5 duration-300"
+        style={{
+          transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`,
+          transition: isDragging ? "none" : "transform 0.4s ease-out",
+        }}
+      >
         <Card className="shadow-lg border-2 border-amber-500/50 bg-card">
           <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-            <CardHeader className="pb-2 pt-3 px-4">
+            <CardHeader
+              className="pb-2 pt-3 px-4 cursor-grab active:cursor-grabbing"
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+            >
               <div className="flex items-center justify-between">
                 <CollapsibleTrigger asChild>
                   <Button variant="ghost" className="p-0 h-auto hover:bg-transparent flex items-center gap-2">
