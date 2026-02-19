@@ -256,7 +256,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
       const containerW = containerRef.current.clientWidth;
       const chartW = chartRef.current.scrollWidth;
       if (chartW > containerW) {
-        setChartScale(Math.max(0.2, containerW / chartW));
+        setChartScale(Math.max(0.55, containerW / chartW));
       } else {
         setChartScale(1);
       }
@@ -579,13 +579,17 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
         ) : members.length === 0 ? (
           <p className="text-muted-foreground text-center py-8 text-sm">No hay miembros en el organigrama</p>
         ) : (
-          <div ref={containerRef} className="overflow-hidden pb-4">
+          <div ref={containerRef} className="overflow-x-auto pb-4">
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={getRootMembers().map(m => m.id)} strategy={horizontalListSortingStrategy}>
                 <div
                   ref={chartRef}
-                  className="flex gap-3 justify-center items-start pt-4 origin-top"
-                  style={{ transform: `scale(${chartScale})`, transformOrigin: "top center" }}
+                  className="flex gap-3 justify-center items-start pt-4 origin-top min-w-max"
+                  style={{
+                    transform: `scale(${chartScale})`,
+                    transformOrigin: "top left",
+                    height: chartRef.current ? `${chartRef.current.scrollHeight * chartScale}px` : 'auto',
+                  }}
                 >
                   {getRootMembers().map(m => renderOrgNode(m))}
                 </div>
