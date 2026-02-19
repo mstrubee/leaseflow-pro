@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +16,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import logosHeader from "@/assets/logos-header.png";
+import { toPng } from "html-to-image";
 import { useAppLogos } from "@/hooks/useAppLogos";
 const CHART_COLORS = [
   "hsl(220, 70%, 50%)", "hsl(142, 71%, 45%)", "hsl(48, 96%, 53%)",
@@ -51,6 +52,7 @@ export function MaintenanceReports() {
   const [dialogSubStatusFilter, setDialogSubStatusFilter] = useState<string[]>([]);
   const [contractCompanyMap, setContractCompanyMap] = useState<Map<string, string>>(new Map());
   const { logos } = useAppLogos();
+  const barChartRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchForms();
@@ -299,63 +301,49 @@ export function MaintenanceReports() {
   };
 
   const exportChartPDF = async () => {
-    const doc = new jsPDF({ orientation: "landscape" });
-    const today = new Date().toLocaleDateString("es-CL");
-    const yearLabel = selectedYears.length > 0 ? selectedYears.sort((a, b) => b - a).join(", ") : "Todos";
-
+    if (!barChartRef.current) return;
     try {
-      const logoImg = new Image();
-      logoImg.src = logosHeader;
-      await new Promise((resolve, reject) => { logoImg.onload = resolve; logoImg.onerror = reject; });
-      doc.addImage(logoImg, "PNG", 14, 8, 50, 20);
-    } catch {}
+      // Capture chart as PNG image
+      const dataUrl = await toPng(barChartRef.current, {
+        backgroundColor: "#ffffff",
+        pixelRatio: 2,
+      });
 
-    doc.setFontSize(16);
-    doc.text(`${chartTopN === 0 ? "Todos los" : `Top ${chartTopN}`} Contratos por FORMs`, 70, 18);
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text(`Generado: ${today} | Año(s): ${yearLabel}`, 70, 25);
-    doc.setTextColor(0);
+      const doc = new jsPDF({ orientation: "landscape" });
+      const today = new Date().toLocaleDateString("es-CL");
+      const yearLabel = selectedYears.length > 0 ? selectedYears.sort((a, b) => b - a).join(", ") : "Todos";
 
-    const logoImages: Map<string, HTMLImageElement> = new Map();
-    for (const item of topContractsChart) {
-      if (item.logoUrl && !logoImages.has(item.logoUrl)) {
-        try {
-          const img = new Image();
-          img.crossOrigin = "anonymous";
-          img.src = item.logoUrl;
-          await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
-          logoImages.set(item.logoUrl, img);
-        } catch {}
-      }
+      // Logo header
+      try {
+        const logoImg = new Image();
+        logoImg.src = logosHeader;
+        await new Promise((resolve, reject) => { logoImg.onload = resolve; logoImg.onerror = reject; });
+        doc.addImage(logoImg, "PNG", 14, 8, 50, 20);
+      } catch {}
+
+      doc.setFontSize(16);
+      doc.text(`${chartTopN === 0 ? "Todos los" : `Top ${chartTopN}`} Contratos por FORMs`, 70, 18);
+      doc.setFontSize(10);
+      doc.setTextColor(100);
+      doc.text(`Generado: ${today} | Año(s): ${yearLabel}`, 70, 25);
+      doc.setTextColor(0);
+
+      // Add chart image - fit to page width
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 14;
+      const imgWidth = pageWidth - margin * 2;
+      const chartEl = barChartRef.current;
+      const aspectRatio = chartEl.offsetHeight / chartEl.offsetWidth;
+      const imgHeight = imgWidth * aspectRatio;
+
+      doc.addImage(dataUrl, "PNG", margin, 32, imgWidth, imgHeight);
+
+      doc.save(`Grafico_Contratos_FORMs_${yearLabel.replace(/, /g, "_")}.pdf`);
+      toast({ title: "PDF generado", description: "El gráfico se descargó correctamente" });
+    } catch (err) {
+      console.error("Error exporting chart PDF:", err);
+      toast({ title: "Error", description: "No se pudo generar el PDF del gráfico", variant: "destructive" });
     }
-
-    const tableBody = topContractsChart.map(c => {
-      const total = (c["En Proceso"] || 0) + (c["Solucionados"] || 0);
-      const pct = total > 0 ? ((c["Solucionados"] / total) * 100).toFixed(1) + "%" : "0%";
-      return ["", c.name, (c["En Proceso"] || 0).toString(), (c["Solucionados"] || 0).toString(), total.toString(), pct];
-    });
-
-    autoTable(doc, {
-      startY: 33,
-      head: [["", "Local", "En Proceso", "Solucionados", "Total", "% Resolución"]],
-      body: tableBody,
-      styles: { fontSize: 8, cellPadding: 3, valign: "middle" },
-      headStyles: { fillColor: [220, 38, 38] },
-      columnStyles: { 0: { cellWidth: 12 }, 1: { cellWidth: 80 } },
-      didDrawCell: (data: any) => {
-        if (data.section === "body" && data.column.index === 0) {
-          const item = topContractsChart[data.row.index];
-          if (item?.logoUrl) {
-            const img = logoImages.get(item.logoUrl);
-            if (img) doc.addImage(img, "PNG", data.cell.x + 1.5, data.cell.y + 1, 9, 9);
-          }
-        }
-      },
-    });
-
-    doc.save(`Grafico_Contratos_FORMs_${yearLabel.replace(/, /g, "_")}.pdf`);
-    toast({ title: "PDF generado", description: "El gráfico se descargó correctamente" });
   };
 
 
@@ -466,6 +454,7 @@ export function MaintenanceReports() {
             </div>
           </CardHeader>
           <CardContent>
+            <div ref={barChartRef}>
             {topContractsChart.length > 0 ? (
               <ResponsiveContainer width="100%" height={Math.max(400, topContractsChart.length * 32)}>
                 <BarChart
@@ -546,6 +535,7 @@ export function MaintenanceReports() {
             ) : (
               <div className="text-center py-8 text-muted-foreground">Sin datos</div>
             )}
+            </div>
           </CardContent>
         </Card>
 
