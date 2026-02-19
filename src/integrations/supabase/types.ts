@@ -3329,6 +3329,93 @@ export type Database = {
           },
         ]
       }
+      org_member_contracts: {
+        Row: {
+          contract_id: string
+          created_at: string | null
+          id: string
+          org_member_id: string
+        }
+        Insert: {
+          contract_id: string
+          created_at?: string | null
+          id?: string
+          org_member_id: string
+        }
+        Update: {
+          contract_id?: string
+          created_at?: string | null
+          id?: string
+          org_member_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "org_member_contracts_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "org_member_contracts_org_member_id_fkey"
+            columns: ["org_member_id"]
+            isOneToOne: false
+            referencedRelation: "org_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      org_members: {
+        Row: {
+          company_id: string
+          created_at: string | null
+          display_order: number | null
+          email: string | null
+          id: string
+          name: string
+          parent_id: string | null
+          phone: string | null
+          position: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string | null
+          display_order?: number | null
+          email?: string | null
+          id?: string
+          name: string
+          parent_id?: string | null
+          phone?: string | null
+          position?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string | null
+          display_order?: number | null
+          email?: string | null
+          id?: string
+          name?: string
+          parent_id?: string | null
+          phone?: string | null
+          position?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "org_members_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "org_members_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "org_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patent_checklist_items: {
         Row: {
           created_at: string
