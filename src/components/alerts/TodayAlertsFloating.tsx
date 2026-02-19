@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Bell, ChevronDown, ChevronUp, X, ExternalLink, Calendar, CalendarDays, CheckCircle, Plus, CalendarIcon } from "lucide-react";
+import { Bell, ChevronDown, ChevronUp, X, ExternalLink, Calendar, CalendarDays, CheckCircle, Plus, CalendarIcon, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
@@ -52,7 +52,7 @@ interface TodayAlert {
   } | null;
 }
 
-type ViewMode = "today" | "week";
+type ViewMode = "today" | "week" | "overdue";
 
 export function TodayAlertsFloating() {
   const { user, loading: authLoading } = useAuth();
@@ -60,6 +60,7 @@ export function TodayAlertsFloating() {
   const { toast } = useToast();
   const [todayAlerts, setTodayAlerts] = useState<TodayAlert[]>([]);
   const [weekAlerts, setWeekAlerts] = useState<TodayAlert[]>([]);
+  const [overdueAlerts, setOverdueAlerts] = useState<TodayAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(true);
   const [isDismissed, setIsDismissed] = useState(false);
@@ -110,41 +111,58 @@ export function TodayAlertsFloating() {
       const weekStart = format(startOfWeek(today, { weekStartsOn: 1 }), "yyyy-MM-dd");
       const weekEnd = format(endOfWeek(today, { weekStartsOn: 1 }), "yyyy-MM-dd");
       
-      const { data: todayData, error: todayError } = await supabase
-        .from("alerts")
-        .select(`
-          id, title, due_date, alert_type, contract_id, assigned_to, category_id,
-          contracts (name),
-          alert_categories (name),
-          profiles!alerts_assigned_to_fkey (full_name, email)
-        `)
-        .eq("due_date", todayStr)
-        .eq("is_active", true)
-        .is("completed_at", null)
-        .is("deleted_at", null)
-        .order("title");
+      const [todayResult, weekResult, overdueResult] = await Promise.all([
+        supabase
+          .from("alerts")
+          .select(`
+            id, title, due_date, alert_type, contract_id, assigned_to, category_id,
+            contracts (name),
+            alert_categories (name),
+            profiles!alerts_assigned_to_fkey (full_name, email)
+          `)
+          .eq("due_date", todayStr)
+          .eq("is_active", true)
+          .is("completed_at", null)
+          .is("deleted_at", null)
+          .order("title"),
+        supabase
+          .from("alerts")
+          .select(`
+            id, title, due_date, alert_type, contract_id, assigned_to, category_id,
+            contracts (name),
+            alert_categories (name),
+            profiles!alerts_assigned_to_fkey (full_name, email)
+          `)
+          .gte("due_date", weekStart)
+          .lte("due_date", weekEnd)
+          .eq("is_active", true)
+          .is("completed_at", null)
+          .is("deleted_at", null)
+          .order("due_date")
+          .order("title"),
+        supabase
+          .from("alerts")
+          .select(`
+            id, title, due_date, alert_type, contract_id, assigned_to, category_id,
+            contracts (name),
+            alert_categories (name),
+            profiles!alerts_assigned_to_fkey (full_name, email)
+          `)
+          .lt("due_date", todayStr)
+          .eq("is_active", true)
+          .is("completed_at", null)
+          .is("deleted_at", null)
+          .order("due_date", { ascending: true })
+          .order("title"),
+      ]);
 
-      if (todayError) throw todayError;
-      setTodayAlerts(todayData || []);
+      if (todayResult.error) throw todayResult.error;
+      if (weekResult.error) throw weekResult.error;
+      if (overdueResult.error) throw overdueResult.error;
 
-      const { data: weekData, error: weekError } = await supabase
-        .from("alerts")
-        .select(`
-          id, title, due_date, alert_type, contract_id, assigned_to, category_id,
-          contracts (name),
-          alert_categories (name),
-          profiles!alerts_assigned_to_fkey (full_name, email)
-        `)
-        .gte("due_date", weekStart)
-        .lte("due_date", weekEnd)
-        .eq("is_active", true)
-        .is("completed_at", null)
-        .is("deleted_at", null)
-        .order("due_date")
-        .order("title");
-
-      if (weekError) throw weekError;
-      setWeekAlerts(weekData || []);
+      setTodayAlerts(todayResult.data || []);
+      setWeekAlerts(weekResult.data || []);
+      setOverdueAlerts(overdueResult.data || []);
     } catch (error) {
       console.error("Error loading alerts:", error);
     } finally {
@@ -154,8 +172,7 @@ export function TodayAlertsFloating() {
 
   const handleCompleteAlert = async (alertId: string) => {
     try {
-      // Find the alert before completing it
-      const alert = [...todayAlerts, ...weekAlerts].find(a => a.id === alertId);
+      const alert = [...todayAlerts, ...weekAlerts, ...overdueAlerts].find(a => a.id === alertId);
       
       const { error } = await supabase
         .from("alerts")
@@ -168,9 +185,9 @@ export function TodayAlertsFloating() {
 
       if (error) throw error;
 
-      // Immediately remove from local state
       setTodayAlerts(prev => prev.filter(a => a.id !== alertId));
       setWeekAlerts(prev => prev.filter(a => a.id !== alertId));
+      setOverdueAlerts(prev => prev.filter(a => a.id !== alertId));
 
       toast({
         title: "Alerta completada",
@@ -242,8 +259,8 @@ export function TodayAlertsFloating() {
     navigate(`/contracts/${contractId}`);
   };
 
-  const currentAlerts = viewMode === "today" ? todayAlerts : weekAlerts;
-  const hasAnyAlerts = todayAlerts.length > 0 || weekAlerts.length > 0;
+  const currentAlerts = viewMode === "today" ? todayAlerts : viewMode === "week" ? weekAlerts : overdueAlerts;
+  const hasAnyAlerts = todayAlerts.length > 0 || weekAlerts.length > 0 || overdueAlerts.length > 0;
 
   if (isDismissed || loading || authLoading || !user || !hasAnyAlerts) {
     return null;
@@ -270,7 +287,7 @@ export function TodayAlertsFloating() {
                       </span>
                     </div>
                     <CardTitle className="text-sm font-semibold">
-                      {viewMode === "today" ? "Alertas del Día" : "Alertas de la Semana"}
+                      {viewMode === "today" ? "Alertas del Día" : viewMode === "week" ? "Alertas de la Semana" : "Alertas Vencidas"}
                     </CardTitle>
                     {isOpen ? (
                       <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -293,11 +310,11 @@ export function TodayAlertsFloating() {
             <CollapsibleContent>
               <CardContent className="pt-0 px-4 pb-3">
                 {/* Toggle Buttons */}
-                <div className="flex gap-2 mb-3">
+                <div className="flex gap-1.5 mb-3">
                   <Button
                     variant={viewMode === "today" ? "default" : "outline"}
                     size="sm"
-                    className="flex-1 text-xs"
+                    className="flex-1 text-xs px-2"
                     onClick={() => setViewMode("today")}
                   >
                     <Calendar className="h-3 w-3 mr-1" />
@@ -306,17 +323,28 @@ export function TodayAlertsFloating() {
                   <Button
                     variant={viewMode === "week" ? "default" : "outline"}
                     size="sm"
-                    className="flex-1 text-xs"
+                    className="flex-1 text-xs px-2"
                     onClick={() => setViewMode("week")}
                   >
                     <CalendarDays className="h-3 w-3 mr-1" />
                     Semana ({weekAlerts.length})
                   </Button>
+                  {overdueAlerts.length > 0 && (
+                    <Button
+                      variant={viewMode === "overdue" ? "default" : "outline"}
+                      size="sm"
+                      className={`flex-1 text-xs px-2 ${viewMode !== "overdue" ? "border-destructive/50 text-destructive hover:bg-destructive/10" : ""}`}
+                      onClick={() => setViewMode("overdue")}
+                    >
+                      <AlertTriangle className="h-3 w-3 mr-1" />
+                      Vencidas ({overdueAlerts.length})
+                    </Button>
+                  )}
                 </div>
 
                 {currentAlerts.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-2">
-                    No hay alertas {viewMode === "today" ? "para hoy" : "esta semana"}
+                    No hay alertas {viewMode === "today" ? "para hoy" : viewMode === "week" ? "esta semana" : "vencidas"}
                   </p>
                 ) : (
                   <div className="space-y-2 max-h-60 overflow-y-auto">
@@ -329,8 +357,8 @@ export function TodayAlertsFloating() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <p className="text-sm font-medium truncate">{alert.title}</p>
-                              {viewMode === "week" && (
-                                <Badge variant="secondary" className="text-[10px] h-4 shrink-0">
+                              {(viewMode === "week" || viewMode === "overdue") && (
+                                <Badge variant={viewMode === "overdue" ? "destructive" : "secondary"} className="text-[10px] h-4 shrink-0">
                                   {formatAlertDate(alert.due_date)}
                                 </Badge>
                               )}
