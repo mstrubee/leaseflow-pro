@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Pencil, Trash2, Save, X, Palette, GripVertical, Folder, Download } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { PatentChecklistSection, PatentChecklistItem, PatentEmitter, PatentStatus, PatentItemEmitter } from "./types";
+import { PatentChecklistSection, PatentChecklistItem, PatentEmitter, PatentStatus, PatentItemEmitter, PatentSharedItem } from "./types";
 import {
   DndContext,
   closestCenter,
@@ -107,8 +108,11 @@ export function PatentAdminPanel({
   const [statuses, setStatuses] = useState<PatentStatus[]>([]);
   const [itemEmitters, setItemEmitters] = useState<PatentItemEmitter[]>([]);
   
-  // Repository folders state
+  // Repository folders state (shared folders with contract_id = NULL)
   const [repositoryFolders, setRepositoryFolders] = useState<{ id: string; name: string; path: string }[]>([]);
+  
+  // Shared items mappings
+  const [sharedItems, setSharedItems] = useState<PatentSharedItem[]>([]);
   
   // Form states
   const [newItemName, setNewItemName] = useState("");
@@ -152,6 +156,7 @@ export function PatentAdminPanel({
       loadStatuses();
       loadItemEmitters();
       loadRepositoryFolders();
+      loadSharedItems();
     }
   }, [open]);
 
@@ -172,11 +177,12 @@ export function PatentAdminPanel({
   };
 
   const loadRepositoryFolders = async () => {
-    // Load all folder templates (these are global templates, not contract-specific)
+    // Load shared folders (contract_id IS NULL = shared repository)
     const { data } = await supabase
-      .from("folder_templates")
+      .from("repository_folders")
       .select("id, name, parent_id")
-      .order("display_order");
+      .is("contract_id", null)
+      .order("name");
     
     if (data) {
       // Build folder paths for display
@@ -197,6 +203,60 @@ export function PatentAdminPanel({
       });
       setRepositoryFolders(foldersWithPaths);
     }
+  };
+
+  const loadSharedItems = async () => {
+    const { data } = await supabase
+      .from("patent_shared_items")
+      .select("id, checklist_item_id, shared_folder_id");
+    if (data) setSharedItems(data as PatentSharedItem[]);
+  };
+
+  const handleToggleSharedItem = async (itemId: string, enabled: boolean) => {
+    if (enabled) {
+      // Default to first folder if available
+      const defaultFolder = repositoryFolders[0];
+      if (!defaultFolder) {
+        toast.error("No hay carpetas en el repositorio compartido");
+        return;
+      }
+      const { data, error } = await supabase
+        .from("patent_shared_items")
+        .insert({ checklist_item_id: itemId, shared_folder_id: defaultFolder.id })
+        .select()
+        .single();
+      if (error) {
+        toast.error("Error al activar repositorio compartido");
+        return;
+      }
+      if (data) setSharedItems(prev => [...prev, data as PatentSharedItem]);
+    } else {
+      const { error } = await supabase
+        .from("patent_shared_items")
+        .delete()
+        .eq("checklist_item_id", itemId);
+      if (error) {
+        toast.error("Error al desactivar repositorio compartido");
+        return;
+      }
+      setSharedItems(prev => prev.filter(si => si.checklist_item_id !== itemId));
+    }
+    onDataChange();
+  };
+
+  const handleChangeSharedFolder = async (itemId: string, folderId: string) => {
+    const { error } = await supabase
+      .from("patent_shared_items")
+      .update({ shared_folder_id: folderId })
+      .eq("checklist_item_id", itemId);
+    if (error) {
+      toast.error("Error al actualizar carpeta");
+      return;
+    }
+    setSharedItems(prev => prev.map(si =>
+      si.checklist_item_id === itemId ? { ...si, shared_folder_id: folderId } : si
+    ));
+    onDataChange();
   };
 
   // --- REORDER HANDLERS ---
@@ -779,6 +839,7 @@ export function PatentAdminPanel({
                                 <TableHead className="w-[40px]"></TableHead>
                                 <TableHead>Nombre</TableHead>
                                 <TableHead className="w-[200px]">Emisores Fijos</TableHead>
+                                <TableHead className="w-[250px]">Repositorio</TableHead>
                                 <TableHead className="w-[100px]">Acciones</TableHead>
                               </TableRow>
                             </TableHeader>
@@ -848,6 +909,37 @@ export function PatentAdminPanel({
                                           </Button>
                                         </div>
                                       )}
+                                    </TableCell>
+                                    <TableCell>
+                                      {(() => {
+                                        const shared = sharedItems.find(si => si.checklist_item_id === item.id);
+                                        const isShared = !!shared;
+                                        return (
+                                          <div className="flex items-center gap-2">
+                                            <Switch
+                                              checked={isShared}
+                                              onCheckedChange={(checked) => handleToggleSharedItem(item.id, checked)}
+                                            />
+                                            {isShared && (
+                                              <Select
+                                                value={shared.shared_folder_id}
+                                                onValueChange={(val) => handleChangeSharedFolder(item.id, val)}
+                                              >
+                                                <SelectTrigger className="h-7 text-xs w-[160px]">
+                                                  <SelectValue placeholder="Carpeta" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                  {repositoryFolders.map(f => (
+                                                    <SelectItem key={f.id} value={f.id}>
+                                                      <span className="text-xs">{f.path}</span>
+                                                    </SelectItem>
+                                                  ))}
+                                                </SelectContent>
+                                              </Select>
+                                            )}
+                                          </div>
+                                        );
+                                      })()}
                                     </TableCell>
                                     <TableCell>
                                       {editingItem?.id === item.id ? (
