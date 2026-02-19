@@ -336,7 +336,34 @@ export function MaintenanceReports() {
       const aspectRatio = chartEl.offsetHeight / chartEl.offsetWidth;
       const imgHeight = imgWidth * aspectRatio;
 
-      doc.addImage(dataUrl, "PNG", margin, 32, imgWidth, imgHeight);
+      // If chart is too tall for one page, scale down
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const maxImgHeight = pageHeight - 32 - 20; // top margin + bottom space for legend
+      let finalWidth = imgWidth;
+      let finalHeight = imgHeight;
+      if (finalHeight > maxImgHeight) {
+        const scale = maxImgHeight / finalHeight;
+        finalWidth = imgWidth * scale;
+        finalHeight = maxImgHeight;
+      }
+
+      doc.addImage(dataUrl, "PNG", margin, 32, finalWidth, finalHeight);
+
+      // Draw legend below chart
+      const legendY = 32 + finalHeight + 8;
+      const legendItems = [
+        { label: "En Proceso", color: [255, 204, 0] as [number, number, number] },
+        { label: "Solucionados", color: [34, 197, 94] as [number, number, number] },
+      ];
+      let legendX = margin;
+      legendItems.forEach(item => {
+        doc.setFillColor(item.color[0], item.color[1], item.color[2]);
+        doc.rect(legendX, legendY, 8, 5, "F");
+        doc.setFontSize(9);
+        doc.setTextColor(0);
+        doc.text(item.label, legendX + 10, legendY + 4);
+        legendX += doc.getTextWidth(item.label) + 20;
+      });
 
       doc.save(`Grafico_Contratos_FORMs_${yearLabel.replace(/, /g, "_")}.pdf`);
       toast({ title: "PDF generado", description: "El gráfico se descargó correctamente" });
