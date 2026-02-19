@@ -1,94 +1,102 @@
 
 
-# Optimizar carga del Repositorio Comun de Patentes
+# Plan: Seccion "Organigrama" en el Panel de Administracion
 
-## Problema
+## Resumen
 
-La funcion `loadContents` en `PatentSharedRepository.tsx` (lineas 89-120) hace lo siguiente:
+Crear una nueva seccion en el Panel de Administracion que permita gestionar un organigrama de gerencias y jefaturas por empresa. Cada persona del organigrama tendra nombre, telefono, email, y podra asociarse a uno o mas contratos. En la tabla expandible de locales del CompanyManager, se agregara una columna "Gerencia" mostrando las personas asignadas.
 
-1. Consulta todas las carpetas en una sola peticion.
-2. Luego, **para cada carpeta**, hace una peticion individual para contar archivos (`select("id", { count: 'exact', head: true })`).
+## Modelo de Datos
 
-Con ~30 carpetas, esto genera ~31 peticiones HTTP secuenciales (una por carpeta + la inicial). Cada peticion toma entre 100-300ms, resultando en tiempos de carga de 5-15 segundos.
+Se crearan 2 nuevas tablas:
 
-## Solucion
-
-Reemplazar las N consultas individuales de conteo por **una sola consulta SQL** que devuelva los conteos agrupados por `folder_id`.
-
-### Cambio en PatentSharedRepository.tsx
-
-Modificar `loadContents` para:
-
-1. Obtener las carpetas (sin cambios).
-2. Obtener los conteos de archivos de todas las carpetas de una sola vez, usando una consulta que agrupe por `folder_id`.
-3. Combinar los resultados en memoria.
-
-En lugar de:
 ```text
-// ACTUAL: N consultas secuenciales (lento)
-for (const folder of folderData) {
-  const { count } = await supabase
-    .from("repository_files")
-    .select("id", { count: 'exact', head: true })
-    .eq("folder_id", folder.id);
-  foldersWithCounts.push({ ...folder, fileCount: count ?? 0 });
-}
+org_members                          org_member_contracts
++------------------+                 +------------------+
+| id (uuid, PK)   |                 | id (uuid, PK)   |
+| company_id (FK)  |<---+           | org_member_id FK |
+| name (text)      |    |           | contract_id (FK) |
+| position (text)  |    +---------->| created_at       |
+| phone (text)     |                 +------------------+
+| email (text)     |
+| parent_id (FK)   |  -- para jerarquia (gerente -> jefaturas)
+| display_order    |
+| created_at       |
++------------------+
 ```
 
-Usar:
-```text
-// NUEVO: 1 sola consulta (rapido)
-const folderIds = folderData.map(f => f.id);
-const { data: countData } = await supabase
-  .from("repository_files")
-  .select("folder_id")
-  .in("folder_id", folderIds);
+- `org_members`: Personas del organigrama, vinculadas a una empresa. `parent_id` permite jerarquia (gerencia contiene jefaturas).
+- `org_member_contracts`: Tabla pivote que asocia miembros a contratos.
+- RLS: Solo usuarios autenticados pueden leer; solo admins pueden crear/editar/eliminar.
 
-// Contar en memoria
-const countMap: Record<string, number> = {};
-for (const row of countData || []) {
-  countMap[row.folder_id] = (countMap[row.folder_id] || 0) + 1;
-}
+## Cambios en el Frontend
 
-const foldersWithCounts = folderData.map(f => ({
-  ...f,
-  fileCount: countMap[f.id] || 0
-}));
-```
+### 1. Nuevo componente `OrgChartManager.tsx`
+- Ubicacion: `src/components/admin/OrgChartManager.tsx`
+- Usa `CollapsibleCard` con icono `Users` (lucide), igual que las demas secciones del admin.
+- Selector de empresa en la parte superior.
+- Al seleccionar una empresa, muestra un arbol jerarquico de personas (gerencias y jefaturas subordinadas).
+- Acciones CRUD:
+  - **Crear**: Dialog con campos Nombre, Cargo/Posicion, Telefono, Email, Gerencia padre (opcional, select de miembros existentes de esa empresa).
+  - **Editar**: Mismo dialog pre-llenado.
+  - **Eliminar**: Doble confirmacion (mismo patron que CompanyManager).
+- Asignacion de contratos: Al crear/editar un miembro, se muestra un multi-select con los contratos de esa empresa (obtenidos via `contract_companies`).
 
-Esto reduce ~31 peticiones HTTP a solo 2 (carpetas + conteos), bajando el tiempo de carga de 5-15 segundos a menos de 1 segundo.
+### 2. Modificacion de `CompanyManager.tsx`
+- En la tabla expandible de locales, agregar una columna **"Gerencia"**.
+- Al cargar los contratos de la empresa, tambien obtener los `org_member_contracts` para esos contratos.
+- Cruzar con `org_members` para mostrar los nombres de las personas asignadas a cada contrato en la columna Gerencia.
 
-### Consideracion: limite de 1000 filas
+### 3. Modificacion de `AdminPanel.tsx`
+- Importar y renderizar `OrgChartManager` como nueva seccion colapsable, debajo de `CompanyManager`.
 
-Si hay mas de 1000 archivos en total, la consulta de conteo podria truncarse. Para manejar esto de forma robusta, una alternativa es crear una funcion de base de datos (RPC) que haga el conteo directamente en SQL:
+## Detalles Tecnicos
 
+### Migracion SQL
 ```sql
-CREATE OR REPLACE FUNCTION get_folder_file_counts(p_folder_ids UUID[])
-RETURNS TABLE(folder_id UUID, file_count BIGINT)
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-  SELECT rf.folder_id, COUNT(*)::BIGINT as file_count
-  FROM repository_files rf
-  WHERE rf.folder_id = ANY(p_folder_ids)
-  GROUP BY rf.folder_id;
-$$;
+CREATE TABLE public.org_members (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  position TEXT,
+  phone TEXT,
+  email TEXT,
+  parent_id UUID REFERENCES public.org_members(id) ON DELETE SET NULL,
+  display_order INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.org_members ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Authenticated users can read org_members"
+  ON public.org_members FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Admins can manage org_members"
+  ON public.org_members FOR ALL TO authenticated
+  USING (public.has_role(auth.uid(), 'admin'))
+  WITH CHECK (public.has_role(auth.uid(), 'admin'));
+
+CREATE TABLE public.org_member_contracts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_member_id UUID NOT NULL REFERENCES public.org_members(id) ON DELETE CASCADE,
+  contract_id UUID NOT NULL REFERENCES public.contracts(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(org_member_id, contract_id)
+);
+
+ALTER TABLE public.org_member_contracts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Authenticated users can read org_member_contracts"
+  ON public.org_member_contracts FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Admins can manage org_member_contracts"
+  ON public.org_member_contracts FOR ALL TO authenticated
+  USING (public.has_role(auth.uid(), 'admin'))
+  WITH CHECK (public.has_role(auth.uid(), 'admin'));
 ```
 
-Y llamarla desde el frontend:
-```text
-const { data: counts } = await supabase
-  .rpc("get_folder_file_counts", { p_folder_ids: folderIds });
-```
+### Archivos a crear
+- `src/components/admin/OrgChartManager.tsx` -- componente principal
 
-Esta es la opcion recomendada ya que no tiene limite de filas y es mas eficiente al ejecutarse directamente en la base de datos.
+### Archivos a modificar
+- `src/pages/AdminPanel.tsx` -- agregar import y render de OrgChartManager
+- `src/components/admin/CompanyManager.tsx` -- agregar columna "Gerencia" en tabla expandible de locales
 
-### Resumen de cambios
-
-1. **Migracion SQL**: Crear funcion `get_folder_file_counts` que reciba un array de UUIDs y devuelva conteos agrupados.
-2. **PatentSharedRepository.tsx**: Reemplazar el bucle `for` de conteos individuales por una sola llamada RPC.
-
-### Resultado esperado
-
-- De ~31 peticiones HTTP a 2 peticiones
-- De 5-15 segundos de carga a menos de 1 segundo
