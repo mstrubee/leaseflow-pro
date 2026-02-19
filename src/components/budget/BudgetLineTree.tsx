@@ -624,7 +624,15 @@ const BudgetLineItem = ({
             })()}
           </span>
           <span className="text-[12px] text-muted-foreground font-mono whitespace-nowrap min-w-[100px] text-right">
-            {formatCLP(convertUFToPesos(calculatedAmount))}
+            {(() => {
+              if (!isParent && line.currency === "CLP") {
+                const qty = line.quantity || 0;
+                const localP = line.unit_price || 0;
+                const price = localP > 0 ? localP : (templateUnitPrice ?? 0);
+                return formatCLP(qty * price);
+              }
+              return formatCLP(convertUFToPesos(calculatedAmount));
+            })()}
           </span>
           <TooltipProvider>
             <Tooltip>
