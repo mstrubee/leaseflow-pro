@@ -57,8 +57,8 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
 
   // Contract filter state
   const [contractFilter, setContractFilter] = useState<"all" | "region" | "commune">("all");
-  const [selectedRegion, setSelectedRegion] = useState<string>("");
-  const [selectedCommune, setSelectedCommune] = useState<string>("");
+  const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
+  const [selectedCommunes, setSelectedCommunes] = useState<string[]>([]);
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -484,7 +484,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                 <Label>Contratos asignados</Label>
                 {/* Filters */}
                 <div className="flex gap-2 flex-wrap items-center">
-                  <Select value={contractFilter} onValueChange={(v) => { setContractFilter(v as any); setSelectedRegion(""); setSelectedCommune(""); }}>
+                  <Select value={contractFilter} onValueChange={(v) => { setContractFilter(v as any); setSelectedRegions([]); setSelectedCommunes([]); }}>
                     <SelectTrigger className="w-[140px] h-8 text-xs">
                       <SelectValue />
                     </SelectTrigger>
@@ -495,28 +495,40 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                     </SelectContent>
                   </Select>
                   {contractFilter === "region" && (
-                    <Select value={selectedRegion} onValueChange={setSelectedRegion}>
-                      <SelectTrigger className="w-[200px] h-8 text-xs">
-                        <SelectValue placeholder="Seleccionar región" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {[...new Set(companyContracts.map(c => c.region).filter(Boolean))].sort().map(r => (
-                          <SelectItem key={r!} value={r!}>{r}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex flex-wrap gap-1.5 items-center">
+                      {[...new Set(companyContracts.map(c => c.region).filter(Boolean))].sort().map(r => (
+                        <label key={r!} className="flex items-center gap-1 text-xs cursor-pointer bg-muted/60 px-2 py-1 rounded-md hover:bg-muted">
+                          <Checkbox
+                            checked={selectedRegions.includes(r!)}
+                            onCheckedChange={(checked) => {
+                              setSelectedRegions(prev =>
+                                checked ? [...prev, r!] : prev.filter(x => x !== r!)
+                              );
+                            }}
+                            className="h-3.5 w-3.5"
+                          />
+                          {r}
+                        </label>
+                      ))}
+                    </div>
                   )}
                   {contractFilter === "commune" && (
-                    <Select value={selectedCommune} onValueChange={setSelectedCommune}>
-                      <SelectTrigger className="w-[200px] h-8 text-xs">
-                        <SelectValue placeholder="Seleccionar comuna" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {[...new Set(companyContracts.map(c => c.commune).filter(Boolean))].sort().map(c => (
-                          <SelectItem key={c!} value={c!}>{c}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex flex-wrap gap-1.5 items-center max-h-24 overflow-y-auto">
+                      {[...new Set(companyContracts.map(c => c.commune).filter(Boolean))].sort().map(c => (
+                        <label key={c!} className="flex items-center gap-1 text-xs cursor-pointer bg-muted/60 px-2 py-1 rounded-md hover:bg-muted">
+                          <Checkbox
+                            checked={selectedCommunes.includes(c!)}
+                            onCheckedChange={(checked) => {
+                              setSelectedCommunes(prev =>
+                                checked ? [...prev, c!] : prev.filter(x => x !== c!)
+                              );
+                            }}
+                            className="h-3.5 w-3.5"
+                          />
+                          {c}
+                        </label>
+                      ))}
+                    </div>
                   )}
                   <Button
                     type="button"
@@ -526,8 +538,8 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                     onClick={() => {
                       const filtered = companyContracts
                         .filter(c => {
-                          if (contractFilter === "region" && selectedRegion) return c.region === selectedRegion;
-                          if (contractFilter === "commune" && selectedCommune) return c.commune === selectedCommune;
+                          if (contractFilter === "region" && selectedRegions.length > 0) return c.region != null && selectedRegions.includes(c.region);
+                          if (contractFilter === "commune" && selectedCommunes.length > 0) return c.commune != null && selectedCommunes.includes(c.commune);
                           return true;
                         })
                         .map(c => c.id);
@@ -562,8 +574,8 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                   <div className="max-h-48 overflow-y-auto">
                     {companyContracts
                       .filter(c => {
-                        if (contractFilter === "region" && selectedRegion) return c.region === selectedRegion;
-                        if (contractFilter === "commune" && selectedCommune) return c.commune === selectedCommune;
+                        if (contractFilter === "region" && selectedRegions.length > 0) return c.region != null && selectedRegions.includes(c.region);
+                        if (contractFilter === "commune" && selectedCommunes.length > 0) return c.commune != null && selectedCommunes.includes(c.commune);
                         return true;
                       })
                       .map(c => {
