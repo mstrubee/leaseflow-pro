@@ -4851,6 +4851,13 @@ export type Database = {
           refresh_token: string
         }[]
       }
+      get_folder_file_counts: {
+        Args: { p_folder_ids: string[] }
+        Returns: {
+          file_count: number
+          folder_id: string
+        }[]
+      }
       has_permission: {
         Args: {
           _permission: Database["public"]["Enums"]["permission_type"]
