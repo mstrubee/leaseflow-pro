@@ -483,7 +483,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
               <div className="space-y-2">
                 <Label>Contratos asignados</Label>
                 {/* Filters */}
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 flex-wrap items-center">
                   <Select value={contractFilter} onValueChange={(v) => { setContractFilter(v as any); setSelectedRegion(""); setSelectedCommune(""); }}>
                     <SelectTrigger className="w-[140px] h-8 text-xs">
                       <SelectValue />
@@ -517,6 +517,35 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                         ))}
                       </SelectContent>
                     </Select>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => {
+                      const filtered = companyContracts
+                        .filter(c => {
+                          if (contractFilter === "region" && selectedRegion) return c.region === selectedRegion;
+                          if (contractFilter === "commune" && selectedCommune) return c.commune === selectedCommune;
+                          return true;
+                        })
+                        .map(c => c.id);
+                      setFormContractIds(prev => [...new Set([...prev, ...filtered])]);
+                    }}
+                  >
+                    Seleccionar filtro
+                  </Button>
+                  {formContractIds.length > 0 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-xs text-muted-foreground"
+                      onClick={() => setFormContractIds([])}
+                    >
+                      Limpiar ({formContractIds.length})
+                    </Button>
                   )}
                 </div>
                 {/* Contract list */}
