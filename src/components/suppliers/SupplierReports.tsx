@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +48,7 @@ export function SupplierReports() {
   const { isOpen: isTimelineOpen, setIsOpen: setTimelineOpen } = useSingleCollapsible("supplier-reports-timeline", false);
 
   const [expandedRegions, setExpandedRegions] = useState<Set<string>>(new Set());
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadData();
@@ -156,6 +157,17 @@ export function SupplierReports() {
     categoryStats.map(c => ({ name: c.name, value: c.total }))
   , [categoryStats]);
 
+  // Suppliers grouped by category for expandable detail
+  const suppliersByCategory = useMemo(() => {
+    const map = new Map<string, SupplierRow[]>();
+    suppliers.forEach(s => {
+      const cat = s.category_name || "Sin categoría";
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat)!.push(s);
+    });
+    return map;
+  }, [suppliers]);
+
   // Timeline stats (by month)
   const timelineStats = useMemo(() => {
     const monthMap = new Map<string, number>();
@@ -174,6 +186,15 @@ export function SupplierReports() {
       const next = new Set(prev);
       if (next.has(region)) next.delete(region);
       else next.add(region);
+      return next;
+    });
+  };
+
+  const toggleCategory = (cat: string) => {
+    setExpandedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
       return next;
     });
   };
@@ -378,18 +399,41 @@ export function SupplierReports() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {categoryStats.map(c => (
-                  <TableRow key={c.name}>
-                    <TableCell className="text-sm font-medium">{c.name}</TableCell>
-                    <TableCell className="text-center">{c.total}</TableCell>
-                    <TableCell className="text-center">
-                      {c.generic > 0 && <Badge variant="secondary" className="text-xs">{c.generic}</Badge>}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {c.specific > 0 && <Badge variant="default" className="text-xs">{c.specific}</Badge>}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {categoryStats.map(c => {
+                  const isExpanded = expandedCategories.has(c.name);
+                  const catSuppliers = suppliersByCategory.get(c.name) || [];
+                  return (
+                    <React.Fragment key={c.name}>
+                      <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => toggleCategory(c.name)}>
+                        <TableCell className="text-sm font-medium">
+                          <div className="flex items-center gap-1">
+                            {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                            {c.name}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">{c.total}</TableCell>
+                        <TableCell className="text-center">
+                          {c.generic > 0 && <Badge variant="secondary" className="text-xs">{c.generic}</Badge>}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {c.specific > 0 && <Badge variant="default" className="text-xs">{c.specific}</Badge>}
+                        </TableCell>
+                      </TableRow>
+                      {isExpanded && catSuppliers.map(s => (
+                        <TableRow key={s.id} className="bg-muted/30">
+                          <TableCell className="text-xs pl-8 text-muted-foreground">{s.name}</TableCell>
+                          <TableCell />
+                          <TableCell className="text-center">
+                            {s.is_generic && <Badge variant="secondary" className="text-xs">Genérico</Badge>}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {!s.is_generic && <Badge variant="default" className="text-xs">Específico</Badge>}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
