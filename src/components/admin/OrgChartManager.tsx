@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Pencil, Trash2, Users, Loader2, ChevronDown, ChevronRight, Phone, Mail } from "lucide-react";
+import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 
 interface OrgMember {
   id: string;
@@ -457,15 +458,19 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
               <div className="space-y-1">
                 <Label>Contratos asignados</Label>
                 <div className="max-h-40 overflow-y-auto border rounded-md p-2 space-y-1">
-                  {companyContracts.map(c => (
+                  {companyContracts.map(c => {
+                    const selectedCompanyName = companies.find(co => co.id === selectedCompanyId)?.name;
+                    return (
                     <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 px-1 py-0.5 rounded">
                       <Checkbox
                         checked={formContractIds.includes(c.id)}
                         onCheckedChange={() => toggleContract(c.id)}
                       />
+                      <CompanyLogo companyName={selectedCompanyName} size="sm" />
                       {c.name}
                     </label>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
