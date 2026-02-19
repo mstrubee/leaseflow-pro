@@ -256,7 +256,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
       const containerW = containerRef.current.clientWidth;
       const chartW = chartRef.current.scrollWidth;
       if (chartW > containerW) {
-        setChartScale(Math.max(0.3, containerW / chartW));
+        setChartScale(Math.max(0.2, containerW / chartW));
       } else {
         setChartScale(1);
       }
@@ -434,7 +434,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
         <div className="flex flex-col items-center">
           {/* Node card */}
           <div
-            className={`relative border rounded-lg px-4 py-2.5 cursor-pointer transition-all text-center min-w-[120px] shadow-sm hover:shadow-md group ${
+            className={`relative border rounded-lg px-2.5 py-1.5 cursor-pointer transition-all text-center min-w-[90px] shadow-sm hover:shadow-md group ${
               isSelected ? "ring-2 ring-primary border-primary bg-primary/5" : "bg-card hover:border-primary/50"
             }`}
             onClick={() => setSelectedMemberId(isSelected ? null : member.id)}
@@ -445,9 +445,9 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                 <CompanyLogo companyNames={effectiveCompanyNames} size="sm" />
               </div>
             )}
-             <p className="font-medium text-sm whitespace-nowrap">{member.name}</p>
+             <p className="font-medium text-xs whitespace-nowrap">{member.name}</p>
             {member.position && (
-              <p className="text-[11px] text-muted-foreground whitespace-nowrap mt-0.5">{member.position}</p>
+              <p className="text-[10px] text-muted-foreground whitespace-nowrap mt-0.5">{member.position}</p>
             )}
             {/* Action buttons on hover */}
             <div className="absolute -top-2 -right-2 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -506,7 +506,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
           {/* Children */}
           {children.length > 0 && (
             <div className="flex flex-col items-center mt-0">
-              <div className="w-px h-4 bg-border" />
+              <div className="w-[2px] h-5 bg-primary/30" />
               {children.length === 1 ? (
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                   <SortableContext items={children.map(c => c.id)} strategy={horizontalListSortingStrategy}>
@@ -519,13 +519,12 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                   <SortableContext items={children.map(c => c.id)} strategy={horizontalListSortingStrategy}>
                     <div className="relative">
-                      <div className="absolute top-0 left-1/2 -translate-x-1/2 flex" style={{ width: "100%" }}>
-                        <div className="w-full h-px bg-border" style={{ marginLeft: `${100 / (children.length * 2)}%`, marginRight: `${100 / (children.length * 2)}%` }} />
-                      </div>
-                      <div className="flex gap-2 pt-0">
+                      {/* Horizontal bar connecting siblings */}
+                      <div className="absolute top-0 h-[2px] bg-primary/30 rounded-full" style={{ left: `${100 / (children.length * 2)}%`, right: `${100 / (children.length * 2)}%` }} />
+                      <div className="flex gap-0 pt-0">
                         {children.map(child => (
                           <div key={child.id} className="flex flex-col items-center">
-                            <div className="w-px h-4 bg-border" />
+                            <div className="w-[2px] h-5 bg-primary/30" />
                             {renderOrgNode(child)}
                           </div>
                         ))}
@@ -585,7 +584,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
               <SortableContext items={getRootMembers().map(m => m.id)} strategy={horizontalListSortingStrategy}>
                 <div
                   ref={chartRef}
-                  className="flex gap-6 justify-center items-start pt-4 origin-top"
+                  className="flex gap-1 justify-center items-start pt-4 origin-top"
                   style={{ transform: `scale(${chartScale})`, transformOrigin: "top center" }}
                 >
                   {getRootMembers().map(m => renderOrgNode(m))}
