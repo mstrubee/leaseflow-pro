@@ -1,53 +1,85 @@
 
+
 # Carpeta "Patentes" con Subcarpetas por Contrato Vigente
 
 ## Objetivo
-Crear una carpeta "Patentes" en el repositorio comun (con `contract_id = NULL`) que contenga una subcarpeta por cada contrato vigente (status = "firmado"). Cuando un contrato se marque como vigente, se debe crear automaticamente su subcarpeta.
+Crear una carpeta "Patentes" en el repositorio comun con subcarpetas por cada contrato vigente. El nombre de cada subcarpeta sigue el formato:
+
+```text
+[AG|AP] - [Codigo] - [CEBE] - [Nombre Contrato]
+```
+
+Ejemplos reales:
+- `AG - AG0007 - H0489P1390 - Talca AG`
+- `AP - AP0006 - H0415P1290 - Quilicura`
+- `AG - AG0027 - H04A1P1390 / H0480P1290 - Parral`
+
+Si falta CEBE o Codigo, se omiten del nombre (ej: `AP - Autoplanet - 10 de Julio`).
 
 ## Cambios
 
-### 1. Migracion de base de datos
+### Migracion SQL (unico cambio)
 
-Crear la carpeta raiz "Patentes" en el repositorio comun y generar subcarpetas para todos los contratos vigentes existentes.
+No se modifica ningun archivo de codigo. Todo se resuelve con una migracion SQL que:
 
-Ademas, crear un **trigger en la tabla `contracts`** que detecte cuando un contrato cambia a status "firmado" y cree automaticamente la subcarpeta correspondiente en la carpeta "Patentes". Si el contrato deja de ser "firmado", la carpeta no se elimina (para preservar archivos).
+1. **Crea la carpeta raiz "Patentes"** en `repository_folders` con `contract_id = NULL`, `folder_type = 'patent_shared_contracts'`, `is_base_folder = true`.
 
-### 2. Detalle tecnico
+2. **Genera subcarpetas iniciales** para todos los contratos con `status = 'firmado'`, construyendo el nombre con:
+   - Prefijo: se determina buscando el nombre de la empresa en `contract_companies` + `companies`. Si contiene "agroplanet" => `AG`, si contiene "autoplanet" => `AP`, sino vacio.
+   - Codigo y CEBE: se obtienen de `contract_custom_field_values` cruzando con `contract_custom_fields` por nombre de campo.
+   - Nombre del contrato.
 
-**Carpeta raiz:**
-- `repository_folders` con `contract_id = NULL`, `name = 'Patentes'`, `folder_type = 'patent_shared_contracts'`, `is_base_folder = true`, `parent_id = NULL`
+3. **Crea la funcion `create_patent_contract_folder()`** que:
+   - Busca la carpeta raiz "Patentes" por `folder_type = 'patent_shared_contracts'`.
+   - Determina el prefijo de empresa (AG/AP) consultando `contract_companies` y `companies`.
+   - Obtiene CEBE y Codigo de `contract_custom_field_values`.
+   - Construye el nombre con el formato `[Prefijo] - [Codigo] - [CEBE] - [Nombre]`, omitiendo partes vacias.
+   - Verifica que no exista ya una subcarpeta con ese nombre.
+   - Inserta la subcarpeta.
 
-**Subcarpetas (una por contrato vigente):**
-- `repository_folders` con `contract_id = NULL`, `parent_id = <id carpeta Patentes>`, `name = <nombre contrato>`, `folder_type = 'patent_contract_sub'`, `is_base_folder = false`
+4. **Crea dos triggers**:
+   - `AFTER UPDATE ON contracts`: se dispara cuando `NEW.status = 'firmado' AND OLD.status IS DISTINCT FROM 'firmado'`.
+   - `AFTER INSERT ON contracts`: se dispara cuando `NEW.status = 'firmado'`.
 
-**Trigger SQL:**
+### Detalle tecnico de la funcion del trigger
+
 ```text
-Funcion: create_patent_contract_folder()
-  - Se ejecuta en UPDATE de contracts
-  - Condicion: NEW.status = 'firmado' AND (OLD.status != 'firmado' OR OLD.status IS NULL)
-  - Accion: Busca la carpeta "Patentes" (folder_type = 'patent_shared_contracts', contract_id IS NULL)
-  - Si existe, verifica que no haya ya una subcarpeta con el mismo nombre
-  - Si no existe subcarpeta, la crea
+create_patent_contract_folder()
+  Variables:
+    v_parent_id  -- ID de carpeta "Patentes"
+    v_prefix     -- 'AG' o 'AP' o ''
+    v_cebe       -- valor del campo custom CEBE
+    v_codigo     -- valor del campo custom Codigo
+    v_folder_name -- nombre final construido
 
-Trigger: AFTER UPDATE ON contracts FOR EACH ROW
-  WHEN (NEW.status = 'firmado' AND OLD.status IS DISTINCT FROM 'firmado')
+  1. SELECT id INTO v_parent_id FROM repository_folders
+     WHERE folder_type = 'patent_shared_contracts' AND contract_id IS NULL
+  
+  2. Si no existe v_parent_id, salir (RETURN NEW)
+
+  3. Determinar prefijo:
+     SELECT company.name INTO v_company
+     FROM contract_companies cc JOIN companies company ON ...
+     WHERE cc.contract_id = NEW.id LIMIT 1
+     
+     Si contiene 'agroplanet' => 'AG'
+     Si contiene 'autoplanet' => 'AP'
+
+  4. Obtener CEBE y Codigo desde contract_custom_field_values
+
+  5. Construir nombre: concatenar partes no vacias con ' - '
+     Ejemplo: 'AG' || ' - ' || 'AG0007' || ' - ' || 'H0489P1390' || ' - ' || 'Talca AG'
+
+  6. Verificar que no exista subcarpeta con ese nombre bajo v_parent_id
+
+  7. INSERT INTO repository_folders (name, parent_id, contract_id, folder_type, is_base_folder)
+     VALUES (v_folder_name, v_parent_id, NULL, 'patent_contract_sub', false)
 ```
 
-Tambien se agregara un trigger para INSERT (contratos nuevos creados directamente como firmados):
-```text
-Trigger: AFTER INSERT ON contracts FOR EACH ROW
-  WHEN (NEW.status = 'firmado')
-```
+### Inicializacion
 
-**Inicializacion:** La migracion insertara subcarpetas para los ~50 contratos vigentes existentes en una sola operacion.
+La migracion genera las ~50 subcarpetas existentes con un solo INSERT...SELECT que aplica la misma logica de nombre (prefijo + codigo + cebe + nombre).
 
-### 3. Archivos a modificar
+### Interfaz
 
-Ninguno. Todo se resuelve con la migracion SQL (carpeta raiz + subcarpetas iniciales + trigger). La interfaz del repositorio comun ya muestra todas las carpetas con `contract_id IS NULL`, por lo que la carpeta "Patentes" y sus subcarpetas apareceran automaticamente.
-
-### Resumen de la migracion
-
-1. Insertar carpeta "Patentes" en `repository_folders`
-2. Insertar subcarpetas para cada contrato con `status = 'firmado'`
-3. Crear funcion `create_patent_contract_folder()`
-4. Crear triggers AFTER INSERT y AFTER UPDATE en `contracts`
+No requiere cambios. El repositorio comun ya muestra todas las carpetas con `contract_id IS NULL`, por lo que la carpeta "Patentes" y sus subcarpetas apareceran automaticamente.
