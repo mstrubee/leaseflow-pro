@@ -23,6 +23,7 @@ import { OCRequestTemplateManager } from "@/components/admin/OCRequestTemplateMa
 import { LogoManager } from "@/components/admin/LogoManager";
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { ComiteGPStatusManager } from "@/components/admin/ComiteGPStatusManager";
+import { OrgChartManager } from "@/components/admin/OrgChartManager";
 interface Profile {
   id: string;
   email: string;
@@ -827,6 +828,9 @@ const AdminPanel = () => {
 
         {/* Companies */}
         <CompanyManager defaultCollapsed />
+
+        {/* Organigrama */}
+        <OrgChartManager defaultCollapsed />
 
         {/* Logo Management */}
         <CollapsibleCard

@@ -24,6 +24,7 @@ interface CompanyContract {
   codigo: string | null;
   cebe: string | null;
   commune: string | null;
+  gerencia: string[];
 }
 
 interface CompanyManagerProps {
@@ -100,8 +101,8 @@ export const CompanyManager = ({ defaultCollapsed = false }: CompanyManagerProps
         return;
       }
 
-      // Get contract details and addresses
-      const [contractsResult, addressesResult] = await Promise.all([
+      // Get contract details, addresses, and org members
+      const [contractsResult, addressesResult, orgContractsResult] = await Promise.all([
         supabase
           .from("contracts")
           .select("id, name, status")
@@ -112,7 +113,30 @@ export const CompanyManager = ({ defaultCollapsed = false }: CompanyManagerProps
           .from("contract_addresses")
           .select("contract_id, commune")
           .in("contract_id", contractIds),
+        supabase
+          .from("org_member_contracts")
+          .select("contract_id, org_member_id")
+          .in("contract_id", contractIds),
       ]);
+
+      // Get org member names
+      const orgMemberIds = [...new Set((orgContractsResult.data || []).map((r: any) => r.org_member_id))];
+      let orgMemberNames: Record<string, string> = {};
+      if (orgMemberIds.length > 0) {
+        const { data: orgMembers } = await supabase
+          .from("org_members")
+          .select("id, name")
+          .in("id", orgMemberIds);
+        (orgMembers || []).forEach((m: any) => { orgMemberNames[m.id] = m.name; });
+      }
+
+      // Build contract -> org member names map
+      const contractOrgMap: Record<string, string[]> = {};
+      (orgContractsResult.data || []).forEach((r: any) => {
+        if (!contractOrgMap[r.contract_id]) contractOrgMap[r.contract_id] = [];
+        const name = orgMemberNames[r.org_member_id];
+        if (name) contractOrgMap[r.contract_id].push(name);
+      });
 
       // Get custom field IDs for CEBE and Código
       const { data: customFields } = await supabase
@@ -155,6 +179,7 @@ export const CompanyManager = ({ defaultCollapsed = false }: CompanyManagerProps
         codigo: fieldValuesMap[c.id]?.codigo || null,
         cebe: fieldValuesMap[c.id]?.cebe || null,
         commune: addressMap[c.id] || null,
+        gerencia: contractOrgMap[c.id] || [],
       }));
 
       setCompanyContracts(result);
@@ -315,7 +340,7 @@ export const CompanyManager = ({ defaultCollapsed = false }: CompanyManagerProps
                     </TableRow>
                     {isExpanded && (
                       <TableRow key={`${company.id}-details`}>
-                        <TableCell colSpan={2} className="p-0">
+                        <TableCell colSpan={3} className="p-0">
                           <div className="bg-muted/30 border-t px-6 py-3">
                             {loadingContracts ? (
                               <div className="flex items-center gap-2 py-2 text-muted-foreground text-sm">
@@ -336,6 +361,7 @@ export const CompanyManager = ({ defaultCollapsed = false }: CompanyManagerProps
                                       <TableHead className="text-xs h-8">Código</TableHead>
                                       <TableHead className="text-xs h-8">CEBE</TableHead>
                                       <TableHead className="text-xs h-8">Comuna</TableHead>
+                                      <TableHead className="text-xs h-8">Gerencia</TableHead>
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
@@ -351,6 +377,9 @@ export const CompanyManager = ({ defaultCollapsed = false }: CompanyManagerProps
                                               {c.commune}
                                             </span>
                                           ) : '—'}
+                                        </TableCell>
+                                        <TableCell className="text-sm py-1.5">
+                                          {c.gerencia.length > 0 ? c.gerencia.join(", ") : '—'}
                                         </TableCell>
                                       </TableRow>
                                     ))}
