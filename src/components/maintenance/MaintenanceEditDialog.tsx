@@ -10,6 +10,9 @@ import { Loader2, Link, Info, ArrowRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm, SubStatus, SUB_STATUS_ORDER, SUB_STATUS_LABELS, SUB_STATUS_INFO, getNextSubStatus } from "./types";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
+import { Clock } from "lucide-react";
 
 interface Props {
   form: MaintenanceForm | null;
@@ -202,6 +205,30 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
             </div>
           )}
         </div>
+
+        {/* Timeline de sub-estados */}
+        {form && (
+          <div className="space-y-2 border-t pt-3 mt-2">
+            <div className="flex items-center gap-1.5">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+              <Label className="text-sm font-semibold">Historial de Sub Estados</Label>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {SUB_STATUS_ORDER.map(s => {
+                const key = `sub_status_${s}_at` as keyof MaintenanceForm;
+                const dateVal = form[key] as string | null;
+                return (
+                  <div key={s} className={`rounded-md border p-2 text-xs ${dateVal ? 'bg-primary/5 border-primary/20' : 'bg-muted/50 border-border'}`}>
+                    <p className="font-medium">{SUB_STATUS_LABELS[s]}</p>
+                    <p className="text-muted-foreground mt-0.5">
+                      {dateVal ? format(new Date(dateVal), "dd MMM yyyy HH:mm", { locale: es }) : "—"}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
