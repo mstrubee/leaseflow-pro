@@ -475,6 +475,7 @@ export function MaintenanceReports() {
                     type="category"
                     dataKey="name"
                     width={250}
+                    interval={0}
                     tick={(props: any) => {
                       const { x, y, payload } = props;
                       const item = topContractsChart.find(c => c.name === payload.value);
