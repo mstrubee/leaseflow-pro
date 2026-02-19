@@ -1,53 +1,94 @@
 
 
-# Fix: Boton "Subir" deshabilitado tras clasificacion manual
+# Optimizar carga del Repositorio Comun de Patentes
 
-## Problema detectado
+## Problema
 
-El componente `PatentBulkUploadDialog.tsx` tiene un problema en la forma en que muestra los archivos clasificados manualmente. Cuando el usuario selecciona una carpeta para un archivo sin match automatico:
+La funcion `loadContents` en `PatentSharedRepository.tsx` (lineas 89-120) hace lo siguiente:
 
-1. El `selectedFolderId` se actualiza correctamente en el estado.
-2. Sin embargo, la interfaz sigue mostrando "Sin clasificar -- selecciona carpeta:" con el icono amarillo de advertencia, porque la condicion de renderizado (linea 246) verifica `entry.matchedFolder` (que siempre es `null` para estos archivos), no `entry.selectedFolderId`.
-3. Esto da la impresion de que la seleccion no se registro, y el usuario no recibe confirmacion visual clara de que el archivo ya tiene carpeta asignada.
+1. Consulta todas las carpetas en una sola peticion.
+2. Luego, **para cada carpeta**, hace una peticion individual para contar archivos (`select("id", { count: 'exact', head: true })`).
 
-Ademas, si algun archivo tiene `selectedFolderId` todavia en `null`, el boton "Subir Todos" permanece deshabilitado por la condicion `allAssigned` (linea 96).
+Con ~30 carpetas, esto genera ~31 peticiones HTTP secuenciales (una por carpeta + la inicial). Cada peticion toma entre 100-300ms, resultando en tiempos de carga de 5-15 segundos.
 
 ## Solucion
 
-Modificar la logica de renderizado para que cuando un archivo tenga `selectedFolderId` asignado (ya sea por auto-match o seleccion manual), se muestre confirmacion visual en lugar del picker.
+Reemplazar las N consultas individuales de conteo por **una sola consulta SQL** que devuelva los conteos agrupados por `folder_id`.
 
-### Cambios en PatentBulkUploadDialog.tsx
+### Cambio en PatentSharedRepository.tsx
 
-**1. Icono de estado (lineas 227-236):** Cambiar la condicion para que muestre el check verde tambien cuando `selectedFolderId` esta asignado manualmente:
+Modificar `loadContents` para:
 
+1. Obtener las carpetas (sin cambios).
+2. Obtener los conteos de archivos de todas las carpetas de una sola vez, usando una consulta que agrupe por `folder_id`.
+3. Combinar los resultados en memoria.
+
+En lugar de:
 ```text
-Antes:  entry.matchedFolder ? <CheckCircle2 verde> : <AlertCircle amarillo>
-Despues: (entry.matchedFolder || entry.selectedFolderId) ? <CheckCircle2 verde> : <AlertCircle amarillo>
+// ACTUAL: N consultas secuenciales (lento)
+for (const folder of folderData) {
+  const { count } = await supabase
+    .from("repository_files")
+    .select("id", { count: 'exact', head: true })
+    .eq("folder_id", folder.id);
+  foldersWithCounts.push({ ...folder, fileCount: count ?? 0 });
+}
 ```
 
-**2. Info del archivo (lineas 246-278):** Cambiar la condicion de renderizado para considerar tres estados:
-- Auto-clasificado (`matchedFolder` existe): mostrar nombre de la carpeta en verde.
-- Manualmente clasificado (`selectedFolderId` existe pero `matchedFolder` es null): mostrar nombre de la carpeta seleccionada en azul, con opcion de cambiar.
-- Sin clasificar (ni `matchedFolder` ni `selectedFolderId`): mostrar el picker de busqueda.
-
+Usar:
 ```text
-Si matchedFolder:
-  Mostrar "-> {matchedFolder.name}" en verde
-Si no matchedFolder pero si selectedFolderId:
-  Buscar nombre de la carpeta en la lista de folders
-  Mostrar "-> {folderName}" en azul + boton "Cambiar"
-  Al hacer clic en "Cambiar", resetear selectedFolderId a null para volver a mostrar el picker
-Si no matchedFolder ni selectedFolderId:
-  Mostrar el picker de busqueda (comportamiento actual)
+// NUEVO: 1 sola consulta (rapido)
+const folderIds = folderData.map(f => f.id);
+const { data: countData } = await supabase
+  .from("repository_files")
+  .select("folder_id")
+  .in("folder_id", folderIds);
+
+// Contar en memoria
+const countMap: Record<string, number> = {};
+for (const row of countData || []) {
+  countMap[row.folder_id] = (countMap[row.folder_id] || 0) + 1;
+}
+
+const foldersWithCounts = folderData.map(f => ({
+  ...f,
+  fileCount: countMap[f.id] || 0
+}));
 ```
 
-**3. Nombre de carpeta seleccionada:** Para mostrar el nombre cuando se selecciona manualmente, buscar en el array `folders` el que tenga `id === entry.selectedFolderId`.
+Esto reduce ~31 peticiones HTTP a solo 2 (carpetas + conteos), bajando el tiempo de carga de 5-15 segundos a menos de 1 segundo.
+
+### Consideracion: limite de 1000 filas
+
+Si hay mas de 1000 archivos en total, la consulta de conteo podria truncarse. Para manejar esto de forma robusta, una alternativa es crear una funcion de base de datos (RPC) que haga el conteo directamente en SQL:
+
+```sql
+CREATE OR REPLACE FUNCTION get_folder_file_counts(p_folder_ids UUID[])
+RETURNS TABLE(folder_id UUID, file_count BIGINT)
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+  SELECT rf.folder_id, COUNT(*)::BIGINT as file_count
+  FROM repository_files rf
+  WHERE rf.folder_id = ANY(p_folder_ids)
+  GROUP BY rf.folder_id;
+$$;
+```
+
+Y llamarla desde el frontend:
+```text
+const { data: counts } = await supabase
+  .rpc("get_folder_file_counts", { p_folder_ids: folderIds });
+```
+
+Esta es la opcion recomendada ya que no tiene limite de filas y es mas eficiente al ejecutarse directamente en la base de datos.
 
 ### Resumen de cambios
 
-Un solo archivo modificado: `src/components/patents/PatentBulkUploadDialog.tsx`
+1. **Migracion SQL**: Crear funcion `get_folder_file_counts` que reciba un array de UUIDs y devuelva conteos agrupados.
+2. **PatentSharedRepository.tsx**: Reemplazar el bucle `for` de conteos individuales por una sola llamada RPC.
 
-- Actualizar condicion del icono de estado para incluir `selectedFolderId`
-- Agregar un tercer estado de renderizado para archivos clasificados manualmente
-- Agregar boton "Cambiar" para permitir re-seleccion
-- Esto dara feedback visual claro de que la seleccion se registro y habilitara el boton "Subir Todos"
+### Resultado esperado
+
+- De ~31 peticiones HTTP a 2 peticiones
+- De 5-15 segundos de carga a menos de 1 segundo
