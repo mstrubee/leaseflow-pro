@@ -306,71 +306,103 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
     );
   };
 
-  // Render tree row
-  const renderMemberRow = (member: OrgMember, level: number) => {
+  // Selected member for detail popover
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+
+  // Render org chart node
+  const renderOrgNode = (member: OrgMember) => {
     const children = getChildren(member.id);
-    const hasChildren = children.length > 0;
-    const isExpanded = expandedIds.has(member.id);
+    const isSelected = selectedMemberId === member.id;
     const contracts = memberContractMap[member.id] || [];
     const contractNames = contracts
       .map(cid => companyContracts.find(c => c.id === cid)?.name)
       .filter(Boolean);
 
     return (
-      <div key={member.id}>
+      <div key={member.id} className="flex flex-col items-center">
+        {/* Node card */}
         <div
-          className="flex items-center gap-2 py-2 px-3 hover:bg-muted/50 rounded-md group"
-          style={{ paddingLeft: `${12 + level * 24}px` }}
+          className={`relative border rounded-lg px-4 py-2.5 cursor-pointer transition-all text-center min-w-[140px] max-w-[200px] shadow-sm hover:shadow-md ${
+            isSelected ? "ring-2 ring-primary border-primary bg-primary/5" : "bg-card hover:border-primary/50"
+          }`}
+          onClick={() => setSelectedMemberId(isSelected ? null : member.id)}
         >
-          {/* Expand toggle */}
-          <button
-            className="w-5 h-5 flex items-center justify-center flex-shrink-0"
-            onClick={() => hasChildren && toggleExpand(member.id)}
-          >
-            {hasChildren ? (
-              isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <span className="w-4" />
-            )}
-          </button>
-
-          {/* Info */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-sm">{member.name}</span>
-              {member.position && (
-                <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{member.position}</span>
-              )}
-            </div>
-            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
-              {member.phone && (
-                <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{member.phone}</span>
-              )}
-              {member.email && (
-                <span className="flex items-center gap-1"><Mail className="h-3 w-3" />{member.email}</span>
-              )}
-              {contractNames.length > 0 && (
-                <span className="text-xs">📋 {contractNames.join(", ")}</span>
-              )}
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openCreate(member.id)} title="Agregar subordinado">
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(member)}>
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openDelete(member)}>
-              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+          <p className="font-medium text-sm truncate">{member.name}</p>
+          {member.position && (
+            <p className="text-[11px] text-muted-foreground truncate mt-0.5">{member.position}</p>
+          )}
+          {/* Actions on hover */}
+          <div className="absolute -top-2 -right-2 flex gap-0.5 opacity-0 hover:opacity-100 group-hover:opacity-100 transition-opacity">
+            <Button variant="secondary" size="icon" className="h-5 w-5 rounded-full shadow-sm" onClick={(e) => { e.stopPropagation(); openCreate(member.id); }} title="Agregar subordinado">
+              <Plus className="h-3 w-3" />
             </Button>
           </div>
         </div>
 
+        {/* Detail panel (shown on click) */}
+        {isSelected && (
+          <div className="mt-2 border rounded-lg bg-card shadow-lg p-3 w-[280px] text-left z-10 relative">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-semibold text-sm">{member.name}</span>
+              <div className="flex gap-1">
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit(member)}>
+                  <Pencil className="h-3 w-3" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openDelete(member)}>
+                  <Trash2 className="h-3 w-3 text-destructive" />
+                </Button>
+              </div>
+            </div>
+            {member.position && (
+              <p className="text-xs text-muted-foreground mb-1.5">{member.position}</p>
+            )}
+            {member.phone && (
+              <p className="text-xs flex items-center gap-1.5 mb-1"><Phone className="h-3 w-3 text-muted-foreground" />{member.phone}</p>
+            )}
+            {member.email && (
+              <p className="text-xs flex items-center gap-1.5 mb-1"><Mail className="h-3 w-3 text-muted-foreground" />{member.email}</p>
+            )}
+            {contractNames.length > 0 && (
+              <div className="mt-2 pt-2 border-t">
+                <p className="text-[11px] font-medium text-muted-foreground mb-1">Contratos ({contractNames.length})</p>
+                <div className="max-h-24 overflow-y-auto space-y-0.5">
+                  {contractNames.map((name, i) => (
+                    <p key={i} className="text-[11px] text-muted-foreground">• {name}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Children */}
-        {isExpanded && children.map(child => renderMemberRow(child, level + 1))}
+        {children.length > 0 && (
+          <div className="flex flex-col items-center mt-0">
+            {/* Vertical connector from parent */}
+            <div className="w-px h-4 bg-border" />
+            {/* Horizontal connector + children */}
+            {children.length === 1 ? (
+              <div className="flex flex-col items-center">
+                {renderOrgNode(children[0])}
+              </div>
+            ) : (
+              <div className="relative">
+                {/* Horizontal line spanning all children */}
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 flex" style={{ width: "100%" }}>
+                  <div className="w-full h-px bg-border" style={{ marginLeft: `${100 / (children.length * 2)}%`, marginRight: `${100 / (children.length * 2)}%` }} />
+                </div>
+                <div className="flex gap-2 pt-0">
+                  {children.map(child => (
+                    <div key={child.id} className="flex flex-col items-center">
+                      <div className="w-px h-4 bg-border" />
+                      {renderOrgNode(child)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -427,8 +459,10 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
         ) : members.length === 0 ? (
           <p className="text-muted-foreground text-center py-8 text-sm">No hay miembros en el organigrama</p>
         ) : (
-          <div className="space-y-0.5">
-            {getRootMembers().map(m => renderMemberRow(m, 0))}
+          <div className="overflow-x-auto pb-4">
+            <div className="flex gap-6 justify-center items-start pt-4 min-w-fit">
+              {getRootMembers().map(m => renderOrgNode(m))}
+            </div>
           </div>
         )}
       </CollapsibleCard>
