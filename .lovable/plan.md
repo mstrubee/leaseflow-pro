@@ -1,65 +1,40 @@
 
-# Plan: Corregir la logica de precios unitarios en el presupuesto
+# Cargar solo FORMs nuevos desde Excel
 
-## Problema identificado
+## Problema
+Actualmente, al cargar un Excel, el sistema usa `upsert` que sobrescribe **todos** los campos de los forms existentes, incluyendo:
+- **Estado** (status)
+- **Sub Estado** (sub_status)
+- **Comentarios** (additional_comments)
 
-Los valores de `unit_price` en la tabla `budget_lines` estan **corruptos**. Durante la importacion desde la plantilla, se calculo incorrectamente `unit_price = amount_uf / quantity`, generando valores diminutos sin sentido. Por ejemplo:
-
-- "Armado Gondolas Centrales": precio plantilla = 0.65 UF/m2, pero `unit_price` = 0.026 (0.65 / 25)
-- "Pulido Radier": precio plantilla = 0.3 UF/m2, pero `unit_price` = 0.000584 (0.3 / 513.69)
-
-El campo `amount_uf` en realidad guarda el precio unitario correcto (igual al `default_amount_uf` de la plantilla), NO el total.
-
-La logica actual `localP > 0 ? localP : templateUnitPrice` siempre elige el valor corrupto porque es > 0.
+Esto causa la perdida de todo el avance registrado en el sistema.
 
 ## Solucion
 
-### Paso 1: Corregir datos corruptos en la base de datos
+Antes de insertar, consultar la base de datos para obtener los `form_number` que ya existen. Filtrar las filas del Excel para insertar **solo los forms nuevos**, ignorando los que ya estan en el sistema.
 
-Ejecutar una migracion SQL que resetee los `unit_price` corruptos. Para las lineas que tienen `template_line_id`, si el `unit_price` actual NO coincide con el `default_amount_uf` de la plantilla y el usuario NO ha editado manualmente el precio, se debe corregir:
+Adicionalmente, mostrar al usuario un resumen claro de cuantos forms son nuevos vs. cuantos ya existen (y seran omitidos).
 
-```text
-UPDATE budget_lines bl
-SET unit_price = btl.default_amount_uf,
-    amount_uf = btl.default_amount_uf  -- amount_uf = precio unitario de plantilla
-FROM budget_template_lines btl
-WHERE bl.template_line_id = btl.id
-  AND btl.default_amount_uf > 0
-  AND bl.unit_price != btl.default_amount_uf
-  AND bl.unit_price > 0;
-```
+## Cambios tecnicos
 
-### Paso 2: Corregir la logica de importacion en BudgetModule.tsx
+### Archivo: `src/components/maintenance/MaintenanceExcelUpload.tsx`
 
-Al importar lineas desde una plantilla, asegurar que `unit_price` se establezca directamente como `default_amount_uf` (el precio unitario de la plantilla), sin dividir por cantidad.
+1. **En `handleInsert`**: Antes de insertar, consultar `maintenance_forms` para obtener todos los `form_number` existentes. Filtrar `validRows` para quedarse solo con los que NO existen en la base de datos.
 
-### Paso 3: Corregir `amount_uf` para que sea el total real
+2. **Mostrar estadisticas**: Agregar al resumen de la tabla:
+   - Forms nuevos (se insertaran)
+   - Forms existentes (se omitiran)
+   - Errores y advertencias (como ya funciona)
 
-Actualmente `amount_uf` almacena el precio unitario (copia de `default_amount_uf`). Despues de corregir `unit_price`, recalcular `amount_uf = quantity * unit_price` para que represente el total real de la linea.
+3. **Cambiar `upsert` por `insert`**: Ya que solo se enviaran forms nuevos, no se necesita upsert.
 
-### Paso 4: Simplificar la logica de display en BudgetLineTree.tsx
+4. **Actualizar mensajes**: El toast final indicara cuantos forms nuevos se cargaron y cuantos se omitieron por ya existir.
 
-Una vez corregidos los datos:
-- El precio unitario mostrado sera simplemente `line.unit_price` (ya correcto)
-- El fallback a `templateUnitPrice` solo aplica cuando `unit_price` es 0 (linea nueva sin precio)
-- Eliminar la dependencia excesiva de `templatePricesMap` para calculos de subtotales, ya que los precios estaran correctos en la linea misma
+### Flujo actualizado
 
-### Paso 5: Proteger ediciones futuras del usuario
-
-- Cuando el usuario edita el precio unitario (doble clic), se guarda su valor en `unit_price`
-- Se recalcula `amount_uf = quantity * unit_price` (total real)
-- Este valor local prevalece sobre el de plantilla en todas las vistas
-
-## Archivos a modificar
-
-1. **Migracion SQL** -- Corregir datos existentes
-2. **src/components/budget/BudgetModule.tsx** -- Corregir logica de importacion de plantilla
-3. **src/components/budget/BudgetLineTree.tsx** -- Simplificar display y calculos con datos ya corregidos
-4. **src/components/budget/BudgetDashboard.tsx** -- Alinear calculos del dashboard
-
-## Detalles tecnicos
-
-- `budget_template_lines.default_amount_uf` = precio unitario (ej: 0.3 UF/m2)
-- `budget_lines.unit_price` = debe ser el precio unitario (igual a template o editado por usuario)
-- `budget_lines.amount_uf` = debe ser el total (quantity x unit_price, convertido a UF si es CLP)
-- La conversion a CLP se muestra debajo del precio unitario en texto pequeno
+1. Usuario sube Excel
+2. Se parsean las filas como antes (matching de contratos, etc.)
+3. Se consultan los `form_number` existentes en la BD
+4. Se marcan las filas existentes como "ya existe" (badge visual)
+5. Al confirmar, solo se insertan los forms nuevos
+6. Toast: "X forms nuevos cargados, Y omitidos (ya existian)"
