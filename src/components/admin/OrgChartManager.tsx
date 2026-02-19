@@ -122,16 +122,27 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
     setMemberCompanyMap(coMap);
   };
 
+  // contract -> company ids map
+  const [contractCompanyMap, setContractCompanyMap] = useState<Record<string, string[]>>({});
+
   const loadAllContracts = async () => {
-    const [contractsResult, addressesResult] = await Promise.all([
+    const [contractsResult, addressesResult, ccResult] = await Promise.all([
       supabase.from("contracts").select("id, name").is("deleted_at", null).order("name"),
       supabase.from("contract_addresses").select("contract_id, region, commune"),
+      supabase.from("contract_companies").select("contract_id, company_id"),
     ]);
 
     const addressMap: Record<string, { region: string | null; commune: string | null }> = {};
     (addressesResult.data || []).forEach(a => {
       addressMap[a.contract_id] = { region: a.region, commune: a.commune };
     });
+
+    const ccMap: Record<string, string[]> = {};
+    (ccResult.data || []).forEach((row: any) => {
+      if (!ccMap[row.contract_id]) ccMap[row.contract_id] = [];
+      ccMap[row.contract_id].push(row.company_id);
+    });
+    setContractCompanyMap(ccMap);
 
     const enriched: ContractOption[] = (contractsResult.data || []).map(c => ({
       id: c.id,
@@ -164,6 +175,19 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
     const ids = getEffectiveCompanyIds(memberId);
     return ids.map(id => companies.find(c => c.id === id)?.name).filter(Boolean) as string[];
   }, [getEffectiveCompanyIds, companies]);
+
+  // Filter contracts by the member's effective companies
+  const filteredContractsByCompany = useMemo(() => {
+    let effectiveIds = formCompanyIds.length > 0 ? formCompanyIds : [];
+    if (effectiveIds.length === 0 && formParentId && formParentId !== "none") {
+      effectiveIds = getEffectiveCompanyIds(formParentId);
+    }
+    if (effectiveIds.length === 0) return allContracts;
+    return allContracts.filter(c => {
+      const cCompanies = contractCompanyMap[c.id] || [];
+      return cCompanies.some(id => effectiveIds.includes(id));
+    });
+  }, [allContracts, contractCompanyMap, formCompanyIds, formParentId, getEffectiveCompanyIds]);
 
   // CRUD
   const openCreate = (parentId?: string) => {
@@ -515,7 +539,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
             </div>
 
             {/* Contract assignment */}
-            {allContracts.length > 0 && (
+            {filteredContractsByCompany.length > 0 && (
               <div className="space-y-2">
                 <Label>Contratos asignados</Label>
                 {/* Filters */}
@@ -532,7 +556,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                   </Select>
                   {contractFilter === "region" && (
                     <div className="flex flex-wrap gap-1.5 items-center">
-                      {[...new Set(allContracts.map(c => c.region).filter(Boolean))].sort().map(r => (
+                      {[...new Set(filteredContractsByCompany.map(c => c.region).filter(Boolean))].sort().map(r => (
                         <label key={r!} className="flex items-center gap-1 text-xs cursor-pointer bg-muted/60 px-2 py-1 rounded-md hover:bg-muted">
                           <Checkbox
                             checked={selectedRegions.includes(r!)}
@@ -550,7 +574,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                   )}
                   {contractFilter === "commune" && (
                     <div className="flex flex-wrap gap-1.5 items-center max-h-24 overflow-y-auto">
-                      {[...new Set(allContracts.map(c => c.commune).filter(Boolean))].sort().map(c => (
+                      {[...new Set(filteredContractsByCompany.map(c => c.commune).filter(Boolean))].sort().map(c => (
                         <label key={c!} className="flex items-center gap-1 text-xs cursor-pointer bg-muted/60 px-2 py-1 rounded-md hover:bg-muted">
                           <Checkbox
                             checked={selectedCommunes.includes(c!)}
@@ -572,7 +596,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                     size="sm"
                     className="h-8 text-xs"
                     onClick={() => {
-                      const filtered = allContracts
+                      const filtered = filteredContractsByCompany
                         .filter(c => {
                           if (contractFilter === "region" && selectedRegions.length > 0) return c.region != null && selectedRegions.includes(c.region);
                           if (contractFilter === "commune" && selectedCommunes.length > 0) return c.commune != null && selectedCommunes.includes(c.commune);
@@ -605,7 +629,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                     <span>Comuna</span>
                   </div>
                   <div className="max-h-48 overflow-y-auto">
-                    {allContracts
+                    {filteredContractsByCompany
                       .filter(c => {
                         if (contractFilter === "region" && selectedRegions.length > 0) return c.region != null && selectedRegions.includes(c.region);
                         if (contractFilter === "commune" && selectedCommunes.length > 0) return c.commune != null && selectedCommunes.includes(c.commune);
