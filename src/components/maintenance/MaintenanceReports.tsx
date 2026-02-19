@@ -298,6 +298,67 @@ export function MaintenanceReports() {
     toast({ title: "PDF generado", description: "El informe se descargó correctamente" });
   };
 
+  const exportChartPDF = async () => {
+    const doc = new jsPDF({ orientation: "landscape" });
+    const today = new Date().toLocaleDateString("es-CL");
+    const yearLabel = selectedYears.length > 0 ? selectedYears.sort((a, b) => b - a).join(", ") : "Todos";
+
+    try {
+      const logoImg = new Image();
+      logoImg.src = logosHeader;
+      await new Promise((resolve, reject) => { logoImg.onload = resolve; logoImg.onerror = reject; });
+      doc.addImage(logoImg, "PNG", 14, 8, 50, 20);
+    } catch {}
+
+    doc.setFontSize(16);
+    doc.text(`${chartTopN === 0 ? "Todos los" : `Top ${chartTopN}`} Contratos por FORMs`, 70, 18);
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Generado: ${today} | Año(s): ${yearLabel}`, 70, 25);
+    doc.setTextColor(0);
+
+    const logoImages: Map<string, HTMLImageElement> = new Map();
+    for (const item of topContractsChart) {
+      if (item.logoUrl && !logoImages.has(item.logoUrl)) {
+        try {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.src = item.logoUrl;
+          await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
+          logoImages.set(item.logoUrl, img);
+        } catch {}
+      }
+    }
+
+    const tableBody = topContractsChart.map(c => {
+      const total = (c["En Proceso"] || 0) + (c["Solucionados"] || 0);
+      const pct = total > 0 ? ((c["Solucionados"] / total) * 100).toFixed(1) + "%" : "0%";
+      return ["", c.name, (c["En Proceso"] || 0).toString(), (c["Solucionados"] || 0).toString(), total.toString(), pct];
+    });
+
+    autoTable(doc, {
+      startY: 33,
+      head: [["", "Local", "En Proceso", "Solucionados", "Total", "% Resolución"]],
+      body: tableBody,
+      styles: { fontSize: 8, cellPadding: 3, valign: "middle" },
+      headStyles: { fillColor: [220, 38, 38] },
+      columnStyles: { 0: { cellWidth: 12 }, 1: { cellWidth: 80 } },
+      didDrawCell: (data: any) => {
+        if (data.section === "body" && data.column.index === 0) {
+          const item = topContractsChart[data.row.index];
+          if (item?.logoUrl) {
+            const img = logoImages.get(item.logoUrl);
+            if (img) doc.addImage(img, "PNG", data.cell.x + 1.5, data.cell.y + 1, 9, 9);
+          }
+        }
+      },
+    });
+
+    doc.save(`Grafico_Contratos_FORMs_${yearLabel.replace(/, /g, "_")}.pdf`);
+    toast({ title: "PDF generado", description: "El gráfico se descargó correctamente" });
+  };
+
+
   if (loading) {
     return <div className="text-center py-8 text-muted-foreground">Cargando datos de mantenciones...</div>;
   }
@@ -387,7 +448,7 @@ export function MaintenanceReports() {
             <CardTitle className="text-sm font-medium">
               {chartTopN === 0 ? "Todos los" : `Top ${chartTopN}`} Contratos por FORMs
             </CardTitle>
-            <div className="flex gap-1">
+            <div className="flex gap-1 items-center">
               {([15, 30, 0] as const).map(n => (
                 <Button
                   key={n}
@@ -399,6 +460,9 @@ export function MaintenanceReports() {
                   {n === 0 ? "100%" : `Top ${n}`}
                 </Button>
               ))}
+              <Button variant="outline" size="sm" className="h-6 px-2 text-xs gap-1 ml-1" onClick={exportChartPDF}>
+                <Download className="h-3 w-3" /> PDF
+              </Button>
             </div>
           </CardHeader>
           <CardContent>
