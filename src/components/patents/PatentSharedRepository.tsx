@@ -5,8 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { 
   Folder, FolderPlus, FileText, ChevronRight, ArrowLeft, 
-  Upload, Trash2, ExternalLink, Pencil, Check, X 
+  Upload, Trash2, ExternalLink, Pencil, Check, X, Search, PackagePlus
 } from "lucide-react";
+import { PatentBulkUploadDialog } from "./PatentBulkUploadDialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -57,6 +58,10 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
 
   // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'folder' | 'file'; id: string; name: string } | null>(null);
+
+  // Search & bulk upload
+  const [folderSearchQuery, setFolderSearchQuery] = useState("");
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
 
   const loadContents = useCallback(async (parentId: string | null) => {
     setLoading(true);
@@ -113,6 +118,7 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
   const navigateToFolder = async (folder: RepoFolder) => {
     setCurrentFolder(folder);
     setFolderPath(prev => [...prev, folder]);
+    setFolderSearchQuery("");
     await loadContents(folder.id);
   };
 
@@ -316,7 +322,7 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
 
           {/* Toolbar */}
           {currentFolder && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Button variant="outline" size="sm" onClick={navigateBack}>
                 <ArrowLeft className="h-4 w-4 mr-1" />
                 Atrás
@@ -344,6 +350,10 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
                   </Button>
                 </Label>
               </div>
+              <Button variant="outline" size="sm" onClick={() => setShowBulkUpload(true)}>
+                <PackagePlus className="h-4 w-4 mr-1" />
+                Subida Masiva
+              </Button>
             </div>
           )}
 
@@ -366,6 +376,19 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
             </div>
           )}
 
+          {/* Folder search */}
+          {folders.length > 0 && (
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar carpetas..."
+                className="pl-8 h-8 text-sm"
+                value={folderSearchQuery}
+                onChange={(e) => setFolderSearchQuery(e.target.value)}
+              />
+            </div>
+          )}
+
           {/* Content */}
           <div className="flex-1 overflow-y-auto space-y-1 min-h-[200px]">
             {loading ? (
@@ -378,8 +401,12 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
                   </div>
                 )}
 
-                {/* Folders */}
-                {folders.map((folder) => (
+                {/* Folders - filtered */}
+                {folders
+                  .filter((folder) =>
+                    !folderSearchQuery || folder.name.toLowerCase().includes(folderSearchQuery.toLowerCase())
+                  )
+                  .map((folder) => (
                   <div
                     key={folder.id}
                     className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 group"
@@ -500,6 +527,13 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Bulk upload dialog */}
+      <PatentBulkUploadDialog
+        open={showBulkUpload}
+        onOpenChange={setShowBulkUpload}
+        onComplete={() => loadContents(currentFolder?.id || null)}
+      />
     </>
   );
 }
