@@ -1,11 +1,12 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Download, CalendarDays, Clock, Timer, TrendingUp, Wrench } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Download, CalendarDays, Clock, Timer, TrendingUp, Wrench, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm, detectMaintenanceType } from "./types";
@@ -41,6 +42,8 @@ export function MaintenanceReports() {
   const [loading, setLoading] = useState(true);
   const [selectedYears, setSelectedYears] = useState<number[]>([]);
   const [chartTopN, setChartTopN] = useState<15 | 30 | 0>(15);
+  const [activeBarContract, setActiveBarContract] = useState<string | null>(null);
+  const [selectedBarContract, setSelectedBarContract] = useState<string | null>(null);
   const [contractCompanyMap, setContractCompanyMap] = useState<Map<string, string>>(new Map());
   const { logos } = useAppLogos();
 
@@ -396,7 +399,18 @@ export function MaintenanceReports() {
           <CardContent>
             {topContractsChart.length > 0 ? (
               <ResponsiveContainer width="100%" height={Math.max(400, topContractsChart.length * 32)}>
-                <BarChart data={topContractsChart} layout="vertical" margin={{ left: 10, right: 20 }}>
+                <BarChart
+                  data={topContractsChart}
+                  layout="vertical"
+                  margin={{ left: 10, right: 20 }}
+                  onMouseMove={(state: any) => {
+                    if (state?.activeLabel) setActiveBarContract(state.activeLabel);
+                  }}
+                  onMouseLeave={() => setActiveBarContract(null)}
+                  onClick={(state: any) => {
+                    if (state?.activeLabel) setSelectedBarContract(state.activeLabel);
+                  }}
+                >
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis type="number" />
                   <YAxis
@@ -407,8 +421,9 @@ export function MaintenanceReports() {
                       const { x, y, payload } = props;
                       const item = topContractsChart.find(c => c.name === payload.value);
                       const logoSrc = item?.logoUrl;
+                      const isActive = activeBarContract === payload.value;
                       return (
-                        <g transform={`translate(${x},${y})`}>
+                        <g transform={`translate(${x},${y})`} style={{ cursor: "pointer" }}>
                           {logoSrc && (
                             <image
                               href={logoSrc}
@@ -417,6 +432,7 @@ export function MaintenanceReports() {
                               width={18}
                               height={18}
                               preserveAspectRatio="xMidYMid meet"
+                              opacity={activeBarContract && !isActive ? 0.3 : 1}
                             />
                           )}
                           <text
@@ -424,8 +440,10 @@ export function MaintenanceReports() {
                             y={0}
                             dy={4}
                             textAnchor={logoSrc ? "start" : "end"}
-                            fontSize={9}
+                            fontSize={isActive ? 10 : 9}
+                            fontWeight={isActive ? 700 : 400}
                             fill="currentColor"
+                            opacity={activeBarContract && !isActive ? 0.4 : 1}
                           >
                             {payload.value}
                           </text>
@@ -433,12 +451,27 @@ export function MaintenanceReports() {
                       );
                     }}
                   />
-                  <Tooltip 
+                  <Tooltip
                     formatter={(value: number, name: string) => [value, name]}
+                    cursor={{ fill: "hsl(var(--accent))", opacity: 0.3 }}
                   />
                   <Legend />
-                  <Bar dataKey="En Proceso" stackId="a" fill="hsl(48, 96%, 53%)" />
-                  <Bar dataKey="Solucionados" stackId="a" fill="hsl(142, 71%, 45%)" />
+                  <Bar
+                    dataKey="En Proceso"
+                    stackId="a"
+                    fill="hsl(48, 96%, 53%)"
+                    style={{ cursor: "pointer" }}
+                    opacity={activeBarContract ? 0.4 : 1}
+                    activeBar={{ opacity: 1, strokeWidth: 2, stroke: "hsl(var(--foreground))" }}
+                  />
+                  <Bar
+                    dataKey="Solucionados"
+                    stackId="a"
+                    fill="hsl(142, 71%, 45%)"
+                    style={{ cursor: "pointer" }}
+                    opacity={activeBarContract ? 0.4 : 1}
+                    activeBar={{ opacity: 1, strokeWidth: 2, stroke: "hsl(var(--foreground))" }}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -521,6 +554,50 @@ export function MaintenanceReports() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Dialog: Forms for selected contract */}
+      <Dialog open={!!selectedBarContract} onOpenChange={(open) => { if (!open) setSelectedBarContract(null); }}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-base">FORMs — {selectedBarContract}</DialogTitle>
+          </DialogHeader>
+          <div className="overflow-auto flex-1">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-28">N° FORM</TableHead>
+                  <TableHead className="w-24">Estado</TableHead>
+                  <TableHead className="w-28">Sub-Estado</TableHead>
+                  <TableHead>Descripción</TableHead>
+                  <TableHead className="w-28">Fecha Creación</TableHead>
+                  <TableHead className="w-28">Fecha Resolución</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredForms
+                  .filter(f => f.contract_name === selectedBarContract)
+                  .sort((a, b) => (b.created_date || "").localeCompare(a.created_date || ""))
+                  .map(f => (
+                    <TableRow key={f.id}>
+                      <TableCell className="text-xs font-medium">{f.form_number}</TableCell>
+                      <TableCell>
+                        <Badge variant={f.status === "solucionado" ? "default" : "secondary"} className="text-xs">
+                          {f.status === "proceso" ? "En Proceso" : f.status === "solucionado" ? "Solucionado" : f.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs">{f.sub_status?.replace(/_/g, " ") || "-"}</TableCell>
+                      <TableCell className="text-xs max-w-[200px] truncate">
+                        {f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-"}
+                      </TableCell>
+                      <TableCell className="text-xs">{f.created_date ? new Date(f.created_date).toLocaleDateString("es-CL") : "-"}</TableCell>
+                      <TableCell className="text-xs">{f.resolution_date ? new Date(f.resolution_date).toLocaleDateString("es-CL") : "-"}</TableCell>
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
