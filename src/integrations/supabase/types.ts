@@ -2517,6 +2517,8 @@ export type Database = {
           general_description: string | null
           hvac_description: string | null
           id: string
+          purchase_order_id: string | null
+          purchase_order_number: string | null
           resolution_date: string | null
           status: string
           status_changed_at: string | null
@@ -2527,6 +2529,8 @@ export type Database = {
           sub_status_pre_aprobado_at: string | null
           sub_status_resuelto_at: string | null
           sub_status_solicitado_at: string | null
+          supplier_id: string | null
+          supplier_name: string | null
           updated_at: string | null
           year: number | null
         }
@@ -2546,6 +2550,8 @@ export type Database = {
           general_description?: string | null
           hvac_description?: string | null
           id?: string
+          purchase_order_id?: string | null
+          purchase_order_number?: string | null
           resolution_date?: string | null
           status?: string
           status_changed_at?: string | null
@@ -2556,6 +2562,8 @@ export type Database = {
           sub_status_pre_aprobado_at?: string | null
           sub_status_resuelto_at?: string | null
           sub_status_solicitado_at?: string | null
+          supplier_id?: string | null
+          supplier_name?: string | null
           updated_at?: string | null
           year?: number | null
         }
@@ -2575,6 +2583,8 @@ export type Database = {
           general_description?: string | null
           hvac_description?: string | null
           id?: string
+          purchase_order_id?: string | null
+          purchase_order_number?: string | null
           resolution_date?: string | null
           status?: string
           status_changed_at?: string | null
@@ -2585,6 +2595,8 @@ export type Database = {
           sub_status_pre_aprobado_at?: string | null
           sub_status_resuelto_at?: string | null
           sub_status_solicitado_at?: string | null
+          supplier_id?: string | null
+          supplier_name?: string | null
           updated_at?: string | null
           year?: number | null
         }
@@ -2594,6 +2606,20 @@ export type Database = {
             columns: ["contract_id"]
             isOneToOne: false
             referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_forms_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_forms_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
             referencedColumns: ["id"]
           },
         ]

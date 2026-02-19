@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,13 +7,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Loader2, Link, Info, ArrowRight } from "lucide-react";
+import { Loader2, Link, Info, ArrowRight, ExternalLink, Truck, FileText, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm, SubStatus, SUB_STATUS_ORDER, SUB_STATUS_LABELS, SUB_STATUS_INFO, getNextSubStatus } from "./types";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Clock } from "lucide-react";
 
 interface Props {
   form: MaintenanceForm | null;
@@ -22,6 +22,7 @@ interface Props {
 }
 
 export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: Props) {
+  const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     form_number: "",
@@ -152,6 +153,40 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
           <div className="space-y-1.5 col-span-2">
             <Label>Contrato</Label>
             <Input value={formData.contract_name} readOnly className="bg-muted" />
+          </div>
+
+          {/* Proveedor y OC asignados */}
+          <div className="space-y-1.5">
+            <Label>Proveedor</Label>
+            {form?.supplier_name ? (
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-2 font-normal"
+                onClick={() => navigate("/suppliers")}
+              >
+                <Truck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">{form.supplier_name}</span>
+                <ExternalLink className="h-3 w-3 ml-auto shrink-0 text-muted-foreground" />
+              </Button>
+            ) : (
+              <Input value="Sin asignar" readOnly className="bg-muted text-muted-foreground" />
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label>Orden de Compra</Label>
+            {form?.purchase_order_number ? (
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-2 font-normal"
+                onClick={() => navigate(`/purchase-orders?search=${encodeURIComponent(form.purchase_order_number!)}`)}
+              >
+                <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">{form.purchase_order_number}</span>
+                <ExternalLink className="h-3 w-3 ml-auto shrink-0 text-muted-foreground" />
+              </Button>
+            ) : (
+              <Input value="Sin asignar" readOnly className="bg-muted text-muted-foreground" />
+            )}
           </div>
         </div>
 

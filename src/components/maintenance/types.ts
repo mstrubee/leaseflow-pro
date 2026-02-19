@@ -61,6 +61,10 @@ export interface MaintenanceForm {
   sub_status_cotizando_at: string | null;
   sub_status_en_ejecucion_at: string | null;
   sub_status_resuelto_at: string | null;
+  supplier_id: string | null;
+  supplier_name: string | null;
+  purchase_order_id: string | null;
+  purchase_order_number: string | null;
 }
 
 export interface ParsedMaintenanceRow {

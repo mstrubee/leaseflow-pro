@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2 } from "lucide-react";
+import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm, detectMaintenanceType, SUB_STATUS_LABELS, SubStatus } from "./types";
@@ -17,8 +17,10 @@ import { MaintenanceExcelUpload } from "./MaintenanceExcelUpload";
 import { MaintenanceEditDialog } from "./MaintenanceEditDialog";
 import { SortableTableHead, SortOrder } from "@/components/contracts/SortableTableHead";
 import { exportMaintenanceExcel, exportMaintenancePDF } from "./maintenanceExport";
+import { useNavigate } from "react-router-dom";
 
 export function MaintenanceModule() {
+  const navigate = useNavigate();
   const [forms, setForms] = useState<MaintenanceForm[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -422,15 +424,17 @@ export function MaintenanceModule() {
                   <TableHead className="w-28">Tipo</TableHead>
                   <TableHead>Descripción</TableHead>
                   <TableHead>Comentarios</TableHead>
+                  <SortableTableHead label="Proveedor" sortKey="supplier_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
+                  <SortableTableHead label="OC" sortKey="purchase_order_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
                   <TableHead className="w-28">Evidencia</TableHead>
                   <TableHead className="w-24 text-center">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Cargando...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={12} className="text-center py-8 text-muted-foreground">Cargando...</TableCell></TableRow>
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No hay FORMs registrados</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={12} className="text-center py-8 text-muted-foreground">No hay FORMs registrados</TableCell></TableRow>
                 ) : (
                   filtered.map(f => (
                     <TableRow key={f.id}>
@@ -459,6 +463,22 @@ export function MaintenanceModule() {
                         {f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-"}
                       </TableCell>
                       <TableCell className="text-xs max-w-32 truncate">{f.additional_comments || "-"}</TableCell>
+                      <TableCell className="text-xs">
+                        {f.supplier_name ? (
+                          <button onClick={() => navigate("/suppliers")} className="text-primary hover:underline flex items-center gap-1 truncate max-w-28">
+                            <span className="truncate">{f.supplier_name}</span>
+                            <ExternalLink className="h-3 w-3 shrink-0" />
+                          </button>
+                        ) : <span className="text-muted-foreground">-</span>}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {f.purchase_order_number ? (
+                          <button onClick={() => navigate(`/purchase-orders?search=${encodeURIComponent(f.purchase_order_number!)}`)} className="text-primary hover:underline flex items-center gap-1 truncate max-w-28">
+                            <span className="truncate">{f.purchase_order_number}</span>
+                            <ExternalLink className="h-3 w-3 shrink-0" />
+                          </button>
+                        ) : <span className="text-muted-foreground">-</span>}
+                      </TableCell>
                       <TableCell className="text-xs">
                         {f.evidence_links && f.evidence_links.length > 0 ? (
                           <div className="flex flex-col gap-0.5">

@@ -597,7 +597,7 @@ export const CentralizedOrderCreator = ({
             
             if (poError) throw poError;
             
-            // Create allocation record for this PO
+            // Create allocation record and sync maintenance forms
             if (poData) {
               await supabase.from("purchase_order_contract_allocations").insert({
                 purchase_order_id: poData.id,
@@ -605,6 +605,18 @@ export const CentralizedOrderCreator = ({
                 amount_uf: allocUf,
                 amount_clp: allocClp
               });
+              
+              // Sync maintenance forms with supplier and OC info
+              if (alloc.maintenanceFormIds.length > 0) {
+                await (supabase.from("maintenance_forms" as any) as any)
+                  .update({
+                    supplier_id: formData.supplier_id,
+                    supplier_name: formData.supplier_name,
+                    purchase_order_id: poData.id,
+                    purchase_order_number: orderNumber,
+                  })
+                  .in("id", alloc.maintenanceFormIds);
+              }
             }
           }
           
@@ -639,11 +651,25 @@ export const CentralizedOrderCreator = ({
             maintenance_form_ids: (assignToForm && singleFormIds.length > 0) ? singleFormIds : []
           };
           
-          const { error: orderError } = await supabase
+          const { data: singlePoData, error: orderError } = await supabase
             .from("purchase_orders")
-            .insert(orderPayload);
+            .insert(orderPayload)
+            .select("id")
+            .single();
           
           if (orderError) throw orderError;
+          
+          // Sync maintenance forms with supplier and OC info
+          if (singlePoData && assignToForm && singleFormIds.length > 0) {
+            await (supabase.from("maintenance_forms" as any) as any)
+              .update({
+                supplier_id: formData.supplier_id,
+                supplier_name: formData.supplier_name,
+                purchase_order_id: singlePoData.id,
+                purchase_order_number: orderNumber,
+              })
+              .in("id", singleFormIds);
+          }
           
           toast({ title: "Orden creada", description: `OC ${orderNumber} creada exitosamente` });
         }
