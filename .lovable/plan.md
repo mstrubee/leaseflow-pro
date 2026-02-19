@@ -1,53 +1,30 @@
 
-# Mejora del Organigrama: Layout Compacto y Lineas de Dependencia
+# Solucion para visualizar todo el organigrama
 
-## Problema Actual
-El organigrama se reduce demasiado (scale) porque los nodos tienen mucho espacio entre si (gaps grandes). Las lineas de conexion entre niveles son muy finas y poco visibles.
+## Problema
+El organigrama se escala demasiado pequeno porque el contenedor usa `overflow-hidden` y el unico mecanismo para ajustar es reducir el `scale`. Aunque se aumento el `max-w` del panel, el organigrama sigue sin caber completo.
 
 ## Solucion
+Cambiar el enfoque: en vez de solo escalar hacia abajo (lo que hace todo ilegible), permitir **scroll horizontal** cuando el organigrama es mas ancho que el contenedor, y aplicar un scale minimo mas razonable.
 
-### 1. Layout Compacto
-- Reducir el `gap-6` entre nodos raiz a `gap-1`
-- Reducir el `gap-2` entre hijos a `gap-0`
-- Eliminar padding lateral innecesario en los nodos
-- Reducir el `min-w` de los nodos de 120px a 100px
-- Usar texto mas compacto (text-xs en vez de text-sm para nombres)
+### Cambios en `src/components/admin/OrgChartManager.tsx`:
 
-### 2. Mejores Lineas de Dependencia
-- Aumentar el grosor de las lineas verticales de `w-px` a `w-[2px]`
-- Usar un color mas visible (border-primary/40 o similar)
-- Para la linea horizontal que conecta hermanos, usar una barra solida de 2px de alto con bordes redondeados
-- Agregar esquinas redondeadas en las conexiones (linea vertical baja del padre, linea horizontal conecta hijos, linea vertical baja a cada hijo)
+1. **Cambiar `overflow-hidden` a `overflow-x-auto`** en el contenedor (linea 582) para permitir scroll horizontal cuando el chart no cabe.
 
-### 3. Auto-scale Mejorado
-- Reducir el minimo de scale de 0.3 a 0.2 para permitir mas reduccion si es necesario
-- Recalcular el scale despues de cada cambio de layout
+2. **Ajustar la logica de auto-scale** (lineas 253-269): En vez de reducir el scale indefinidamente, usar un minimo mas alto (por ejemplo 0.55) y dejar que el scroll horizontal se encargue del resto. Esto mantiene el organigrama legible y navegable.
 
-## Detalles Tecnicos
+3. **Agregar altura al contenedor escalado**: Cuando se aplica `scale`, el contenedor padre no ajusta su altura automaticamente. Se agregara un calculo de altura para evitar que el contenido se corte verticalmente.
 
-**Archivo a modificar:** `src/components/admin/OrgChartManager.tsx`
+### Detalles tecnicos
 
-**Cambios en renderOrgNode (lineas 506-538):**
-- Linea vertical padre-a-barra: `w-[2px] h-5 bg-primary/30` (en vez de `w-px h-4 bg-border`)
-- Barra horizontal: `h-[2px] bg-primary/30 rounded-full` con ancho calculado de primer a ultimo hijo
-- Lineas verticales barra-a-hijo: `w-[2px] h-5 bg-primary/30`
+**Linea 582** - Contenedor:
+- De: `className="overflow-hidden pb-4"`
+- A: `className="overflow-x-auto pb-4"`
 
-**Cambios en layout principal (linea 588):**
-- Root: `flex gap-1 justify-center` (antes gap-6)
-- Children container: `flex gap-0` (antes gap-2)
+**Lineas 253-262** - Logica de scale:
+- Subir el minimo de scale de 0.2 a 0.55
+- Cuando el chart escalado siga sin caber, el scroll horizontal se activara automaticamente
 
-**Cambios en nodos (lineas 437-460):**
-- Nodo: `px-2.5 py-1.5 min-w-[90px]` (antes px-4 py-2.5 min-w-[120px])
-- Nombre: `text-xs` (antes text-sm)
-- Cargo: `text-[10px]` (antes text-[11px])
-
-**Estructura de conectores mejorada para multiples hijos:**
-```text
-       [Padre]
-          |          <- linea vertical 2px
-    ------+------    <- barra horizontal 2px
-    |     |     |    <- lineas verticales 2px a cada hijo
-  [H1]  [H2]  [H3]
-```
-
-Se usara un enfoque con posicionamiento relativo para la barra horizontal, calculando que vaya desde el centro del primer hijo hasta el centro del ultimo hijo.
+**Lineas 585-591** - Wrapper del chart:
+- Agregar `min-w-max` al div del chart para que mantenga su tamano natural y active el scroll cuando sea necesario
+- Ajustar el `height` del contenedor proporcionalmente al scale para evitar corte vertical
