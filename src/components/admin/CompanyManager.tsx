@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Pencil, Trash2, Building2, Loader2, ChevronDown, ChevronRight, MapPin } from "lucide-react";
+import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 
 interface Company {
   id: string;
@@ -297,6 +298,7 @@ export const CompanyManager = ({ defaultCollapsed = false }: CompanyManagerProps
                           ) : (
                             <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
                           )}
+                          <CompanyLogo companyName={company.name} size="sm" />
                           {company.name}
                         </div>
                       </TableCell>
