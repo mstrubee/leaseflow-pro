@@ -6,8 +6,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Download, CalendarDays, Clock, Timer, TrendingUp, Wrench, FileText, ArrowLeft } from "lucide-react";
+import { Download, CalendarDays, Clock, Timer, TrendingUp, Wrench, FileText, ArrowLeft, Filter } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm, detectMaintenanceType, SUB_STATUS_LABELS, SubStatus } from "./types";
 import { exportMaintenancePDF } from "./maintenanceExport";
@@ -46,6 +47,8 @@ export function MaintenanceReports() {
   const [activeBarContract, setActiveBarContract] = useState<string | null>(null);
   const [selectedBarContract, setSelectedBarContract] = useState<string | null>(null);
   const [selectedFormDetail, setSelectedFormDetail] = useState<MaintenanceForm | null>(null);
+  const [dialogStatusFilter, setDialogStatusFilter] = useState<string[]>([]);
+  const [dialogSubStatusFilter, setDialogSubStatusFilter] = useState<string[]>([]);
   const [contractCompanyMap, setContractCompanyMap] = useState<Map<string, string>>(new Map());
   const { logos } = useAppLogos();
 
@@ -558,7 +561,7 @@ export function MaintenanceReports() {
       </Card>
 
       {/* Dialog: Forms for selected contract */}
-      <Dialog open={!!selectedBarContract} onOpenChange={(open) => { if (!open) { setSelectedBarContract(null); setSelectedFormDetail(null); } }}>
+      <Dialog open={!!selectedBarContract} onOpenChange={(open) => { if (!open) { setSelectedBarContract(null); setSelectedFormDetail(null); setDialogStatusFilter([]); setDialogSubStatusFilter([]); } }}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
           {selectedFormDetail ? (
             <>
@@ -618,28 +621,96 @@ export function MaintenanceReports() {
                 </Button>
               </div>
             </>
-          ) : (
-            <>
-              <DialogHeader>
-                <DialogTitle className="text-base">FORMs — {selectedBarContract}</DialogTitle>
-              </DialogHeader>
-              <div className="overflow-auto flex-1">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-28">N° FORM</TableHead>
-                      <TableHead className="w-24">Estado</TableHead>
-                      <TableHead className="w-28">Sub-Estado</TableHead>
-                      <TableHead>Descripción</TableHead>
-                      <TableHead className="w-28">Fecha Creación</TableHead>
-                      <TableHead className="w-28">Fecha Resolución</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredForms
-                      .filter(f => f.contract_name === selectedBarContract)
-                      .sort((a, b) => (b.created_date || "").localeCompare(a.created_date || ""))
-                      .map(f => (
+          ) : (() => {
+            const STATUS_OPTIONS = [{ value: "proceso", label: "En Proceso" }, { value: "solucionado", label: "Solucionado" }];
+            const SUB_STATUS_OPTIONS = Object.entries(SUB_STATUS_LABELS).map(([k, v]) => ({ value: k, label: v }));
+            const dialogFilteredForms = filteredForms
+              .filter(f => f.contract_name === selectedBarContract)
+              .filter(f => dialogStatusFilter.length === 0 || dialogStatusFilter.includes(f.status))
+              .filter(f => dialogSubStatusFilter.length === 0 || dialogSubStatusFilter.includes(f.sub_status))
+              .sort((a, b) => (b.created_date || "").localeCompare(a.created_date || ""));
+            const toggleFilter = (arr: string[], val: string, setter: (v: string[]) => void) => {
+              setter(arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val]);
+            };
+            const exportFilteredListPDF = async () => {
+              const doc = new jsPDF({ orientation: "landscape" });
+              try { const logoImg = new Image(); logoImg.src = logosHeader; await new Promise((resolve, reject) => { logoImg.onload = resolve; logoImg.onerror = reject; }); doc.addImage(logoImg, "PNG", 14, 8, 50, 20); } catch {}
+              doc.setFontSize(16);
+              doc.text("FORMs — " + (selectedBarContract || ""), 70, 18);
+              doc.setFontSize(9); doc.setTextColor(100);
+              const af: string[] = [];
+              if (dialogStatusFilter.length > 0) af.push("Estado: " + dialogStatusFilter.map(s => STATUS_OPTIONS.find(o => o.value === s)?.label || s).join(", "));
+              if (dialogSubStatusFilter.length > 0) af.push("Sub-Estado: " + dialogSubStatusFilter.map(s => SUB_STATUS_LABELS[s as SubStatus] || s).join(", "));
+              doc.text(dialogFilteredForms.length + " FORMs" + (af.length > 0 ? " | Filtros: " + af.join(" | ") : ""), 70, 24);
+              doc.setTextColor(0);
+              autoTable(doc, { startY: 32, head: [["N° FORM", "Estado", "Sub-Estado", "Descripción", "Fecha Creación", "Fecha Resolución"]], body: dialogFilteredForms.map(f => [f.form_number, f.status === "proceso" ? "En Proceso" : f.status === "solucionado" ? "Solucionado" : f.status, SUB_STATUS_LABELS[f.sub_status as SubStatus] || f.sub_status || "-", (f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-").substring(0, 80), f.created_date ? new Date(f.created_date).toLocaleDateString("es-CL") : "-", f.resolution_date ? new Date(f.resolution_date).toLocaleDateString("es-CL") : "-"]), styles: { fontSize: 8, cellPadding: 2 }, headStyles: { fillColor: [220, 38, 38] } });
+              doc.save("FORMs_" + (selectedBarContract || "").replace(/\s+/g, "_") + ".pdf");
+              toast({ title: "PDF generado", description: "El listado se descargó correctamente" });
+            };
+            return (
+              <>
+                <DialogHeader>
+                  <div className="flex items-center justify-between">
+                    <DialogTitle className="text-base">FORMs — {selectedBarContract}</DialogTitle>
+                    <Button size="sm" className="gap-1.5 h-7 text-xs" onClick={exportFilteredListPDF}>
+                      <Download className="h-3.5 w-3.5" /> Descargar listado
+                    </Button>
+                  </div>
+                </DialogHeader>
+                <div className="flex flex-wrap gap-2 px-1">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs">
+                        <Filter className="h-3 w-3" />
+                        Estado {dialogStatusFilter.length > 0 && <Badge variant="secondary" className="text-[10px] px-1 py-0">{dialogStatusFilter.length}</Badge>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-44 p-2">
+                      {STATUS_OPTIONS.map(o => (
+                        <label key={o.value} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent cursor-pointer text-sm">
+                          <Checkbox checked={dialogStatusFilter.includes(o.value)} onCheckedChange={() => toggleFilter(dialogStatusFilter, o.value, setDialogStatusFilter)} />
+                          {o.label}
+                        </label>
+                      ))}
+                    </PopoverContent>
+                  </Popover>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs">
+                        <Filter className="h-3 w-3" />
+                        Sub-Estado {dialogSubStatusFilter.length > 0 && <Badge variant="secondary" className="text-[10px] px-1 py-0">{dialogSubStatusFilter.length}</Badge>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-48 p-2">
+                      {SUB_STATUS_OPTIONS.map(o => (
+                        <label key={o.value} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent cursor-pointer text-sm">
+                          <Checkbox checked={dialogSubStatusFilter.includes(o.value)} onCheckedChange={() => toggleFilter(dialogSubStatusFilter, o.value, setDialogSubStatusFilter)} />
+                          {o.label}
+                        </label>
+                      ))}
+                    </PopoverContent>
+                  </Popover>
+                  {(dialogStatusFilter.length > 0 || dialogSubStatusFilter.length > 0) && (
+                    <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setDialogStatusFilter([]); setDialogSubStatusFilter([]); }}>
+                      Limpiar filtros
+                    </Button>
+                  )}
+                  <span className="text-xs text-muted-foreground self-center ml-auto">{dialogFilteredForms.length} FORMs</span>
+                </div>
+                <div className="overflow-auto flex-1">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-28">N° FORM</TableHead>
+                        <TableHead className="w-24">Estado</TableHead>
+                        <TableHead className="w-28">Sub-Estado</TableHead>
+                        <TableHead>Descripción</TableHead>
+                        <TableHead className="w-28">Fecha Creación</TableHead>
+                        <TableHead className="w-28">Fecha Resolución</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {dialogFilteredForms.map(f => (
                         <TableRow key={f.id} className="cursor-pointer hover:bg-accent/50" onClick={() => setSelectedFormDetail(f)}>
                           <TableCell className="text-xs font-medium">{f.form_number}</TableCell>
                           <TableCell>
@@ -647,7 +718,7 @@ export function MaintenanceReports() {
                               {f.status === "proceso" ? "En Proceso" : f.status === "solucionado" ? "Solucionado" : f.status}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-xs">{f.sub_status?.replace(/_/g, " ") || "-"}</TableCell>
+                          <TableCell className="text-xs">{SUB_STATUS_LABELS[f.sub_status as SubStatus] || f.sub_status?.replace(/_/g, " ") || "-"}</TableCell>
                           <TableCell className="text-xs max-w-[200px] truncate">
                             {f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-"}
                           </TableCell>
@@ -655,11 +726,12 @@ export function MaintenanceReports() {
                           <TableCell className="text-xs">{f.resolution_date ? new Date(f.resolution_date).toLocaleDateString("es-CL") : "-"}</TableCell>
                         </TableRow>
                       ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </>
-          )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>
