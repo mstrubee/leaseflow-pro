@@ -420,7 +420,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
     // Obtener líneas del presupuesto específico con quantity, unit_price y template_line_id
     const { data: lines } = await supabase
       .from("budget_lines")
-      .select("id, amount_uf, status, parent_id, quantity, unit_price, template_line_id")
+      .select("id, amount_uf, status, parent_id, quantity, unit_price, template_line_id, currency")
       .eq("budget_id", budget.id);
 
     // Fetch template prices for lines with template_line_id
@@ -445,14 +445,19 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
     // Only count leaf nodes (lines that are not parents of other lines) to avoid double counting
     const leafLines = (lines || []).filter(l => !parentIds.has(l.id));
     
-    // Helper to get effective amount - uses template price as fallback
-    const getEffectiveAmount = (line: { id: string; quantity?: number | null; unit_price?: number | null; amount_uf: number }) => {
+    // Helper to get effective amount in UF - uses template price as fallback
+    const getEffectiveAmount = (line: { id: string; quantity?: number | null; unit_price?: number | null; amount_uf: number; currency?: string | null }) => {
       const qty = line.quantity || 0;
       const localPrice = line.unit_price || 0;
       const templatePrice = tPricesMap[line.id] ?? 0;
       const price = localPrice > 0 ? localPrice : templatePrice;
       if (qty <= 0 || price <= 0) return 0;
-      return qty * price;
+      const total = qty * price;
+      // Convert CLP to UF if needed
+      if (line.currency === "CLP" && ufValue > 0) {
+        return total / ufValue;
+      }
+      return total;
     };
     
     const authorized = leafLines
