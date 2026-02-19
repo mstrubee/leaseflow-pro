@@ -622,7 +622,8 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                 </div>
                 {/* Contract list */}
                 <div className="border rounded-md overflow-hidden">
-                  <div className="grid grid-cols-[auto_1fr_120px_120px] gap-2 px-2 py-1.5 bg-muted/60 border-b text-[11px] font-medium text-muted-foreground">
+                  <div className="grid grid-cols-[auto_auto_1fr_120px_120px] gap-2 px-2 py-1.5 bg-muted/60 border-b text-[11px] font-medium text-muted-foreground">
+                    <span></span>
                     <span></span>
                     <span>Contrato</span>
                     <span>Región</span>
@@ -635,17 +636,23 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
                         if (contractFilter === "commune" && selectedCommunes.length > 0) return c.commune != null && selectedCommunes.includes(c.commune);
                         return true;
                       })
-                      .map(c => (
-                        <label key={c.id} className="grid grid-cols-[auto_1fr_120px_120px] gap-2 items-center text-sm cursor-pointer hover:bg-muted/50 px-2 py-1 border-b last:border-b-0">
-                          <Checkbox
-                            checked={formContractIds.includes(c.id)}
-                            onCheckedChange={() => toggleContract(c.id)}
-                          />
-                          <span className="truncate">{c.name}</span>
-                          <span className="text-[11px] text-muted-foreground truncate">{c.region || ''}</span>
-                          <span className="text-[11px] text-muted-foreground truncate">{c.commune || ''}</span>
-                        </label>
-                      ))}
+                      .map(c => {
+                        const cCompanyNames = (contractCompanyMap[c.id] || [])
+                          .map(id => companies.find(co => co.id === id)?.name)
+                          .filter(Boolean) as string[];
+                        return (
+                          <label key={c.id} className="grid grid-cols-[auto_auto_1fr_120px_120px] gap-2 items-center text-sm cursor-pointer hover:bg-muted/50 px-2 py-1 border-b last:border-b-0">
+                            <Checkbox
+                              checked={formContractIds.includes(c.id)}
+                              onCheckedChange={() => toggleContract(c.id)}
+                            />
+                            <CompanyLogo companyNames={cCompanyNames} size="sm" />
+                            <span className="truncate">{c.name}</span>
+                            <span className="text-[11px] text-muted-foreground truncate">{c.region || ''}</span>
+                            <span className="text-[11px] text-muted-foreground truncate">{c.commune || ''}</span>
+                          </label>
+                        );
+                      })}
                   </div>
                 </div>
               </div>
