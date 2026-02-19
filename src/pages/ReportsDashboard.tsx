@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { ArrowLeft, FileText, Building2, CheckCircle2, AlertTriangle, Clock, XCircle, FileCheck, ExternalLink, ChevronDown, ChevronUp, ChevronRight, X, Download, Filter, MessageSquare, ArrowUpDown, Settings2, Check } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { MaintenanceReports } from "@/components/maintenance/MaintenanceReports";
+import { SupplierReports } from "@/components/suppliers/SupplierReports";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
@@ -90,6 +91,18 @@ const ReportsDashboard = () => {
     true
   );
   
+  // Collapsible state for maintenance section
+  const { isOpen: isMaintenanceSectionOpen, setIsOpen: setMaintenanceSectionOpen } = useSingleCollapsible(
+    "reports-maintenance-section",
+    true
+  );
+
+  // Collapsible state for suppliers section
+  const { isOpen: isSupplierSectionOpen, setIsOpen: setSupplierSectionOpen } = useSingleCollapsible(
+    "reports-supplier-section",
+    true
+  );
+
   // Collapsible state for "Sin Patente" sub-section
   const { isOpen: isSinPatenteSectionOpen, setIsOpen: setSinPatenteSectionOpen } = useSingleCollapsible(
     "reports-sin-patente-section",
@@ -1456,12 +1469,43 @@ const ReportsDashboard = () => {
           </Card>
         </Collapsible>
 
+        {/* Supplier Reports Section */}
+        <Collapsible open={isSupplierSectionOpen} onOpenChange={setSupplierSectionOpen}>
+          <Card className="mt-6">
+            <CollapsibleTrigger asChild>
+              <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                <div className="flex items-center gap-2">
+                  {isSupplierSectionOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                  <CardTitle>Informe de Proveedores</CardTitle>
+                </div>
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent>
+                <SupplierReports />
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
+
         {/* Maintenance Reports Section */}
-        <Card className="mt-6">
-          <CardContent className="pt-6">
-            <MaintenanceReports />
-          </CardContent>
-        </Card>
+        <Collapsible open={isMaintenanceSectionOpen} onOpenChange={setMaintenanceSectionOpen}>
+          <Card className="mt-6">
+            <CollapsibleTrigger asChild>
+              <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                <div className="flex items-center gap-2">
+                  {isMaintenanceSectionOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                  <CardTitle>Informe de Mantenciones</CardTitle>
+                </div>
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent>
+                <MaintenanceReports />
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
       </main>
     </div>
   );
