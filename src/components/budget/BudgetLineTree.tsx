@@ -425,8 +425,15 @@ const BudgetLineItem = ({
                   className={cn(
                     "text-sm flex-shrink-0 w-[280px] min-w-[280px] max-w-[280px] truncate", 
                     level === 0 ? "font-semibold" : "font-medium",
-                    !readOnly && "cursor-text hover:bg-accent/30 px-1 py-0.5 rounded"
+                    !readOnly && "cursor-text hover:bg-accent/30 px-1 py-0.5 rounded",
+                    !isParent && onViewLineDetails && "cursor-pointer hover:underline hover:text-primary"
                   )}
+                  onClick={(e) => {
+                    if (!isParent && onViewLineDetails) {
+                      e.stopPropagation();
+                      onViewLineDetails(line.id, line.name);
+                    }
+                  }}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     if (!readOnly) {
@@ -438,7 +445,12 @@ const BudgetLineItem = ({
                   {line.name}
                 </span>
               </TooltipTrigger>
-              <TooltipContent side="top">{line.name}</TooltipContent>
+              <TooltipContent side="top">
+                {!isParent && onViewLineDetails 
+                  ? <>{line.name}<br/><span className="text-[10px]">Click para ver Solicitudes, OC y Facturas</span></>
+                  : line.name
+                }
+              </TooltipContent>
             </Tooltip>
           </TooltipProvider>
         )}
