@@ -40,6 +40,7 @@ export function MaintenanceReports() {
   const [forms, setForms] = useState<MaintenanceForm[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedYears, setSelectedYears] = useState<number[]>([]);
+  const [chartTopN, setChartTopN] = useState<15 | 30 | 0>(15);
   const [contractCompanyMap, setContractCompanyMap] = useState<Map<string, string>>(new Map());
   const { logos } = useAppLogos();
 
@@ -135,7 +136,8 @@ export function MaintenanceReports() {
 
   // Top contracts for bar chart
   const topContractsChart = useMemo(() => {
-    return contractStats.slice(0, 15).map(c => {
+    const slice = chartTopN === 0 ? contractStats : contractStats.slice(0, chartTopN);
+    return slice.map(c => {
       const companyName = c.contractId ? contractCompanyMap.get(c.contractId) || "" : "";
       let logoUrl = "";
       if (companyName.toLowerCase().includes("agroplanet")) logoUrl = logos.agroplanet;
@@ -147,7 +149,7 @@ export function MaintenanceReports() {
         "Solucionados": c.solucionados,
       };
     });
-  }, [contractStats, contractCompanyMap, logos]);
+  }, [contractStats, contractCompanyMap, logos, chartTopN]);
 
   // Type distribution for pie chart
   const typeDistribution = useMemo(() => {
@@ -373,8 +375,23 @@ export function MaintenanceReports() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Bar chart: Forms by contract */}
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Top 15 Contratos por FORMs</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              {chartTopN === 0 ? "Todos los" : `Top ${chartTopN}`} Contratos por FORMs
+            </CardTitle>
+            <div className="flex gap-1">
+              {([15, 30, 0] as const).map(n => (
+                <Button
+                  key={n}
+                  variant={chartTopN === n ? "default" : "outline"}
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => setChartTopN(n)}
+                >
+                  {n === 0 ? "100%" : `Top ${n}`}
+                </Button>
+              ))}
+            </div>
           </CardHeader>
           <CardContent>
             {topContractsChart.length > 0 ? (
