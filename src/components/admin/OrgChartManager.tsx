@@ -33,6 +33,8 @@ interface CompanyOption {
 interface ContractOption {
   id: string;
   name: string;
+  region: string | null;
+  commune: string | null;
 }
 
 interface OrgChartManagerProps {
@@ -52,6 +54,11 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
 
   // Member contract assignments
   const [memberContractMap, setMemberContractMap] = useState<Record<string, string[]>>({});
+
+  // Contract filter state
+  const [contractFilter, setContractFilter] = useState<"all" | "region" | "commune">("all");
+  const [selectedRegion, setSelectedRegion] = useState<string>("");
+  const [selectedCommune, setSelectedCommune] = useState<string>("");
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -133,14 +140,32 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
       return;
     }
 
-    const { data } = await supabase
-      .from("contracts")
-      .select("id, name")
-      .in("id", ids)
-      .is("deleted_at", null)
-      .order("name");
+    const [contractsResult, addressesResult] = await Promise.all([
+      supabase
+        .from("contracts")
+        .select("id, name")
+        .in("id", ids)
+        .is("deleted_at", null)
+        .order("name"),
+      supabase
+        .from("contract_addresses")
+        .select("contract_id, region, commune")
+        .in("contract_id", ids),
+    ]);
 
-    setCompanyContracts(data || []);
+    const addressMap: Record<string, { region: string | null; commune: string | null }> = {};
+    (addressesResult.data || []).forEach(a => {
+      addressMap[a.contract_id] = { region: a.region, commune: a.commune };
+    });
+
+    const enriched: ContractOption[] = (contractsResult.data || []).map(c => ({
+      id: c.id,
+      name: c.name,
+      region: addressMap[c.id]?.region || null,
+      commune: addressMap[c.id]?.commune || null,
+    }));
+
+    setCompanyContracts(enriched);
   };
 
   // Tree helpers
@@ -455,22 +480,68 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
 
             {/* Contract assignment */}
             {companyContracts.length > 0 && (
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <Label>Contratos asignados</Label>
-                <div className="max-h-40 overflow-y-auto border rounded-md p-2 space-y-1">
-                  {companyContracts.map(c => {
-                    const selectedCompanyName = companies.find(co => co.id === selectedCompanyId)?.name;
-                    return (
-                    <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 px-1 py-0.5 rounded">
-                      <Checkbox
-                        checked={formContractIds.includes(c.id)}
-                        onCheckedChange={() => toggleContract(c.id)}
-                      />
-                      <CompanyLogo companyName={selectedCompanyName} size="sm" />
-                      {c.name}
-                    </label>
-                    );
-                  })}
+                {/* Filters */}
+                <div className="flex gap-2 flex-wrap">
+                  <Select value={contractFilter} onValueChange={(v) => { setContractFilter(v as any); setSelectedRegion(""); setSelectedCommune(""); }}>
+                    <SelectTrigger className="w-[140px] h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      <SelectItem value="region">Por Región</SelectItem>
+                      <SelectItem value="commune">Por Comuna</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {contractFilter === "region" && (
+                    <Select value={selectedRegion} onValueChange={setSelectedRegion}>
+                      <SelectTrigger className="w-[200px] h-8 text-xs">
+                        <SelectValue placeholder="Seleccionar región" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[...new Set(companyContracts.map(c => c.region).filter(Boolean))].sort().map(r => (
+                          <SelectItem key={r!} value={r!}>{r}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {contractFilter === "commune" && (
+                    <Select value={selectedCommune} onValueChange={setSelectedCommune}>
+                      <SelectTrigger className="w-[200px] h-8 text-xs">
+                        <SelectValue placeholder="Seleccionar comuna" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[...new Set(companyContracts.map(c => c.commune).filter(Boolean))].sort().map(c => (
+                          <SelectItem key={c!} value={c!}>{c}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                {/* Contract list */}
+                <div className="max-h-48 overflow-y-auto border rounded-md p-2 space-y-0.5">
+                  {companyContracts
+                    .filter(c => {
+                      if (contractFilter === "region" && selectedRegion) return c.region === selectedRegion;
+                      if (contractFilter === "commune" && selectedCommune) return c.commune === selectedCommune;
+                      return true;
+                    })
+                    .map(c => {
+                      const selectedCompanyName = companies.find(co => co.id === selectedCompanyId)?.name;
+                      return (
+                        <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 px-1 py-0.5 rounded">
+                          <Checkbox
+                            checked={formContractIds.includes(c.id)}
+                            onCheckedChange={() => toggleContract(c.id)}
+                          />
+                          <CompanyLogo companyName={selectedCompanyName} size="sm" />
+                          <span className="flex-1 truncate">{c.name}</span>
+                          <span className="text-[10px] text-muted-foreground truncate max-w-[80px]">{c.region || ''}</span>
+                          <span className="text-[10px] text-muted-foreground truncate max-w-[80px]">{c.commune || ''}</span>
+                        </label>
+                      );
+                    })}
                 </div>
               </div>
             )}
