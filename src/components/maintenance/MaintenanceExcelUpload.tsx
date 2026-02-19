@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Upload, AlertTriangle, CheckCircle, Loader2, Sparkles } from "lucide-react";
+import { Upload, AlertTriangle, CheckCircle, Loader2, Sparkles, SkipForward } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { validateExcelFile } from "@/lib/excelFileValidation";
@@ -20,7 +20,7 @@ interface Props {
 }
 
 export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props) {
-  const [parsedRows, setParsedRows] = useState<(ParsedMaintenanceRow & { aiMatched?: boolean })[]>([]);
+  const [parsedRows, setParsedRows] = useState<(ParsedMaintenanceRow & { aiMatched?: boolean; isExisting?: boolean })[]>([]);
   const [loading, setLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [inserting, setInserting] = useState(false);
@@ -327,6 +327,26 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         }
       }
 
+      // Check which form_numbers already exist in the database
+      const allFormNumbers = parsed.map(r => r.form_number);
+      const existingFormNumbers = new Set<string>();
+      
+      // Query in batches of 500 to avoid URL length limits
+      for (let i = 0; i < allFormNumbers.length; i += 500) {
+        const batch = allFormNumbers.slice(i, i + 500);
+        const { data: existingForms } = await (supabase.from("maintenance_forms" as any) as any)
+          .select("form_number")
+          .in("form_number", batch);
+        existingForms?.forEach((f: any) => existingFormNumbers.add(f.form_number));
+      }
+
+      // Mark existing rows
+      parsed.forEach(r => {
+        if (existingFormNumbers.has(r.form_number)) {
+          (r as any).isExisting = true;
+        }
+      });
+
       setParsedRows(parsed);
       if (parsed.length === 0) {
         toast({ title: "Sin datos", description: "No se encontraron filas con datos válidos", variant: "destructive" });
@@ -340,9 +360,11 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
   }, []);
 
   const handleInsert = async () => {
-    const validRows = parsedRows.filter(r => r.errors.length === 0);
-    if (validRows.length === 0) {
-      toast({ title: "Sin filas válidas", description: "Todas las filas tienen errores", variant: "destructive" });
+    const newRows = parsedRows.filter(r => r.errors.length === 0 && !r.isExisting);
+    const skippedCount = parsedRows.filter(r => r.isExisting).length;
+    
+    if (newRows.length === 0) {
+      toast({ title: "Sin forms nuevos", description: `Todos los ${skippedCount} forms ya existen en el sistema`, variant: "destructive" });
       return;
     }
 
@@ -350,7 +372,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
-      const records = validRows.map(r => ({
+      const records = newRows.map(r => ({
         form_number: r.form_number,
         status: r.status,
         created_date: r.created_date,
@@ -368,15 +390,18 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         created_by: user?.id ?? null,
       }));
 
-      // Upsert in batches of 100 (update existing, insert new based on form_number)
+      // Insert in batches of 100 (only new forms)
       for (let i = 0; i < records.length; i += 100) {
         const batch = records.slice(i, i + 100);
         const { error } = await (supabase.from("maintenance_forms" as any) as any)
-          .upsert(batch, { onConflict: "form_number" });
+          .insert(batch);
         if (error) throw error;
       }
 
-      toast({ title: "Carga exitosa", description: `${validRows.length} FORMs cargados/actualizados correctamente` });
+      const msg = skippedCount > 0
+        ? `${newRows.length} FORMs nuevos cargados, ${skippedCount} omitidos (ya existían)`
+        : `${newRows.length} FORMs nuevos cargados correctamente`;
+      toast({ title: "Carga exitosa", description: msg });
       reset();
       onOpenChange(false);
       onSuccess();
@@ -388,10 +413,11 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
     }
   };
 
+  const existingCount = parsedRows.filter(r => r.isExisting).length;
+  const newCount = parsedRows.filter(r => !r.isExisting && r.errors.length === 0 && !(r.ambiguousCandidates && !r.contract_id)).length;
   const ambiguousCount = parsedRows.filter(r => r.ambiguousCandidates && !r.contract_id).length;
   const errorCount = parsedRows.filter(r => r.errors.length > 0).length;
-  const warningCount = parsedRows.filter(r => r.warnings.length > 0 && !r.ambiguousCandidates).length;
-  const validCount = parsedRows.filter(r => r.errors.length === 0 && !(r.ambiguousCandidates && !r.contract_id)).length;
+  const warningCount = parsedRows.filter(r => r.warnings.length > 0 && !r.ambiguousCandidates && !r.isExisting).length;
 
   const resolveAmbiguous = (rowIndex: number, contract: { id: string; name: string }) => {
     setParsedRows(prev => prev.map(r =>
@@ -441,7 +467,8 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         ) : (
           <>
             <div className="flex gap-4 text-sm flex-wrap">
-              <span className="flex items-center gap-1"><CheckCircle className="h-4 w-4 text-green-600" /> {validCount} válidos</span>
+              <span className="flex items-center gap-1"><CheckCircle className="h-4 w-4 text-green-600" /> {newCount} nuevos</span>
+              {existingCount > 0 && <span className="flex items-center gap-1 text-muted-foreground"><SkipForward className="h-4 w-4" /> {existingCount} ya existen (se omitirán)</span>}
               {ambiguousCount > 0 && <span className="flex items-center gap-1 text-orange-600"><AlertTriangle className="h-4 w-4" /> {ambiguousCount} duplicados por resolver</span>}
               {warningCount > 0 && <span className="flex items-center gap-1 text-yellow-600"><AlertTriangle className="h-4 w-4" /> {warningCount} advertencias</span>}
               {errorCount > 0 && <span className="flex items-center gap-1 text-destructive"><AlertTriangle className="h-4 w-4" /> {errorCount} errores</span>}
@@ -463,8 +490,11 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
                 </TableHeader>
                 <TableBody>
                   {parsedRows.map((row) => (
-                    <TableRow key={row.rowIndex} className={row.errors.length > 0 ? "bg-destructive/10" : (row.ambiguousCandidates && !row.contract_id) ? "bg-orange-50" : row.warnings.length > 0 ? "bg-yellow-50" : ""}>
-                      <TableCell className="font-mono text-xs">{row.form_number}</TableCell>
+                    <TableRow key={row.rowIndex} className={row.isExisting ? "bg-muted/50 opacity-60" : row.errors.length > 0 ? "bg-destructive/10" : (row.ambiguousCandidates && !row.contract_id) ? "bg-orange-50" : row.warnings.length > 0 ? "bg-yellow-50" : ""}>
+                      <TableCell className="font-mono text-xs">
+                        {row.form_number}
+                        {row.isExisting && <Badge variant="outline" className="ml-1 text-[10px] text-muted-foreground">Ya existe</Badge>}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={row.status === "solucionado" ? "default" : "secondary"} className="text-xs">
                           {row.status === "solucionado" ? "Solucionado" : "Proceso"}
@@ -547,8 +577,8 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
               <p className="text-xs text-orange-600 mr-auto">⚠ Resuelva los {ambiguousCount} CEBE duplicados antes de cargar</p>
             )}
             <Button variant="outline" onClick={() => { reset(); }}>Cancelar</Button>
-            <Button onClick={handleInsert} disabled={inserting || validCount === 0 || ambiguousCount > 0}>
-              {inserting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Cargando...</> : `Cargar ${validCount} FORMs`}
+            <Button onClick={handleInsert} disabled={inserting || newCount === 0 || ambiguousCount > 0}>
+              {inserting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Cargando...</> : `Cargar ${newCount} FORMs nuevos`}
             </Button>
           </DialogFooter>
         )}
