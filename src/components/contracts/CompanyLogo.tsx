@@ -44,7 +44,7 @@ export const CompanyLogo = ({ companyName, companyNames, size = "sm", className 
   // If both companies, show both logos
   if (hasAgroplanet && hasAutoplanet) {
     return (
-      <div className="flex flex-col gap-0.5 flex-shrink-0">
+      <div className="flex flex-row gap-0.5 flex-shrink-0">
         <img
           src={logos.agroplanet}
           alt="Agroplanet"
