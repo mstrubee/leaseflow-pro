@@ -42,7 +42,7 @@ interface ResolutionStats {
 export function MaintenanceReports() {
   const [forms, setForms] = useState<MaintenanceForm[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedYears, setSelectedYears] = useState<number[]>([]);
+  const [selectedYears, setSelectedYears] = useState<number[]>([new Date().getFullYear()]);
   const [chartTopN, setChartTopN] = useState<15 | 30 | 0>(15);
   const [activeBarContract, setActiveBarContract] = useState<string | null>(null);
   const [selectedBarContract, setSelectedBarContract] = useState<string | null>(null);
