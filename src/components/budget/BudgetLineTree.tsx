@@ -786,31 +786,36 @@ const BudgetLineItem = ({
 };
 
 // Helpers para cálculos
-// Helper to get effective amount - uses template price as fallback when unit_price is 0
-const getEffectiveAmount = (item: BudgetLine, templatePricesMap?: Record<string, number>): number => {
+// Helper to get effective amount in UF - uses template price as fallback when unit_price is 0
+const getEffectiveAmount = (item: BudgetLine, templatePricesMap?: Record<string, number>, ufValue?: number): number => {
   const qty = item.quantity || 0;
   const localPrice = item.unit_price || 0;
   const templatePrice = templatePricesMap && item.template_line_id ? (templatePricesMap[item.id] ?? 0) : 0;
   // Prefer local unit_price (user-edited), fallback to template price
   const price = localPrice > 0 ? localPrice : templatePrice;
   if (qty <= 0 || price <= 0) return 0;
-  return qty * price;
+  const total = qty * price;
+  // Convert CLP to UF if needed
+  if (item.currency === "CLP" && ufValue && ufValue > 0) {
+    return total / ufValue;
+  }
+  return total;
 };
 
-export const calculateAuthorizedTotal = (items: BudgetLine[], templatePricesMap?: Record<string, number>): number => {
+export const calculateAuthorizedTotal = (items: BudgetLine[], templatePricesMap?: Record<string, number>, ufValue?: number): number => {
   return items.reduce((sum, item) => {
     if (item.children && item.children.length > 0) {
-      return sum + calculateAuthorizedTotal(item.children, templatePricesMap);
+      return sum + calculateAuthorizedTotal(item.children, templatePricesMap, ufValue);
     }
-    return item.status === "autorizado" ? sum + getEffectiveAmount(item, templatePricesMap) : sum;
+    return item.status === "autorizado" ? sum + getEffectiveAmount(item, templatePricesMap, ufValue) : sum;
   }, 0);
 };
-export const calculateUnauthorizedTotal = (items: BudgetLine[], templatePricesMap?: Record<string, number>): number => {
+export const calculateUnauthorizedTotal = (items: BudgetLine[], templatePricesMap?: Record<string, number>, ufValue?: number): number => {
   return items.reduce((sum, item) => {
     if (item.children && item.children.length > 0) {
-      return sum + calculateUnauthorizedTotal(item.children, templatePricesMap);
+      return sum + calculateUnauthorizedTotal(item.children, templatePricesMap, ufValue);
     }
-    return item.status === "no_autorizado" ? sum + getEffectiveAmount(item, templatePricesMap) : sum;
+    return item.status === "no_autorizado" ? sum + getEffectiveAmount(item, templatePricesMap, ufValue) : sum;
   }, 0);
 };
 export const getUnauthorizedLines = (items: BudgetLine[]): BudgetLine[] => {

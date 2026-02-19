@@ -668,8 +668,8 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   };
 
   const currentBudget = budgets.find((b) => b.year === selectedYear);
-  const authorizedTotal = calculateAuthorizedTotal(lines, templatePricesMap);
-  const unauthorizedTotal = calculateUnauthorizedTotal(lines, templatePricesMap);
+  const authorizedTotal = calculateAuthorizedTotal(lines, templatePricesMap, ufValue);
+  const unauthorizedTotal = calculateUnauthorizedTotal(lines, templatePricesMap, ufValue);
   const budgetAmount = currentBudget?.amount_uf || 0;
   const isClosed = currentBudget?.is_closed || false;
   const unauthorizedCount = getUnauthorizedLines(lines).length;
