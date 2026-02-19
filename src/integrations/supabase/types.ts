@@ -3645,6 +3645,42 @@ export type Database = {
           },
         ]
       }
+      patent_shared_items: {
+        Row: {
+          checklist_item_id: string
+          created_at: string
+          id: string
+          shared_folder_id: string
+        }
+        Insert: {
+          checklist_item_id: string
+          created_at?: string
+          id?: string
+          shared_folder_id: string
+        }
+        Update: {
+          checklist_item_id?: string
+          created_at?: string
+          id?: string
+          shared_folder_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patent_shared_items_checklist_item_id_fkey"
+            columns: ["checklist_item_id"]
+            isOneToOne: true
+            referencedRelation: "patent_checklist_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patent_shared_items_shared_folder_id_fkey"
+            columns: ["shared_folder_id"]
+            isOneToOne: false
+            referencedRelation: "repository_folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patent_statuses: {
         Row: {
           bg_color: string

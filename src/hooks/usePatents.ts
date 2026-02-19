@@ -9,7 +9,8 @@ import {
   PatentPriority,
   PatentDocStatus,
   PatentItemEmitter,
-  PatentStatus
+  PatentStatus,
+  PatentSharedItem
 } from "@/components/patents/types";
 
 // Helper to get CEBE field value
@@ -59,6 +60,7 @@ export function usePatents() {
   const [emitters, setEmitters] = useState<PatentEmitter[]>([]);
   const [itemEmitters, setItemEmitters] = useState<PatentItemEmitter[]>([]);
   const [statuses, setStatuses] = useState<PatentStatus[]>([]);
+  const [sharedItems, setSharedItems] = useState<PatentSharedItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
@@ -72,6 +74,7 @@ export function usePatents() {
         emittersResult,
         itemEmittersResult,
         statusesResult,
+        sharedItemsResult,
         customFieldMaps
       ] = await Promise.all([
         supabase
@@ -114,6 +117,9 @@ export function usePatents() {
           .select("*")
           .eq("is_active", true)
           .order("display_order"),
+        supabase
+          .from("patent_shared_items")
+          .select("id, checklist_item_id, shared_folder_id"),
         getCustomFieldMaps()
       ]);
 
@@ -130,6 +136,7 @@ export function usePatents() {
       setEmitters((emittersResult.data as PatentEmitter[]) || []);
       setItemEmitters((itemEmittersResult.data as PatentItemEmitter[]) || []);
       setStatuses((statusesResult.data as PatentStatus[]) || []);
+      setSharedItems((sharedItemsResult.data as PatentSharedItem[]) || []);
     } catch (error) {
       console.error("Error loading patents data:", error);
     } finally {
@@ -407,6 +414,7 @@ export function usePatents() {
     emitters,
     itemEmitters,
     statuses,
+    sharedItems,
     loading,
     loadData,
     updatePriority,

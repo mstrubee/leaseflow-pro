@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { FileText, AlertTriangle, Settings, CheckCircle, ChevronDown } from "lucide-react";
+import { FileText, AlertTriangle, Settings, CheckCircle, ChevronDown, FolderOpen } from "lucide-react";
 import { usePatents } from "@/hooks/usePatents";
 import { useAuth } from "@/hooks/useAuth";
 import { useSingleCollapsible } from "@/hooks/useCollapsibleState";
@@ -12,6 +12,7 @@ import { PatentsList } from "./PatentsList";
 import { PatentChecklist } from "./PatentChecklist";
 import { CriticalAlertsDashboard } from "./CriticalAlertsDashboard";
 import { PatentAdminPanel } from "./PatentAdminPanel";
+import { PatentSharedRepository } from "./PatentSharedRepository";
 import { PatentDocStatus } from "./types";
 import { toast } from "sonner";
 
@@ -24,6 +25,7 @@ export function PatentsModule() {
     emitters,
     itemEmitters,
     statuses,
+    sharedItems,
     loading,
     loadData,
     updatePriority,
@@ -40,6 +42,7 @@ export function PatentsModule() {
   const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'list' | 'alerts'>('list');
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
+  const [sharedRepoOpen, setSharedRepoOpen] = useState(false);
   const [cardFilter, setCardFilter] = useState<string | null>(null);
   const { isOpen: isListOpen, setIsOpen: setIsListOpen } = useSingleCollapsible('patents-list-open', true);
   const stats = getCriticalStats();
@@ -100,7 +103,7 @@ export function PatentsModule() {
 
   // Show detail view if a contract is selected
   if (selectedContract) {
-    return <PatentChecklist contract={selectedContract} sections={sections} items={items} emitters={emitters} itemEmitters={itemEmitters} statuses={statuses} onBack={() => setSelectedContractId(null)} onUpdatePriority={updatePriority} onUpdatePatenteStatus={updatePatenteStatus} onUpdateComments={updateComments} onUpdateDocument={updateDocument} onUpdateDocumentStatus={updateDocumentStatus} />;
+    return <PatentChecklist contract={selectedContract} sections={sections} items={items} emitters={emitters} itemEmitters={itemEmitters} statuses={statuses} sharedItems={sharedItems} onBack={() => setSelectedContractId(null)} onUpdatePriority={updatePriority} onUpdatePatenteStatus={updatePatenteStatus} onUpdateComments={updateComments} onUpdateDocument={updateDocument} onUpdateDocumentStatus={updateDocumentStatus} />;
   }
   return <Collapsible open={isListOpen} onOpenChange={setIsListOpen}>
       <Card>
@@ -112,12 +115,17 @@ export function PatentsModule() {
             </Button>
           </CollapsibleTrigger>
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => setSharedRepoOpen(true)}>
+              <FolderOpen className="h-4 w-4" />
+              Repositorio
+            </Button>
             {isAdmin && <Button variant="outline" size="sm" className="gap-2" onClick={() => setAdminPanelOpen(true)}>
                 <Settings className="h-4 w-4" />
                 Administrar
               </Button>}
           </div>
           <PatentAdminPanel open={adminPanelOpen} onOpenChange={setAdminPanelOpen} sections={sections} items={items} emitters={emitters} onDataChange={loadData} />
+          <PatentSharedRepository open={sharedRepoOpen} onOpenChange={setSharedRepoOpen} />
         </CardHeader>
         <CollapsibleContent>
           <CardContent className="space-y-4">
