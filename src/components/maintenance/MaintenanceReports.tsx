@@ -6,10 +6,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Download, CalendarDays, Clock, Timer, TrendingUp, Wrench, X } from "lucide-react";
+import { Download, CalendarDays, Clock, Timer, TrendingUp, Wrench, FileText, ArrowLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { MaintenanceForm, detectMaintenanceType } from "./types";
+import { MaintenanceForm, detectMaintenanceType, SUB_STATUS_LABELS, SubStatus } from "./types";
+import { exportMaintenancePDF } from "./maintenanceExport";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -44,6 +45,7 @@ export function MaintenanceReports() {
   const [chartTopN, setChartTopN] = useState<15 | 30 | 0>(15);
   const [activeBarContract, setActiveBarContract] = useState<string | null>(null);
   const [selectedBarContract, setSelectedBarContract] = useState<string | null>(null);
+  const [selectedFormDetail, setSelectedFormDetail] = useState<MaintenanceForm | null>(null);
   const [contractCompanyMap, setContractCompanyMap] = useState<Map<string, string>>(new Map());
   const { logos } = useAppLogos();
 
@@ -556,46 +558,108 @@ export function MaintenanceReports() {
       </Card>
 
       {/* Dialog: Forms for selected contract */}
-      <Dialog open={!!selectedBarContract} onOpenChange={(open) => { if (!open) setSelectedBarContract(null); }}>
+      <Dialog open={!!selectedBarContract} onOpenChange={(open) => { if (!open) { setSelectedBarContract(null); setSelectedFormDetail(null); } }}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="text-base">FORMs — {selectedBarContract}</DialogTitle>
-          </DialogHeader>
-          <div className="overflow-auto flex-1">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-28">N° FORM</TableHead>
-                  <TableHead className="w-24">Estado</TableHead>
-                  <TableHead className="w-28">Sub-Estado</TableHead>
-                  <TableHead>Descripción</TableHead>
-                  <TableHead className="w-28">Fecha Creación</TableHead>
-                  <TableHead className="w-28">Fecha Resolución</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredForms
-                  .filter(f => f.contract_name === selectedBarContract)
-                  .sort((a, b) => (b.created_date || "").localeCompare(a.created_date || ""))
-                  .map(f => (
-                    <TableRow key={f.id}>
-                      <TableCell className="text-xs font-medium">{f.form_number}</TableCell>
-                      <TableCell>
-                        <Badge variant={f.status === "solucionado" ? "default" : "secondary"} className="text-xs">
-                          {f.status === "proceso" ? "En Proceso" : f.status === "solucionado" ? "Solucionado" : f.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-xs">{f.sub_status?.replace(/_/g, " ") || "-"}</TableCell>
-                      <TableCell className="text-xs max-w-[200px] truncate">
-                        {f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-"}
-                      </TableCell>
-                      <TableCell className="text-xs">{f.created_date ? new Date(f.created_date).toLocaleDateString("es-CL") : "-"}</TableCell>
-                      <TableCell className="text-xs">{f.resolution_date ? new Date(f.resolution_date).toLocaleDateString("es-CL") : "-"}</TableCell>
+          {selectedFormDetail ? (
+            <>
+              <DialogHeader>
+                <div className="flex items-center gap-2">
+                  <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setSelectedFormDetail(null)}>
+                    <ArrowLeft className="h-4 w-4 mr-1" /> Volver
+                  </Button>
+                  <DialogTitle className="text-base">FORM {selectedFormDetail.form_number}</DialogTitle>
+                </div>
+              </DialogHeader>
+              <div className="overflow-auto flex-1 space-y-4 p-1">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                  <div><span className="text-muted-foreground">Local:</span> <span className="font-medium">{selectedFormDetail.contract_name || "-"}</span></div>
+                  <div><span className="text-muted-foreground">Estado:</span>{" "}
+                    <Badge variant={selectedFormDetail.status === "solucionado" ? "default" : "secondary"} className="text-xs">
+                      {selectedFormDetail.status === "proceso" ? "En Proceso" : selectedFormDetail.status === "solucionado" ? "Solucionado" : selectedFormDetail.status}
+                    </Badge>
+                  </div>
+                  <div><span className="text-muted-foreground">Sub-Estado:</span> <span className="font-medium">{SUB_STATUS_LABELS[selectedFormDetail.sub_status as SubStatus] || selectedFormDetail.sub_status || "-"}</span></div>
+                  <div><span className="text-muted-foreground">Tipo:</span> <span className="font-medium">{detectMaintenanceType(selectedFormDetail)}</span></div>
+                  <div><span className="text-muted-foreground">Fecha Creación:</span> <span className="font-medium">{selectedFormDetail.created_date ? new Date(selectedFormDetail.created_date).toLocaleDateString("es-CL") : "-"}</span></div>
+                  <div><span className="text-muted-foreground">Fecha Resolución:</span> <span className="font-medium">{selectedFormDetail.resolution_date ? new Date(selectedFormDetail.resolution_date).toLocaleDateString("es-CL") : "-"}</span></div>
+                  {selectedFormDetail.supplier_name && <div><span className="text-muted-foreground">Proveedor:</span> <span className="font-medium">{selectedFormDetail.supplier_name}</span></div>}
+                  {selectedFormDetail.purchase_order_number && <div><span className="text-muted-foreground">OC:</span> <span className="font-medium">{selectedFormDetail.purchase_order_number}</span></div>}
+                </div>
+
+                <div className="space-y-2">
+                  {selectedFormDetail.general_description && (
+                    <div className="rounded-md border p-3"><p className="text-xs text-muted-foreground font-medium mb-1">Descripción General</p><p className="text-sm">{selectedFormDetail.general_description}</p></div>
+                  )}
+                  {selectedFormDetail.electrical_description && (
+                    <div className="rounded-md border p-3"><p className="text-xs text-muted-foreground font-medium mb-1">Req. Eléctrico</p><p className="text-sm">{selectedFormDetail.electrical_description}</p></div>
+                  )}
+                  {selectedFormDetail.civil_description && (
+                    <div className="rounded-md border p-3"><p className="text-xs text-muted-foreground font-medium mb-1">Req. Obra Civil</p><p className="text-sm">{selectedFormDetail.civil_description}</p></div>
+                  )}
+                  {selectedFormDetail.hvac_description && (
+                    <div className="rounded-md border p-3"><p className="text-xs text-muted-foreground font-medium mb-1">Req. Climatización</p><p className="text-sm">{selectedFormDetail.hvac_description}</p></div>
+                  )}
+                  {selectedFormDetail.fixed_assets_description && (
+                    <div className="rounded-md border p-3"><p className="text-xs text-muted-foreground font-medium mb-1">Req. Activos Fijos</p><p className="text-sm">{selectedFormDetail.fixed_assets_description}</p></div>
+                  )}
+                  {selectedFormDetail.additional_comments && (
+                    <div className="rounded-md border p-3 border-primary/30"><p className="text-xs text-muted-foreground font-medium mb-1">Comentarios Técnicos (Jefe Mantenciones)</p><p className="text-sm">{selectedFormDetail.additional_comments}</p></div>
+                  )}
+                </div>
+
+                <Button
+                  className="gap-2"
+                  onClick={() => {
+                    const companyName = selectedFormDetail.contract_id ? contractCompanyMap.get(selectedFormDetail.contract_id) : undefined;
+                    exportMaintenancePDF(selectedFormDetail, companyName || undefined);
+                  }}
+                >
+                  <Download className="h-4 w-4" /> Descargar PDF
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-base">FORMs — {selectedBarContract}</DialogTitle>
+              </DialogHeader>
+              <div className="overflow-auto flex-1">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-28">N° FORM</TableHead>
+                      <TableHead className="w-24">Estado</TableHead>
+                      <TableHead className="w-28">Sub-Estado</TableHead>
+                      <TableHead>Descripción</TableHead>
+                      <TableHead className="w-28">Fecha Creación</TableHead>
+                      <TableHead className="w-28">Fecha Resolución</TableHead>
                     </TableRow>
-                  ))}
-              </TableBody>
-            </Table>
-          </div>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredForms
+                      .filter(f => f.contract_name === selectedBarContract)
+                      .sort((a, b) => (b.created_date || "").localeCompare(a.created_date || ""))
+                      .map(f => (
+                        <TableRow key={f.id} className="cursor-pointer hover:bg-accent/50" onClick={() => setSelectedFormDetail(f)}>
+                          <TableCell className="text-xs font-medium">{f.form_number}</TableCell>
+                          <TableCell>
+                            <Badge variant={f.status === "solucionado" ? "default" : "secondary"} className="text-xs">
+                              {f.status === "proceso" ? "En Proceso" : f.status === "solucionado" ? "Solucionado" : f.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs">{f.sub_status?.replace(/_/g, " ") || "-"}</TableCell>
+                          <TableCell className="text-xs max-w-[200px] truncate">
+                            {f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-"}
+                          </TableCell>
+                          <TableCell className="text-xs">{f.created_date ? new Date(f.created_date).toLocaleDateString("es-CL") : "-"}</TableCell>
+                          <TableCell className="text-xs">{f.resolution_date ? new Date(f.resolution_date).toLocaleDateString("es-CL") : "-"}</TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>
