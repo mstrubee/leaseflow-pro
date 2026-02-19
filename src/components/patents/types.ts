@@ -79,6 +79,12 @@ export interface PatentDocument {
   custom_data?: Record<string, string>;
 }
 
+export interface PatentSharedItem {
+  id: string;
+  checklist_item_id: string;
+  shared_folder_id: string;
+}
+
 export interface PatentDocumentAlert {
   id: string;
   patent_document_id: string;

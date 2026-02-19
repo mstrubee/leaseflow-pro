@@ -10,7 +10,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download, CheckSquare, Square, X, ChevronDown } from "lucide-react";
+import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download, CheckSquare, Square, X, ChevronDown, FolderOpen } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { exportPatentsToExcel } from "./exportPatentsExcel";
 import { format, addDays, differenceInDays } from "date-fns";
@@ -26,6 +26,7 @@ import {
   PatentDocument,
   PatentPriority,
   PatentDocStatus,
+  PatentSharedItem,
   PRIORITY_CONFIG
 } from "./types";
 import { PatentPriorityBadge } from "./PatentPriorityBadge";
@@ -44,6 +45,7 @@ interface PatentChecklistProps {
   emitters: PatentEmitter[];
   itemEmitters: PatentItemEmitter[];
   statuses: PatentStatus[];
+  sharedItems: PatentSharedItem[];
   onBack: () => void;
   onUpdatePriority: (contractId: string, priority: PatentPriority, userId: string) => Promise<void>;
   onUpdatePatenteStatus: (contractId: string, patenteStatus: string) => Promise<void>;
@@ -59,6 +61,7 @@ export function PatentChecklist({
   emitters,
   itemEmitters,
   statuses,
+  sharedItems,
   onBack,
   onUpdatePriority,
   onUpdatePatenteStatus,
@@ -67,6 +70,37 @@ export function PatentChecklist({
   onUpdateDocumentStatus,
 }: PatentChecklistProps) {
   const { user } = useAuth();
+  
+  // Shared items lookup: itemId -> folderId
+  const sharedItemLookup = useMemo(() => {
+    const map: Record<string, string> = {};
+    sharedItems.forEach(si => { map[si.checklist_item_id] = si.shared_folder_id; });
+    return map;
+  }, [sharedItems]);
+  
+  // Shared files cache: folderId -> files
+  const [sharedFilesCache, setSharedFilesCache] = useState<Record<string, { id: string; name: string; url: string }[]>>({});
+  
+  // Load shared files for all shared items
+  useEffect(() => {
+    const folderIds = [...new Set(sharedItems.map(si => si.shared_folder_id))];
+    if (folderIds.length === 0) return;
+    
+    const loadSharedFiles = async () => {
+      const { data } = await (await import("@/integrations/supabase/client")).supabase
+        .from("repository_files")
+        .select("id, name, url, folder_id")
+        .in("folder_id", folderIds);
+      
+      const cache: Record<string, { id: string; name: string; url: string }[]> = {};
+      (data || []).forEach((f: any) => {
+        if (!cache[f.folder_id]) cache[f.folder_id] = [];
+        cache[f.folder_id].push({ id: f.id, name: f.name, url: f.url });
+      });
+      setSharedFilesCache(cache);
+    };
+    loadSharedFiles();
+  }, [sharedItems]);
   
   // Section collapsible state - collapsed by default
   const { isExpanded, toggle: toggleSection, expandAll, collapseAll } = useCollapsibleState('patent-checklist-sections', []);
@@ -808,64 +842,147 @@ export function PatentChecklist({
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-1">
-                                {getDocValue(item.id, 'document_url') && (() => {
-                                  const urls = (getDocValue(item.id, 'document_url') as string).split('|||').filter(Boolean);
-                                  return urls.length > 1 ? (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-8 text-primary hover:text-primary/80"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setUploadDialog({ itemId: item.id, itemName: item.name });
-                                      }}
-                                      title={`${urls.length} archivos - click para ver`}
-                                    >
-                                      <FileText className="h-3 w-3" />
-                                      <span className="ml-1 text-xs">{urls.length}</span>
-                                    </Button>
-                                  ) : (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-8 text-primary hover:text-primary/80"
-                                      onClick={async (e) => {
-                                        e.stopPropagation();
-                                        const url = urls[0];
-                                        // Check if it's a storage URL that needs signed URL
-                                        if (url.startsWith('storage://') || url.includes('/repository-files/')) {
-                                          const { getSignedUrl } = await import('@/lib/storageUtils');
-                                          const signedUrl = await getSignedUrl(url);
-                                          if (signedUrl) {
-                                            window.open(signedUrl, '_blank');
-                                          } else {
-                                            toast.error("No se pudo acceder al archivo");
-                                          }
-                                        } else {
-                                          window.open(url, '_blank');
-                                        }
-                                      }}
-                                      title="Ver archivo"
-                                    >
-                                      <FileText className="h-3 w-3" />
-                                    </Button>
+                                {/* Shared item: show files from shared repository */}
+                                {sharedItemLookup[item.id] ? (() => {
+                                  const folderId = sharedItemLookup[item.id];
+                                  const sharedFiles = sharedFilesCache[folderId] || [];
+                                  return (
+                                    <>
+                                      {sharedFiles.length > 0 ? (
+                                        sharedFiles.length > 1 ? (
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 text-primary hover:text-primary/80"
+                                            onClick={async (e) => {
+                                              e.stopPropagation();
+                                              // Open first file, show count
+                                              const { getSignedUrl } = await import('@/lib/storageUtils');
+                                              const signedUrl = await getSignedUrl(sharedFiles[0].url);
+                                              if (signedUrl) window.open(signedUrl, '_blank');
+                                            }}
+                                            title={`${sharedFiles.length} archivos compartidos`}
+                                          >
+                                            <FolderOpen className="h-3 w-3" />
+                                            <span className="ml-1 text-xs">{sharedFiles.length}</span>
+                                          </Button>
+                                        ) : (
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 text-primary hover:text-primary/80"
+                                            onClick={async (e) => {
+                                              e.stopPropagation();
+                                              const { getSignedUrl } = await import('@/lib/storageUtils');
+                                              const signedUrl = await getSignedUrl(sharedFiles[0].url);
+                                              if (signedUrl) window.open(signedUrl, '_blank');
+                                              else toast.error("No se pudo acceder al archivo");
+                                            }}
+                                            title={`Archivo compartido: ${sharedFiles[0].name}`}
+                                          >
+                                            <FolderOpen className="h-3 w-3" />
+                                          </Button>
+                                        )
+                                      ) : null}
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8"
+                                        onClick={async (e) => {
+                                          e.stopPropagation();
+                                          // Upload to shared folder
+                                          const input = document.createElement('input');
+                                          input.type = 'file';
+                                          input.accept = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png';
+                                          input.multiple = true;
+                                          input.onchange = async () => {
+                                            if (!input.files?.length) return;
+                                            const { sanitizeFileName } = await import('@/lib/fileValidation');
+                                            const { supabase } = await import('@/integrations/supabase/client');
+                                            for (const file of Array.from(input.files)) {
+                                              const sanitized = sanitizeFileName(file.name);
+                                              const path = `shared-patents/${folderId}/${Date.now()}_${sanitized}`;
+                                              const { error } = await supabase.storage.from('repository-files').upload(path, file, { upsert: true });
+                                              if (error) { toast.error(`Error al subir ${file.name}`); continue; }
+                                              await supabase.from('repository_files').insert({
+                                                folder_id: folderId, name: file.name,
+                                                url: `storage://repository-files/${path}`, file_type: file.type || null,
+                                              });
+                                            }
+                                            toast.success("Archivo(s) subido(s) al repositorio común");
+                                            // Refresh shared files
+                                            const { data } = await supabase.from('repository_files').select('id, name, url, folder_id').eq('folder_id', folderId);
+                                            setSharedFilesCache(prev => ({ ...prev, [folderId]: (data || []).map((f: any) => ({ id: f.id, name: f.name, url: f.url })) }));
+                                          };
+                                          input.click();
+                                        }}
+                                        title="Subir al repositorio común"
+                                      >
+                                        <Upload className="h-3 w-3" />
+                                      </Button>
+                                    </>
                                   );
-                                })()}
-                                {/* Always show upload button when status is "ok" or when there's no document */}
-                                {(status === "ok" || !getDocValue(item.id, 'document_url')) && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className={`h-8 ${status !== "ok" && disableOtherFields ? disabledCellClass : ""}`}
-                                    disabled={status !== "ok" && disableOtherFields}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setUploadDialog({ itemId: item.id, itemName: item.name });
-                                    }}
-                                    title={getDocValue(item.id, 'document_url') ? "Agregar otro archivo" : "Subir archivo"}
-                                  >
-                                    <Upload className="h-3 w-3" />
-                                  </Button>
+                                })() : (
+                                  <>
+                                    {/* Regular (non-shared) item: existing logic */}
+                                    {getDocValue(item.id, 'document_url') && (() => {
+                                      const urls = (getDocValue(item.id, 'document_url') as string).split('|||').filter(Boolean);
+                                      return urls.length > 1 ? (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-8 text-primary hover:text-primary/80"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setUploadDialog({ itemId: item.id, itemName: item.name });
+                                          }}
+                                          title={`${urls.length} archivos - click para ver`}
+                                        >
+                                          <FileText className="h-3 w-3" />
+                                          <span className="ml-1 text-xs">{urls.length}</span>
+                                        </Button>
+                                      ) : (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-8 text-primary hover:text-primary/80"
+                                          onClick={async (e) => {
+                                            e.stopPropagation();
+                                            const url = urls[0];
+                                            if (url.startsWith('storage://') || url.includes('/repository-files/')) {
+                                              const { getSignedUrl } = await import('@/lib/storageUtils');
+                                              const signedUrl = await getSignedUrl(url);
+                                              if (signedUrl) {
+                                                window.open(signedUrl, '_blank');
+                                              } else {
+                                                toast.error("No se pudo acceder al archivo");
+                                              }
+                                            } else {
+                                              window.open(url, '_blank');
+                                            }
+                                          }}
+                                          title="Ver archivo"
+                                        >
+                                          <FileText className="h-3 w-3" />
+                                        </Button>
+                                      );
+                                    })()}
+                                    {(status === "ok" || !getDocValue(item.id, 'document_url')) && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className={`h-8 ${status !== "ok" && disableOtherFields ? disabledCellClass : ""}`}
+                                        disabled={status !== "ok" && disableOtherFields}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setUploadDialog({ itemId: item.id, itemName: item.name });
+                                        }}
+                                        title={getDocValue(item.id, 'document_url') ? "Agregar otro archivo" : "Subir archivo"}
+                                      >
+                                        <Upload className="h-3 w-3" />
+                                      </Button>
+                                    )}
+                                  </>
                                 )}
                               </div>
                             </TableCell>
