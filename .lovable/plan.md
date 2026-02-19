@@ -1,109 +1,54 @@
 
-# Repositorio Comun de Patentes
+# Toggle de Repositorio Compartido en Items del Checklist
 
-## Resumen
-Crear un repositorio compartido accesible desde el modulo de patentes, donde se almacenan documentos comunes a todos los contratos (ej: Constitucion de Sociedad, RUT Empresa, etc.). Las lineas del checklist que correspondan a estos documentos mostraran/subiran archivos desde este repositorio en lugar de hacerlo por contrato individual.
+## Objetivo
+Agregar un boton/toggle en cada linea de la seccion "Items" del panel de administracion de patentes que permita:
+1. Definir si esa linea se lee desde el Repositorio Comun o si opera con carga directa por contrato.
+2. Si se activa el repositorio, permitir seleccionar a que carpeta del repositorio comun apunta.
+
+## Estado actual
+- Ya existe la tabla `patent_shared_items` que mapea `checklist_item_id` a `shared_folder_id`.
+- Ya existen 6 items mapeados (Constitucion de Sociedad, Vigencia de Sociedad, etc.).
+- Ya existen carpetas compartidas en `repository_folders` con `contract_id = NULL`.
+- El `PatentChecklist.tsx` ya consume `sharedItems` y redirige archivos al repositorio comun.
+
+Lo que falta es la interfaz en el Admin Panel para gestionar estos mapeos de forma visual.
 
 ## Cambios
 
-### 1. Base de datos
+### Archivo: `src/components/patents/PatentAdminPanel.tsx`
 
-La tabla `repository_folders` ya permite `contract_id = NULL`. Se usara esta condicion para identificar carpetas del repositorio comun. Se crearan las carpetas iniciales via migracion:
+1. **Cargar datos del repositorio compartido**: Al abrir el panel, cargar las carpetas compartidas (`repository_folders WHERE contract_id IS NULL`) y los mapeos existentes de `patent_shared_items`.
 
-- **Documentacion Legal** (carpeta raiz, `contract_id = NULL`)
-  - Constitucion de Sociedad
-  - Vigencia de Sociedad
-  - Poderes de Rep. Legal
-  - Vigencia de Poderes
-  - RUT Empresa
-  - RUT Rep. Legal
+2. **Nueva columna "Repositorio" en la tabla de Items**: Agregar una columna entre "Emisores Fijos" y "Acciones" con un Switch (toggle) que indica si la linea usa repositorio compartido.
 
-Adicionalmente se creara una tabla `patent_shared_items` que mapee cuales `patent_checklist_items` usan el repositorio comun (vinculando item_id con el folder_id del repositorio compartido). Esto permite que en el futuro se agreguen o quiten items compartidos sin tocar codigo.
+3. **Selector de carpeta**: Cuando el toggle esta activado, mostrar un Select con las carpetas del repositorio comun (incluyendo subcarpetas con su ruta completa) para elegir a que carpeta apunta.
 
-### 2. Nuevo componente: `PatentSharedRepository.tsx`
+4. **Logica de activacion/desactivacion**:
+   - Al activar: Insertar en `patent_shared_items` con la carpeta seleccionada.
+   - Al cambiar carpeta: Actualizar el `shared_folder_id` en `patent_shared_items`.
+   - Al desactivar: Eliminar el registro de `patent_shared_items`.
 
-Un dialog/panel que se abre desde un boton "Repositorio" ubicado entre "Administrar" y el boton de salir en el header del modulo de patentes.
+5. **Propagacion**: Llamar `onDataChange()` al modificar los mapeos para que el modulo principal recargue los datos y el checklist refleje los cambios inmediatamente.
 
-Caracteristicas:
-- Navegacion por carpetas y subcarpetas (igual que RepositorySection)
-- Crear carpetas y subcarpetas
-- Subir archivos a carpetas
-- Eliminar archivos y carpetas
-- Renombrar carpetas (editables como se solicito)
-- Sin dependencia de Google Drive (archivos en Supabase Storage)
+### Seccion Tecnica
 
-Se reutilizara la logica de `repository_folders` y `repository_files` existente, filtrando por `contract_id IS NULL`.
-
-### 3. Cambios en `PatentChecklist.tsx` (columna Archivo)
-
-Para las 6 lineas compartidas:
-- La columna "Archivo" mostrara los archivos del repositorio comun (consultando `repository_files` de la subcarpeta correspondiente).
-- El boton de subir archivo subira directamente a la subcarpeta del repositorio comun que coincida con el nombre de la linea.
-- Se usara un icono o badge distinto para indicar visualmente que el archivo proviene del repositorio comun.
-
-### 4. Cambios en `PatentsModule.tsx`
-
-Agregar el boton "Repositorio" en el header, entre "Administrar" y el extremo derecho:
-
-```text
-[Patentes]                    [Repositorio] [Administrar (admin)]
-```
-
-### 5. Tabla nueva: `patent_shared_items`
-
-```text
-patent_shared_items
-+--------------------+----------------------------------------------+
-| id                 | uuid (PK)                                    |
-| checklist_item_id  | uuid (FK patent_checklist_items, UNIQUE)      |
-| shared_folder_id   | uuid (FK repository_folders)                 |
-+--------------------+----------------------------------------------+
-```
-
-Esto permite determinar programaticamente que items usan el repositorio comun y hacia que carpeta apuntan.
-
-## Seccion Tecnica
-
-### Migracion SQL
-
+**Datos a cargar** (en `loadRepositoryFolders` existente o funcion nueva):
 ```sql
--- 1. Crear carpeta raiz del repositorio comun
-INSERT INTO public.repository_folders (id, contract_id, parent_id, name, is_base_folder, folder_type)
-VALUES (gen_random_uuid(), NULL, NULL, 'Documentación Legal', true, 'patent_shared_legal');
+-- Carpetas compartidas (ya existen)
+SELECT id, name, parent_id FROM repository_folders WHERE contract_id IS NULL
 
--- 2. Crear subcarpetas (usando subquery para parent_id)
--- Constitucion de Sociedad, Vigencia de Sociedad, etc.
-
--- 3. Tabla de mapeo items compartidos
-CREATE TABLE public.patent_shared_items (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  checklist_item_id uuid NOT NULL UNIQUE REFERENCES public.patent_checklist_items(id) ON DELETE CASCADE,
-  shared_folder_id uuid NOT NULL REFERENCES public.repository_folders(id) ON DELETE CASCADE,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-ALTER TABLE public.patent_shared_items ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Authenticated read" ON public.patent_shared_items
-  FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Admin manage" ON public.patent_shared_items
-  FOR ALL USING (has_role(auth.uid(), 'admin'));
-
--- 4. Insertar mapeos para las 6 lineas
--- (INSERT patent_shared_items vinculando cada item_id con su subcarpeta)
+-- Mapeos actuales
+SELECT * FROM patent_shared_items
 ```
 
-### Archivos a crear
-1. **`src/components/patents/PatentSharedRepository.tsx`** -- Componente del repositorio comun (Dialog con navegacion de carpetas, subida de archivos, CRUD de carpetas)
+**Operaciones CRUD en `patent_shared_items`**:
+- INSERT: al activar toggle, con carpeta por defecto o seleccionada
+- UPDATE: al cambiar carpeta seleccionada
+- DELETE: al desactivar toggle
 
-### Archivos a modificar
-1. **`src/components/patents/PatentsModule.tsx`** -- Agregar boton "Repositorio" en el header
-2. **`src/components/patents/PatentChecklist.tsx`** -- En la columna "Archivo", para items compartidos: mostrar archivos del repositorio comun y subir a la carpeta compartida correspondiente
-3. **`src/hooks/usePatents.ts`** -- Cargar `patent_shared_items` para saber cuales items son compartidos y sus folder_ids
-4. **`src/components/patents/types.ts`** -- Agregar tipo `PatentSharedItem`
+**Columna nueva en la tabla de Items**:
+- Header: "Repositorio"
+- Contenido: Switch + Select de carpeta (condicional)
 
-### Flujo de uso
-
-1. Admin sube "Constitucion de Sociedad.pdf" al repositorio comun (carpeta Documentacion Legal > Constitucion de Sociedad)
-2. Al abrir cualquier contrato en patentes, la linea "Constitucion de Sociedad" muestra automaticamente ese archivo
-3. Si un usuario sube un archivo desde la linea del checklist, este se sube a la subcarpeta correspondiente del repositorio comun (no al contrato individual)
-4. Todos los contratos ven el mismo archivo actualizado
+**Carpetas mostradas en el Select**: Se construye un arbol con paths legibles (ej: "Documentacion Legal / Constitucion de Sociedad") usando la misma logica de `loadRepositoryFolders` que ya existe, pero apuntando a `repository_folders` con `contract_id IS NULL` en vez de `folder_templates`.
