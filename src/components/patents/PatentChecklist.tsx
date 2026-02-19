@@ -699,8 +699,11 @@ export function PatentChecklist({
                     </TableHeader>
                     <TableBody>
                       {(itemsBySection[section.id] || []).map(item => {
-                        const doc = getDocument(item.id);
-                        const status = getDocValue(item.id, 'status') as PatentDocStatus || 'pendiente';
+                      const doc = getDocument(item.id);
+                        const sharedFolderId = sharedItemLookup[item.id];
+                        const hasSharedFiles = sharedFolderId && (sharedFilesCache[sharedFolderId]?.length || 0) > 0;
+                        const rawStatus = getDocValue(item.id, 'status') as PatentDocStatus || 'pendiente';
+                        const status: PatentDocStatus = hasSharedFiles ? 'ok' : rawStatus;
                         const isSaving = savingItems.has(item.id);
 
                         // Determine which fields to disable based on status
