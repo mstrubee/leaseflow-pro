@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { Supplier, SupplierFormData } from "./types";
 import { CategorySelect } from "./CategorySelect";
 import { OpexCategoryMultiSelect } from "./OpexCategoryMultiSelect";
+import { InfluenceZoneSelect } from "./InfluenceZoneSelect";
 
 interface SupplierFormProps {
   supplier?: Supplier | null;
@@ -35,6 +36,7 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
     emails: [""],
     category_id: defaultCategoryId || "",
     opex_category_ids: [],
+    influence_zones: [],
     is_generic: false,
   });
   const [newEmail, setNewEmail] = useState("");
@@ -60,6 +62,12 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
       .select("opex_category_id")
       .eq("supplier_id", supplier.id);
 
+    // Load influence zones
+    const { data: zones } = await supabase
+      .from("supplier_influence_zones")
+      .select("region, commune")
+      .eq("supplier_id", supplier.id);
+
     setFormData({
       name: supplier.name || "",
       rut: supplier.rut || "",
@@ -74,6 +82,7 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
       emails: emails?.map(e => e.email) || [""],
       category_id: supplier.category_id || "",
       opex_category_ids: opexCategories?.map(c => c.opex_category_id) || [],
+      influence_zones: zones?.map(z => ({ region: z.region, commune: z.commune })) || [],
       is_generic: supplier.is_generic || false,
     });
   };
@@ -193,6 +202,18 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
           formData.opex_category_ids.map((opex_category_id) => ({
             supplier_id: supplierId,
             opex_category_id,
+          }))
+        );
+      }
+
+      // Update influence zones
+      await supabase.from("supplier_influence_zones").delete().eq("supplier_id", supplierId);
+      if (formData.influence_zones.length > 0) {
+        await supabase.from("supplier_influence_zones").insert(
+          formData.influence_zones.map((zone) => ({
+            supplier_id: supplierId,
+            region: zone.region,
+            commune: zone.commune,
           }))
         );
       }
@@ -379,6 +400,18 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
         <p className="text-xs text-muted-foreground">
           Asigna categorías OPEX para que el proveedor aparezca como opción al crear órdenes de compra.
           Las categorías sugeridas se basan en el rubro seleccionado.
+        </p>
+      </div>
+
+      {/* Influence Zones */}
+      <div className="space-y-4">
+        <h4 className="font-medium text-sm border-b pb-2">Zona de Influencia (opcional)</h4>
+        <InfluenceZoneSelect
+          value={formData.influence_zones}
+          onChange={(influence_zones) => setFormData(prev => ({ ...prev, influence_zones }))}
+        />
+        <p className="text-xs text-muted-foreground">
+          Selecciona las regiones y comunas donde el proveedor tiene cobertura.
         </p>
       </div>
 

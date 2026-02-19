@@ -47,6 +47,14 @@ export interface SupplierOpexCategory {
   created_at: string;
 }
 
+export interface SupplierInfluenceZone {
+  id: string;
+  supplier_id: string;
+  region: string;
+  commune: string | null;
+  created_at: string;
+}
+
 export interface SupplierFormData {
   name: string;
   rut: string;
@@ -61,5 +69,6 @@ export interface SupplierFormData {
   emails: string[];
   category_id: string;
   opex_category_ids: string[];
+  influence_zones: { region: string; commune: string | null }[];
   is_generic: boolean;
 }
