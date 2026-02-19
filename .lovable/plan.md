@@ -1,54 +1,53 @@
 
-# Toggle de Repositorio Compartido en Items del Checklist
+# Carpeta "Patentes" con Subcarpetas por Contrato Vigente
 
 ## Objetivo
-Agregar un boton/toggle en cada linea de la seccion "Items" del panel de administracion de patentes que permita:
-1. Definir si esa linea se lee desde el Repositorio Comun o si opera con carga directa por contrato.
-2. Si se activa el repositorio, permitir seleccionar a que carpeta del repositorio comun apunta.
-
-## Estado actual
-- Ya existe la tabla `patent_shared_items` que mapea `checklist_item_id` a `shared_folder_id`.
-- Ya existen 6 items mapeados (Constitucion de Sociedad, Vigencia de Sociedad, etc.).
-- Ya existen carpetas compartidas en `repository_folders` con `contract_id = NULL`.
-- El `PatentChecklist.tsx` ya consume `sharedItems` y redirige archivos al repositorio comun.
-
-Lo que falta es la interfaz en el Admin Panel para gestionar estos mapeos de forma visual.
+Crear una carpeta "Patentes" en el repositorio comun (con `contract_id = NULL`) que contenga una subcarpeta por cada contrato vigente (status = "firmado"). Cuando un contrato se marque como vigente, se debe crear automaticamente su subcarpeta.
 
 ## Cambios
 
-### Archivo: `src/components/patents/PatentAdminPanel.tsx`
+### 1. Migracion de base de datos
 
-1. **Cargar datos del repositorio compartido**: Al abrir el panel, cargar las carpetas compartidas (`repository_folders WHERE contract_id IS NULL`) y los mapeos existentes de `patent_shared_items`.
+Crear la carpeta raiz "Patentes" en el repositorio comun y generar subcarpetas para todos los contratos vigentes existentes.
 
-2. **Nueva columna "Repositorio" en la tabla de Items**: Agregar una columna entre "Emisores Fijos" y "Acciones" con un Switch (toggle) que indica si la linea usa repositorio compartido.
+Ademas, crear un **trigger en la tabla `contracts`** que detecte cuando un contrato cambia a status "firmado" y cree automaticamente la subcarpeta correspondiente en la carpeta "Patentes". Si el contrato deja de ser "firmado", la carpeta no se elimina (para preservar archivos).
 
-3. **Selector de carpeta**: Cuando el toggle esta activado, mostrar un Select con las carpetas del repositorio comun (incluyendo subcarpetas con su ruta completa) para elegir a que carpeta apunta.
+### 2. Detalle tecnico
 
-4. **Logica de activacion/desactivacion**:
-   - Al activar: Insertar en `patent_shared_items` con la carpeta seleccionada.
-   - Al cambiar carpeta: Actualizar el `shared_folder_id` en `patent_shared_items`.
-   - Al desactivar: Eliminar el registro de `patent_shared_items`.
+**Carpeta raiz:**
+- `repository_folders` con `contract_id = NULL`, `name = 'Patentes'`, `folder_type = 'patent_shared_contracts'`, `is_base_folder = true`, `parent_id = NULL`
 
-5. **Propagacion**: Llamar `onDataChange()` al modificar los mapeos para que el modulo principal recargue los datos y el checklist refleje los cambios inmediatamente.
+**Subcarpetas (una por contrato vigente):**
+- `repository_folders` con `contract_id = NULL`, `parent_id = <id carpeta Patentes>`, `name = <nombre contrato>`, `folder_type = 'patent_contract_sub'`, `is_base_folder = false`
 
-### Seccion Tecnica
+**Trigger SQL:**
+```text
+Funcion: create_patent_contract_folder()
+  - Se ejecuta en UPDATE de contracts
+  - Condicion: NEW.status = 'firmado' AND (OLD.status != 'firmado' OR OLD.status IS NULL)
+  - Accion: Busca la carpeta "Patentes" (folder_type = 'patent_shared_contracts', contract_id IS NULL)
+  - Si existe, verifica que no haya ya una subcarpeta con el mismo nombre
+  - Si no existe subcarpeta, la crea
 
-**Datos a cargar** (en `loadRepositoryFolders` existente o funcion nueva):
-```sql
--- Carpetas compartidas (ya existen)
-SELECT id, name, parent_id FROM repository_folders WHERE contract_id IS NULL
-
--- Mapeos actuales
-SELECT * FROM patent_shared_items
+Trigger: AFTER UPDATE ON contracts FOR EACH ROW
+  WHEN (NEW.status = 'firmado' AND OLD.status IS DISTINCT FROM 'firmado')
 ```
 
-**Operaciones CRUD en `patent_shared_items`**:
-- INSERT: al activar toggle, con carpeta por defecto o seleccionada
-- UPDATE: al cambiar carpeta seleccionada
-- DELETE: al desactivar toggle
+Tambien se agregara un trigger para INSERT (contratos nuevos creados directamente como firmados):
+```text
+Trigger: AFTER INSERT ON contracts FOR EACH ROW
+  WHEN (NEW.status = 'firmado')
+```
 
-**Columna nueva en la tabla de Items**:
-- Header: "Repositorio"
-- Contenido: Switch + Select de carpeta (condicional)
+**Inicializacion:** La migracion insertara subcarpetas para los ~50 contratos vigentes existentes en una sola operacion.
 
-**Carpetas mostradas en el Select**: Se construye un arbol con paths legibles (ej: "Documentacion Legal / Constitucion de Sociedad") usando la misma logica de `loadRepositoryFolders` que ya existe, pero apuntando a `repository_folders` con `contract_id IS NULL` en vez de `folder_templates`.
+### 3. Archivos a modificar
+
+Ninguno. Todo se resuelve con la migracion SQL (carpeta raiz + subcarpetas iniciales + trigger). La interfaz del repositorio comun ya muestra todas las carpetas con `contract_id IS NULL`, por lo que la carpeta "Patentes" y sus subcarpetas apareceran automaticamente.
+
+### Resumen de la migracion
+
+1. Insertar carpeta "Patentes" en `repository_folders`
+2. Insertar subcarpetas para cada contrato con `status = 'firmado'`
+3. Crear funcion `create_patent_contract_folder()`
+4. Crear triggers AFTER INSERT y AFTER UPDATE en `contracts`
