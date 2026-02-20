@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ArrowLeft, ChevronDown, Search, DollarSign } from "lucide-react";
 import { BudgetModule } from "@/components/budget/BudgetModule";
+import { BudgetProvider } from "@/components/budget/BudgetContext";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { formatCLP } from "@/lib/utils";
 
@@ -209,14 +210,16 @@ export default function CapexDashboard() {
                     </CollapsibleTrigger>
                     <CollapsibleContent>
                       <CardContent className="pt-0">
-                        <BudgetModule
-                          contractId={contractId}
-                          contractName={contractName}
-                          budgetType="capex"
-                          title="CAPEX"
-                          selectedYear={selectedYear}
-                          onRefresh={loadBudgets}
-                        />
+                        <BudgetProvider>
+                          <BudgetModule
+                            contractId={contractId}
+                            contractName={contractName}
+                            budgetType="capex"
+                            title="CAPEX"
+                            selectedYear={selectedYear}
+                            onRefresh={loadBudgets}
+                          />
+                        </BudgetProvider>
                       </CardContent>
                     </CollapsibleContent>
                   </Card>
