@@ -9,7 +9,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, Users, Loader2, Phone, Mail, GripHorizontal, Download } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Loader2, Phone, Mail, GripHorizontal, Download, Search, X } from "lucide-react";
 import { toPng } from "html-to-image";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
@@ -107,6 +107,9 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
 
   // Selected member for detail panel
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+
+  // Contract search state
+  const [searchContract, setSearchContract] = useState("");
 
   // Auto-scale refs
   const containerRef = useRef<HTMLDivElement>(null);
@@ -222,6 +225,25 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
   }, [allContracts, contractCompanyMap, formCompanyIds, formParentId, getEffectiveCompanyIds]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  // Highlighted members based on contract search
+  const highlightedMemberIds = useMemo(() => {
+    const q = searchContract.trim().toLowerCase();
+    if (!q) return new Set<string>();
+    const matchedContractIds = allContracts
+      .filter(c => c.name.toLowerCase().includes(q))
+      .map(c => c.id);
+    if (matchedContractIds.length === 0) return new Set<string>();
+    const ids = new Set<string>();
+    for (const [memberId, contractIds] of Object.entries(memberContractMap)) {
+      if (contractIds.some(cid => matchedContractIds.includes(cid))) {
+        ids.add(memberId);
+      }
+    }
+    return ids;
+  }, [searchContract, allContracts, memberContractMap]);
+
+  const isSearchActive = searchContract.trim().length > 0;
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -435,7 +457,10 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
           {/* Node card */}
           <div
             className={`relative border rounded-lg px-2.5 py-1.5 cursor-pointer transition-all text-center min-w-[90px] shadow-sm hover:shadow-md group ${
-              isSelected ? "ring-2 ring-primary border-primary bg-primary/5" : "bg-card hover:border-primary/50"
+              isSelected ? "ring-2 ring-primary border-primary bg-primary/5" :
+              isSearchActive && highlightedMemberIds.has(member.id) ? "ring-2 ring-yellow-400 border-yellow-400 bg-yellow-50 shadow-lg dark:bg-yellow-900/20" :
+              isSearchActive && !highlightedMemberIds.has(member.id) ? "opacity-40 bg-card hover:border-primary/50" :
+              "bg-card hover:border-primary/50"
             }`}
             onClick={() => setSelectedMemberId(isSelected ? null : member.id)}
           >
@@ -560,7 +585,29 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
         icon={<Users className="h-5 w-5" />}
         defaultOpen={!defaultCollapsed}
         headerActions={
-          <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+          <div className="flex gap-2 items-center" onClick={e => e.stopPropagation()}>
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                value={searchContract}
+                onChange={e => setSearchContract(e.target.value)}
+                placeholder="Buscar por local/contrato..."
+                className="h-8 w-[220px] pl-7 pr-7 text-xs"
+              />
+              {searchContract && (
+                <button
+                  onClick={() => setSearchContract("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            {isSearchActive && (
+              <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                {highlightedMemberIds.size} resultado{highlightedMemberIds.size !== 1 ? "s" : ""}
+              </span>
+            )}
             <Button variant="outline" size="sm" onClick={handleDownloadImage} title="Descargar como imagen">
               <Download className="h-4 w-4 mr-1" />
               Imagen
