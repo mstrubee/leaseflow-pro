@@ -127,6 +127,7 @@ interface PurchaseOrder {
   invoices: Invoice[];
   invoices_count?: number;
   invoices_total?: number;
+  invoices_total_clp?: number;
   year?: number;
   is_multi_contract?: boolean;
   allocations?: ContractAllocation[];
@@ -186,6 +187,7 @@ interface GroupedOrder {
   total_amount_clp: number;
   total_invoices_count: number;
   total_invoices_amount: number;
+  total_invoices_clp: number;
   status: string;
   year: number;
   is_multi_contract: boolean;
@@ -467,6 +469,10 @@ const PurchaseOrdersDashboard = () => {
           invoices: validInvoices,
           invoices_count: validInvoices.length,
           invoices_total: validInvoices.reduce((sum: number, inv: any) => sum + (inv.amount_uf || 0), 0),
+          invoices_total_clp: validInvoices.reduce((sum: number, inv: any) => {
+            const clp = inv.amount_clp ?? (inv.amount_uf || 0) * (inv.uf_value_at_entry || ufValue);
+            return sum + clp;
+          }, 0),
           allocations: orderAllocationsMap.get(order.id) || [],
         };
       });
@@ -763,8 +769,11 @@ const PurchaseOrdersDashboard = () => {
     let filtered = orders.filter(o => o.year === yearNum);
 
     const totalOC = filtered.reduce((sum, o) => sum + (o.amount_uf || 0), 0);
+    const totalOCClp = filtered.reduce((sum, o) => sum + (o.amount_clp || Math.round((o.amount_uf || 0) * ufValue)), 0);
     const totalFacturado = filtered.reduce((sum, o) => sum + (o.invoices_total || 0), 0);
+    const totalFacturadoClp = filtered.reduce((sum, o) => sum + (o.invoices_total_clp || 0), 0);
     const sinFacturar = totalOC - totalFacturado;
+    const sinFacturarClp = totalOCClp - totalFacturadoClp;
     
     // Count unique order numbers (unique OCs)
     const uniqueOrderNumbers = new Set(filtered.map(o => o.order_number));
@@ -774,10 +783,13 @@ const PurchaseOrdersDashboard = () => {
 
     return {
       totalOC,
+      totalOCClp,
       totalFacturado,
+      totalFacturadoClp,
       sinFacturar,
-      countOC: uniqueOrderNumbers.size, // Unique OC count
-      countLocales: uniqueContracts.size, // Unique locales with OC
+      sinFacturarClp,
+      countOC: uniqueOrderNumbers.size,
+      countLocales: uniqueContracts.size,
       countFacturas: filtered.reduce((sum, o) => sum + (o.invoices_count || 0), 0),
     };
   }, [orders, yearFilter]);
@@ -853,6 +865,7 @@ const PurchaseOrdersDashboard = () => {
       const totalAmountClp = ordersList.reduce((sum, o) => sum + (o.amount_clp || Math.round((o.amount_uf || 0) * ufValue)), 0);
       const totalInvoicesCount = ordersList.reduce((sum, o) => sum + (o.invoices_count || 0), 0);
       const totalInvoicesAmount = ordersList.reduce((sum, o) => sum + (o.invoices_total || 0), 0);
+      const totalInvoicesClp = ordersList.reduce((sum, o) => sum + (o.invoices_total_clp || 0), 0);
       
       // Determine overall status
       let status = "abierta";
@@ -882,6 +895,7 @@ const PurchaseOrdersDashboard = () => {
         total_amount_clp: totalAmountClp,
         total_invoices_count: totalInvoicesCount,
         total_invoices_amount: totalInvoicesAmount,
+        total_invoices_clp: totalInvoicesClp,
         status,
         year: firstOrder.year || yearNum,
         is_multi_contract: isMulti,
@@ -1705,7 +1719,12 @@ const PurchaseOrdersDashboard = () => {
   const getOCStatusInfo = (groupedOrder: GroupedOrder) => {
     const orderCreditNotes = groupedOrder.orders.flatMap(o => creditNotes.get(o.id) || []);
     const totalCreditNotesAmount = orderCreditNotes.reduce((sum, cn) => sum + cn.amount_uf, 0);
+    const totalCreditNotesClp = orderCreditNotes.reduce((sum, cn) => {
+      const cnClp = cn.amount_clp ?? cn.amount_uf * (cn.uf_value_at_entry ?? ufValue);
+      return sum + cnClp;
+    }, 0);
     const netInvoiced = groupedOrder.total_invoices_amount - totalCreditNotesAmount;
+    const netInvoicedClp = groupedOrder.total_invoices_clp - totalCreditNotesClp;
     const percentage = groupedOrder.total_amount_uf > 0 ? (netInvoiced / groupedOrder.total_amount_uf) * 100 : 0;
     
     let status: "abierta" | "cerrada" | "sobrepasada" = "abierta";
@@ -1719,8 +1738,11 @@ const PurchaseOrdersDashboard = () => {
       status,
       percentage,
       netInvoiced,
+      netInvoicedClp,
       totalCreditNotes: totalCreditNotesAmount,
+      totalCreditNotesClp,
       pending: groupedOrder.total_amount_uf - netInvoiced,
+      pendingClp: groupedOrder.total_amount_clp - netInvoicedClp,
     };
   };
 
@@ -1834,7 +1856,7 @@ const PurchaseOrdersDashboard = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">${Math.round(summaryData.totalOC * ufValue).toLocaleString("es-CL")}</div>
+              <div className="text-2xl font-bold">${Math.round(summaryData.totalOCClp).toLocaleString("es-CL")}</div>
               <p className="text-xs text-muted-foreground">{formatUF(summaryData.totalOC)}</p>
             </CardContent>
           </Card>
@@ -1846,7 +1868,7 @@ const PurchaseOrdersDashboard = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">${Math.round(summaryData.totalFacturado * ufValue).toLocaleString("es-CL")}</div>
+              <div className="text-2xl font-bold text-green-600">${Math.round(summaryData.totalFacturadoClp).toLocaleString("es-CL")}</div>
               <p className="text-xs text-muted-foreground">{formatUF(summaryData.totalFacturado)} • {summaryData.countFacturas} facturas</p>
             </CardContent>
           </Card>
@@ -1858,7 +1880,7 @@ const PurchaseOrdersDashboard = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-amber-600">${Math.round(summaryData.sinFacturar * ufValue).toLocaleString("es-CL")}</div>
+              <div className="text-2xl font-bold text-amber-600">${Math.round(summaryData.sinFacturarClp).toLocaleString("es-CL")}</div>
               <p className="text-xs text-muted-foreground">{formatUF(summaryData.sinFacturar)}</p>
             </CardContent>
           </Card>
@@ -2889,19 +2911,19 @@ const PurchaseOrdersDashboard = () => {
                                       {/* Summary */}
                                       <div className="flex items-center gap-4 text-sm pt-2 border-t">
                                         <span className="text-muted-foreground">
-                                          Total OC: <span className="font-medium text-foreground">{formatCLP(groupedOrder.total_amount_uf * ufValue)}</span>
+                                          Total OC: <span className="font-medium text-foreground">{formatCLP(groupedOrder.total_amount_clp)}</span>
                                         </span>
                                         <span className="text-muted-foreground">
-                                          Facturado: <span className="font-medium text-green-600">{formatCLP(groupedOrder.total_invoices_amount * ufValue)}</span>
+                                          Facturado: <span className="font-medium text-green-600">{formatCLP(statusInfo.netInvoicedClp + statusInfo.totalCreditNotesClp)}</span>
                                         </span>
                                         {statusInfo.totalCreditNotes > 0 && (
                                           <span className="text-muted-foreground">
-                                            NC: <span className="font-medium text-blue-600">-{formatCLP(statusInfo.totalCreditNotes * ufValue)}</span>
+                                            NC: <span className="font-medium text-blue-600">-{formatCLP(statusInfo.totalCreditNotesClp)}</span>
                                           </span>
                                         )}
                                         <span className="text-muted-foreground">
                                           Pendiente: <span className={`font-medium ${statusInfo.pending < 0 ? 'text-red-600' : 'text-orange-600'}`}>
-                                            {formatCLP(statusInfo.pending * ufValue)}
+                                            {formatCLP(statusInfo.pendingClp)}
                                           </span>
                                         </span>
                                       </div>
