@@ -99,6 +99,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
 
   // Refresh key to force BudgetModule to reload
   const [refreshKey, setRefreshKey] = useState(0);
+  const [superficieEdificada, setSuperficieEdificada] = useState(0);
 
   useEffect(() => {
     loadAvailableYears();
@@ -109,10 +110,13 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
   const loadContractName = async () => {
     const { data } = await supabase
       .from("contracts")
-      .select("name")
+      .select("name, superficie_edificada_local")
       .eq("id", contractId)
       .single();
-    if (data) setContractName(data.name);
+    if (data) {
+      setContractName(data.name);
+      setSuperficieEdificada(data.superficie_edificada_local || 0);
+    }
     
     // Load CEBE custom field
     const { data: cebeFieldData } = await supabase
@@ -973,6 +977,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
             selectedYear={selectedYear}
             ocTotal={capexTotals.oc}
             onRefresh={() => { refreshData(); }}
+            superficieEdificada={superficieEdificada}
           />
         </TabsContent>
         <TabsContent value="opex" className="mt-4">
@@ -986,6 +991,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
             selectedYear={selectedYear}
             ocTotal={opexTotals.oc}
             onRefresh={() => { refreshData(); }}
+            superficieEdificada={superficieEdificada}
           />
         </TabsContent>
         <TabsContent value="oc" className="mt-4 space-y-6">

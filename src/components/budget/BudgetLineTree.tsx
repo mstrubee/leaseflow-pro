@@ -61,6 +61,7 @@ interface BudgetLineTreeProps {
   collapsedIds?: Set<string>;
   onToggleExpand?: (id: string) => void;
   linesMap?: Map<string, BudgetLine>;
+  superficieEdificada?: number;
 }
 export const BudgetLineTree = ({
   lines,
@@ -78,7 +79,8 @@ export const BudgetLineTree = ({
   templatePricesMap = {},
   collapsedIds,
   onToggleExpand,
-  linesMap: externalLinesMap
+  linesMap: externalLinesMap,
+  superficieEdificada = 0
 }: BudgetLineTreeProps) => {
   // Build linesMap only at root level (level === 0), pass down to children
   const rootLinesMap = useMemo(() => {
@@ -115,6 +117,7 @@ export const BudgetLineTree = ({
         templatePricesMap={templatePricesMap}
         collapsedIds={collapsedIds}
         onToggleExpand={onToggleExpand}
+        superficieEdificada={superficieEdificada}
       />)}
       {level === 0 && !readOnly && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
@@ -139,6 +142,7 @@ interface BudgetLineItemProps {
   templatePricesMap?: Record<string, number>;
   collapsedIds?: Set<string>;
   onToggleExpand?: (id: string) => void;
+  superficieEdificada?: number;
 }
 
 const countDescendants = (line: BudgetLine): number => {
@@ -162,7 +166,8 @@ const BudgetLineItemInner = ({
   globalExpandState = null,
   templatePricesMap: externalTemplatePricesMap = {},
   collapsedIds,
-  onToggleExpand
+  onToggleExpand,
+  superficieEdificada = 0
 }: BudgetLineItemProps) => {
   // Use centralized expansion state if provided, otherwise fall back to local state
   const [localExpanded, setLocalExpanded] = useState(true);
@@ -500,6 +505,13 @@ const BudgetLineItemInner = ({
                   {line.name}
                 </span>
               </TooltipTrigger>
+              {level === 0 && isParent && superficieEdificada > 0 && (
+                <span className="text-[10px] text-muted-foreground ml-2 flex-shrink-0 whitespace-nowrap">
+                  | {formatUF(calculatedAmount / superficieEdificada)} /m²
+                  {" · "}
+                  {formatCLP(convertUFToPesos(calculatedAmount) / superficieEdificada)} /m²
+                </span>
+              )}
               <TooltipContent side="top">
                 {!isParent && onViewLineDetails 
                   ? <>{line.name}<br/><span className="text-[10px]">Click para ver Solicitudes, OC y Facturas</span></>
