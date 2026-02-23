@@ -40,9 +40,10 @@ interface BudgetModuleProps {
   selectedYear: number;
   ocTotal?: number;
   onRefresh?: () => void;
+  superficieEdificada?: number;
 }
 
-export const BudgetModule = ({ contractId, contractName = "", contractCebe, budgetType, title, selectedYear, ocTotal = 0, onRefresh }: BudgetModuleProps) => {
+export const BudgetModule = ({ contractId, contractName = "", contractCebe, budgetType, title, selectedYear, ocTotal = 0, onRefresh, superficieEdificada = 0 }: BudgetModuleProps) => {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [templatePricesMap, setTemplatePricesMap] = useState<Record<string, number>>({});
@@ -1016,6 +1017,14 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                   <Download className="h-4 w-4" />
                   Descargar Excel
                 </Button>
+                {superficieEdificada > 0 && (
+                  <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+                    <span className="font-medium">Total:</span>
+                    <span>{formatUF(calculateAuthorizedTotal(lines, templatePricesMap, ufValue) / superficieEdificada)} /m²</span>
+                    <span>·</span>
+                    <span>{formatCLP(convertUFToPesos(calculateAuthorizedTotal(lines, templatePricesMap, ufValue)) / superficieEdificada)} /m²</span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1033,6 +1042,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               templatePricesMap={templatePricesMap}
               collapsedIds={collapsedIds}
               onToggleExpand={handleToggleExpand}
+              superficieEdificada={superficieEdificada}
             />
             
             {/* Trash Panel - shows deleted lines and audit history */}
