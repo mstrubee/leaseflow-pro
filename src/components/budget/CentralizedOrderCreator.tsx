@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { ContractSearchSelect } from "@/components/contracts/ContractSearchSelect";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -770,34 +772,30 @@ export const CentralizedOrderCreator = ({
                 {/* Budget Type: CAPEX / OPEX */}
                 <div className="space-y-2">
                   <Label>Tipo de Presupuesto *</Label>
-                  <Select value={budgetType} onValueChange={(v: "capex" | "opex") => {
-                    setBudgetType(v);
-                    if (v === "capex") setSelectedCategoryId("");
-                  }}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="capex">CAPEX</SelectItem>
-                      <SelectItem value="opex">OPEX</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={budgetType}
+                    onValueChange={(v) => {
+                      setBudgetType(v as "capex" | "opex");
+                      if (v === "capex") setSelectedCategoryId("");
+                    }}
+                    options={[
+                      { value: "capex", label: "CAPEX" },
+                      { value: "opex", label: "OPEX" },
+                    ]}
+                    placeholder="Tipo"
+                  />
                 </div>
 
                 {/* Category Selection (only for OPEX) */}
                 {budgetType === "opex" && (
                   <div className="space-y-2">
                     <Label>Categoría OPEX *</Label>
-                    <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar categoría" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {opexCategories.map(cat => (
-                          <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      value={selectedCategoryId}
+                      onValueChange={setSelectedCategoryId}
+                      options={opexCategories.map(cat => ({ value: cat.id, label: cat.name }))}
+                      placeholder="Seleccionar categoría"
+                    />
                     {selectedCategoryId && (
                       <p className="text-xs text-muted-foreground">
                         Presupuesto disponible: ${availableBudget.toLocaleString("es-CL")}
@@ -828,18 +826,15 @@ export const CentralizedOrderCreator = ({
                   </div>
                   <div className="space-y-2">
                     <Label>Moneda</Label>
-                    <Select 
-                      value={formData.currency} 
-                      onValueChange={(v: "UF" | "CLP") => setFormData(prev => ({ ...prev, currency: v }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="CLP">$ (CLP)</SelectItem>
-                        <SelectItem value="UF">UF</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      value={formData.currency}
+                      onValueChange={(v) => setFormData(prev => ({ ...prev, currency: v as "UF" | "CLP" }))}
+                      options={[
+                        { value: "CLP", label: "$ (CLP)" },
+                        { value: "UF", label: "UF" },
+                      ]}
+                      placeholder="Moneda"
+                    />
                   </div>
                 </div>
                 
@@ -933,27 +928,17 @@ export const CentralizedOrderCreator = ({
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <Label>Contrato *</Label>
-                      <Select value={singleContractId} onValueChange={(v) => {
-                        setSingleContractId(v);
-                        setSingleFormIds([]);
-                        setAssignToForm(false);
-                        loadFormsForContract(v);
-                      }}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Seleccionar contrato" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {contracts.map(c => (
-                            <SelectItem key={c.id} value={c.id}>
-                              <div className="flex items-center gap-2">
-                                <CompanyLogo companyNames={c.company_names} size="sm" />
-                                <span>{c.name}</span>
-                                {c.cebe && <span className="text-xs text-muted-foreground">({c.cebe})</span>}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <ContractSearchSelect
+                        value={singleContractId}
+                        onValueChange={(v) => {
+                          setSingleContractId(v);
+                          setSingleFormIds([]);
+                          setAssignToForm(false);
+                          loadFormsForContract(v);
+                        }}
+                        contracts={contracts}
+                        placeholder="Seleccionar contrato"
+                      />
                       {singleContractId && (
                         <div className="text-xs text-muted-foreground">
                           {(() => {
@@ -1073,28 +1058,12 @@ export const CentralizedOrderCreator = ({
                               return (
                                 <TableRow key={idx}>
                                   <TableCell>
-                                    <Select 
-                                      value={alloc.contractId} 
+                                    <ContractSearchSelect
+                                      value={alloc.contractId}
                                       onValueChange={(v) => handleUpdateAllocation(idx, "contractId", v)}
-                                    >
-                                      <SelectTrigger className="w-full">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {contracts.map(c => (
-                                          <SelectItem 
-                                            key={c.id} 
-                                            value={c.id}
-                                            disabled={contractAllocations.some((a, i) => i !== idx && a.contractId === c.id)}
-                                          >
-                                            <div className="flex items-center gap-2">
-                                              <span>{c.name}</span>
-                                              {c.cebe && <span className="text-xs text-muted-foreground">({c.cebe})</span>}
-                                            </div>
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
+                                      contracts={contracts.filter(c => !contractAllocations.some((a, i) => i !== idx && a.contractId === c.id))}
+                                      placeholder="Seleccionar"
+                                    />
                                   </TableCell>
                                   <TableCell className="text-xs text-muted-foreground">
                                     {alloc.cebe || "-"}
