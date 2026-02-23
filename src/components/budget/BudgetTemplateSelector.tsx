@@ -151,8 +151,12 @@ export const applyBudgetTemplate = async (
     // 2. Map old IDs to new IDs for parent references
     const idMap = new Map<string, string>();
 
-    // First pass: create all lines without parent_id
-    for (const line of templateLines) {
+    // Separate normal lines and percentage-calculated lines
+    const normalLines = templateLines.filter((l: any) => l.calc_type !== "percentage");
+    const calcLines = templateLines.filter((l: any) => l.calc_type === "percentage");
+
+    // First pass: create all normal lines without parent_id
+    for (const line of normalLines) {
       // Resolve quantity from contract if indexed
       const quantity = resolveQuantityFromContract(
         (line as any).quantity_source,
@@ -169,7 +173,7 @@ export const applyBudgetTemplate = async (
           budget_id: budgetId,
           name: line.name,
           description: line.description,
-          amount_uf: totalAmount, // Total = quantity × unit_price
+          amount_uf: totalAmount,
           display_order: line.display_order,
           status: "no_autorizado",
           parent_id: null,
@@ -188,8 +192,8 @@ export const applyBudgetTemplate = async (
       idMap.set(line.id, newLine.id);
     }
 
-    // Second pass: update parent_id references
-    for (const line of templateLines) {
+    // Second pass: update parent_id references for normal lines
+    for (const line of normalLines) {
       if (line.parent_id && idMap.has(line.parent_id)) {
         const newId = idMap.get(line.id);
         const newParentId = idMap.get(line.parent_id);
@@ -200,6 +204,55 @@ export const applyBudgetTemplate = async (
             .eq("id", newId);
         }
       }
+    }
+
+    // Third pass: create percentage-calculated lines
+    for (const line of calcLines) {
+      const sourceLineId = (line as any).calc_source_line_id;
+      const mappedSourceId = sourceLineId ? idMap.get(sourceLineId) || null : null;
+      const percentage = (line as any).calc_percentage || 0;
+      
+      // Calculate amount based on source line subtotal
+      let calcAmount = 0;
+      if (mappedSourceId) {
+        // Get the subtotal of the source line's children in the budget
+        const { data: sourceChildren } = await supabase
+          .from("budget_lines")
+          .select("amount_uf")
+          .eq("budget_id", budgetId)
+          .eq("parent_id", mappedSourceId)
+          .is("deleted_at", null);
+        
+        const sourceSubtotal = (sourceChildren || []).reduce((sum: number, c: any) => sum + (c.amount_uf || 0), 0);
+        calcAmount = sourceSubtotal * percentage / 100;
+      }
+      
+      const { data: newLine, error } = await supabase
+        .from("budget_lines")
+        .insert({
+          budget_id: budgetId,
+          name: line.name,
+          description: line.description,
+          amount_uf: calcAmount,
+          display_order: line.display_order,
+          status: "no_autorizado",
+          parent_id: null,
+          quantity: 1,
+          unit_type: "gl",
+          currency: "UF",
+          unit_price: calcAmount,
+          template_line_id: line.id,
+          supplier_name: line.supplier_name || null,
+          category_id: line.category_id || null,
+          calc_type: "percentage",
+          calc_source_line_id: mappedSourceId,
+          calc_percentage: percentage,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      idMap.set(line.id, newLine.id);
     }
 
     return true;
@@ -296,10 +349,14 @@ export const updateBudgetTemplatePreservingValues = async (
       return true;
     }
 
-    // 4. Create new lines, preserving existing user values where they exist
+    // Separate normal and calc lines
+    const normalLines = templateLines.filter((l: any) => (l as any).calc_type !== "percentage");
+    const calcLines = templateLines.filter((l: any) => (l as any).calc_type === "percentage");
+
+    // 4. Create normal lines, preserving existing user values where they exist
     const idMap = new Map<string, string>();
 
-    for (const line of templateLines) {
+    for (const line of normalLines) {
       const existingValues = existingValuesMap.get(line.id);
       const hasUserValues = existingValues?.hasUserValues || false;
       
@@ -337,8 +394,8 @@ export const updateBudgetTemplatePreservingValues = async (
       idMap.set(line.id, newLine.id);
     }
 
-    // 5. Update parent_id references
-    for (const line of templateLines) {
+    // 5. Update parent_id references for normal lines
+    for (const line of normalLines) {
       if (line.parent_id && idMap.has(line.parent_id)) {
         const newId = idMap.get(line.id);
         const newParentId = idMap.get(line.parent_id);
@@ -349,6 +406,53 @@ export const updateBudgetTemplatePreservingValues = async (
             .eq("id", newId);
         }
       }
+    }
+
+    // 6. Create percentage-calculated lines (always recalculated, never preserve user values)
+    for (const line of calcLines) {
+      const sourceLineId = (line as any).calc_source_line_id;
+      const mappedSourceId = sourceLineId ? idMap.get(sourceLineId) || null : null;
+      const percentage = (line as any).calc_percentage || 0;
+      
+      let calcAmount = 0;
+      if (mappedSourceId) {
+        const { data: sourceChildren } = await supabase
+          .from("budget_lines")
+          .select("amount_uf")
+          .eq("budget_id", budgetId)
+          .eq("parent_id", mappedSourceId)
+          .is("deleted_at", null);
+        
+        const sourceSubtotal = (sourceChildren || []).reduce((sum: number, c: any) => sum + (c.amount_uf || 0), 0);
+        calcAmount = sourceSubtotal * percentage / 100;
+      }
+      
+      const { data: newLine, error } = await supabase
+        .from("budget_lines")
+        .insert({
+          budget_id: budgetId,
+          name: line.name,
+          description: line.description,
+          amount_uf: calcAmount,
+          display_order: line.display_order,
+          status: existingValuesMap.get(line.id)?.status ?? "no_autorizado",
+          unit_type: "gl",
+          currency: "UF",
+          template_line_id: line.id,
+          parent_id: null,
+          quantity: 1,
+          unit_price: calcAmount,
+          supplier_name: line.supplier_name || null,
+          category_id: line.category_id || null,
+          calc_type: "percentage",
+          calc_source_line_id: mappedSourceId,
+          calc_percentage: percentage,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      idMap.set(line.id, newLine.id);
     }
 
     return true;

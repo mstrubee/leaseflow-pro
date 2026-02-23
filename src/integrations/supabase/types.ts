@@ -332,6 +332,9 @@ export type Database = {
         Row: {
           amount_uf: number
           budget_id: string
+          calc_percentage: number | null
+          calc_source_line_id: string | null
+          calc_type: string | null
           category_id: string | null
           created_at: string
           currency: string | null
@@ -354,6 +357,9 @@ export type Database = {
         Insert: {
           amount_uf?: number
           budget_id: string
+          calc_percentage?: number | null
+          calc_source_line_id?: string | null
+          calc_type?: string | null
           category_id?: string | null
           created_at?: string
           currency?: string | null
@@ -376,6 +382,9 @@ export type Database = {
         Update: {
           amount_uf?: number
           budget_id?: string
+          calc_percentage?: number | null
+          calc_source_line_id?: string | null
+          calc_type?: string | null
           category_id?: string | null
           created_at?: string
           currency?: string | null
@@ -401,6 +410,13 @@ export type Database = {
             columns: ["budget_id"]
             isOneToOne: false
             referencedRelation: "contract_budgets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_lines_calc_source_line_id_fkey"
+            columns: ["calc_source_line_id"]
+            isOneToOne: false
+            referencedRelation: "budget_lines"
             referencedColumns: ["id"]
           },
           {
@@ -543,6 +559,9 @@ export type Database = {
       }
       budget_template_lines: {
         Row: {
+          calc_percentage: number | null
+          calc_source_line_id: string | null
+          calc_type: string | null
           category_id: string | null
           created_at: string
           currency: string | null
@@ -559,6 +578,9 @@ export type Database = {
           unit_type: string | null
         }
         Insert: {
+          calc_percentage?: number | null
+          calc_source_line_id?: string | null
+          calc_type?: string | null
           category_id?: string | null
           created_at?: string
           currency?: string | null
@@ -575,6 +597,9 @@ export type Database = {
           unit_type?: string | null
         }
         Update: {
+          calc_percentage?: number | null
+          calc_source_line_id?: string | null
+          calc_type?: string | null
           category_id?: string | null
           created_at?: string
           currency?: string | null
@@ -591,6 +616,13 @@ export type Database = {
           unit_type?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "budget_template_lines_calc_source_line_id_fkey"
+            columns: ["calc_source_line_id"]
+            isOneToOne: false
+            referencedRelation: "budget_template_lines"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "budget_template_lines_category_id_fkey"
             columns: ["category_id"]
