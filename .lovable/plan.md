@@ -1,45 +1,63 @@
 
 
-## Porcentaje editable en líneas calculadas del presupuesto
+## Optimizar velocidad de edición de presupuesto en contratos
 
-### Objetivo
-Permitir que el porcentaje de las líneas calculadas (Gastos Generales, Utilidades) sea editable directamente desde la visualización del presupuesto CAPEX/OPEX en cada contrato, sin necesidad de modificar la plantilla.
+### Problema
+Al editar un valor unitario o cantidad en una linea del presupuesto (CAPEX/OPEX) dentro de un contrato, el flujo actual ejecuta demasiadas consultas secuenciales a la base de datos, causando lentitud extrema y a veces recarga de pagina:
 
-### Cambios en `src/components/budget/BudgetLineTree.tsx`
+1. `update` de la linea editada (1 query)
+2. `recalcPercentageLines`: fetch de TODAS las lineas + N updates individuales (1 + N queries)
+3. `loadLines`: fetch de todas las lineas de nuevo (1 query)
+4. `onRefresh()`: recarga el dashboard padre (mas queries)
+5. Cada `BudgetLineItem` tiene un `useEffect` que hace fetch de template prices al recibir nuevas props -- esto se dispara para CADA linea cuando se re-renderiza el arbol
 
-Actualmente las líneas con `calc_type = 'percentage'` muestran un Badge estático con el porcentaje y el nombre de la línea fuente (líneas 478-491). Se modificará para:
+Total: minimo 4+ round-trips secuenciales, mas N updates de porcentaje, mas M fetches de template prices desde cada componente hijo.
 
-1. **Porcentaje editable con doble clic** (igual que cantidad y precio en líneas normales):
-   - Al hacer doble clic en el badge del porcentaje, se muestra un Input numérico
-   - Al confirmar (blur o Enter), se guarda el nuevo porcentaje y se recalcula `amount_uf`
-   - El cálculo es: subtotal de la línea fuente * nuevo porcentaje / 100
+### Solucion
 
-2. **Recálculo del monto**:
-   - Al cambiar el porcentaje, se busca la línea fuente en `allLines` por `calc_source_line_id`
-   - Se calcula el subtotal de sus hijos (reutilizando `calculateChildrenSubtotal`)
-   - Se actualiza `calc_percentage` y `amount_uf` via `onUpdateLine`
+#### 1. Optimistic UI + update local inmediato (`BudgetModule.tsx`)
+- Actualizar el estado local `lines` inmediatamente al editar, sin esperar la respuesta de la BD
+- Ejecutar el `update` en la BD en background
+- Solo hacer `loadLines` si hay error (para revertir)
 
-3. **Respeto al modo readOnly**: Si `readOnly = true`, el porcentaje no es editable
+#### 2. Batch update de lineas porcentuales (`BudgetModule.tsx`)
+- En `recalcPercentageLines`, en lugar de hacer N updates individuales con `await` secuencial, recopilar todos los cambios y ejecutarlos en paralelo con `Promise.all`
+- Eliminar el `await` en la llamada a `recalcPercentageLines` desde `applyLineUpdate` para que no bloquee la UI
 
-### Detalle técnico
+#### 3. Eliminar fetch de template prices por componente (`BudgetLineTree.tsx`)
+- El `useEffect` en cada `BudgetLineItem` (lineas 161-198) hace un fetch individual a `budget_template_lines` por cada linea del arbol. Cuando se re-renderiza el arbol tras un cambio, esto dispara decenas de queries simultaneas
+- Ya existe `templatePricesMap` cargado a nivel de `BudgetModule.loadLines`. Pasar este map como prop al `BudgetLineTree` y eliminar el fetch individual
+
+#### 4. Debounce del onRefresh (`BudgetModule.tsx`)
+- `onRefresh()` recarga todo el dashboard. Diferirlo con un debounce o ejecutarlo sin `await`
+
+### Detalle tecnico
 
 ```text
-Estado local nuevo:
-  - isEditingPercentage: boolean
-  - editPercentage: string (inicializado con line.calc_percentage)
+BudgetModule.tsx - applyLineUpdate:
+  ANTES:
+    1. await supabase.update(line)
+    2. await recalcPercentageLines(budget.id) -- fetch all + N sequential updates
+    3. loadLines(budget.id) -- fetch all again
+    4. onRefresh()
 
-Al guardar:
-  1. Parsear el nuevo porcentaje
-  2. Buscar línea fuente en allLines por calc_source_line_id
-  3. Calcular subtotal de hijos de la fuente
-  4. amount_uf = subtotal * porcentaje / 100
-  5. onUpdateLine(line.id, { calc_percentage: nuevoValor, amount_uf: nuevoMonto })
+  DESPUES:
+    1. Actualizar estado local lines inmediatamente (optimistic)
+    2. supabase.update(line) -- sin await bloqueante en UI
+    3. recalcPercentageLines en background con Promise.all para batch
+    4. loadLines solo al final (1 sola recarga)
+    5. onRefresh diferido
 
-UI:
-  - Doble clic en badge -> Input numérico con "%" como sufijo
-  - Enter o blur -> guardar
-  - Escape -> cancelar edición
+BudgetModule.tsx - recalcPercentageLines:
+  ANTES: for loop con await individual por cada linea porcentual
+  DESPUES: Promise.all([...updates])
+
+BudgetLineTree.tsx - BudgetLineItem:
+  ANTES: useEffect individual fetch template prices por componente
+  DESPUES: Recibir templatePricesMap como prop desde BudgetModule
+           Eliminar el useEffect de fetch de templates (lineas 161-198)
 ```
 
-### Archivo modificado
-- `src/components/budget/BudgetLineTree.tsx` (solo modificación de la sección de líneas porcentuales, líneas 478-491)
+### Archivos a modificar
+- `src/components/budget/BudgetModule.tsx` -- optimistic update, batch percentage recalc, pasar templatePricesMap como prop
+- `src/components/budget/BudgetLineTree.tsx` -- recibir templatePricesMap como prop, eliminar fetch individual de templates por componente
