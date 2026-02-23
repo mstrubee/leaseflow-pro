@@ -950,6 +950,15 @@ const getEffectiveAmount = (item: BudgetLine, templatePricesMap?: Record<string,
   return total;
 };
 
+export const calculateGrandTotal = (items: BudgetLine[], templatePricesMap?: Record<string, number>, ufValue?: number): number => {
+  return items.reduce((sum, item) => {
+    if (item.children && item.children.length > 0) {
+      return sum + calculateGrandTotal(item.children, templatePricesMap, ufValue);
+    }
+    return sum + getEffectiveAmount(item, templatePricesMap, ufValue);
+  }, 0);
+};
+
 export const calculateAuthorizedTotal = (items: BudgetLine[], templatePricesMap?: Record<string, number>, ufValue?: number): number => {
   return items.reduce((sum, item) => {
     if (item.children && item.children.length > 0) {

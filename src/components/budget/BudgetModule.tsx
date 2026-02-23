@@ -7,7 +7,7 @@ import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp
 import * as XLSX from "xlsx";
 import { OpexConsumptionPieChart } from "./OpexConsumptionPieChart";
 import { useToast } from "@/hooks/use-toast";
-import { BudgetLineTree, BudgetLine, calculateAuthorizedTotal, calculateUnauthorizedTotal, getUnauthorizedLines, getAllDescendantIds, hasDescendants } from "./BudgetLineTree";
+import { BudgetLineTree, BudgetLine, calculateAuthorizedTotal, calculateGrandTotal, calculateUnauthorizedTotal, getUnauthorizedLines, getAllDescendantIds, hasDescendants } from "./BudgetLineTree";
 import { BudgetSemaphore } from "./BudgetSemaphore";
 import { useBudgetContext } from "./BudgetContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -1020,9 +1020,9 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                 {superficieEdificada > 0 && (
                   <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
                     <span className="font-medium">Total:</span>
-                    <span>{formatUF(calculateAuthorizedTotal(lines, templatePricesMap, ufValue) / superficieEdificada)} /m²</span>
+                    <span>{formatUF(calculateGrandTotal(lines, templatePricesMap, ufValue) / superficieEdificada)} /m²</span>
                     <span>·</span>
-                    <span>{formatCLP(convertUFToPesos(calculateAuthorizedTotal(lines, templatePricesMap, ufValue)) / superficieEdificada)} /m²</span>
+                    <span>{formatCLP(convertUFToPesos(calculateGrandTotal(lines, templatePricesMap, ufValue)) / superficieEdificada)} /m²</span>
                   </div>
                 )}
               </div>
