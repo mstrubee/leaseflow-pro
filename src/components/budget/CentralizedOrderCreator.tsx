@@ -16,10 +16,12 @@ import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { useAuth } from "@/hooks/useAuth";
 import { uploadFileToStorage } from "@/lib/storageUtils";
 import { backupOCToMultipleContracts, backupOCFromStorageUrl, backupOCFileToRepository, uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
+import { CompanyLogo, getCompanyNames } from "@/components/contracts/CompanyLogo";
 interface Contract {
   id: string;
   name: string;
   cebe: string | null;
+  company_names: string[];
 }
 
 interface OpexCategory {
@@ -135,7 +137,7 @@ export const CentralizedOrderCreator = ({
       // Load contracts with CEBE custom field
       const { data: contractsData } = await supabase
         .from("contracts")
-        .select("id, name")
+        .select("id, name, contract_companies(companies(name))")
         .is("deleted_at", null)
         .order("name");
       
@@ -163,11 +165,13 @@ export const CentralizedOrderCreator = ({
         });
         
         contractsWithCebe = (contractsData || []).map(c => ({
-          ...c,
-          cebe: cebeMap.get(c.id) || null
+          id: c.id,
+          name: c.name,
+          cebe: cebeMap.get(c.id) || null,
+          company_names: getCompanyNames(c.contract_companies as any),
         }));
       } else {
-        contractsWithCebe = (contractsData || []).map(c => ({ ...c, cebe: null }));
+        contractsWithCebe = (contractsData || []).map(c => ({ id: c.id, name: c.name, cebe: null, company_names: getCompanyNames((c as any).contract_companies) }));
       }
       
       setContracts(contractsWithCebe);
@@ -942,6 +946,7 @@ export const CentralizedOrderCreator = ({
                           {contracts.map(c => (
                             <SelectItem key={c.id} value={c.id}>
                               <div className="flex items-center gap-2">
+                                <CompanyLogo companyNames={c.company_names} size="sm" />
                                 <span>{c.name}</span>
                                 {c.cebe && <span className="text-xs text-muted-foreground">({c.cebe})</span>}
                               </div>
