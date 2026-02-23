@@ -325,11 +325,11 @@ export const OCRequestDialog = ({
 
             {/* Description */}
             <div className="space-y-2">
-              <Label>Descripción</Label>
+              <Label>Titulo</Label>
               <Textarea
                 value={form.description}
                 onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="Descripción de la solicitud"
+                placeholder="Titulo"
                 rows={2}
               />
             </div>

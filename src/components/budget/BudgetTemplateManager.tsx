@@ -510,11 +510,11 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
               />
             </div>
             <div className="space-y-2">
-              <Label>Descripción</Label>
+              <Label>Titulo</Label>
               <Textarea
                 value={newDescription}
                 onChange={(e) => setNewDescription(e.target.value)}
-                placeholder="Descripción opcional de esta plantilla"
+                placeholder="Titulo"
               />
             </div>
             <div className="space-y-2">
@@ -557,7 +557,7 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
               />
             </div>
             <div className="space-y-2">
-              <Label>Descripción</Label>
+              <Label>Titulo</Label>
               <Textarea
                 value={editDescription}
                 onChange={(e) => setEditDescription(e.target.value)}

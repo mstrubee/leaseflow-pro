@@ -2185,7 +2185,7 @@ const PurchaseOrdersDashboard = () => {
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Buscar por OC, descripción, local o proveedor..."
+                  placeholder="Buscar por OC, titulo, local o proveedor..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-9"
@@ -2309,7 +2309,7 @@ const PurchaseOrdersDashboard = () => {
                       <TableRow>
                         {isAdmin && <TableHead className="w-[40px]"></TableHead>}
                         <TableHead>Nº OC</TableHead>
-                        <TableHead>Descripción</TableHead>
+                         <TableHead>Titulo</TableHead>
                         <TableHead>Proveedor</TableHead>
                         <TableHead>Tipo</TableHead>
                         <TableHead>Categoría</TableHead>
@@ -3062,7 +3062,7 @@ const PurchaseOrdersDashboard = () => {
                   <div className="relative flex-1 min-w-[200px]">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Buscar por número, descripción o proyecto..."
+                      placeholder="Buscar por número, titulo o proyecto..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="pl-9"
@@ -3127,7 +3127,7 @@ const PurchaseOrdersDashboard = () => {
                         <TableHead>Fecha</TableHead>
                         <TableHead>Proyecto</TableHead>
                         <TableHead>Línea</TableHead>
-                        <TableHead>Descripción</TableHead>
+                        <TableHead>Titulo</TableHead>
                         <TableHead>Proveedor</TableHead>
                         <TableHead className="text-right">Monto (UF)</TableHead>
                         <TableHead>Estado</TableHead>

@@ -845,11 +845,11 @@ export const CentralizedOrderCreator = ({
                 
                 {/* Project Name */}
                 <div className="space-y-2">
-                  <Label>Descripción</Label>
+                  <Label>Titulo</Label>
                   <Input
                     value={formData.project_name}
                     onChange={(e) => setFormData(prev => ({ ...prev, project_name: e.target.value }))}
-                    placeholder="Descripción Breve"
+                    placeholder="Titulo"
                   />
                 </div>
                 
