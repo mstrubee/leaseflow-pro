@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +54,7 @@ interface BudgetLineTreeProps {
   readOnly?: boolean;
   parentCategoryId?: string | null;
   globalExpandState?: "expanded" | "collapsed" | null;
+  templatePricesMap?: Record<string, number>;
 }
 export const BudgetLineTree = ({
   lines,
@@ -68,7 +68,8 @@ export const BudgetLineTree = ({
   level = 0,
   readOnly = false,
   parentCategoryId = null,
-  globalExpandState = null
+  globalExpandState = null,
+  templatePricesMap = {}
 }: BudgetLineTreeProps) => {
   return <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
       {lines.map(line => <BudgetLineItem 
@@ -86,6 +87,7 @@ export const BudgetLineTree = ({
         readOnly={readOnly}
         parentCategoryId={line.category_id || parentCategoryId}
         globalExpandState={globalExpandState}
+        templatePricesMap={templatePricesMap}
       />)}
       {level === 0 && !readOnly && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
@@ -107,6 +109,7 @@ interface BudgetLineItemProps {
   readOnly?: boolean;
   parentCategoryId?: string | null;
   globalExpandState?: "expanded" | "collapsed" | null;
+  templatePricesMap?: Record<string, number>;
 }
 
 const countDescendants = (line: BudgetLine): number => {
@@ -127,7 +130,8 @@ const BudgetLineItem = ({
   onViewLineDetails,
   readOnly = false,
   parentCategoryId = null,
-  globalExpandState = null
+  globalExpandState = null,
+  templatePricesMap: externalTemplatePricesMap = {}
 }: BudgetLineItemProps) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isEditingName, setIsEditingName] = useState(false);
@@ -153,49 +157,9 @@ const BudgetLineItem = ({
     ufValue
   } = useBudgetContext();
   
-  // Fetch template unit_price if line has a template_line_id
-  const [templateUnitPrice, setTemplateUnitPrice] = useState<number | null>(null);
-  // Map of template prices for all descendant lines (for parent subtotal calculation)
-  const [templatePricesMap, setTemplatePricesMap] = useState<Record<string, number>>({});
-
-  useEffect(() => {
-    // Collect all template_line_ids from this line and its descendants
-    const collectTemplateIds = (l: BudgetLine): { lineId: string; templateId: string }[] => {
-      const result: { lineId: string; templateId: string }[] = [];
-      if (l.template_line_id) result.push({ lineId: l.id, templateId: l.template_line_id });
-      if (l.children) l.children.forEach(c => result.push(...collectTemplateIds(c)));
-      return result;
-    };
-    const allMappings = collectTemplateIds(line);
-    
-    if (allMappings.length === 0) {
-      setTemplateUnitPrice(null);
-      setTemplatePricesMap({});
-      return;
-    }
-
-    const uniqueTemplateIds = [...new Set(allMappings.map(m => m.templateId))];
-    supabase
-      .from("budget_template_lines")
-      .select("id, default_amount_uf")
-      .in("id", uniqueTemplateIds)
-      .then(({ data }) => {
-        if (data) {
-          const templateMap: Record<string, number> = {};
-          const pricesMap: Record<string, number> = {};
-          data.forEach(t => { templateMap[t.id] = t.default_amount_uf || 0; });
-          allMappings.forEach(m => { pricesMap[m.lineId] = templateMap[m.templateId] ?? 0; });
-          
-          // Set own template price
-          if (line.template_line_id && templateMap[line.template_line_id] !== undefined) {
-            setTemplateUnitPrice(templateMap[line.template_line_id]);
-          } else {
-            setTemplateUnitPrice(null);
-          }
-          setTemplatePricesMap(pricesMap);
-        }
-      });
-  }, [line.template_line_id, line.children]);
+  // Use template prices from parent prop instead of fetching individually
+  const templateUnitPrice = line.template_line_id ? (externalTemplatePricesMap[line.id] ?? null) : null;
+  const templatePricesMap = externalTemplatePricesMap;
 
   const descendantCount = countDescendants(line);
 
@@ -880,7 +844,7 @@ const BudgetLineItem = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} />}
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>

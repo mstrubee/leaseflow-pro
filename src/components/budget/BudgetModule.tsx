@@ -270,20 +270,38 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
 
   const applyLineUpdate = async (id: string, data: Partial<BudgetLine>) => {
     const budget = budgets.find((b) => b.year === selectedYear);
+    
+    // 1. Optimistic UI: update local state immediately
+    setLines(prev => {
+      const updateInTree = (items: BudgetLine[]): BudgetLine[] =>
+        items.map(item => {
+          if (item.id === id) return { ...item, ...data };
+          if (item.children?.length) return { ...item, children: updateInTree(item.children) };
+          return item;
+        });
+      return updateInTree(prev);
+    });
+
+    // 2. Background DB update + percentage recalc (non-blocking)
     try {
       const { error } = await supabase.from("budget_lines").update(data).eq("id", id);
       if (error) throw error;
       
-      // Recalculate percentage lines if a non-percentage line was updated with amount-affecting fields
+      // Recalculate percentage lines in background with batch Promise.all
       if (budget && (data.amount_uf !== undefined || data.quantity !== undefined || data.unit_price !== undefined || data.currency !== undefined)) {
-        await recalcPercentageLines(budget.id);
+        recalcPercentageLines(budget.id).then(() => {
+          // Reload lines once after percentage recalc to sync
+          loadLines(budget.id);
+          onRefresh?.();
+        });
+      } else {
+        // No percentage recalc needed, just refresh
+        onRefresh?.();
       }
-      
-      if (budget) loadLines(budget.id);
-      // Refresh parent dashboard summaries
-      onRefresh?.();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
+      // Revert: reload from DB on error
+      if (budget) loadLines(budget.id);
     }
   };
 
@@ -318,9 +336,9 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
         }, 0);
       };
 
-      for (const pLine of percentageLines) {
+      const updatePromises = percentageLines.map(pLine => {
         const sourceLine = lineMap.get(pLine.calc_source_line_id!);
-        if (!sourceLine) continue;
+        if (!sourceLine) return null;
         
         const sourceChildren = allFlatLines.filter(l => l.parent_id === sourceLine.id);
         let sourceSubtotal: number;
@@ -334,8 +352,13 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
         
         const newAmount = (sourceSubtotal * (pLine.calc_percentage || 0)) / 100;
         if (Math.abs(newAmount - (pLine.amount_uf || 0)) > 0.001) {
-          await supabase.from("budget_lines").update({ amount_uf: newAmount }).eq("id", pLine.id);
+          return supabase.from("budget_lines").update({ amount_uf: newAmount }).eq("id", pLine.id);
         }
+        return null;
+      }).filter(Boolean);
+      
+      if (updatePromises.length > 0) {
+        await Promise.all(updatePromises);
       }
     } catch (error) {
       console.error("Error recalculating percentage lines:", error);
@@ -926,6 +949,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               onViewLineDetails={handleViewLineDetails}
               readOnly={isClosed}
               globalExpandState={globalExpandState}
+              templatePricesMap={templatePricesMap}
             />
             
             {/* Trash Panel - shows deleted lines and audit history */}
