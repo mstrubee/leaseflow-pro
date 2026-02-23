@@ -118,25 +118,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   // Centralized expansion state: tracks which lines are expanded
   // Using a "collapsed set" approach: all lines are expanded by default, this set tracks collapsed ones
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
-  const expandedIds = useRef<Set<string>>(new Set()); // computed on render
-  
-  // Compute expandedIds as inverse of collapsedIds (all line IDs minus collapsed)
-  const getAllLineIds = useCallback((items: BudgetLine[]): string[] => {
-    const ids: string[] = [];
-    items.forEach(item => {
-      ids.push(item.id);
-      if (item.children?.length) ids.push(...getAllLineIds(item.children));
-    });
-    return ids;
-  }, []);
-  
-  // Build the expandedIds set for passing to tree (memoized to prevent unnecessary re-renders)
-  const computedExpandedIds = useMemo(() => {
-    const allIds = getAllLineIds(lines);
-    const set = new Set<string>();
-    allIds.forEach(id => { if (!collapsedIds.has(id)) set.add(id); });
-    return set;
-  }, [lines, collapsedIds, getAllLineIds]);
+  // collapsedIds is passed directly to the tree - no need to compute expandedIds
   
   const handleToggleExpand = useCallback((id: string) => {
     setCollapsedIds(prev => {
@@ -158,11 +140,18 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   }, []);
   
   const handleCollapseAll = useCallback(() => {
-    const allIds = getAllLineIds(lines);
-    setCollapsedIds(new Set(allIds));
+    const collectIds = (items: BudgetLine[]): string[] => {
+      const ids: string[] = [];
+      items.forEach(item => {
+        ids.push(item.id);
+        if (item.children?.length) ids.push(...collectIds(item.children));
+      });
+      return ids;
+    };
+    setCollapsedIds(new Set(collectIds(lines)));
     setGlobalExpandState("collapsed");
     setTimeout(() => setGlobalExpandState(null), 100);
-  }, [lines, getAllLineIds]);
+  }, [lines]);
 
   // Debounced onRefresh
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1018,7 +1007,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               readOnly={isClosed}
               globalExpandState={globalExpandState}
               templatePricesMap={templatePricesMap}
-              expandedIds={computedExpandedIds}
+              collapsedIds={collapsedIds}
               onToggleExpand={handleToggleExpand}
             />
             

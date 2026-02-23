@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,7 +55,7 @@ interface BudgetLineTreeProps {
   parentCategoryId?: string | null;
   globalExpandState?: "expanded" | "collapsed" | null;
   templatePricesMap?: Record<string, number>;
-  expandedIds?: Set<string>;
+  collapsedIds?: Set<string>;
   onToggleExpand?: (id: string) => void;
 }
 export const BudgetLineTree = ({
@@ -72,7 +72,7 @@ export const BudgetLineTree = ({
   parentCategoryId = null,
   globalExpandState = null,
   templatePricesMap = {},
-  expandedIds,
+  collapsedIds,
   onToggleExpand
 }: BudgetLineTreeProps) => {
   return <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
@@ -92,7 +92,7 @@ export const BudgetLineTree = ({
         parentCategoryId={line.category_id || parentCategoryId}
         globalExpandState={globalExpandState}
         templatePricesMap={templatePricesMap}
-        expandedIds={expandedIds}
+        collapsedIds={collapsedIds}
         onToggleExpand={onToggleExpand}
       />)}
       {level === 0 && !readOnly && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
@@ -116,7 +116,7 @@ interface BudgetLineItemProps {
   parentCategoryId?: string | null;
   globalExpandState?: "expanded" | "collapsed" | null;
   templatePricesMap?: Record<string, number>;
-  expandedIds?: Set<string>;
+  collapsedIds?: Set<string>;
   onToggleExpand?: (id: string) => void;
 }
 
@@ -125,7 +125,7 @@ const countDescendants = (line: BudgetLine): number => {
   return line.children.reduce((sum, child) => sum + 1 + countDescendants(child), 0);
 };
 
-const BudgetLineItem = ({
+const BudgetLineItemInner = ({
   line,
   level,
   allLines,
@@ -140,12 +140,12 @@ const BudgetLineItem = ({
   parentCategoryId = null,
   globalExpandState = null,
   templatePricesMap: externalTemplatePricesMap = {},
-  expandedIds,
+  collapsedIds,
   onToggleExpand
 }: BudgetLineItemProps) => {
   // Use centralized expansion state if provided, otherwise fall back to local state
   const [localExpanded, setLocalExpanded] = useState(true);
-  const isExpanded = expandedIds ? expandedIds.has(line.id) : localExpanded;
+  const isExpanded = collapsedIds ? !collapsedIds.has(line.id) : localExpanded;
   const setIsExpanded = (val: boolean) => {
     if (onToggleExpand) {
       onToggleExpand(line.id);
@@ -854,7 +854,7 @@ const BudgetLineItem = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} expandedIds={expandedIds} onToggleExpand={onToggleExpand} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} />}
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
@@ -896,6 +896,8 @@ const BudgetLineItem = ({
       </AlertDialog>
     </div>;
 };
+
+const BudgetLineItem = React.memo(BudgetLineItemInner);
 
 // Helpers para cálculos
 // Helper to get effective amount in UF - uses template price as fallback when unit_price is 0
