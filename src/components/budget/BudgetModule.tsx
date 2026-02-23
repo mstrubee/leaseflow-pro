@@ -274,9 +274,69 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
       const { error } = await supabase.from("budget_lines").update(data).eq("id", id);
       if (error) throw error;
       
+      // Recalculate percentage lines if a non-percentage line was updated with amount-affecting fields
+      if (budget && (data.amount_uf !== undefined || data.quantity !== undefined || data.unit_price !== undefined || data.currency !== undefined)) {
+        await recalcPercentageLines(budget.id);
+      }
+      
       if (budget) loadLines(budget.id);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
+  // Recalculate all percentage-type lines in a budget based on their source line's current subtotal
+  const recalcPercentageLines = async (budgetId: string) => {
+    try {
+      const { data: allFlatLines } = await supabase
+        .from("budget_lines")
+        .select("*")
+        .eq("budget_id", budgetId)
+        .is("deleted_at", null);
+      
+      if (!allFlatLines) return;
+      
+      const percentageLines = allFlatLines.filter(l => l.calc_type === "percentage" && l.calc_source_line_id);
+      if (percentageLines.length === 0) return;
+
+      // Build a map for quick lookup
+      const lineMap = new Map(allFlatLines.map(l => [l.id, l]));
+      
+      // Calculate subtotal of a line's children recursively using stored amount_uf
+      const calcSubtotal = (parentId: string): number => {
+        const children = allFlatLines.filter(l => l.parent_id === parentId);
+        return children.reduce((sum, child) => {
+          const childChildren = allFlatLines.filter(l => l.parent_id === child.id);
+          if (childChildren.length > 0) {
+            const sub = calcSubtotal(child.id);
+            const mult = child.quantity || 1;
+            return sum + (sub * mult);
+          }
+          return sum + (child.amount_uf || 0);
+        }, 0);
+      };
+
+      for (const pLine of percentageLines) {
+        const sourceLine = lineMap.get(pLine.calc_source_line_id!);
+        if (!sourceLine) continue;
+        
+        const sourceChildren = allFlatLines.filter(l => l.parent_id === sourceLine.id);
+        let sourceSubtotal: number;
+        if (sourceChildren.length > 0) {
+          sourceSubtotal = calcSubtotal(sourceLine.id);
+          const srcMult = sourceLine.quantity || 1;
+          sourceSubtotal = sourceSubtotal * srcMult;
+        } else {
+          sourceSubtotal = sourceLine.amount_uf || 0;
+        }
+        
+        const newAmount = (sourceSubtotal * (pLine.calc_percentage || 0)) / 100;
+        if (Math.abs(newAmount - (pLine.amount_uf || 0)) > 0.001) {
+          await supabase.from("budget_lines").update({ amount_uf: newAmount }).eq("id", pLine.id);
+        }
+      }
+    } catch (error) {
+      console.error("Error recalculating percentage lines:", error);
     }
   };
 
