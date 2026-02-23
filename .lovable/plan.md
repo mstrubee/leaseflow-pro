@@ -1,63 +1,45 @@
 
 
-## Optimizar velocidad de edición de presupuesto en contratos
+## Optimizar velocidad de edicion y preservar estado colapsado/expandido
 
-### Problema
-Al editar un valor unitario o cantidad en una linea del presupuesto (CAPEX/OPEX) dentro de un contrato, el flujo actual ejecuta demasiadas consultas secuenciales a la base de datos, causando lentitud extrema y a veces recarga de pagina:
+### Problemas identificados
 
-1. `update` de la linea editada (1 query)
-2. `recalcPercentageLines`: fetch de TODAS las lineas + N updates individuales (1 + N queries)
-3. `loadLines`: fetch de todas las lineas de nuevo (1 query)
-4. `onRefresh()`: recarga el dashboard padre (mas queries)
-5. Cada `BudgetLineItem` tiene un `useEffect` que hace fetch de template prices al recibir nuevas props -- esto se dispara para CADA linea cuando se re-renderiza el arbol
+1. **Perdida de estado expandido/colapsado**: Cada `BudgetLineItem` guarda su estado `isExpanded` en un `useState` local (linea 136). Cuando `loadLines` reconstruye el arbol completo, todos los componentes se remontan y el estado vuelve a `true` (valor por defecto).
 
-Total: minimo 4+ round-trips secuenciales, mas N updates de porcentaje, mas M fetches de template prices desde cada componente hijo.
+2. **Recarga innecesaria tras recalculo**: Despues del update optimista + recalculo de porcentajes, `loadLines` vuelve a reemplazar todo el estado `lines`, causando un flash visual y perdida del estado colapsado.
+
+3. **`onRefresh` pesado**: Llama a `setRefreshKey(k => k + 1)` + `refreshData()` en el dashboard padre, lo cual puede remontar secciones completas.
 
 ### Solucion
 
-#### 1. Optimistic UI + update local inmediato (`BudgetModule.tsx`)
-- Actualizar el estado local `lines` inmediatamente al editar, sin esperar la respuesta de la BD
-- Ejecutar el `update` en la BD en background
-- Solo hacer `loadLines` si hay error (para revertir)
+#### 1. Estado de expansion centralizado (no local por componente)
+- Mover el estado `isExpanded` fuera de cada `BudgetLineItem` a un `Map<string, boolean>` (o `Set<string>`) gestionado a nivel de `BudgetLineTree` o `BudgetModule`
+- Pasar `expandedIds` y `onToggleExpand` como props a cada item
+- Asi, cuando `loadLines` reconstruye el arbol, el estado de expansion se preserva porque vive fuera del arbol de componentes
 
-#### 2. Batch update de lineas porcentuales (`BudgetModule.tsx`)
-- En `recalcPercentageLines`, en lugar de hacer N updates individuales con `await` secuencial, recopilar todos los cambios y ejecutarlos en paralelo con `Promise.all`
-- Eliminar el `await` en la llamada a `recalcPercentageLines` desde `applyLineUpdate` para que no bloquee la UI
+#### 2. Evitar `loadLines` tras recalculo de porcentajes
+- En lugar de llamar `loadLines(budget.id)` despues de `recalcPercentageLines`, actualizar solo las lineas porcentuales en el estado local con sus nuevos `amount_uf`
+- Esto elimina el round-trip extra y evita remontar componentes
 
-#### 3. Eliminar fetch de template prices por componente (`BudgetLineTree.tsx`)
-- El `useEffect` en cada `BudgetLineItem` (lineas 161-198) hace un fetch individual a `budget_template_lines` por cada linea del arbol. Cuando se re-renderiza el arbol tras un cambio, esto dispara decenas de queries simultaneas
-- Ya existe `templatePricesMap` cargado a nivel de `BudgetModule.loadLines`. Pasar este map como prop al `BudgetLineTree` y eliminar el fetch individual
-
-#### 4. Debounce del onRefresh (`BudgetModule.tsx`)
-- `onRefresh()` recarga todo el dashboard. Diferirlo con un debounce o ejecutarlo sin `await`
+#### 3. Debounce de `onRefresh`
+- Envolver `onRefresh` en un `setTimeout` de ~500ms para evitar multiples llamadas consecutivas
+- Cancelar el timer previo si llega otro update antes
 
 ### Detalle tecnico
 
-```text
-BudgetModule.tsx - applyLineUpdate:
-  ANTES:
-    1. await supabase.update(line)
-    2. await recalcPercentageLines(budget.id) -- fetch all + N sequential updates
-    3. loadLines(budget.id) -- fetch all again
-    4. onRefresh()
+**Archivo: `src/components/budget/BudgetLineTree.tsx`**
+- Eliminar `const [isExpanded, setIsExpanded] = useState(true)` del `BudgetLineItem`
+- Agregar props `expandedIds: Set<string>` y `onToggleExpand: (id: string) => void` al `BudgetLineTreeProps` y `BudgetLineItemProps`
+- Calcular `isExpanded` como `expandedIds.has(line.id)` (con default `true` si no esta en el set y no se ha tocado)
+- Mantener el useEffect de `globalExpandState` pero operando sobre el set centralizado
 
-  DESPUES:
-    1. Actualizar estado local lines inmediatamente (optimistic)
-    2. supabase.update(line) -- sin await bloqueante en UI
-    3. recalcPercentageLines en background con Promise.all para batch
-    4. loadLines solo al final (1 sola recarga)
-    5. onRefresh diferido
-
-BudgetModule.tsx - recalcPercentageLines:
-  ANTES: for loop con await individual por cada linea porcentual
-  DESPUES: Promise.all([...updates])
-
-BudgetLineTree.tsx - BudgetLineItem:
-  ANTES: useEffect individual fetch template prices por componente
-  DESPUES: Recibir templatePricesMap como prop desde BudgetModule
-           Eliminar el useEffect de fetch de templates (lineas 161-198)
-```
+**Archivo: `src/components/budget/BudgetModule.tsx`**
+- Agregar estado `expandedIds` con `useState<Set<string>>` inicializado como set vacio (todos expandidos por defecto via logica inversa, o set con todos los IDs)
+- Pasar `expandedIds` y `onToggleExpand` al `BudgetLineTree`
+- En `applyLineUpdate`: reemplazar `loadLines(budget.id)` post-recalculo por actualizacion local de solo las lineas porcentuales
+- Envolver `onRefresh` en un ref con debounce de 500ms
 
 ### Archivos a modificar
-- `src/components/budget/BudgetModule.tsx` -- optimistic update, batch percentage recalc, pasar templatePricesMap como prop
-- `src/components/budget/BudgetLineTree.tsx` -- recibir templatePricesMap como prop, eliminar fetch individual de templates por componente
+- `src/components/budget/BudgetLineTree.tsx` -- externalizar estado de expansion
+- `src/components/budget/BudgetModule.tsx` -- gestionar estado de expansion centralizado, eliminar loadLines post-recalc, debounce onRefresh
+
