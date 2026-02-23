@@ -1,48 +1,42 @@
 
-## Boton de descarga Excel del presupuesto CAPEX
 
-### Objetivo
-Agregar un boton "Descargar Excel" junto al boton "Actualizar Plantilla" en cada presupuesto de contrato dentro del modulo CAPEX, que exporte las lineas del presupuesto a un archivo Excel (.xlsx).
+## Corrección de acceso a Órdenes de Compra para usuarios no-admin
 
-### Cambios en `src/components/budget/BudgetModule.tsx`
+### Problema identificado
+Las políticas de seguridad (RLS) en las tablas `purchase_orders`, `invoices` y `credit_notes` verifican el permiso con recurso **`'budget'`**, pero a los usuarios se les asigna el permiso **`'purchase_orders'`**. Como no coinciden, los usuarios no-admin no pueden ver ninguna OC ni las facturas/notas de crédito asociadas.
 
-1. **Importar dependencias**
-   - Importar `Download` de `lucide-react`
-   - Importar `* as XLSX` de `xlsx`
+Las solicitudes de OC (`oc_requests`) sí funcionan parcialmente porque su política SELECT permite acceso a todos los autenticados (`qual: true`).
 
-2. **Crear funcion `handleExportExcel`**
-   - Recorre las lineas del presupuesto (arbol aplanado con indentacion)
-   - Columnas: Linea (con indentacion para jerarquia), Cantidad, Unidad, Precio Unitario (UF), Total (UF), Total (CLP), Estado
-   - Genera un libro Excel con nombre del contrato + ano
-   - Descarga automaticamente el archivo
+### Solución
+Actualizar las políticas RLS de las 3 tablas para que acepten **tanto** `'budget'` como `'purchase_orders'` como recurso válido. Esto mantiene compatibilidad con permisos existentes.
 
-3. **Agregar boton en la UI** (linea ~791, junto a "Actualizar Plantilla")
-   - Boton con icono `Download` y texto "Descargar Excel"
-   - Variante `outline`, tamano `sm`
-   - Visible tanto cuando el presupuesto esta abierto como cerrado (a diferencia de "Actualizar Plantilla" que solo aparece cuando no esta cerrado)
+### Cambios en base de datos (migración SQL)
 
-### Detalle tecnico
+**Tabla `purchase_orders`** - 3 políticas a actualizar:
+- SELECT: agregar `OR has_permission(uid, 'purchase_orders', 'view/edit/all')`
+- INSERT: agregar `OR has_permission(uid, 'purchase_orders', 'edit/all')`
+- UPDATE: agregar `OR has_permission(uid, 'purchase_orders', 'edit/all')`
+- DELETE: agregar `OR has_permission(uid, 'purchase_orders', 'edit/all')`
+
+**Tabla `invoices`** - mismas 4 políticas a actualizar con las mismas condiciones.
+
+**Tabla `credit_notes`** - mismas 4 políticas a actualizar con las mismas condiciones.
+
+### Detalle técnico
+
+Se ejecutará un `DROP POLICY` + `CREATE POLICY` para cada política afectada, agregando condiciones como:
 
 ```text
-Funcion handleExportExcel:
-  1. Aplanar arbol de lineas recursivamente con nivel de profundidad
-  2. Mapear a filas Excel:
-     - Linea: nombre con espacios de indentacion segun nivel
-     - Cantidad: line.quantity
-     - Unidad: line.unit_type
-     - P. Unitario UF: line.unit_price
-     - Total UF: line.amount_uf
-     - Total CLP: line.amount_uf * ufValue
-     - Estado: line.status
-  3. Agregar fila de totales al final
-  4. Crear worksheet y workbook con XLSX
-  5. Descargar como "{contractName} - CAPEX {year}.xlsx"
+-- Ejemplo para SELECT en purchase_orders (actual):
+USING (has_permission(uid, 'budget', 'view') OR ... 'edit' OR ... 'all')
 
-Ubicacion del boton:
-  Dentro del div flex justify-end gap-2 (linea 751)
-  Despues del boton "Actualizar Plantilla"
-  El boton tambien se muestra cuando isClosed (mover fuera del condicional !isClosed)
+-- Corregido:
+USING (
+  has_permission(uid, 'budget', 'view') OR ... 'edit' OR ... 'all'
+  OR has_permission(uid, 'purchase_orders', 'view') OR ... 'edit' OR ... 'all'
+)
 ```
 
-### Archivo modificado
-- `src/components/budget/BudgetModule.tsx`
+### Archivos modificados
+- Solo migración SQL (sin cambios en código frontend)
+
