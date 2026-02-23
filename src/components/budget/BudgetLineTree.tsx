@@ -556,7 +556,7 @@ const BudgetLineItem = ({
         {/* For non-parent lines: show quantity/unit, ×, and price inputs */}
         {!isParent && !isCalcPercentage && <>
           {/* Quantity + Unit block */}
-          <div className="flex items-center gap-1 w-[120px] min-w-[120px] max-w-[120px] justify-end">
+          <div className="flex items-center gap-1 w-[140px] min-w-[140px] max-w-[140px] justify-end">
             {/* Quantity - editable on double click */}
             {isEditingQuantity && !readOnly ? (
               <Input 
@@ -565,13 +565,13 @@ const BudgetLineItem = ({
                 onChange={e => setEditQuantity(e.target.value)} 
                 onBlur={handleSaveQuantity}
                 onKeyDown={handleQuantityKeyDown}
-                className="h-6 w-14 text-xs" 
+                className="h-6 w-20 text-xs" 
                 autoFocus
                 min="0"
               />
             ) : (
               <span 
-                className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[40px] text-right cursor-text hover:bg-accent/50"
+                className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[50px] text-right cursor-text hover:bg-accent/50"
                 onDoubleClick={() => !readOnly && setIsEditingQuantity(true)}
                 title="Doble clic para editar"
               >

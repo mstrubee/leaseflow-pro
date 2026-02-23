@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -130,13 +130,13 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     return ids;
   }, []);
   
-  // Build the expandedIds set for passing to tree
-  const computedExpandedIds = (() => {
+  // Build the expandedIds set for passing to tree (memoized to prevent unnecessary re-renders)
+  const computedExpandedIds = useMemo(() => {
     const allIds = getAllLineIds(lines);
     const set = new Set<string>();
     allIds.forEach(id => { if (!collapsedIds.has(id)) set.add(id); });
     return set;
-  })();
+  }, [lines, collapsedIds, getAllLineIds]);
   
   const handleToggleExpand = useCallback((id: string) => {
     setCollapsedIds(prev => {
@@ -363,13 +363,17 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   // Recalculate percentage lines and update both DB and local state without full reload
   const recalcPercentageLinesLocally = async (budgetId: string) => {
     try {
-      const { data: allFlatLines } = await supabase
-        .from("budget_lines")
-        .select("*")
-        .eq("budget_id", budgetId)
-        .is("deleted_at", null);
-      
-      if (!allFlatLines) return;
+      // Flatten local tree instead of fetching from DB (optimistic state is already applied)
+      const flattenTree = (items: BudgetLine[]): BudgetLine[] => {
+        const result: BudgetLine[] = [];
+        items.forEach(item => {
+          result.push(item);
+          if (item.children?.length) result.push(...flattenTree(item.children));
+        });
+        return result;
+      };
+      const allFlatLines = flattenTree(lines);
+      if (allFlatLines.length === 0) return;
       
       const percentageLines = allFlatLines.filter(l => l.calc_type === "percentage" && l.calc_source_line_id);
       if (percentageLines.length === 0) return;
