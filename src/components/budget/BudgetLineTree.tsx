@@ -257,6 +257,18 @@ const BudgetLineItemInner = ({
   const parentTotal = childrenSubtotal * multiplier;
   const calculatedAmount = isCalcPercentage ? (line.amount_uf || 0) : (isParent ? parentTotal : getLeafAmount());
 
+  // For root parent lines: include percentage surcharges (Gastos Generales, Utilidades) that reference this line
+  const calculatedAmountWithSurcharges = useMemo(() => {
+    if (level !== 0 || !isParent || !linesMap) return calculatedAmount;
+    let surcharges = 0;
+    linesMap.forEach((l) => {
+      if (l.calc_type === "percentage" && l.calc_source_line_id === line.id) {
+        surcharges += l.amount_uf || 0;
+      }
+    });
+    return calculatedAmount + surcharges;
+  }, [level, isParent, linesMap, line.id, calculatedAmount]);
+
   // Calculate amount only if both quantity and price are > 0
   const calculateLineAmount = (qty: number, price: number, currency: string): number => {
     if (qty <= 0 || price <= 0) return 0;
@@ -507,9 +519,9 @@ const BudgetLineItemInner = ({
               </TooltipTrigger>
               {level === 0 && isParent && superficieEdificada > 0 && (
                 <span className="text-[10px] text-muted-foreground ml-2 flex-shrink-0 whitespace-nowrap">
-                  | {formatUF(calculatedAmount / superficieEdificada)} /m²
+                  | {formatUF(calculatedAmountWithSurcharges / superficieEdificada)} /m²
                   {" · "}
-                  {formatCLP(convertUFToPesos(calculatedAmount) / superficieEdificada)} /m²
+                  {formatCLP(convertUFToPesos(calculatedAmountWithSurcharges) / superficieEdificada)} /m²
                 </span>
               )}
               <TooltipContent side="top">
@@ -745,7 +757,7 @@ const BudgetLineItemInner = ({
               const localP = line.unit_price || 0;
               const price = localP > 0 ? localP : (templateUnitPrice ?? 0);
               const lineTotal = qty * price;
-              return formatUF(isParent ? calculatedAmount : (line.currency === "CLP" && ufValue > 0 ? lineTotal / ufValue : lineTotal));
+              return formatUF(isParent ? calculatedAmountWithSurcharges : (line.currency === "CLP" && ufValue > 0 ? lineTotal / ufValue : lineTotal));
             })()}
           </span>
           <span className="text-[12px] text-muted-foreground font-mono whitespace-nowrap min-w-[100px] text-right">
@@ -757,7 +769,7 @@ const BudgetLineItemInner = ({
                 const price = localP > 0 ? localP : (templateUnitPrice ?? 0);
                 return formatCLP(qty * price);
               }
-              return formatCLP(convertUFToPesos(calculatedAmount));
+              return formatCLP(convertUFToPesos(calculatedAmountWithSurcharges));
             })()}
           </span>
           <TooltipProvider>
