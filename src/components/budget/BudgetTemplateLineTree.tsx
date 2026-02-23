@@ -1,6 +1,6 @@
 import { useState, createContext, useContext, useMemo } from "react";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
-import { ChevronRight, ChevronDown, Plus, Trash2, GripVertical, CornerDownRight, ArrowRight, Ruler } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, GripVertical, CornerDownRight, ArrowRight, Ruler, Percent } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -56,6 +56,9 @@ export interface TemplateLine {
   supplier_name?: string;
   category_id?: string | null;
   quantity_source?: string | null;
+  calc_type?: string | null;
+  calc_source_line_id?: string | null;
+  calc_percentage?: number | null;
   children?: TemplateLine[];
 }
 
@@ -418,14 +421,28 @@ const SortableTemplateLineItem = ({
   const [isEditingUnit, setIsEditingUnit] = useState(false);
   const [isEditingAmount, setIsEditingAmount] = useState(false);
   const [isEditingCurrency, setIsEditingCurrency] = useState(false);
+  const [isEditingPercentage, setIsEditingPercentage] = useState(false);
   const [editName, setEditName] = useState(line.name);
   const [editQuantity, setEditQuantity] = useState((line.quantity ?? 1).toString());
   const [editUnit, setEditUnit] = useState(line.unit_type || "m2");
   const [editAmount, setEditAmount] = useState(line.default_amount_uf.toString());
   const [editCurrency, setEditCurrency] = useState(line.currency || "UF");
+  const [editPercentage, setEditPercentage] = useState((line.calc_percentage ?? 0).toString());
+
+  const isCalcPercentage = line.calc_type === "percentage";
 
   const hasChildren = line.children && line.children.length > 0;
   const calculatedTotal = (parseFloat(editQuantity) || 0) * (parseFloat(editAmount) || 0);
+  
+  // Get root lines that have children (potential source lines for percentage calc)
+  const rootParentLines = allLines.filter(l => l.id !== line.id && l.parent_id === null && l.children && l.children.length > 0);
+  
+  // Calculate percentage-based total
+  const calcSourceLine = isCalcPercentage && line.calc_source_line_id 
+    ? findLineById(allLines, line.calc_source_line_id) 
+    : null;
+  const sourceSubtotal = calcSourceLine ? calculateChildrenSubtotal(calcSourceLine) : 0;
+  const calcPercentageTotal = isCalcPercentage ? sourceSubtotal * (line.calc_percentage || 0) / 100 : 0;
   
   // For parent lines: calculate children subtotal and apply multiplier
   const childrenSubtotal = hasChildren ? calculateChildrenSubtotal(line) : 0;
@@ -544,10 +561,13 @@ const SortableTemplateLineItem = ({
       <div
         className={cn(
           "grid items-center py-2 px-2 rounded-md hover:bg-accent/50 group transition-all duration-200",
-          // Grid columns: drag(32px) expand(28px) name(minmax) qty(60px) unit(40px) x(16px) currency(60px) price(80px) total(100px) supplier(auto) actions(60px)
-          !hasChildren 
-            ? "grid-cols-[32px_28px_minmax(240px,1.2fr)_60px_40px_16px_60px_80px_100px_auto_60px]"
-            : "grid-cols-[32px_28px_minmax(240px,1.2fr)_1fr_60px]",
+          // Grid columns depend on line type
+          isCalcPercentage
+            ? "grid-cols-[32px_28px_minmax(240px,1.2fr)_1fr_60px]"
+            : !hasChildren 
+              ? "grid-cols-[32px_28px_minmax(240px,1.2fr)_60px_40px_16px_60px_80px_100px_auto_60px]"
+              : "grid-cols-[32px_28px_minmax(240px,1.2fr)_1fr_60px]",
+          isCalcPercentage && "bg-amber-50/50 dark:bg-amber-950/20 border-l-2 border-amber-400",
           level === 0 && hasChildren && "bg-muted/60",
           level === 0 && !hasChildren && "bg-muted/20",
           level === 1 && hasChildren && "bg-muted/50",
@@ -620,8 +640,89 @@ const SortableTemplateLineItem = ({
           </span>
         )}
         
-        {/* Leaf node columns */}
-        {!hasChildren && (
+        {/* Percentage-calculated line: show source selector + percentage */}
+        {isCalcPercentage && (
+          <div className="flex items-center gap-2 flex-1">
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 border-amber-300 text-amber-700 dark:text-amber-300 whitespace-nowrap">
+              <Percent className="h-3 w-3 mr-0.5" />
+              Calculada
+            </Badge>
+            
+            {/* Source line selector */}
+            <span className="text-xs text-muted-foreground whitespace-nowrap">% de</span>
+            <Select 
+              value={line.calc_source_line_id || ""} 
+              onValueChange={(val) => onUpdateLine(line.id, { calc_source_line_id: val || null })}
+            >
+              <SelectTrigger className="h-6 text-xs w-[180px]">
+                <SelectValue placeholder="Seleccionar línea fuente" />
+              </SelectTrigger>
+              <SelectContent>
+                {rootParentLines.map(rl => (
+                  <SelectItem key={rl.id} value={rl.id}>
+                    {rl.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            {/* Percentage input */}
+            <span className="text-xs text-muted-foreground">×</span>
+            {isEditingPercentage ? (
+              <Input
+                type="number"
+                value={editPercentage}
+                onChange={(e) => setEditPercentage(e.target.value)}
+                onBlur={() => {
+                  const pct = parseFloat(editPercentage) || 0;
+                  if (pct !== (line.calc_percentage || 0)) {
+                    onUpdateLine(line.id, { calc_percentage: pct });
+                  }
+                  setIsEditingPercentage(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const pct = parseFloat(editPercentage) || 0;
+                    onUpdateLine(line.id, { calc_percentage: pct });
+                    setIsEditingPercentage(false);
+                  } else if (e.key === "Escape") {
+                    setEditPercentage((line.calc_percentage ?? 0).toString());
+                    setIsEditingPercentage(false);
+                  }
+                }}
+                className="h-6 w-16 text-xs"
+                autoFocus
+                min="0"
+                step="0.1"
+              />
+            ) : (
+              <span
+                className="text-xs font-mono bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded cursor-text hover:bg-amber-200 dark:hover:bg-amber-900/50"
+                onDoubleClick={() => {
+                  setEditPercentage((line.calc_percentage ?? 0).toString());
+                  setIsEditingPercentage(true);
+                }}
+                title="Doble clic para editar"
+              >
+                {line.calc_percentage || 0}%
+              </span>
+            )}
+            
+            {/* Calculated total */}
+            <span className="text-xs text-muted-foreground">=</span>
+            <span className="text-xs font-mono bg-primary/10 px-1.5 py-0.5 rounded font-semibold">
+              UF {calcPercentageTotal.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+            </span>
+            {ufValue > 0 && calcPercentageTotal > 0 && (
+              <span className="text-[9px] text-muted-foreground">
+                ($ {Math.round(calcPercentageTotal * ufValue).toLocaleString("es-CL")})
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Leaf node columns - only for normal (non-calculated) leaves */}
+        {!hasChildren && !isCalcPercentage && (
           <>
             {/* Col 4: Quantity - manual or surface-indexed */}
             {line.quantity_source && line.quantity_source !== "manual" ? (
@@ -891,6 +992,24 @@ const SortableTemplateLineItem = ({
         
         {/* Last col: Actions */}
         <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity justify-end">
+          {/* Toggle percentage calc - only for root lines without children */}
+          {!hasChildren && line.parent_id === null && (
+            <Button
+              size="sm"
+              variant={isCalcPercentage ? "secondary" : "ghost"}
+              onClick={() => {
+                if (isCalcPercentage) {
+                  onUpdateLine(line.id, { calc_type: null, calc_source_line_id: null, calc_percentage: null });
+                } else {
+                  onUpdateLine(line.id, { calc_type: "percentage", calc_source_line_id: null, calc_percentage: 0 });
+                }
+              }}
+              className={cn("h-6 w-6 p-0", isCalcPercentage && "text-amber-600")}
+              title={isCalcPercentage ? "Desactivar cálculo por porcentaje" : "Activar cálculo por porcentaje"}
+            >
+              <Percent className="h-3 w-3" />
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"

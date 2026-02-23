@@ -237,6 +237,8 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
               supplier_name: line.supplier_name,
               category_id: line.category_id,
               quantity_source: (line as any).quantity_source,
+              calc_type: (line as any).calc_type || null,
+              calc_percentage: (line as any).calc_percentage || null,
               parent_id: null,
             })
             .select()
@@ -246,15 +248,21 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
           idMap.set(line.id, newLine.id);
         }
 
-        // Second pass: update parent_id references
+        // Second pass: update parent_id and calc_source_line_id references
         for (const line of originalLines) {
+          const updates: Record<string, any> = {};
           if (line.parent_id && idMap.has(line.parent_id)) {
+            updates.parent_id = idMap.get(line.parent_id);
+          }
+          if ((line as any).calc_source_line_id && idMap.has((line as any).calc_source_line_id)) {
+            updates.calc_source_line_id = idMap.get((line as any).calc_source_line_id);
+          }
+          if (Object.keys(updates).length > 0) {
             const newId = idMap.get(line.id);
-            const newParentId = idMap.get(line.parent_id);
-            if (newId && newParentId) {
+            if (newId) {
               await supabase
                 .from("budget_template_lines")
-                .update({ parent_id: newParentId })
+                .update(updates)
                 .eq("id", newId);
             }
           }

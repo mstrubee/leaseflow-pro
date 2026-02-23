@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +37,9 @@ export interface BudgetLine {
   supplier_id?: string | null;
   supplier_name?: string | null;
   category_id?: string | null;
+  calc_type?: string | null;
+  calc_source_line_id?: string | null;
+  calc_percentage?: number | null;
   children?: BudgetLine[];
 }
 interface BudgetLineTreeProps {
@@ -205,6 +208,23 @@ const BudgetLineItem = ({
   
   const hasChildren = line.children && line.children.length > 0;
   const isParent = hasChildren;
+  const isCalcPercentage = line.calc_type === "percentage";
+
+  // For percentage lines, find source line name from allLines
+  const calcSourceName = useMemo(() => {
+    if (!isCalcPercentage || !line.calc_source_line_id) return null;
+    const findName = (items: BudgetLine[]): string | null => {
+      for (const item of items) {
+        if (item.id === line.calc_source_line_id) return item.name;
+        if (item.children) {
+          const found = findName(item.children);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    return findName(allLines);
+  }, [isCalcPercentage, line.calc_source_line_id, allLines]);
 
   // Calculate subtotal of children recursively (for parent lines) using template prices when available
   const calculateChildrenSubtotal = (children: BudgetLine[]): number => {
@@ -455,8 +475,23 @@ const BudgetLineItem = ({
           </TooltipProvider>
         )}
 
+        {/* Percentage-calculated line display */}
+        {isCalcPercentage && (
+          <div className="flex items-center gap-2 flex-1">
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 border-amber-300 text-amber-700 dark:text-amber-300 whitespace-nowrap">
+              <Percent className="h-3 w-3 mr-0.5" />
+              {line.calc_percentage || 0}%
+            </Badge>
+            {calcSourceName && (
+              <span className="text-xs text-muted-foreground">
+                de "{calcSourceName}"
+              </span>
+            )}
+          </div>
+        )}
+
         {/* For non-parent lines: show quantity/unit, ×, and price inputs */}
-        {!isParent && <>
+        {!isParent && !isCalcPercentage && <>
           {/* Quantity + Unit block */}
           <div className="flex items-center gap-1 w-[120px] min-w-[120px] max-w-[120px] justify-end">
             {/* Quantity - editable on double click */}
