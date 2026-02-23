@@ -41,6 +41,9 @@ export interface BudgetLine {
   calc_percentage?: number | null;
   children?: BudgetLine[];
 }
+
+const EMPTY_LINES_MAP = new Map<string, BudgetLine>();
+
 interface BudgetLineTreeProps {
   lines: BudgetLine[];
   onAddLine: (parentId: string | null) => void;
@@ -91,7 +94,7 @@ export const BudgetLineTree = ({
     return map;
   }, [lines, level]);
 
-  const effectiveLinesMap = externalLinesMap || rootLinesMap || new Map();
+  const effectiveLinesMap = externalLinesMap || rootLinesMap || EMPTY_LINES_MAP;
 
   return <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
       {lines.map(line => <BudgetLineItem 
