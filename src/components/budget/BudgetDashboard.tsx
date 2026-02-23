@@ -417,10 +417,10 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
       return { budget: 0, authorized: 0, unauthorized: 0 };
     }
 
-    // Obtener líneas del presupuesto específico con quantity, unit_price y template_line_id
+    // Obtener líneas del presupuesto específico con quantity, unit_price, template_line_id y calc_type
     const { data: lines } = await supabase
       .from("budget_lines")
-      .select("id, amount_uf, status, parent_id, quantity, unit_price, template_line_id, currency")
+      .select("id, amount_uf, status, parent_id, quantity, unit_price, template_line_id, currency, calc_type")
       .eq("budget_id", budget.id);
 
     // Fetch template prices for lines with template_line_id
@@ -446,7 +446,11 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
     const leafLines = (lines || []).filter(l => !parentIds.has(l.id));
     
     // Helper to get effective amount in UF - uses template price as fallback
-    const getEffectiveAmount = (line: { id: string; quantity?: number | null; unit_price?: number | null; amount_uf: number; currency?: string | null }) => {
+    const getEffectiveAmount = (line: { id: string; quantity?: number | null; unit_price?: number | null; amount_uf: number; currency?: string | null; calc_type?: string | null }) => {
+      // Percentage-calculated lines use their stored amount_uf directly
+      if (line.calc_type === "percentage") {
+        return line.amount_uf || 0;
+      }
       const qty = line.quantity || 0;
       const localPrice = line.unit_price || 0;
       const templatePrice = tPricesMap[line.id] ?? 0;
