@@ -280,6 +280,8 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
       }
       
       if (budget) loadLines(budget.id);
+      // Refresh parent dashboard summaries
+      onRefresh?.();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
@@ -362,7 +364,8 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
       }
 
       loadLines(budget.id);
-      toast({ 
+      onRefresh?.();
+      toast({
         title: "Estado actualizado", 
         description: applyToChildren 
           ? "Estado aplicado a la línea y todas sus sublíneas" 
@@ -405,6 +408,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
       });
       
       if (budget) loadLines(budget.id);
+      onRefresh?.();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
