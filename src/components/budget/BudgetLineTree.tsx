@@ -136,6 +136,7 @@ const BudgetLineItem = ({
   const [isEditingPrice, setIsEditingPrice] = useState(false);
   const [isEditingCurrency, setIsEditingCurrency] = useState(false);
   const [isEditingTotal, setIsEditingTotal] = useState(false);
+  const [isEditingPercentage, setIsEditingPercentage] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [editName, setEditName] = useState(line.name);
   const [editQuantity, setEditQuantity] = useState((line.quantity || 0).toString());
@@ -143,6 +144,7 @@ const BudgetLineItem = ({
   const [editCurrency, setEditCurrency] = useState(line.currency || "UF");
   const [editUnit, setEditUnit] = useState(line.unit_type || "m2");
   const [editTotal, setEditTotal] = useState("");
+  const [editPercentage, setEditPercentage] = useState((line.calc_percentage || 0).toString());
   const [editTotalCurrency, setEditTotalCurrency] = useState<"UF" | "CLP">("UF");
   const {
     formatUF,
@@ -386,6 +388,45 @@ const BudgetLineItem = ({
     }
   };
 
+  // Save percentage on blur or Enter for calc_type=percentage lines
+  const handleSavePercentage = () => {
+    if (readOnly) return;
+    const parsed = parseFloat(editPercentage) || 0;
+    if (parsed === (line.calc_percentage || 0)) {
+      setIsEditingPercentage(false);
+      return;
+    }
+    // Find source line subtotal
+    let sourceSubtotal = 0;
+    if (line.calc_source_line_id) {
+      const findSource = (items: BudgetLine[]): BudgetLine | null => {
+        for (const item of items) {
+          if (item.id === line.calc_source_line_id) return item;
+          if (item.children) {
+            const found = findSource(item.children);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+      const sourceLine = findSource(allLines);
+      if (sourceLine?.children) {
+        sourceSubtotal = calculateChildrenSubtotal(sourceLine.children);
+      }
+    }
+    const newAmountUf = (sourceSubtotal * parsed) / 100;
+    onUpdateLine(line.id, { calc_percentage: parsed, amount_uf: newAmountUf });
+    setIsEditingPercentage(false);
+  };
+
+  const handlePercentageKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleSavePercentage();
+    else if (e.key === "Escape") {
+      setEditPercentage((line.calc_percentage || 0).toString());
+      setIsEditingPercentage(false);
+    }
+  };
+
   const toggleStatus = () => {
     if (readOnly) return;
     onUpdateLine(line.id, {
@@ -478,10 +519,40 @@ const BudgetLineItem = ({
         {/* Percentage-calculated line display */}
         {isCalcPercentage && (
           <div className="flex items-center gap-2 flex-1">
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 border-amber-300 text-amber-700 dark:text-amber-300 whitespace-nowrap">
-              <Percent className="h-3 w-3 mr-0.5" />
-              {line.calc_percentage || 0}%
-            </Badge>
+            {isEditingPercentage && !readOnly ? (
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  value={editPercentage}
+                  onChange={e => setEditPercentage(e.target.value)}
+                  onBlur={handleSavePercentage}
+                  onKeyDown={handlePercentageKeyDown}
+                  className="h-6 w-16 text-xs"
+                  autoFocus
+                  min="0"
+                  step="0.1"
+                />
+                <span className="text-xs text-muted-foreground">%</span>
+              </div>
+            ) : (
+              <Badge 
+                variant="outline" 
+                className={cn(
+                  "text-[10px] px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 border-amber-300 text-amber-700 dark:text-amber-300 whitespace-nowrap",
+                  !readOnly && "cursor-text hover:bg-amber-200 dark:hover:bg-amber-900/50"
+                )}
+                onDoubleClick={() => {
+                  if (!readOnly) {
+                    setEditPercentage((line.calc_percentage || 0).toString());
+                    setIsEditingPercentage(true);
+                  }
+                }}
+                title={!readOnly ? "Doble clic para editar porcentaje" : undefined}
+              >
+                <Percent className="h-3 w-3 mr-0.5" />
+                {line.calc_percentage || 0}%
+              </Badge>
+            )}
             {calcSourceName && (
               <span className="text-xs text-muted-foreground">
                 de "{calcSourceName}"
