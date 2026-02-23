@@ -972,7 +972,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
             title="CAPEX" 
             selectedYear={selectedYear}
             ocTotal={capexTotals.oc}
-            onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
+            onRefresh={() => { refreshData(); }}
           />
         </TabsContent>
         <TabsContent value="opex" className="mt-4">
@@ -985,7 +985,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
             title="OPEX"
             selectedYear={selectedYear}
             ocTotal={opexTotals.oc}
-            onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
+            onRefresh={() => { refreshData(); }}
           />
         </TabsContent>
         <TabsContent value="oc" className="mt-4 space-y-6">
