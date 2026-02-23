@@ -1,45 +1,64 @@
 
 
-## Optimizar velocidad de edicion y preservar estado colapsado/expandido
+## Corregir recarga completa del arbol y ampliar columna de cantidad
 
 ### Problemas identificados
 
-1. **Perdida de estado expandido/colapsado**: Cada `BudgetLineItem` guarda su estado `isExpanded` en un `useState` local (linea 136). Cuando `loadLines` reconstruye el arbol completo, todos los componentes se remontan y el estado vuelve a `true` (valor por defecto).
+1. **Recarga completa del arbol**: `computedExpandedIds` (linea 134-139 de BudgetModule) es una IIFE que crea un nuevo objeto `Set` en cada render. Esto causa que React considere que la prop `expandedIds` cambio, y re-renderiza TODOS los `BudgetLineItem` aunque sus datos no hayan cambiado. Este es el principal causante de la recarga visual completa.
 
-2. **Recarga innecesaria tras recalculo**: Despues del update optimista + recalculo de porcentajes, `loadLines` vuelve a reemplazar todo el estado `lines`, causando un flash visual y perdida del estado colapsado.
+2. **Fetch innecesario en recalculo**: `recalcPercentageLinesLocally` (linea 366) hace un `SELECT *` de todas las lineas desde la BD despues de cada edicion, lo cual agrega latencia y puede leer datos desactualizados (la escritura optimista aun no se refleja en la BD).
 
-3. **`onRefresh` pesado**: Llama a `setRefreshKey(k => k + 1)` + `refreshData()` en el dashboard padre, lo cual puede remontar secciones completas.
+3. **Columna de cantidad cortada**: El input de cantidad usa `w-14` (56px) y el display usa `min-w-[40px]`, insuficiente para numeros de 5 digitos. El contenedor tiene `w-[120px]` que tambien limita el espacio.
 
 ### Solucion
 
-#### 1. Estado de expansion centralizado (no local por componente)
-- Mover el estado `isExpanded` fuera de cada `BudgetLineItem` a un `Map<string, boolean>` (o `Set<string>`) gestionado a nivel de `BudgetLineTree` o `BudgetModule`
-- Pasar `expandedIds` y `onToggleExpand` como props a cada item
-- Asi, cuando `loadLines` reconstruye el arbol, el estado de expansion se preserva porque vive fuera del arbol de componentes
+#### 1. Memoizar `computedExpandedIds` (BudgetModule.tsx)
+- Reemplazar la IIFE por un `useMemo` que dependa de `lines` y `collapsedIds`
+- Esto evita crear un nuevo Set en cada render y React no re-renderizara los hijos innecesariamente
 
-#### 2. Evitar `loadLines` tras recalculo de porcentajes
-- En lugar de llamar `loadLines(budget.id)` despues de `recalcPercentageLines`, actualizar solo las lineas porcentuales en el estado local con sus nuevos `amount_uf`
-- Esto elimina el round-trip extra y evita remontar componentes
+#### 2. Recalcular porcentajes desde el estado local (BudgetModule.tsx)
+- En `recalcPercentageLinesLocally`, en vez de hacer `supabase.from("budget_lines").select("*")`, aplanar el arbol `lines` del estado local (que ya tiene el update optimista)
+- Esto elimina el round-trip a la BD y usa datos actualizados
 
-#### 3. Debounce de `onRefresh`
-- Envolver `onRefresh` en un `setTimeout` de ~500ms para evitar multiples llamadas consecutivas
-- Cancelar el timer previo si llega otro update antes
+#### 3. Ampliar ancho de columna de cantidad (BudgetLineTree.tsx)
+- Cambiar el contenedor de cantidad de `w-[120px]` a `w-[140px]`
+- Cambiar el input de edicion de `w-14` a `w-20` (80px)
+- Cambiar el display de `min-w-[40px]` a `min-w-[50px]`
 
 ### Detalle tecnico
 
-**Archivo: `src/components/budget/BudgetLineTree.tsx`**
-- Eliminar `const [isExpanded, setIsExpanded] = useState(true)` del `BudgetLineItem`
-- Agregar props `expandedIds: Set<string>` y `onToggleExpand: (id: string) => void` al `BudgetLineTreeProps` y `BudgetLineItemProps`
-- Calcular `isExpanded` como `expandedIds.has(line.id)` (con default `true` si no esta en el set y no se ha tocado)
-- Mantener el useEffect de `globalExpandState` pero operando sobre el set centralizado
+**BudgetModule.tsx**:
+```
+// Linea 134-139: reemplazar IIFE por useMemo
+const computedExpandedIds = useMemo(() => {
+  const allIds = getAllLineIds(lines);
+  const set = new Set<string>();
+  allIds.forEach(id => { if (!collapsedIds.has(id)) set.add(id); });
+  return set;
+}, [lines, collapsedIds, getAllLineIds]);
+```
 
-**Archivo: `src/components/budget/BudgetModule.tsx`**
-- Agregar estado `expandedIds` con `useState<Set<string>>` inicializado como set vacio (todos expandidos por defecto via logica inversa, o set con todos los IDs)
-- Pasar `expandedIds` y `onToggleExpand` al `BudgetLineTree`
-- En `applyLineUpdate`: reemplazar `loadLines(budget.id)` post-recalculo por actualizacion local de solo las lineas porcentuales
-- Envolver `onRefresh` en un ref con debounce de 500ms
+```
+// Linea 364-435: recalcPercentageLinesLocally sin fetch a BD
+// Aplanar el arbol local en vez de consultar la BD
+const flattenTree = (items: BudgetLine[]): BudgetLine[] => {
+  const result: BudgetLine[] = [];
+  items.forEach(item => {
+    result.push(item);
+    if (item.children?.length) result.push(...flattenTree(item.children));
+  });
+  return result;
+};
+const allFlatLines = flattenTree(lines); // usar estado local
+```
+
+**BudgetLineTree.tsx**:
+```
+// Linea 559: w-[120px] -> w-[140px]
+// Linea 568: w-14 -> w-20
+// Linea 574: min-w-[40px] -> min-w-[50px]
+```
 
 ### Archivos a modificar
-- `src/components/budget/BudgetLineTree.tsx` -- externalizar estado de expansion
-- `src/components/budget/BudgetModule.tsx` -- gestionar estado de expansion centralizado, eliminar loadLines post-recalc, debounce onRefresh
-
+- `src/components/budget/BudgetModule.tsx` -- memoizar expandedIds, recalcular desde estado local
+- `src/components/budget/BudgetLineTree.tsx` -- ampliar ancho de columna de cantidad
