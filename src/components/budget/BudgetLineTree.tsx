@@ -57,6 +57,7 @@ interface BudgetLineTreeProps {
   templatePricesMap?: Record<string, number>;
   collapsedIds?: Set<string>;
   onToggleExpand?: (id: string) => void;
+  linesMap?: Map<string, BudgetLine>;
 }
 export const BudgetLineTree = ({
   lines,
@@ -73,14 +74,31 @@ export const BudgetLineTree = ({
   globalExpandState = null,
   templatePricesMap = {},
   collapsedIds,
-  onToggleExpand
+  onToggleExpand,
+  linesMap: externalLinesMap
 }: BudgetLineTreeProps) => {
+  // Build linesMap only at root level (level === 0), pass down to children
+  const rootLinesMap = useMemo(() => {
+    if (level > 0) return null; // Don't compute for nested trees
+    const map = new Map<string, BudgetLine>();
+    const addToMap = (items: BudgetLine[]) => {
+      items.forEach(item => {
+        map.set(item.id, item);
+        if (item.children?.length) addToMap(item.children);
+      });
+    };
+    addToMap(lines);
+    return map;
+  }, [lines, level]);
+
+  const effectiveLinesMap = externalLinesMap || rootLinesMap || new Map();
+
   return <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
       {lines.map(line => <BudgetLineItem 
         key={line.id} 
         line={line} 
         level={level} 
-        allLines={lines}
+        linesMap={effectiveLinesMap}
         onAddLine={onAddLine} 
         onUpdateLine={onUpdateLine} 
         onDeleteLine={onDeleteLine} 
@@ -104,7 +122,7 @@ export const BudgetLineTree = ({
 interface BudgetLineItemProps {
   line: BudgetLine;
   level: number;
-  allLines: BudgetLine[];
+  linesMap: Map<string, BudgetLine>;
   onAddLine: (parentId: string | null) => void;
   onUpdateLine: (id: string, data: Partial<BudgetLine>) => void;
   onDeleteLine: (id: string) => void;
@@ -128,7 +146,7 @@ const countDescendants = (line: BudgetLine): number => {
 const BudgetLineItemInner = ({
   line,
   level,
-  allLines,
+  linesMap,
   onAddLine,
   onUpdateLine,
   onDeleteLine,
@@ -189,18 +207,9 @@ const BudgetLineItemInner = ({
   // For percentage lines, find source line name from allLines
   const calcSourceName = useMemo(() => {
     if (!isCalcPercentage || !line.calc_source_line_id) return null;
-    const findName = (items: BudgetLine[]): string | null => {
-      for (const item of items) {
-        if (item.id === line.calc_source_line_id) return item.name;
-        if (item.children) {
-          const found = findName(item.children);
-          if (found) return found;
-        }
-      }
-      return null;
-    };
-    return findName(allLines);
-  }, [isCalcPercentage, line.calc_source_line_id, allLines]);
+    const source = linesMap.get(line.calc_source_line_id);
+    return source ? source.name : null;
+  }, [isCalcPercentage, line.calc_source_line_id, linesMap]);
 
   // Calculate subtotal of children recursively (for parent lines) using template prices when available
   const calculateChildrenSubtotal = (children: BudgetLine[]): number => {
@@ -385,17 +394,7 @@ const BudgetLineItemInner = ({
     // Find source line subtotal using stored amount_uf values
     let sourceSubtotal = 0;
     if (line.calc_source_line_id) {
-      const findSource = (items: BudgetLine[]): BudgetLine | null => {
-        for (const item of items) {
-          if (item.id === line.calc_source_line_id) return item;
-          if (item.children) {
-            const found = findSource(item.children);
-            if (found) return found;
-          }
-        }
-        return null;
-      };
-      const sourceLine = findSource(allLines);
+      const sourceLine = linesMap.get(line.calc_source_line_id) || null;
       if (sourceLine) {
         if (sourceLine.children && sourceLine.children.length > 0) {
           sourceSubtotal = calculateStoredSubtotal(sourceLine.children);
@@ -854,7 +853,7 @@ const BudgetLineItemInner = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} />}
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
@@ -897,7 +896,23 @@ const BudgetLineItemInner = ({
     </div>;
 };
 
-const BudgetLineItem = React.memo(BudgetLineItemInner);
+const BudgetLineItem = React.memo(BudgetLineItemInner, (prev, next) => {
+  if (prev.line !== next.line) return false;
+  if (prev.level !== next.level) return false;
+  if (prev.readOnly !== next.readOnly) return false;
+  if (prev.globalExpandState !== next.globalExpandState) return false;
+  // Compare only this item's collapsed state, not the full Set
+  const prevCollapsed = prev.collapsedIds?.has(prev.line.id) ?? false;
+  const nextCollapsed = next.collapsedIds?.has(next.line.id) ?? false;
+  if (prevCollapsed !== nextCollapsed) return false;
+  // For percentage lines, also check if linesMap changed (need recalc)
+  if (prev.line.calc_type === "percentage" && prev.linesMap !== next.linesMap) return false;
+  // Skip comparing linesMap for non-percentage lines
+  if (prev.parentCategoryId !== next.parentCategoryId) return false;
+  if (prev.templatePricesMap !== next.templatePricesMap) return false;
+  // Callbacks are stable (useCallback in parent), skip comparing
+  return true;
+});
 
 // Helpers para cálculos
 // Helper to get effective amount in UF - uses template price as fallback when unit_price is 0
