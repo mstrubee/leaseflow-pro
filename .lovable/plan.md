@@ -1,64 +1,36 @@
 
 
-## Corregir recarga completa del arbol y ampliar columna de cantidad
+## Eliminar recarga completa del arbol al editar cantidad/precio
 
-### Problemas identificados
+### Causa raiz
 
-1. **Recarga completa del arbol**: `computedExpandedIds` (linea 134-139 de BudgetModule) es una IIFE que crea un nuevo objeto `Set` en cada render. Esto causa que React considere que la prop `expandedIds` cambio, y re-renderiza TODOS los `BudgetLineItem` aunque sus datos no hayan cambiado. Este es el principal causante de la recarga visual completa.
+Hay dos problemas que se refuerzan mutuamente:
 
-2. **Fetch innecesario en recalculo**: `recalcPercentageLinesLocally` (linea 366) hace un `SELECT *` de todas las lineas desde la BD despues de cada edicion, lo cual agrega latencia y puede leer datos desactualizados (la escritura optimista aun no se refleja en la BD).
+1. **`computedExpandedIds` depende de `lines`**: Cada vez que se llama `setLines` (update optimista), el `useMemo` se recalcula y crea un nuevo objeto `Set`. React ve una nueva referencia en la prop `expandedIds` y re-renderiza TODOS los `BudgetLineItem`.
 
-3. **Columna de cantidad cortada**: El input de cantidad usa `w-14` (56px) y el display usa `min-w-[40px]`, insuficiente para numeros de 5 digitos. El contenedor tiene `w-[120px]` que tambien limita el espacio.
+2. **`BudgetLineItem` no usa `React.memo`**: Sin memoizacion, React re-renderiza cada item del arbol aunque sus props individuales no hayan cambiado.
 
 ### Solucion
 
-#### 1. Memoizar `computedExpandedIds` (BudgetModule.tsx)
-- Reemplazar la IIFE por un `useMemo` que dependa de `lines` y `collapsedIds`
-- Esto evita crear un nuevo Set en cada render y React no re-renderizara los hijos innecesariamente
+#### 1. Reemplazar `expandedIds` por `collapsedIds` como prop directa
+En vez de calcular `expandedIds` (que depende de `lines`), pasar `collapsedIds` directamente al arbol. Cada item calcula su estado como `!collapsedIds.has(id)`. Como `collapsedIds` solo cambia cuando el usuario expande/colapsa algo (no cuando edita valores), el arbol no se re-renderiza al editar.
 
-#### 2. Recalcular porcentajes desde el estado local (BudgetModule.tsx)
-- En `recalcPercentageLinesLocally`, en vez de hacer `supabase.from("budget_lines").select("*")`, aplanar el arbol `lines` del estado local (que ya tiene el update optimista)
-- Esto elimina el round-trip a la BD y usa datos actualizados
-
-#### 3. Ampliar ancho de columna de cantidad (BudgetLineTree.tsx)
-- Cambiar el contenedor de cantidad de `w-[120px]` a `w-[140px]`
-- Cambiar el input de edicion de `w-14` a `w-20` (80px)
-- Cambiar el display de `min-w-[40px]` a `min-w-[50px]`
+#### 2. Envolver `BudgetLineItem` en `React.memo`
+Esto evita que React re-renderice items cuyas props no cambiaron. Solo se re-renderizara el item editado (cuya `line` prop cambio).
 
 ### Detalle tecnico
 
 **BudgetModule.tsx**:
-```
-// Linea 134-139: reemplazar IIFE por useMemo
-const computedExpandedIds = useMemo(() => {
-  const allIds = getAllLineIds(lines);
-  const set = new Set<string>();
-  allIds.forEach(id => { if (!collapsedIds.has(id)) set.add(id); });
-  return set;
-}, [lines, collapsedIds, getAllLineIds]);
-```
-
-```
-// Linea 364-435: recalcPercentageLinesLocally sin fetch a BD
-// Aplanar el arbol local en vez de consultar la BD
-const flattenTree = (items: BudgetLine[]): BudgetLine[] => {
-  const result: BudgetLine[] = [];
-  items.forEach(item => {
-    result.push(item);
-    if (item.children?.length) result.push(...flattenTree(item.children));
-  });
-  return result;
-};
-const allFlatLines = flattenTree(lines); // usar estado local
-```
+- Eliminar `computedExpandedIds` (el `useMemo` en linea 134-139)
+- Pasar `collapsedIds` directamente como prop al `BudgetLineTree`
+- Eliminar `getAllLineIds` ya que no se necesita mas
 
 **BudgetLineTree.tsx**:
-```
-// Linea 559: w-[120px] -> w-[140px]
-// Linea 568: w-14 -> w-20
-// Linea 574: min-w-[40px] -> min-w-[50px]
-```
+- Cambiar prop `expandedIds: Set<string>` por `collapsedIds: Set<string>` en `BudgetLineTreeProps` y `BudgetLineItemProps`
+- Cambiar la logica de expansion: `const isExpanded = collapsedIds ? !collapsedIds.has(line.id) : localExpanded`
+- Envolver `BudgetLineItem` en `React.memo` para evitar re-renders innecesarios
 
 ### Archivos a modificar
-- `src/components/budget/BudgetModule.tsx` -- memoizar expandedIds, recalcular desde estado local
-- `src/components/budget/BudgetLineTree.tsx` -- ampliar ancho de columna de cantidad
+- `src/components/budget/BudgetModule.tsx` -- eliminar computedExpandedIds, pasar collapsedIds directamente
+- `src/components/budget/BudgetLineTree.tsx` -- usar collapsedIds, envolver en React.memo
+
