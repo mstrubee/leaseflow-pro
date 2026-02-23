@@ -3,7 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp } from "lucide-react";
+import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp, Download } from "lucide-react";
+import * as XLSX from "xlsx";
 import { OpexConsumptionPieChart } from "./OpexConsumptionPieChart";
 import { useToast } from "@/hooks/use-toast";
 import { BudgetLineTree, BudgetLine, calculateAuthorizedTotal, calculateUnauthorizedTotal, getUnauthorizedLines, getAllDescendantIds, hasDescendants } from "./BudgetLineTree";
@@ -397,7 +398,53 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     setShowOCRequestDialog(true);
   };
 
-  // Handle opening OC dialog from budget line
+  // Export budget lines to Excel
+  const handleExportExcel = () => {
+    if (!lines.length || !currentBudget) return;
+
+    const flatRows: Record<string, any>[] = [];
+    const flattenLines = (items: BudgetLine[], level = 0) => {
+      for (const line of items) {
+        flatRows.push({
+          "Línea": "  ".repeat(level) + line.name,
+          "Cantidad": line.quantity ?? "",
+          "Unidad": line.unit_type ?? "",
+          "P. Unitario (UF)": line.unit_price ?? "",
+          "Total (UF)": line.amount_uf ?? 0,
+          "Total (CLP)": Math.round((line.amount_uf ?? 0) * ufValue),
+          "Estado": line.status ?? "",
+        });
+        if (line.children?.length) {
+          flattenLines(line.children, level + 1);
+        }
+      }
+    };
+
+    flattenLines(lines);
+
+    // Totals row
+    const totalUF = lines.reduce((s, l) => s + (l.amount_uf ?? 0), 0);
+    flatRows.push({
+      "Línea": "TOTAL",
+      "Cantidad": "",
+      "Unidad": "",
+      "P. Unitario (UF)": "",
+      "Total (UF)": totalUF,
+      "Total (CLP)": Math.round(totalUF * ufValue),
+      "Estado": "",
+    });
+
+    const ws = XLSX.utils.json_to_sheet(flatRows);
+    ws["!cols"] = [
+      { wch: 40 }, { wch: 10 }, { wch: 12 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 14 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Presupuesto");
+    const fileName = `${contractName || "Contrato"} - ${title} ${currentBudget.year}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
+
   const handleCreateOCFromLine = async (budgetLineId: string, lineName: string) => {
     setOcBudgetLineId(budgetLineId);
     setOcLineName(lineName);
@@ -747,47 +794,59 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               </Alert>
             )}
 
-            {!isClosed && currentBudget && (
+            {currentBudget && (
               <div className="flex justify-end gap-2">
+                {!isClosed && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setGlobalExpandState(null);
+                        setTimeout(() => setGlobalExpandState("expanded"), 0);
+                      }}
+                      className="gap-1"
+                      title="Expandir todas las líneas"
+                    >
+                      <ChevronsUpDown className="h-4 w-4" />
+                      Expandir
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setGlobalExpandState(null);
+                        setTimeout(() => setGlobalExpandState("collapsed"), 0);
+                      }}
+                      className="gap-1"
+                      title="Colapsar todas las líneas"
+                    >
+                      <ChevronsDownUp className="h-4 w-4" />
+                      Colapsar
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={async () => {
+                        const currentTemplateIdLoaded = await getCurrentTemplateId(currentBudget.id);
+                        setUpdateTemplateId(currentTemplateIdLoaded || "");
+                        setShowUpdateTemplateDialog(true);
+                      }}
+                      className="gap-2"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      Actualizar Plantilla
+                    </Button>
+                  </>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    setGlobalExpandState(null);
-                    setTimeout(() => setGlobalExpandState("expanded"), 0);
-                  }}
-                  className="gap-1"
-                  title="Expandir todas las líneas"
-                >
-                  <ChevronsUpDown className="h-4 w-4" />
-                  Expandir
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setGlobalExpandState(null);
-                    setTimeout(() => setGlobalExpandState("collapsed"), 0);
-                  }}
-                  className="gap-1"
-                  title="Colapsar todas las líneas"
-                >
-                  <ChevronsDownUp className="h-4 w-4" />
-                  Colapsar
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={async () => {
-                    // Pre-load the current template ID
-                    const currentTemplateIdLoaded = await getCurrentTemplateId(currentBudget.id);
-                    setUpdateTemplateId(currentTemplateIdLoaded || "");
-                    setShowUpdateTemplateDialog(true);
-                  }}
+                  onClick={handleExportExcel}
                   className="gap-2"
                 >
-                  <RefreshCw className="h-4 w-4" />
-                  Actualizar Plantilla
+                  <Download className="h-4 w-4" />
+                  Descargar Excel
                 </Button>
               </div>
             )}
