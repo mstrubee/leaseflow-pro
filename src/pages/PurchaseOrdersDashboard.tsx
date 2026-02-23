@@ -14,6 +14,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { ContractSearchSelect } from "@/components/contracts/ContractSearchSelect";
+import { getCompanyNames } from "@/components/contracts/CompanyLogo";
 import {
   Collapsible,
   CollapsibleContent,
@@ -155,6 +158,7 @@ interface OCRequest {
 interface Contract {
   id: string;
   name: string;
+  company_names?: string[];
 }
 
 interface OpexCategory {
@@ -377,10 +381,14 @@ const PurchaseOrdersDashboard = () => {
       // Load contracts
       const { data: contractsData } = await supabase
         .from("contracts")
-        .select("id, name")
+        .select("id, name, contract_companies(companies(name))")
         .is("deleted_at", null)
         .order("name");
-      setContracts(contractsData || []);
+      setContracts((contractsData || []).map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        company_names: getCompanyNames(c.contract_companies),
+      })));
 
       // Load OPEX categories
       const { data: categoriesData } = await supabase
@@ -1785,18 +1793,13 @@ const PurchaseOrdersDashboard = () => {
         {/* Year Filter */}
         <div className="flex items-center gap-4">
           <span className="text-sm font-medium">Año:</span>
-          <Select value={yearFilter} onValueChange={setYearFilter}>
-            <SelectTrigger className="w-[120px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {availableYears.map((year) => (
-                <SelectItem key={year} value={year.toString()}>
-                  {year}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={yearFilter}
+            onValueChange={setYearFilter}
+            options={availableYears.map((year) => ({ value: year.toString(), label: year.toString() }))}
+            placeholder="Año"
+            triggerClassName="w-[120px]"
+          />
         </div>
 
         {/* Summary Cards - Ordered: Total OC, Locales con OC, Monto Total ($/UF), Facturado, Sin Facturar */}
@@ -2192,57 +2195,53 @@ const PurchaseOrdersDashboard = () => {
                 />
               </div>
 
-              <Select value={contractFilter} onValueChange={setContractFilter}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Local" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos los locales</SelectItem>
-                  {contracts.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ContractSearchSelect
+                value={contractFilter}
+                onValueChange={setContractFilter}
+                contracts={contracts}
+                placeholder="Local"
+                showAllOption
+                allOptionLabel="Todos los locales"
+                allOptionValue="todos"
+                triggerClassName="w-[180px]"
+              />
 
-              <Select value={classificationFilter} onValueChange={setClassificationFilter}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue placeholder="Tipo" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="CAPEX">CAPEX</SelectItem>
-                  <SelectItem value="OPEX">OPEX</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={classificationFilter}
+                onValueChange={setClassificationFilter}
+                options={[
+                  { value: "todos", label: "Todos" },
+                  { value: "CAPEX", label: "CAPEX" },
+                  { value: "OPEX", label: "OPEX" },
+                ]}
+                placeholder="Tipo"
+                triggerClassName="w-[140px]"
+              />
 
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Categoría" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todas las categorías</SelectItem>
-                  {opexCategories.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={categoryFilter}
+                onValueChange={setCategoryFilter}
+                options={[
+                  { value: "todos", label: "Todas las categorías" },
+                  ...opexCategories.map((c) => ({ value: c.id, label: c.name })),
+                ]}
+                placeholder="Categoría"
+                triggerClassName="w-[180px]"
+              />
 
-              <Select value={amountFilter} onValueChange={setAmountFilter}>
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Monto" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos los montos</SelectItem>
-                  <SelectItem value="0-100">0 - 100 UF</SelectItem>
-                  <SelectItem value="100-500">100 - 500 UF</SelectItem>
-                  <SelectItem value="500-1000">500 - 1.000 UF</SelectItem>
-                  <SelectItem value="1000+">+1.000 UF</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={amountFilter}
+                onValueChange={setAmountFilter}
+                options={[
+                  { value: "todos", label: "Todos los montos" },
+                  { value: "0-100", label: "0 - 100 UF" },
+                  { value: "100-500", label: "100 - 500 UF" },
+                  { value: "500-1000", label: "500 - 1.000 UF" },
+                  { value: "1000+", label: "+1.000 UF" },
+                ]}
+                placeholder="Monto"
+                triggerClassName="w-[150px]"
+              />
 
               {hasActiveFilters && (
                 <Button variant="ghost" size="sm" onClick={clearFilters}>
@@ -3068,29 +3067,27 @@ const PurchaseOrdersDashboard = () => {
                       className="pl-9"
                     />
                   </div>
-                  <Select value={contractFilter} onValueChange={setContractFilter}>
-                    <SelectTrigger className="w-[180px]">
-                      <SelectValue placeholder="Proyecto" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="todos">Todos los proyectos</SelectItem>
-                      {contracts.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={requestStatusFilter} onValueChange={setRequestStatusFilter}>
-                    <SelectTrigger className="w-[140px]">
-                      <SelectValue placeholder="Estado" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="todos">Todos</SelectItem>
-                      <SelectItem value="pending">Pendientes</SelectItem>
-                      <SelectItem value="converted">Convertidas</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <ContractSearchSelect
+                    value={contractFilter}
+                    onValueChange={setContractFilter}
+                    contracts={contracts}
+                    placeholder="Proyecto"
+                    showAllOption
+                    allOptionLabel="Todos los proyectos"
+                    allOptionValue="todos"
+                    triggerClassName="w-[180px]"
+                  />
+                  <SearchableSelect
+                    value={requestStatusFilter}
+                    onValueChange={setRequestStatusFilter}
+                    options={[
+                      { value: "todos", label: "Todos" },
+                      { value: "pending", label: "Pendientes" },
+                      { value: "converted", label: "Convertidas" },
+                    ]}
+                    placeholder="Estado"
+                    triggerClassName="w-[140px]"
+                  />
                   {isAdmin && selectedRequests.size > 0 && (
                     <Button
                       variant="destructive"
@@ -3679,22 +3676,15 @@ const PurchaseOrdersDashboard = () => {
               return (
                 <div className="space-y-1.5">
                   <Label htmlFor="oc_category">Categoría OPEX</Label>
-                  <Select
+                  <SearchableSelect
                     value={editingOCData.opex_category_id || "none"}
                     onValueChange={(v) => setEditingOCData({ ...editingOCData, opex_category_id: v === "none" ? null : v })}
-                  >
-                    <SelectTrigger id="oc_category">
-                      <SelectValue placeholder="Seleccionar categoría" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Sin categoría</SelectItem>
-                      {opexCategories.map((cat) => (
-                        <SelectItem key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    options={[
+                      { value: "none", label: "Sin categoría" },
+                      ...opexCategories.map((cat) => ({ value: cat.id, label: cat.name })),
+                    ]}
+                    placeholder="Seleccionar categoría"
+                  />
                 </div>
               );
             })()}
@@ -3798,23 +3788,13 @@ const PurchaseOrdersDashboard = () => {
               
               {/* Add contract selector */}
               <div className="flex gap-2">
-                <Select
-                  onValueChange={(v) => handleAddContractToEditOC(v)}
+                <ContractSearchSelect
                   value=""
-                >
-                  <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="Agregar contrato..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {contracts
-                      .filter(c => !editingOCContracts.some(ec => ec.contract_id === c.id))
-                      .map((contract) => (
-                        <SelectItem key={contract.id} value={contract.id}>
-                          {contract.name}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
+                  onValueChange={(v) => handleAddContractToEditOC(v)}
+                  contracts={contracts.filter(c => !editingOCContracts.some(ec => ec.contract_id === c.id))}
+                  placeholder="Agregar contrato..."
+                  triggerClassName="flex-1"
+                />
               </div>
 
               {/* Contracts table */}

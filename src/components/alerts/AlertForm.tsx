@@ -5,6 +5,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { ContractSearchSelect } from "@/components/contracts/ContractSearchSelect";
+import { getCompanyNames } from "@/components/contracts/CompanyLogo";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -27,6 +30,7 @@ interface ContractOption {
   id: string;
   name: string;
   company_name: string | null;
+  company_names?: string[];
 }
 
 const ALERT_TYPES = [
@@ -112,7 +116,7 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
       try {
         const { data, error } = await supabase
           .from("contracts")
-          .select("id, name, companies:company_id(name)")
+          .select("id, name, companies:company_id(name), contract_companies(companies(name))")
           .is("deleted_at", null)
           .order("name");
         
@@ -121,6 +125,7 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
             id: c.id,
             name: c.name,
             company_name: c.companies?.name || null,
+            company_names: getCompanyNames(c.contract_companies),
           }));
           setContracts(mapped);
         }
@@ -361,18 +366,12 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
 
             <div className="space-y-2">
               <Label>Tipo de alerta</Label>
-              <Select value={alertType} onValueChange={setAlertType}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ALERT_TYPES.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={alertType}
+                onValueChange={setAlertType}
+                options={ALERT_TYPES.map((type) => ({ value: type.value, label: type.label }))}
+                placeholder="Tipo de alerta"
+              />
             </div>
 
             {/* Category selector - only show if not forced */}
@@ -382,18 +381,12 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
                   <Tag className="h-3 w-3" />
                   Categoría
                 </Label>
-                <Select value={categoryId || ""} onValueChange={setCategoryId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar categoría" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((cat) => (
-                      <SelectItem key={cat.id} value={cat.id}>
-                        {cat.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={categoryId || ""}
+                  onValueChange={setCategoryId}
+                  options={categories.map((cat) => ({ value: cat.id, label: cat.name }))}
+                  placeholder="Seleccionar categoría"
+                />
               </div>
             )}
           </div>
@@ -404,22 +397,13 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
               <Building2 className="h-4 w-4" />
               Local *
             </Label>
-            <Select 
-              value={selectedContractId} 
+            <ContractSearchSelect
+              value={selectedContractId}
               onValueChange={setSelectedContractId}
+              contracts={contracts}
+              placeholder={loadingContracts ? "Cargando..." : "Seleccionar local"}
               disabled={!!contractId && !editingAlert}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={loadingContracts ? "Cargando..." : "Seleccionar local"} />
-              </SelectTrigger>
-              <SelectContent>
-                {contracts.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}{c.company_name ? ` - ${c.company_name}` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            />
             <p className="text-xs text-muted-foreground">
               Cada alerta debe estar asociada a un local específico
             </p>
@@ -431,18 +415,12 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
               <User className="h-4 w-4" />
               Responsable *
             </Label>
-            <Select value={assignedTo} onValueChange={setAssignedTo}>
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar responsable" />
-              </SelectTrigger>
-              <SelectContent>
-                {users.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>
-                    {u.full_name || u.email}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={assignedTo}
+              onValueChange={setAssignedTo}
+              options={users.map((u) => ({ value: u.id, label: u.full_name || u.email }))}
+              placeholder="Seleccionar responsable"
+            />
             <p className="text-xs text-muted-foreground">
               El responsable recibirá las notificaciones de esta alerta
             </p>

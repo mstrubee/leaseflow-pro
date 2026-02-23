@@ -7,6 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { ContractSearchSelect } from "@/components/contracts/ContractSearchSelect";
+import { getCompanyNames } from "@/components/contracts/CompanyLogo";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useSingleCollapsible } from "@/hooks/useCollapsibleState";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -75,6 +78,7 @@ interface Contract {
   name: string;
   company_id: string | null;
   company_name?: string;
+  company_names?: string[];
 }
 interface ContractOpexSummary {
   contract_id: string;
@@ -194,14 +198,14 @@ const OpexDashboard = () => {
         data: contractsData
       } = await supabase.from("contracts").select("id, name, status, contract_companies(company_id, companies(id, name))").is("deleted_at", null).eq("status", "firmado").order("name");
       const processedContracts = (contractsData || []).map((c: any) => {
-        // Get company from contract_companies relation
         const companyRelation = c.contract_companies?.[0];
         const companyData = companyRelation?.companies;
         return {
           id: c.id,
           name: c.name,
           company_id: companyData?.id || null,
-          company_name: companyData?.name || "Sin empresa"
+          company_name: companyData?.name || "Sin empresa",
+          company_names: getCompanyNames(c.contract_companies),
         };
       });
       setContracts(processedContracts);
@@ -570,16 +574,13 @@ const OpexDashboard = () => {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Select value={yearFilter} onValueChange={setYearFilter}>
-                  <SelectTrigger className="w-[120px]">
-                    <SelectValue placeholder="Año" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableYears.map(year => <SelectItem key={year} value={year.toString()}>
-                        {year}
-                      </SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={yearFilter}
+                  onValueChange={setYearFilter}
+                  options={availableYears.map(year => ({ value: year.toString(), label: year.toString() }))}
+                  placeholder="Año"
+                  triggerClassName="w-[120px]"
+                />
               </div>
             </div>
             <div className="flex items-center justify-end gap-2 flex-wrap">
@@ -730,41 +731,36 @@ const OpexDashboard = () => {
                   className="pl-9 h-9" 
                 />
               </div>
-              <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                <SelectTrigger className="w-[160px] h-9">
-                  <SelectValue placeholder="Empresas" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todas las empresas</SelectItem>
-                  {companies.map(company => (
-                    <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={contractFilter} onValueChange={setContractFilter}>
-                <SelectTrigger className="w-[160px] h-9">
-                  <SelectValue placeholder="Locales" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos los locales</SelectItem>
-                  {contracts
-                    .filter(c => companyFilter === "todos" || c.company_id === companyFilter)
-                    .map(c => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-[160px] h-9">
-                  <SelectValue placeholder="Categorías" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todas las categorías</SelectItem>
-                  {categories.map(cat => (
-                    <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={companyFilter}
+                onValueChange={setCompanyFilter}
+                options={[
+                  { value: "todos", label: "Todas las empresas" },
+                  ...companies.map(company => ({ value: company.id, label: company.name })),
+                ]}
+                placeholder="Empresas"
+                triggerClassName="w-[160px] h-9"
+              />
+              <ContractSearchSelect
+                value={contractFilter}
+                onValueChange={setContractFilter}
+                contracts={contracts.filter(c => companyFilter === "todos" || c.company_id === companyFilter)}
+                placeholder="Locales"
+                showAllOption
+                allOptionLabel="Todos los locales"
+                allOptionValue="todos"
+                triggerClassName="w-[160px] h-9"
+              />
+              <SearchableSelect
+                value={categoryFilter}
+                onValueChange={setCategoryFilter}
+                options={[
+                  { value: "todos", label: "Todas las categorías" },
+                  ...categories.map(cat => ({ value: cat.id, label: cat.name })),
+                ]}
+                placeholder="Categorías"
+                triggerClassName="w-[160px] h-9"
+              />
               {hasActiveFilters && (
                 <Button variant="ghost" size="sm" className="h-9" onClick={clearFilters}>
                   <X className="h-4 w-4 mr-1" />
