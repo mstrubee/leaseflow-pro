@@ -265,7 +265,7 @@ export const PaymentPlanManager = ({
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Descripción</Label>
+              <Label>Titulo</Label>
               <Input
                 value={form.description}
                 onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}

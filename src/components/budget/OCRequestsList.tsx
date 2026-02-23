@@ -1091,11 +1091,11 @@ export const OCRequestsList = ({
 
                 {/* Description */}
                 <div className="space-y-2">
-                  <Label>Descripción</Label>
+                  <Label>Titulo</Label>
                   <Textarea
                     value={newRequestForm.description}
                     onChange={(e) => setNewRequestForm(prev => ({ ...prev, description: e.target.value }))}
-                    placeholder="Descripción de la solicitud"
+                    placeholder="Titulo"
                     rows={2}
                   />
                 </div>

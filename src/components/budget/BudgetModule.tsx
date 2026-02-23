@@ -971,7 +971,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="oc_description">Descripción</Label>
+              <Label htmlFor="oc_description">Titulo</Label>
               <Input
                 id="oc_description"
                 value={ocForm.description}

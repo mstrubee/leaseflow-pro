@@ -676,11 +676,11 @@ export const OCRequestViewDialog = ({
               {!readOnly && request.status === "pending" && (
                 <>
                   <div className="space-y-2">
-                    <Label>Descripción</Label>
+                    <Label>Titulo</Label>
                     <Input
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      placeholder="Descripción de la solicitud"
+                      placeholder="Titulo"
                     />
                   </div>
 
