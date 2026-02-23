@@ -1,34 +1,48 @@
 
+## Boton de descarga Excel del presupuesto CAPEX
 
-## Dropdowns buscables y logos en selectores de contratos
+### Objetivo
+Agregar un boton "Descargar Excel" junto al boton "Actualizar Plantilla" en cada presupuesto de contrato dentro del modulo CAPEX, que exporte las lineas del presupuesto a un archivo Excel (.xlsx).
 
-### Resumen
-Se requieren dos mejoras globales:
-1. **Todos los dropdowns del sistema** deben permitir escribir para buscar/filtrar opciones
-2. **Todos los dropdowns que listen contratos** deben mostrar el logo de empresa (CompanyLogo)
+### Cambios en `src/components/budget/BudgetModule.tsx`
 
-### Estado actual
+1. **Importar dependencias**
+   - Importar `Download` de `lucide-react`
+   - Importar `* as XLSX` de `xlsx`
 
-#### ✅ Completado
-- `src/components/ui/searchable-select.tsx` - Componente genérico creado
-- `src/components/contracts/ContractSearchSelect.tsx` - Componente de contratos con logos creado
-- `src/pages/PurchaseOrdersDashboard.tsx` - Todos los filtros migrados (año, local, tipo, categoría, monto, estado, categoría OPEX en edit, agregar contrato en edit)
-- `src/pages/OpexDashboard.tsx` - Todos los filtros migrados (año, empresa, local, categoría)
-- `src/components/alerts/AlertForm.tsx` - Todos los selects migrados (tipo alerta, categoría, local, responsable)
-- `src/components/budget/CentralizedOrderCreator.tsx` - Migrado (tipo presupuesto, categoría OPEX, moneda, contrato single, contrato allocation)
+2. **Crear funcion `handleExportExcel`**
+   - Recorre las lineas del presupuesto (arbol aplanado con indentacion)
+   - Columnas: Linea (con indentacion para jerarquia), Cantidad, Unidad, Precio Unitario (UF), Total (UF), Total (CLP), Estado
+   - Genera un libro Excel con nombre del contrato + ano
+   - Descarga automaticamente el archivo
 
-#### 🔲 Pendiente
-- `src/components/budget/OCRequestDialog.tsx` - Moneda
-- `src/components/budget/OCRequestViewDialog.tsx` - Contratos (conversión multi)
-- `src/components/budget/InvoiceList.tsx` - Moneda, facturas
-- `src/components/opex/OpexCreateDialog.tsx` - Contratos
-- `src/components/bulk-upload/ValidationErrorsTable.tsx` - Contratos existentes
-- `src/components/suppliers/SupplierSelect.tsx` - Proveedores
-- `src/components/suppliers/CategorySelect.tsx` - Categorías
-- `src/components/maintenance/MaintenanceEditDialog.tsx` - Estado, sub-estado
-- `src/components/maintenance/MaintenanceModule.tsx` - Filtros varios
-- `src/pages/EditContract.tsx` - Moneda, tipo término
-- `src/pages/NewContract.tsx` - Dropdowns de formulario
-- `src/components/admin/OrgChartManager.tsx` - Filtros de contratos
-- `src/components/kpi/KPIForm.tsx` - Selecciones KPI
-- `src/components/gantt/GanttModule.tsx` - Filtros Gantt
+3. **Agregar boton en la UI** (linea ~791, junto a "Actualizar Plantilla")
+   - Boton con icono `Download` y texto "Descargar Excel"
+   - Variante `outline`, tamano `sm`
+   - Visible tanto cuando el presupuesto esta abierto como cerrado (a diferencia de "Actualizar Plantilla" que solo aparece cuando no esta cerrado)
+
+### Detalle tecnico
+
+```text
+Funcion handleExportExcel:
+  1. Aplanar arbol de lineas recursivamente con nivel de profundidad
+  2. Mapear a filas Excel:
+     - Linea: nombre con espacios de indentacion segun nivel
+     - Cantidad: line.quantity
+     - Unidad: line.unit_type
+     - P. Unitario UF: line.unit_price
+     - Total UF: line.amount_uf
+     - Total CLP: line.amount_uf * ufValue
+     - Estado: line.status
+  3. Agregar fila de totales al final
+  4. Crear worksheet y workbook con XLSX
+  5. Descargar como "{contractName} - CAPEX {year}.xlsx"
+
+Ubicacion del boton:
+  Dentro del div flex justify-end gap-2 (linea 751)
+  Despues del boton "Actualizar Plantilla"
+  El boton tambien se muestra cuando isClosed (mover fuera del condicional !isClosed)
+```
+
+### Archivo modificado
+- `src/components/budget/BudgetModule.tsx`
