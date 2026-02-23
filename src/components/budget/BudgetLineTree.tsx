@@ -264,7 +264,7 @@ const BudgetLineItem = ({
   const childrenSubtotal = isParent ? calculateChildrenSubtotal(line.children!) : 0;
   const multiplier = line.quantity || 1;
   const parentTotal = childrenSubtotal * multiplier;
-  const calculatedAmount = isParent ? parentTotal : getLeafAmount();
+  const calculatedAmount = isCalcPercentage ? (line.amount_uf || 0) : (isParent ? parentTotal : getLeafAmount());
 
   // Calculate amount only if both quantity and price are > 0
   const calculateLineAmount = (qty: number, price: number, currency: string): number => {
@@ -388,6 +388,18 @@ const BudgetLineItem = ({
     }
   };
 
+  // Calculate subtotal from a line's children using their stored amount_uf (for cross-line calculations)
+  const calculateStoredSubtotal = (children: BudgetLine[]): number => {
+    return children.reduce((sum, child) => {
+      if (child.children && child.children.length > 0) {
+        const childSub = calculateStoredSubtotal(child.children);
+        const mult = child.quantity || 1;
+        return sum + (childSub * mult);
+      }
+      return sum + (child.amount_uf || 0);
+    }, 0);
+  };
+
   // Save percentage on blur or Enter for calc_type=percentage lines
   const handleSavePercentage = () => {
     if (readOnly) return;
@@ -396,7 +408,7 @@ const BudgetLineItem = ({
       setIsEditingPercentage(false);
       return;
     }
-    // Find source line subtotal
+    // Find source line subtotal using stored amount_uf values
     let sourceSubtotal = 0;
     if (line.calc_source_line_id) {
       const findSource = (items: BudgetLine[]): BudgetLine | null => {
@@ -410,8 +422,14 @@ const BudgetLineItem = ({
         return null;
       };
       const sourceLine = findSource(allLines);
-      if (sourceLine?.children) {
-        sourceSubtotal = calculateChildrenSubtotal(sourceLine.children);
+      if (sourceLine) {
+        if (sourceLine.children && sourceLine.children.length > 0) {
+          sourceSubtotal = calculateStoredSubtotal(sourceLine.children);
+          const srcMult = sourceLine.quantity || 1;
+          sourceSubtotal = sourceSubtotal * srcMult;
+        } else {
+          sourceSubtotal = sourceLine.amount_uf || 0;
+        }
       }
     }
     const newAmountUf = (sourceSubtotal * parsed) / 100;
@@ -734,6 +752,7 @@ const BudgetLineItem = ({
         <div className="flex items-center mx-[3px] gap-[50px] text-destructive ml-auto flex-shrink-0">
           <span className="text-xs text-right font-sans font-medium whitespace-nowrap min-w-[80px]">
             {(() => {
+              if (isCalcPercentage) return formatUF(calculatedAmount);
               const qty = line.quantity || 0;
               const localP = line.unit_price || 0;
               const price = localP > 0 ? localP : (templateUnitPrice ?? 0);
@@ -743,6 +762,7 @@ const BudgetLineItem = ({
           </span>
           <span className="text-[12px] text-muted-foreground font-mono whitespace-nowrap min-w-[100px] text-right">
             {(() => {
+              if (isCalcPercentage) return formatCLP(convertUFToPesos(calculatedAmount));
               if (!isParent && line.currency === "CLP") {
                 const qty = line.quantity || 0;
                 const localP = line.unit_price || 0;
