@@ -320,12 +320,24 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     
     // 1. Optimistic UI: update local state immediately
     setLines(prev => {
-      const updateInTree = (items: BudgetLine[]): BudgetLine[] =>
-        items.map(item => {
-          if (item.id === id) return { ...item, ...data };
-          if (item.children?.length) return { ...item, children: updateInTree(item.children) };
+      const updateInTree = (items: BudgetLine[]): BudgetLine[] => {
+        let changed = false;
+        const result = items.map(item => {
+          if (item.id === id) {
+            changed = true;
+            return { ...item, ...data };
+          }
+          if (item.children?.length) {
+            const newChildren = updateInTree(item.children);
+            if (newChildren !== item.children) {
+              changed = true;
+              return { ...item, children: newChildren };
+            }
+          }
           return item;
         });
+        return changed ? result : items;
+      };
       return updateInTree(prev);
     });
 
@@ -412,13 +424,25 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
       // Update local state with new percentage amounts (no full reload)
       if (updates.length > 0) {
         setLines(prev => {
-          const updateInTree = (items: BudgetLine[]): BudgetLine[] =>
-            items.map(item => {
+          const updateInTree = (items: BudgetLine[]): BudgetLine[] => {
+            let changed = false;
+            const result = items.map(item => {
               const upd = updates.find(u => u.id === item.id);
-              if (upd) return { ...item, amount_uf: upd.newAmount };
-              if (item.children?.length) return { ...item, children: updateInTree(item.children) };
+              if (upd) {
+                changed = true;
+                return { ...item, amount_uf: upd.newAmount };
+              }
+              if (item.children?.length) {
+                const newChildren = updateInTree(item.children);
+                if (newChildren !== item.children) {
+                  changed = true;
+                  return { ...item, children: newChildren };
+                }
+              }
               return item;
             });
+            return changed ? result : items;
+          };
           return updateInTree(prev);
         });
       }
