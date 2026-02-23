@@ -926,6 +926,10 @@ const BudgetLineItem = ({
 // Helpers para cálculos
 // Helper to get effective amount in UF - uses template price as fallback when unit_price is 0
 const getEffectiveAmount = (item: BudgetLine, templatePricesMap?: Record<string, number>, ufValue?: number): number => {
+  // Percentage-calculated lines use their stored amount_uf directly
+  if (item.calc_type === "percentage") {
+    return item.amount_uf || 0;
+  }
   const qty = item.quantity || 0;
   const localPrice = item.unit_price || 0;
   const templatePrice = templatePricesMap && item.template_line_id ? (templatePricesMap[item.id] ?? 0) : 0;
