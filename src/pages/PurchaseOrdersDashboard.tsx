@@ -3644,7 +3644,7 @@ const PurchaseOrdersDashboard = () => {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="oc_description">Descripción</Label>
+              <Label htmlFor="oc_description">Titulo</Label>
               <Input
                 id="oc_description"
                 value={editingOCData.description}
