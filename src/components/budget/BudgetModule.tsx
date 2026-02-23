@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -114,6 +114,64 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   
   // Global expand/collapse state
   const [globalExpandState, setGlobalExpandState] = useState<"expanded" | "collapsed" | null>(null);
+  
+  // Centralized expansion state: tracks which lines are expanded
+  // Using a "collapsed set" approach: all lines are expanded by default, this set tracks collapsed ones
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
+  const expandedIds = useRef<Set<string>>(new Set()); // computed on render
+  
+  // Compute expandedIds as inverse of collapsedIds (all line IDs minus collapsed)
+  const getAllLineIds = useCallback((items: BudgetLine[]): string[] => {
+    const ids: string[] = [];
+    items.forEach(item => {
+      ids.push(item.id);
+      if (item.children?.length) ids.push(...getAllLineIds(item.children));
+    });
+    return ids;
+  }, []);
+  
+  // Build the expandedIds set for passing to tree
+  const computedExpandedIds = (() => {
+    const allIds = getAllLineIds(lines);
+    const set = new Set<string>();
+    allIds.forEach(id => { if (!collapsedIds.has(id)) set.add(id); });
+    return set;
+  })();
+  
+  const handleToggleExpand = useCallback((id: string) => {
+    setCollapsedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+  
+  // Handle global expand/collapse
+  const handleExpandAll = useCallback(() => {
+    setCollapsedIds(new Set());
+    setGlobalExpandState("expanded");
+    setTimeout(() => setGlobalExpandState(null), 100);
+  }, []);
+  
+  const handleCollapseAll = useCallback(() => {
+    const allIds = getAllLineIds(lines);
+    setCollapsedIds(new Set(allIds));
+    setGlobalExpandState("collapsed");
+    setTimeout(() => setGlobalExpandState(null), 100);
+  }, [lines, getAllLineIds]);
+
+  // Debounced onRefresh
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedRefresh = useCallback(() => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => {
+      onRefresh?.();
+    }, 500);
+  }, [onRefresh]);
   
   // OC Request Dialog state
   const [showOCRequestDialog, setShowOCRequestDialog] = useState(false);
@@ -282,21 +340,18 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
       return updateInTree(prev);
     });
 
-    // 2. Background DB update + percentage recalc (non-blocking)
+    // 2. Background DB update (non-blocking for UI)
     try {
       const { error } = await supabase.from("budget_lines").update(data).eq("id", id);
       if (error) throw error;
       
-      // Recalculate percentage lines in background with batch Promise.all
+      // 3. Recalculate percentage lines in background, update local state only
       if (budget && (data.amount_uf !== undefined || data.quantity !== undefined || data.unit_price !== undefined || data.currency !== undefined)) {
-        recalcPercentageLines(budget.id).then(() => {
-          // Reload lines once after percentage recalc to sync
-          loadLines(budget.id);
-          onRefresh?.();
-        });
+        recalcPercentageLinesLocally(budget.id);
+        // Debounced refresh for parent dashboard
+        debouncedRefresh();
       } else {
-        // No percentage recalc needed, just refresh
-        onRefresh?.();
+        debouncedRefresh();
       }
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
@@ -305,8 +360,8 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     }
   };
 
-  // Recalculate all percentage-type lines in a budget based on their source line's current subtotal
-  const recalcPercentageLines = async (budgetId: string) => {
+  // Recalculate percentage lines and update both DB and local state without full reload
+  const recalcPercentageLinesLocally = async (budgetId: string) => {
     try {
       const { data: allFlatLines } = await supabase
         .from("budget_lines")
@@ -319,10 +374,8 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
       const percentageLines = allFlatLines.filter(l => l.calc_type === "percentage" && l.calc_source_line_id);
       if (percentageLines.length === 0) return;
 
-      // Build a map for quick lookup
       const lineMap = new Map(allFlatLines.map(l => [l.id, l]));
       
-      // Calculate subtotal of a line's children recursively using stored amount_uf
       const calcSubtotal = (parentId: string): number => {
         const children = allFlatLines.filter(l => l.parent_id === parentId);
         return children.reduce((sum, child) => {
@@ -336,6 +389,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
         }, 0);
       };
 
+      const updates: { id: string; newAmount: number }[] = [];
       const updatePromises = percentageLines.map(pLine => {
         const sourceLine = lineMap.get(pLine.calc_source_line_id!);
         if (!sourceLine) return null;
@@ -352,6 +406,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
         
         const newAmount = (sourceSubtotal * (pLine.calc_percentage || 0)) / 100;
         if (Math.abs(newAmount - (pLine.amount_uf || 0)) > 0.001) {
+          updates.push({ id: pLine.id, newAmount });
           return supabase.from("budget_lines").update({ amount_uf: newAmount }).eq("id", pLine.id);
         }
         return null;
@@ -360,10 +415,25 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
       if (updatePromises.length > 0) {
         await Promise.all(updatePromises);
       }
+      
+      // Update local state with new percentage amounts (no full reload)
+      if (updates.length > 0) {
+        setLines(prev => {
+          const updateInTree = (items: BudgetLine[]): BudgetLine[] =>
+            items.map(item => {
+              const upd = updates.find(u => u.id === item.id);
+              if (upd) return { ...item, amount_uf: upd.newAmount };
+              if (item.children?.length) return { ...item, children: updateInTree(item.children) };
+              return item;
+            });
+          return updateInTree(prev);
+        });
+      }
     } catch (error) {
       console.error("Error recalculating percentage lines:", error);
     }
   };
+
 
   const handleConfirmStatusPropagation = async (applyToChildren: boolean) => {
     if (!pendingStatusChange) return;
@@ -888,10 +958,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => {
-                        setGlobalExpandState(null);
-                        setTimeout(() => setGlobalExpandState("expanded"), 0);
-                      }}
+                      onClick={handleExpandAll}
                       className="gap-1"
                       title="Expandir todas las líneas"
                     >
@@ -901,10 +968,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => {
-                        setGlobalExpandState(null);
-                        setTimeout(() => setGlobalExpandState("collapsed"), 0);
-                      }}
+                      onClick={handleCollapseAll}
                       className="gap-1"
                       title="Colapsar todas las líneas"
                     >
@@ -950,6 +1014,8 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               readOnly={isClosed}
               globalExpandState={globalExpandState}
               templatePricesMap={templatePricesMap}
+              expandedIds={computedExpandedIds}
+              onToggleExpand={handleToggleExpand}
             />
             
             {/* Trash Panel - shows deleted lines and audit history */}

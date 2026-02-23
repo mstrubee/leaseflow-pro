@@ -55,6 +55,8 @@ interface BudgetLineTreeProps {
   parentCategoryId?: string | null;
   globalExpandState?: "expanded" | "collapsed" | null;
   templatePricesMap?: Record<string, number>;
+  expandedIds?: Set<string>;
+  onToggleExpand?: (id: string) => void;
 }
 export const BudgetLineTree = ({
   lines,
@@ -69,7 +71,9 @@ export const BudgetLineTree = ({
   readOnly = false,
   parentCategoryId = null,
   globalExpandState = null,
-  templatePricesMap = {}
+  templatePricesMap = {},
+  expandedIds,
+  onToggleExpand
 }: BudgetLineTreeProps) => {
   return <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
       {lines.map(line => <BudgetLineItem 
@@ -88,6 +92,8 @@ export const BudgetLineTree = ({
         parentCategoryId={line.category_id || parentCategoryId}
         globalExpandState={globalExpandState}
         templatePricesMap={templatePricesMap}
+        expandedIds={expandedIds}
+        onToggleExpand={onToggleExpand}
       />)}
       {level === 0 && !readOnly && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
@@ -110,6 +116,8 @@ interface BudgetLineItemProps {
   parentCategoryId?: string | null;
   globalExpandState?: "expanded" | "collapsed" | null;
   templatePricesMap?: Record<string, number>;
+  expandedIds?: Set<string>;
+  onToggleExpand?: (id: string) => void;
 }
 
 const countDescendants = (line: BudgetLine): number => {
@@ -131,9 +139,20 @@ const BudgetLineItem = ({
   readOnly = false,
   parentCategoryId = null,
   globalExpandState = null,
-  templatePricesMap: externalTemplatePricesMap = {}
+  templatePricesMap: externalTemplatePricesMap = {},
+  expandedIds,
+  onToggleExpand
 }: BudgetLineItemProps) => {
-  const [isExpanded, setIsExpanded] = useState(true);
+  // Use centralized expansion state if provided, otherwise fall back to local state
+  const [localExpanded, setLocalExpanded] = useState(true);
+  const isExpanded = expandedIds ? expandedIds.has(line.id) : localExpanded;
+  const setIsExpanded = (val: boolean) => {
+    if (onToggleExpand) {
+      onToggleExpand(line.id);
+    } else {
+      setLocalExpanded(val);
+    }
+  };
   const [isEditingName, setIsEditingName] = useState(false);
   const [isEditingQuantity, setIsEditingQuantity] = useState(false);
   const [isEditingUnit, setIsEditingUnit] = useState(false);
@@ -163,15 +182,6 @@ const BudgetLineItem = ({
 
   const descendantCount = countDescendants(line);
 
-  // Respond to global expand/collapse state
-  useEffect(() => {
-    if (globalExpandState === "expanded") {
-      setIsExpanded(true);
-    } else if (globalExpandState === "collapsed") {
-      setIsExpanded(false);
-    }
-  }, [globalExpandState]);
-  
   const hasChildren = line.children && line.children.length > 0;
   const isParent = hasChildren;
   const isCalcPercentage = line.calc_type === "percentage";
@@ -430,7 +440,7 @@ const BudgetLineItem = ({
         level >= 3 && !hasChildren && "bg-muted/5",
         !hasChildren && isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20"
       )}>
-        <button onClick={() => setIsExpanded(!isExpanded)} className="p-0.5 hover:bg-accent rounded" disabled={!hasChildren}>
+        <button onClick={() => { if (onToggleExpand) onToggleExpand(line.id); else setLocalExpanded(!localExpanded); }} className="p-0.5 hover:bg-accent rounded" disabled={!hasChildren}>
           {hasChildren ? isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" /> : <div className="h-3.5 w-3.5" />}
         </button>
 
@@ -844,7 +854,7 @@ const BudgetLineItem = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} expandedIds={expandedIds} onToggleExpand={onToggleExpand} />}
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
