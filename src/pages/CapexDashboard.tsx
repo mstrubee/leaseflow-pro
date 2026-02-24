@@ -74,7 +74,7 @@ export default function CapexDashboard() {
       if (budgetIds.length > 0) {
         const { data: lines, error: linesError } = await supabase
           .from("budget_lines")
-          .select("id, budget_id, amount_uf, status, parent_id")
+          .select("id, budget_id, amount_uf, status, parent_id, quantity, unit_price, currency, calc_type, template_line_id")
           .in("budget_id", budgetIds)
           .is("deleted_at", null);
 
@@ -82,6 +82,17 @@ export default function CapexDashboard() {
           // Find parent IDs to exclude (avoid double-counting)
           const parentIds = new Set(lines.filter(l => l.parent_id).map(l => l.parent_id!));
           const leafLines = lines.filter(l => !parentIds.has(l.id));
+
+          // Calculate effective amount in UF matching BudgetLineTree logic
+          const getEffectiveUF = (line: any): number => {
+            if (line.calc_type === "percentage") return line.amount_uf || 0;
+            const qty = line.quantity || 0;
+            const price = line.unit_price || 0;
+            if (qty <= 0 || price <= 0) return 0;
+            const total = qty * price;
+            if (line.currency === "CLP" && ufValue && ufValue > 0) return total / ufValue;
+            return total;
+          };
 
           // Group by budget_id → contract_id
           const budgetToContract: Record<string, string> = {};
@@ -92,10 +103,11 @@ export default function CapexDashboard() {
             const contractId = budgetToContract[line.budget_id];
             if (!contractId) return;
             if (!breakdown[contractId]) breakdown[contractId] = { authorized: 0, unauthorized: 0 };
+            const amt = getEffectiveUF(line);
             if (line.status === "autorizado") {
-              breakdown[contractId].authorized += line.amount_uf || 0;
+              breakdown[contractId].authorized += amt;
             } else {
-              breakdown[contractId].unauthorized += line.amount_uf || 0;
+              breakdown[contractId].unauthorized += amt;
             }
           });
           setAuthByContract(breakdown);
