@@ -173,21 +173,54 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
     loadComiteStatuses();
   }, []);
 
-  // Load CAPEX totals for current year
+  // Load CAPEX totals for current year (mirrors BudgetDashboard logic)
   useEffect(() => {
     const loadCapex = async () => {
-      const { data } = await supabase
+      const currentYear = new Date().getFullYear();
+      
+      // Get all capex budgets for current year
+      const { data: budgets } = await supabase
         .from("contract_budgets")
-        .select("contract_id, amount_uf")
+        .select("id, contract_id, amount_uf")
         .eq("budget_type", "capex")
-        .eq("year", new Date().getFullYear());
-      if (data) {
-        const map: Record<string, number> = {};
-        data.forEach(row => {
-          map[row.contract_id] = (map[row.contract_id] || 0) + row.amount_uf;
-        });
-        setCapexByContract(map);
+        .eq("year", currentYear);
+      
+      if (!budgets || budgets.length === 0) {
+        setCapexByContract({});
+        return;
       }
+
+      // For budgets with amount_uf = 0, fallback to sum of authorized budget lines
+      const budgetsNeedingLines = budgets.filter(b => !b.amount_uf || b.amount_uf === 0);
+      let linesByBudget: Record<string, number> = {};
+      
+      if (budgetsNeedingLines.length > 0) {
+        const budgetIds = budgetsNeedingLines.map(b => b.id);
+        const { data: lines } = await supabase
+          .from("budget_lines")
+          .select("budget_id, amount_uf, status, parent_id, id")
+          .in("budget_id", budgetIds)
+          .eq("status", "autorizado");
+        
+        if (lines) {
+          // Identify parent IDs to exclude (avoid double-counting)
+          const parentIds = new Set(lines.filter(l => l.parent_id).map(l => l.parent_id));
+          const leafLines = lines.filter(l => !parentIds.has(l.id));
+          
+          leafLines.forEach(l => {
+            linesByBudget[l.budget_id] = (linesByBudget[l.budget_id] || 0) + (l.amount_uf || 0);
+          });
+        }
+      }
+
+      const map: Record<string, number> = {};
+      budgets.forEach(row => {
+        const budgetAmount = row.amount_uf || 0;
+        const authorizedAmount = linesByBudget[row.id] || 0;
+        const effectiveAmount = budgetAmount > 0 ? budgetAmount : authorizedAmount;
+        map[row.contract_id] = (map[row.contract_id] || 0) + effectiveAmount;
+      });
+      setCapexByContract(map);
     };
     loadCapex();
   }, []);
