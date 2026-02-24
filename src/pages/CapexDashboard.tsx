@@ -27,6 +27,9 @@ interface AuthBreakdown {
   unauthorized: number;
 }
 
+// Store breakdown per budget_id (not per contract) to avoid cross-year duplication
+type AuthByBudget = Record<string, AuthBreakdown>;
+
 export default function CapexDashboard() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -37,7 +40,7 @@ export default function CapexDashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
   const [expandedContract, setExpandedContract] = useState<string | null>(null);
-  const [authByContract, setAuthByContract] = useState<Record<string, AuthBreakdown>>({});
+  const [authByBudget, setAuthByBudget] = useState<AuthByBudget>({});
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -109,23 +112,18 @@ export default function CapexDashboard() {
             return total;
           };
 
-          // Group by budget_id → contract_id
-          const budgetToContract: Record<string, string> = {};
-          (data || []).forEach((b: any) => { budgetToContract[b.id] = b.contract_id; });
-
-          const breakdown: Record<string, AuthBreakdown> = {};
+          // Group by budget_id (NOT contract_id) to avoid cross-year duplication
+          const breakdown: AuthByBudget = {};
           leafLines.forEach(line => {
-            const contractId = budgetToContract[line.budget_id];
-            if (!contractId) return;
-            if (!breakdown[contractId]) breakdown[contractId] = { authorized: 0, unauthorized: 0 };
+            if (!breakdown[line.budget_id]) breakdown[line.budget_id] = { authorized: 0, unauthorized: 0 };
             const amt = getEffectiveUF(line);
             if (line.status === "autorizado") {
-              breakdown[contractId].authorized += amt;
+              breakdown[line.budget_id].authorized += amt;
             } else {
-              breakdown[contractId].unauthorized += amt;
+              breakdown[line.budget_id].unauthorized += amt;
             }
           });
-          setAuthByContract(breakdown);
+          setAuthByBudget(breakdown);
         }
       }
     } catch (error) {
@@ -162,12 +160,24 @@ export default function CapexDashboard() {
     return Array.from(map.entries()).sort((a, b) => a[1][0].contract_name.localeCompare(b[1][0].contract_name));
   }, [filteredBudgets]);
 
+  // Aggregate authByBudget → authByContract using only filtered budgets (year-specific)
+  const authByContract = React.useMemo(() => {
+    const result: Record<string, AuthBreakdown> = {};
+    filteredBudgets.forEach(b => {
+      const bd = authByBudget[b.budget_id];
+      if (!bd) return;
+      if (!result[b.contract_id]) result[b.contract_id] = { authorized: 0, unauthorized: 0 };
+      result[b.contract_id].authorized += bd.authorized;
+      result[b.contract_id].unauthorized += bd.unauthorized;
+    });
+    return result;
+  }, [filteredBudgets, authByBudget]);
+
   const totalCapexUF = filteredBudgets.reduce((sum, b) => sum + b.amount_uf, 0);
 
   // Totals by clasificacion
   const { totalNuevoUF, totalReemplazoUF } = React.useMemo(() => {
     let nuevo = 0, reemplazo = 0;
-    // Deduplicate by contract_id to avoid counting multiple years
     const seen = new Set<string>();
     filteredBudgets.forEach(b => {
       if (seen.has(b.contract_id)) return;
