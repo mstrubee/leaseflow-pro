@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -304,6 +305,7 @@ export default function CapexDashboard() {
             contractGroups.map(([contractId, contractBudgets]) => {
               const isExpanded = expandedContract === contractId;
               const contractName = contractBudgets[0].contract_name;
+              const clasificacion = contractBudgets[0].clasificacion;
               const selectedYear = yearFilter !== "todos" ? parseInt(yearFilter) : contractBudgets[0].year;
               const breakdown = authByContract[contractId] || { authorized: 0, unauthorized: 0 };
               const superficie = contractBudgets[0].superficie || 0;
@@ -327,10 +329,10 @@ export default function CapexDashboard() {
                           <div className="flex items-center gap-3">
                             <ChevronDown className={`h-5 w-5 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
                             <CardTitle className="text-base">{contractName}</CardTitle>
-                            {superficie > 0 && totalUF > 0 && (
-                              <span className="text-xs text-muted-foreground">
-                                UF {fmtUF(ufM2)}/m²
-                              </span>
+                            {clasificacion && (
+                              <Badge variant={clasificacion === "nuevo" ? "default" : "secondary"} className="text-xs">
+                                {clasificacion === "nuevo" ? "Nuevo" : clasificacion === "reemplazo" ? "Reemplazo" : clasificacion}
+                              </Badge>
                             )}
                           </div>
                           <div className="flex items-center gap-4 text-sm">
@@ -353,6 +355,11 @@ export default function CapexDashboard() {
                                   ({fmtUF(breakdown.unauthorized)} UF)
                                 </span>
                               </div>
+                            )}
+                            {superficie > 0 && totalUF > 0 && (
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                UF {fmtUF(ufM2)}/m²
+                              </span>
                             )}
                             {breakdown.authorized === 0 && breakdown.unauthorized === 0 && (
                               <span className="text-muted-foreground">$0</span>
