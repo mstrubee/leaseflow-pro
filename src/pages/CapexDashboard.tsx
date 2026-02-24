@@ -19,6 +19,7 @@ interface ContractBudget {
   year: number;
   amount_uf: number;
   budget_id: string;
+  superficie: number;
 }
 
 interface AuthBreakdown {
@@ -53,7 +54,7 @@ export default function CapexDashboard() {
     try {
       const { data, error } = await supabase
         .from("contract_budgets")
-        .select("id, contract_id, year, amount_uf, budget_type, contracts(name, clasificacion)")
+        .select("id, contract_id, year, amount_uf, budget_type, contracts(name, clasificacion, superficie_edificada_local)")
         .eq("budget_type", "capex")
         .order("year", { ascending: false });
 
@@ -66,31 +67,45 @@ export default function CapexDashboard() {
         year: b.year,
         amount_uf: b.amount_uf,
         budget_id: b.id,
+        superficie: b.contracts?.superficie_edificada_local || 0,
       }));
       setBudgets(processed);
 
       // Load budget lines for authorized/unauthorized breakdown
+      // Paginate to avoid 1000-row limit
       const budgetIds = (data || []).map((b: any) => b.id);
       if (budgetIds.length > 0) {
-        const { data: lines, error: linesError } = await supabase
-          .from("budget_lines")
-          .select("id, budget_id, amount_uf, status, parent_id, quantity, unit_price, currency, calc_type, template_line_id")
-          .in("budget_id", budgetIds)
-          .is("deleted_at", null);
+        let allLines: any[] = [];
+        const PAGE_SIZE = 1000;
+        let from = 0;
+        let hasMore = true;
+        while (hasMore) {
+          const { data: page, error: pageErr } = await supabase
+            .from("budget_lines")
+            .select("id, budget_id, amount_uf, status, parent_id, quantity, unit_price, currency, calc_type")
+            .in("budget_id", budgetIds)
+            .is("deleted_at", null)
+            .range(from, from + PAGE_SIZE - 1);
+          if (pageErr) throw pageErr;
+          allLines = allLines.concat(page || []);
+          hasMore = (page?.length || 0) === PAGE_SIZE;
+          from += PAGE_SIZE;
+        }
 
-        if (!linesError && lines) {
+        if (allLines.length > 0) {
           // Find parent IDs to exclude (avoid double-counting)
-          const parentIds = new Set(lines.filter(l => l.parent_id).map(l => l.parent_id!));
-          const leafLines = lines.filter(l => !parentIds.has(l.id));
+          const parentIds = new Set(allLines.filter(l => l.parent_id).map(l => l.parent_id!));
+          const leafLines = allLines.filter(l => !parentIds.has(l.id));
 
           // Calculate effective amount in UF matching BudgetLineTree logic
+          const currentUF = ufValue || 0;
           const getEffectiveUF = (line: any): number => {
             if (line.calc_type === "percentage") return line.amount_uf || 0;
             const qty = line.quantity || 0;
             const price = line.unit_price || 0;
             if (qty <= 0 || price <= 0) return 0;
             const total = qty * price;
-            if (line.currency === "CLP" && ufValue && ufValue > 0) return total / ufValue;
+            if (line.currency === "CLP" && currentUF > 0) return total / currentUF;
             return total;
           };
 
@@ -281,6 +296,13 @@ export default function CapexDashboard() {
               const contractName = contractBudgets[0].contract_name;
               const selectedYear = yearFilter !== "todos" ? parseInt(yearFilter) : contractBudgets[0].year;
               const breakdown = authByContract[contractId] || { authorized: 0, unauthorized: 0 };
+              const superficie = contractBudgets[0].superficie || 0;
+              const currentUF = ufValue || 0;
+
+              const authCLP = breakdown.authorized * currentUF;
+              const unauthCLP = breakdown.unauthorized * currentUF;
+              const totalUF = breakdown.authorized + breakdown.unauthorized;
+              const ufM2 = superficie > 0 ? totalUF / superficie : 0;
 
               return (
                 <Collapsible
@@ -295,20 +317,35 @@ export default function CapexDashboard() {
                           <div className="flex items-center gap-3">
                             <ChevronDown className={`h-5 w-5 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
                             <CardTitle className="text-base">{contractName}</CardTitle>
+                            {superficie > 0 && totalUF > 0 && (
+                              <span className="text-xs text-muted-foreground">
+                                UF {fmtUF(ufM2)}/m²
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-4 text-sm">
                             {breakdown.authorized > 0 && (
-                              <span className="text-green-600 dark:text-green-400 font-medium">
-                                Autorizado: {fmtUF(breakdown.authorized)} UF
-                              </span>
+                              <div className="text-right">
+                                <span className="text-green-600 dark:text-green-400 font-medium">
+                                  Autorizado: {formatCLP(authCLP)}
+                                </span>
+                                <span className="text-xs text-muted-foreground ml-1">
+                                  ({fmtUF(breakdown.authorized)} UF)
+                                </span>
+                              </div>
                             )}
                             {breakdown.unauthorized > 0 && (
-                              <span className="text-yellow-600 dark:text-yellow-400 font-medium">
-                                No Autorizado: {fmtUF(breakdown.unauthorized)} UF
-                              </span>
+                              <div className="text-right">
+                                <span className="text-yellow-600 dark:text-yellow-400 font-medium">
+                                  No Autorizado: {formatCLP(unauthCLP)}
+                                </span>
+                                <span className="text-xs text-muted-foreground ml-1">
+                                  ({fmtUF(breakdown.unauthorized)} UF)
+                                </span>
+                              </div>
                             )}
                             {breakdown.authorized === 0 && breakdown.unauthorized === 0 && (
-                              <span className="text-muted-foreground">0 UF</span>
+                              <span className="text-muted-foreground">$0</span>
                             )}
                           </div>
                         </div>
@@ -324,6 +361,7 @@ export default function CapexDashboard() {
                             title="CAPEX"
                             selectedYear={selectedYear}
                             onRefresh={loadBudgets}
+                            superficieEdificada={superficie}
                           />
                         </BudgetProvider>
                       </CardContent>
