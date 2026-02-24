@@ -525,7 +525,6 @@ export function PatentChecklist({
               label="Comentarios y Observaciones"
               value={comments}
               onChange={setComments}
-              maxLength={500}
               placeholder="Escriba sus comentarios u observaciones aquí..."
               className="resize-none text-left font-mono text-sm"
               rows={5}
@@ -541,7 +540,6 @@ export function PatentChecklist({
               label="Próximas Acciones"
               value={nextActions}
               onChange={setNextActions}
-              maxLength={500}
               placeholder="Escriba las próximas acciones aquí..."
               className="resize-none text-left font-mono text-sm"
               rows={5}
