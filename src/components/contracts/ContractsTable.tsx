@@ -146,6 +146,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   const [comiteGPStatuses, setComiteGPStatuses] = useState<ComiteGPStatus[]>([]);
   const [comiteGPConfirm, setComiteGPConfirm] = useState<{ contractId: string; contractName: string } | null>(null);
   const [rechazadaConfirm, setRechazadaConfirm] = useState<{ contractId: string; contractName: string } | null>(null);
+  const [capexByContract, setCapexByContract] = useState<Record<string, number>>({});
   
   // Use external column widths if provided, otherwise use defaults from hook
   const columnWidths = externalColumnWidths || defaultColumnWidths;
@@ -170,6 +171,25 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
       if (data) setComiteGPStatuses(data);
     };
     loadComiteStatuses();
+  }, []);
+
+  // Load CAPEX totals for current year
+  useEffect(() => {
+    const loadCapex = async () => {
+      const { data } = await supabase
+        .from("contract_budgets")
+        .select("contract_id, amount_uf")
+        .eq("budget_type", "capex")
+        .eq("year", new Date().getFullYear());
+      if (data) {
+        const map: Record<string, number> = {};
+        data.forEach(row => {
+          map[row.contract_id] = (map[row.contract_id] || 0) + row.amount_uf;
+        });
+        setCapexByContract(map);
+      }
+    };
+    loadCapex();
   }, []);
 
   const handleComiteGPChange = async (contractId: string, value: string) => {
@@ -541,7 +561,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   };
 
   return (
-    <div className="rounded-md border overflow-hidden" style={{ width: "108%" }}>
+    <div className="rounded-md border overflow-hidden" style={{ width: "130%" }}>
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/50">
@@ -600,6 +620,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   align="center"
                   style={getColStyle("venta_estimada")}
                 />
+                <TableHead className="font-semibold text-center" style={{ minWidth: '120px' }}>CAPEX</TableHead>
               </>
             )}
             <SortableTableHead
@@ -984,6 +1005,30 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                           )}
                         </button>
                       )}
+                    </TableCell>
+                    <TableCell className="text-center min-w-[120px]">
+                      {(() => {
+                        const capexUF = capexByContract[contract.id] || 0;
+                        if (capexUF <= 0) return <span className="text-muted-foreground">-</span>;
+                        const capexCLP = convertUFToPesos(capexUF);
+                        const superficie = contract.superficie_edificada_local || 0;
+                        const perM2 = superficie > 0 ? capexUF / superficie : 0;
+                        return (
+                          <div className="flex flex-col items-center">
+                            <span className="font-medium text-xs">
+                              ${capexCLP.toLocaleString('es-CL', { maximumFractionDigits: 0 })}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {capexUF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
+                            </span>
+                            {perM2 > 0 && (
+                              <span className="text-[10px] text-muted-foreground">
+                                {perM2.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF/m²
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </TableCell>
                   </>
                 )}
