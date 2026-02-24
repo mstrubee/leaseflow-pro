@@ -190,25 +190,28 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
         return;
       }
 
-      // For budgets with amount_uf = 0, fallback to sum of authorized budget lines
+      // For budgets with amount_uf = 0, fallback to sum of budget lines (authorized first, then unauthorized)
       const budgetsNeedingLines = budgets.filter(b => !b.amount_uf || b.amount_uf === 0);
-      let linesByBudget: Record<string, number> = {};
+      let authorizedByBudget: Record<string, number> = {};
+      let unauthorizedByBudget: Record<string, number> = {};
       
       if (budgetsNeedingLines.length > 0) {
         const budgetIds = budgetsNeedingLines.map(b => b.id);
         const { data: lines } = await supabase
           .from("budget_lines")
           .select("budget_id, amount_uf, status, parent_id, id")
-          .in("budget_id", budgetIds)
-          .eq("status", "autorizado");
+          .in("budget_id", budgetIds);
         
         if (lines) {
-          // Identify parent IDs to exclude (avoid double-counting)
           const parentIds = new Set(lines.filter(l => l.parent_id).map(l => l.parent_id));
           const leafLines = lines.filter(l => !parentIds.has(l.id));
           
           leafLines.forEach(l => {
-            linesByBudget[l.budget_id] = (linesByBudget[l.budget_id] || 0) + (l.amount_uf || 0);
+            if (l.status === "autorizado") {
+              authorizedByBudget[l.budget_id] = (authorizedByBudget[l.budget_id] || 0) + (l.amount_uf || 0);
+            } else {
+              unauthorizedByBudget[l.budget_id] = (unauthorizedByBudget[l.budget_id] || 0) + (l.amount_uf || 0);
+            }
           });
         }
       }
@@ -216,8 +219,9 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
       const map: Record<string, number> = {};
       budgets.forEach(row => {
         const budgetAmount = row.amount_uf || 0;
-        const authorizedAmount = linesByBudget[row.id] || 0;
-        const effectiveAmount = budgetAmount > 0 ? budgetAmount : authorizedAmount;
+        const authorized = authorizedByBudget[row.id] || 0;
+        const unauthorized = unauthorizedByBudget[row.id] || 0;
+        const effectiveAmount = budgetAmount > 0 ? budgetAmount : (authorized > 0 ? authorized : unauthorized);
         map[row.contract_id] = (map[row.contract_id] || 0) + effectiveAmount;
       });
       setCapexByContract(map);
