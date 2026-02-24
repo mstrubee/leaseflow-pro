@@ -1,65 +1,49 @@
 
 
-## Columna CAPEX en tabla de contratos + aumento de ancho
+## Mejoras al Dashboard CAPEX: Desglose Autorizado/No Autorizado + Cards por Clasificacion
 
-### Resumen
-1. Aumentar el ancho de la Card de filtros y la ContractsTable en un 20% (de 108% a ~130%)
-2. Agregar columna "CAPEX" entre "Venta Est." y "Costo Arriendo" en la vista de negociacion, mostrando el CAPEX total asignado al contrato
+### 1. Lineas colapsadas: mostrar Autorizado y No Autorizado
 
-### Cambios por archivo
+Actualmente cada linea colapsada solo muestra el total en UF. Se modificara para mostrar dos valores diferenciados:
 
-#### 1. `src/pages/Contracts.tsx`
-- Cambiar el `width` de la Card de filtros de `"108%"` a `"130%"`
+- **Autorizado** (verde): monto total de lineas con status "autorizado"
+- **No Autorizado** (amarillo): monto total de lineas con status "no_autorizado"
 
-#### 2. `src/components/contracts/ContractsTable.tsx`
+Ejemplo visual en la fila colapsada:
+```text
+Local Centro Sur          Autorizado: 120,50 UF  |  No Autorizado: 45,30 UF
+```
 
-**Ancho**:
-- Cambiar el `width` del contenedor de `"108%"` a `"130%"`
+**Cambios tecnicos:**
+- Modificar la query `loadBudgets` en `CapexDashboard.tsx` para tambien cargar las `budget_lines` agrupadas por budget, calculando totales autorizados y no autorizados por contrato
+- Guardar en estado adicional: `capexAuthorized` y `capexUnauthorized` por contract_id
+- Actualizar el area derecha del `CollapsibleTrigger` para mostrar ambos montos con colores diferenciados (verde para autorizado, amarillo para no autorizado)
 
-**Datos CAPEX**:
-- Al montar el componente, hacer query a `contract_budgets` filtrando `budget_type = 'capex'` para el ano actual
-- Guardar en un estado `capexByContract: Record<string, number>` (contract_id -> amount_uf)
+### 2. Cards de resumen por clasificacion (Nuevo vs Reemplazo)
 
-**Nueva columna (solo en vista negociacion)**:
-- Agregar `<TableHead>` con label "CAPEX" entre "Venta Est." y "Costo Arriendo"
-- Agregar `<TableCell>` correspondiente en cada fila
-
-**Contenido de la celda CAPEX**:
-- Si el contrato tiene CAPEX (`capexByContract[contract.id] > 0`):
-  - Linea 1 (principal): Monto en CLP (`$ X.XXX.XXX`)
-  - Linea 2 (secundaria, texto pequeno): Monto en UF (`X,XX UF`)
-  - Linea 3 (secundaria, texto pequeno): UF/m2 = `amount_uf / superficie_edificada_local` (solo si superficie > 0)
-- Si no tiene CAPEX: mostrar "-" en texto tenue
-
-### Formato visual de la celda
+Se agregaran dos Cards nuevas al area de resumen, basadas en el campo `clasificacion` de la tabla `contracts` (valores: `"nuevo"` y `"reemplazo"`).
 
 ```text
-$ 45.000.000
-120,50 UF
-3,45 UF/m2
++--------------------+--------------------+--------------------+
+| Total CAPEX (UF)   | Total CAPEX (CLP)  | Locales con CAPEX  |
++--------------------+--------------------+--------------------+
+| CAPEX Nuevos       | CAPEX Reemplazo    |
++--------------------+--------------------+
 ```
 
-Linea 1 en font-medium, lineas 2 y 3 en text-[10px] text-muted-foreground.
+**Cambios tecnicos:**
+- Ampliar la query `loadBudgets` para incluir `contracts(name, clasificacion)` en el select
+- Agregar `clasificacion` a la interfaz `ContractBudget`
+- Calcular totales filtrados por clasificacion:
+  - `totalNuevoUF`: suma de amount_uf donde clasificacion === "nuevo"
+  - `totalReemplazoUF`: suma donde clasificacion === "reemplazo"
+- Renderizar dos Cards nuevas debajo de las existentes mostrando UF y CLP para cada tipo
 
-### Detalle tecnico
+### Archivo a modificar
 
-**Query de CAPEX** (en useEffect del componente):
-```typescript
-const { data } = await supabase
-  .from("contract_budgets")
-  .select("contract_id, amount_uf")
-  .eq("budget_type", "capex")
-  .eq("year", new Date().getFullYear());
-```
-
-**Calculo UF/m2**:
-```typescript
-const capexUF = capexByContract[contract.id] || 0;
-const superficie = contract.superficie_edificada_local || 0;
-const perM2 = superficie > 0 ? capexUF / superficie : 0;
-```
-
-### Archivos a modificar
-- `src/pages/Contracts.tsx` -- ancho Card filtros
-- `src/components/contracts/ContractsTable.tsx` -- ancho tabla + columna CAPEX
-
+**`src/pages/CapexDashboard.tsx`**:
+- Ampliar interfaz `ContractBudget` con `clasificacion`
+- Modificar `loadBudgets`: traer clasificacion del contrato + budget_lines para calcular autorizados/no autorizados
+- Nuevo estado: `authorizedByContract` y `unauthorizedByContract` (Record de contract_id a monto UF)
+- Agregar 2 Cards de resumen (Nuevos / Reemplazo) en grid debajo de las actuales
+- Modificar la zona derecha del header colapsable: mostrar "Autorizado: X UF" en verde y "No Autorizado: Y UF" en amarillo, en lugar del total unico
