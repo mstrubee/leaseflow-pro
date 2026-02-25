@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink, Shield, XCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -88,6 +89,7 @@ export function MaintenanceModule() {
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [contractCompanyMap, setContractCompanyMap] = useState<Record<string, string[]>>(() => readCache<Record<string, string[]>>(CACHE_KEY_COMPANY_MAP) || {});
   const [criticalityCategories, setCriticalityCategories] = useState<CriticalityCategory[]>(() => readCache<CriticalityCategory[]>(CACHE_KEY_CRITICALITY) || []);
+  const [excelCritDialog, setExcelCritDialog] = useState(false);
   const hasFetchedRef = useRef(false);
 
   const fetchForms = useCallback(async (showLoading = true) => {
@@ -593,7 +595,7 @@ export function MaintenanceModule() {
         <Button onClick={() => setUploadOpen(true)} className="gap-2">
           <Upload className="h-4 w-4" /> Cargar Excel
         </Button>
-        <Button variant="outline" onClick={() => exportMaintenanceExcel(filtered)} disabled={filtered.length === 0} className="gap-2">
+        <Button variant="outline" onClick={() => setExcelCritDialog(true)} disabled={filtered.length === 0} className="gap-2">
           <Download className="h-4 w-4" /> Descargar Excel
         </Button>
         <Button
@@ -682,15 +684,21 @@ export function MaintenanceModule() {
                                   <span className="text-muted-foreground">Sin criticidad</span>
                                 </div>
                                 {criticalityCategories.map(c => (
-                                  <div
-                                    key={c.id}
-                                    className="flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm cursor-pointer hover:bg-accent"
-                                    onClick={() => handleCriticalityChange(f.id, c.id)}
-                                  >
-                                    <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: c.color || "#6b7280" }} />
-                                    <span className="flex-1">{c.name}</span>
-                                    <span className="text-xs text-muted-foreground">{c.code}</span>
-                                  </div>
+                                  <Tooltip key={c.id}>
+                                    <TooltipTrigger asChild>
+                                      <div
+                                        className="flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm cursor-pointer hover:bg-accent"
+                                        onClick={() => handleCriticalityChange(f.id, c.id)}
+                                      >
+                                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: c.color || "#6b7280" }} />
+                                        <span className="flex-1">{c.name}</span>
+                                      </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="right" className="max-w-xs">
+                                      <p className="text-xs font-medium">Código: {c.code}</p>
+                                      {c.description && <p className="text-xs text-muted-foreground">{c.description}</p>}
+                                    </TooltipContent>
+                                  </Tooltip>
                                 ))}
                               </PopoverContent>
                             </Popover>
@@ -705,8 +713,28 @@ export function MaintenanceModule() {
                             </div>
                           </TableCell>
                           <TableCell><Badge variant="outline" className="text-xs">{detectMaintenanceType(f)}</Badge></TableCell>
-                          <TableCell className="text-xs max-w-48 truncate">
-                            {f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-"}
+                          <TableCell className="text-xs max-w-48">
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <button className="truncate block max-w-48 text-left hover:text-primary transition-colors cursor-pointer">
+                                  {f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-"}
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent align="start" className="w-80 max-h-64 overflow-y-auto p-3 space-y-2">
+                                {[
+                                  { label: "Descripción General", value: f.general_description },
+                                  { label: "Req. Eléctrico", value: f.electrical_description },
+                                  { label: "Req. Obra Civil", value: f.civil_description },
+                                  { label: "Req. Climatización", value: f.hvac_description },
+                                  { label: "Req. Activos Fijos", value: f.fixed_assets_description },
+                                ].filter(d => d.value?.trim()).map((d, i) => (
+                                  <div key={i}>
+                                    <p className="text-xs font-semibold text-muted-foreground">{d.label}</p>
+                                    <p className="text-sm whitespace-pre-wrap">{d.value}</p>
+                                  </div>
+                                ))}
+                              </PopoverContent>
+                            </Popover>
                           </TableCell>
                           <TableCell className="text-xs max-w-32 truncate">{f.additional_comments || "-"}</TableCell>
                           <TableCell className="text-xs">
@@ -741,7 +769,10 @@ export function MaintenanceModule() {
                               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditForm(f)} title="Editar">
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => exportMaintenancePDF(f, f.contract_id ? (contractCompanyMap[f.contract_id] || []).join(", ") : undefined)} title="Descargar PDF">
+                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+                                const critName = cat?.name;
+                                exportMaintenancePDF(f, f.contract_id ? (contractCompanyMap[f.contract_id] || []).join(", ") : undefined, critName);
+                              }} title="Descargar PDF">
                                 <FileDown className="h-3.5 w-3.5" />
                               </Button>
                             </div>
@@ -759,6 +790,31 @@ export function MaintenanceModule() {
 
       <MaintenanceExcelUpload open={uploadOpen} onOpenChange={setUploadOpen} onSuccess={handleDataChanged} />
       <MaintenanceEditDialog form={editForm} open={!!editForm} onOpenChange={v => { if (!v) setEditForm(null); }} onSuccess={handleDataChanged} />
+
+      <AlertDialog open={excelCritDialog} onOpenChange={setExcelCritDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Descargar Excel</AlertDialogTitle>
+            <AlertDialogDescription>¿Incluir columna de Criticidad en el archivo?</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              exportMaintenanceExcel(filtered);
+              setExcelCritDialog(false);
+            }}>
+              No, sin criticidad
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              const critMap = new Map<string, string>();
+              criticalityCategories.forEach(c => critMap.set(c.id, c.name));
+              exportMaintenanceExcel(filtered, "mantenciones.xlsx", critMap);
+              setExcelCritDialog(false);
+            }}>
+              Sí, incluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

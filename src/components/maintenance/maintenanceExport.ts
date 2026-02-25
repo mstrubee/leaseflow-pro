@@ -4,20 +4,30 @@ import autoTable from "jspdf-autotable";
 import { MaintenanceForm, detectMaintenanceType } from "./types";
 import logosHeader from "@/assets/logos-header.png";
 
-export function exportMaintenanceExcel(forms: MaintenanceForm[], fileName = "mantenciones.xlsx") {
-  const data = forms.map(f => ({
-    "N° FORM": f.form_number,
-    "Estado": f.status === "solucionado" ? "Solucionado" : "En Proceso",
-    "Fecha": f.created_date || "",
-    "Contrato": f.contract_name || "",
-    "Tipo": detectMaintenanceType(f),
-    "Descripción General": f.general_description || "",
-    "Req. Eléctrico": f.electrical_description || "",
-    "Req. Obra Civil": f.civil_description || "",
-    "Req. Climatización": f.hvac_description || "",
-    "Req. Activos Fijos": f.fixed_assets_description || "",
-    "Comentarios": f.additional_comments || "",
-  }));
+export function exportMaintenanceExcel(
+  forms: MaintenanceForm[],
+  fileName = "mantenciones.xlsx",
+  criticalityMap?: Map<string, string>,
+) {
+  const data = forms.map(f => {
+    const base: Record<string, string> = {
+      "N° FORM": f.form_number,
+      "Estado": f.status === "solucionado" ? "Solucionado" : "En Proceso",
+      "Fecha": f.created_date || "",
+      "Contrato": f.contract_name || "",
+      "Tipo": detectMaintenanceType(f),
+      "Descripción General": f.general_description || "",
+      "Req. Eléctrico": f.electrical_description || "",
+      "Req. Obra Civil": f.civil_description || "",
+      "Req. Climatización": f.hvac_description || "",
+      "Req. Activos Fijos": f.fixed_assets_description || "",
+      "Comentarios": f.additional_comments || "",
+    };
+    if (criticalityMap) {
+      base["Criticidad"] = (f.criticality_category_id && criticalityMap.get(f.criticality_category_id)) || "";
+    }
+    return base;
+  });
 
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(data);
@@ -25,7 +35,7 @@ export function exportMaintenanceExcel(forms: MaintenanceForm[], fileName = "man
   XLSX.writeFile(wb, fileName);
 }
 
-export async function exportMaintenancePDF(form: MaintenanceForm, companyName?: string) {
+export async function exportMaintenancePDF(form: MaintenanceForm, companyName?: string, criticalityName?: string) {
   const doc = new jsPDF();
   const type = detectMaintenanceType(form);
 
@@ -50,6 +60,9 @@ export async function exportMaintenancePDF(form: MaintenanceForm, companyName?: 
   doc.text(`Empresa: ${companyName || "N/A"}`, 14, startY + 20);
   doc.text(`Local: ${form.contract_name || "N/A"}`, 14, startY + 26);
   doc.text(`Tipo: ${type}`, 14, startY + 32);
+  if (criticalityName) {
+    doc.text(`Criticidad: ${criticalityName}`, 14, startY + 38);
+  }
   doc.setTextColor(0);
 
   const rows: [string, string][] = [];
@@ -62,7 +75,7 @@ export async function exportMaintenancePDF(form: MaintenanceForm, companyName?: 
 
   if (rows.length > 0) {
     autoTable(doc, {
-      startY: startY + 38,
+      startY: startY + (criticalityName ? 44 : 38),
       head: [["Campo", "Detalle"]],
       body: rows,
       styles: { fontSize: 9, cellPadding: 3 },
