@@ -840,8 +840,8 @@ export function MaintenanceModule() {
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1">
-          <Label className="block text-xs text-muted-foreground">Sub Estado</Label>
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs text-muted-foreground">Sub Estado</Label>
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" className="w-40 justify-between text-sm font-normal">
