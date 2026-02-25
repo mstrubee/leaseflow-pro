@@ -368,9 +368,7 @@ export default function CapexDashboard() {
                         <div className="flex items-center justify-between gap-4">
                           <div className="flex items-center gap-3 min-w-0">
                             <ChevronDown className={`h-5 w-5 shrink-0 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
-                            <CardTitle className="text-base truncate">{contractName}</CardTitle>
-                          </div>
-                          <div className="flex items-center gap-4 shrink-0">
+                            <CardTitle className="text-base whitespace-nowrap">{contractName}</CardTitle>
                             <div onClick={(e) => e.stopPropagation()}>
                               <Select
                                 value={clasificacion || ""}
@@ -386,36 +384,36 @@ export default function CapexDashboard() {
                                 </SelectContent>
                               </Select>
                             </div>
-                            <div className="text-right space-y-0.5">
-                              {breakdown.authorized > 0 && (
-                                <div>
-                                  <span className="text-green-600 dark:text-green-400 font-medium text-sm">
-                                    Autorizado: {formatCLP(authCLP)}
-                                  </span>
-                                  <span className="text-xs text-muted-foreground ml-1">
-                                    ({fmtUF(breakdown.authorized)} UF)
-                                  </span>
-                                </div>
-                              )}
-                              {breakdown.unauthorized > 0 && (
-                                <div>
-                                  <span className="text-yellow-600 dark:text-yellow-400 font-medium text-sm">
-                                    No Autorizado: {formatCLP(unauthCLP)}
-                                  </span>
-                                  <span className="text-xs text-muted-foreground ml-1">
-                                    ({fmtUF(breakdown.unauthorized)} UF)
-                                  </span>
-                                </div>
-                              )}
-                              {superficie > 0 && totalUF > 0 && (
-                                <div className="text-xs text-muted-foreground">
-                                  UF {fmtUF(ufM2)}/m²
-                                </div>
-                              )}
-                              {breakdown.authorized === 0 && breakdown.unauthorized === 0 && (
-                                <span className="text-muted-foreground text-sm">$0</span>
-                              )}
-                            </div>
+                          </div>
+                          <div className="text-right space-y-0.5 shrink-0">
+                            {breakdown.authorized > 0 && (
+                              <div>
+                                <span className="text-green-600 dark:text-green-400 font-medium text-sm">
+                                  Autorizado: {formatCLP(authCLP)}
+                                </span>
+                                <span className="text-xs text-muted-foreground ml-1">
+                                  ({fmtUF(breakdown.authorized)} UF)
+                                </span>
+                              </div>
+                            )}
+                            {breakdown.unauthorized > 0 && (
+                              <div>
+                                <span className="text-yellow-600 dark:text-yellow-400 font-medium text-sm">
+                                  No Autorizado: {formatCLP(unauthCLP)}
+                                </span>
+                                <span className="text-xs text-muted-foreground ml-1">
+                                  ({fmtUF(breakdown.unauthorized)} UF)
+                                </span>
+                              </div>
+                            )}
+                            {superficie > 0 && totalUF > 0 && (
+                              <div className="text-xs text-muted-foreground">
+                                UF {fmtUF(ufM2)}/m²
+                              </div>
+                            )}
+                            {breakdown.authorized === 0 && breakdown.unauthorized === 0 && (
+                              <span className="text-muted-foreground text-sm">$0</span>
+                            )}
                           </div>
                         </div>
                       </CardHeader>
