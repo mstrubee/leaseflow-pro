@@ -19,7 +19,7 @@ import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { MaintenanceExcelUpload } from "./MaintenanceExcelUpload";
 import { MaintenanceEditDialog } from "./MaintenanceEditDialog";
 import { SortableTableHead, SortOrder } from "@/components/contracts/SortableTableHead";
-import { exportMaintenanceExcel, exportMaintenancePDF } from "./maintenanceExport";
+import { exportMaintenanceExcel, exportMaintenancePDF, exportDailyFormsPDF } from "./maintenanceExport";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 
@@ -524,6 +524,22 @@ export function MaintenanceModule() {
                 onClick={e => e.stopPropagation()}
                 className="h-7 text-xs w-auto"
               />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                title="Descargar PDF del día"
+                disabled={dateCount === 0}
+                onClick={e => {
+                  e.stopPropagation();
+                  const dateForms = forms.filter(f => f.created_date === dateCardValue);
+                  const critMap = new Map<string, string>();
+                  criticalityCategories.forEach(c => critMap.set(c.id, c.name));
+                  exportDailyFormsPDF(dateForms, dateCardValue, critMap);
+                }}
+              >
+                <FileDown className="h-4 w-4" />
+              </Button>
             </div>
           </CardContent>
         </Card>
