@@ -1,46 +1,55 @@
 
 
-## Plan: Mejoras en Cards de Criticidad, Boton Limpiar Filtros y Rendimiento del Selector
+## Plan: Persistencia de Criticidad, Cache de Datos y Filtros Rapidos
 
-### 1. Corregir toggle de deseleccion en cards de criticidad
+### 1. Preservar criticidad al cargar nuevo Excel
 
-El codigo actual en `handleCriticalityCardClick` ya implementa el toggle, pero la condicion verifica que `statusFilter === "proceso"` Y `criticalityFilter === catId`. Si el usuario cambio manualmente el statusFilter despues de hacer click en la card, el toggle no funciona correctamente. Se simplificara la logica para que al hacer click en una card ya activa (donde `criticalityFilter === catId`), se limpien ambos filtros independientemente del statusFilter actual.
+Cuando se suben nuevos formularios via Excel, si ya existe un form con el mismo `form_number` que tiene una criticidad asignada, los nuevos forms no sobreescriben ese dato (esto ya funciona porque los existentes se omiten). Sin embargo, falta el caso inverso: si el usuario quiere reasignar criticidades masivamente. Se agregara logica en `MaintenanceExcelUpload.tsx` para:
 
-### 2. Boton "Limpiar filtros"
+- Al detectar forms existentes (`isExisting = true`), consultar su `criticality_category_id` actual desde la BD
+- Mostrar esa criticidad en la tabla de preview del upload (columna adicional con badge de color)
+- Asegurar que el `handleInsert` solo inserte forms nuevos sin tocar la criticidad de los existentes (ya implementado, se refuerza visualmente)
 
-Agregar un boton visible en la barra de filtros que resetee todos los filtros a sus valores por defecto:
-- `search = ""`
-- `statusFilter = "all"`
-- `typeFilter = "all"`
-- `criticalityFilter = "all"`
-- `selectedYears = []`
-- `selectedContracts = []`
-- `companyFilter = "all"`
-- `contractSearch = ""`
+### 2. Cache de datos entre navegaciones
 
-El boton tendra fondo estandar (variant="outline") y texto en rojo.
+Actualmente `fetchForms` se ejecuta en cada montaje del componente (`useEffect(() => fetchForms(), [])`). Se reemplazara por una estrategia de cache usando `sessionStorage`:
 
-### 3. Mejorar rendimiento del selector de criticidad
+- Al cargar forms exitosamente, guardar en `sessionStorage` con key `maintenance_forms_cache` y un timestamp
+- Al montar el componente, verificar si existe cache reciente (menos de 5 minutos)
+- Si existe cache valido, usar los datos cacheados inmediatamente (sin loading) y hacer fetch en background para refrescar
+- Si no existe cache o esta expirado, hacer fetch normal con loading
+- Despues de upload exitoso o edicion, invalidar cache y refrescar
+- Hacer lo mismo para `criticalityCategories` y `contractCompanyMap`
 
-El `DropdownMenu` actual aun tiene overhead por los `Tooltip` anidados dentro de cada `DropdownMenuItem`, lo cual genera re-renders y portales adicionales por cada opcion en cada fila. Se reemplazara por un enfoque con `Popover` minimalista:
-- Usar un `Popover` simple con un `div` de opciones clickeables (sin `Tooltip` dentro del menu)
-- Mostrar la info de codigo/descripcion directamente como texto secundario en cada opcion del popover, eliminando la necesidad de tooltips anidados
-- Mantener el `Tooltip` solo en el badge visible (fuera del popover), que ya funciona bien
-- Controlar el estado open/close manualmente para cerrar al seleccionar
+### 3. Mejorar velocidad de limpieza de filtros
+
+El boton "Limpiar filtros" actualmente ejecuta 8 llamadas `setState` separadas. Aunque React 18 las agrupa, los multiples `useMemo` dependientes se recalculan en cascada. Se optimizara:
+
+- Agrupar todos los filtros en un unico objeto de estado `filters` con `useReducer` o un solo `useState` con objeto, permitiendo un unico `setFilters(defaultFilters)` para limpiar todo
+- Usar `React.startTransition` para la actualizacion de filtros, marcandola como no urgente y manteniendo la UI responsiva
+- Pre-calcular el resultado "sin filtros" como referencia rapida
 
 ### Detalle tecnico
 
-**Archivo a modificar:** `src/components/maintenance/MaintenanceModule.tsx`
+**Archivos a modificar:**
 
-Cambios especificos:
+1. **`src/components/maintenance/MaintenanceExcelUpload.tsx`**:
+   - Despues de verificar forms existentes (lineas 330-348), consultar `criticality_category_id` para esos forms
+   - Agregar propiedad `existingCriticality` al tipo de fila parseada
+   - Mostrar badge de criticidad en la tabla de preview para forms existentes
 
-1. **handleCriticalityCardClick** (linea ~290): Cambiar la condicion de toggle para verificar solo `criticalityFilter === catId` en lugar de ambas condiciones.
+2. **`src/components/maintenance/MaintenanceModule.tsx`**:
+   - Reemplazar los 8 estados de filtro individuales por un unico `useState<FilterState>` con objeto:
+     ```text
+     FilterState = { search, statusFilter, typeFilter, criticalityFilter, 
+                     selectedYears, selectedContracts, companyFilter, contractSearch }
+     ```
+   - Limpiar filtros con un solo `setFilters(DEFAULT_FILTERS)`
+   - Agregar cache en `sessionStorage` para `forms`, `criticalityCategories` y `contractCompanyMap`
+   - Al montar: leer cache, mostrar datos inmediatamente, refrescar en background
+   - Al insertar/editar: invalidar cache
+   - Envolver actualizaciones de filtros pesadas con `startTransition`
 
-2. **Boton "Limpiar filtros"** (despues de linea ~518): Agregar un `Button` con `variant="outline"` y `className="text-red-600 border-red-200 hover:bg-red-50"` que llame a una funcion `clearAllFilters`.
-
-3. **Selector de criticidad en cada fila** (lineas ~566-607): Reemplazar `DropdownMenu` con `Tooltip` anidados por un `Popover` simple:
-   - El trigger es el badge actual (envuelto en Tooltip para mostrar codigo/descripcion)
-   - El contenido del Popover es una lista de `div` clickeables sin tooltips internos
-   - Cada opcion muestra: circulo de color + nombre + codigo en gris pequeno
-   - Al hacer click, se cierra el popover y se ejecuta `handleCriticalityChange`
+3. **`src/components/maintenance/types.ts`**:
+   - Agregar `existingCriticality?: string | null` a `ParsedMaintenanceRow` (opcional, para el preview)
 
