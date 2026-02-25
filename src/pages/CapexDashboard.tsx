@@ -193,19 +193,20 @@ export default function CapexDashboard() {
   const totalCapexUF = filteredBudgets.reduce((sum, b) => sum + b.amount_uf, 0);
 
   // Totals by clasificacion
-  const { totalNuevoUF, totalReemplazoUF, totalRegularizacionUF } = React.useMemo(() => {
+  const { totalNuevoUF, totalReemplazoUF, totalRegularizacionUF, countNuevo, countReemplazo, countRegularizacion } = React.useMemo(() => {
     let nuevo = 0, reemplazo = 0, regularizacion = 0;
+    let cNuevo = 0, cReemplazo = 0, cRegularizacion = 0;
     const seen = new Set<string>();
     filteredBudgets.forEach(b => {
       if (seen.has(b.contract_id)) return;
       seen.add(b.contract_id);
       const breakdown = authByContract[b.contract_id];
       const effectiveUF = breakdown ? (breakdown.authorized + breakdown.unauthorized) : b.amount_uf;
-      if (b.clasificacion === "nuevo") nuevo += effectiveUF;
-      else if (b.clasificacion === "reemplazo") reemplazo += effectiveUF;
-      else if (b.clasificacion === "regularizacion") regularizacion += effectiveUF;
+      if (b.clasificacion === "nuevo") { nuevo += effectiveUF; cNuevo++; }
+      else if (b.clasificacion === "reemplazo") { reemplazo += effectiveUF; cReemplazo++; }
+      else if (b.clasificacion === "regularizacion") { regularizacion += effectiveUF; cRegularizacion++; }
     });
-    return { totalNuevoUF: nuevo, totalReemplazoUF: reemplazo, totalRegularizacionUF: regularizacion };
+    return { totalNuevoUF: nuevo, totalReemplazoUF: reemplazo, totalRegularizacionUF: regularizacion, countNuevo: cNuevo, countReemplazo: cReemplazo, countRegularizacion: cRegularizacion };
   }, [filteredBudgets, authByContract]);
 
   const handleClasificacionChange = async (contractId: string, value: string) => {
@@ -281,7 +282,7 @@ export default function CapexDashboard() {
             <CardContent className="p-4 flex items-center gap-3">
               <Building2 className="h-8 w-8 text-chart-1" />
               <div>
-                <p className="text-xs text-muted-foreground">CAPEX Nuevos</p>
+                <p className="text-xs text-muted-foreground">CAPEX Nuevos ({countNuevo} {countNuevo === 1 ? "local" : "locales"})</p>
                 <p className="text-lg font-bold">{fmtUF(totalNuevoUF)} UF</p>
                 <p className="text-xs text-muted-foreground">{formatCLP(totalNuevoUF * (ufValue || 0))}</p>
               </div>
@@ -291,7 +292,7 @@ export default function CapexDashboard() {
             <CardContent className="p-4 flex items-center gap-3">
               <RefreshCw className="h-8 w-8 text-chart-2" />
               <div>
-                <p className="text-xs text-muted-foreground">CAPEX Reemplazo</p>
+                <p className="text-xs text-muted-foreground">CAPEX Reemplazo ({countReemplazo} {countReemplazo === 1 ? "local" : "locales"})</p>
                 <p className="text-lg font-bold">{fmtUF(totalReemplazoUF)} UF</p>
                 <p className="text-xs text-muted-foreground">{formatCLP(totalReemplazoUF * (ufValue || 0))}</p>
               </div>
@@ -301,7 +302,7 @@ export default function CapexDashboard() {
             <CardContent className="p-4 flex items-center gap-3">
               <FileCheck className="h-8 w-8 text-chart-3" />
               <div>
-                <p className="text-xs text-muted-foreground">CAPEX Regularización</p>
+                <p className="text-xs text-muted-foreground">CAPEX Regularización ({countRegularizacion} {countRegularizacion === 1 ? "local" : "locales"})</p>
                 <p className="text-lg font-bold">{fmtUF(totalRegularizacionUF)} UF</p>
                 <p className="text-xs text-muted-foreground">{formatCLP(totalRegularizacionUF * (ufValue || 0))}</p>
               </div>
