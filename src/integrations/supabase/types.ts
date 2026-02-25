@@ -2597,6 +2597,7 @@ export type Database = {
           sub_status_evaluado_at: string | null
           sub_status_pre_aprobado_at: string | null
           sub_status_resuelto_at: string | null
+          sub_status_revisado_at: string | null
           sub_status_solicitado_at: string | null
           supplier_id: string | null
           supplier_name: string | null
@@ -2631,6 +2632,7 @@ export type Database = {
           sub_status_evaluado_at?: string | null
           sub_status_pre_aprobado_at?: string | null
           sub_status_resuelto_at?: string | null
+          sub_status_revisado_at?: string | null
           sub_status_solicitado_at?: string | null
           supplier_id?: string | null
           supplier_name?: string | null
@@ -2665,6 +2667,7 @@ export type Database = {
           sub_status_evaluado_at?: string | null
           sub_status_pre_aprobado_at?: string | null
           sub_status_resuelto_at?: string | null
+          sub_status_revisado_at?: string | null
           sub_status_solicitado_at?: string | null
           supplier_id?: string | null
           supplier_name?: string | null

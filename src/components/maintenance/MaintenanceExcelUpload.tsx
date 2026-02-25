@@ -316,19 +316,23 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         }
       }
 
-      // Check which form_numbers already exist and fetch their criticality
+      // Check which form_numbers already exist and fetch their criticality + sub_status + comments
       const allFormNumbers = parsed.map(r => r.form_number);
       const existingFormNumbers = new Set<string>();
       const existingCriticalityMap = new Map<string, string | null>();
+      const existingSubStatusMap = new Map<string, string | null>();
+      const existingCommentsMap = new Map<string, boolean>();
       
       for (let i = 0; i < allFormNumbers.length; i += 500) {
         const batch = allFormNumbers.slice(i, i + 500);
         const { data: existingForms } = await (supabase.from("maintenance_forms" as any) as any)
-          .select("form_number, criticality_category_id")
+          .select("form_number, criticality_category_id, sub_status, additional_comments")
           .in("form_number", batch);
         existingForms?.forEach((f: any) => {
           existingFormNumbers.add(f.form_number);
           existingCriticalityMap.set(f.form_number, f.criticality_category_id);
+          existingSubStatusMap.set(f.form_number, f.sub_status);
+          existingCommentsMap.set(f.form_number, !!f.additional_comments?.trim());
         });
       }
 
@@ -344,7 +348,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         critCats?.forEach((c: any) => critCategoryLookup.set(c.id, { name: c.name, color: c.color }));
       }
 
-      // Mark existing rows with their criticality info
+      // Mark existing rows with their criticality info + sub_status + comments
       parsed.forEach(r => {
         if (existingFormNumbers.has(r.form_number)) {
           (r as any).isExisting = true;
@@ -355,6 +359,8 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
             r.existingCriticalityName = cat?.name || null;
             r.existingCriticalityColor = cat?.color || null;
           }
+          (r as any).existingSubStatus = existingSubStatusMap.get(r.form_number) || null;
+          (r as any).existingHasComments = existingCommentsMap.get(r.form_number) || false;
         }
       });
 
@@ -480,7 +486,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
           <>
             <div className="flex gap-4 text-sm flex-wrap">
               <span className="flex items-center gap-1"><CheckCircle className="h-4 w-4 text-green-600" /> {newCount} nuevos</span>
-              {existingCount > 0 && <span className="flex items-center gap-1 text-muted-foreground"><SkipForward className="h-4 w-4" /> {existingCount} ya existen (se omitirán, criticidad preservada)</span>}
+              {existingCount > 0 && <span className="flex items-center gap-1 text-muted-foreground"><SkipForward className="h-4 w-4" /> {existingCount} ya existen (criticidad, comentarios y sub-estado preservados)</span>}
               {ambiguousCount > 0 && <span className="flex items-center gap-1 text-orange-600"><AlertTriangle className="h-4 w-4" /> {ambiguousCount} duplicados por resolver</span>}
               {warningCount > 0 && <span className="flex items-center gap-1 text-yellow-600"><AlertTriangle className="h-4 w-4" /> {warningCount} advertencias</span>}
               {errorCount > 0 && <span className="flex items-center gap-1 text-destructive"><AlertTriangle className="h-4 w-4" /> {errorCount} errores</span>}
@@ -506,7 +512,17 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
                     <TableRow key={row.rowIndex} className={row.isExisting ? "bg-muted/50 opacity-60" : row.errors.length > 0 ? "bg-destructive/10" : (row.ambiguousCandidates && !row.contract_id) ? "bg-orange-50" : row.warnings.length > 0 ? "bg-yellow-50" : ""}>
                       <TableCell className="font-mono text-xs">
                         {row.form_number}
-                        {row.isExisting && <Badge variant="outline" className="ml-1 text-[10px] text-muted-foreground">Ya existe</Badge>}
+                        {row.isExisting && (
+                          <span className="flex gap-1 mt-0.5">
+                            <Badge variant="outline" className="text-[10px] text-muted-foreground">Ya existe</Badge>
+                            {(row as any).existingSubStatus && (
+                              <Badge variant="outline" className="text-[10px]">{(row as any).existingSubStatus === 'revisado' ? '✓ Revisado' : (row as any).existingSubStatus}</Badge>
+                            )}
+                            {(row as any).existingHasComments && (
+                              <Badge variant="outline" className="text-[10px]">💬</Badge>
+                            )}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge variant={row.status === "solucionado" ? "default" : "secondary"} className="text-xs">

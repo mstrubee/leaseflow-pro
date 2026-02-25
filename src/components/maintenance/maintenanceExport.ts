@@ -8,6 +8,7 @@ export function exportMaintenanceExcel(
   forms: MaintenanceForm[],
   fileName = "mantenciones.xlsx",
   criticalityMap?: Map<string, string>,
+  includeRevisado?: boolean,
 ) {
   const data = forms.map(f => {
     const base: Record<string, string> = {
@@ -25,6 +26,10 @@ export function exportMaintenanceExcel(
     };
     if (criticalityMap) {
       base["Criticidad"] = (f.criticality_category_id && criticalityMap.get(f.criticality_category_id)) || "";
+    }
+    if (includeRevisado) {
+      const subStatus = f.sub_status || "solicitado";
+      base["Sub Estado"] = subStatus === "revisado" ? "Revisado" : (subStatus === "solicitado" ? "Solicitado" : subStatus);
     }
     return base;
   });

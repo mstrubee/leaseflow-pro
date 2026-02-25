@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Textarea } from "@/components/ui/textarea";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink, Shield, XCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -20,6 +21,7 @@ import { MaintenanceEditDialog } from "./MaintenanceEditDialog";
 import { SortableTableHead, SortOrder } from "@/components/contracts/SortableTableHead";
 import { exportMaintenanceExcel, exportMaintenancePDF } from "./maintenanceExport";
 import { useNavigate } from "react-router-dom";
+import { format } from "date-fns";
 
 interface CriticalityCategory {
   id: string;
@@ -38,6 +40,7 @@ interface FilterState {
   selectedContracts: string[];
   companyFilter: string;
   contractSearch: string;
+  dateFilter: string | null;
 }
 
 const DEFAULT_FILTERS: FilterState = {
@@ -49,6 +52,7 @@ const DEFAULT_FILTERS: FilterState = {
   selectedContracts: [],
   companyFilter: "all",
   contractSearch: "",
+  dateFilter: null,
 };
 
 const CACHE_KEY_FORMS = "maintenance_forms_cache";
@@ -89,8 +93,20 @@ export function MaintenanceModule() {
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [contractCompanyMap, setContractCompanyMap] = useState<Record<string, string[]>>(() => readCache<Record<string, string[]>>(CACHE_KEY_COMPANY_MAP) || {});
   const [criticalityCategories, setCriticalityCategories] = useState<CriticalityCategory[]>(() => readCache<CriticalityCategory[]>(CACHE_KEY_CRITICALITY) || []);
-  const [excelCritDialog, setExcelCritDialog] = useState(false);
+  const [excelDialog, setExcelDialog] = useState(false);
+  const [excelIncludeCriticality, setExcelIncludeCriticality] = useState(false);
+  const [excelIncludeRevisado, setExcelIncludeRevisado] = useState(false);
   const hasFetchedRef = useRef(false);
+
+  // Comment editing state
+  const [commentEditFormId, setCommentEditFormId] = useState<string | null>(null);
+  const [commentEditText, setCommentEditText] = useState("");
+  const [commentViewFormId, setCommentViewFormId] = useState<string | null>(null);
+  const [revisadoDialogOpen, setRevisadoDialogOpen] = useState(false);
+  const [pendingCommentSave, setPendingCommentSave] = useState<{ formId: string; text: string } | null>(null);
+
+  // Date filter card state
+  const [dateCardValue, setDateCardValue] = useState(() => format(new Date(), "yyyy-MM-dd"));
 
   const fetchForms = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -130,7 +146,6 @@ export function MaintenanceModule() {
   useEffect(() => {
     const cachedForms = readCache<MaintenanceForm[]>(CACHE_KEY_FORMS);
     if (cachedForms && !hasFetchedRef.current) {
-      // Cache hit — refresh in background
       hasFetchedRef.current = true;
       fetchForms(false);
     } else if (!hasFetchedRef.current) {
@@ -139,7 +154,6 @@ export function MaintenanceModule() {
     }
   }, [fetchForms]);
 
-  // Fetch criticality categories with cache
   useEffect(() => {
     const fetchCriticalities = async () => {
       const { data } = await (supabase as any)
@@ -155,7 +169,6 @@ export function MaintenanceModule() {
     fetchCriticalities();
   }, []);
 
-  // Fetch contract-company mapping with cache
   useEffect(() => {
     const fetchCompanyMap = async () => {
       const { data } = await supabase
@@ -184,7 +197,6 @@ export function MaintenanceModule() {
     fetchForms(false);
   }, [fetchForms]);
 
-  // Filter helpers using the consolidated filter object
   const updateFilter = useCallback(<K extends keyof FilterState>(key: K, value: FilterState[K]) => {
     startTransition(() => {
       setFilters(prev => ({ ...prev, [key]: value }));
@@ -295,7 +307,7 @@ export function MaintenanceModule() {
   }, [criticalityCategories]);
 
   const filtered = useMemo(() => {
-    const { search, statusFilter, typeFilter, criticalityFilter, selectedYears, selectedContracts } = filters;
+    const { search, statusFilter, typeFilter, criticalityFilter, selectedYears, selectedContracts, dateFilter } = filters;
     let result = forms.filter(f => {
       if (selectedYears.length > 0 && (!f.year || !selectedYears.includes(f.year))) return false;
       if (companyFilteredContractIds !== null) {
@@ -317,6 +329,9 @@ export function MaintenanceModule() {
         } else {
           if (f.criticality_category_id !== criticalityFilter) return false;
         }
+      }
+      if (dateFilter) {
+        if (f.created_date !== dateFilter) return false;
       }
       if (search) {
         const s = search.toLowerCase();
@@ -355,6 +370,11 @@ export function MaintenanceModule() {
   const enProceso = filtered.filter(f => f.status === "proceso").length;
   const solucionados = filtered.filter(f => f.status === "solucionado").length;
 
+  // Date card count
+  const dateCount = useMemo(() => {
+    return forms.filter(f => f.created_date === dateCardValue).length;
+  }, [forms, dateCardValue]);
+
   const criticalityCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     criticalityCategories.forEach(c => { counts[c.id] = 0; });
@@ -390,10 +410,66 @@ export function MaintenanceModule() {
     });
   };
 
+  // Comment handlers
+  const handleCommentClick = (f: MaintenanceForm) => {
+    if (f.additional_comments?.trim()) {
+      // Show view mode first
+      setCommentViewFormId(f.id);
+      setCommentEditFormId(null);
+    } else {
+      // Open edit mode directly
+      setCommentEditFormId(f.id);
+      setCommentEditText("");
+      setCommentViewFormId(null);
+    }
+  };
+
+  const startCommentEdit = (f: MaintenanceForm) => {
+    setCommentEditFormId(f.id);
+    setCommentEditText(f.additional_comments || "");
+    setCommentViewFormId(null);
+  };
+
+  const handleCommentKeyDown = (e: React.KeyboardEvent, formId: string) => {
+    if (e.ctrlKey && e.key === "Enter") {
+      e.preventDefault();
+      setPendingCommentSave({ formId, text: commentEditText });
+      setRevisadoDialogOpen(true);
+    }
+  };
+
+  const saveComment = async (markAsRevisado: boolean) => {
+    if (!pendingCommentSave) return;
+    const { formId, text } = pendingCommentSave;
+    const updates: any = { additional_comments: text || null, updated_at: new Date().toISOString() };
+    if (markAsRevisado) {
+      updates.sub_status = 'revisado';
+    }
+    const { error } = await (supabase as any)
+      .from("maintenance_forms")
+      .update(updates)
+      .eq("id", formId);
+    if (error) {
+      console.error(error);
+      toast({ title: "Error", description: "No se pudo guardar el comentario", variant: "destructive" });
+    } else {
+      setForms(prev => {
+        const updated = prev.map(fm => fm.id === formId ? { ...fm, additional_comments: text || null, ...(markAsRevisado ? { sub_status: 'revisado' as SubStatus } : {}) } : fm);
+        writeCache(CACHE_KEY_FORMS, updated);
+        return updated;
+      });
+      toast({ title: markAsRevisado ? "Comentario guardado y marcado como Revisado" : "Comentario guardado" });
+    }
+    setCommentEditFormId(null);
+    setCommentViewFormId(null);
+    setPendingCommentSave(null);
+    setRevisadoDialogOpen(false);
+  };
+
   return (
     <div className="space-y-4">
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Total FORMs</CardTitle>
@@ -414,6 +490,39 @@ export function MaintenanceModule() {
             <CheckCircle className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent><div className="text-2xl font-bold text-green-600">{solucionados}</div></CardContent>
+        </Card>
+        <Card
+          className={`cursor-pointer transition-all hover:shadow-md ${filters.dateFilter ? "ring-2 ring-primary ring-offset-1" : ""}`}
+          onClick={() => {
+            if (filters.dateFilter) {
+              updateFilter("dateFilter", null);
+            } else {
+              updateFilter("dateFilter", dateCardValue);
+            }
+          }}
+        >
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Fecha Específica</CardTitle>
+            <CalendarDays className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2">
+              <div className="text-2xl font-bold text-primary">{dateCount}</div>
+              <Input
+                type="date"
+                value={dateCardValue}
+                onChange={e => {
+                  e.stopPropagation();
+                  setDateCardValue(e.target.value);
+                  if (filters.dateFilter) {
+                    updateFilter("dateFilter", e.target.value);
+                  }
+                }}
+                onClick={e => e.stopPropagation()}
+                className="h-7 text-xs w-auto"
+              />
+            </div>
+          </CardContent>
         </Card>
       </div>
 
@@ -595,7 +704,7 @@ export function MaintenanceModule() {
         <Button onClick={() => setUploadOpen(true)} className="gap-2">
           <Upload className="h-4 w-4" /> Cargar Excel
         </Button>
-        <Button variant="outline" onClick={() => setExcelCritDialog(true)} disabled={filtered.length === 0} className="gap-2">
+        <Button variant="outline" onClick={() => setExcelDialog(true)} disabled={filtered.length === 0} className="gap-2">
           <Download className="h-4 w-4" /> Descargar Excel
         </Button>
         <Button
@@ -736,7 +845,51 @@ export function MaintenanceModule() {
                               </PopoverContent>
                             </Popover>
                           </TableCell>
-                          <TableCell className="text-xs max-w-32 truncate">{f.additional_comments || "-"}</TableCell>
+                          {/* Comments cell - clickable with edit/view */}
+                          <TableCell className="text-xs max-w-32">
+                            <Popover
+                              open={commentViewFormId === f.id || commentEditFormId === f.id}
+                              onOpenChange={(open) => {
+                                if (!open) {
+                                  setCommentViewFormId(null);
+                                  setCommentEditFormId(null);
+                                }
+                              }}
+                            >
+                              <PopoverTrigger asChild>
+                                <button
+                                  className="truncate block max-w-32 text-left hover:text-primary transition-colors cursor-pointer"
+                                  onClick={() => handleCommentClick(f)}
+                                >
+                                  {f.additional_comments?.trim() || "-"}
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent align="start" className="w-80 p-3 space-y-2">
+                                {commentViewFormId === f.id && !commentEditFormId ? (
+                                  <>
+                                    <p className="text-xs font-semibold text-muted-foreground">Comentarios</p>
+                                    <p className="text-sm whitespace-pre-wrap">{f.additional_comments}</p>
+                                    <Button variant="outline" size="sm" className="gap-1.5 mt-2" onClick={() => startCommentEdit(f)}>
+                                      <Pencil className="h-3.5 w-3.5" /> Editar
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <p className="text-xs font-semibold text-muted-foreground">Editar Comentarios</p>
+                                    <Textarea
+                                      value={commentEditText}
+                                      onChange={e => setCommentEditText(e.target.value)}
+                                      onKeyDown={e => handleCommentKeyDown(e, f.id)}
+                                      rows={4}
+                                      placeholder="Escriba un comentario..."
+                                      autoFocus
+                                    />
+                                    <p className="text-[10px] text-muted-foreground">Ctrl + Enter para guardar</p>
+                                  </>
+                                )}
+                              </PopoverContent>
+                            </Popover>
+                          </TableCell>
                           <TableCell className="text-xs">
                             {f.supplier_name ? (
                               <button onClick={() => navigate("/suppliers")} className="text-primary hover:underline flex items-center gap-1 truncate max-w-28">
@@ -791,26 +944,54 @@ export function MaintenanceModule() {
       <MaintenanceExcelUpload open={uploadOpen} onOpenChange={setUploadOpen} onSuccess={handleDataChanged} />
       <MaintenanceEditDialog form={editForm} open={!!editForm} onOpenChange={v => { if (!v) setEditForm(null); }} onSuccess={handleDataChanged} />
 
-      <AlertDialog open={excelCritDialog} onOpenChange={setExcelCritDialog}>
+      {/* Revisado confirmation dialog */}
+      <AlertDialog open={revisadoDialogOpen} onOpenChange={setRevisadoDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Desea marcar como REVISADO?</AlertDialogTitle>
+            <AlertDialogDescription>El comentario se guardará. Puede además marcar el FORM como "Revisado" en el sub-estado.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => saveComment(false)}>
+              No, solo guardar
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => saveComment(true)}>
+              Sí, marcar como Revisado
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Excel download dialog with checkboxes */}
+      <AlertDialog open={excelDialog} onOpenChange={setExcelDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Descargar Excel</AlertDialogTitle>
-            <AlertDialogDescription>¿Incluir columna de Criticidad en el archivo?</AlertDialogDescription>
+            <AlertDialogDescription>Seleccione las opciones para la descarga.</AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="space-y-3 py-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Checkbox checked={excelIncludeCriticality} onCheckedChange={v => setExcelIncludeCriticality(!!v)} />
+              <span className="text-sm">Incluir columna de Criticidad</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Checkbox checked={excelIncludeRevisado} onCheckedChange={v => setExcelIncludeRevisado(!!v)} />
+              <span className="text-sm">Incluir sub-estado Revisado</span>
+            </label>
+          </div>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {
-              exportMaintenanceExcel(filtered);
-              setExcelCritDialog(false);
-            }}>
-              No, sin criticidad
-            </AlertDialogCancel>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={() => {
-              const critMap = new Map<string, string>();
-              criticalityCategories.forEach(c => critMap.set(c.id, c.name));
-              exportMaintenanceExcel(filtered, "mantenciones.xlsx", critMap);
-              setExcelCritDialog(false);
+              const critMap = excelIncludeCriticality ? new Map<string, string>() : undefined;
+              if (critMap) {
+                criticalityCategories.forEach(c => critMap.set(c.id, c.name));
+              }
+              exportMaintenanceExcel(filtered, "mantenciones.xlsx", critMap, excelIncludeRevisado || undefined);
+              setExcelDialog(false);
+              setExcelIncludeCriticality(false);
+              setExcelIncludeRevisado(false);
             }}>
-              Sí, incluir
+              Descargar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
