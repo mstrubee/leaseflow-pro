@@ -14,7 +14,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, A
 import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink, Shield, XCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { MaintenanceForm, detectMaintenanceType, SUB_STATUS_LABELS, SubStatus } from "./types";
+import { MaintenanceForm, detectMaintenanceType, SUB_STATUS_LABELS, SUB_STATUS_ORDER, SubStatus } from "./types";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { MaintenanceExcelUpload } from "./MaintenanceExcelUpload";
 import { MaintenanceEditDialog } from "./MaintenanceEditDialog";
@@ -34,6 +34,7 @@ interface CriticalityCategory {
 interface FilterState {
   search: string;
   statusFilter: string;
+  subStatusFilter: string;
   typeFilter: string;
   criticalityFilter: string;
   selectedYears: number[];
@@ -46,6 +47,7 @@ interface FilterState {
 const DEFAULT_FILTERS: FilterState = {
   search: "",
   statusFilter: "all",
+  subStatusFilter: "all",
   typeFilter: "all",
   criticalityFilter: "all",
   selectedYears: [],
@@ -307,7 +309,7 @@ export function MaintenanceModule() {
   }, [criticalityCategories]);
 
   const filtered = useMemo(() => {
-    const { search, statusFilter, typeFilter, criticalityFilter, selectedYears, selectedContracts, dateFilter } = filters;
+    const { search, statusFilter, subStatusFilter, typeFilter, criticalityFilter, selectedYears, selectedContracts, dateFilter } = filters;
     let result = forms.filter(f => {
       if (selectedYears.length > 0 && (!f.year || !selectedYears.includes(f.year))) return false;
       if (companyFilteredContractIds !== null) {
@@ -322,6 +324,7 @@ export function MaintenanceModule() {
         if (!f.contract_id || !selectedIds.has(f.contract_id)) return false;
       }
       if (statusFilter !== "all" && f.status !== statusFilter) return false;
+      if (subStatusFilter !== "all" && f.sub_status !== subStatusFilter) return false;
       if (typeFilter !== "all" && detectMaintenanceType(f) !== typeFilter) return false;
       if (criticalityFilter !== "all") {
         if (criticalityFilter === "none") {
@@ -479,17 +482,17 @@ export function MaintenanceModule() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">En Proceso</CardTitle>
-            <Clock className="h-4 w-4 text-yellow-600" />
-          </CardHeader>
-          <CardContent><div className="text-2xl font-bold text-yellow-600">{enProceso}</div></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Solucionados</CardTitle>
             <CheckCircle className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent><div className="text-2xl font-bold text-green-600">{solucionados}</div></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">En Proceso</CardTitle>
+            <Clock className="h-4 w-4 text-yellow-600" />
+          </CardHeader>
+          <CardContent><div className="text-2xl font-bold text-yellow-600">{enProceso}</div></CardContent>
         </Card>
         <Card
           className={`cursor-pointer transition-all hover:shadow-md ${filters.dateFilter ? "ring-2 ring-primary ring-offset-1" : ""}`}
@@ -665,6 +668,18 @@ export function MaintenanceModule() {
               <SelectItem value="all">Todos</SelectItem>
               <SelectItem value="proceso">En Proceso</SelectItem>
               <SelectItem value="solucionado">Solucionado</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Sub Estado</Label>
+          <Select value={filters.subStatusFilter} onValueChange={v => updateFilter("subStatusFilter", v)}>
+            <SelectTrigger className="w-40"><SelectValue placeholder="Sub Estado" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              {SUB_STATUS_ORDER.map(s => (
+                <SelectItem key={s} value={s}>{SUB_STATUS_LABELS[s]}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -858,7 +873,7 @@ export function MaintenanceModule() {
                             >
                               <PopoverTrigger asChild>
                                 <button
-                                  className="truncate block max-w-32 text-left hover:text-primary transition-colors cursor-pointer"
+                                  className="w-full min-h-[28px] text-left hover:text-primary transition-colors cursor-pointer truncate block"
                                   onClick={() => handleCommentClick(f)}
                                 >
                                   {f.additional_comments?.trim() || "-"}
