@@ -844,28 +844,24 @@ export function MaintenanceModule() {
           <Label className="text-xs text-muted-foreground">Sub Estado</Label>
           <Select value={filters.subStatusFilter} onValueChange={v => updateFilter("subStatusFilter", v)}>
             <SelectTrigger className="w-40"><SelectValue placeholder="Sub Estado" /></SelectTrigger>
-            <SelectContent>
-              <TooltipProvider delayDuration={100}>
+             <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
                 {subStatusOrder.map(s => {
                   const info = subStatusInfo[s];
-                  const hasDetail = info?.description || info?.responsible;
-                  return hasDetail ? (
-                    <Tooltip key={s}>
-                      <TooltipTrigger asChild>
-                        <SelectItem value={s}>{subStatusLabels[s] || s}</SelectItem>
-                      </TooltipTrigger>
-                      <TooltipContent side="right" className="max-w-xs">
-                        <p className="font-semibold">{subStatusLabels[s] || s}</p>
-                        {info.description && <p className="text-xs">{info.description}</p>}
-                        {info.responsible && <p className="text-xs italic text-muted-foreground">Resp: {info.responsible}</p>}
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    <SelectItem key={s} value={s}>{subStatusLabels[s] || s}</SelectItem>
+                  return (
+                    <SelectItem key={s} value={s}>
+                      <div className="flex flex-col">
+                        <span>{subStatusLabels[s] || s}</span>
+                        {info?.description && (
+                          <span className="text-[10px] leading-tight text-muted-foreground">{info.description}</span>
+                        )}
+                        {info?.responsible && (
+                          <span className="text-[10px] leading-tight italic text-muted-foreground">Resp: {info.responsible}</span>
+                        )}
+                      </div>
+                    </SelectItem>
                   );
                 })}
-              </TooltipProvider>
             </SelectContent>
           </Select>
         </div>
