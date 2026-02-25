@@ -133,7 +133,7 @@ const SubStatusCell = memo(function SubStatusCell({
                 <Badge
                   variant="outline"
                   className="text-xs"
-                  style={currentColor ? { borderColor: currentColor, color: currentColor } : {}}
+                  style={currentColor ? { borderColor: currentColor === 'yellow' ? '#eab308' : currentColor, color: currentColor === 'yellow' ? 'black' : currentColor } : {}}
                 >
                   {subStatusLabels[(form.sub_status || "").toLowerCase()] || form.sub_status || "Solicitado"}
                 </Badge>
