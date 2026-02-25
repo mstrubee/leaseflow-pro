@@ -1,33 +1,39 @@
 
 
-## Plan: Detalle flotante en filtro de sub-estados (reemplazar detalle inline)
+## Plan: Auto-clasificacion y correccion de labels de sub-estado
 
-### Problema actual
-El filtro de sub-estados muestra la descripcion y responsable directamente dentro de cada item del dropdown, haciendo la lista larga, lenta y poco agil.
+### Problema
+1. Al asignar criticidad a un FORM, el sub-estado no cambia automaticamente a "Clasificado"
+2. En el filtro y la tabla, se muestra la clave `Clasificacion_de_Criticidad` en lugar del label `Clasificado`, porque las busquedas en el mapa de labels usan claves en minuscula pero los valores de `subStatusOrder` vienen en su formato original
+3. Los FORMs existentes con criticidad asignada y sub-estado "solicitado" deben migrar a "Clasificacion_de_Criticidad"
 
-### Solucion
-Revertir el detalle inline y usar un **Popover** (en vez de `Select`) para el filtro de sub-estados. Esto permite usar `Tooltip` en cada opcion del listado, mostrando la descripcion solo al posarse sobre el nombre en una ventanilla flotante.
+### Cambios
 
-### Detalle tecnico
+**1. Correccion de labels (MaintenanceModule.tsx)**
 
-**Archivo: `src/components/maintenance/MaintenanceModule.tsx`**
+En el filtro de Sub Estado y el boton del Popover, las busquedas `subStatusLabels[s]` y `subStatusInfo[s]` fallan porque el mapa usa claves en minuscula pero `s` viene con el formato original (ej. `Clasificacion_de_Criticidad`). Se corregiran todas las busquedas agregando `.toLowerCase()`:
+- Linea 848 (trigger del filtro): `subStatusLabels[filters.subStatusFilter.toLowerCase()]`
+- Linea 864 (info en opciones): `subStatusInfo[s.toLowerCase()]`
+- Linea 874 (label en opciones): `subStatusLabels[s.toLowerCase()]`
 
-1. **Reemplazar el `Select` del filtro Sub Estado** (lineas 845-866) por un `Popover` con un boton trigger que muestre el valor actual
-2. Dentro del `PopoverContent`, listar las opciones como botones simples (solo el nombre)
-3. Envolver cada opcion en un `Tooltip` con `delayDuration={100}` que muestre descripcion y responsable al posar el puntero
-4. Al hacer click en una opcion, actualizar el filtro y cerrar el Popover
+**2. Auto-avance al clasificar criticidad (MaintenanceModule.tsx)**
 
-Estructura resultante:
-```text
-Popover
-  Trigger: Button mostrando sub-estado seleccionado (o "Todos")
-  Content:
-    TooltipProvider delayDuration={100}
-      Boton "Todos" (sin tooltip)
-      Para cada sub-estado:
-        Tooltip
-          TooltipTrigger: Boton con nombre del sub-estado
-          TooltipContent (side="right"): descripcion + responsable
+Modificar `handleCriticalityChange` (linea 562) para que, cuando se asigna una criticidad (valor distinto de "none") y el sub-estado actual es "solicitado", tambien actualice:
+- `sub_status` a `Clasificacion_de_Criticidad`
+- `status` a `proceso`
+
+El estado local tambien se actualizara para reflejar el cambio inmediatamente.
+
+**3. Migracion de datos existentes (SQL)**
+
+Ejecutar una migracion que actualice todos los FORMs que tengan `criticality_category_id` no nulo y `sub_status = 'solicitado'`, cambiandolos a `sub_status = 'Clasificacion_de_Criticidad'` y `status = 'proceso'`.
+
+```sql
+UPDATE maintenance_forms
+SET sub_status = 'Clasificación_de_Criticidad',
+    status = 'proceso',
+    updated_at = now()
+WHERE criticality_category_id IS NOT NULL
+  AND sub_status = 'solicitado'
+  AND deleted_at IS NULL;
 ```
-
-Esto mantiene el dropdown limpio y rapido, con detalles visibles solo al hacer hover.
