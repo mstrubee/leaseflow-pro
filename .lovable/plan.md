@@ -1,59 +1,55 @@
 
-## Plan: Columna "Criticidad" en Mantenciones + Mejoras de visualizacion
 
-### 1. Crear tabla `maintenance_criticality_categories` en la base de datos
+## Plan: Mejoras en Criticidad de Mantenciones
 
-Nueva tabla para que el Admin defina las categorias de criticidad:
+### 1. Mejorar rendimiento del selector de criticidad
 
-```text
-maintenance_criticality_categories
-- id (uuid, PK)
-- name (text, NOT NULL) -- ej: "Alta", "Media", "Baja"
-- code (text, UNIQUE, NOT NULL)
-- description (text, nullable)
-- color (text, nullable) -- color hex para el badge, ej: "#ef4444"
-- display_order (integer, default 0)
-- is_active (boolean, default true)
-- created_at / updated_at (timestamps)
-```
+Actualmente el selector es un `Select` de Radix que se renderiza por cada fila de la tabla, causando lentitud. Se reemplazara por un enfoque mas ligero:
+- Cambiar la interfaz `CriticalityCategory` para incluir `code` y `description` en la query inicial
+- Usar un simple `DropdownMenu` nativo o un `Popover` ligero en lugar de `Select` por cada fila, evitando montar/desmontar portales pesados
 
-Agregar columna `criticality_category_id` (uuid, nullable, FK) a la tabla `maintenance_forms`.
+### 2. Tooltip con codigo y descripcion al pasar el mouse
 
-Politicas RLS: lectura para usuarios autenticados, escritura para admins.
+- Envolver el Badge de criticidad con un `Tooltip` que muestre el codigo y la descripcion de la categoria
+- Formato: "Codigo: {code} - {description}"
+- Actualizar la query de criticidades para traer `code` y `description` ademas de `id`, `name`, `color`
 
-### 2. Panel de Administracion - Gestor de Criticidades
+### 3. Ordenamiento por columna Criticidad
 
-Crear componente `MaintenanceCriticalityManager` similar al patron existente de `AlertCategoryManager`:
-- CRUD de categorias (nombre, codigo, descripcion, color)
-- Tabla con nombre, codigo, descripcion, color badge preview, acciones (editar/eliminar)
-- Agregar como `CollapsibleCard` en `AdminPanel.tsx` despues de "Estados Comite GP"
+- Reemplazar el `TableHead` estatico de "Criticidad" por `SortableTableHead` con `sortKey="criticality_category_id"`
+- En la logica de sort, resolver el nombre de la categoria para ordenar alfabeticamente por nombre de criticidad en lugar de por UUID
 
-### 3. Columna "Criticidad" en la tabla de Mantenciones
+### 4. Filtro de criticidad
 
-En `MaintenanceModule.tsx`:
-- Cargar las categorias de criticidad desde la nueva tabla
-- Agregar columna "Criticidad" en el header de la tabla (despues de "Sub Estado")
-- Cada celda muestra un `Select` inline que permite al usuario elegir la criticidad
-- Al cambiar, se actualiza `maintenance_forms.criticality_category_id` directamente
-- Se muestra como Badge con el color definido por el admin
+- Agregar un nuevo estado `criticalityFilter` (default: `"all"`)
+- Agregar un `Select` en la barra de filtros con las categorias disponibles + opcion "Todas" y "Sin criticidad"
+- Aplicar el filtro en el `useMemo` de `filtered`
 
-### 4. Ampliar el ancho del modulo en 25%
+### 5. Cards de criticidad como filtros rapidos
 
-En `MaintenanceDashboard.tsx`:
-- Cambiar `max-w-[1536px]` a `max-w-[1920px]` (1536 * 1.25 = 1920) en el header y main
+- Agregar una fila de Cards (una por cada categoria de criticidad activa) debajo de las 3 cards de stats existentes
+- Cada card muestra:
+  - Nombre de la criticidad con su color
+  - Cantidad de forms "En Proceso" (`status === "proceso"`) con esa criticidad
+- Al hacer click en una card:
+  - Se establece `statusFilter = "proceso"` y `criticalityFilter = {id de la categoria}`
+  - Si ya estaba activo ese filtro, se limpia (toggle)
+- Cards con borde coloreado segun el color de la categoria
 
 ### Detalle tecnico
 
-**Archivos a crear:**
-- `src/components/admin/MaintenanceCriticalityManager.tsx`
+**Archivo a modificar:** `src/components/maintenance/MaintenanceModule.tsx`
 
-**Archivos a modificar:**
-- `src/pages/MaintenanceDashboard.tsx` - ampliar max-width
-- `src/components/maintenance/MaintenanceModule.tsx` - agregar columna criticidad con select inline
-- `src/components/maintenance/types.ts` - agregar `criticality_category_id` al tipo
-- `src/pages/AdminPanel.tsx` - agregar seccion de criticidades
+Cambios especificos:
+1. Actualizar `CriticalityCategory` interface para incluir `code: string` y `description: string | null`
+2. Actualizar query en `fetchCriticalities` para traer `id, name, code, description, color`
+3. Agregar estado `criticalityFilter` con valor `"all"`
+4. En filtros UI: agregar Select de criticidad despues del filtro de Tipo
+5. En `filtered` useMemo: agregar condicion de filtro por `criticality_category_id`
+6. En sort: cuando `sortKey === "criticality_category_id"`, resolver al nombre de la categoria para comparacion
+7. Reemplazar `<TableHead className="w-36">Criticidad</TableHead>` por `<SortableTableHead>` con sortKey `"criticality_category_id"`
+8. Reemplazar el `Select` inline por un `Popover` ligero con items clickeables y `Tooltip` en cada opcion del Badge
+9. Agregar cards de criticidad con conteo de "En Proceso" y funcionalidad de filtro automatico
 
-**Migracion SQL:**
-- Crear tabla `maintenance_criticality_categories`
-- Agregar columna `criticality_category_id` a `maintenance_forms`
-- RLS policies
+No se requieren cambios en la base de datos ni migraciones.
+
