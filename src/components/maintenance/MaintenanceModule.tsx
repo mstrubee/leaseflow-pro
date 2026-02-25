@@ -107,62 +107,81 @@ const SubStatusCell = memo(function SubStatusCell({
   form,
   subStatuses,
   subStatusLabels,
+  subStatusInfo,
   subStatusOrder,
   onSubStatusChange,
 }: {
   form: MaintenanceForm;
   subStatuses: MaintenanceSubStatus[];
   subStatusLabels: Record<string, string>;
+  subStatusInfo: Record<string, { description: string; responsible: string }>;
   subStatusOrder: string[];
   onSubStatusChange: (formId: string, newSubStatus: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const currentSub = subStatuses.find(s => s.name === form.sub_status);
   const currentColor = currentSub?.color;
+  const currentInfo = subStatusInfo[form.sub_status];
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button className="flex items-center h-7 px-1 rounded hover:bg-accent transition-colors w-full text-left cursor-pointer">
-          <Badge
-            variant="outline"
-            className="text-xs"
-            style={currentColor ? { borderColor: currentColor, color: currentColor } : {}}
-          >
-            {subStatusLabels[form.sub_status] || form.sub_status || "Solicitado"}
-          </Badge>
-        </button>
-      </PopoverTrigger>
+      <TooltipProvider delayDuration={100}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <button className="flex items-center h-7 px-1 rounded hover:bg-accent transition-colors w-full text-left cursor-pointer">
+                <Badge
+                  variant="outline"
+                  className="text-xs"
+                  style={currentColor ? { borderColor: currentColor, color: currentColor } : {}}
+                >
+                  {subStatusLabels[form.sub_status] || form.sub_status || "Solicitado"}
+                </Badge>
+              </button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          {(currentInfo?.description || currentInfo?.responsible) && (
+            <TooltipContent side="top" className="max-w-xs">
+              {currentInfo.description && <p className="text-xs">{currentInfo.description}</p>}
+              {currentInfo.responsible && (
+                <p className="text-xs text-muted-foreground mt-0.5">Responsable: {currentInfo.responsible}</p>
+              )}
+            </TooltipContent>
+          )}
+        </Tooltip>
+      </TooltipProvider>
       <PopoverContent align="start" className="w-52 p-1 z-50 bg-popover border shadow-md">
-        {subStatuses.map(s => (
-          <Tooltip key={s.id}>
-            <TooltipTrigger asChild>
-              <div
-                className={`flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm cursor-pointer hover:bg-accent ${
-                  form.sub_status === s.name ? "bg-accent font-medium" : ""
-                }`}
-                onClick={() => {
-                  onSubStatusChange(form.id, s.name);
-                  setOpen(false);
-                }}
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: s.color || "#6b7280" }}
-                />
-                <span className="flex-1 truncate">{s.label}</span>
-              </div>
-            </TooltipTrigger>
-            {(s.description || s.responsible) && (
-              <TooltipContent side="right" className="max-w-xs">
-                {s.description && <p className="text-xs">{s.description}</p>}
-                {s.responsible && (
-                  <p className="text-xs text-muted-foreground mt-0.5">Responsable: {s.responsible}</p>
-                )}
-              </TooltipContent>
-            )}
-          </Tooltip>
-        ))}
+        <TooltipProvider delayDuration={100}>
+          {subStatuses.map(s => (
+            <Tooltip key={s.id}>
+              <TooltipTrigger asChild>
+                <div
+                  className={`flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm cursor-pointer hover:bg-accent ${
+                    form.sub_status === s.name ? "bg-accent font-medium" : ""
+                  }`}
+                  onClick={() => {
+                    onSubStatusChange(form.id, s.name);
+                    setOpen(false);
+                  }}
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: s.color || "#6b7280" }}
+                  />
+                  <span className="flex-1 truncate">{s.label}</span>
+                </div>
+              </TooltipTrigger>
+              {(s.description || s.responsible) && (
+                <TooltipContent side="right" className="max-w-xs">
+                  {s.description && <p className="text-xs">{s.description}</p>}
+                  {s.responsible && (
+                    <p className="text-xs text-muted-foreground mt-0.5">Responsable: {s.responsible}</p>
+                  )}
+                </TooltipContent>
+              )}
+            </Tooltip>
+          ))}
+        </TooltipProvider>
       </PopoverContent>
     </Popover>
   );
@@ -826,7 +845,7 @@ export function MaintenanceModule() {
           <Select value={filters.subStatusFilter} onValueChange={v => updateFilter("subStatusFilter", v)}>
             <SelectTrigger className="w-40"><SelectValue placeholder="Sub Estado" /></SelectTrigger>
             <SelectContent>
-              <TooltipProvider delayDuration={200}>
+              <TooltipProvider delayDuration={100}>
                 <SelectItem value="all">Todos</SelectItem>
                 {subStatusOrder.map(s => {
                   const info = subStatusInfo[s];
@@ -896,7 +915,7 @@ export function MaintenanceModule() {
       <Card>
         <CardContent className="p-0">
           <div className="overflow-auto">
-            <TooltipProvider delayDuration={200}>
+            <TooltipProvider delayDuration={100}>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -936,55 +955,62 @@ export function MaintenanceModule() {
                               form={f}
                               subStatuses={subStatuses}
                               subStatusLabels={subStatusLabels}
+                              subStatusInfo={subStatusInfo}
                               subStatusOrder={subStatusOrder}
                               onSubStatusChange={handleSubStatusChange}
                             />
                           </TableCell>
                           <TableCell>
                             <Popover>
-                              <PopoverTrigger asChild>
-                                <button className="flex items-center h-7 px-1 rounded hover:bg-accent transition-colors w-full text-left">
-                                  {cat ? (
-                                    <Tooltip>
+                              <TooltipProvider delayDuration={100}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <PopoverTrigger asChild>
+                                      <button className="flex items-center h-7 px-1 rounded hover:bg-accent transition-colors w-full text-left">
+                                        {cat ? (
+                                          <Badge className="text-xs cursor-pointer" style={{ backgroundColor: cat.color || undefined, color: "#fff" }}>
+                                            {cat.name}
+                                          </Badge>
+                                        ) : (
+                                          <span className="text-muted-foreground text-xs">—</span>
+                                        )}
+                                      </button>
+                                    </PopoverTrigger>
+                                  </TooltipTrigger>
+                                  {cat && (
+                                    <TooltipContent side="top">
+                                      <p className="text-xs font-medium">Código: {cat.code}</p>
+                                      {cat.description && <p className="text-xs text-muted-foreground">{cat.description}</p>}
+                                    </TooltipContent>
+                                  )}
+                                </Tooltip>
+                              </TooltipProvider>
+                              <PopoverContent align="start" className="w-48 p-1 z-50 bg-popover border shadow-md">
+                                <TooltipProvider delayDuration={100}>
+                                  <div
+                                    className="flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm cursor-pointer hover:bg-accent"
+                                    onClick={() => handleCriticalityChange(f.id, "none")}
+                                  >
+                                    <span className="text-muted-foreground">Sin criticidad</span>
+                                  </div>
+                                  {criticalityCategories.map(c => (
+                                    <Tooltip key={c.id}>
                                       <TooltipTrigger asChild>
-                                        <Badge className="text-xs cursor-pointer" style={{ backgroundColor: cat.color || undefined, color: "#fff" }}>
-                                          {cat.name}
-                                        </Badge>
+                                        <div
+                                          className="flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm cursor-pointer hover:bg-accent"
+                                          onClick={() => handleCriticalityChange(f.id, c.id)}
+                                        >
+                                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: c.color || "#6b7280" }} />
+                                          <span className="flex-1">{c.name}</span>
+                                        </div>
                                       </TooltipTrigger>
-                                      <TooltipContent side="top">
-                                        <p className="text-xs font-medium">Código: {cat.code}</p>
-                                        {cat.description && <p className="text-xs text-muted-foreground">{cat.description}</p>}
+                                      <TooltipContent side="right" className="max-w-xs">
+                                        <p className="text-xs font-medium">Código: {c.code}</p>
+                                        {c.description && <p className="text-xs text-muted-foreground">{c.description}</p>}
                                       </TooltipContent>
                                     </Tooltip>
-                                  ) : (
-                                    <span className="text-muted-foreground text-xs">—</span>
-                                  )}
-                                </button>
-                              </PopoverTrigger>
-                              <PopoverContent align="start" className="w-48 p-1 z-50 bg-popover border shadow-md">
-                                <div
-                                  className="flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm cursor-pointer hover:bg-accent"
-                                  onClick={() => handleCriticalityChange(f.id, "none")}
-                                >
-                                  <span className="text-muted-foreground">Sin criticidad</span>
-                                </div>
-                                {criticalityCategories.map(c => (
-                                  <Tooltip key={c.id}>
-                                    <TooltipTrigger asChild>
-                                      <div
-                                        className="flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm cursor-pointer hover:bg-accent"
-                                        onClick={() => handleCriticalityChange(f.id, c.id)}
-                                      >
-                                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: c.color || "#6b7280" }} />
-                                        <span className="flex-1">{c.name}</span>
-                                      </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="right" className="max-w-xs">
-                                      <p className="text-xs font-medium">Código: {c.code}</p>
-                                      {c.description && <p className="text-xs text-muted-foreground">{c.description}</p>}
-                                    </TooltipContent>
-                                  </Tooltip>
-                                ))}
+                                  ))}
+                                </TooltipProvider>
                               </PopoverContent>
                             </Popover>
                           </TableCell>
