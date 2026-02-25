@@ -51,7 +51,7 @@ export default function CapexDashboard() {
 
   useEffect(() => {
     if (user) loadBudgets();
-  }, [user]);
+  }, [user, ufValue]);
 
   const loadBudgets = async () => {
     setLoading(true);
