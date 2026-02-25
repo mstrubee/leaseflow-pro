@@ -842,28 +842,53 @@ export function MaintenanceModule() {
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Sub Estado</Label>
-          <Select value={filters.subStatusFilter} onValueChange={v => updateFilter("subStatusFilter", v)}>
-            <SelectTrigger className="w-40"><SelectValue placeholder="Sub Estado" /></SelectTrigger>
-             <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                {subStatusOrder.map(s => {
-                  const info = subStatusInfo[s];
-                  return (
-                    <SelectItem key={s} value={s}>
-                      <div className="flex flex-col">
-                        <span>{subStatusLabels[s] || s}</span>
-                        {info?.description && (
-                          <span className="text-[10px] leading-tight text-muted-foreground">{info.description}</span>
-                        )}
-                        {info?.responsible && (
-                          <span className="text-[10px] leading-tight italic text-muted-foreground">Resp: {info.responsible}</span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  );
-                })}
-            </SelectContent>
-          </Select>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="w-40 justify-between text-sm font-normal">
+                {filters.subStatusFilter === "all" ? "Todos" : (subStatusLabels[filters.subStatusFilter] || filters.subStatusFilter)}
+                <svg className="h-4 w-4 opacity-50 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-52 p-1" align="start">
+              <TooltipProvider delayDuration={100}>
+                <div className="flex flex-col gap-0.5 max-h-64 overflow-y-auto">
+                  <Button
+                    variant={filters.subStatusFilter === "all" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="justify-start text-sm h-8"
+                    onClick={() => updateFilter("subStatusFilter", "all")}
+                  >
+                    Todos
+                  </Button>
+                  {subStatusOrder.map(s => {
+                    const info = subStatusInfo[s];
+                    const hasDetail = info?.description || info?.responsible;
+                    const btn = (
+                      <Button
+                        key={s}
+                        variant={filters.subStatusFilter === s ? "secondary" : "ghost"}
+                        size="sm"
+                        className="justify-start text-sm h-8 w-full"
+                        onClick={() => updateFilter("subStatusFilter", s)}
+                      >
+                        {subStatusLabels[s] || s}
+                      </Button>
+                    );
+                    if (!hasDetail) return btn;
+                    return (
+                      <Tooltip key={s}>
+                        <TooltipTrigger asChild>{btn}</TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-xs text-xs space-y-1">
+                          {info.description && <p>{info.description}</p>}
+                          {info.responsible && <p className="italic">Resp: {info.responsible}</p>}
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
+              </TooltipProvider>
+            </PopoverContent>
+          </Popover>
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Tipo</Label>
