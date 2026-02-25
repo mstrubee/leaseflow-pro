@@ -1,5 +1,6 @@
 export const SUB_STATUS_ORDER = [
   'solicitado',
+  'revisado',
   'pre_aprobado',
   'evaluado',
   'cotizando',
@@ -11,6 +12,7 @@ export type SubStatus = typeof SUB_STATUS_ORDER[number];
 
 export const SUB_STATUS_LABELS: Record<SubStatus, string> = {
   solicitado: 'Solicitado',
+  revisado: 'Revisado',
   pre_aprobado: 'Pre Aprobado',
   evaluado: 'Evaluado',
   cotizando: 'Cotizando',
@@ -20,6 +22,7 @@ export const SUB_STATUS_LABELS: Record<SubStatus, string> = {
 
 export const SUB_STATUS_INFO: Record<SubStatus, { description: string; responsible: string }> = {
   solicitado: { description: 'La tienda ha solicitado el Form. Se requiere aprobación de Gerente Zonal y Gerente Operaciones para avanzar.', responsible: 'Control de Gestión' },
+  revisado: { description: 'Form revisado por Control de Gestión. Pendiente de aprobación para avanzar.', responsible: 'Control de Gestión' },
   pre_aprobado: { description: 'Requiere Aprobación de Gerente Zonal y Gerente Operaciones para avanzar a Evaluación Técnica.', responsible: 'Control de Gestión' },
   evaluado: { description: 'Preaprobado por Gerencia. Se requiere evaluación Técnica para avanzar a Cotización.', responsible: 'Jefe Mantenciones' },
   cotizando: { description: 'Evaluación Técnica OK. Se requiere cotización para Avanzar a Ejecución.', responsible: 'Jefe Compras' },
@@ -56,6 +59,7 @@ export interface MaintenanceForm {
   created_by: string | null;
   status_changed_at: string | null;
   sub_status_solicitado_at: string | null;
+  sub_status_revisado_at: string | null;
   sub_status_pre_aprobado_at: string | null;
   sub_status_evaluado_at: string | null;
   sub_status_cotizando_at: string | null;
