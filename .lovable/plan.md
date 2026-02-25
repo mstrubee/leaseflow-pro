@@ -1,29 +1,42 @@
 
 
-## Plan: Mostrar detalle de sub-estado en filtro desplegable
+## Plan: Tooltips informativos en botones y listas desplegables
 
-### Problema
-El filtro de "Sub Estado" en la barra de filtros (lineas 824-835) usa un `Select` basico con `SelectItem`. No muestra la descripcion ni el responsable al posarse sobre cada opcion.
+### Cambios en `src/components/maintenance/MaintenanceModule.tsx`
 
-### Solucion
-Envolver cada `SelectItem` del filtro de sub-estados con un `Tooltip` que muestre la descripcion y responsable, igual que en el dropdown de la tabla (`SubStatusCell`).
+### 1. Tooltip en el boton de Sub-Estado (trigger del Popover)
 
-### Cambios
+Actualmente el boton del `SubStatusCell` (linea 126) solo abre el Popover al hacer click, pero no muestra informacion al pasar el puntero. Se envolvera el boton trigger con un `Tooltip` que muestre la descripcion y responsable del sub-estado actual.
 
-**Archivo unico: `src/components/maintenance/MaintenanceModule.tsx`**
+Se necesita agregar `subStatusInfo` como prop del componente `SubStatusCell` para tener acceso a la descripcion.
 
-1. Agregar `subStatusInfo` a la destructuracion del hook `useMaintenanceSubStatuses` (linea 234)
-2. Reemplazar el bloque del filtro de sub-estados (lineas 826-834) para envolver cada `SelectItem` en un `Tooltip` con descripcion y responsable
+### 2. Tooltip en el boton de Criticidad (trigger del Popover)
 
-El resultado sera:
-```text
-Select > SelectContent >
-  SelectItem "Todos" (sin tooltip)
-  Para cada sub-estado:
-    Tooltip >
-      TooltipTrigger > SelectItem con label
-      TooltipContent > descripcion + responsable (si existen)
-```
+El Badge de criticidad ya tiene un Tooltip (lineas 948-958), pero esta dentro del `PopoverTrigger`, lo que causa conflicto: al hacer hover aparece el tooltip y al click abre el popover sobre el mismo elemento. Se reestructurara para que el Tooltip envuelva al PopoverTrigger, evitando interferencia.
 
-Esto reutiliza el `TooltipProvider` que ya envuelve la tabla (linea 882), por lo que no se necesita agregar uno nuevo -- sin embargo, el filtro esta fuera de ese provider, asi que se envolvera el `SelectContent` del filtro en su propio `TooltipProvider`.
+### 3. Velocidad de los tooltips
+
+Se configurara `delayDuration={100}` en los `TooltipProvider` relevantes (tabla principal y filtros) para que la aparicion sea mas rapida.
+
+### 4. Tooltips en las listas desplegables
+
+Los tooltips en las opciones de los dropdowns de sub-estado y criticidad ya existen (lineas 138-164 y 972-986). Se verificara que tienen `delayDuration` bajo para respuesta rapida. Se ajustara el `TooltipProvider` de la tabla (linea 899) a `delayDuration={100}`.
+
+### Detalle tecnico
+
+**SubStatusCell** (lineas 106-169):
+- Agregar prop `subStatusInfo`
+- Envolver el `PopoverTrigger` con un `Tooltip` que muestre descripcion/responsable del sub-estado actual
+- Agregar `TooltipProvider delayDuration={100}` dentro del `PopoverContent`
+
+**Celda de Criticidad** (lineas 943-989):
+- Mover el `Tooltip` existente para que envuelva el `PopoverTrigger` en vez de estar dentro de el
+- Agregar `TooltipProvider delayDuration={100}` dentro del `PopoverContent`
+
+**TooltipProviders existentes:**
+- Tabla principal (linea 899): cambiar `delayDuration={200}` a `delayDuration={100}`
+- Filtro sub-estados (linea 829): cambiar `delayDuration={200}` a `delayDuration={100}`
+
+**Invocacion de SubStatusCell** (linea 935-941):
+- Pasar `subStatusInfo` como prop adicional
 
