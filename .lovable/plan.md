@@ -1,55 +1,46 @@
 
 
-## Plan: Mejoras en Criticidad de Mantenciones
+## Plan: Mejoras en Cards de Criticidad, Boton Limpiar Filtros y Rendimiento del Selector
 
-### 1. Mejorar rendimiento del selector de criticidad
+### 1. Corregir toggle de deseleccion en cards de criticidad
 
-Actualmente el selector es un `Select` de Radix que se renderiza por cada fila de la tabla, causando lentitud. Se reemplazara por un enfoque mas ligero:
-- Cambiar la interfaz `CriticalityCategory` para incluir `code` y `description` en la query inicial
-- Usar un simple `DropdownMenu` nativo o un `Popover` ligero en lugar de `Select` por cada fila, evitando montar/desmontar portales pesados
+El codigo actual en `handleCriticalityCardClick` ya implementa el toggle, pero la condicion verifica que `statusFilter === "proceso"` Y `criticalityFilter === catId`. Si el usuario cambio manualmente el statusFilter despues de hacer click en la card, el toggle no funciona correctamente. Se simplificara la logica para que al hacer click en una card ya activa (donde `criticalityFilter === catId`), se limpien ambos filtros independientemente del statusFilter actual.
 
-### 2. Tooltip con codigo y descripcion al pasar el mouse
+### 2. Boton "Limpiar filtros"
 
-- Envolver el Badge de criticidad con un `Tooltip` que muestre el codigo y la descripcion de la categoria
-- Formato: "Codigo: {code} - {description}"
-- Actualizar la query de criticidades para traer `code` y `description` ademas de `id`, `name`, `color`
+Agregar un boton visible en la barra de filtros que resetee todos los filtros a sus valores por defecto:
+- `search = ""`
+- `statusFilter = "all"`
+- `typeFilter = "all"`
+- `criticalityFilter = "all"`
+- `selectedYears = []`
+- `selectedContracts = []`
+- `companyFilter = "all"`
+- `contractSearch = ""`
 
-### 3. Ordenamiento por columna Criticidad
+El boton tendra fondo estandar (variant="outline") y texto en rojo.
 
-- Reemplazar el `TableHead` estatico de "Criticidad" por `SortableTableHead` con `sortKey="criticality_category_id"`
-- En la logica de sort, resolver el nombre de la categoria para ordenar alfabeticamente por nombre de criticidad en lugar de por UUID
+### 3. Mejorar rendimiento del selector de criticidad
 
-### 4. Filtro de criticidad
-
-- Agregar un nuevo estado `criticalityFilter` (default: `"all"`)
-- Agregar un `Select` en la barra de filtros con las categorias disponibles + opcion "Todas" y "Sin criticidad"
-- Aplicar el filtro en el `useMemo` de `filtered`
-
-### 5. Cards de criticidad como filtros rapidos
-
-- Agregar una fila de Cards (una por cada categoria de criticidad activa) debajo de las 3 cards de stats existentes
-- Cada card muestra:
-  - Nombre de la criticidad con su color
-  - Cantidad de forms "En Proceso" (`status === "proceso"`) con esa criticidad
-- Al hacer click en una card:
-  - Se establece `statusFilter = "proceso"` y `criticalityFilter = {id de la categoria}`
-  - Si ya estaba activo ese filtro, se limpia (toggle)
-- Cards con borde coloreado segun el color de la categoria
+El `DropdownMenu` actual aun tiene overhead por los `Tooltip` anidados dentro de cada `DropdownMenuItem`, lo cual genera re-renders y portales adicionales por cada opcion en cada fila. Se reemplazara por un enfoque con `Popover` minimalista:
+- Usar un `Popover` simple con un `div` de opciones clickeables (sin `Tooltip` dentro del menu)
+- Mostrar la info de codigo/descripcion directamente como texto secundario en cada opcion del popover, eliminando la necesidad de tooltips anidados
+- Mantener el `Tooltip` solo en el badge visible (fuera del popover), que ya funciona bien
+- Controlar el estado open/close manualmente para cerrar al seleccionar
 
 ### Detalle tecnico
 
 **Archivo a modificar:** `src/components/maintenance/MaintenanceModule.tsx`
 
 Cambios especificos:
-1. Actualizar `CriticalityCategory` interface para incluir `code: string` y `description: string | null`
-2. Actualizar query en `fetchCriticalities` para traer `id, name, code, description, color`
-3. Agregar estado `criticalityFilter` con valor `"all"`
-4. En filtros UI: agregar Select de criticidad despues del filtro de Tipo
-5. En `filtered` useMemo: agregar condicion de filtro por `criticality_category_id`
-6. En sort: cuando `sortKey === "criticality_category_id"`, resolver al nombre de la categoria para comparacion
-7. Reemplazar `<TableHead className="w-36">Criticidad</TableHead>` por `<SortableTableHead>` con sortKey `"criticality_category_id"`
-8. Reemplazar el `Select` inline por un `Popover` ligero con items clickeables y `Tooltip` en cada opcion del Badge
-9. Agregar cards de criticidad con conteo de "En Proceso" y funcionalidad de filtro automatico
 
-No se requieren cambios en la base de datos ni migraciones.
+1. **handleCriticalityCardClick** (linea ~290): Cambiar la condicion de toggle para verificar solo `criticalityFilter === catId` en lugar de ambas condiciones.
+
+2. **Boton "Limpiar filtros"** (despues de linea ~518): Agregar un `Button` con `variant="outline"` y `className="text-red-600 border-red-200 hover:bg-red-50"` que llame a una funcion `clearAllFilters`.
+
+3. **Selector de criticidad en cada fila** (lineas ~566-607): Reemplazar `DropdownMenu` con `Tooltip` anidados por un `Popover` simple:
+   - El trigger es el badge actual (envuelto en Tooltip para mostrar codigo/descripcion)
+   - El contenido del Popover es una lista de `div` clickeables sin tooltips internos
+   - Cada opcion muestra: circulo de color + nombre + codigo en gris pequeno
+   - Al hacer click, se cierra el popover y se ejecuta `handleCriticalityChange`
 
