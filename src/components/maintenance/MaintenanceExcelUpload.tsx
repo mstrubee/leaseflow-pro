@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Upload, AlertTriangle, CheckCircle, Loader2, Sparkles, SkipForward } from "lucide-react";
+import { Upload, AlertTriangle, CheckCircle, Loader2, Sparkles, SkipForward, Shield } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { validateExcelFile } from "@/lib/excelFileValidation";
@@ -50,7 +50,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
 
-      // Find header row (look for row containing "FORM" or similar in column A)
+      // Find header row
       let headerIdx = 0;
       for (let i = 0; i < Math.min(rows.length, 10); i++) {
         const cellA = String(rows[i]?.[0] ?? "").toLowerCase();
@@ -100,15 +100,12 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
             const name = contractMap.get(cv.contract_id);
             if (!name) return;
             const entry = { id: cv.contract_id, name };
-            // Full CEBE (e.g., "H04A2P1390")
             const fullCebe = cv.field_value.trim().toUpperCase();
             contractsByFullCEBE.set(fullCebe, entry);
-            // Extract prefix before 'P' (e.g., "H04A2" from "H04A2P1390")
             const prefixMatch = fullCebe.match(/^(H\w+?)P\d+$/i);
             if (prefixMatch) {
               contractsByPrefix.set(prefixMatch[1], entry);
             }
-            // Extract 4 digits at positions 1-4 (e.g., "0410" from "H0410P1290")
             if (fullCebe.length >= 5) {
               const digits4 = fullCebe.substring(1, 5);
               if (/^\d{4}$/.test(digits4)) {
@@ -127,25 +124,21 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         const normText = normalize(rawText);
         const upperText = rawText.toUpperCase();
 
-        // Priority 1: Full CEBE match (e.g., text contains "H0440P1290") — most precise
         for (const [cebe, contract] of contractsByFullCEBE) {
           if (upperText.includes(cebe)) return { match: contract };
         }
 
-        // Priority 2: 4-digit CEBE match from H####P#### or plain ####
         const cebeMatch = rawText.trim().match(/^H(\d{4})P\d+/i);
         const plainDigitsMatch = rawText.trim().match(/^(\d{4})/);
         const excelDigits = cebeMatch?.[1] || plainDigitsMatch?.[1];
         if (excelDigits && contractsByDigits.has(excelDigits)) {
           const candidates = contractsByDigits.get(excelDigits)!;
           if (candidates.length === 1) return { match: candidates[0] };
-          // Disambiguate by name similarity
           for (const c of candidates) {
             if (normText.includes(normalize(c.name)) || normalize(c.name).includes(normText)) {
               return { match: c };
             }
           }
-          // Try partial word overlap
           const words = normText.split(/\s+/).filter(w => w.length > 2);
           let best: { id: string; name: string } | null = null;
           let bestScore = 0;
@@ -165,12 +158,10 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
           return { match: null, ambiguous: candidates };
         }
 
-        // Priority 3: CEBE prefix match (e.g., text contains "H04A2")
         for (const [prefix, contract] of contractsByPrefix) {
           if (upperText.includes(prefix)) return { match: contract };
         }
 
-        // Priority 4: Direct name match (accent-normalized) — least precise, last resort
         for (const [name, contract] of contractsByName) {
           if (normText.includes(name) || name.includes(normText)) return { match: contract };
         }
@@ -233,7 +224,6 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
           }
         }
 
-        // Extract evidence links from column N (index 13)
         const rawColumnN = String(row[13] ?? "");
         const evidenceLinks: string[] = [];
         const linkRegex = /https?:\/\/[^\s"<>]+\.(?:jpeg|jpg|png|gif|pdf|docx?|xlsx?|pptx?|mp4|mov|zip)/gi;
@@ -270,7 +260,6 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         setAiLoading(true);
 
         try {
-          // Build contracts with CEBEs for AI
           const contractsWithCebes: { id: string; name: string; cebe: string }[] = [];
           if (cebeField) {
             const { data: allCebeValues } = await supabase
@@ -327,23 +316,45 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         }
       }
 
-      // Check which form_numbers already exist in the database
+      // Check which form_numbers already exist and fetch their criticality
       const allFormNumbers = parsed.map(r => r.form_number);
       const existingFormNumbers = new Set<string>();
+      const existingCriticalityMap = new Map<string, string | null>();
       
-      // Query in batches of 500 to avoid URL length limits
       for (let i = 0; i < allFormNumbers.length; i += 500) {
         const batch = allFormNumbers.slice(i, i + 500);
         const { data: existingForms } = await (supabase.from("maintenance_forms" as any) as any)
-          .select("form_number")
+          .select("form_number, criticality_category_id")
           .in("form_number", batch);
-        existingForms?.forEach((f: any) => existingFormNumbers.add(f.form_number));
+        existingForms?.forEach((f: any) => {
+          existingFormNumbers.add(f.form_number);
+          existingCriticalityMap.set(f.form_number, f.criticality_category_id);
+        });
       }
 
-      // Mark existing rows
+      // Fetch criticality categories for display
+      let critCategoryLookup = new Map<string, { name: string; color: string | null }>();
+      const critIds = new Set<string>();
+      existingCriticalityMap.forEach(v => { if (v) critIds.add(v); });
+      if (critIds.size > 0) {
+        const { data: critCats } = await (supabase as any)
+          .from("maintenance_criticality_categories")
+          .select("id, name, color")
+          .in("id", Array.from(critIds));
+        critCats?.forEach((c: any) => critCategoryLookup.set(c.id, { name: c.name, color: c.color }));
+      }
+
+      // Mark existing rows with their criticality info
       parsed.forEach(r => {
         if (existingFormNumbers.has(r.form_number)) {
           (r as any).isExisting = true;
+          const critId = existingCriticalityMap.get(r.form_number);
+          r.existingCriticalityId = critId || null;
+          if (critId) {
+            const cat = critCategoryLookup.get(critId);
+            r.existingCriticalityName = cat?.name || null;
+            r.existingCriticalityColor = cat?.color || null;
+          }
         }
       });
 
@@ -392,7 +403,6 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
         sub_status_solicitado_at: new Date().toISOString(),
       }));
 
-      // Insert in batches of 100 (only new forms)
       for (let i = 0; i < records.length; i += 100) {
         const batch = records.slice(i, i + 100);
         const { error } = await (supabase.from("maintenance_forms" as any) as any)
@@ -470,7 +480,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
           <>
             <div className="flex gap-4 text-sm flex-wrap">
               <span className="flex items-center gap-1"><CheckCircle className="h-4 w-4 text-green-600" /> {newCount} nuevos</span>
-              {existingCount > 0 && <span className="flex items-center gap-1 text-muted-foreground"><SkipForward className="h-4 w-4" /> {existingCount} ya existen (se omitirán)</span>}
+              {existingCount > 0 && <span className="flex items-center gap-1 text-muted-foreground"><SkipForward className="h-4 w-4" /> {existingCount} ya existen (se omitirán, criticidad preservada)</span>}
               {ambiguousCount > 0 && <span className="flex items-center gap-1 text-orange-600"><AlertTriangle className="h-4 w-4" /> {ambiguousCount} duplicados por resolver</span>}
               {warningCount > 0 && <span className="flex items-center gap-1 text-yellow-600"><AlertTriangle className="h-4 w-4" /> {warningCount} advertencias</span>}
               {errorCount > 0 && <span className="flex items-center gap-1 text-destructive"><AlertTriangle className="h-4 w-4" /> {errorCount} errores</span>}
@@ -485,6 +495,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
                     <TableHead className="w-24">Fecha</TableHead>
                     <TableHead>Contrato</TableHead>
                     <TableHead className="w-24">Tipo</TableHead>
+                    <TableHead className="w-28">Criticidad</TableHead>
                     <TableHead>Descripción</TableHead>
                     <TableHead className="w-24">Evidencias</TableHead>
                     <TableHead className="w-32">Validación</TableHead>
@@ -521,10 +532,7 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
                             <button
                               onClick={() => {
                                 const candidateIds = row.ambiguousCandidates!.map(c => c.id);
-                                // Show a small dialog-like choice for "apply all"
                                 const choice = row.ambiguousCandidates![0];
-                                // For "apply all", let user pick which one via a prompt-like approach
-                                // We'll use the first candidate as default — but show both options
                                 resolveAllAmbiguous(candidateIds, choice);
                               }}
                               className="text-[10px] text-muted-foreground underline hover:text-foreground"
@@ -551,6 +559,21 @@ export function MaintenanceExcelUpload({ open, onOpenChange, onSuccess }: Props)
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-xs">{detectMaintenanceType(row)}</Badge>
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {row.isExisting && row.existingCriticalityName ? (
+                          <Badge
+                            className="text-[10px]"
+                            style={{ backgroundColor: row.existingCriticalityColor || "#6b7280", color: "#fff" }}
+                          >
+                            <Shield className="h-3 w-3 mr-1" />
+                            {row.existingCriticalityName}
+                          </Badge>
+                        ) : row.isExisting ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : (
+                          <span className="text-muted-foreground text-[10px]">Nueva</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-xs max-w-48 truncate">
                         {row.general_description || row.electrical_description || row.civil_description || row.hvac_description || row.fixed_assets_description || "-"}

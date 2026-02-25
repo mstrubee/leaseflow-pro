@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, startTransition, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,27 +28,70 @@ interface CriticalityCategory {
   color: string | null;
 }
 
+interface FilterState {
+  search: string;
+  statusFilter: string;
+  typeFilter: string;
+  criticalityFilter: string;
+  selectedYears: number[];
+  selectedContracts: string[];
+  companyFilter: string;
+  contractSearch: string;
+}
+
+const DEFAULT_FILTERS: FilterState = {
+  search: "",
+  statusFilter: "all",
+  typeFilter: "all",
+  criticalityFilter: "all",
+  selectedYears: [],
+  selectedContracts: [],
+  companyFilter: "all",
+  contractSearch: "",
+};
+
+const CACHE_KEY_FORMS = "maintenance_forms_cache";
+const CACHE_KEY_CRITICALITY = "maintenance_criticality_cache";
+const CACHE_KEY_COMPANY_MAP = "maintenance_company_map_cache";
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function readCache<T>(key: string): T | null {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    if (Date.now() - ts > CACHE_TTL_MS) return null;
+    return data as T;
+  } catch { return null; }
+}
+
+function writeCache<T>(key: string, data: T) {
+  try {
+    sessionStorage.setItem(key, JSON.stringify({ data, ts: Date.now() }));
+  } catch { /* quota exceeded, ignore */ }
+}
+
+function invalidateCache() {
+  sessionStorage.removeItem(CACHE_KEY_FORMS);
+  sessionStorage.removeItem(CACHE_KEY_CRITICALITY);
+  sessionStorage.removeItem(CACHE_KEY_COMPANY_MAP);
+}
+
 export function MaintenanceModule() {
   const navigate = useNavigate();
-  const [forms, setForms] = useState<MaintenanceForm[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [criticalityFilter, setCriticalityFilter] = useState("all");
-  const [selectedYears, setSelectedYears] = useState<number[]>([]);
-  const [selectedContracts, setSelectedContracts] = useState<string[]>([]);
-  const [contractSearch, setContractSearch] = useState("");
+  const [forms, setForms] = useState<MaintenanceForm[]>(() => readCache<MaintenanceForm[]>(CACHE_KEY_FORMS) || []);
+  const [loading, setLoading] = useState(() => !readCache<MaintenanceForm[]>(CACHE_KEY_FORMS));
+  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editForm, setEditForm] = useState<MaintenanceForm | null>(null);
   const [sortKey, setSortKey] = useState<string | null>("created_date");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
-  const [contractCompanyMap, setContractCompanyMap] = useState<Record<string, string[]>>({});
-  const [companyFilter, setCompanyFilter] = useState("all");
-  const [criticalityCategories, setCriticalityCategories] = useState<CriticalityCategory[]>([]);
+  const [contractCompanyMap, setContractCompanyMap] = useState<Record<string, string[]>>(() => readCache<Record<string, string[]>>(CACHE_KEY_COMPANY_MAP) || {});
+  const [criticalityCategories, setCriticalityCategories] = useState<CriticalityCategory[]>(() => readCache<CriticalityCategory[]>(CACHE_KEY_CRITICALITY) || []);
+  const hasFetchedRef = useRef(false);
 
-  const fetchForms = async () => {
-    setLoading(true);
+  const fetchForms = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     let allData: MaintenanceForm[] = [];
     let from = 0;
     const batchSize = 1000;
@@ -78,12 +121,23 @@ export function MaintenanceModule() {
     }
 
     setForms(allData);
+    writeCache(CACHE_KEY_FORMS, allData);
     setLoading(false);
-  };
+  }, []);
 
-  useEffect(() => { fetchForms(); }, []);
+  useEffect(() => {
+    const cachedForms = readCache<MaintenanceForm[]>(CACHE_KEY_FORMS);
+    if (cachedForms && !hasFetchedRef.current) {
+      // Cache hit — refresh in background
+      hasFetchedRef.current = true;
+      fetchForms(false);
+    } else if (!hasFetchedRef.current) {
+      hasFetchedRef.current = true;
+      fetchForms(true);
+    }
+  }, [fetchForms]);
 
-  // Fetch criticality categories with code and description
+  // Fetch criticality categories with cache
   useEffect(() => {
     const fetchCriticalities = async () => {
       const { data } = await (supabase as any)
@@ -91,12 +145,15 @@ export function MaintenanceModule() {
         .select("id, name, code, description, color")
         .eq("is_active", true)
         .order("display_order");
-      if (data) setCriticalityCategories(data);
+      if (data) {
+        setCriticalityCategories(data);
+        writeCache(CACHE_KEY_CRITICALITY, data);
+      }
     };
     fetchCriticalities();
   }, []);
 
-  // Fetch contract-company mapping for logos
+  // Fetch contract-company mapping with cache
   useEffect(() => {
     const fetchCompanyMap = async () => {
       const { data } = await supabase
@@ -114,9 +171,22 @@ export function MaintenanceModule() {
           }
         });
         setContractCompanyMap(map);
+        writeCache(CACHE_KEY_COMPANY_MAP, map);
       }
     };
     fetchCompanyMap();
+  }, []);
+
+  const handleDataChanged = useCallback(() => {
+    invalidateCache();
+    fetchForms(false);
+  }, [fetchForms]);
+
+  // Filter helpers using the consolidated filter object
+  const updateFilter = useCallback(<K extends keyof FilterState>(key: K, value: FilterState[K]) => {
+    startTransition(() => {
+      setFilters(prev => ({ ...prev, [key]: value }));
+    });
   }, []);
 
   const availableCompanies = useMemo(() => {
@@ -126,15 +196,15 @@ export function MaintenanceModule() {
   }, [contractCompanyMap]);
 
   const companyFilteredContractIds = useMemo(() => {
-    if (companyFilter === "all") return null;
+    if (filters.companyFilter === "all") return null;
     const ids = new Set<string>();
     for (const [contractId, companies] of Object.entries(contractCompanyMap)) {
-      if (companies.some(c => c.toLowerCase().includes(companyFilter.toLowerCase()))) {
+      if (companies.some(c => c.toLowerCase().includes(filters.companyFilter.toLowerCase()))) {
         ids.add(contractId);
       }
     }
     return ids;
-  }, [companyFilter, contractCompanyMap]);
+  }, [filters.companyFilter, contractCompanyMap]);
 
   const availableYears = useMemo(() => {
     const years = new Set<number>();
@@ -180,21 +250,31 @@ export function MaintenanceModule() {
   }, [forms, contractCompanyMap]);
 
   const filteredContractOptions = useMemo(() => {
-    if (!contractSearch) return contractFilterOptions;
-    const s = contractSearch.toLowerCase();
+    if (!filters.contractSearch) return contractFilterOptions;
+    const s = filters.contractSearch.toLowerCase();
     return contractFilterOptions.filter(c => c.label.toLowerCase().includes(s));
-  }, [contractFilterOptions, contractSearch]);
+  }, [contractFilterOptions, filters.contractSearch]);
 
   const toggleContract = (key: string) => {
-    setSelectedContracts(prev =>
-      prev.includes(key) ? prev.filter(c => c !== key) : [...prev, key]
-    );
+    startTransition(() => {
+      setFilters(prev => ({
+        ...prev,
+        selectedContracts: prev.selectedContracts.includes(key)
+          ? prev.selectedContracts.filter(c => c !== key)
+          : [...prev.selectedContracts, key],
+      }));
+    });
   };
 
   const toggleYear = (year: number) => {
-    setSelectedYears(prev =>
-      prev.includes(year) ? prev.filter(y => y !== year) : [...prev, year]
-    );
+    startTransition(() => {
+      setFilters(prev => ({
+        ...prev,
+        selectedYears: prev.selectedYears.includes(year)
+          ? prev.selectedYears.filter(y => y !== year)
+          : [...prev.selectedYears, year],
+      }));
+    });
   };
 
   const handleSort = useCallback((key: string) => {
@@ -206,7 +286,6 @@ export function MaintenanceModule() {
     }
   }, [sortKey]);
 
-  // Build a map for quick criticality name lookup
   const criticalityMap = useMemo(() => {
     const map = new Map<string, CriticalityCategory>();
     criticalityCategories.forEach(c => map.set(c.id, c));
@@ -214,6 +293,7 @@ export function MaintenanceModule() {
   }, [criticalityCategories]);
 
   const filtered = useMemo(() => {
+    const { search, statusFilter, typeFilter, criticalityFilter, selectedYears, selectedContracts } = filters;
     let result = forms.filter(f => {
       if (selectedYears.length > 0 && (!f.year || !selectedYears.includes(f.year))) return false;
       if (companyFilteredContractIds !== null) {
@@ -229,7 +309,6 @@ export function MaintenanceModule() {
       }
       if (statusFilter !== "all" && f.status !== statusFilter) return false;
       if (typeFilter !== "all" && detectMaintenanceType(f) !== typeFilter) return false;
-      // Criticality filter
       if (criticalityFilter !== "all") {
         if (criticalityFilter === "none") {
           if (f.criticality_category_id) return false;
@@ -268,13 +347,12 @@ export function MaintenanceModule() {
     }
 
     return result;
-  }, [forms, statusFilter, typeFilter, criticalityFilter, search, selectedYears, selectedContracts, companyFilteredContractIds, contractFilterOptions, sortKey, sortOrder, criticalityMap]);
+  }, [forms, filters, companyFilteredContractIds, contractFilterOptions, sortKey, sortOrder, criticalityMap]);
 
   const totalForms = filtered.length;
   const enProceso = filtered.filter(f => f.status === "proceso").length;
   const solucionados = filtered.filter(f => f.status === "solucionado").length;
 
-  // Criticality cards: count "En Proceso" per category across ALL forms (not filtered)
   const criticalityCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     criticalityCategories.forEach(c => { counts[c.id] = 0; });
@@ -287,14 +365,13 @@ export function MaintenanceModule() {
   }, [forms, criticalityCategories]);
 
   const handleCriticalityCardClick = (catId: string) => {
-    if (criticalityFilter === catId) {
-      // Toggle off
-      setStatusFilter("all");
-      setCriticalityFilter("all");
-    } else {
-      setStatusFilter("proceso");
-      setCriticalityFilter(catId);
-    }
+    startTransition(() => {
+      if (filters.criticalityFilter === catId) {
+        setFilters(prev => ({ ...prev, statusFilter: "all", criticalityFilter: "all" }));
+      } else {
+        setFilters(prev => ({ ...prev, statusFilter: "proceso", criticalityFilter: catId }));
+      }
+    });
   };
 
   const handleCriticalityChange = async (formId: string, val: string) => {
@@ -304,7 +381,11 @@ export function MaintenanceModule() {
       .update({ criticality_category_id: newVal })
       .eq("id", formId);
     if (error) { console.error(error); return; }
-    setForms(prev => prev.map(fm => fm.id === formId ? { ...fm, criticality_category_id: newVal } : fm));
+    setForms(prev => {
+      const updated = prev.map(fm => fm.id === formId ? { ...fm, criticality_category_id: newVal } : fm);
+      writeCache(CACHE_KEY_FORMS, updated);
+      return updated;
+    });
   };
 
   return (
@@ -338,7 +419,7 @@ export function MaintenanceModule() {
       {criticalityCategories.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
           {criticalityCategories.map(cat => {
-            const isActive = criticalityFilter === cat.id;
+            const isActive = filters.criticalityFilter === cat.id;
             return (
               <Card
                 key={cat.id}
@@ -374,7 +455,7 @@ export function MaintenanceModule() {
           <Label className="text-xs text-muted-foreground">Buscar</Label>
           <div className="relative">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="N° FORM, contrato, descripción..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8" />
+            <Input placeholder="N° FORM, contrato, descripción..." value={filters.search} onChange={e => updateFilter("search", e.target.value)} className="pl-8" />
           </div>
         </div>
         <div>
@@ -383,7 +464,7 @@ export function MaintenanceModule() {
             <PopoverTrigger asChild>
               <Button variant="outline" className="w-40 justify-start gap-2">
                 <CalendarDays className="h-4 w-4" />
-                {selectedYears.length === 0 ? "Todos" : [...selectedYears].sort((a,b) => b-a).join(", ")}
+                {filters.selectedYears.length === 0 ? "Todos" : [...filters.selectedYears].sort((a,b) => b-a).join(", ")}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-48 p-2">
@@ -391,14 +472,14 @@ export function MaintenanceModule() {
                 {availableYears.map(year => (
                   <label key={year} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent cursor-pointer text-sm">
                     <Checkbox
-                      checked={selectedYears.includes(year)}
+                      checked={filters.selectedYears.includes(year)}
                       onCheckedChange={() => toggleYear(year)}
                     />
                     {year}
                   </label>
                 ))}
-                {selectedYears.length > 0 && (
-                  <Button variant="ghost" size="sm" className="w-full mt-1 text-xs" onClick={() => setSelectedYears([])}>
+                {filters.selectedYears.length > 0 && (
+                  <Button variant="ghost" size="sm" className="w-full mt-1 text-xs" onClick={() => updateFilter("selectedYears", [])}>
                     Limpiar
                   </Button>
                 )}
@@ -412,7 +493,7 @@ export function MaintenanceModule() {
             <PopoverTrigger asChild>
               <Button variant="outline" className="w-48 justify-start gap-2 truncate">
                 <ListFilter className="h-4 w-4 shrink-0" />
-                <span className="truncate">{selectedContracts.length === 0 ? "Todos" : `${selectedContracts.length} seleccionados`}</span>
+                <span className="truncate">{filters.selectedContracts.length === 0 ? "Todos" : `${filters.selectedContracts.length} seleccionados`}</span>
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-64 p-2">
@@ -421,16 +502,16 @@ export function MaintenanceModule() {
                   <Search className="absolute left-2 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                   <Input
                     placeholder="Buscar contrato..."
-                    value={contractSearch}
-                    onChange={e => setContractSearch(e.target.value)}
+                    value={filters.contractSearch}
+                    onChange={e => updateFilter("contractSearch", e.target.value)}
                     className="pl-7 h-8 text-sm"
                   />
                 </div>
                 <div className="flex gap-1">
-                  <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setSelectedContracts(filteredContractOptions.map(o => o.key))}>
+                  <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => updateFilter("selectedContracts", filteredContractOptions.map(o => o.key))}>
                     Todos
                   </Button>
-                  <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => setSelectedContracts([])}>
+                  <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => updateFilter("selectedContracts", [])}>
                     Ninguno
                   </Button>
                 </div>
@@ -438,7 +519,7 @@ export function MaintenanceModule() {
                   {filteredContractOptions.map(opt => (
                       <label key={opt.key} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent cursor-pointer text-sm">
                         <Checkbox
-                          checked={selectedContracts.includes(opt.key)}
+                          checked={filters.selectedContracts.includes(opt.key)}
                           onCheckedChange={() => toggleContract(opt.key)}
                         />
                         <CompanyLogo companyNames={opt.companyNames} size="sm" className="h-4 w-4" />
@@ -455,7 +536,7 @@ export function MaintenanceModule() {
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Empresa</Label>
-          <Select value={companyFilter} onValueChange={setCompanyFilter}>
+          <Select value={filters.companyFilter} onValueChange={v => updateFilter("companyFilter", v)}>
             <SelectTrigger className="w-40"><SelectValue placeholder="Empresa" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todas</SelectItem>
@@ -467,7 +548,7 @@ export function MaintenanceModule() {
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Estado</Label>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select value={filters.statusFilter} onValueChange={v => updateFilter("statusFilter", v)}>
             <SelectTrigger className="w-40"><SelectValue placeholder="Estado" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
@@ -478,7 +559,7 @@ export function MaintenanceModule() {
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Tipo</Label>
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <Select value={filters.typeFilter} onValueChange={v => updateFilter("typeFilter", v)}>
             <SelectTrigger className="w-40"><SelectValue placeholder="Tipo" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
@@ -493,7 +574,7 @@ export function MaintenanceModule() {
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Criticidad</Label>
-          <Select value={criticalityFilter} onValueChange={setCriticalityFilter}>
+          <Select value={filters.criticalityFilter} onValueChange={v => updateFilter("criticalityFilter", v)}>
             <SelectTrigger className="w-40"><SelectValue placeholder="Criticidad" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todas</SelectItem>
@@ -519,14 +600,9 @@ export function MaintenanceModule() {
           variant="outline"
           className="gap-2 text-destructive border-destructive/30 hover:bg-destructive/10"
           onClick={() => {
-            setSearch("");
-            setStatusFilter("all");
-            setTypeFilter("all");
-            setCriticalityFilter("all");
-            setSelectedYears([]);
-            setSelectedContracts([]);
-            setCompanyFilter("all");
-            setContractSearch("");
+            startTransition(() => {
+              setFilters(DEFAULT_FILTERS);
+            });
           }}
         >
           <XCircle className="h-4 w-4" /> Limpiar filtros
@@ -681,8 +757,8 @@ export function MaintenanceModule() {
         </CardContent>
       </Card>
 
-      <MaintenanceExcelUpload open={uploadOpen} onOpenChange={setUploadOpen} onSuccess={fetchForms} />
-      <MaintenanceEditDialog form={editForm} open={!!editForm} onOpenChange={v => { if (!v) setEditForm(null); }} onSuccess={fetchForms} />
+      <MaintenanceExcelUpload open={uploadOpen} onOpenChange={setUploadOpen} onSuccess={handleDataChanged} />
+      <MaintenanceEditDialog form={editForm} open={!!editForm} onOpenChange={v => { if (!v) setEditForm(null); }} onSuccess={handleDataChanged} />
     </div>
   );
 }

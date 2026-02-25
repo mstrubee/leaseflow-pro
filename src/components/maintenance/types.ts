@@ -84,6 +84,9 @@ export interface ParsedMaintenanceRow {
   additional_comments: string | null;
   evidence_links: string[];
   ambiguousCandidates?: { id: string; name: string }[];
+  existingCriticalityId?: string | null;
+  existingCriticalityName?: string | null;
+  existingCriticalityColor?: string | null;
   errors: string[];
   warnings: string[];
 }
