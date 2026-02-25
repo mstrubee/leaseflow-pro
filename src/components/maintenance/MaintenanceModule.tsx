@@ -840,8 +840,7 @@ export function MaintenanceModule() {
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">Sub Estado</Label>
+        <div>
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" className="w-40 justify-between text-sm font-normal">
@@ -850,6 +849,7 @@ export function MaintenanceModule() {
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-52 p-1" align="start">
+              <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Sub Estado</p>
               <TooltipProvider delayDuration={100}>
                 <div className="flex flex-col gap-0.5 max-h-64 overflow-y-auto">
                   <Button
