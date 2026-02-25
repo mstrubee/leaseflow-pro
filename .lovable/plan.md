@@ -1,49 +1,59 @@
 
+## Plan: Columna "Criticidad" en Mantenciones + Mejoras de visualizacion
 
-## Mejoras al Dashboard CAPEX: Desglose Autorizado/No Autorizado + Cards por Clasificacion
+### 1. Crear tabla `maintenance_criticality_categories` en la base de datos
 
-### 1. Lineas colapsadas: mostrar Autorizado y No Autorizado
-
-Actualmente cada linea colapsada solo muestra el total en UF. Se modificara para mostrar dos valores diferenciados:
-
-- **Autorizado** (verde): monto total de lineas con status "autorizado"
-- **No Autorizado** (amarillo): monto total de lineas con status "no_autorizado"
-
-Ejemplo visual en la fila colapsada:
-```text
-Local Centro Sur          Autorizado: 120,50 UF  |  No Autorizado: 45,30 UF
-```
-
-**Cambios tecnicos:**
-- Modificar la query `loadBudgets` en `CapexDashboard.tsx` para tambien cargar las `budget_lines` agrupadas por budget, calculando totales autorizados y no autorizados por contrato
-- Guardar en estado adicional: `capexAuthorized` y `capexUnauthorized` por contract_id
-- Actualizar el area derecha del `CollapsibleTrigger` para mostrar ambos montos con colores diferenciados (verde para autorizado, amarillo para no autorizado)
-
-### 2. Cards de resumen por clasificacion (Nuevo vs Reemplazo)
-
-Se agregaran dos Cards nuevas al area de resumen, basadas en el campo `clasificacion` de la tabla `contracts` (valores: `"nuevo"` y `"reemplazo"`).
+Nueva tabla para que el Admin defina las categorias de criticidad:
 
 ```text
-+--------------------+--------------------+--------------------+
-| Total CAPEX (UF)   | Total CAPEX (CLP)  | Locales con CAPEX  |
-+--------------------+--------------------+--------------------+
-| CAPEX Nuevos       | CAPEX Reemplazo    |
-+--------------------+--------------------+
+maintenance_criticality_categories
+- id (uuid, PK)
+- name (text, NOT NULL) -- ej: "Alta", "Media", "Baja"
+- code (text, UNIQUE, NOT NULL)
+- description (text, nullable)
+- color (text, nullable) -- color hex para el badge, ej: "#ef4444"
+- display_order (integer, default 0)
+- is_active (boolean, default true)
+- created_at / updated_at (timestamps)
 ```
 
-**Cambios tecnicos:**
-- Ampliar la query `loadBudgets` para incluir `contracts(name, clasificacion)` en el select
-- Agregar `clasificacion` a la interfaz `ContractBudget`
-- Calcular totales filtrados por clasificacion:
-  - `totalNuevoUF`: suma de amount_uf donde clasificacion === "nuevo"
-  - `totalReemplazoUF`: suma donde clasificacion === "reemplazo"
-- Renderizar dos Cards nuevas debajo de las existentes mostrando UF y CLP para cada tipo
+Agregar columna `criticality_category_id` (uuid, nullable, FK) a la tabla `maintenance_forms`.
 
-### Archivo a modificar
+Politicas RLS: lectura para usuarios autenticados, escritura para admins.
 
-**`src/pages/CapexDashboard.tsx`**:
-- Ampliar interfaz `ContractBudget` con `clasificacion`
-- Modificar `loadBudgets`: traer clasificacion del contrato + budget_lines para calcular autorizados/no autorizados
-- Nuevo estado: `authorizedByContract` y `unauthorizedByContract` (Record de contract_id a monto UF)
-- Agregar 2 Cards de resumen (Nuevos / Reemplazo) en grid debajo de las actuales
-- Modificar la zona derecha del header colapsable: mostrar "Autorizado: X UF" en verde y "No Autorizado: Y UF" en amarillo, en lugar del total unico
+### 2. Panel de Administracion - Gestor de Criticidades
+
+Crear componente `MaintenanceCriticalityManager` similar al patron existente de `AlertCategoryManager`:
+- CRUD de categorias (nombre, codigo, descripcion, color)
+- Tabla con nombre, codigo, descripcion, color badge preview, acciones (editar/eliminar)
+- Agregar como `CollapsibleCard` en `AdminPanel.tsx` despues de "Estados Comite GP"
+
+### 3. Columna "Criticidad" en la tabla de Mantenciones
+
+En `MaintenanceModule.tsx`:
+- Cargar las categorias de criticidad desde la nueva tabla
+- Agregar columna "Criticidad" en el header de la tabla (despues de "Sub Estado")
+- Cada celda muestra un `Select` inline que permite al usuario elegir la criticidad
+- Al cambiar, se actualiza `maintenance_forms.criticality_category_id` directamente
+- Se muestra como Badge con el color definido por el admin
+
+### 4. Ampliar el ancho del modulo en 25%
+
+En `MaintenanceDashboard.tsx`:
+- Cambiar `max-w-[1536px]` a `max-w-[1920px]` (1536 * 1.25 = 1920) en el header y main
+
+### Detalle tecnico
+
+**Archivos a crear:**
+- `src/components/admin/MaintenanceCriticalityManager.tsx`
+
+**Archivos a modificar:**
+- `src/pages/MaintenanceDashboard.tsx` - ampliar max-width
+- `src/components/maintenance/MaintenanceModule.tsx` - agregar columna criticidad con select inline
+- `src/components/maintenance/types.ts` - agregar `criticality_category_id` al tipo
+- `src/pages/AdminPanel.tsx` - agregar seccion de criticidades
+
+**Migracion SQL:**
+- Crear tabla `maintenance_criticality_categories`
+- Agregar columna `criticality_category_id` a `maintenance_forms`
+- RLS policies
