@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Search, DollarSign, Building2, RefreshCw } from "lucide-react";
+import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck } from "lucide-react";
+import { toast } from "sonner";
 import { BudgetModule } from "@/components/budget/BudgetModule";
 import { BudgetProvider } from "@/components/budget/BudgetContext";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
@@ -192,8 +193,8 @@ export default function CapexDashboard() {
   const totalCapexUF = filteredBudgets.reduce((sum, b) => sum + b.amount_uf, 0);
 
   // Totals by clasificacion
-  const { totalNuevoUF, totalReemplazoUF } = React.useMemo(() => {
-    let nuevo = 0, reemplazo = 0;
+  const { totalNuevoUF, totalReemplazoUF, totalRegularizacionUF } = React.useMemo(() => {
+    let nuevo = 0, reemplazo = 0, regularizacion = 0;
     const seen = new Set<string>();
     filteredBudgets.forEach(b => {
       if (seen.has(b.contract_id)) return;
@@ -202,9 +203,23 @@ export default function CapexDashboard() {
       const effectiveUF = breakdown ? (breakdown.authorized + breakdown.unauthorized) : b.amount_uf;
       if (b.clasificacion === "nuevo") nuevo += effectiveUF;
       else if (b.clasificacion === "reemplazo") reemplazo += effectiveUF;
+      else if (b.clasificacion === "regularizacion") regularizacion += effectiveUF;
     });
-    return { totalNuevoUF: nuevo, totalReemplazoUF: reemplazo };
+    return { totalNuevoUF: nuevo, totalReemplazoUF: reemplazo, totalRegularizacionUF: regularizacion };
   }, [filteredBudgets, authByContract]);
+
+  const handleClasificacionChange = async (contractId: string, value: string) => {
+    const { error } = await supabase
+      .from("contracts")
+      .update({ clasificacion: value })
+      .eq("id", contractId);
+    if (error) {
+      toast.error("Error al actualizar clasificación");
+      return;
+    }
+    setBudgets(prev => prev.map(b => b.contract_id === contractId ? { ...b, clasificacion: value } : b));
+    toast.success("Clasificación actualizada");
+  };
 
   if (authLoading || loading) {
     return (
@@ -261,7 +276,7 @@ export default function CapexDashboard() {
         </div>
 
         {/* Summary Cards Row 2: Clasificacion */}
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
               <Building2 className="h-8 w-8 text-chart-1" />
@@ -279,6 +294,16 @@ export default function CapexDashboard() {
                 <p className="text-xs text-muted-foreground">CAPEX Reemplazo</p>
                 <p className="text-lg font-bold">{fmtUF(totalReemplazoUF)} UF</p>
                 <p className="text-xs text-muted-foreground">{formatCLP(totalReemplazoUF * (ufValue || 0))}</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              <FileCheck className="h-8 w-8 text-chart-3" />
+              <div>
+                <p className="text-xs text-muted-foreground">CAPEX Regularización</p>
+                <p className="text-lg font-bold">{fmtUF(totalRegularizacionUF)} UF</p>
+                <p className="text-xs text-muted-foreground">{formatCLP(totalRegularizacionUF * (ufValue || 0))}</p>
               </div>
             </CardContent>
           </Card>
@@ -344,11 +369,21 @@ export default function CapexDashboard() {
                           <div className="flex items-center gap-3">
                             <ChevronDown className={`h-5 w-5 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
                             <CardTitle className="text-base">{contractName}</CardTitle>
-                            {clasificacion && (
-                              <Badge variant={clasificacion === "nuevo" ? "default" : "secondary"} className="text-xs">
-                                {clasificacion === "nuevo" ? "Nuevo" : clasificacion === "reemplazo" ? "Reemplazo" : clasificacion}
-                              </Badge>
-                            )}
+                            <div onClick={(e) => e.stopPropagation()}>
+                              <Select
+                                value={clasificacion || ""}
+                                onValueChange={(val) => handleClasificacionChange(contractId, val)}
+                              >
+                                <SelectTrigger className="h-7 w-[140px] text-xs">
+                                  <SelectValue placeholder="Clasificar..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="nuevo">Nuevo</SelectItem>
+                                  <SelectItem value="reemplazo">Reemplazo</SelectItem>
+                                  <SelectItem value="regularizacion">Regularización</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
                           <div className="flex items-center gap-4 text-sm">
                             {breakdown.authorized > 0 && (
