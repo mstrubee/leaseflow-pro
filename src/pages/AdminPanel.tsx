@@ -24,6 +24,7 @@ import { LogoManager } from "@/components/admin/LogoManager";
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { ComiteGPStatusManager } from "@/components/admin/ComiteGPStatusManager";
 import { OrgChartManager } from "@/components/admin/OrgChartManager";
+import { MaintenanceCriticalityManager } from "@/components/admin/MaintenanceCriticalityManager";
 interface Profile {
   id: string;
   email: string;
@@ -925,6 +926,14 @@ const AdminPanel = () => {
           defaultOpen={false}
         >
           <ComiteGPStatusManager />
+        </CollapsibleCard>
+
+        {/* Criticidad de Mantenciones */}
+        <CollapsibleCard
+          title="Criticidad de Mantenciones"
+          description="Define las categorías de criticidad para los formularios de mantención"
+        >
+          <MaintenanceCriticalityManager />
         </CollapsibleCard>
 
         {/* Storage Monitor - Admin only */}

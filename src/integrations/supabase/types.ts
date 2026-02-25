@@ -2532,6 +2532,42 @@ export type Database = {
           },
         ]
       }
+      maintenance_criticality_categories: {
+        Row: {
+          code: string
+          color: string | null
+          created_at: string
+          description: string | null
+          display_order: number
+          id: string
+          is_active: boolean
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       maintenance_forms: {
         Row: {
           additional_comments: string | null
@@ -2541,6 +2577,7 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           created_date: string | null
+          criticality_category_id: string | null
           deleted_at: string | null
           electrical_description: string | null
           evidence_links: string[] | null
@@ -2574,6 +2611,7 @@ export type Database = {
           created_at?: string | null
           created_by?: string | null
           created_date?: string | null
+          criticality_category_id?: string | null
           deleted_at?: string | null
           electrical_description?: string | null
           evidence_links?: string[] | null
@@ -2607,6 +2645,7 @@ export type Database = {
           created_at?: string | null
           created_by?: string | null
           created_date?: string | null
+          criticality_category_id?: string | null
           deleted_at?: string | null
           electrical_description?: string | null
           evidence_links?: string[] | null
@@ -2638,6 +2677,13 @@ export type Database = {
             columns: ["contract_id"]
             isOneToOne: false
             referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_forms_criticality_category_id_fkey"
+            columns: ["criticality_category_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_criticality_categories"
             referencedColumns: ["id"]
           },
           {

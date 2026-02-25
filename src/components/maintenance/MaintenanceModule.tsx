@@ -19,6 +19,12 @@ import { SortableTableHead, SortOrder } from "@/components/contracts/SortableTab
 import { exportMaintenanceExcel, exportMaintenancePDF } from "./maintenanceExport";
 import { useNavigate } from "react-router-dom";
 
+interface CriticalityCategory {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
 export function MaintenanceModule() {
   const navigate = useNavigate();
   const [forms, setForms] = useState<MaintenanceForm[]>([]);
@@ -35,6 +41,7 @@ export function MaintenanceModule() {
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [contractCompanyMap, setContractCompanyMap] = useState<Record<string, string[]>>({});
   const [companyFilter, setCompanyFilter] = useState("all");
+  const [criticalityCategories, setCriticalityCategories] = useState<CriticalityCategory[]>([]);
 
   const fetchForms = async () => {
     setLoading(true);
@@ -73,6 +80,19 @@ export function MaintenanceModule() {
   };
 
   useEffect(() => { fetchForms(); }, []);
+
+  // Fetch criticality categories
+  useEffect(() => {
+    const fetchCriticalities = async () => {
+      const { data } = await (supabase as any)
+        .from("maintenance_criticality_categories")
+        .select("id, name, color")
+        .eq("is_active", true)
+        .order("display_order");
+      if (data) setCriticalityCategories(data);
+    };
+    fetchCriticalities();
+  }, []);
 
   // Fetch contract-company mapping for logos (keyed by contract_id)
   useEffect(() => {
@@ -419,6 +439,7 @@ export function MaintenanceModule() {
                   <SortableTableHead label="N° FORM" sortKey="form_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-24" />
                   <SortableTableHead label="Estado" sortKey="status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
                   <SortableTableHead label="Sub Estado" sortKey="sub_status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
+                  <TableHead className="w-36">Criticidad</TableHead>
                   <SortableTableHead label="Fecha" sortKey="created_date" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
                   <SortableTableHead label="Contrato" sortKey="contract_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} />
                   <TableHead className="w-28">Tipo</TableHead>
@@ -432,9 +453,9 @@ export function MaintenanceModule() {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={12} className="text-center py-8 text-muted-foreground">Cargando...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={13} className="text-center py-8 text-muted-foreground">Cargando...</TableCell></TableRow>
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={12} className="text-center py-8 text-muted-foreground">No hay FORMs registrados</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={13} className="text-center py-8 text-muted-foreground">No hay FORMs registrados</TableCell></TableRow>
                 ) : (
                   filtered.map(f => (
                     <TableRow key={f.id}>
@@ -448,6 +469,46 @@ export function MaintenanceModule() {
                         <Badge variant="outline" className="text-xs">
                           {SUB_STATUS_LABELS[(f.sub_status as SubStatus)] || f.sub_status || "Solicitado"}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const cat = criticalityCategories.find(c => c.id === f.criticality_category_id);
+                          return (
+                            <Select
+                              value={f.criticality_category_id || "none"}
+                              onValueChange={async (val) => {
+                                const newVal = val === "none" ? null : val;
+                                const { error } = await (supabase as any)
+                                  .from("maintenance_forms")
+                                  .update({ criticality_category_id: newVal })
+                                  .eq("id", f.id);
+                                if (error) { console.error(error); return; }
+                                setForms(prev => prev.map(fm => fm.id === f.id ? { ...fm, criticality_category_id: newVal } : fm));
+                              }}
+                            >
+                              <SelectTrigger className="h-7 w-32 text-xs border-0 bg-transparent px-1">
+                                <SelectValue>
+                                  {cat ? (
+                                    <Badge className="text-xs" style={{ backgroundColor: cat.color || undefined, color: "#fff" }}>{cat.name}</Badge>
+                                  ) : (
+                                    <span className="text-muted-foreground">—</span>
+                                  )}
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">Sin criticidad</SelectItem>
+                                {criticalityCategories.map(c => (
+                                  <SelectItem key={c.id} value={c.id}>
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: c.color || "#6b7280" }} />
+                                      {c.name}
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell className="text-xs">{f.created_date || "-"}</TableCell>
                       <TableCell className="text-xs">
