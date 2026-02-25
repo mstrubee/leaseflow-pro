@@ -722,17 +722,19 @@ export function MaintenanceModule() {
         <Button variant="outline" onClick={() => setExcelDialog(true)} disabled={filtered.length === 0} className="gap-2">
           <Download className="h-4 w-4" /> Descargar Excel
         </Button>
-        <Button
-          variant="outline"
-          className="gap-2 text-destructive border-destructive/30 hover:bg-destructive/10"
-          onClick={() => {
-            startTransition(() => {
-              setFilters(DEFAULT_FILTERS);
-            });
-          }}
-        >
-          <XCircle className="h-4 w-4" /> Limpiar filtros
-        </Button>
+        {JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS) && (
+          <Button
+            variant="outline"
+            className="gap-2 text-destructive border-destructive/30 hover:bg-destructive/10"
+            onClick={() => {
+              startTransition(() => {
+                setFilters(DEFAULT_FILTERS);
+              });
+            }}
+          >
+            <XCircle className="h-4 w-4" /> Limpiar filtros
+          </Button>
+        )}
       </div>
 
       {/* Table */}
