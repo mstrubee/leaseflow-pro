@@ -58,14 +58,14 @@ export function useMaintenanceSubStatuses() {
 
   const subStatusLabels = useMemo(() => {
     const map: Record<string, string> = {};
-    subStatuses.forEach(s => { map[s.name] = s.label; });
+    subStatuses.forEach(s => { map[s.name.toLowerCase()] = s.label; });
     return map;
   }, [subStatuses]);
 
   const subStatusInfo = useMemo(() => {
     const map: Record<string, { description: string; responsible: string }> = {};
     subStatuses.forEach(s => {
-      map[s.name] = { description: s.description || "", responsible: s.responsible || "" };
+      map[s.name.toLowerCase()] = { description: s.description || "", responsible: s.responsible || "" };
     });
     return map;
   }, [subStatuses]);
