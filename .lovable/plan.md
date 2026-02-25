@@ -1,30 +1,34 @@
 
 
-## Fix: Sub-estado "Clasificado" muestra clave en vez de label
+## Selector manual de clasificación en CAPEX Dashboard
 
-### Problema raiz
-La tabla `maintenance_sub_statuses` tiene `name = 'Clasificación_de_Criticidad'` (con tilde), pero los formularios almacenan `sub_status = 'Clasificacion_de_Criticidad'` (sin tilde). Al buscar el label con `.toLowerCase()`, las claves no coinciden y el badge muestra la clave cruda.
+### Que se hará
+Cuando un contrato no tenga clasificación asignada (o se quiera cambiar), mostrar un selector inline en el header del contrato dentro del listado CAPEX, con las opciones: **Nuevo**, **Reemplazo**, **Regularización**. Al seleccionar, se actualiza directamente en la base de datos.
 
-### Solucion
+### Cambios
 
-**1. Normalizar la clave en la base de datos (migracion SQL)**
+**Archivo: `src/pages/CapexDashboard.tsx`**
 
-Actualizar el nombre en `maintenance_sub_statuses` para que no tenga tilde, asi coincide con lo que guardan los formularios:
+1. **Reemplazar el Badge estático por un selector interactivo** (líneas ~347-351):
+   - Si `clasificacion` ya tiene valor: mostrar un `Select` compacto con el valor actual pre-seleccionado
+   - Si no tiene valor: mostrar un `Select` con placeholder "Clasificar..."
+   - Opciones: `nuevo` (Nuevo), `reemplazo` (Reemplazo), `regularizacion` (Regularización)
+   - El Select usará `e.stopPropagation()` en el trigger para evitar que abra/cierre el collapsible al hacer clic
 
-```sql
-UPDATE maintenance_sub_statuses
-SET name = 'Clasificacion_de_Criticidad'
-WHERE name = 'Clasificación_de_Criticidad';
-```
+2. **Agregar función `handleClasificacionChange`**:
+   - Recibe `contractId` y el nuevo valor de clasificación
+   - Actualiza `contracts.clasificacion` en la base de datos via `supabase.from('contracts').update({ clasificacion: value }).eq('id', contractId)`
+   - Actualiza el estado local `budgets` para reflejar el cambio sin recargar todo
+   - Muestra toast de confirmación
 
-**2. Estilo del badge para color amarillo (MaintenanceModule.tsx)**
+3. **Agregar "Regularización" a los totales del summary** (líneas ~195-206):
+   - Agregar variable `totalRegularizacionUF` al memo existente
+   - Agregar una tercera card en la fila de resumen mostrando el total de Regularización
+   - Cambiar el grid de `md:grid-cols-2` a `md:grid-cols-3`
 
-Actualmente el badge aplica `borderColor` y `color` con el valor del color (ej. `"yellow"`). Para lograr **letras negras con borde amarillo**, cambiar la logica de estilo en la linea ~136:
+4. **Estilo del badge/select**: El Select será compacto (altura reducida, sin borde excesivo) para integrarse visualmente con el header del contrato.
 
-- Cuando `currentColor` es `"yellow"`: aplicar `borderColor: '#eab308'` (amarillo visible), `color: 'black'`
-- Para otros colores: mantener el comportamiento actual
-
-### Detalles tecnicos
-
-- **Archivo**: `src/components/maintenance/MaintenanceModule.tsx` (linea ~133-138, SubStatusCell)
-- **Migracion SQL**: Normalizar el `name` en `maintenance_sub_statuses` para que coincida con los valores almacenados en `maintenance_forms`
+### Detalles técnicos
+- No se requieren cambios en la base de datos: el campo `clasificacion` ya existe como `string | null` en la tabla `contracts`
+- Se reutilizará el componente `Select` existente de la UI
+- El valor `"regularizacion"` se almacenará en minúsculas sin tilde, consistente con los valores existentes (`"nuevo"`, `"reemplazo"`)
