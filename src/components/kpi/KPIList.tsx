@@ -6,10 +6,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Pencil, Trash2, Search, Filter, BarChart3, Download, ChevronRight, Users, Building2, Target, FileText, FileSpreadsheet } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Plus, Pencil, Trash2, Search, Filter, BarChart3, Download, ChevronRight, Users, Building2, Target, FileText, FileSpreadsheet, FileDown } from "lucide-react";
 import { KPI, KPICategory } from "@/hooks/useKPI";
 import { generateKPIListPDF, generateSelectedKPIsPDF } from "./KPIPDFExport";
 import { generateSelectedKPIsExcel } from "./KPIExcelExport";
+import { exportKPIDetailExcel, exportKPIDetailPDF, exportKPIDetailWord } from "./KPIDetailExport";
 
 interface KPIListProps {
   kpis: KPI[];
@@ -142,10 +144,25 @@ export function KPIList({
               </Button>
             </>
           )}
-          <Button variant="outline" onClick={handleDownloadPDF} className="gap-2">
-            <Download className="h-4 w-4" />
-            Descargar PDF
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <FileDown className="h-4 w-4" />
+                Descargar Detalle
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => exportKPIDetailExcel(kpis, categories)}>
+                <FileSpreadsheet className="h-4 w-4 mr-2" /> Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportKPIDetailWord(kpis, categories)}>
+                <FileText className="h-4 w-4 mr-2" /> Word
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportKPIDetailPDF(kpis, categories)}>
+                <FileDown className="h-4 w-4 mr-2" /> PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button onClick={onCreateKPI}>
             <Plus className="h-4 w-4 mr-2" />
             Nuevo KPI
