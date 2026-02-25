@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { MaintenanceForm, detectMaintenanceType, SUB_STATUS_LABELS, SubStatus } from "./types";
+import { MaintenanceForm, detectMaintenanceType } from "./types";
 import logosHeader from "@/assets/logos-header.png";
 
 export function exportMaintenanceExcel(
@@ -9,6 +9,7 @@ export function exportMaintenanceExcel(
   fileName = "mantenciones.xlsx",
   criticalityMap?: Map<string, string>,
   includeRevisado?: boolean,
+  subStatusLabels?: Record<string, string>,
 ) {
   const data = forms.map(f => {
     const base: Record<string, string> = {
@@ -29,7 +30,7 @@ export function exportMaintenanceExcel(
     }
     if (includeRevisado) {
       const subStatus = f.sub_status || "solicitado";
-      base["Sub Estado"] = subStatus === "revisado" ? "Revisado" : (subStatus === "solicitado" ? "Solicitado" : subStatus);
+      base["Sub Estado"] = (subStatusLabels && subStatusLabels[subStatus]) || subStatus;
     }
     return base;
   });
@@ -96,6 +97,7 @@ export async function exportDailyFormsPDF(
   forms: MaintenanceForm[],
   dateLabel: string,
   criticalityMap?: Map<string, string>,
+  subStatusLabels?: Record<string, string>,
 ) {
   const doc = new jsPDF({ orientation: "landscape" });
 
@@ -126,7 +128,7 @@ export async function exportDailyFormsPDF(
 
   const head = [["N°", "Fecha", "Estado", "Sub Estado", "Local", "Tipo", "Criticidad", "Descripción General", "Req. Eléctrico", "Req. Obra Civil", "Req. Climatización", "Req. Activos Fijos", "Comentarios"]];
   const body = forms.map(f => {
-    const subLabel = SUB_STATUS_LABELS[(f.sub_status || "solicitado") as SubStatus] || f.sub_status || "";
+    const subLabel = (subStatusLabels && subStatusLabels[f.sub_status || "solicitado"]) || f.sub_status || "Solicitado";
     const critName = (f.criticality_category_id && criticalityMap?.get(f.criticality_category_id)) || "";
     return [
       f.form_number,

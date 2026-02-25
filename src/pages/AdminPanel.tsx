@@ -25,6 +25,7 @@ import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { ComiteGPStatusManager } from "@/components/admin/ComiteGPStatusManager";
 import { OrgChartManager } from "@/components/admin/OrgChartManager";
 import { MaintenanceCriticalityManager } from "@/components/admin/MaintenanceCriticalityManager";
+import { MaintenanceSubStatusManager } from "@/components/admin/MaintenanceSubStatusManager";
 interface Profile {
   id: string;
   email: string;
@@ -926,6 +927,15 @@ const AdminPanel = () => {
           defaultOpen={false}
         >
           <ComiteGPStatusManager />
+        </CollapsibleCard>
+
+        {/* Sub Estados de Mantenciones */}
+        <CollapsibleCard
+          title="Sub Estados de Mantenciones"
+          description="Define los sub-estados del flujo de trabajo de mantenciones y su orden de avance"
+          defaultOpen={false}
+        >
+          <MaintenanceSubStatusManager />
         </CollapsibleCard>
 
         {/* Criticidad de Mantenciones */}

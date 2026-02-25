@@ -10,7 +10,8 @@ import { Download, CalendarDays, Clock, Timer, TrendingUp, Wrench, FileText, Arr
 import { supabase } from "@/integrations/supabase/client";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/hooks/use-toast";
-import { MaintenanceForm, detectMaintenanceType, SUB_STATUS_LABELS, SubStatus } from "./types";
+import { MaintenanceForm, detectMaintenanceType } from "./types";
+import { useMaintenanceSubStatuses } from "@/hooks/useMaintenanceSubStatuses";
 import { exportMaintenancePDF } from "./maintenanceExport";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import jsPDF from "jspdf";
@@ -41,6 +42,7 @@ interface ResolutionStats {
 }
 
 export function MaintenanceReports() {
+  const { subStatusLabels } = useMaintenanceSubStatuses();
   const [forms, setForms] = useState<MaintenanceForm[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedYears, setSelectedYears] = useState<number[]>([new Date().getFullYear()]);
@@ -663,7 +665,7 @@ export function MaintenanceReports() {
                       {selectedFormDetail.status === "proceso" ? "En Proceso" : selectedFormDetail.status === "solucionado" ? "Solucionado" : selectedFormDetail.status}
                     </Badge>
                   </div>
-                  <div><span className="text-muted-foreground">Sub-Estado:</span> <span className="font-medium">{SUB_STATUS_LABELS[selectedFormDetail.sub_status as SubStatus] || selectedFormDetail.sub_status || "-"}</span></div>
+                  <div><span className="text-muted-foreground">Sub-Estado:</span> <span className="font-medium">{subStatusLabels[selectedFormDetail.sub_status] || selectedFormDetail.sub_status || "-"}</span></div>
                   <div><span className="text-muted-foreground">Tipo:</span> <span className="font-medium">{detectMaintenanceType(selectedFormDetail)}</span></div>
                   <div><span className="text-muted-foreground">Fecha Creación:</span> <span className="font-medium">{selectedFormDetail.created_date ? new Date(selectedFormDetail.created_date).toLocaleDateString("es-CL") : "-"}</span></div>
                   <div><span className="text-muted-foreground">Fecha Resolución:</span> <span className="font-medium">{selectedFormDetail.resolution_date ? new Date(selectedFormDetail.resolution_date).toLocaleDateString("es-CL") : "-"}</span></div>
@@ -705,7 +707,7 @@ export function MaintenanceReports() {
             </>
           ) : (() => {
             const STATUS_OPTIONS = [{ value: "proceso", label: "En Proceso" }, { value: "solucionado", label: "Solucionado" }];
-            const SUB_STATUS_OPTIONS = Object.entries(SUB_STATUS_LABELS).map(([k, v]) => ({ value: k, label: v }));
+            const SUB_STATUS_OPTIONS = Object.entries(subStatusLabels).map(([k, v]) => ({ value: k, label: v as string }));
             const dialogFilteredForms = filteredForms
               .filter(f => f.contract_name === selectedBarContract)
               .filter(f => dialogStatusFilter.length === 0 || dialogStatusFilter.includes(f.status))
@@ -722,10 +724,10 @@ export function MaintenanceReports() {
               doc.setFontSize(9); doc.setTextColor(100);
               const af: string[] = [];
               if (dialogStatusFilter.length > 0) af.push("Estado: " + dialogStatusFilter.map(s => STATUS_OPTIONS.find(o => o.value === s)?.label || s).join(", "));
-              if (dialogSubStatusFilter.length > 0) af.push("Sub-Estado: " + dialogSubStatusFilter.map(s => SUB_STATUS_LABELS[s as SubStatus] || s).join(", "));
+              if (dialogSubStatusFilter.length > 0) af.push("Sub-Estado: " + dialogSubStatusFilter.map(s => subStatusLabels[s] || s).join(", "));
               doc.text(dialogFilteredForms.length + " FORMs" + (af.length > 0 ? " | Filtros: " + af.join(" | ") : ""), 70, 24);
               doc.setTextColor(0);
-              autoTable(doc, { startY: 32, head: [["N° FORM", "Estado", "Sub-Estado", "Descripción", "Fecha Creación", "Fecha Resolución"]], body: dialogFilteredForms.map(f => [f.form_number, f.status === "proceso" ? "En Proceso" : f.status === "solucionado" ? "Solucionado" : f.status, SUB_STATUS_LABELS[f.sub_status as SubStatus] || f.sub_status || "-", (f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-").substring(0, 80), f.created_date ? new Date(f.created_date).toLocaleDateString("es-CL") : "-", f.resolution_date ? new Date(f.resolution_date).toLocaleDateString("es-CL") : "-"]), styles: { fontSize: 8, cellPadding: 2 }, headStyles: { fillColor: [220, 38, 38] } });
+              autoTable(doc, { startY: 32, head: [["N° FORM", "Estado", "Sub-Estado", "Descripción", "Fecha Creación", "Fecha Resolución"]], body: dialogFilteredForms.map(f => [f.form_number, f.status === "proceso" ? "En Proceso" : f.status === "solucionado" ? "Solucionado" : f.status, subStatusLabels[f.sub_status] || f.sub_status || "-", (f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-").substring(0, 80), f.created_date ? new Date(f.created_date).toLocaleDateString("es-CL") : "-", f.resolution_date ? new Date(f.resolution_date).toLocaleDateString("es-CL") : "-"]), styles: { fontSize: 8, cellPadding: 2 }, headStyles: { fillColor: [220, 38, 38] } });
               doc.save("FORMs_" + (selectedBarContract || "").replace(/\s+/g, "_") + ".pdf");
               toast({ title: "PDF generado", description: "El listado se descargó correctamente" });
             };
@@ -800,7 +802,7 @@ export function MaintenanceReports() {
                               {f.status === "proceso" ? "En Proceso" : f.status === "solucionado" ? "Solucionado" : f.status}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-xs">{SUB_STATUS_LABELS[f.sub_status as SubStatus] || f.sub_status?.replace(/_/g, " ") || "-"}</TableCell>
+                          <TableCell className="text-xs">{subStatusLabels[f.sub_status] || f.sub_status?.replace(/_/g, " ") || "-"}</TableCell>
                           <TableCell className="text-xs max-w-[200px] truncate">
                             {f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-"}
                           </TableCell>

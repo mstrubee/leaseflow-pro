@@ -2743,6 +2743,42 @@ export type Database = {
           },
         ]
       }
+      maintenance_sub_statuses: {
+        Row: {
+          color: string | null
+          created_at: string | null
+          description: string | null
+          display_order: number
+          id: string
+          is_active: boolean | null
+          label: string
+          name: string
+          responsible: string | null
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string | null
+          description?: string | null
+          display_order: number
+          id?: string
+          is_active?: boolean | null
+          label: string
+          name: string
+          responsible?: string | null
+        }
+        Update: {
+          color?: string | null
+          created_at?: string | null
+          description?: string | null
+          display_order?: number
+          id?: string
+          is_active?: boolean | null
+          label?: string
+          name?: string
+          responsible?: string | null
+        }
+        Relationships: []
+      }
       notice_ranges: {
         Row: {
           created_at: string

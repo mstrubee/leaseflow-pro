@@ -14,7 +14,8 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, A
 import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink, Shield, XCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { MaintenanceForm, detectMaintenanceType, SUB_STATUS_LABELS, SUB_STATUS_ORDER, SubStatus } from "./types";
+import { MaintenanceForm, detectMaintenanceType } from "./types";
+import { useMaintenanceSubStatuses } from "@/hooks/useMaintenanceSubStatuses";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { MaintenanceExcelUpload } from "./MaintenanceExcelUpload";
 import { MaintenanceEditDialog } from "./MaintenanceEditDialog";
@@ -86,6 +87,7 @@ function invalidateCache() {
 
 export function MaintenanceModule() {
   const navigate = useNavigate();
+  const { subStatuses, subStatusLabels, subStatusOrder, loading: subStatusLoading } = useMaintenanceSubStatuses();
   const [forms, setForms] = useState<MaintenanceForm[]>(() => readCache<MaintenanceForm[]>(CACHE_KEY_FORMS) || []);
   const [loading, setLoading] = useState(() => !readCache<MaintenanceForm[]>(CACHE_KEY_FORMS));
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
@@ -104,8 +106,6 @@ export function MaintenanceModule() {
   const [commentEditFormId, setCommentEditFormId] = useState<string | null>(null);
   const [commentEditText, setCommentEditText] = useState("");
   const [commentViewFormId, setCommentViewFormId] = useState<string | null>(null);
-  const [revisadoDialogOpen, setRevisadoDialogOpen] = useState(false);
-  const [pendingCommentSave, setPendingCommentSave] = useState<{ formId: string; text: string } | null>(null);
 
   // Date filter card state
   const [dateCardValue, setDateCardValue] = useState(() => format(new Date(), "yyyy-MM-dd"));
@@ -436,17 +436,17 @@ export function MaintenanceModule() {
   const handleCommentKeyDown = (e: React.KeyboardEvent, formId: string) => {
     if (e.ctrlKey && e.key === "Enter") {
       e.preventDefault();
-      setPendingCommentSave({ formId, text: commentEditText });
-      setRevisadoDialogOpen(true);
+      saveComment(formId, commentEditText);
     }
   };
 
-  const saveComment = async (markAsRevisado: boolean) => {
-    if (!pendingCommentSave) return;
-    const { formId, text } = pendingCommentSave;
+  const saveComment = async (formId: string, text: string) => {
+    const form = forms.find(f => f.id === formId);
+    const markAsRevisado = form && form.sub_status === "solicitado";
     const updates: any = { additional_comments: text || null, updated_at: new Date().toISOString() };
     if (markAsRevisado) {
       updates.sub_status = 'revisado';
+      updates.status = 'proceso';
     }
     const { error } = await (supabase as any)
       .from("maintenance_forms")
@@ -457,7 +457,7 @@ export function MaintenanceModule() {
       toast({ title: "Error", description: "No se pudo guardar el comentario", variant: "destructive" });
     } else {
       setForms(prev => {
-        const updated = prev.map(fm => fm.id === formId ? { ...fm, additional_comments: text || null, ...(markAsRevisado ? { sub_status: 'revisado' as SubStatus } : {}) } : fm);
+        const updated = prev.map(fm => fm.id === formId ? { ...fm, additional_comments: text || null, ...(markAsRevisado ? { sub_status: 'revisado', status: 'proceso' } : {}) } : fm);
         writeCache(CACHE_KEY_FORMS, updated);
         return updated;
       });
@@ -465,8 +465,6 @@ export function MaintenanceModule() {
     }
     setCommentEditFormId(null);
     setCommentViewFormId(null);
-    setPendingCommentSave(null);
-    setRevisadoDialogOpen(false);
   };
 
   return (
@@ -534,7 +532,7 @@ export function MaintenanceModule() {
                   const dateForms = forms.filter(f => f.created_date === dateCardValue);
                   const critMap = new Map<string, string>();
                   criticalityCategories.forEach(c => critMap.set(c.id, c.name));
-                  exportDailyFormsPDF(dateForms, dateCardValue, critMap);
+                  exportDailyFormsPDF(dateForms, dateCardValue, critMap, subStatusLabels);
                 }}
               >
                 <FileDown className="h-4 w-4" />
@@ -692,8 +690,8 @@ export function MaintenanceModule() {
             <SelectTrigger className="w-40"><SelectValue placeholder="Sub Estado" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
-              {SUB_STATUS_ORDER.map(s => (
-                <SelectItem key={s} value={s}>{SUB_STATUS_LABELS[s]}</SelectItem>
+              {subStatusOrder.map(s => (
+                <SelectItem key={s} value={s}>{subStatusLabels[s] || s}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -781,7 +779,7 @@ export function MaintenanceModule() {
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline" className="text-xs">
-                              {SUB_STATUS_LABELS[(f.sub_status as SubStatus)] || f.sub_status || "Solicitado"}
+                              {subStatusLabels[f.sub_status] || f.sub_status || "Solicitado"}
                             </Badge>
                           </TableCell>
                           <TableCell>
@@ -964,24 +962,6 @@ export function MaintenanceModule() {
       <MaintenanceExcelUpload open={uploadOpen} onOpenChange={setUploadOpen} onSuccess={handleDataChanged} />
       <MaintenanceEditDialog form={editForm} open={!!editForm} onOpenChange={v => { if (!v) setEditForm(null); }} onSuccess={handleDataChanged} />
 
-      {/* Revisado confirmation dialog */}
-      <AlertDialog open={revisadoDialogOpen} onOpenChange={setRevisadoDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Desea marcar como REVISADO?</AlertDialogTitle>
-            <AlertDialogDescription>El comentario se guardará. Puede además marcar el FORM como "Revisado" en el sub-estado.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => saveComment(false)}>
-              No, solo guardar
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={() => saveComment(true)}>
-              Sí, marcar como Revisado
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       {/* Excel download dialog with checkboxes */}
       <AlertDialog open={excelDialog} onOpenChange={setExcelDialog}>
         <AlertDialogContent>
@@ -1006,7 +986,7 @@ export function MaintenanceModule() {
               if (critMap) {
                 criticalityCategories.forEach(c => critMap.set(c.id, c.name));
               }
-              exportMaintenanceExcel(filtered, "mantenciones.xlsx", critMap, excelIncludeRevisado || undefined);
+              exportMaintenanceExcel(filtered, "mantenciones.xlsx", critMap, excelIncludeRevisado || undefined, subStatusLabels);
               setExcelDialog(false);
               setExcelIncludeCriticality(false);
               setExcelIncludeRevisado(false);
