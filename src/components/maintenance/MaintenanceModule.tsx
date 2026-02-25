@@ -231,7 +231,7 @@ function invalidateCache() {
 
 export function MaintenanceModule() {
   const navigate = useNavigate();
-  const { subStatuses, subStatusLabels, subStatusOrder, loading: subStatusLoading } = useMaintenanceSubStatuses();
+  const { subStatuses, subStatusLabels, subStatusInfo, subStatusOrder, loading: subStatusLoading } = useMaintenanceSubStatuses();
   const [forms, setForms] = useState<MaintenanceForm[]>(() => readCache<MaintenanceForm[]>(CACHE_KEY_FORMS) || []);
   const [loading, setLoading] = useState(() => !readCache<MaintenanceForm[]>(CACHE_KEY_FORMS));
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
@@ -826,10 +826,27 @@ export function MaintenanceModule() {
           <Select value={filters.subStatusFilter} onValueChange={v => updateFilter("subStatusFilter", v)}>
             <SelectTrigger className="w-40"><SelectValue placeholder="Sub Estado" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              {subStatusOrder.map(s => (
-                <SelectItem key={s} value={s}>{subStatusLabels[s] || s}</SelectItem>
-              ))}
+              <TooltipProvider delayDuration={200}>
+                <SelectItem value="all">Todos</SelectItem>
+                {subStatusOrder.map(s => {
+                  const info = subStatusInfo[s];
+                  const hasDetail = info?.description || info?.responsible;
+                  return hasDetail ? (
+                    <Tooltip key={s}>
+                      <TooltipTrigger asChild>
+                        <SelectItem value={s}>{subStatusLabels[s] || s}</SelectItem>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-xs">
+                        <p className="font-semibold">{subStatusLabels[s] || s}</p>
+                        {info.description && <p className="text-xs">{info.description}</p>}
+                        {info.responsible && <p className="text-xs italic text-muted-foreground">Resp: {info.responsible}</p>}
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    <SelectItem key={s} value={s}>{subStatusLabels[s] || s}</SelectItem>
+                  );
+                })}
+              </TooltipProvider>
             </SelectContent>
           </Select>
         </div>
