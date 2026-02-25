@@ -5,7 +5,7 @@ const MaintenanceDashboard = () => {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center gap-3">
             <Wrench className="h-6 w-6 text-primary" />
             <div>
@@ -15,7 +15,7 @@ const MaintenanceDashboard = () => {
           </div>
         </div>
       </header>
-      <main className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <MaintenanceModule />
       </main>
     </div>
