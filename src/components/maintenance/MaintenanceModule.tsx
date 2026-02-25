@@ -561,13 +561,20 @@ export function MaintenanceModule() {
 
   const handleCriticalityChange = async (formId: string, val: string) => {
     const newVal = val === "none" ? null : val;
+    const form = forms.find(f => f.id === formId);
+    const shouldAdvance = newVal && form && form.sub_status === "solicitado";
+    const updatePayload: any = { criticality_category_id: newVal };
+    if (shouldAdvance) {
+      updatePayload.sub_status = "Clasificacion_de_Criticidad";
+      updatePayload.status = "proceso";
+    }
     const { error } = await (supabase as any)
       .from("maintenance_forms")
-      .update({ criticality_category_id: newVal })
+      .update(updatePayload)
       .eq("id", formId);
     if (error) { console.error(error); return; }
     setForms(prev => {
-      const updated = prev.map(fm => fm.id === formId ? { ...fm, criticality_category_id: newVal } : fm);
+      const updated = prev.map(fm => fm.id === formId ? { ...fm, criticality_category_id: newVal, ...(shouldAdvance ? { sub_status: "Clasificacion_de_Criticidad", status: "proceso" } : {}) } : fm);
       writeCache(CACHE_KEY_FORMS, updated);
       return updated;
     });
@@ -845,7 +852,7 @@ export function MaintenanceModule() {
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" className="w-40 justify-between text-sm font-normal">
-                {filters.subStatusFilter === "all" ? "Todos" : (subStatusLabels[filters.subStatusFilter] || filters.subStatusFilter)}
+                {filters.subStatusFilter === "all" ? "Todos" : (subStatusLabels[filters.subStatusFilter.toLowerCase()] || filters.subStatusFilter)}
                 <svg className="h-4 w-4 opacity-50 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
               </Button>
             </PopoverTrigger>
@@ -861,7 +868,7 @@ export function MaintenanceModule() {
                     Todos
                   </Button>
                   {subStatusOrder.map(s => {
-                    const info = subStatusInfo[s];
+                    const info = subStatusInfo[s.toLowerCase()];
                     const hasDetail = info?.description || info?.responsible;
                     const btn = (
                       <Button
@@ -871,7 +878,7 @@ export function MaintenanceModule() {
                         className="justify-start text-sm h-8 w-full"
                         onClick={() => updateFilter("subStatusFilter", s)}
                       >
-                        {subStatusLabels[s] || s}
+                        {subStatusLabels[s.toLowerCase()] || s}
                       </Button>
                     );
                     if (!hasDetail) return btn;
