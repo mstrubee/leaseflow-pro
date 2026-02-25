@@ -9,8 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink, Shield } from "lucide-react";
+import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink, Shield, XCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm, detectMaintenanceType, SUB_STATUS_LABELS, SubStatus } from "./types";
@@ -288,7 +287,7 @@ export function MaintenanceModule() {
   }, [forms, criticalityCategories]);
 
   const handleCriticalityCardClick = (catId: string) => {
-    if (statusFilter === "proceso" && criticalityFilter === catId) {
+    if (criticalityFilter === catId) {
       // Toggle off
       setStatusFilter("all");
       setCriticalityFilter("all");
@@ -339,7 +338,7 @@ export function MaintenanceModule() {
       {criticalityCategories.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
           {criticalityCategories.map(cat => {
-            const isActive = statusFilter === "proceso" && criticalityFilter === cat.id;
+            const isActive = criticalityFilter === cat.id;
             return (
               <Card
                 key={cat.id}
@@ -516,6 +515,22 @@ export function MaintenanceModule() {
         <Button variant="outline" onClick={() => exportMaintenanceExcel(filtered)} disabled={filtered.length === 0} className="gap-2">
           <Download className="h-4 w-4" /> Descargar Excel
         </Button>
+        <Button
+          variant="outline"
+          className="gap-2 text-destructive border-destructive/30 hover:bg-destructive/10"
+          onClick={() => {
+            setSearch("");
+            setStatusFilter("all");
+            setTypeFilter("all");
+            setCriticalityFilter("all");
+            setSelectedYears([]);
+            setSelectedContracts([]);
+            setCompanyFilter("all");
+            setContractSearch("");
+          }}
+        >
+          <XCircle className="h-4 w-4" /> Limpiar filtros
+        </Button>
       </div>
 
       {/* Table */}
@@ -563,8 +578,8 @@ export function MaintenanceModule() {
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
+                            <Popover>
+                              <PopoverTrigger asChild>
                                 <button className="flex items-center h-7 px-1 rounded hover:bg-accent transition-colors w-full text-left">
                                   {cat ? (
                                     <Tooltip>
@@ -582,29 +597,27 @@ export function MaintenanceModule() {
                                     <span className="text-muted-foreground text-xs">—</span>
                                   )}
                                 </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="start" className="min-w-[160px]">
-                                <DropdownMenuItem onClick={() => handleCriticalityChange(f.id, "none")}>
+                              </PopoverTrigger>
+                              <PopoverContent align="start" className="w-48 p-1 z-50 bg-popover border shadow-md">
+                                <div
+                                  className="flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm cursor-pointer hover:bg-accent"
+                                  onClick={() => handleCriticalityChange(f.id, "none")}
+                                >
                                   <span className="text-muted-foreground">Sin criticidad</span>
-                                </DropdownMenuItem>
+                                </div>
                                 {criticalityCategories.map(c => (
-                                  <DropdownMenuItem key={c.id} onClick={() => handleCriticalityChange(f.id, c.id)}>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <div className="flex items-center gap-2 w-full">
-                                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: c.color || "#6b7280" }} />
-                                          <span>{c.name}</span>
-                                        </div>
-                                      </TooltipTrigger>
-                                      <TooltipContent side="right">
-                                        <p className="text-xs font-medium">Código: {c.code}</p>
-                                        {c.description && <p className="text-xs text-muted-foreground">{c.description}</p>}
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </DropdownMenuItem>
+                                  <div
+                                    key={c.id}
+                                    className="flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm cursor-pointer hover:bg-accent"
+                                    onClick={() => handleCriticalityChange(f.id, c.id)}
+                                  >
+                                    <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: c.color || "#6b7280" }} />
+                                    <span className="flex-1">{c.name}</span>
+                                    <span className="text-xs text-muted-foreground">{c.code}</span>
+                                  </div>
                                 ))}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                              </PopoverContent>
+                            </Popover>
                           </TableCell>
                           <TableCell className="text-xs">{f.created_date || "-"}</TableCell>
                           <TableCell className="text-xs">
