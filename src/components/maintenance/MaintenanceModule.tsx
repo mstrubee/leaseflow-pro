@@ -516,10 +516,9 @@ export function MaintenanceModule() {
                 value={dateCardValue}
                 onChange={e => {
                   e.stopPropagation();
-                  setDateCardValue(e.target.value);
-                  if (filters.dateFilter) {
-                    updateFilter("dateFilter", e.target.value);
-                  }
+                  const newDate = e.target.value;
+                  setDateCardValue(newDate);
+                  updateFilter("dateFilter", newDate);
                 }}
                 onClick={e => e.stopPropagation()}
                 className="h-7 text-xs w-auto"
@@ -738,19 +737,7 @@ export function MaintenanceModule() {
         <Button variant="outline" onClick={() => setExcelDialog(true)} disabled={filtered.length === 0} className="gap-2">
           <Download className="h-4 w-4" /> Descargar Excel
         </Button>
-        {JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS) && (
-          <Button
-            variant="outline"
-            className="gap-2 text-destructive border-destructive/30 hover:bg-destructive/10"
-            onClick={() => {
-              startTransition(() => {
-                setFilters(DEFAULT_FILTERS);
-              });
-            }}
-          >
-            <XCircle className="h-4 w-4" /> Limpiar filtros
-          </Button>
-        )}
+        
       </div>
 
       {/* Table */}
@@ -1029,6 +1016,19 @@ export function MaintenanceModule() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS) && (
+        <Button
+          variant="outline"
+          className="fixed top-4 right-4 z-50 gap-2 text-destructive border-destructive/30 hover:bg-destructive/10 shadow-lg bg-card"
+          onClick={() => {
+            startTransition(() => {
+              setFilters(DEFAULT_FILTERS);
+            });
+          }}
+        >
+          <XCircle className="h-4 w-4" /> Limpiar filtros
+        </Button>
+      )}
     </div>
   );
 }
