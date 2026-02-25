@@ -187,6 +187,81 @@ const SubStatusCell = memo(function SubStatusCell({
   );
 });
 
+/* ── Isolated CriticalityCell with controlled popover ── */
+const CriticalityCell = memo(function CriticalityCell({
+  form,
+  cat,
+  criticalityCategories,
+  onCriticalityChange,
+}: {
+  form: MaintenanceForm;
+  cat: CriticalityCategory | undefined;
+  criticalityCategories: CriticalityCategory[];
+  onCriticalityChange: (formId: string, value: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const handleSelect = (value: string) => {
+    setOpen(false);
+    onCriticalityChange(form.id, value);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <TooltipProvider delayDuration={100}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <button className="flex items-center h-7 px-1 rounded hover:bg-accent transition-colors w-full text-left">
+                {cat ? (
+                  <Badge className="text-xs cursor-pointer" style={{ backgroundColor: cat.color || undefined, color: "#fff" }}>
+                    {cat.name}
+                  </Badge>
+                ) : (
+                  <span className="text-muted-foreground text-xs">—</span>
+                )}
+              </button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          {cat && (
+            <TooltipContent side="top">
+              <p className="text-xs font-medium">Código: {cat.code}</p>
+              {cat.description && <p className="text-xs text-muted-foreground">{cat.description}</p>}
+            </TooltipContent>
+          )}
+        </Tooltip>
+      </TooltipProvider>
+      <PopoverContent align="start" className="w-48 p-1 z-50 bg-popover border shadow-md">
+        <TooltipProvider delayDuration={100}>
+          <div
+            className="flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm cursor-pointer hover:bg-accent"
+            onClick={() => handleSelect("none")}
+          >
+            <span className="text-muted-foreground">Sin criticidad</span>
+          </div>
+          {criticalityCategories.map(c => (
+            <Tooltip key={c.id}>
+              <TooltipTrigger asChild>
+                <div
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm cursor-pointer hover:bg-accent"
+                  onClick={() => handleSelect(c.id)}
+                >
+                  <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: c.color || "#6b7280" }} />
+                  <span className="flex-1">{c.name}</span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="max-w-xs">
+                <p className="text-xs font-medium">Código: {c.code}</p>
+                {c.description && <p className="text-xs text-muted-foreground">{c.description}</p>}
+              </TooltipContent>
+            </Tooltip>
+          ))}
+        </TooltipProvider>
+      </PopoverContent>
+    </Popover>
+  );
+});
+
 interface CriticalityCategory {
   id: string;
   name: string;
@@ -989,58 +1064,12 @@ export function MaintenanceModule() {
                             />
                           </TableCell>
                           <TableCell>
-                            <Popover>
-                              <TooltipProvider delayDuration={100}>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <PopoverTrigger asChild>
-                                      <button className="flex items-center h-7 px-1 rounded hover:bg-accent transition-colors w-full text-left">
-                                        {cat ? (
-                                          <Badge className="text-xs cursor-pointer" style={{ backgroundColor: cat.color || undefined, color: "#fff" }}>
-                                            {cat.name}
-                                          </Badge>
-                                        ) : (
-                                          <span className="text-muted-foreground text-xs">—</span>
-                                        )}
-                                      </button>
-                                    </PopoverTrigger>
-                                  </TooltipTrigger>
-                                  {cat && (
-                                    <TooltipContent side="top">
-                                      <p className="text-xs font-medium">Código: {cat.code}</p>
-                                      {cat.description && <p className="text-xs text-muted-foreground">{cat.description}</p>}
-                                    </TooltipContent>
-                                  )}
-                                </Tooltip>
-                              </TooltipProvider>
-                              <PopoverContent align="start" className="w-48 p-1 z-50 bg-popover border shadow-md">
-                                <TooltipProvider delayDuration={100}>
-                                  <div
-                                    className="flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm cursor-pointer hover:bg-accent"
-                                    onClick={() => handleCriticalityChange(f.id, "none")}
-                                  >
-                                    <span className="text-muted-foreground">Sin criticidad</span>
-                                  </div>
-                                  {criticalityCategories.map(c => (
-                                    <Tooltip key={c.id}>
-                                      <TooltipTrigger asChild>
-                                        <div
-                                          className="flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm cursor-pointer hover:bg-accent"
-                                          onClick={() => handleCriticalityChange(f.id, c.id)}
-                                        >
-                                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: c.color || "#6b7280" }} />
-                                          <span className="flex-1">{c.name}</span>
-                                        </div>
-                                      </TooltipTrigger>
-                                      <TooltipContent side="right" className="max-w-xs">
-                                        <p className="text-xs font-medium">Código: {c.code}</p>
-                                        {c.description && <p className="text-xs text-muted-foreground">{c.description}</p>}
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  ))}
-                                </TooltipProvider>
-                              </PopoverContent>
-                            </Popover>
+                            <CriticalityCell
+                              form={f}
+                              cat={cat}
+                              criticalityCategories={criticalityCategories}
+                              onCriticalityChange={handleCriticalityChange}
+                            />
                           </TableCell>
                           <TableCell className="text-xs">{f.created_date || "-"}</TableCell>
                           <TableCell className="text-xs">
