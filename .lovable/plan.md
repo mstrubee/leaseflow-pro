@@ -1,97 +1,46 @@
 
 
-## Plan: Card de Fecha, Comentarios Editables y Sub-Estado "Revisado"
+## Plan: Reordenar Cards, Filtro de Sub-Estado y Area de Comentarios
 
-### 1. Migración de Base de Datos
+### 1. Reordenar cards superiores
 
-Agregar columna `sub_status_revisado_at` a la tabla `maintenance_forms` para rastrear cuando un form fue marcado como revisado. Actualizar el trigger `track_maintenance_status_change` para manejar el nuevo sub-estado 'revisado'.
+El orden actual es: Total FORMs - En Proceso - Solucionados - Fecha Especifica.
+Se cambiara a: **Total FORMs - Solucionados - En Proceso - Forms fecha**.
 
-```sql
-ALTER TABLE public.maintenance_forms 
-  ADD COLUMN sub_status_revisado_at timestamptz;
+Esto solo requiere intercambiar el orden de los cards en las lineas 480-526 de `MaintenanceModule.tsx`.
 
--- Update trigger to handle 'revisado'
-CREATE OR REPLACE FUNCTION public.track_maintenance_status_change() ...
-  WHEN 'revisado' THEN NEW.sub_status_revisado_at := now();
-```
+### 2. Agregar filtro de Sub-Estado
 
-### 2. Card de Fecha Específica (junto a "Solucionados")
+Se agregara un nuevo `Select` para filtrar por sub-estado, ubicado a la derecha del filtro de "Estado" (despues de linea 669). Las opciones seran las definidas en `SUB_STATUS_LABELS` mas la opcion "Todos".
 
-- Agregar un cuarto card en la fila de estadísticas (cambiar grid de 3 a 4 columnas)
-- El card muestra un Input tipo `date` con valor por defecto de hoy (`format(new Date(), "yyyy-MM-dd")`)
-- Al seleccionar una fecha, filtra los forms cuyo `created_date` coincida con esa fecha exacta
-- Incluir un icono de calendario (`CalendarDays`) y mostrar la cantidad de forms en esa fecha
-- Al hacer click en el card (cuando ya tiene fecha), activa/desactiva el filtro por fecha
-- Agregar `dateFilter` al objeto `FilterState` (valor `string | null`, default `null`)
-- El filtro se aplica en el `useMemo` de `filtered`
+Cambios necesarios:
+- Agregar `subStatusFilter: string` a `FilterState` (default `"all"`)
+- Agregar la validacion en el `useMemo` de `filtered`: si `subStatusFilter !== "all"`, filtrar por `f.sub_status === subStatusFilter`
+- Agregar el componente `Select` en la seccion de filtros
 
-### 3. Comentarios Editables al Hacer Click
+### 3. Ampliar area clickeable de Comentarios
 
-- Reemplazar la celda de "Comentarios" (actualmente solo muestra texto truncado o "-") por un elemento clickeable
-- Al hacer click, abrir un `Popover` con un `Textarea` editable precargado con el comentario actual
-- Al pie del popover, indicar: "Ctrl + Enter para guardar"
-- Manejar `onKeyDown` en el Textarea: si `e.ctrlKey && e.key === "Enter"` → disparar guardado
-- Enter normal solo agrega nueva línea (comportamiento por defecto del textarea)
+Actualmente el trigger del Popover de comentarios es un `<button>` con clase `truncate block max-w-32` que solo muestra el texto o "-". Se cambiara para que ocupe todo el ancho de la celda:
+- Cambiar el `<button>` trigger para que tenga `w-full min-h-[28px]` en lugar de solo mostrar el contenido truncado
+- Esto hace que toda la celda sea clickeable, no solo el texto "-"
 
-**Flujo de guardado:**
-1. Al presionar Ctrl+Enter, mostrar un `AlertDialog` preguntando: "¿Desea marcar como REVISADO?"
-2. Botón "No": Solo guarda el comentario (`additional_comments`) en la BD y cierra
-3. Botón "Sí": Guarda el comentario Y actualiza `sub_status` a `'revisado'`
-4. Actualizar el estado local y el cache
-5. Cerrar el popover
+### Detalle tecnico
 
-- Al hacer click en un comentario existente (no vacío), primero mostrar el detalle completo (como se hace con las descripciones), con un botón "Editar" que cambie al modo de edición
+**Archivo: `src/components/maintenance/MaintenanceModule.tsx`**
 
-### 4. Actualizar tipos y constantes (`types.ts`)
+1. **Cards (lineas 472-527):** Intercambiar el card de "En Proceso" (lineas 480-486) con el de "Solucionados" (lineas 487-493), quedando: Total - Solucionados - En Proceso - Fecha.
 
-- Agregar `'revisado'` al `SUB_STATUS_ORDER` (después de `'solicitado'`)
-- Agregar label: `revisado: 'Revisado'`
-- Agregar info: `revisado: { description: 'Form revisado por Control de Gestión...', responsible: 'Control de Gestión' }`
-- Agregar `sub_status_revisado_at` a la interfaz `MaintenanceForm`
+2. **FilterState (lineas 34-44):** Agregar `subStatusFilter: string` al interface y al `DEFAULT_FILTERS`.
 
-### 5. Excel: Exportación con opciones ampliadas
+3. **Filtro useMemo (lineas 309-343):** Agregar condicion: `if (subStatusFilter !== "all" && f.sub_status !== subStatusFilter) return false;`
 
-Modificar el diálogo de descarga Excel para ofrecer checkboxes en lugar de solo sí/no:
-- Checkbox "Incluir Criticidad"
-- Checkbox "Incluir sub-estado Revisado"
+4. **Seccion de filtros (despues de linea 669):** Insertar un nuevo `Select` con label "Sub Estado":
+   ```text
+   <Select value={filters.subStatusFilter} onValueChange={v => updateFilter("subStatusFilter", v)}>
+     <SelectItem value="all">Todos</SelectItem>
+     {SUB_STATUS_ORDER.map(s => <SelectItem key={s} value={s}>{SUB_STATUS_LABELS[s]}</SelectItem>)}
+   </Select>
+   ```
 
-Cuando se incluye "Revisado", agregar columna "Sub Estado" al Excel. Cuando NO se incluye, los forms con sub_status `'revisado'` se exportan como `'Solicitado'`.
-
-Actualizar `exportMaintenanceExcel` para aceptar un parámetro `includeRevisado?: boolean`:
-- Si `true`: agregar columna "Sub Estado" con el valor real
-- Si `false` o no proporcionado: no agregar columna, o si se agrega, mapear 'revisado' a 'Solicitado'
-
-### 6. Excel: Importación preserva datos existentes
-
-La importación ya omite forms existentes (no los sobrescribe). Esto significa que criticidad, comentarios y sub_status se preservan automáticamente. Se refuerza visualmente mostrando en la preview:
-- Criticidad existente (ya implementado)
-- Sub-estado actual (agregar badge en preview)
-- Indicador de que los comentarios existentes se conservan
-
-### 7. Detalle técnico - Archivos a modificar
-
-**`src/components/maintenance/types.ts`:**
-- Insertar `'revisado'` en `SUB_STATUS_ORDER` después de `'solicitado'`
-- Agregar entrada en `SUB_STATUS_LABELS`, `SUB_STATUS_INFO`
-- Agregar `sub_status_revisado_at` a interfaz `MaintenanceForm`
-
-**`src/components/maintenance/MaintenanceModule.tsx`:**
-- Agregar `dateFilter: string | null` a `FilterState` (default `null`)
-- Agregar card de fecha al grid de stats (cambiar `grid-cols-3` a `grid-cols-4`)
-- Agregar filtro por fecha en el `useMemo` de `filtered`
-- Reemplazar celda de comentarios por Popover editable con textarea + Ctrl+Enter
-- Agregar AlertDialog para "¿Marcar como REVISADO?"
-- Actualizar diálogo de descarga Excel con checkboxes
-
-**`src/components/maintenance/maintenanceExport.ts`:**
-- Agregar parámetro `includeRevisado?: boolean` a `exportMaintenanceExcel`
-- Si `includeRevisado`, agregar columna "Sub Estado"
-- Mapear 'revisado' → 'Solicitado' cuando no se incluye
-
-**`src/components/maintenance/MaintenanceExcelUpload.tsx`:**
-- En la tabla de preview, mostrar el sub-estado actual de forms existentes
-- Agregar badge indicando que comentarios/criticidad se conservan
-
-**`src/components/maintenance/MaintenanceEditDialog.tsx`:**
-- Agregar `'revisado'` al timeline de sub-estados (ya se renderiza dinámicamente desde `SUB_STATUS_ORDER`)
+5. **Comentarios (lineas 859-865):** Cambiar el boton trigger de `truncate block max-w-32` a `w-full min-h-[28px] text-left hover:text-primary transition-colors cursor-pointer truncate` para cubrir toda la celda.
 
