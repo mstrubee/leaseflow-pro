@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { MaintenanceForm, detectMaintenanceType } from "./types";
+import { MaintenanceForm, detectMaintenanceType, SUB_STATUS_LABELS, SubStatus } from "./types";
 import logosHeader from "@/assets/logos-header.png";
 
 export function exportMaintenanceExcel(
@@ -90,4 +90,88 @@ export async function exportMaintenancePDF(form: MaintenanceForm, companyName?: 
   }
 
   doc.save(`FORM_${form.form_number}.pdf`);
+}
+
+export async function exportDailyFormsPDF(
+  forms: MaintenanceForm[],
+  dateLabel: string,
+  criticalityMap?: Map<string, string>,
+) {
+  const doc = new jsPDF({ orientation: "landscape" });
+
+  // Logo
+  let logoHeight = 0;
+  try {
+    const logoImg = new Image();
+    logoImg.src = logosHeader;
+    await new Promise((resolve, reject) => { logoImg.onload = resolve; logoImg.onerror = reject; });
+    doc.addImage(logoImg, "PNG", 14, 8, 50, 20);
+    logoHeight = 22;
+  } catch {}
+
+  const startY = 10 + logoHeight;
+  doc.setFontSize(14);
+  doc.text(`FORMs Mantenciones — ${dateLabel}`, logoHeight > 0 ? 70 : 14, startY);
+  doc.setFontSize(10);
+  doc.setTextColor(100);
+  doc.text(`Total: ${forms.length} formularios`, logoHeight > 0 ? 70 : 14, startY + 7);
+  doc.setTextColor(0);
+
+  if (forms.length === 0) {
+    doc.setFontSize(12);
+    doc.text("No hay formularios para esta fecha.", 14, startY + 20);
+    doc.save(`FORMs_${dateLabel}.pdf`);
+    return;
+  }
+
+  const head = [["N°", "Estado", "Sub Estado", "Local", "Tipo", "Criticidad", "Descripción General", "Req. Eléctrico", "Req. Obra Civil", "Req. Climatización", "Req. Activos Fijos", "Comentarios"]];
+  const body = forms.map(f => {
+    const subLabel = SUB_STATUS_LABELS[(f.sub_status || "solicitado") as SubStatus] || f.sub_status || "";
+    const critName = (f.criticality_category_id && criticalityMap?.get(f.criticality_category_id)) || "";
+    return [
+      f.form_number,
+      f.status === "solucionado" ? "Solucionado" : "En Proceso",
+      subLabel,
+      f.contract_name || "",
+      detectMaintenanceType(f),
+      critName,
+      f.general_description || "",
+      f.electrical_description || "",
+      f.civil_description || "",
+      f.hvac_description || "",
+      f.fixed_assets_description || "",
+      f.additional_comments || "",
+    ];
+  });
+
+  autoTable(doc, {
+    startY: startY + 12,
+    head,
+    body,
+    styles: { fontSize: 7, cellPadding: 2, overflow: "linebreak" },
+    headStyles: { fillColor: [220, 38, 38], fontSize: 7 },
+    columnStyles: {
+      0: { cellWidth: 14 },
+      1: { cellWidth: 18 },
+      2: { cellWidth: 18 },
+      3: { cellWidth: 28 },
+      4: { cellWidth: 16 },
+      5: { cellWidth: 18 },
+      6: { cellWidth: "auto" },
+      7: { cellWidth: "auto" },
+      8: { cellWidth: "auto" },
+      9: { cellWidth: "auto" },
+      10: { cellWidth: "auto" },
+      11: { cellWidth: "auto" },
+    },
+    didDrawPage: (data) => {
+      // Footer
+      const pageCount = (doc as any).internal.getNumberOfPages();
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      doc.text(`Página ${data.pageNumber} de ${pageCount}`, doc.internal.pageSize.getWidth() - 30, doc.internal.pageSize.getHeight() - 8);
+    },
+  });
+
+  doc.save(`FORMs_${dateLabel}.pdf`);
 }
