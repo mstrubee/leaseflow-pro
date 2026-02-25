@@ -1,57 +1,29 @@
 
 
-## Plan: Corregir colapso de comentarios y dropdown de sub-estados
+## Plan: Mostrar detalle de sub-estado en filtro desplegable
 
-### Problema 1: Colapso al escribir comentarios
+### Problema
+El filtro de "Sub Estado" en la barra de filtros (lineas 824-835) usa un `Select` basico con `SelectItem`. No muestra la descripcion ni el responsable al posarse sobre cada opcion.
 
-**Causa raiz:** El Popover de comentarios (linea 868) usa un estado controlado (`open={commentViewFormId === f.id || commentEditFormId === f.id}`) dentro de un `filtered.map(...)` que renderiza toda la tabla. Cada cambio de caracter en el textarea (`setCommentEditText`) re-renderiza toda la tabla, causando inestabilidad.
+### Solucion
+Envolver cada `SelectItem` del filtro de sub-estados con un `Tooltip` que muestre la descripcion y responsable, igual que en el dropdown de la tabla (`SubStatusCell`).
 
-**Solucion:** Extraer el Popover de comentarios en un componente separado (`CommentCell`) que encapsule su propio estado local. Esto aisla los re-renders de la edicion de comentarios al componente individual, sin afectar toda la tabla.
-
-```text
-CommentCell (nuevo componente inline)
-  - Props: form, onSave (callback)
-  - Estado local: viewMode, editMode, editText
-  - Maneja el Popover, Textarea y guardado internamente
-  - Solo notifica al padre cuando se guarda exitosamente
-```
-
-**Archivo: `src/components/maintenance/MaintenanceModule.tsx`**
-- Crear componente `CommentCell` antes del componente principal
-- Mover toda la logica de comentarios (handleCommentClick, startCommentEdit, handleCommentKeyDown, saveComment) dentro de `CommentCell`
-- Eliminar los estados `commentEditFormId`, `commentEditText`, `commentViewFormId` del componente principal
-- Reemplazar el bloque de la celda de comentarios (lineas 867-909) por `<CommentCell form={f} onSave={...} />`
-
----
-
-### Problema 2: Dropdown seleccionable de sub-estados con descripcion
-
-**Estado actual:** El sub-estado se muestra como un Badge estatico (lineas 780-783).
-
-**Solucion:** Convertir el Badge en un Popover clickeable con lista de sub-estados. Al pasar el mouse sobre cada opcion, mostrar la descripcion del sub-estado usando Tooltip.
-
-```text
-Celda Sub Estado (reemplazar Badge estatico)
-  - Popover con trigger en el Badge actual
-  - Lista de sub-estados del hook useMaintenanceSubStatuses
-  - Cada item: nombre + Tooltip con descripcion y responsable
-  - Al seleccionar: actualizar sub_status en BD
-  - Si nuevo sub_status != primer sub-estado: auto-set status = "proceso"
-```
-
-**Archivo: `src/components/maintenance/MaintenanceModule.tsx`**
-- Reemplazar lineas 780-784 con un Popover similar al de criticidad (lineas 785-831)
-- Agregar funcion `handleSubStatusChange(formId, newSubStatus)` que actualice en BD y en estado local
-- Cada opcion del dropdown tendra un Tooltip con la descripcion del sub-estado
-
----
-
-### Resumen de cambios
+### Cambios
 
 **Archivo unico: `src/components/maintenance/MaintenanceModule.tsx`**
 
-1. Crear componente `CommentCell` (antes de `MaintenanceModule`) con estado local aislado
-2. Eliminar estados de comentarios del componente principal
-3. Reemplazar celda de comentarios por `<CommentCell>`
-4. Agregar funcion `handleSubStatusChange` para cambio directo de sub-estado
-5. Reemplazar Badge estatico de sub-estado por Popover con lista seleccionable y tooltips con descripcion
+1. Agregar `subStatusInfo` a la destructuracion del hook `useMaintenanceSubStatuses` (linea 234)
+2. Reemplazar el bloque del filtro de sub-estados (lineas 826-834) para envolver cada `SelectItem` en un `Tooltip` con descripcion y responsable
+
+El resultado sera:
+```text
+Select > SelectContent >
+  SelectItem "Todos" (sin tooltip)
+  Para cada sub-estado:
+    Tooltip >
+      TooltipTrigger > SelectItem con label
+      TooltipContent > descripcion + responsable (si existen)
+```
+
+Esto reutiliza el `TooltipProvider` que ya envuelve la tabla (linea 882), por lo que no se necesita agregar uno nuevo -- sin embargo, el filtro esta fuera de ese provider, asi que se envolvera el `SelectContent` del filtro en su propio `TooltipProvider`.
+
