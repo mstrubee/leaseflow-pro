@@ -119,9 +119,9 @@ const SubStatusCell = memo(function SubStatusCell({
   onSubStatusChange: (formId: string, newSubStatus: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
-  const currentSub = subStatuses.find(s => s.name === form.sub_status);
+  const currentSub = subStatuses.find(s => s.name.toLowerCase() === (form.sub_status || "").toLowerCase());
   const currentColor = currentSub?.color;
-  const currentInfo = subStatusInfo[form.sub_status];
+  const currentInfo = subStatusInfo[(form.sub_status || "").toLowerCase()];
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -135,7 +135,7 @@ const SubStatusCell = memo(function SubStatusCell({
                   className="text-xs"
                   style={currentColor ? { borderColor: currentColor, color: currentColor } : {}}
                 >
-                  {subStatusLabels[form.sub_status] || form.sub_status || "Solicitado"}
+                  {subStatusLabels[(form.sub_status || "").toLowerCase()] || form.sub_status || "Solicitado"}
                 </Badge>
               </button>
             </PopoverTrigger>
