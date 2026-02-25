@@ -190,7 +190,15 @@ export default function CapexDashboard() {
     return result;
   }, [filteredBudgets, authByBudget]);
 
-  const totalCapexUF = filteredBudgets.reduce((sum, b) => sum + b.amount_uf, 0);
+  const totalCapexUF = React.useMemo(() => {
+    const seen = new Set<string>();
+    let total = 0;
+    filteredBudgets.forEach(b => {
+      const bd = authByBudget[b.budget_id];
+      if (bd) total += bd.authorized + bd.unauthorized;
+    });
+    return total;
+  }, [filteredBudgets, authByBudget]);
 
   // Totals by clasificacion
   const { totalNuevoUF, totalReemplazoUF, totalRegularizacionUF, countNuevo, countReemplazo, countRegularizacion } = React.useMemo(() => {
