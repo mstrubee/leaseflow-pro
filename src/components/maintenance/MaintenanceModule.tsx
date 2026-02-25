@@ -8,7 +8,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink, Shield } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm, detectMaintenanceType, SUB_STATUS_LABELS, SubStatus } from "./types";
@@ -22,6 +24,8 @@ import { useNavigate } from "react-router-dom";
 interface CriticalityCategory {
   id: string;
   name: string;
+  code: string;
+  description: string | null;
   color: string | null;
 }
 
@@ -32,6 +36,7 @@ export function MaintenanceModule() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [criticalityFilter, setCriticalityFilter] = useState("all");
   const [selectedYears, setSelectedYears] = useState<number[]>([]);
   const [selectedContracts, setSelectedContracts] = useState<string[]>([]);
   const [contractSearch, setContractSearch] = useState("");
@@ -45,7 +50,6 @@ export function MaintenanceModule() {
 
   const fetchForms = async () => {
     setLoading(true);
-    // Fetch all records in batches to avoid the 1000-row default limit
     let allData: MaintenanceForm[] = [];
     let from = 0;
     const batchSize = 1000;
@@ -66,7 +70,6 @@ export function MaintenanceModule() {
         hasMore = false;
       } else {
         const batch = (data as any as MaintenanceForm[]) || [];
-        // Deduplicate by id to prevent overlapping ranges
         const existingIds = new Set(allData.map(d => d.id));
         const newBatch = batch.filter(b => !existingIds.has(b.id));
         allData = [...allData, ...newBatch];
@@ -81,12 +84,12 @@ export function MaintenanceModule() {
 
   useEffect(() => { fetchForms(); }, []);
 
-  // Fetch criticality categories
+  // Fetch criticality categories with code and description
   useEffect(() => {
     const fetchCriticalities = async () => {
       const { data } = await (supabase as any)
         .from("maintenance_criticality_categories")
-        .select("id, name, color")
+        .select("id, name, code, description, color")
         .eq("is_active", true)
         .order("display_order");
       if (data) setCriticalityCategories(data);
@@ -94,7 +97,7 @@ export function MaintenanceModule() {
     fetchCriticalities();
   }, []);
 
-  // Fetch contract-company mapping for logos (keyed by contract_id)
+  // Fetch contract-company mapping for logos
   useEffect(() => {
     const fetchCompanyMap = async () => {
       const { data } = await supabase
@@ -117,16 +120,14 @@ export function MaintenanceModule() {
     fetchCompanyMap();
   }, []);
 
-  // Available companies for filtering
   const availableCompanies = useMemo(() => {
     const companies = new Set<string>();
     Object.values(contractCompanyMap).forEach(names => names.forEach(n => companies.add(n)));
     return Array.from(companies).sort();
   }, [contractCompanyMap]);
 
-  // Set of contract_ids that match the company filter
   const companyFilteredContractIds = useMemo(() => {
-    if (companyFilter === "all") return null; // no filtering
+    if (companyFilter === "all") return null;
     const ids = new Set<string>();
     for (const [contractId, companies] of Object.entries(contractCompanyMap)) {
       if (companies.some(c => c.toLowerCase().includes(companyFilter.toLowerCase()))) {
@@ -136,17 +137,13 @@ export function MaintenanceModule() {
     return ids;
   }, [companyFilter, contractCompanyMap]);
 
-  // Available years for filtering
   const availableYears = useMemo(() => {
     const years = new Set<number>();
     forms.forEach(f => { if (f.year) years.add(f.year); });
     return Array.from(years).sort((a, b) => b - a);
   }, [forms]);
 
-  // Build filter options: when a contract_name maps to multiple companies, split into separate entries
-  // Each entry is { key, label, contractIds, companyNames }
   const contractFilterOptions = useMemo(() => {
-    // Group contract_ids by name
     const nameToIds: Record<string, Set<string>> = {};
     forms.forEach(f => {
       if (f.contract_name) {
@@ -159,7 +156,6 @@ export function MaintenanceModule() {
 
     for (const [name, idSet] of Object.entries(nameToIds)) {
       const ids = Array.from(idSet);
-      // Group ids by company
       const companyToIds: Record<string, string[]> = {};
       ids.forEach(id => {
         const companies = contractCompanyMap[id] || [];
@@ -170,11 +166,9 @@ export function MaintenanceModule() {
 
       const companyGroups = Object.entries(companyToIds);
       if (companyGroups.length <= 1) {
-        // Single company (or no company) - show as-is
         const companyNames = companyGroups[0]?.[0] === "__none__" ? [] : (companyGroups[0]?.[0]?.split(", ") || []);
         options.push({ key: name, label: name, contractIds: ids, companyNames });
       } else {
-        // Multiple companies - split into separate entries, use name as label (logo differentiates)
         for (const [companyKey, groupIds] of companyGroups) {
           const companyNames = companyKey === "__none__" ? [] : companyKey.split(", ");
           const uniqueKey = `${name}__${companyKey}`;
@@ -213,6 +207,13 @@ export function MaintenanceModule() {
     }
   }, [sortKey]);
 
+  // Build a map for quick criticality name lookup
+  const criticalityMap = useMemo(() => {
+    const map = new Map<string, CriticalityCategory>();
+    criticalityCategories.forEach(c => map.set(c.id, c));
+    return map;
+  }, [criticalityCategories]);
+
   const filtered = useMemo(() => {
     let result = forms.filter(f => {
       if (selectedYears.length > 0 && (!f.year || !selectedYears.includes(f.year))) return false;
@@ -220,7 +221,6 @@ export function MaintenanceModule() {
         if (!f.contract_id || !companyFilteredContractIds.has(f.contract_id)) return false;
       }
       if (selectedContracts.length > 0) {
-        // Match by contract_id using the selected filter option keys
         const selectedIds = new Set<string>();
         selectedContracts.forEach(key => {
           const opt = contractFilterOptions.find(o => o.key === key);
@@ -230,6 +230,14 @@ export function MaintenanceModule() {
       }
       if (statusFilter !== "all" && f.status !== statusFilter) return false;
       if (typeFilter !== "all" && detectMaintenanceType(f) !== typeFilter) return false;
+      // Criticality filter
+      if (criticalityFilter !== "all") {
+        if (criticalityFilter === "none") {
+          if (f.criticality_category_id) return false;
+        } else {
+          if (f.criticality_category_id !== criticalityFilter) return false;
+        }
+      }
       if (search) {
         const s = search.toLowerCase();
         const matches = [f.form_number, f.contract_name, f.general_description, f.electrical_description, f.civil_description, f.hvac_description, f.fixed_assets_description]
@@ -239,24 +247,20 @@ export function MaintenanceModule() {
       return true;
     });
 
-    // Debug: log any items that shouldn't pass the filter
-    if (statusFilter !== "all") {
-      const leaking = result.filter(f => f.status !== statusFilter);
-      if (leaking.length > 0) {
-        console.error("FILTER LEAK: items passing filter with wrong status", statusFilter, leaking.map(l => ({ id: l.id, form: l.form_number, status: l.status })));
-      }
-    }
-
     if (sortKey && sortOrder) {
       result = [...result].sort((a, b) => {
-        let valA: any = (a as any)[sortKey];
-        let valB: any = (b as any)[sortKey];
-        if (sortKey === "created_date") {
-          valA = valA ? new Date(valA).getTime() : 0;
-          valB = valB ? new Date(valB).getTime() : 0;
+        let valA: any;
+        let valB: any;
+
+        if (sortKey === "criticality_category_id") {
+          valA = (criticalityMap.get(a.criticality_category_id || "")?.name || "zzz").toLowerCase();
+          valB = (criticalityMap.get(b.criticality_category_id || "")?.name || "zzz").toLowerCase();
+        } else if (sortKey === "created_date") {
+          valA = a.created_date ? new Date(a.created_date).getTime() : 0;
+          valB = b.created_date ? new Date(b.created_date).getTime() : 0;
         } else {
-          valA = (valA ?? "").toString().toLowerCase();
-          valB = (valB ?? "").toString().toLowerCase();
+          valA = ((a as any)[sortKey] ?? "").toString().toLowerCase();
+          valB = ((b as any)[sortKey] ?? "").toString().toLowerCase();
         }
         if (valA < valB) return sortOrder === "asc" ? -1 : 1;
         if (valA > valB) return sortOrder === "asc" ? 1 : -1;
@@ -265,11 +269,44 @@ export function MaintenanceModule() {
     }
 
     return result;
-  }, [forms, statusFilter, typeFilter, search, selectedYears, selectedContracts, companyFilteredContractIds, contractFilterOptions, sortKey, sortOrder]);
+  }, [forms, statusFilter, typeFilter, criticalityFilter, search, selectedYears, selectedContracts, companyFilteredContractIds, contractFilterOptions, sortKey, sortOrder, criticalityMap]);
 
   const totalForms = filtered.length;
   const enProceso = filtered.filter(f => f.status === "proceso").length;
   const solucionados = filtered.filter(f => f.status === "solucionado").length;
+
+  // Criticality cards: count "En Proceso" per category across ALL forms (not filtered)
+  const criticalityCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    criticalityCategories.forEach(c => { counts[c.id] = 0; });
+    forms.forEach(f => {
+      if (f.status === "proceso" && f.criticality_category_id && counts[f.criticality_category_id] !== undefined) {
+        counts[f.criticality_category_id]++;
+      }
+    });
+    return counts;
+  }, [forms, criticalityCategories]);
+
+  const handleCriticalityCardClick = (catId: string) => {
+    if (statusFilter === "proceso" && criticalityFilter === catId) {
+      // Toggle off
+      setStatusFilter("all");
+      setCriticalityFilter("all");
+    } else {
+      setStatusFilter("proceso");
+      setCriticalityFilter(catId);
+    }
+  };
+
+  const handleCriticalityChange = async (formId: string, val: string) => {
+    const newVal = val === "none" ? null : val;
+    const { error } = await (supabase as any)
+      .from("maintenance_forms")
+      .update({ criticality_category_id: newVal })
+      .eq("id", formId);
+    if (error) { console.error(error); return; }
+    setForms(prev => prev.map(fm => fm.id === formId ? { ...fm, criticality_category_id: newVal } : fm));
+  };
 
   return (
     <div className="space-y-4">
@@ -297,6 +334,40 @@ export function MaintenanceModule() {
           <CardContent><div className="text-2xl font-bold text-green-600">{solucionados}</div></CardContent>
         </Card>
       </div>
+
+      {/* Criticality Quick-Filter Cards */}
+      {criticalityCategories.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          {criticalityCategories.map(cat => {
+            const isActive = statusFilter === "proceso" && criticalityFilter === cat.id;
+            return (
+              <Card
+                key={cat.id}
+                className={`cursor-pointer transition-all hover:shadow-md ${isActive ? "ring-2 ring-offset-1" : ""}`}
+                style={{
+                  borderLeftWidth: 4,
+                  borderLeftColor: cat.color || "hsl(var(--border))",
+                  ...(isActive ? { ringColor: cat.color || undefined } : {}),
+                }}
+                onClick={() => handleCriticalityCardClick(cat.id)}
+              >
+                <CardContent className="p-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-4 w-4" style={{ color: cat.color || undefined }} />
+                    <span className="text-sm font-medium">{cat.name}</span>
+                  </div>
+                  <Badge
+                    className="text-xs"
+                    style={{ backgroundColor: cat.color || undefined, color: "#fff" }}
+                  >
+                    {criticalityCounts[cat.id] || 0}
+                  </Badge>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-end">
@@ -421,6 +492,24 @@ export function MaintenanceModule() {
             </SelectContent>
           </Select>
         </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Criticidad</Label>
+          <Select value={criticalityFilter} onValueChange={setCriticalityFilter}>
+            <SelectTrigger className="w-40"><SelectValue placeholder="Criticidad" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas</SelectItem>
+              <SelectItem value="none">Sin criticidad</SelectItem>
+              {criticalityCategories.map(c => (
+                <SelectItem key={c.id} value={c.id}>
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full inline-block shrink-0" style={{ backgroundColor: c.color || "#6b7280" }} />
+                    {c.name}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <Button onClick={() => setUploadOpen(true)} className="gap-2">
           <Upload className="h-4 w-4" /> Cargar Excel
         </Button>
@@ -433,139 +522,148 @@ export function MaintenanceModule() {
       <Card>
         <CardContent className="p-0">
           <div className="overflow-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <SortableTableHead label="N° FORM" sortKey="form_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-24" />
-                  <SortableTableHead label="Estado" sortKey="status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
-                  <SortableTableHead label="Sub Estado" sortKey="sub_status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
-                  <TableHead className="w-36">Criticidad</TableHead>
-                  <SortableTableHead label="Fecha" sortKey="created_date" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
-                  <SortableTableHead label="Contrato" sortKey="contract_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} />
-                  <TableHead className="w-28">Tipo</TableHead>
-                  <TableHead>Descripción</TableHead>
-                  <TableHead>Comentarios</TableHead>
-                  <SortableTableHead label="Proveedor" sortKey="supplier_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
-                  <SortableTableHead label="OC" sortKey="purchase_order_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
-                  <TableHead className="w-28">Evidencia</TableHead>
-                  <TableHead className="w-24 text-center">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  <TableRow><TableCell colSpan={13} className="text-center py-8 text-muted-foreground">Cargando...</TableCell></TableRow>
-                ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={13} className="text-center py-8 text-muted-foreground">No hay FORMs registrados</TableCell></TableRow>
-                ) : (
-                  filtered.map(f => (
-                    <TableRow key={f.id}>
-                      <TableCell className="font-mono text-xs">{f.form_number}</TableCell>
-                      <TableCell>
-                        <Badge variant={f.status === "solucionado" ? "default" : "secondary"} className="text-xs">
-                          {f.status === "solucionado" ? "Solucionado" : "En Proceso"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          {SUB_STATUS_LABELS[(f.sub_status as SubStatus)] || f.sub_status || "Solicitado"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {(() => {
-                          const cat = criticalityCategories.find(c => c.id === f.criticality_category_id);
-                          return (
-                            <Select
-                              value={f.criticality_category_id || "none"}
-                              onValueChange={async (val) => {
-                                const newVal = val === "none" ? null : val;
-                                const { error } = await (supabase as any)
-                                  .from("maintenance_forms")
-                                  .update({ criticality_category_id: newVal })
-                                  .eq("id", f.id);
-                                if (error) { console.error(error); return; }
-                                setForms(prev => prev.map(fm => fm.id === f.id ? { ...fm, criticality_category_id: newVal } : fm));
-                              }}
-                            >
-                              <SelectTrigger className="h-7 w-32 text-xs border-0 bg-transparent px-1">
-                                <SelectValue>
+            <TooltipProvider delayDuration={200}>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <SortableTableHead label="N° FORM" sortKey="form_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-24" />
+                    <SortableTableHead label="Estado" sortKey="status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
+                    <SortableTableHead label="Sub Estado" sortKey="sub_status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
+                    <SortableTableHead label="Criticidad" sortKey="criticality_category_id" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-36" />
+                    <SortableTableHead label="Fecha" sortKey="created_date" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
+                    <SortableTableHead label="Contrato" sortKey="contract_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} />
+                    <TableHead className="w-28">Tipo</TableHead>
+                    <TableHead>Descripción</TableHead>
+                    <TableHead>Comentarios</TableHead>
+                    <SortableTableHead label="Proveedor" sortKey="supplier_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
+                    <SortableTableHead label="OC" sortKey="purchase_order_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
+                    <TableHead className="w-28">Evidencia</TableHead>
+                    <TableHead className="w-24 text-center">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    <TableRow><TableCell colSpan={13} className="text-center py-8 text-muted-foreground">Cargando...</TableCell></TableRow>
+                  ) : filtered.length === 0 ? (
+                    <TableRow><TableCell colSpan={13} className="text-center py-8 text-muted-foreground">No hay FORMs registrados</TableCell></TableRow>
+                  ) : (
+                    filtered.map(f => {
+                      const cat = criticalityMap.get(f.criticality_category_id || "");
+                      return (
+                        <TableRow key={f.id}>
+                          <TableCell className="font-mono text-xs">{f.form_number}</TableCell>
+                          <TableCell>
+                            <Badge variant={f.status === "solucionado" ? "default" : "secondary"} className="text-xs">
+                              {f.status === "solucionado" ? "Solucionado" : "En Proceso"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-xs">
+                              {SUB_STATUS_LABELS[(f.sub_status as SubStatus)] || f.sub_status || "Solicitado"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button className="flex items-center h-7 px-1 rounded hover:bg-accent transition-colors w-full text-left">
                                   {cat ? (
-                                    <Badge className="text-xs" style={{ backgroundColor: cat.color || undefined, color: "#fff" }}>{cat.name}</Badge>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Badge className="text-xs cursor-pointer" style={{ backgroundColor: cat.color || undefined, color: "#fff" }}>
+                                          {cat.name}
+                                        </Badge>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top">
+                                        <p className="text-xs font-medium">Código: {cat.code}</p>
+                                        {cat.description && <p className="text-xs text-muted-foreground">{cat.description}</p>}
+                                      </TooltipContent>
+                                    </Tooltip>
                                   ) : (
-                                    <span className="text-muted-foreground">—</span>
+                                    <span className="text-muted-foreground text-xs">—</span>
                                   )}
-                                </SelectValue>
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">Sin criticidad</SelectItem>
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="start" className="min-w-[160px]">
+                                <DropdownMenuItem onClick={() => handleCriticalityChange(f.id, "none")}>
+                                  <span className="text-muted-foreground">Sin criticidad</span>
+                                </DropdownMenuItem>
                                 {criticalityCategories.map(c => (
-                                  <SelectItem key={c.id} value={c.id}>
-                                    <div className="flex items-center gap-2">
-                                      <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: c.color || "#6b7280" }} />
-                                      {c.name}
-                                    </div>
-                                  </SelectItem>
+                                  <DropdownMenuItem key={c.id} onClick={() => handleCriticalityChange(f.id, c.id)}>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div className="flex items-center gap-2 w-full">
+                                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: c.color || "#6b7280" }} />
+                                          <span>{c.name}</span>
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="right">
+                                        <p className="text-xs font-medium">Código: {c.code}</p>
+                                        {c.description && <p className="text-xs text-muted-foreground">{c.description}</p>}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </DropdownMenuItem>
                                 ))}
-                              </SelectContent>
-                            </Select>
-                          );
-                        })()}
-                      </TableCell>
-                      <TableCell className="text-xs">{f.created_date || "-"}</TableCell>
-                      <TableCell className="text-xs">
-                        <div className="flex items-center gap-1.5">
-                          {f.contract_id && contractCompanyMap[f.contract_id] && (
-                            <CompanyLogo companyNames={contractCompanyMap[f.contract_id]} size="sm" className="h-4 w-4 shrink-0" />
-                          )}
-                          <span className="truncate">{f.contract_name || "-"}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell><Badge variant="outline" className="text-xs">{detectMaintenanceType(f)}</Badge></TableCell>
-                      <TableCell className="text-xs max-w-48 truncate">
-                        {f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-"}
-                      </TableCell>
-                      <TableCell className="text-xs max-w-32 truncate">{f.additional_comments || "-"}</TableCell>
-                      <TableCell className="text-xs">
-                        {f.supplier_name ? (
-                          <button onClick={() => navigate("/suppliers")} className="text-primary hover:underline flex items-center gap-1 truncate max-w-28">
-                            <span className="truncate">{f.supplier_name}</span>
-                            <ExternalLink className="h-3 w-3 shrink-0" />
-                          </button>
-                        ) : <span className="text-muted-foreground">-</span>}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {f.purchase_order_number ? (
-                          <button onClick={() => navigate(`/purchase-orders?search=${encodeURIComponent(f.purchase_order_number!)}`)} className="text-primary hover:underline flex items-center gap-1 truncate max-w-28">
-                            <span className="truncate">{f.purchase_order_number}</span>
-                            <ExternalLink className="h-3 w-3 shrink-0" />
-                          </button>
-                        ) : <span className="text-muted-foreground">-</span>}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {f.evidence_links && f.evidence_links.length > 0 ? (
-                          <div className="flex flex-col gap-0.5">
-                            {f.evidence_links.map((link, idx) => (
-                              <a key={idx} href={link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1">
-                                <Link className="h-3 w-3" />Evidencia {idx + 1}
-                              </a>
-                            ))}
-                          </div>
-                        ) : "-"}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center justify-center gap-1">
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditForm(f)} title="Editar">
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => exportMaintenancePDF(f, f.contract_id ? (contractCompanyMap[f.contract_id] || []).join(", ") : undefined)} title="Descargar PDF">
-                            <FileDown className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                          <TableCell className="text-xs">{f.created_date || "-"}</TableCell>
+                          <TableCell className="text-xs">
+                            <div className="flex items-center gap-1.5">
+                              {f.contract_id && contractCompanyMap[f.contract_id] && (
+                                <CompanyLogo companyNames={contractCompanyMap[f.contract_id]} size="sm" className="h-4 w-4 shrink-0" />
+                              )}
+                              <span className="truncate">{f.contract_name || "-"}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell><Badge variant="outline" className="text-xs">{detectMaintenanceType(f)}</Badge></TableCell>
+                          <TableCell className="text-xs max-w-48 truncate">
+                            {f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-"}
+                          </TableCell>
+                          <TableCell className="text-xs max-w-32 truncate">{f.additional_comments || "-"}</TableCell>
+                          <TableCell className="text-xs">
+                            {f.supplier_name ? (
+                              <button onClick={() => navigate("/suppliers")} className="text-primary hover:underline flex items-center gap-1 truncate max-w-28">
+                                <span className="truncate">{f.supplier_name}</span>
+                                <ExternalLink className="h-3 w-3 shrink-0" />
+                              </button>
+                            ) : <span className="text-muted-foreground">-</span>}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {f.purchase_order_number ? (
+                              <button onClick={() => navigate(`/purchase-orders?search=${encodeURIComponent(f.purchase_order_number!)}`)} className="text-primary hover:underline flex items-center gap-1 truncate max-w-28">
+                                <span className="truncate">{f.purchase_order_number}</span>
+                                <ExternalLink className="h-3 w-3 shrink-0" />
+                              </button>
+                            ) : <span className="text-muted-foreground">-</span>}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {f.evidence_links && f.evidence_links.length > 0 ? (
+                              <div className="flex flex-col gap-0.5">
+                                {f.evidence_links.map((link, idx) => (
+                                  <a key={idx} href={link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1">
+                                    <Link className="h-3 w-3" />Evidencia {idx + 1}
+                                  </a>
+                                ))}
+                              </div>
+                            ) : "-"}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center justify-center gap-1">
+                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditForm(f)} title="Editar">
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => exportMaintenancePDF(f, f.contract_id ? (contractCompanyMap[f.contract_id] || []).join(", ") : undefined)} title="Descargar PDF">
+                                <FileDown className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </TooltipProvider>
           </div>
         </CardContent>
       </Card>
