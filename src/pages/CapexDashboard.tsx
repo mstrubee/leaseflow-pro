@@ -157,7 +157,7 @@ export default function CapexDashboard() {
     });
   }, [budgets, yearFilter, searchTerm]);
 
-  // Group by contract
+  // Group by contract, filtering out those with zero total amounts
   const contractGroups = React.useMemo(() => {
     const map = new Map<string, ContractBudget[]>();
     filteredBudgets.forEach(b => {
@@ -165,8 +165,16 @@ export default function CapexDashboard() {
       existing.push(b);
       map.set(b.contract_id, existing);
     });
-    return Array.from(map.entries()).sort((a, b) => a[1][0].contract_name.localeCompare(b[1][0].contract_name));
-  }, [filteredBudgets]);
+    return Array.from(map.entries())
+      .filter(([, cBudgets]) => {
+        const total = cBudgets.reduce((sum, b) => {
+          const bd = authByBudget[b.budget_id];
+          return sum + (bd ? bd.authorized + bd.unauthorized : 0);
+        }, 0);
+        return total > 0;
+      })
+      .sort((a, b) => a[1][0].contract_name.localeCompare(b[1][0].contract_name));
+  }, [filteredBudgets, authByBudget]);
 
   // Aggregate authByBudget → authByContract using only filtered budgets (year-specific)
   const authByContract = React.useMemo(() => {
