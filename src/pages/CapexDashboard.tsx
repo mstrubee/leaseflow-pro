@@ -365,27 +365,25 @@ export default function CapexDashboard() {
                   <Card>
                     <CollapsibleTrigger asChild>
                       <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
-                        <div className="flex items-center justify-between gap-4">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <ChevronDown className={`h-5 w-5 shrink-0 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
-                            <CardTitle className="text-base whitespace-nowrap">{contractName}</CardTitle>
-                            <div onClick={(e) => e.stopPropagation()}>
-                              <Select
-                                value={clasificacion || ""}
-                                onValueChange={(val) => handleClasificacionChange(contractId, val)}
-                              >
-                                <SelectTrigger className="h-7 w-[140px] text-xs">
-                                  <SelectValue placeholder="Clasificar..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="nuevo">Nuevo</SelectItem>
-                                  <SelectItem value="reemplazo">Reemplazo</SelectItem>
-                                  <SelectItem value="regularizacion">Regularización</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
+                        <div className="grid grid-cols-[24px_200px_140px_1fr] items-center gap-3">
+                          <ChevronDown className={`h-5 w-5 shrink-0 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
+                          <CardTitle className="text-base whitespace-nowrap">{contractName}</CardTitle>
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <Select
+                              value={clasificacion || ""}
+                              onValueChange={(val) => handleClasificacionChange(contractId, val)}
+                            >
+                              <SelectTrigger className="h-7 w-[140px] text-xs">
+                                <SelectValue placeholder="Clasificar..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="nuevo">Nuevo</SelectItem>
+                                <SelectItem value="reemplazo">Reemplazo</SelectItem>
+                                <SelectItem value="regularizacion">Regularización</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
-                          <div className="text-right space-y-0.5 shrink-0">
+                          <div className="text-right space-y-0.5">
                             {breakdown.authorized > 0 && (
                               <div>
                                 <span className="text-green-600 dark:text-green-400 font-medium text-sm">
