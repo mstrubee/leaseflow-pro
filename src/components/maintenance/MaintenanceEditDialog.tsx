@@ -10,7 +10,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Loader2, Link, Info, ArrowRight, ExternalLink, Truck, FileText, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { MaintenanceForm, SubStatus, SUB_STATUS_ORDER, SUB_STATUS_LABELS, SUB_STATUS_INFO, getNextSubStatus } from "./types";
+import { MaintenanceForm } from "./types";
+import { useMaintenanceSubStatuses } from "@/hooks/useMaintenanceSubStatuses";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -23,11 +24,12 @@ interface Props {
 
 export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: Props) {
   const navigate = useNavigate();
+  const { subStatuses, subStatusLabels, subStatusInfo, subStatusOrder, getNextSubStatus } = useMaintenanceSubStatuses();
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     form_number: "",
     status: "proceso",
-    sub_status: "solicitado" as SubStatus,
+    sub_status: "solicitado",
     created_date: "",
     contract_name: "",
     general_description: "",
@@ -43,7 +45,7 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
       setFormData({
         form_number: form.form_number || "",
         status: form.status || "proceso",
-        sub_status: (form.sub_status as SubStatus) || "solicitado",
+        sub_status: form.sub_status || "solicitado",
         created_date: form.created_date || "",
         contract_name: form.contract_name || "",
         general_description: form.general_description || "",
@@ -56,6 +58,8 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
     }
   }, [form]);
 
+  const firstSubStatus = subStatusOrder[0] || "solicitado";
+
   const doSave = async (advance: boolean) => {
     if (!form) return;
     setSaving(true);
@@ -67,17 +71,21 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
         return;
       }
 
+      const finalSubStatus = newSubStatus || formData.sub_status;
+      // Auto-set status to "proceso" when sub_status moves from first state
+      const finalStatus = finalSubStatus !== firstSubStatus ? "proceso" : formData.status;
+
       const { error } = await (supabase.from("maintenance_forms" as any) as any)
         .update({
-          status: formData.status,
-          sub_status: newSubStatus || formData.sub_status,
+          status: finalStatus,
+          sub_status: finalSubStatus,
           additional_comments: formData.additional_comments || null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", form.id);
 
       if (error) throw error;
-      toast({ title: advance ? `Avanzado a ${SUB_STATUS_LABELS[newSubStatus as SubStatus]}` : "FORM actualizado correctamente" });
+      toast({ title: advance ? `Avanzado a ${subStatusLabels[finalSubStatus] || finalSubStatus}` : "FORM actualizado correctamente" });
       onOpenChange(false);
       onSuccess();
     } catch (err: any) {
@@ -106,13 +114,11 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
           </div>
           <div className="space-y-1.5">
             <Label>Estado</Label>
-            <Select value={formData.status} onValueChange={v => set("status", v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="proceso">En Proceso</SelectItem>
-                <SelectItem value="solucionado">Solucionado</SelectItem>
-              </SelectContent>
-            </Select>
+            <Input
+              value={formData.status === "solucionado" ? "Solucionado" : "En Proceso"}
+              readOnly
+              className="bg-muted"
+            />
           </div>
           <div className="space-y-1.5">
             <div className="flex items-center gap-1.5">
@@ -126,11 +132,11 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
                 <PopoverContent className="w-80 p-3" side="right">
                   <p className="font-semibold text-sm mb-2">Sub Estados del FORM</p>
                   <div className="space-y-2">
-                    {SUB_STATUS_ORDER.map(s => (
-                      <div key={s} className="text-xs">
-                        <span className="font-medium">{SUB_STATUS_LABELS[s]}</span>
-                        <span className="text-muted-foreground ml-1">({SUB_STATUS_INFO[s].responsible})</span>
-                        <p className="text-muted-foreground mt-0.5">{SUB_STATUS_INFO[s].description}</p>
+                    {subStatuses.map(s => (
+                      <div key={s.name} className="text-xs">
+                        <span className="font-medium">{s.label}</span>
+                        {s.responsible && <span className="text-muted-foreground ml-1">({s.responsible})</span>}
+                        {s.description && <p className="text-muted-foreground mt-0.5">{s.description}</p>}
                       </div>
                     ))}
                   </div>
@@ -140,8 +146,8 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
             <Select value={formData.sub_status} onValueChange={v => set("sub_status", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {SUB_STATUS_ORDER.map(s => (
-                  <SelectItem key={s} value={s}>{SUB_STATUS_LABELS[s]}</SelectItem>
+                {subStatuses.map(s => (
+                  <SelectItem key={s.name} value={s.name}>{s.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -249,12 +255,12 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
               <Label className="text-sm font-semibold">Historial de Sub Estados</Label>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {SUB_STATUS_ORDER.map(s => {
-                const key = `sub_status_${s}_at` as keyof MaintenanceForm;
+              {subStatuses.map(s => {
+                const key = `sub_status_${s.name}_at` as keyof MaintenanceForm;
                 const dateVal = form[key] as string | null;
                 return (
-                  <div key={s} className={`rounded-md border p-2 text-xs ${dateVal ? 'bg-primary/5 border-primary/20' : 'bg-muted/50 border-border'}`}>
-                    <p className="font-medium">{SUB_STATUS_LABELS[s]}</p>
+                  <div key={s.name} className={`rounded-md border p-2 text-xs ${dateVal ? 'bg-primary/5 border-primary/20' : 'bg-muted/50 border-border'}`}>
+                    <p className="font-medium">{s.label}</p>
                     <p className="text-muted-foreground mt-0.5">
                       {dateVal ? format(new Date(dateVal), "dd MMM yyyy HH:mm", { locale: es }) : "—"}
                     </p>
