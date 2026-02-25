@@ -96,6 +96,10 @@ export default function CapexDashboard() {
           from += PAGE_SIZE;
         }
 
+        // Filter out budgets with zero lines (empty CAPEX)
+        const budgetIdsWithLines = new Set(allLines.map(l => l.budget_id));
+        setBudgets(prev => prev.filter(b => budgetIdsWithLines.has(b.budget_id)));
+
         if (allLines.length > 0) {
           // Find parent IDs to exclude (avoid double-counting)
           const parentIds = new Set(allLines.filter(l => l.parent_id).map(l => l.parent_id!));
@@ -126,6 +130,9 @@ export default function CapexDashboard() {
           });
           setAuthByBudget(breakdown);
         }
+      } else {
+        // No budgets at all — clear
+        setBudgets([]);
       }
     } catch (error) {
       console.error("Error loading CAPEX budgets:", error);
