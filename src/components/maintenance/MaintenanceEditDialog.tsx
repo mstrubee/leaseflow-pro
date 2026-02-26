@@ -62,6 +62,13 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
 
   const doSave = async (advance: boolean) => {
     if (!form) return;
+
+    // Block manual sub-status change if currently "solicitado"
+    if (form.sub_status === "solicitado" && formData.sub_status !== "solicitado") {
+      toast({ title: "Debe asignar criticidad primero", description: "El sub-estado 'Solicitado' solo cambia al asignar una clasificación de criticidad.", variant: "destructive" });
+      return;
+    }
+
     setSaving(true);
     try {
       const newSubStatus = advance ? getNextSubStatus(formData.sub_status) : formData.sub_status;
@@ -72,8 +79,16 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
       }
 
       const finalSubStatus = newSubStatus || formData.sub_status;
-      // Auto-set status to "proceso" when sub_status moves from first state
-      const finalStatus = finalSubStatus !== firstSubStatus ? "proceso" : formData.status;
+
+      // Auto-set status: "solucionado" when "resuelto", otherwise "proceso"
+      let finalStatus: string;
+      if (finalSubStatus === "resuelto") {
+        finalStatus = "solucionado";
+      } else if (finalSubStatus === "solicitado") {
+        finalStatus = formData.status;
+      } else {
+        finalStatus = "proceso";
+      }
 
       const { error } = await (supabase.from("maintenance_forms" as any) as any)
         .update({
@@ -143,12 +158,18 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
                 </PopoverContent>
               </Popover>
             </div>
-            <Select value={formData.sub_status} onValueChange={v => set("sub_status", v)}>
+            <Select
+              value={formData.sub_status}
+              onValueChange={v => set("sub_status", v)}
+              disabled={form?.sub_status === "solicitado"}
+            >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {subStatuses.map(s => (
-                  <SelectItem key={s.name} value={s.name}>{s.label}</SelectItem>
-                ))}
+                {subStatuses
+                  .filter(s => form?.sub_status === "solicitado" ? true : s.name.toLowerCase() !== "solicitado")
+                  .map(s => (
+                    <SelectItem key={s.name} value={s.name}>{s.label}</SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           </div>
