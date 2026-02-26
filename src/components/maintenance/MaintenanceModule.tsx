@@ -146,9 +146,12 @@ const SubStatusCell = memo(function SubStatusCell({
   onSubStatusChange: (formId: string, newSubStatus: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
-  const currentSub = subStatuses.find(s => s.name.toLowerCase() === (form.sub_status || "").toLowerCase());
+  const subStatusLower = (form.sub_status || "").toLowerCase();
+  const currentSub = subStatuses.find(s => s.name.toLowerCase() === subStatusLower || s.label.toLowerCase() === subStatusLower);
   const currentColor = currentSub?.color;
-  const currentInfo = subStatusInfo[(form.sub_status || "").toLowerCase()];
+  const currentInfo = currentSub
+    ? subStatusInfo[currentSub.name.toLowerCase()] || subStatusInfo[subStatusLower]
+    : subStatusInfo[subStatusLower];
 
   const isSolicitado = (form.sub_status || "").toLowerCase() === "solicitado";
   // Filter: hide "solicitado" from options when form is no longer in that state
@@ -170,7 +173,7 @@ const SubStatusCell = memo(function SubStatusCell({
                   className="text-xs"
                   style={currentColor ? { borderColor: currentColor === 'yellow' ? '#eab308' : currentColor, color: currentColor === 'yellow' ? 'black' : currentColor } : {}}
                 >
-                  {subStatusLabels[(form.sub_status || "").toLowerCase()] || form.sub_status || "Solicitado"}
+                  {currentSub?.label || subStatusLabels[subStatusLower] || form.sub_status || "Solicitado"}
                 </Badge>
               </button>
             </PopoverTrigger>
