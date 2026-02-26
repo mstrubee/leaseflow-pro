@@ -102,6 +102,33 @@ const CommentCell = memo(function CommentCell({
   );
 });
 
+/* ── DebouncedInput: isolated memo'd input that only re-renders itself ── */
+const DebouncedInput = memo(function DebouncedInput({
+  value: externalValue,
+  onChange,
+  delay = 300,
+  ...props
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  delay?: number;
+} & Omit<React.ComponentProps<typeof Input>, "value" | "onChange">) {
+  const [local, setLocal] = useState(externalValue);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  useEffect(() => {
+    const t = setTimeout(() => onChangeRef.current(local), delay);
+    return () => clearTimeout(t);
+  }, [local, delay]);
+
+  // Sync if parent resets (e.g. "clear filters")
+  useEffect(() => { setLocal(externalValue); }, [externalValue]);
+
+  return <Input {...props} value={local} onChange={e => setLocal(e.target.value)} />;
+});
+
+
 /* ── Isolated SubStatusCell for dropdown selection ── */
 const SubStatusCell = memo(function SubStatusCell({
   form,
@@ -451,19 +478,13 @@ export function MaintenanceModule() {
     });
   }, []);
 
-  // Local state for search inputs to avoid lag
-  const [localSearch, setLocalSearch] = useState(filters.search);
-  const [localContractSearch, setLocalContractSearch] = useState(filters.contractSearch);
-
-  useEffect(() => {
-    const t = setTimeout(() => updateFilter("search", localSearch), 300);
-    return () => clearTimeout(t);
-  }, [localSearch, updateFilter]);
-
-  useEffect(() => {
-    const t = setTimeout(() => updateFilter("contractSearch", localContractSearch), 300);
-    return () => clearTimeout(t);
-  }, [localContractSearch, updateFilter]);
+  // Search callbacks for DebouncedInput (stable refs via useCallback)
+  const onSearchChange = useCallback((val: string) => {
+    setFilters(prev => ({ ...prev, search: val }));
+  }, []);
+  const onContractSearchChange = useCallback((val: string) => {
+    setFilters(prev => ({ ...prev, contractSearch: val }));
+  }, []);
 
   const availableCompanies = useMemo(() => {
     const companies = new Set<string>();
@@ -852,7 +873,7 @@ export function MaintenanceModule() {
           <Label className="text-xs text-muted-foreground">Buscar</Label>
           <div className="relative">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="N° FORM, contrato, descripción..." value={localSearch} onChange={e => setLocalSearch(e.target.value)} className="pl-8" />
+            <DebouncedInput placeholder="N° FORM, contrato, descripción..." value={filters.search} onChange={onSearchChange} className="pl-8" />
           </div>
         </div>
         <div>
@@ -897,10 +918,10 @@ export function MaintenanceModule() {
               <div className="space-y-2">
                 <div className="relative">
                   <Search className="absolute left-2 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input
+                  <DebouncedInput
                     placeholder="Buscar contrato..."
-                    value={localContractSearch}
-                    onChange={e => setLocalContractSearch(e.target.value)}
+                    value={filters.contractSearch}
+                    onChange={onContractSearchChange}
                     className="pl-7 h-8 text-sm"
                   />
                 </div>
