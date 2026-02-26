@@ -1,27 +1,57 @@
 
 
-## Cambio automático a "Clasificado" al asignar criticidad
+## Reglas de flujo de sub-estados en Mantenciones
 
-### Situación actual
-Actualmente, cuando se asigna una clasificación de criticidad a un FORM, el sub-estado solo cambia a "Clasificacion_de_Criticidad" si el FORM está en sub-estado "solicitado". Si ya avanzó a otro sub-estado, no se modifica.
+### Resumen de cambios
 
-### Cambio propuesto
-Modificar la lógica para que **siempre** que se asigne una criticidad (valor distinto de "ninguno"), el sub-estado pase automáticamente a "Clasificacion_de_Criticidad" y el estado principal a "proceso", sin importar en qué sub-estado se encuentre actualmente el FORM.
+Se implementaran 4 reglas de negocio para el flujo de sub-estados:
 
-### Archivo a modificar
+1. **"Solicitado" solo cambia con asignacion de criticidad** -- no se puede cambiar manualmente ni por comentario.
+2. **Estado "Solucionado" solo cuando sub-estado es "Resuelto"** -- el estado principal cambia automaticamente.
+3. **Criticidad siempre lleva a sub-estado "clasificado"** (no "Clasificacion_de_Criticidad") -- se corrige el nombre del sub-estado.
+4. **Una vez clasificado, el usuario puede cambiar manualmente pero no volver a "Solicitado"**.
 
-**`src/components/maintenance/MaintenanceModule.tsx`** (función `handleCriticalityChange`, líneas ~637-656)
+---
 
-- Eliminar la condición `form.sub_status === "solicitado"` del check `shouldAdvance`
-- La condición será simplemente: si se asigna una criticidad (no null), entonces avanzar a "Clasificacion_de_Criticidad"
-- Si se remueve la criticidad (valor "none"), solo se limpia el campo sin cambiar sub-estado
+### Archivos a modificar
 
-### Detalle técnico
+#### 1. `src/components/maintenance/MaintenanceModule.tsx`
+
+**handleCriticalityChange (~linea 637-656)**
+- Cambiar `"Clasificacion_de_Criticidad"` por `"clasificado"` en el sub_status que se asigna automaticamente.
+
+**saveComment (~linea 659-682)**
+- Eliminar la logica que cambia sub_status de "solicitado" a "revisado" al guardar un comentario. Los comentarios ya no deben cambiar el sub-estado.
+
+**handleSubStatusChange (~linea 684-706)**
+- Agregar validacion: si el FORM esta en sub_status "solicitado", bloquear el cambio manual y mostrar un toast indicando que debe asignarse criticidad primero.
+- Agregar validacion: no permitir seleccionar "solicitado" manualmente (solo el estado inicial).
+- Agregar logica: si el nuevo sub-estado es "resuelto", cambiar automaticamente el status principal a "solucionado".
+- Si el sub-estado cambia desde "resuelto" a otro, volver status a "proceso".
+
+**SubStatusCell (~linea 106-188)**
+- Filtrar la opcion "Solicitado" del dropdown cuando el FORM ya no esta en "solicitado" (para que no se pueda volver).
+- Si el FORM esta en "solicitado", deshabilitar el dropdown o mostrar mensaje de que debe asignarse criticidad.
+
+#### 2. `src/components/maintenance/MaintenanceEditDialog.tsx`
+
+**doSave (~linea 63-90)**
+- Agregar logica: si finalSubStatus es "resuelto", el status debe ser "solucionado".
+- Si el FORM esta en "solicitado", no permitir cambio manual de sub-estado.
+
+**Select de Sub Estado (~linea 123-140)**
+- Filtrar "solicitado" de las opciones cuando el FORM ya fue clasificado.
+- Deshabilitar el select si el sub_status actual es "solicitado".
+
+---
+
+### Detalle tecnico
 
 ```text
-Antes:  shouldAdvance = newVal && form && form.sub_status === "solicitado"
-Después: shouldAdvance = newVal && form
+Reglas:
+  solicitado -> clasificado    (solo via criticidad)
+  clasificado -> [manual]      (excepto volver a solicitado)
+  resuelto -> status=solucionado (automatico)
+  cualquier otro -> status=proceso
 ```
-
-Esto asegura que cualquier asignación de criticidad siempre posicione el FORM en el sub-estado "Clasificado", desde donde el usuario puede continuar avanzando manualmente.
 
