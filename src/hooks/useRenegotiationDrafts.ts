@@ -52,6 +52,11 @@ export interface RenegotiationDraft {
   source_type: string;
   source_draft_id: string | null;
   
+  // Auto renewal
+  auto_renewal: boolean;
+  auto_renewal_type: string | null;
+  auto_renewal_months: number | null;
+  
   // Status
   status: string;
   
@@ -149,6 +154,9 @@ export function useRenegotiationDrafts(contractId: string) {
           notice_bilaterality: currentVersion.notice_bilaterality || "unilateral",
           otros_egresos_amount: currentVersion.otros_egresos_amount,
           otros_egresos_description: currentVersion.otros_egresos_description,
+          auto_renewal: currentVersion.auto_renewal || false,
+          auto_renewal_type: currentVersion.auto_renewal_type,
+          auto_renewal_months: currentVersion.auto_renewal_months,
         };
       } else if (input.source_type === "draft" && input.source_draft_id) {
         // Copy from another draft
@@ -183,6 +191,9 @@ export function useRenegotiationDrafts(contractId: string) {
             notice_bilaterality: sourceDraft.notice_bilaterality,
             otros_egresos_amount: sourceDraft.otros_egresos_amount,
             otros_egresos_description: sourceDraft.otros_egresos_description,
+            auto_renewal: sourceDraft.auto_renewal || false,
+            auto_renewal_type: sourceDraft.auto_renewal_type,
+            auto_renewal_months: sourceDraft.auto_renewal_months,
           };
         }
       } else {
@@ -403,6 +414,9 @@ export function useRenegotiationDrafts(contractId: string) {
         notice_bilaterality: draft.notice_bilaterality,
         otros_egresos_amount: draft.otros_egresos_amount,
         otros_egresos_description: draft.otros_egresos_description,
+        auto_renewal: draft.auto_renewal || false,
+        auto_renewal_type: draft.auto_renewal ? draft.auto_renewal_type : null,
+        auto_renewal_months: draft.auto_renewal ? draft.auto_renewal_months : null,
       };
 
       const { data: newVersion, error: insertError } = await supabase

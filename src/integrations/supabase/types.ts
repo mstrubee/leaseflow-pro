@@ -4357,6 +4357,9 @@ export type Database = {
           adjustment_periodicity_months: number | null
           adjustment_type: string | null
           adjustment_value: number | null
+          auto_renewal: boolean | null
+          auto_renewal_months: number | null
+          auto_renewal_type: string | null
           contract_id: string
           created_at: string
           created_by: string | null
@@ -4398,6 +4401,9 @@ export type Database = {
           adjustment_periodicity_months?: number | null
           adjustment_type?: string | null
           adjustment_value?: number | null
+          auto_renewal?: boolean | null
+          auto_renewal_months?: number | null
+          auto_renewal_type?: string | null
           contract_id: string
           created_at?: string
           created_by?: string | null
@@ -4439,6 +4445,9 @@ export type Database = {
           adjustment_periodicity_months?: number | null
           adjustment_type?: string | null
           adjustment_value?: number | null
+          auto_renewal?: boolean | null
+          auto_renewal_months?: number | null
+          auto_renewal_type?: string | null
           contract_id?: string
           created_at?: string
           created_by?: string | null
