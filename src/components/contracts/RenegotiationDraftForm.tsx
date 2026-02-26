@@ -99,6 +99,11 @@ export function RenegotiationDraftForm({
   const [otrosEgresosAmount, setOtrosEgresosAmount] = useState("");
   const [otrosEgresosDescription, setOtrosEgresosDescription] = useState("");
   
+  // Auto renewal
+  const [autoRenewal, setAutoRenewal] = useState(false);
+  const [autoRenewalType, setAutoRenewalType] = useState<"unilateral_gp" | "bilateral">("bilateral");
+  const [autoRenewalMonths, setAutoRenewalMonths] = useState("");
+  
   // Avisos
   const [noticeType, setNoticeType] = useState<"meses" | "fecha" | "rangos" | "desde_mes">("meses");
   const [noticeValue, setNoticeValue] = useState("");
@@ -146,6 +151,10 @@ export function RenegotiationDraftForm({
       setOtrosEgresosAmount(draft.otros_egresos_amount?.toString() || "");
       setOtrosEgresosDescription(draft.otros_egresos_description || "");
       
+      setAutoRenewal((draft as any).auto_renewal || false);
+      setAutoRenewalType((draft as any).auto_renewal_type || "bilateral");
+      setAutoRenewalMonths((draft as any).auto_renewal_months?.toString() || "");
+      
       setNoticeType((draft.notice_type as "meses" | "fecha" | "rangos") || "meses");
       setNoticeValue(draft.notice_value || "");
       setNoticeBilaterality((draft.notice_bilaterality as "unilateral_gp" | "bilateral") || "unilateral_gp");
@@ -186,6 +195,9 @@ export function RenegotiationDraftForm({
     setFondoPromocionPercentage("");
     setOtrosEgresosAmount("");
     setOtrosEgresosDescription("");
+    setAutoRenewal(false);
+    setAutoRenewalType("bilateral");
+    setAutoRenewalMonths("");
     setNoticeType("meses");
     setNoticeValue("");
     setNoticeBilaterality("unilateral_gp");
@@ -230,7 +242,10 @@ export function RenegotiationDraftForm({
       notice_type: noticeType,
       notice_value: noticeType === "rangos" ? "rangos" : noticeValue,
       notice_bilaterality: noticeBilaterality,
-    };
+      auto_renewal: autoRenewal,
+      auto_renewal_type: autoRenewal ? autoRenewalType : null,
+      auto_renewal_months: autoRenewal && autoRenewalMonths ? parseInt(autoRenewalMonths) : null,
+    } as any;
 
     await onSave(data, escalations, noticeRanges);
   };
@@ -337,6 +352,62 @@ export function RenegotiationDraftForm({
                   onChange={setDurationMonths}
                   description="Duración total del contrato"
                 />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm">Renovación Automática</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center gap-4">
+                  <Label className="text-sm">¿Renovación automática?</Label>
+                  <RadioGroup
+                    value={autoRenewal ? "yes" : "no"}
+                    onValueChange={(v) => setAutoRenewal(v === "yes")}
+                    className="flex gap-4"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="yes" id="autoRenewalYesDraft" />
+                      <Label htmlFor="autoRenewalYesDraft" className="font-normal">Sí</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="no" id="autoRenewalNoDraft" />
+                      <Label htmlFor="autoRenewalNoDraft" className="font-normal">No</Label>
+                    </div>
+                  </RadioGroup>
+                </div>
+
+                {autoRenewal && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-primary/30">
+                    <div className="space-y-2">
+                      <Label>Tipo de Renovación</Label>
+                      <RadioGroup
+                        value={autoRenewalType}
+                        onValueChange={(v: "unilateral_gp" | "bilateral") => setAutoRenewalType(v)}
+                        className="flex gap-4"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="unilateral_gp" id="renewalUnilateralDraft" />
+                          <Label htmlFor="renewalUnilateralDraft" className="font-normal">Unilateral GP</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="bilateral" id="renewalBilateralDraft" />
+                          <Label htmlFor="renewalBilateralDraft" className="font-normal">Bilateral</Label>
+                        </div>
+                      </RadioGroup>
+                    </div>
+                    <DurationInput
+                      id="autoRenewalMonthsDraft"
+                      label="Plazo de Renovación"
+                      value={autoRenewalMonths}
+                      onChange={setAutoRenewalMonths}
+                      placeholder="Ej: 12"
+                      showEquivalent={true}
+                      description="Período de cada renovación automática"
+                    />
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
