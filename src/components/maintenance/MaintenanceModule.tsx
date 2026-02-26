@@ -637,7 +637,7 @@ export function MaintenanceModule() {
   const handleCriticalityChange = async (formId: string, val: string) => {
     const newVal = val === "none" ? null : val;
     const form = forms.find(f => f.id === formId);
-    const shouldAdvance = newVal && form && form.sub_status === "solicitado";
+    const shouldAdvance = !!newVal && !!form;
     const updatePayload: any = { criticality_category_id: newVal };
     if (shouldAdvance) {
       updatePayload.sub_status = "Clasificacion_de_Criticidad";
