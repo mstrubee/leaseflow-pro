@@ -1,45 +1,53 @@
 
 
-## Fix: Escritura lenta en campo de busqueda
+## Fix: Escritura extremadamente lenta en campos de busqueda
 
-### Problema
-El campo de busqueda usa `startTransition` para actualizar el estado del filtro. Esto hace que React difiera la actualizacion del valor, pero como el input esta controlado (`value={filters.search}`), el texto aparece con retraso y se siente erratico.
-
-Lo mismo aplica al campo "Buscar contrato..." que usa el mismo patron.
+### Problema raiz
+Aunque se agrego estado local (`localSearch`), cada pulsacion de tecla llama `setLocalSearch`, lo que re-renderiza **todo** el componente `MaintenanceModule` (~1243 lineas). Los multiples `useMemo`, la tabla completa y todos los filtros se recalculan/re-renderizan en cada teclazo, causando el retraso visible.
 
 ### Solucion
-Usar un estado local para el valor del input y sincronizarlo con el filtro mediante un debounce o un `useEffect`. Asi el input responde inmediatamente al teclado, y el filtrado pesado se ejecuta con un pequeno retraso.
+Extraer los campos de busqueda en componentes independientes con `memo`. Asi, al escribir solo se re-renderiza el pequeno componente del input, no el modulo completo. El componente padre solo se entera cuando el debounce dispara el callback.
 
 ### Cambios en `src/components/maintenance/MaintenanceModule.tsx`
 
-1. **Agregar estado local para los campos de texto** -- dos variables: `localSearch` y `localContractSearch`, inicializadas desde `filters`.
+1. **Crear un componente `DebouncedInput`** (dentro del mismo archivo o separado) que:
+   - Mantiene su propio estado local
+   - Usa un `useEffect` con debounce interno
+   - Llama un callback `onDebouncedChange` cuando el valor se estabiliza
+   - Esta envuelto en `memo` para no re-renderizarse por cambios del padre
 
-2. **Sincronizar con debounce** -- usar `useEffect` con un `setTimeout` de ~300ms para propagar el valor local al filtro real.
+2. **Eliminar `localSearch`, `localContractSearch` y sus `useEffect`** del componente principal.
 
-3. **Cambiar los inputs** -- los inputs usaran el estado local (`value={localSearch}`) y actualizaran el estado local directamente (`onChange={e => setLocalSearch(e.target.value)}`), sin pasar por `startTransition`.
+3. **Reemplazar los inputs** por `<DebouncedInput>` pasando `onDebouncedChange` que llama directamente a `setFilters` (sin `startTransition`, ya que el debounce ya absorbe la latencia).
 
 ### Detalle tecnico
 
 ```text
-// Nuevos estados locales
-const [localSearch, setLocalSearch] = useState(filters.search);
-const [localContractSearch, setLocalContractSearch] = useState(filters.contractSearch);
+// Componente aislado - se re-renderiza solo cuando escribe
+const DebouncedInput = memo(({ value, onChange, delay = 300, ...props }) => {
+  const [local, setLocal] = useState(value);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
-// Debounce: sincronizar estado local -> filtro
-useEffect(() => {
-  const t = setTimeout(() => updateFilter("search", localSearch), 300);
-  return () => clearTimeout(t);
-}, [localSearch]);
+  useEffect(() => {
+    const t = setTimeout(() => onChangeRef.current(local), delay);
+    return () => clearTimeout(t);
+  }, [local, delay]);
 
-useEffect(() => {
-  const t = setTimeout(() => updateFilter("contractSearch", localContractSearch), 300);
-  return () => clearTimeout(t);
-}, [localContractSearch]);
+  // Sincronizar si el padre cambia el valor (ej: "limpiar filtros")
+  useEffect(() => { setLocal(value); }, [value]);
 
-// Inputs usan estado local
-<Input value={localSearch} onChange={e => setLocalSearch(e.target.value)} ... />
-<Input value={localContractSearch} onChange={e => setLocalContractSearch(e.target.value)} ... />
+  return <Input {...props} value={local} onChange={e => setLocal(e.target.value)} />;
+});
+
+// Uso en el modulo:
+<DebouncedInput
+  value={filters.search}
+  onChange={val => setFilters(prev => ({ ...prev, search: val }))}
+  placeholder="N° FORM, contrato..."
+  className="pl-8"
+/>
 ```
 
-Esto hace que la escritura sea instantanea y el filtrado se aplique 300ms despues de dejar de escribir.
+Esto asegura que al escribir, solo el input se re-renderiza. El filtrado pesado se ejecuta 300ms despues, una sola vez.
 
