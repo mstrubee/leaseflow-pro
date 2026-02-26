@@ -1,53 +1,47 @@
 
 
-## Fix: Escritura extremadamente lenta en campos de busqueda
+## Historial de Sub Estados con Usuario Clasificador
 
-### Problema raiz
-Aunque se agrego estado local (`localSearch`), cada pulsacion de tecla llama `setLocalSearch`, lo que re-renderiza **todo** el componente `MaintenanceModule` (~1243 lineas). Los multiples `useMemo`, la tabla completa y todos los filtros se recalculan/re-renderizan en cada teclazo, causando el retraso visible.
+### Situacion actual
+El historial actual muestra tarjetas estaticas basadas en columnas de timestamp del formulario (`sub_status_solicitado_at`, etc.). No muestra quien realizo el cambio ni usa los datos reales de la tabla `maintenance_status_history` que ya registra cada transicion con `changed_by` y `changed_at`.
 
 ### Solucion
-Extraer los campos de busqueda en componentes independientes con `memo`. Asi, al escribir solo se re-renderiza el pequeno componente del input, no el modulo completo. El componente padre solo se entera cuando el debounce dispara el callback.
+Reemplazar el historial actual por uno que consulte la tabla `maintenance_status_history`, filtrando por `field_changed = 'sub_status'`, y cruzando con `profiles` para obtener el nombre del usuario clasificador.
 
-### Cambios en `src/components/maintenance/MaintenanceModule.tsx`
+### Cambios
 
-1. **Crear un componente `DebouncedInput`** (dentro del mismo archivo o separado) que:
-   - Mantiene su propio estado local
-   - Usa un `useEffect` con debounce interno
-   - Llama un callback `onDebouncedChange` cuando el valor se estabiliza
-   - Esta envuelto en `memo` para no re-renderizarse por cambios del padre
-
-2. **Eliminar `localSearch`, `localContractSearch` y sus `useEffect`** del componente principal.
-
-3. **Reemplazar los inputs** por `<DebouncedInput>` pasando `onDebouncedChange` que llama directamente a `setFilters` (sin `startTransition`, ya que el debounce ya absorbe la latencia).
+**1. MaintenanceEditDialog.tsx -- Consultar historial real**
+- Al abrir el dialogo, hacer una consulta a `maintenance_status_history` filtrando por `form_id` y `field_changed = 'sub_status'`, ordenado por `changed_at`.
+- Hacer un segundo query (o join) a `profiles` para obtener el `full_name` o `email` del `changed_by`.
+- Reemplazar la seccion de timeline actual (que itera `subStatuses` y busca columnas timestamp) por tarjetas que muestren:
+  - **Sub Estado**: label del sub-estado (usando `subStatusLabels`)
+  - **Fecha**: `changed_at` formateada
+  - **Usuario Clasificador**: nombre del usuario que realizo el cambio (vacio para "Solicitado")
+  - **Fecha de Clasificacion**: igual a `changed_at` (momento en que se asigno)
+- Las tarjetas son de solo lectura, no editables.
+- Para el sub-estado "Solicitado", usar `created_at` del formulario como fecha y no mostrar usuario.
 
 ### Detalle tecnico
 
 ```text
-// Componente aislado - se re-renderiza solo cuando escribe
-const DebouncedInput = memo(({ value, onChange, delay = 300, ...props }) => {
-  const [local, setLocal] = useState(value);
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+// Estado para el historial
+const [history, setHistory] = useState([]);
 
-  useEffect(() => {
-    const t = setTimeout(() => onChangeRef.current(local), delay);
-    return () => clearTimeout(t);
-  }, [local, delay]);
+// Fetch al abrir
+useEffect(() => {
+  if (!form || !open) return;
+  
+  // 1. Obtener registros de maintenance_status_history
+  // 2. Obtener profiles para los changed_by ids
+  // 3. Combinar y ordenar cronologicamente
+  // 4. Agregar entrada "Solicitado" con created_at del form
+}, [form?.id, open]);
 
-  // Sincronizar si el padre cambia el valor (ej: "limpiar filtros")
-  useEffect(() => { setLocal(value); }, [value]);
-
-  return <Input {...props} value={local} onChange={e => setLocal(e.target.value)} />;
-});
-
-// Uso en el modulo:
-<DebouncedInput
-  value={filters.search}
-  onChange={val => setFilters(prev => ({ ...prev, search: val }))}
-  placeholder="N° FORM, contrato..."
-  className="pl-8"
-/>
+// Render: tarjetas no editables con sub-estado, fecha, usuario
 ```
 
-Esto asegura que al escribir, solo el input se re-renderiza. El filtrado pesado se ejecuta 300ms despues, una sola vez.
+**Archivos a modificar:**
+- `src/components/maintenance/MaintenanceEditDialog.tsx`
+
+No se requieren cambios de base de datos ya que la tabla `maintenance_status_history` ya existe y el trigger ya registra `changed_by` con `auth.uid()`.
 
