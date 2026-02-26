@@ -123,13 +123,20 @@ const SubStatusCell = memo(function SubStatusCell({
   const currentColor = currentSub?.color;
   const currentInfo = subStatusInfo[(form.sub_status || "").toLowerCase()];
 
+  const isSolicitado = (form.sub_status || "").toLowerCase() === "solicitado";
+  // Filter: hide "solicitado" from options when form is no longer in that state
+  const availableStatuses = isSolicitado ? subStatuses : subStatuses.filter(s => s.name.toLowerCase() !== "solicitado");
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={isSolicitado ? false : open} onOpenChange={isSolicitado ? undefined : setOpen}>
       <TooltipProvider delayDuration={100}>
         <Tooltip>
           <TooltipTrigger asChild>
             <PopoverTrigger asChild>
-              <button className="flex items-center h-7 px-1 rounded hover:bg-accent transition-colors w-full text-left cursor-pointer">
+              <button
+                className={`flex items-center h-7 px-1 rounded hover:bg-accent transition-colors w-full text-left ${isSolicitado ? "cursor-not-allowed opacity-70" : "cursor-pointer"}`}
+                onClick={isSolicitado ? (e) => { e.preventDefault(); } : undefined}
+              >
                 <Badge
                   variant="outline"
                   className="text-xs"
@@ -140,19 +147,23 @@ const SubStatusCell = memo(function SubStatusCell({
               </button>
             </PopoverTrigger>
           </TooltipTrigger>
-          {(currentInfo?.description || currentInfo?.responsible) && (
+          {isSolicitado ? (
+            <TooltipContent side="top" className="max-w-xs">
+              <p className="text-xs">Asigne criticidad para cambiar el sub-estado</p>
+            </TooltipContent>
+          ) : (currentInfo?.description || currentInfo?.responsible) ? (
             <TooltipContent side="top" className="max-w-xs">
               {currentInfo.description && <p className="text-xs">{currentInfo.description}</p>}
               {currentInfo.responsible && (
                 <p className="text-xs text-muted-foreground mt-0.5">Responsable: {currentInfo.responsible}</p>
               )}
             </TooltipContent>
-          )}
+          ) : null}
         </Tooltip>
       </TooltipProvider>
       <PopoverContent align="start" className="w-52 p-1 z-50 bg-popover border shadow-md">
         <TooltipProvider delayDuration={100}>
-          {subStatuses.map(s => (
+          {availableStatuses.map(s => (
             <Tooltip key={s.id}>
               <TooltipTrigger asChild>
                 <div
@@ -640,7 +651,7 @@ export function MaintenanceModule() {
     const shouldAdvance = !!newVal && !!form;
     const updatePayload: any = { criticality_category_id: newVal };
     if (shouldAdvance) {
-      updatePayload.sub_status = "Clasificacion_de_Criticidad";
+      updatePayload.sub_status = "clasificado";
       updatePayload.status = "proceso";
     }
     const { error } = await (supabase as any)
@@ -649,7 +660,7 @@ export function MaintenanceModule() {
       .eq("id", formId);
     if (error) { console.error(error); return; }
     setForms(prev => {
-      const updated = prev.map(fm => fm.id === formId ? { ...fm, criticality_category_id: newVal, ...(shouldAdvance ? { sub_status: "Clasificacion_de_Criticidad", status: "proceso" } : {}) } : fm);
+      const updated = prev.map(fm => fm.id === formId ? { ...fm, criticality_category_id: newVal, ...(shouldAdvance ? { sub_status: "clasificado", status: "proceso" } : {}) } : fm);
       writeCache(CACHE_KEY_FORMS, updated);
       return updated;
     });
@@ -657,13 +668,7 @@ export function MaintenanceModule() {
 
   // Comment save handler (called by CommentCell)
   const saveComment = useCallback(async (formId: string, text: string) => {
-    const form = forms.find(f => f.id === formId);
-    const markAsRevisado = form && form.sub_status === "solicitado";
     const updates: any = { additional_comments: text || null, updated_at: new Date().toISOString() };
-    if (markAsRevisado) {
-      updates.sub_status = 'revisado';
-      updates.status = 'proceso';
-    }
     const { error } = await (supabase as any)
       .from("maintenance_forms")
       .update(updates)
@@ -673,19 +678,32 @@ export function MaintenanceModule() {
       toast({ title: "Error", description: "No se pudo guardar el comentario", variant: "destructive" });
     } else {
       setForms(prev => {
-        const updated = prev.map(fm => fm.id === formId ? { ...fm, additional_comments: text || null, ...(markAsRevisado ? { sub_status: 'revisado', status: 'proceso' } : {}) } : fm);
+        const updated = prev.map(fm => fm.id === formId ? { ...fm, additional_comments: text || null } : fm);
         writeCache(CACHE_KEY_FORMS, updated);
         return updated;
       });
-      toast({ title: markAsRevisado ? "Comentario guardado y marcado como Revisado" : "Comentario guardado" });
+      toast({ title: "Comentario guardado" });
     }
   }, [forms]);
 
   // Sub-status change handler (called by SubStatusCell)
   const handleSubStatusChange = useCallback(async (formId: string, newSubStatus: string) => {
+    const form = forms.find(f => f.id === formId);
+    // Block manual change if currently "solicitado"
+    if (form && form.sub_status === "solicitado") {
+      toast({ title: "Debe asignar criticidad primero", description: "El sub-estado 'Solicitado' solo cambia al asignar una clasificación de criticidad.", variant: "destructive" });
+      return;
+    }
+    // Block going back to "solicitado"
+    if (newSubStatus === "solicitado") {
+      toast({ title: "No permitido", description: "No se puede volver al sub-estado 'Solicitado'.", variant: "destructive" });
+      return;
+    }
     const updates: any = { sub_status: newSubStatus, updated_at: new Date().toISOString() };
-    // Auto-set status to "proceso" if not first sub-status
-    if (subStatusOrder.length > 0 && newSubStatus !== subStatusOrder[0]) {
+    // Auto-set status based on sub-status
+    if (newSubStatus === "resuelto") {
+      updates.status = 'solucionado';
+    } else {
       updates.status = 'proceso';
     }
     const { error } = await (supabase as any)
@@ -703,7 +721,7 @@ export function MaintenanceModule() {
       });
       toast({ title: "Sub-estado actualizado" });
     }
-  }, [subStatusOrder]);
+  }, [subStatusOrder, forms]);
 
   return (
     <div className="space-y-4">
