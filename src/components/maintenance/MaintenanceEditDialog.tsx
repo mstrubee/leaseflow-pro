@@ -7,13 +7,19 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Loader2, Link, Info, ArrowRight, ExternalLink, Truck, FileText, Clock } from "lucide-react";
+import { Loader2, Link, Info, ArrowRight, ExternalLink, Truck, FileText, Clock, User } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm } from "./types";
 import { useMaintenanceSubStatuses } from "@/hooks/useMaintenanceSubStatuses";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+
+interface HistoryEntry {
+  sub_status: string;
+  changed_at: string;
+  user_name: string | null;
+}
 
 interface Props {
   form: MaintenanceForm | null;
@@ -39,6 +45,8 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
     fixed_assets_description: "",
     additional_comments: "",
   });
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   useEffect(() => {
     if (form) {
@@ -57,6 +65,66 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
       });
     }
   }, [form]);
+
+  // Fetch real history from maintenance_status_history + profiles
+  useEffect(() => {
+    if (!form || !open) { setHistory([]); return; }
+    let cancelled = false;
+    const fetchHistory = async () => {
+      setHistoryLoading(true);
+      try {
+        const { data: rows, error } = await (supabase as any)
+          .from("maintenance_status_history")
+          .select("new_value, changed_at, changed_by")
+          .eq("form_id", form.id)
+          .eq("field_changed", "sub_status")
+          .order("changed_at", { ascending: true });
+
+        if (error) throw error;
+
+        // Get unique user ids
+        const userIds = [...new Set((rows || []).map((r: any) => r.changed_by).filter(Boolean))] as string[];
+        let profileMap: Record<string, string> = {};
+        if (userIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from("profiles")
+            .select("id, full_name, email")
+            .in("id", userIds);
+          (profiles || []).forEach((p: any) => {
+            profileMap[p.id] = p.full_name || p.email || "—";
+          });
+        }
+
+        if (cancelled) return;
+
+        // Build entries: start with "Solicitado" using form created_at
+        const entries: HistoryEntry[] = [
+          {
+            sub_status: "solicitado",
+            changed_at: (form as any).created_at || form.created_date || "",
+            user_name: null,
+          },
+        ];
+
+        (rows || []).forEach((r: any) => {
+          if ((r.new_value || "").toLowerCase() === "solicitado") return; // skip duplicate solicitado
+          entries.push({
+            sub_status: r.new_value || "",
+            changed_at: r.changed_at || "",
+            user_name: r.changed_by ? (profileMap[r.changed_by] || "—") : null,
+          });
+        });
+
+        setHistory(entries);
+      } catch (err) {
+        console.error("Error fetching status history", err);
+      } finally {
+        setHistoryLoading(false);
+      }
+    };
+    fetchHistory();
+    return () => { cancelled = true; };
+  }, [form?.id, open]);
 
   const firstSubStatus = subStatusOrder[0] || "solicitado";
 
@@ -268,27 +336,49 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
           )}
         </div>
 
-        {/* Timeline de sub-estados */}
+        {/* Timeline de sub-estados - historial real */}
         {form && (
           <div className="space-y-2 border-t pt-3 mt-2">
             <div className="flex items-center gap-1.5">
               <Clock className="h-4 w-4 text-muted-foreground" />
               <Label className="text-sm font-semibold">Historial de Sub Estados</Label>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {subStatuses.map(s => {
-                const key = `sub_status_${s.name}_at` as keyof MaintenanceForm;
-                const dateVal = form[key] as string | null;
-                return (
-                  <div key={s.name} className={`rounded-md border p-2 text-xs ${dateVal ? 'bg-primary/5 border-primary/20' : 'bg-muted/50 border-border'}`}>
-                    <p className="font-medium">{s.label}</p>
-                    <p className="text-muted-foreground mt-0.5">
-                      {dateVal ? format(new Date(dateVal), "dd MMM yyyy HH:mm", { locale: es }) : "—"}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
+            {historyLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                <Loader2 className="h-4 w-4 animate-spin" /> Cargando historial…
+              </div>
+            ) : history.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Sin registros de historial.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {history.map((entry, idx) => {
+                  const label = subStatusLabels[entry.sub_status.toLowerCase()] || entry.sub_status;
+                  const dateStr = entry.changed_at
+                    ? format(new Date(entry.changed_at), "dd MMM yyyy HH:mm", { locale: es })
+                    : "—";
+                  return (
+                    <div key={idx} className="rounded-md border bg-primary/5 border-primary/20 p-2.5 text-xs space-y-1">
+                      <p className="font-semibold text-sm">{label}</p>
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <Clock className="h-3 w-3 shrink-0" />
+                        <span>Fecha: {dateStr}</span>
+                      </div>
+                      {entry.user_name && (
+                        <div className="flex items-center gap-1 text-muted-foreground">
+                          <User className="h-3 w-3 shrink-0" />
+                          <span>Clasificador: {entry.user_name}</span>
+                        </div>
+                      )}
+                      {entry.user_name && (
+                        <div className="text-muted-foreground">
+                          Fecha Clasificación: {dateStr}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
