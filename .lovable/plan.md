@@ -1,63 +1,56 @@
 
 
-## Card de filtro "Resuelto con Observaciones" y columna "Comentarios / Observaciones"
+## Redimensionar ventana flotante de alertas hacia arriba
 
-### 1. Nueva Card de estadisticas: "Resuelto con Observaciones"
+Agregar una funcionalidad de resize manual en el borde superior de la ventana flotante de alertas, permitiendo al usuario arrastrar hacia arriba para ampliar la lista visible cuando esta expandida.
 
-Agregar una quinta Card en la grilla de estadisticas (cambiar de `grid-cols-4` a `grid-cols-5`):
-- Titulo: "Con Observaciones"
-- Icono: `MessageSquare` (lucide)
-- Color: azul (`text-blue-600`)
-- Cuenta: forms con `sub_status === "resuelto"` y `resolution_observations` no vacio
-- Click: agrega un nuevo filtro `observationsFilter` (boolean) al `FilterState` que filtra solo forms resueltos con observaciones
-- Click de nuevo: desactiva el filtro
-- Borde activo con `ring-2 ring-blue-500`
+### Cambios
 
-Cambios en `FilterState`:
-- Agregar `observationsFilter: boolean` (default `false`)
-- En el `filtered` useMemo, si `observationsFilter === true`, filtrar solo forms donde `sub_status === "resuelto"` y `resolution_observations?.trim()` no este vacio
+**Archivo: `src/components/alerts/TodayAlertsFloating.tsx`**
 
-### 2. Columna "Comentarios / Observaciones"
+1. **Nuevo estado para altura personalizada**: Agregar `customHeight` (number | null) que controle la altura maxima del listado de alertas (reemplazando el `max-h-60` fijo).
 
-Renombrar el `TableHead` de "Comentarios" a "Comentarios / Observaciones".
+2. **Handle de resize en el borde superior**: Agregar un elemento pequeno (barra horizontal de 4px) en la parte superior de la Card que actue como "resize handle". El usuario arrastra hacia arriba para aumentar la altura del contenedor de alertas.
 
-Modificar el componente `InlineCommentsCell`:
-- En el popover de lectura (cuando no esta editando), si el form tiene `resolution_observations` con contenido (y `sub_status === "resuelto"`), mostrar una seccion adicional debajo de los comentarios:
-  - Separador visual
-  - Titulo "Observaciones - Control de Gestion" en texto muted
-  - Texto de las observaciones (solo lectura, sin boton editar para esta seccion)
-- El trigger del popover (la celda clickeable) debe mostrar un indicador visual cuando hay observaciones: por ejemplo un pequeno icono o texto truncado que combine ambos
+3. **Logica de resize**:
+   - `onPointerDown` en el handle: captura la posicion Y inicial y la altura actual
+   - `onPointerMove`: calcula la diferencia Y (hacia arriba = mayor altura) y actualiza `customHeight`
+   - `onPointerUp`: termina el resize
+   - Limites: minimo 240px (equivalente a max-h-60), maximo ~70% del viewport
 
-### Archivos afectados
+4. **Aplicar altura dinamica**: El div del listado (`max-h-60 overflow-y-auto`) usara `style={{ maxHeight: customHeight || 240 }}` en lugar de la clase fija.
+
+5. **Reset al colapsar**: Cuando `isOpen` cambia a false, resetear `customHeight` a null para que al reabrir vuelva al tamano por defecto.
+
+6. **Indicador visual**: El handle tendra un cursor `ns-resize` y mostrara una linea sutil (similar a un grip horizontal) para indicar que es arrastrable.
+
+### Detalle tecnico
+
+```text
+Estado nuevo:
+  customHeight: number | null  (default: null, usa 240px)
+  isResizing: boolean (default: false)
+  resizeStartY: useRef<number>
+  resizeStartHeight: useRef<number>
+
+Handle de resize (div encima de la Card):
+  - height: 6px, cursor: ns-resize
+  - Icono: linea horizontal centrada (GripHorizontal de lucide o borde visual)
+  - Solo visible cuando isOpen === true
+
+Logica:
+  onPointerDown -> captura Y, captura height actual, setPointerCapture
+  onPointerMove -> newHeight = startHeight + (startY - currentY)  // hacia arriba = mayor
+  onPointerUp -> fin
+  Clamp entre 150 y window.innerHeight * 0.7
+
+Listado de alertas:
+  <div style={{ maxHeight: customHeight ?? 240 }} className="space-y-2 overflow-y-auto">
+```
+
+### Archivo afectado
 
 | Archivo | Cambio |
 |---------|--------|
-| `src/components/maintenance/MaintenanceModule.tsx` | Agregar Card, filtro, renombrar columna, modificar InlineCommentsCell |
-
-### Detalles tecnicos
-
-**FilterState**:
-```text
-observationsFilter: boolean  // nuevo campo, default false
-```
-
-**Conteo**:
-```text
-const withObservationsCount = forms.filter(f => 
-  f.sub_status === "resuelto" && f.resolution_observations?.trim()
-).length;
-```
-
-**Filtro en `filtered` useMemo**:
-```text
-if (observationsFilter && !(f.sub_status === "resuelto" && f.resolution_observations?.trim())) return false;
-```
-
-**InlineCommentsCell popover (modo lectura)**:
-- Mostrar comentarios como antes
-- Si `form.resolution_observations?.trim()` y `form.sub_status === "resuelto"`:
-  - Separador
-  - Label "Observaciones - Control de Gestion" (muted, bold)
-  - Texto de observaciones (solo lectura)
-- Boton "Editar" solo aplica a comentarios, no a observaciones
+| `src/components/alerts/TodayAlertsFloating.tsx` | Agregar resize handle, estado de altura, logica de arrastre |
 
