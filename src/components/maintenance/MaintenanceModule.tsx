@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Textarea } from "@/components/ui/textarea";
-import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink, Shield, XCircle } from "lucide-react";
+import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink, Shield, XCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm, detectMaintenanceType } from "./types";
@@ -106,7 +106,7 @@ const CommentCell = memo(function CommentCell({
 const DebouncedInput = memo(function DebouncedInput({
   value: externalValue,
   onChange,
-  delay = 300,
+  delay = 200,
   ...props
 }: {
   value: string;
@@ -337,6 +337,8 @@ const DEFAULT_FILTERS: FilterState = {
   dateFilter: null,
 };
 
+const PAGE_SIZE = 100;
+
 const CACHE_KEY_FORMS = "maintenance_forms_cache";
 const CACHE_KEY_CRITICALITY = "maintenance_criticality_cache";
 const CACHE_KEY_COMPANY_MAP = "maintenance_company_map_cache";
@@ -380,6 +382,9 @@ export function MaintenanceModule() {
   const [excelIncludeCriticality, setExcelIncludeCriticality] = useState(false);
   const [excelIncludeRevisado, setExcelIncludeRevisado] = useState(false);
   const hasFetchedRef = useRef(false);
+  const [currentPage, setCurrentPage] = useState(0);
+  const formsRef = useRef(forms);
+  formsRef.current = forms;
 
   // Comment editing state removed — now handled by CommentCell
 
@@ -476,6 +481,7 @@ export function MaintenanceModule() {
   }, [fetchForms]);
 
   const updateFilter = useCallback(<K extends keyof FilterState>(key: K, value: FilterState[K]) => {
+    setCurrentPage(0);
     startTransition(() => {
       setFilters(prev => ({ ...prev, [key]: value }));
     });
@@ -483,9 +489,11 @@ export function MaintenanceModule() {
 
   // Search callbacks for DebouncedInput (stable refs via useCallback)
   const onSearchChange = useCallback((val: string) => {
+    setCurrentPage(0);
     setFilters(prev => ({ ...prev, search: val }));
   }, []);
   const onContractSearchChange = useCallback((val: string) => {
+    setCurrentPage(0);
     setFilters(prev => ({ ...prev, contractSearch: val }));
   }, []);
 
@@ -556,6 +564,7 @@ export function MaintenanceModule() {
   }, [contractFilterOptions, filters.contractSearch]);
 
   const toggleContract = (key: string) => {
+    setCurrentPage(0);
     startTransition(() => {
       setFilters(prev => ({
         ...prev,
@@ -567,6 +576,7 @@ export function MaintenanceModule() {
   };
 
   const toggleYear = (year: number) => {
+    setCurrentPage(0);
     startTransition(() => {
       setFilters(prev => ({
         ...prev,
@@ -654,6 +664,9 @@ export function MaintenanceModule() {
   }, [forms, filters, companyFilteredContractIds, contractFilterOptions, sortKey, sortOrder, criticalityMap]);
 
   const totalForms = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalForms / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages - 1);
+  const paginatedForms = useMemo(() => filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE), [filtered, safePage]);
   const enProceso = filtered.filter(f => f.status === "proceso").length;
   const solucionados = filtered.filter(f => f.status === "solucionado").length;
 
@@ -674,6 +687,7 @@ export function MaintenanceModule() {
   }, [forms, criticalityCategories]);
 
   const handleCriticalityCardClick = (catId: string) => {
+    setCurrentPage(0);
     startTransition(() => {
       if (filters.criticalityFilter === catId) {
         setFilters(prev => ({ ...prev, statusFilter: "all", criticalityFilter: "all" }));
@@ -683,9 +697,9 @@ export function MaintenanceModule() {
     });
   };
 
-  const handleCriticalityChange = async (formId: string, val: string) => {
+  const handleCriticalityChange = useCallback(async (formId: string, val: string) => {
     const newVal = val === "none" ? null : val;
-    const form = forms.find(f => f.id === formId);
+    const form = formsRef.current.find(f => f.id === formId);
     const shouldAdvance = !!newVal && !!form;
     const updatePayload: any = { criticality_category_id: newVal };
     if (shouldAdvance) {
@@ -702,7 +716,7 @@ export function MaintenanceModule() {
       writeCache(CACHE_KEY_FORMS, updated);
       return updated;
     });
-  };
+  }, []);
 
   // Comment save handler (called by CommentCell)
   const saveComment = useCallback(async (formId: string, text: string) => {
@@ -722,11 +736,11 @@ export function MaintenanceModule() {
       });
       toast({ title: "Comentario guardado" });
     }
-  }, [forms]);
+  }, []);
 
   // Sub-status change handler (called by SubStatusCell)
   const handleSubStatusChange = useCallback(async (formId: string, newSubStatus: string) => {
-    const form = forms.find(f => f.id === formId);
+    const form = formsRef.current.find(f => f.id === formId);
     // Block manual change if currently "solicitado"
     if (form && form.sub_status === "solicitado") {
       toast({ title: "Debe asignar criticidad primero", description: "El sub-estado 'Solicitado' solo cambia al asignar una clasificación de criticidad.", variant: "destructive" });
@@ -759,7 +773,7 @@ export function MaintenanceModule() {
       });
       toast({ title: "Sub-estado actualizado" });
     }
-  }, [subStatusOrder, forms]);
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -1099,7 +1113,7 @@ export function MaintenanceModule() {
                   ) : filtered.length === 0 ? (
                     <TableRow><TableCell colSpan={13} className="text-center py-8 text-muted-foreground">No hay FORMs registrados</TableCell></TableRow>
                   ) : (
-                    filtered.map(f => {
+                    paginatedForms.map(f => {
                       const cat = criticalityMap.get(f.criticality_category_id || "");
                       return (
                         <TableRow key={f.id}>
@@ -1215,6 +1229,38 @@ export function MaintenanceModule() {
         </CardContent>
       </Card>
 
+      {/* Pagination Controls */}
+      {totalForms > PAGE_SIZE && (
+        <div className="flex items-center justify-between px-2">
+          <p className="text-sm text-muted-foreground">
+            Mostrando {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, totalForms)} de {totalForms} resultados
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1"
+              disabled={safePage === 0}
+              onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+            >
+              <ChevronLeft className="h-4 w-4" /> Anterior
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              Página {safePage + 1} de {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1"
+              disabled={safePage >= totalPages - 1}
+              onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+            >
+              Siguiente <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
       <MaintenanceExcelUpload open={uploadOpen} onOpenChange={setUploadOpen} onSuccess={handleDataChanged} />
       <MaintenanceEditDialog form={editForm} open={!!editForm} onOpenChange={v => { if (!v) setEditForm(null); }} onSuccess={handleDataChanged} />
 
@@ -1254,9 +1300,8 @@ export function MaintenanceModule() {
           variant="outline"
           className="fixed top-4 right-4 z-50 gap-2 text-destructive border-destructive/30 hover:bg-destructive/10 shadow-lg bg-card"
           onClick={() => {
-            startTransition(() => {
-              setFilters(DEFAULT_FILTERS);
-            });
+            setCurrentPage(0);
+            setFilters(DEFAULT_FILTERS);
           }}
         >
           <XCircle className="h-4 w-4" /> Limpiar filtros
