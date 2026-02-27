@@ -807,7 +807,7 @@ const AdminPanel = () => {
                             </div>
                             {isOnline && profile.current_section && (
                               <span className="text-[10px] text-muted-foreground ml-4">
-                                en {profile.current_section}
+                                Trabajando en {profile.current_section}
                               </span>
                             )}
                           </div>
