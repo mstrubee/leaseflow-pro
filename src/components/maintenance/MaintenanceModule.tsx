@@ -904,11 +904,11 @@ export function MaintenanceModule() {
             return (
               <Card
                 key={cat.id}
-                className={`cursor-pointer transition-all hover:shadow-md flex-1 min-w-0`}
+                className={`cursor-pointer transition-all flex-1 min-w-0 ${isActive ? "" : "shadow-sm hover:shadow-md"}`}
                 style={{
-                  borderWidth: isActive ? 2 : undefined,
+                  borderWidth: isActive ? 3 : undefined,
                   borderColor: isActive ? (cat.color || "hsl(var(--primary))") : undefined,
-                  borderLeftWidth: isActive ? 4 : 4,
+                  borderLeftWidth: isActive ? 5 : 4,
                   borderLeftColor: cat.color || "hsl(var(--border))",
                   ...(isActive ? { background: `${cat.color}10` } : {}),
                 }}
@@ -944,11 +944,11 @@ export function MaintenanceModule() {
             const ageRange = criticalityAgeRanges["__none__"];
             return (
               <Card
-                className="cursor-pointer transition-all hover:shadow-md flex-1 min-w-0"
+                className={`cursor-pointer transition-all flex-1 min-w-0 ${isActive ? "" : "shadow-sm hover:shadow-md"}`}
                 style={{
-                  borderWidth: isActive ? 2 : undefined,
+                  borderWidth: isActive ? 3 : undefined,
                   borderColor: isActive ? '#f59e0b' : undefined,
-                  borderLeftWidth: 4,
+                  borderLeftWidth: isActive ? 5 : 4,
                   borderLeftColor: '#f59e0b',
                   ...(isActive ? { background: '#f59e0b10' } : {}),
                 }}
