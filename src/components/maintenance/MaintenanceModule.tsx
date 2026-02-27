@@ -898,7 +898,9 @@ export function MaintenanceModule() {
       {/* Criticality Quick-Filter Cards */}
       {criticalityCategories.length > 0 && (
         <div className="flex gap-2 overflow-x-auto">
-          {criticalityCategories.map(cat => {
+          {criticalityCategories
+            .filter(cat => (criticalityCounts[cat.id] || 0) > 0)
+            .map(cat => {
             const isActive = filters.criticalityFilter === cat.id;
             const ageRange = criticalityAgeRanges[cat.id];
             return (
@@ -940,45 +942,6 @@ export function MaintenanceModule() {
               </Card>
             );
           })}
-          {/* Sin Criticidad card */}
-          {(() => {
-            const isActive = filters.criticalityFilter === "none";
-            const ageRange = criticalityAgeRanges["__none__"];
-            return (
-              <Card
-                className={`cursor-pointer transition-all flex-1 min-w-0`}
-                style={{
-                  borderWidth: isActive ? 3 : undefined,
-                  borderColor: isActive ? '#f59e0b' : undefined,
-                  borderLeftWidth: isActive ? 5 : 4,
-                  borderLeftColor: '#f59e0b',
-                  ...(isActive
-                    ? { background: '#f59e0b10' }
-                    : { boxShadow: '0 1px 3px 0 #f59e0b30, 0 1px 2px -1px #f59e0b20' }),
-                }}
-                onClick={handleNoCriticalityCardClick}
-              >
-                <CardContent className="p-3 flex items-center justify-between">
-                  <div className="flex flex-col gap-0.5">
-                    <div className="flex items-center gap-2">
-                      <XCircle className="h-4 w-4 text-amber-500" />
-                      <span className="text-sm font-medium">Sin Criticidad</span>
-                    </div>
-                    {ageRange && (
-                      <span className="text-[10px] text-muted-foreground ml-6">
-                        {ageRange.min === ageRange.max
-                          ? `${ageRange.min} día${ageRange.min !== 1 ? "s" : ""}`
-                          : `${ageRange.min} - ${ageRange.max} días`}
-                      </span>
-                    )}
-                  </div>
-                  <Badge className="text-xs bg-amber-500 text-white hover:bg-amber-600">
-                    {noCriticalityCount}
-                  </Badge>
-                </CardContent>
-              </Card>
-            );
-          })()}
         </div>
       )}
 
