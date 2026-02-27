@@ -526,7 +526,7 @@ export function PatentChecklist({
               value={comments}
               onChange={setComments}
               placeholder="Escriba sus comentarios u observaciones aquí..."
-              className="resize-none text-left font-mono text-sm"
+              className="text-left font-mono text-sm"
               rows={5}
               style={{ lineHeight: '1.5' }}
               downloadFileName="comentarios-patente"
@@ -541,7 +541,7 @@ export function PatentChecklist({
               value={nextActions}
               onChange={setNextActions}
               placeholder="Escriba las próximas acciones aquí..."
-              className="resize-none text-left font-mono text-sm"
+              className="text-left font-mono text-sm"
               rows={5}
               style={{ lineHeight: '1.5' }}
               downloadFileName="proximas-acciones-patente"
