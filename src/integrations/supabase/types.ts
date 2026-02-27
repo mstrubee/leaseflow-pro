@@ -3888,6 +3888,35 @@ export type Database = {
           },
         ]
       }
+      patent_kpi_config: {
+        Row: {
+          created_at: string
+          id: string
+          kpi_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kpi_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kpi_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patent_kpi_config_kpi_id_fkey"
+            columns: ["kpi_id"]
+            isOneToOne: false
+            referencedRelation: "kpis"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patent_shared_items: {
         Row: {
           checklist_item_id: string

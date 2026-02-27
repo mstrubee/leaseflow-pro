@@ -92,7 +92,7 @@ export function PatentAdminPanel({
   emitters: initialEmitters,
   onDataChange,
 }: PatentAdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<'items' | 'sections' | 'emitters' | 'statuses'>('sections');
+  const [activeTab, setActiveTab] = useState<'items' | 'sections' | 'emitters' | 'statuses' | 'kpi'>('sections');
   
   // Local state copies for immediate UI updates
   const [localSections, setLocalSections] = useState<PatentChecklistSection[]>(initialSections);
@@ -129,6 +129,11 @@ export function PatentAdminPanel({
   // Item emitter management state
   const [managingItemEmitters, setManagingItemEmitters] = useState<string | null>(null);
 
+  // KPI config state
+  const [kpiList, setKpiList] = useState<{ id: string; name: string }[]>([]);
+  const [selectedKpiId, setSelectedKpiId] = useState<string | null>(null);
+  const [savingKpiConfig, setSavingKpiConfig] = useState(false);
+
   // DnD sensors
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -150,15 +155,59 @@ export function PatentAdminPanel({
     setLocalEmitters(initialEmitters);
   }, [initialEmitters]);
 
-  // Load statuses, item emitters and repository folders
+  // Load statuses, item emitters, repository folders and KPI config
   useEffect(() => {
     if (open) {
       loadStatuses();
       loadItemEmitters();
       loadRepositoryFolders();
       loadSharedItems();
+      loadKpiConfig();
     }
   }, [open]);
+
+  const loadKpiConfig = async () => {
+    // Load available KPIs
+    const { data: kpis } = await supabase
+      .from("kpis")
+      .select("id, name")
+      .eq("is_active", true)
+      .order("name");
+    if (kpis) setKpiList(kpis);
+
+    // Load current config
+    const { data: config } = await supabase
+      .from("patent_kpi_config")
+      .select("kpi_id")
+      .limit(1)
+      .single();
+    if (config) setSelectedKpiId(config.kpi_id);
+  };
+
+  const handleSaveKpiConfig = async () => {
+    setSavingKpiConfig(true);
+    try {
+      const { data: existing } = await supabase
+        .from("patent_kpi_config")
+        .select("id")
+        .limit(1)
+        .single();
+      
+      if (existing) {
+        const { error } = await supabase
+          .from("patent_kpi_config")
+          .update({ kpi_id: selectedKpiId, updated_at: new Date().toISOString() })
+          .eq("id", existing.id);
+        if (error) throw error;
+      }
+      toast.success("Configuración KPI guardada");
+    } catch (error) {
+      console.error("Error saving KPI config:", error);
+      toast.error("Error al guardar configuración KPI");
+    } finally {
+      setSavingKpiConfig(false);
+    }
+  };
 
   const loadStatuses = async () => {
     const { data } = await supabase
@@ -774,11 +823,12 @@ export function PatentAdminPanel({
           </DialogHeader>
 
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 overflow-hidden flex flex-col">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="sections">Secciones</TabsTrigger>
               <TabsTrigger value="items">Ítems</TabsTrigger>
               <TabsTrigger value="statuses">Estado</TabsTrigger>
               <TabsTrigger value="emitters">Emisores</TabsTrigger>
+              <TabsTrigger value="kpi">KPI</TabsTrigger>
             </TabsList>
 
             {/* ITEMS TAB */}
@@ -1428,6 +1478,38 @@ export function PatentAdminPanel({
                       </TableBody>
                     </Table>
                   </DndContext>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* KPI CONFIG TAB */}
+            <TabsContent value="kpi" className="flex-1 overflow-auto mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Registro automático en KPI</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    Cuando un documento de patente se marca como "OK", se registrará automáticamente un ingreso en el KPI seleccionado con el nombre del contrato y la fecha.
+                  </p>
+                  <div className="space-y-2">
+                    <Label>KPI destino</Label>
+                    <Select value={selectedKpiId || "none"} onValueChange={(v) => setSelectedKpiId(v === "none" ? null : v)}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Seleccionar KPI..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Sin KPI vinculado</SelectItem>
+                        {kpiList.map((kpi) => (
+                          <SelectItem key={kpi.id} value={kpi.id}>{kpi.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button onClick={handleSaveKpiConfig} disabled={savingKpiConfig}>
+                    <Save className="h-4 w-4 mr-2" />
+                    {savingKpiConfig ? "Guardando..." : "Guardar"}
+                  </Button>
                 </CardContent>
               </Card>
             </TabsContent>

@@ -331,6 +331,33 @@ export function PatentChecklist({
     try {
       await onUpdateDocumentStatus(contract.id, itemId, status, user.id);
       toast.success("Estado actualizado");
+
+      // Auto-register KPI entry when status changes to "ok"
+      if (status === 'ok') {
+        try {
+          const { supabase: sb } = await import("@/integrations/supabase/client");
+          const { data: config } = await sb
+            .from("patent_kpi_config")
+            .select("kpi_id")
+            .limit(1)
+            .single();
+          
+          if (config?.kpi_id) {
+            const item = items.find(i => i.id === itemId);
+            const entryName = `${contract.name} - ${item?.name || 'Documento'}`;
+            await sb.from("kpi_empresa_entries").insert({
+              kpi_id: config.kpi_id,
+              name: entryName,
+              description: `Documento marcado como OK en módulo de Patentes`,
+              entry_date: new Date().toISOString().split('T')[0],
+              created_by: user.id,
+            });
+            toast.success("Ingreso KPI registrado automáticamente");
+          }
+        } catch (kpiError) {
+          console.error("Error registering KPI entry:", kpiError);
+        }
+      }
     } catch (error) {
       toast.error("Error al actualizar estado");
     }
