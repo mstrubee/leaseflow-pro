@@ -944,7 +944,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                Disponible en OC: {formatUF(pendingAmount)}
+                Disponible en OC: {formatCLP(convertUFToPesos(pendingAmount))}
               </p>
             </div>
             <div className="space-y-2">
@@ -1028,7 +1028,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                 <SelectContent>
                   {invoices.map((invoice) => (
                     <SelectItem key={invoice.id} value={invoice.id}>
-                      {invoice.invoice_number} - {formatUF(invoice.amount_uf)}
+                      {invoice.invoice_number} - {formatCLP(convertUFToPesos(invoice.amount_uf))}
                     </SelectItem>
                   ))}
                 </SelectContent>

@@ -113,7 +113,7 @@ export const OCRequestsList = ({
   const [newRequestForm, setNewRequestForm] = useState({
     description: "",
     amount: "",
-    currency: "UF" as "UF" | "CLP",
+    currency: "CLP" as "UF" | "CLP",
     supplier_id: null as string | null,
     supplier_name: null as string | null
   });
@@ -358,7 +358,7 @@ export const OCRequestsList = ({
     setBudgetType("capex");
     setSelectedLines([]);
     setPaymentPlan([]);
-    setNewRequestForm({ description: "", amount: "", currency: "UF", supplier_id: null, supplier_name: null });
+    setNewRequestForm({ description: "", amount: "", currency: "CLP", supplier_id: null, supplier_name: null });
     setLoadingBudgets(true);
     
     try {
@@ -826,10 +826,11 @@ export const OCRequestsList = ({
                   <TableCell className="truncate max-w-[150px]">{request.line_name}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex flex-col items-end">
-                      <span>{formatUF(request.amount_uf)}</span>
+                      <span>{formatCLP(request.amount_clp || Math.round(request.amount_uf * ufValue))}</span>
+                      <span className="text-[10px] text-muted-foreground">{formatUF(request.amount_uf)}</span>
                       {request.is_multi_contract && request.total_request_amount_uf && (
                         <span className="text-[10px] text-muted-foreground">
-                          (Total: {formatUF(request.total_request_amount_uf)})
+                          (Total: {formatCLP(request.total_request_amount_clp || Math.round(request.total_request_amount_uf * ufValue))})
                         </span>
                       )}
                     </div>
@@ -929,7 +930,12 @@ export const OCRequestsList = ({
                   <TableCell className="font-mono text-xs">{request.request_number}</TableCell>
                   <TableCell>{format(new Date(request.request_date), 'dd/MM/yyyy', { locale: es })}</TableCell>
                   <TableCell className="truncate max-w-[150px]">{request.line_name}</TableCell>
-                  <TableCell className="text-right">{formatUF(request.amount_uf)}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex flex-col items-end">
+                      <span>{formatCLP(request.amount_clp || Math.round(request.amount_uf * ufValue))}</span>
+                      <span className="text-[10px] text-muted-foreground">{formatUF(request.amount_uf)}</span>
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <Badge variant="default" className="bg-green-500">
                       Convertida a OC
@@ -956,7 +962,11 @@ export const OCRequestsList = ({
             <div className="p-3 rounded-md bg-muted/50 border text-sm space-y-1">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Monto:</span>
-                <span className="font-medium">{selectedRequest && formatUF(selectedRequest.amount_uf)}</span>
+                <span className="font-medium">{selectedRequest && formatCLP(selectedRequest.amount_clp || Math.round(selectedRequest.amount_uf * ufValue))}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">UF:</span>
+                <span className="text-xs">{selectedRequest && formatUF(selectedRequest.amount_uf)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Línea:</span>
@@ -1132,12 +1142,19 @@ export const OCRequestsList = ({
 
                 {/* Show equivalent */}
                 {parseFloat(newRequestForm.amount) > 0 && ufValue > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    Equivalente: {newRequestForm.currency === "CLP" 
-                      ? `UF ${(parseFloat(newRequestForm.amount) / ufValue).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                      : `$ ${Math.round(parseFloat(newRequestForm.amount) * ufValue).toLocaleString("es-CL")}`
-                    }
-                  </p>
+                  <div className="text-xs text-muted-foreground space-y-0.5">
+                    {newRequestForm.currency === "CLP" ? (
+                      <>
+                        <p className="font-medium text-foreground">$ {Math.round(parseFloat(newRequestForm.amount)).toLocaleString("es-CL")}</p>
+                        <p>Equivalente: UF {(parseFloat(newRequestForm.amount) / ufValue).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-medium text-foreground">$ {Math.round(parseFloat(newRequestForm.amount) * ufValue).toLocaleString("es-CL")}</p>
+                        <p>Ingresado: UF {parseFloat(newRequestForm.amount).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                      </>
+                    )}
+                  </div>
                 )}
 
                 {/* Supplier */}
