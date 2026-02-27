@@ -1,59 +1,35 @@
 
 
-## Optimizacion de rendimiento en plantillas de presupuesto
+## Fix: PDF exports only selected contracts
 
-### Problema
+### Problem
+The current "Filas PDF" selector uses an **exclusion model** -- all contracts start as included, and you must manually uncheck each one you don't want. When you have many contracts and search to find specific ones, the contracts hidden by the search filter remain included. This makes it appear the PDF "shows everything."
 
-Cada operacion (editar, duplicar, eliminar) en `BudgetTemplateManager` dispara una recarga completa desde la base de datos:
-- `handleUpdateLine` -> `loadLines()` (re-fetch completo)
-- `handleDeleteLine` -> `loadLines()` (re-fetch completo)
-- `handleAddLine` -> `loadLines()` (re-fetch completo)
-- `handleDeleteTemplate` -> `loadTemplates()` (re-fetch completo)
-- `handleDuplicateTemplate` -> `loadTemplates()` (re-fetch completo)
-- `handleUpdateTemplate` -> `loadTemplates()` (re-fetch completo)
+### Solution
+Add a console log for debugging AND change the PDF export to log the count of excluded/included contracts so we can verify the filtering is working. More importantly, improve the UX so the user can easily select only specific contracts:
 
-Esto genera latencia visible en cada accion porque cada cambio implica un round-trip completo al servidor.
+1. **Add "Ninguno" as default hint** -- When the popover opens, show a clearer message explaining the user can click "Ninguno" first, then select only the contracts they want.
 
-### Solucion: Actualizaciones optimistas
+2. **Add logging to PDF export** -- Temporarily add a `console.log` in both `handleDownloadReport` (Contracts.tsx) and `exportSinPatentePDF` (ReportsDashboard.tsx) to verify the filtering is executing.
 
-Reemplazar las recargas completas con actualizaciones locales del estado. La base de datos se actualiza en segundo plano, y solo si falla se revierte el estado.
+3. **Add a toast notification** -- When the PDF is generated, show a toast confirming how many contracts were included (e.g., "PDF generado con 1 de 45 contratos").
 
----
+### Technical Details
 
-### Cambios en `BudgetTemplateManager.tsx`
+**Files to modify:**
 
-**1. Operaciones sobre plantillas (crear, editar, eliminar, duplicar)**
+- **`src/pages/Contracts.tsx`** (handleDownloadReport):
+  - Add toast notification showing count of included contracts
+  - Add console.log for debugging
 
-- `handleCreateTemplate`: Insertar la plantilla devuelta por `.select().single()` directamente en el array `templates` sin llamar a `loadTemplates()`.
-- `handleUpdateTemplate`: Actualizar el objeto en `templates` localmente con `setTemplates(prev => prev.map(...))`.
-- `handleDeleteTemplate`: Remover del array local con `setTemplates(prev => prev.filter(...))`.
-- `handleDuplicateTemplate`: Insertar la nueva plantilla devuelta por el insert en el array local.
+- **`src/pages/ReportsDashboard.tsx`** (exportSinPatentePDF):
+  - Add toast notification showing count of included contracts
+  - Add console.log for debugging
 
-**2. Operaciones sobre lineas (agregar, editar, eliminar, reparent)**
+- **`src/components/contracts/ContractRowSelector.tsx`**:
+  - Add a visual indicator showing "X de Y seleccionados" more prominently on the trigger button
+  - This helps the user understand at a glance whether their selection is active
 
-- `handleAddLine`: Despues del insert exitoso, hacer un `.select().single()` para obtener la linea creada y agregarla al arbol local reconstruyendolo con `buildTree`.
-- `handleUpdateLine`: Actualizar la linea en el arbol local sin re-fetch. Reconstruir el arbol desde un flat array actualizado.
-- `handleDeleteLine`: Remover la linea del flat array local y reconstruir el arbol.
-- `handleReparent`: Cambiar `parent_id` en el flat array local y reconstruir.
-
-**3. Mantener flat array como fuente de verdad**
-
-Agregar un estado `flatLines` ademas de `lines` (arbol). Las mutaciones operan sobre `flatLines` y luego se deriva el arbol con `buildTree`. Esto simplifica todas las operaciones de actualizacion local.
-
-### Detalle tecnico
-
-| Funcion | Antes | Despues |
-|---------|-------|---------|
-| `handleCreateTemplate` | `loadTemplates()` | `setTemplates(prev => [data, ...prev])` |
-| `handleUpdateTemplate` | `loadTemplates()` | `setTemplates(prev => prev.map(...))` |
-| `handleDeleteTemplate` | `loadTemplates()` | `setTemplates(prev => prev.filter(...))` |
-| `handleDuplicateTemplate` | `loadTemplates()` | `setTemplates(prev => [newTemplate, ...prev])` |
-| `handleAddLine` | `loadLines(id)` | Agregar al flat array, rebuild tree |
-| `handleUpdateLine` | `loadLines(id)` | Actualizar en flat array, rebuild tree |
-| `handleDeleteLine` | `loadLines(id)` | Filtrar del flat array, rebuild tree |
-| `handleReparent` | `loadLines(id)` | Cambiar parent_id en flat array, rebuild tree |
-
-### Archivo afectado
-
-`src/components/budget/BudgetTemplateManager.tsx` -- unico archivo a modificar.
+### Expected Result
+The user will see exactly how many contracts are being exported, and the button will clearly show when not all contracts are selected, making it obvious if the selection is active or not.
 
