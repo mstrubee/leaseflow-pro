@@ -904,11 +904,11 @@ export function MaintenanceModule() {
             return (
               <Card
                 key={cat.id}
-                className={`cursor-pointer transition-all hover:shadow-md flex-1 min-w-0 ${isActive ? "ring-2 ring-offset-1" : ""}`}
+                className={`cursor-pointer transition-all hover:shadow-md flex-1 min-w-0`}
                 style={{
                   borderLeftWidth: 4,
                   borderLeftColor: cat.color || "hsl(var(--border))",
-                  ...(isActive ? { ringColor: cat.color || undefined } : {}),
+                  ...(isActive ? { boxShadow: `0 0 0 2px ${cat.color || "hsl(var(--primary))"}`, background: `${cat.color}08` } : {}),
                 }}
                 onClick={() => handleCriticalityCardClick(cat.id)}
               >
@@ -942,7 +942,8 @@ export function MaintenanceModule() {
             const ageRange = criticalityAgeRanges["__none__"];
             return (
               <Card
-                className={`cursor-pointer transition-all hover:shadow-md border-l-4 border-l-amber-400 flex-1 min-w-0 ${isActive ? "ring-2 ring-amber-400 ring-offset-1" : ""}`}
+                className="cursor-pointer transition-all hover:shadow-md border-l-4 border-l-amber-400 flex-1 min-w-0"
+                style={isActive ? { boxShadow: '0 0 0 2px #f59e0b', background: '#f59e0b08' } : {}}
                 onClick={handleNoCriticalityCardClick}
               >
                 <CardContent className="p-3 flex items-center justify-between">
