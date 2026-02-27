@@ -1228,14 +1228,14 @@ export function MaintenanceModule() {
                     <SortableTableHead label="Sub Estado" sortKey="sub_status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
                     <SortableTableHead label="Criticidad" sortKey="criticality_category_id" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-36" />
                     <SortableTableHead label="Fecha" sortKey="created_date" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-[8.4rem]" />
-                    <SortableTableHead label="Contrato" sortKey="contract_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} />
+                    <SortableTableHead label="Contrato" sortKey="contract_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="max-w-[10rem]" />
                     <TableHead className="w-28">Tipo</TableHead>
                     <TableHead>Descripción</TableHead>
                     <TableHead>Comentarios</TableHead>
                     <SortableTableHead label="Proveedor" sortKey="supplier_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
                     <SortableTableHead label="OC" sortKey="purchase_order_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
                     <TableHead className="w-28">Evidencia</TableHead>
-                    <TableHead className="w-24 text-center">Acciones</TableHead>
+                    <TableHead className="w-32 text-center">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
