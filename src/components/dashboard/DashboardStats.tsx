@@ -1,4 +1,4 @@
-import { useEffect, useState, Fragment } from "react";
+import { useEffect, useState, Fragment, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,11 +15,12 @@ import {
 } from "@/components/ui/table";
 import { FileText, CheckCircle, Clock, AlertTriangle } from "lucide-react";
 import { EconomicIndicators } from "./EconomicIndicators";
-import { PatentsModule } from "@/components/patents/PatentsModule";
 import { SelectableElement } from "@/components/admin/SelectableElement";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { CommuneContractsDialog } from "./CommuneContractsDialog";
 import * as XLSX from "xlsx";
+
+const LazyPatentsModule = lazy(() => import("@/components/patents/PatentsModule").then(m => ({ default: m.PatentsModule })));
 
 // Chilean regions ordered geographically from north to south
 const REGION_ORDER: string[] = [
@@ -45,7 +46,7 @@ const getRegionSortIndex = (region: string): number => {
   const index = REGION_ORDER.findIndex(
     (r) => r.toLowerCase() === region.toLowerCase()
   );
-  return index >= 0 ? index : 999; // Unknown regions go to the end
+  return index >= 0 ? index : 999;
 };
 
 interface CommuneStats {
@@ -135,148 +136,50 @@ export const DashboardStats = () => {
 
   const loadStats = async () => {
     try {
-      // Load contracts for stats with commune info
-      const { data: contracts } = await supabase
-        .from("contracts")
-        .select(`
-          id,
-          name,
-          status,
-          requires_special_attention,
-          contract_addresses (region, commune),
-          termination_notices (id, notice_type, required_exit_date, issuer_name),
-          contract_companies (
-            company:companies (name)
-          )
-        `)
-        .is("deleted_at", null);
+      // Fetch stats and termination alerts in parallel from server-side RPCs
+      const [statsRes, alertsRes] = await Promise.all([
+        supabase.rpc("get_dashboard_stats"),
+        supabase.rpc("get_termination_alerts"),
+      ]);
 
-      const regionMap: Record<string, RegionStats> = {};
-      let totalVigentes = 0;
-      let totalVigentesAutoplanet = 0;
-      let totalVigentesAgroplanet = 0;
-      let totalVigentesGrupoPlanet = 0;
-      let totalNegociacion = 0;
-      let totalVencidos = 0;
-      let totalAtencionEspecial = 0;
-      const terminationAlerts: TerminationAlert[] = [];
+      const dashData = statsRes.data as any;
+      const alertsData = (alertsRes.data as unknown as TerminationAlert[]) || [];
 
-      contracts?.forEach((contract: any) => {
-        const region = contract.contract_addresses?.[0]?.region || "Sin región";
-        const commune = contract.contract_addresses?.[0]?.commune || "Sin comuna";
-        
-        // Get all companies for this contract
-        const companies = contract.contract_companies?.map((cc: any) => cc.company?.name?.toLowerCase() || "") || [];
-        
-        if (!regionMap[region]) {
-          regionMap[region] = {
-            region,
-            total: 0,
-            vigentes: 0,
-            vigentesAutoplanet: 0,
-            vigentesAgroplanet: 0,
-            vigentesGrupoPlanet: 0,
-            negociacion: 0,
-            vencidos: 0,
-            communes: {},
-          };
-        }
+      if (!dashData) {
+        setStatsLoading(false);
+        return;
+      }
 
-        // Initialize commune if not exists
-        if (!regionMap[region].communes[commune]) {
-          regionMap[region].communes[commune] = {
-            commune,
-            total: 0,
-            vigentes: 0,
-            vigentesAutoplanet: 0,
-            vigentesAgroplanet: 0,
-            vigentesGrupoPlanet: 0,
-            negociacion: 0,
-            vencidos: 0,
-          };
-        }
+      const totals = dashData.totals;
+      const byRegionRaw = (dashData.byRegion || []) as any[];
 
-        regionMap[region].total++;
-        regionMap[region].communes[commune].total++;
-
-        // Check for termination notices with exit dates
-        const notices = contract.termination_notices || [];
-        const noticesWithExitDate = notices.filter((n: any) => n.required_exit_date);
-        noticesWithExitDate.forEach((notice: any) => {
-          terminationAlerts.push({
-            id: contract.id,
-            name: contract.name,
-            required_exit_date: notice.required_exit_date,
-            notice_type: notice.notice_type,
-            issuer_name: notice.issuer_name,
-          });
-        });
-
-        switch (contract.status) {
-          case "firmado":
-            regionMap[region].vigentes++;
-            regionMap[region].communes[commune].vigentes++;
-            totalVigentes++;
-            
-            // Categorize by company - count for EACH company the contract has
-            const hasAutoplanet = companies.some((c: string) => c.includes("autoplanet"));
-            const hasAgroplanet = companies.some((c: string) => c.includes("agroplanet"));
-            const hasGrupoPlanet = companies.some((c: string) => c.includes("grupo planet") || c.includes("grupoplanet"));
-            
-            if (hasAutoplanet) {
-              regionMap[region].vigentesAutoplanet++;
-              regionMap[region].communes[commune].vigentesAutoplanet++;
-              totalVigentesAutoplanet++;
-            }
-            if (hasAgroplanet) {
-              regionMap[region].vigentesAgroplanet++;
-              regionMap[region].communes[commune].vigentesAgroplanet++;
-              totalVigentesAgroplanet++;
-            }
-            if (hasGrupoPlanet) {
-              regionMap[region].vigentesGrupoPlanet++;
-              regionMap[region].communes[commune].vigentesGrupoPlanet++;
-              totalVigentesGrupoPlanet++;
-            }
-            
-            if (contract.requires_special_attention) {
-              totalAtencionEspecial++;
-            }
-            break;
-          case "en_negociacion":
-            regionMap[region].negociacion++;
-            regionMap[region].communes[commune].negociacion++;
-            totalNegociacion++;
-            break;
-          case "vencido":
-            regionMap[region].vencidos++;
-            regionMap[region].communes[commune].vencidos++;
-            totalVencidos++;
-            break;
-        }
-      });
-
-      const byRegion = Object.values(regionMap).sort((a, b) => 
-        getRegionSortIndex(a.region) - getRegionSortIndex(b.region)
-      );
-
-      // Sort termination alerts by date
-      terminationAlerts.sort((a, b) => 
-        new Date(a.required_exit_date).getTime() - new Date(b.required_exit_date).getTime()
-      );
+      // Sort regions geographically
+      const byRegion: RegionStats[] = byRegionRaw
+        .map((r: any) => ({
+          region: r.region,
+          total: r.total,
+          vigentes: r.vigentes,
+          vigentesAutoplanet: r.vigentesAutoplanet,
+          vigentesAgroplanet: r.vigentesAgroplanet,
+          vigentesGrupoPlanet: r.vigentesGrupoPlanet,
+          negociacion: r.negociacion,
+          vencidos: r.vencidos,
+          communes: r.communes || {},
+        }))
+        .sort((a: RegionStats, b: RegionStats) => getRegionSortIndex(a.region) - getRegionSortIndex(b.region));
 
       setStats({
-        totalContracts: contracts?.length || 0,
-        totalVigentes,
-        totalVigentesAutoplanet,
-        totalVigentesAgroplanet,
-        totalVigentesGrupoPlanet,
-        totalNegociacion,
-        totalVencidos,
-        totalAtencionEspecial,
-        totalTerminationNotices: terminationAlerts.length,
+        totalContracts: totals.total_contracts,
+        totalVigentes: totals.total_vigentes,
+        totalVigentesAutoplanet: totals.total_vigentes_autoplanet,
+        totalVigentesAgroplanet: totals.total_vigentes_agroplanet,
+        totalVigentesGrupoPlanet: totals.total_vigentes_grupo_planet,
+        totalNegociacion: totals.total_negociacion,
+        totalVencidos: totals.total_vencidos,
+        totalAtencionEspecial: totals.total_atencion_especial,
+        totalTerminationNotices: alertsData.length,
         byRegion,
-        terminationAlerts,
+        terminationAlerts: alertsData,
       });
     } finally {
       setStatsLoading(false);
@@ -634,10 +537,19 @@ export const DashboardStats = () => {
         </SelectableElement>
       )}
 
-      {/* Patents Module */}
+      {/* Patents Module - Lazy Loaded */}
       {!isHidden("dashboard_patents") && (
         <SelectableElement elementId="dashboard_patents" label="Módulo de Patentes">
-          <PatentsModule />
+          <Suspense fallback={
+            <Card>
+              <CardContent className="py-8 text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
+                <p className="mt-2 text-muted-foreground">Cargando módulo de patentes...</p>
+              </CardContent>
+            </Card>
+          }>
+            <LazyPatentsModule />
+          </Suspense>
         </SelectableElement>
       )}
 

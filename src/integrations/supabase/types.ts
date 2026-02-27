@@ -5212,6 +5212,7 @@ export type Database = {
           refresh_token: string
         }[]
       }
+      get_dashboard_stats: { Args: never; Returns: Json }
       get_folder_file_counts: {
         Args: { p_folder_ids: string[] }
         Returns: {
@@ -5219,6 +5220,7 @@ export type Database = {
           folder_id: string
         }[]
       }
+      get_termination_alerts: { Args: never; Returns: Json }
       has_permission: {
         Args: {
           _permission: Database["public"]["Enums"]["permission_type"]
