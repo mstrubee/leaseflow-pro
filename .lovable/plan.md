@@ -1,54 +1,43 @@
 
 
-## Evitar recarga de formularios al abrir la seccion de Mantenciones
-
-### Problema
-
-Actualmente, cada vez que se abre la seccion de Mantenciones, el sistema re-descarga **todos** los formularios desde la base de datos (lineas 429-438), incluso cuando ya existen datos en cache. Esto ocurre porque el `useEffect` siempre ejecuta `fetchForms()`, aunque haya datos cacheados en `sessionStorage`.
-
-### Solucion
-
-Modificar la logica de carga inicial para que, si hay datos en cache validos, **no se vuelva a consultar la base de datos**. Solo se recargaran los formularios en dos casos:
-1. Primera visita (sin cache)
-2. Despues de una carga masiva por Excel (ya manejado por `handleDataChanged`)
+## Agregar card "Sin Criticidad" y rango de antigüedad a todas las cards
 
 ### Cambios en `src/components/maintenance/MaintenanceModule.tsx`
 
-**1. Aumentar TTL del cache**
-- Cambiar de 5 minutos a 30 minutos para que el cache persista durante la sesion de trabajo normal
+**1. Nueva card "Sin Criticidad"**
+- Agregar una card adicional al grid de criticidad que muestre la cantidad de forms en estado "En Proceso" (`status === "proceso"`) que NO tienen `criticality_category_id` asignado.
+- La card tendrá un estilo diferenciado (borde gris/amber) y al hacer clic filtrará por forms sin criticidad.
 
-**2. Modificar el useEffect de carga inicial (lineas 429-438)**
-- Si hay datos en cache validos, NO llamar a `fetchForms` - usar los datos cacheados directamente
-- Solo llamar a `fetchForms` si no hay cache
+**2. Rango de antigüedad en cada card (incluida la nueva)**
+- En cada card de criticidad (y en la nueva "Sin Criticidad"), calcular el rango de días de antigüedad de los forms que pertenecen a esa categoría.
+- La antigüedad se calcula como la diferencia en días entre `hoy` y `created_date` de cada form.
+- Se mostrará debajo del nombre como texto pequeño: "1 - 45 días" (mínimo y máximo).
+- Si solo hay 1 form, mostrar "N días". Si no hay forms, no mostrar rango.
 
-Logica actual:
+### Detalle técnico
+
+**Nuevo `useMemo` para calcular rangos de antigüedad:**
 ```text
-// Siempre llama fetchForms, incluso con cache
-if (cachedForms) {
-  fetchForms(false);  // <-- recarga innecesaria
-} else {
-  fetchForms(true);
-}
+// Para cada categoría + "sin criticidad", calcular min/max días
+const criticalityAgeRanges = useMemo(() => {
+  const today = new Date();
+  const ranges: Record<string, {min: number, max: number} | null> = {};
+  
+  // Por cada categoría
+  criticalityCategories.forEach(c => { ... });
+  
+  // Sin criticidad
+  const noCritForms = forms.filter(f => f.status === "proceso" && !f.criticality_category_id);
+  // calcular min/max días desde created_date
+  
+  return ranges;
+}, [forms, criticalityCategories]);
 ```
 
-Logica nueva:
-```text
-// Solo fetch si NO hay cache
-if (!cachedForms) {
-  fetchForms(true);
-}
-// Si hay cache, los datos ya estan en el state inicial via useState
-```
-
-**3. Aplicar lo mismo a criticality y company map (lineas 440-476)**
-- Si hay datos cacheados de criticality, no re-consultar
-- Si hay datos cacheados de company map, no re-consultar
+**Modificar grid de cards:**
+- Agregar la card "Sin Criticidad" al final del `.map()` de categorías
+- En cada card, agregar un `<span>` debajo del nombre con el rango de días
+- Agregar handler `handleNoCriticalityCardClick` para filtrar forms sin criticidad
 
 ### Archivo a modificar
 - `src/components/maintenance/MaintenanceModule.tsx`
-
-### Resultado esperado
-- Al navegar a Mantenciones con datos ya cargados: apertura instantanea sin consultas a la base de datos
-- Al cargar formularios nuevos via Excel: recarga completa como hasta ahora
-- Los cambios del usuario (criticidad, sub-estados, comentarios) se mantienen intactos en el cache
-
