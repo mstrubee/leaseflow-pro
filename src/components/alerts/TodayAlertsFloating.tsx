@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Bell, ChevronDown, ChevronUp, X, ExternalLink, Calendar, CalendarDays, CheckCircle, Plus, CalendarIcon, AlertTriangle } from "lucide-react";
+import { Bell, ChevronDown, ChevronUp, X, ExternalLink, Calendar, CalendarDays, CheckCircle, Plus, CalendarIcon, AlertTriangle, GripHorizontal } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
@@ -74,11 +74,42 @@ export function TodayAlertsFloating() {
   const [followUpDate, setFollowUpDate] = useState<Date | undefined>(undefined);
   const [creatingFollowUp, setCreatingFollowUp] = useState(false);
 
+  // Resize state
+  const [customHeight, setCustomHeight] = useState<number | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartY = useRef(0);
+  const resizeStartHeight = useRef(0);
+
   // Drag state
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartPos = useRef({ x: 0, y: 0 });
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Resize handlers
+  const handleResizePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    setIsResizing(true);
+    resizeStartY.current = e.clientY;
+    resizeStartHeight.current = customHeight ?? 240;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }, [customHeight]);
+
+  const handleResizePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isResizing) return;
+    const diff = resizeStartY.current - e.clientY;
+    const newHeight = Math.max(150, Math.min(window.innerHeight * 0.7, resizeStartHeight.current + diff));
+    setCustomHeight(newHeight);
+  }, [isResizing]);
+
+  const handleResizePointerUp = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  // Reset customHeight when collapsed
+  useEffect(() => {
+    if (!isOpen) setCustomHeight(null);
+  }, [isOpen]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     // Only drag from header area
@@ -320,6 +351,17 @@ export function TodayAlertsFloating() {
           transition: isDragging ? "none" : "transform 0.4s ease-out",
         }}
       >
+        {isOpen && (
+          <div
+            className="flex items-center justify-center cursor-ns-resize hover:bg-muted/50 transition-colors rounded-t-lg"
+            style={{ height: 8 }}
+            onPointerDown={handleResizePointerDown}
+            onPointerMove={handleResizePointerMove}
+            onPointerUp={handleResizePointerUp}
+          >
+            <GripHorizontal className="h-3 w-3 text-muted-foreground" />
+          </div>
+        )}
         <Card className="shadow-lg border-2 border-amber-500/50 bg-card">
           <Collapsible open={isOpen} onOpenChange={setIsOpen}>
             <CardHeader
@@ -398,7 +440,7 @@ export function TodayAlertsFloating() {
                     No hay alertas {viewMode === "today" ? "para hoy" : viewMode === "week" ? "esta semana" : "vencidas"}
                   </p>
                 ) : (
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                  <div className="space-y-2 overflow-y-auto" style={{ maxHeight: customHeight ?? 240 }}>
                     {currentAlerts.map((alert) => (
                       <div
                         key={alert.id}
