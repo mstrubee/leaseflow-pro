@@ -942,7 +942,7 @@ const AdminPanel = () => {
         <CollapsibleCard
           title="Criticidad de Mantenciones"
           description="Define las categorías de criticidad para los formularios de mantención"
-          defaultOpen={true}
+          defaultOpen={false}
           icon={<Shield className="h-5 w-5 text-orange-500" />}
         >
           <MaintenanceCriticalityManager />
