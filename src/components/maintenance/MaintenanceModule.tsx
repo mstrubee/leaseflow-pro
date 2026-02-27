@@ -164,8 +164,7 @@ const SubStatusCell = memo(function SubStatusCell({
           <TooltipTrigger asChild>
             <PopoverTrigger asChild>
               <button
-                className={`flex items-center h-7 px-1 rounded border transition-colors w-full text-left ${isSolicitado ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-accent"}`}
-                style={currentColor ? { borderColor: currentColor === 'yellow' ? '#eab308' : currentColor } : {}}
+                className={`flex items-center h-7 px-1 rounded transition-colors w-full text-left ${isSolicitado ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-accent"}`}
                 onClick={isSolicitado ? (e) => { e.preventDefault(); } : undefined}
               >
                 <Badge
