@@ -1,64 +1,54 @@
 
 
-## Optimizacion de Rendimiento del Modulo de Mantenciones
+## Evitar recarga de formularios al abrir la seccion de Mantenciones
 
-### Diagnostico
+### Problema
 
-El modulo renderiza **todos** los formularios filtrados (potencialmente 2,500+) en el DOM simultaneamente. Cada fila contiene multiples componentes interactivos (Popovers, Tooltips, Badges). Esto causa:
+Actualmente, cada vez que se abre la seccion de Mantenciones, el sistema re-descarga **todos** los formularios desde la base de datos (lineas 429-438), incluso cuando ya existen datos en cache. Esto ocurre porque el `useEffect` siempre ejecuta `fetchForms()`, aunque haya datos cacheados en `sessionStorage`.
 
-1. **Busqueda lenta**: cada cambio en el filtro recalcula `filtered` y React re-renderiza miles de filas.
-2. **Borrar busqueda lento**: al limpiar el texto, se pasa de N resultados a 2,500+ filas de golpe.
-3. **Criticidad/Sub-estado lentos**: los callbacks `handleCriticalityChange` y `handleSubStatusChange` dependen de `forms` en su closure, forzando re-creacion y propagacion a todas las celdas memo.
-4. **Limpiar filtros lento**: resetear todos los filtros dispara un re-render masivo de la tabla completa.
+### Solucion
 
-### Solucion: Paginacion + Optimizacion de Callbacks
-
-**Estrategia 1: Paginacion de tabla (impacto principal)**
-- Agregar paginacion con 100 filas por pagina
-- Solo renderizar las filas de la pagina actual en el DOM
-- Reducir de ~2,500 nodos de fila a ~100, mejorando dramaticamente la velocidad de filtrado y renderizado
-
-**Estrategia 2: Estabilizar callbacks con useRef**
-- Usar `useRef` para `forms` en los callbacks `handleCriticalityChange`, `handleSubStatusChange` y `saveComment`
-- Esto evita que los callbacks se re-creen cuando cambia `forms`, lo cual propagaria re-renders a todos los `memo` cells
-
-**Estrategia 3: Optimizar DebouncedInput**
-- Reducir delay de debounce de 300ms a 200ms para mayor responsividad
-- Asegurar que `clearFilters` resetee el estado local del DebouncedInput sin delay
+Modificar la logica de carga inicial para que, si hay datos en cache validos, **no se vuelva a consultar la base de datos**. Solo se recargaran los formularios en dos casos:
+1. Primera visita (sin cache)
+2. Despues de una carga masiva por Excel (ya manejado por `handleDataChanged`)
 
 ### Cambios en `src/components/maintenance/MaintenanceModule.tsx`
 
-1. **Agregar estado de paginacion**:
-   - `currentPage` (default 0)
-   - `PAGE_SIZE = 100`
-   - Reset `currentPage` a 0 cuando cambian los filtros
+**1. Aumentar TTL del cache**
+- Cambiar de 5 minutos a 30 minutos para que el cache persista durante la sesion de trabajo normal
 
-2. **Paginar `filtered`**:
-   - `paginatedForms = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)`
-   - Renderizar solo `paginatedForms` en la tabla
+**2. Modificar el useEffect de carga inicial (lineas 429-438)**
+- Si hay datos en cache validos, NO llamar a `fetchForms` - usar los datos cacheados directamente
+- Solo llamar a `fetchForms` si no hay cache
 
-3. **Controles de paginacion**:
-   - Mostrar "Pagina X de Y" y botones Anterior/Siguiente debajo de la tabla
-   - Mostrar total de resultados filtrados
-
-4. **Estabilizar callbacks con refs**:
+Logica actual:
 ```text
-const formsRef = useRef(forms);
-formsRef.current = forms;
-
-// handleCriticalityChange: usar formsRef.current en vez de forms
-// handleSubStatusChange: usar formsRef.current en vez de forms
-// saveComment: eliminar forms de dependencias
+// Siempre llama fetchForms, incluso con cache
+if (cachedForms) {
+  fetchForms(false);  // <-- recarga innecesaria
+} else {
+  fetchForms(true);
+}
 ```
 
-5. **Optimizar limpieza de filtros**:
-   - Unificar reseteo en un solo `setFilters(DEFAULT_FILTERS)` sin startTransition para respuesta inmediata
+Logica nueva:
+```text
+// Solo fetch si NO hay cache
+if (!cachedForms) {
+  fetchForms(true);
+}
+// Si hay cache, los datos ya estan en el state inicial via useState
+```
 
-### Archivos a modificar
+**3. Aplicar lo mismo a criticality y company map (lineas 440-476)**
+- Si hay datos cacheados de criticality, no re-consultar
+- Si hay datos cacheados de company map, no re-consultar
+
+### Archivo a modificar
 - `src/components/maintenance/MaintenanceModule.tsx`
 
 ### Resultado esperado
-- Busqueda: respuesta inmediata (solo 100 filas re-renderizan)
-- Criticidad/Sub-estado: actualizacion instantanea (callbacks estables, sin propagacion)
-- Limpiar filtros: retorno inmediato al universo paginado
+- Al navegar a Mantenciones con datos ya cargados: apertura instantanea sin consultas a la base de datos
+- Al cargar formularios nuevos via Excel: recarga completa como hasta ahora
+- Los cambios del usuario (criticidad, sub-estados, comentarios) se mantienen intactos en el cache
 
