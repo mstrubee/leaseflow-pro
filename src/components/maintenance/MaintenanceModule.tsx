@@ -10,7 +10,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Textarea } from "@/components/ui/textarea";
-import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink, Shield, XCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink, Shield, XCircle, ChevronLeft, ChevronRight, MessageSquare } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm, detectMaintenanceType } from "./types";
@@ -60,6 +61,8 @@ const CommentCell = memo(function CommentCell({
     }
   };
 
+  const hasObservations = form.sub_status === "resuelto" && !!form.resolution_observations?.trim();
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -67,17 +70,27 @@ const CommentCell = memo(function CommentCell({
           className="w-full min-h-[28px] text-left hover:text-primary transition-colors cursor-pointer truncate block"
           onClick={handleOpen}
         >
-          {form.additional_comments?.trim() || "-"}
+          <span className="flex items-center gap-1">
+            <span className="truncate">{form.additional_comments?.trim() || "-"}</span>
+            {hasObservations && <MessageSquare className="h-3 w-3 text-blue-500 shrink-0" />}
+          </span>
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 p-3 space-y-2 z-50 bg-popover border shadow-md">
         {!editing ? (
           <>
             <p className="text-xs font-semibold text-muted-foreground">Comentarios</p>
-            <p className="text-sm whitespace-pre-wrap">{form.additional_comments}</p>
+            <p className="text-sm whitespace-pre-wrap">{form.additional_comments || <span className="text-muted-foreground italic">Sin comentarios</span>}</p>
             <Button variant="outline" size="sm" className="gap-1.5 mt-2" onClick={startEdit}>
               <Pencil className="h-3.5 w-3.5" /> Editar
             </Button>
+            {hasObservations && (
+              <>
+                <Separator className="my-2" />
+                <p className="text-xs font-bold text-muted-foreground">Observaciones - Control de Gestión</p>
+                <p className="text-sm whitespace-pre-wrap">{form.resolution_observations}</p>
+              </>
+            )}
           </>
         ) : (
           <>
@@ -323,6 +336,7 @@ interface FilterState {
   companyFilter: string;
   contractSearch: string;
   dateFilter: string | null;
+  observationsFilter: boolean;
 }
 
 const DEFAULT_FILTERS: FilterState = {
@@ -336,6 +350,7 @@ const DEFAULT_FILTERS: FilterState = {
   companyFilter: "all",
   contractSearch: "",
   dateFilter: null,
+  observationsFilter: false,
 };
 
 const PAGE_SIZE = 100;
@@ -610,8 +625,9 @@ export function MaintenanceModule() {
   }, [criticalityCategories]);
 
   const filtered = useMemo(() => {
-    const { search, statusFilter, subStatusFilter, typeFilter, criticalityFilter, selectedYears, selectedContracts, dateFilter } = filters;
+    const { search, statusFilter, subStatusFilter, typeFilter, criticalityFilter, selectedYears, selectedContracts, dateFilter, observationsFilter } = filters;
     let result = forms.filter(f => {
+      if (observationsFilter && !(f.sub_status === "resuelto" && f.resolution_observations?.trim())) return false;
       if (selectedYears.length > 0 && (!f.year || !selectedYears.includes(f.year))) return false;
       if (companyFilteredContractIds !== null) {
         if (!f.contract_id || !companyFilteredContractIds.has(f.contract_id)) return false;
@@ -854,7 +870,7 @@ export function MaintenanceModule() {
   return (
     <div className="space-y-4">
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Total FORMs</CardTitle>
@@ -921,6 +937,25 @@ export function MaintenanceModule() {
               >
                 <FileDown className="h-4 w-4" />
               </Button>
+            </div>
+          </CardContent>
+        </Card>
+        <Card
+          className={`cursor-pointer transition-all hover:shadow-md ${filters.observationsFilter ? "ring-2 ring-blue-500 ring-offset-1" : ""}`}
+          onClick={() => {
+            setCurrentPage(0);
+            startTransition(() => {
+              setFilters(prev => ({ ...prev, observationsFilter: !prev.observationsFilter }));
+            });
+          }}
+        >
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Con Observaciones</CardTitle>
+            <MessageSquare className="h-4 w-4 text-blue-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600">
+              {forms.filter(f => f.sub_status === "resuelto" && f.resolution_observations?.trim()).length}
             </div>
           </CardContent>
         </Card>
@@ -1231,7 +1266,7 @@ export function MaintenanceModule() {
                     <SortableTableHead label="Contrato" sortKey="contract_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="max-w-[10rem]" />
                     <TableHead className="w-28">Tipo</TableHead>
                     <TableHead>Descripción</TableHead>
-                    <TableHead>Comentarios</TableHead>
+                    <TableHead>Comentarios / Observaciones</TableHead>
                     <SortableTableHead label="Proveedor" sortKey="supplier_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
                     <SortableTableHead label="OC" sortKey="purchase_order_number" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
                     <TableHead className="w-28">Evidencia</TableHead>
