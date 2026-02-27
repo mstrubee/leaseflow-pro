@@ -136,7 +136,7 @@ export const OCRequestViewDialog = ({
   const [supplierName, setSupplierName] = useState<string | null>(null);
   
   // New payment form
-  const [newPayment, setNewPayment] = useState({ description: "", amount: "", due_date: "" });
+  const [newPayment, setNewPayment] = useState({ description: "", amount: "", due_date: "", input_mode: "clp" as "clp" | "percent" | "balance" });
   const [addingPayment, setAddingPayment] = useState(false);
 
   // Contract allocations edit state
@@ -550,7 +550,22 @@ export const OCRequestViewDialog = ({
   const handleAddPayment = async () => {
     if (!request) return;
     
-    const amountClp = parseFloat(newPayment.amount) || 0;
+    const effectiveUf = getEffectiveUf(request, ufValue);
+    let amountClp = 0;
+
+    if (newPayment.input_mode === "balance") {
+      amountClp = remainingClp;
+    } else if (newPayment.input_mode === "percent") {
+      const pct = parseFloat(newPayment.amount) || 0;
+      if (pct <= 0 || pct > 100) {
+        toast({ variant: "destructive", title: "Error", description: "Ingrese un porcentaje válido (1-100)" });
+        return;
+      }
+      amountClp = totalRequestClp * pct / 100;
+    } else {
+      amountClp = parseFloat(newPayment.amount) || 0;
+    }
+
     if (amountClp <= 0) {
       toast({ variant: "destructive", title: "Error", description: "Ingrese un monto válido" });
       return;
@@ -559,7 +574,6 @@ export const OCRequestViewDialog = ({
     setAddingPayment(true);
     try {
       const nextNumber = paymentPlans.length + 1;
-      const effectiveUf = getEffectiveUf(request, ufValue);
       const amountUf = amountClp / effectiveUf;
       
       const { error } = await supabase.from("oc_payment_plans").insert({
@@ -574,7 +588,7 @@ export const OCRequestViewDialog = ({
       if (error) throw error;
 
       toast({ title: "Pago agregado" });
-      setNewPayment({ description: "", amount: "", due_date: "" });
+      setNewPayment({ description: "", amount: "", due_date: "", input_mode: "clp" });
       loadRequest();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
@@ -1352,7 +1366,7 @@ export const OCRequestViewDialog = ({
                     <Label>Agregar Pago</Label>
                   </div>
                   <div className="grid grid-cols-12 gap-2">
-                    <div className="col-span-4 space-y-1">
+                    <div className="col-span-3 space-y-1">
                       <Label className="text-xs">Descripción</Label>
                       <Input
                         value={newPayment.description}
@@ -1360,18 +1374,73 @@ export const OCRequestViewDialog = ({
                         placeholder={`Pago ${paymentPlans.length + 1}`}
                       />
                     </div>
-                    <div className="col-span-3 space-y-1">
-                      <Label className="text-xs">Monto ($) *</Label>
-                      <Input
-                        type="number"
-                        value={newPayment.amount}
-                        onChange={(e) => setNewPayment(prev => ({ ...prev, amount: e.target.value }))}
-                        placeholder="0"
-                        step="1"
-                      />
+                    <div className="col-span-2 space-y-1">
+                      <Label className="text-xs">Tipo</Label>
+                      <Select
+                        value={newPayment.input_mode}
+                        onValueChange={(v: "clp" | "percent" | "balance") => setNewPayment(prev => ({ ...prev, input_mode: v, amount: v === "balance" ? "" : prev.amount }))}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="clp">$ Monto</SelectItem>
+                          <SelectItem value="percent">% del Total</SelectItem>
+                          {paymentPlans.length >= 1 && (
+                            <SelectItem value="balance">Saldo</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="col-span-3 space-y-1">
-                      <Label className="text-xs">Vencimiento (opcional)</Label>
+                      <Label className="text-xs">
+                        {newPayment.input_mode === "percent" ? "Porcentaje *" : "Monto ($) *"}
+                      </Label>
+                      {newPayment.input_mode === "balance" ? (
+                        <div className="h-9 flex items-center px-3 border rounded-md bg-muted/50 text-sm font-mono">
+                          {formatCLP(remainingClp)}
+                        </div>
+                      ) : (
+                        <Input
+                          type="number"
+                          value={newPayment.amount}
+                          onChange={(e) => setNewPayment(prev => ({ ...prev, amount: e.target.value }))}
+                          placeholder={newPayment.input_mode === "percent" ? "0-100" : "0"}
+                          step={newPayment.input_mode === "percent" ? "0.01" : "1"}
+                          min="0"
+                          max={newPayment.input_mode === "percent" ? "100" : undefined}
+                        />
+                      )}
+                      {/* Show calculated equivalencies */}
+                      {(() => {
+                        const effectiveUf = request ? getEffectiveUf(request, ufValue) : ufValue;
+                        if (newPayment.input_mode === "percent" && parseFloat(newPayment.amount) > 0) {
+                          const calcClp = totalRequestClp * parseFloat(newPayment.amount) / 100;
+                          return (
+                            <p className="text-[10px] text-muted-foreground">
+                              = {formatCLP(calcClp)} · {formatUF(calcClp / effectiveUf)}
+                            </p>
+                          );
+                        }
+                        if (newPayment.input_mode === "balance" && remainingClp > 0) {
+                          return (
+                            <p className="text-[10px] text-muted-foreground">
+                              ≈ {formatUF(remainingClp / effectiveUf)}
+                            </p>
+                          );
+                        }
+                        if (newPayment.input_mode === "clp" && parseFloat(newPayment.amount) > 0) {
+                          return (
+                            <p className="text-[10px] text-muted-foreground">
+                              ≈ {formatUF(parseFloat(newPayment.amount) / effectiveUf)}
+                            </p>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
+                    <div className="col-span-2 space-y-1">
+                      <Label className="text-xs">Vencimiento</Label>
                       <Input
                         type="date"
                         value={newPayment.due_date}
@@ -1390,7 +1459,7 @@ export const OCRequestViewDialog = ({
                       </Button>
                     </div>
                   </div>
-                  {remainingClp > 0 && (
+                  {remainingClp > 0 && newPayment.input_mode !== "balance" && (
                     <p className="text-xs text-muted-foreground">
                       Sugerencia: quedan {formatCLP(remainingClp)} sin planificar
                     </p>
