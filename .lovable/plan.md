@@ -1,24 +1,37 @@
 
 
-## Mostrar "Last Seen" cuando el usuario esta desconectado
+## Boton Flotante de Estado de Usuarios (solo Admin)
 
-### Cambio
-En la tabla de usuarios del Admin Panel, cuando un usuario aparece como "Desconectado", mostrar debajo la fecha y hora de su ultima conexion (last_seen_at) en formato legible, por ejemplo: "Visto por ultima vez: 27/02/2026 14:30".
+### Objetivo
+Crear un boton flotante posicionado justo encima de la calculadora que solo sea visible para administradores. Al hacer clic, despliega un panel con la lista de usuarios mostrando nombre, estado de conexion y actividad en tiempo real.
 
-Si nunca se ha conectado (last_seen_at es null), mostrar "Sin actividad registrada".
+### Logica de estados
 
-### Archivo afectado
-- `src/pages/AdminPanel.tsx` -- agregar linea de texto debajo de "Desconectado" con la fecha formateada usando `date-fns` (ya instalado).
+| Condicion | Indicador | Texto |
+|-----------|-----------|-------|
+| `last_seen_at` > 5 min o null | Gris | Desconectado + "Visto: dd/MM/yyyy HH:mm" |
+| `last_seen_at` < 5 min AND `activity_status` = `idle` | Amarillo | Detenido |
+| `last_seen_at` < 5 min AND `activity_status` = `active` | Verde pulsante | Trabajando en [seccion] |
 
-### Detalle tecnico
-Despues del indicador "Desconectado", agregar un bloque condicional similar al que ya existe para "Trabajando en...":
+### Cambios
 
-```typescript
-{!isOnline && (
-  <span className="text-[10px] text-muted-foreground ml-4">
-    {profile.last_seen_at 
-      ? `Visto: ${format(new Date(profile.last_seen_at), "dd/MM/yyyy HH:mm")}`
-      : "Sin actividad registrada"}
-  </span>
-)}
-```
+**1. Nuevo componente: `src/components/FloatingUserStatus.tsx`**
+
+- Boton flotante con icono `Users` en `fixed bottom-[52px] left-4` (encima de la calculadora)
+- Solo se renderiza si el usuario es admin (usa `useAuth`)
+- Al hacer clic, despliega un panel con scroll mostrando todos los usuarios
+- Consulta `profiles` al abrir y se suscribe a Realtime para actualizaciones automaticas
+- Cada fila muestra:
+  - Nombre (o email si no tiene nombre)
+  - Indicador de color (verde pulsante / amarillo / gris)
+  - Texto de estado: "Trabajando en [seccion]", "Detenido", o "Desconectado" con fecha/hora del ultimo acceso
+- Usa `format` de `date-fns` para formatear la fecha de ultimo acceso
+
+**2. Modificar `src/components/layout/MainLayout.tsx`**
+
+- Importar y renderizar `FloatingUserStatus` junto a `FloatingCalculator`, en las mismas condiciones (fuera de home/auth)
+
+### Archivos afectados
+- **Nuevo**: `src/components/FloatingUserStatus.tsx`
+- **Modificado**: `src/components/layout/MainLayout.tsx`
+
