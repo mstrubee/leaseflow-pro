@@ -1,101 +1,84 @@
 
 
-## Cambio de moneda principal a Pesos ($) y opcion de ingreso UF/CLP
+## Cambios en "Ver/Editar Solicitud de OC" - Montos en Pesos y edicion inline
 
-Este cambio establece que **todos los calculos y visualizaciones** del sistema de presupuesto (CAPEX, OPEX, OC, Facturas, Notas de Credito) se muestren **siempre en Pesos ($)**, con UF como dato secundario informativo. Al crear una OC o Solicitud de OC, el sistema pregunta si el monto se ingresa en Pesos o UF; si se ingresa en UF, se convierte instantaneamente a Pesos usando la UF del dia de creacion.
+### 1. Todos los montos en Pesos ($) como principal
 
----
+Cambiar todas las visualizaciones de montos en el dialogo para mostrar CLP como linea principal y UF como dato secundario (texto pequeno muted).
 
-### 1. Logica de conversion y almacenamiento (sin cambios de DB)
+**Lugares afectados en `OCRequestViewDialog.tsx`:**
 
-El sistema ya almacena `amount_clp`, `amount_uf`, `input_currency` y `uf_value_at_entry`. No se requieren cambios de base de datos. La diferencia es en **como se muestra**: CLP pasa a ser la moneda principal y UF la secundaria.
+- **Resumen (lineas 646-652)**: "Monto Total" mostrara `$ amount_clp` como principal, `UF amount_uf` como secundario
+- **Tabla de contratos (lineas 787-791)**: CLP principal, UF secundario en cada fila
+- **Total asignado contratos (lineas 820-825)**: CLP principal
+- **Lineas de presupuesto (linea 956)**: Convertir UF a CLP para mostrar
+- **Resumen de pagos (lineas 1104-1123)**: Todos los totales en CLP, UF secundario
+- **Tabla de pagos (linea 1150)**: Monto en CLP principal, UF secundario
+- **Sugerencia "quedan sin planificar" (linea 1234)**: En CLP
+- **Formulario agregar pago (linea 1203)**: Label "Monto ($)" en vez de "Monto (UF)"
+- **Totales de FORMs (linea 1078)**: En CLP
+- **Edicion de asignaciones (lineas 839, 929-939)**: Montos en CLP
 
----
+### 2. Eliminar boton "Marcar como pagada"
 
-### 2. BudgetDashboard - Resumen Cards (ya casi correcto)
+Eliminar completamente el boton con icono `Check` que llama a `handleMarkPaid` (lineas 1158-1167). Se mantiene solo el boton de eliminar pago. La funcion `handleMarkPaid` (lineas 534-549) se puede dejar o eliminar.
 
-El BudgetDashboard ya muestra `formatCLP(convertUFToPesos(...))` como linea principal. Solo asegurar que UF sea siempre la linea secundaria mas pequena. **Archivo: `src/components/budget/BudgetDashboard.tsx`** - Revision menor, ya esta mayormente correcto.
+### 3. Edicion inline con doble click en pagos
 
----
+Reemplazar las celdas de texto estatico de la tabla de pagos (descripcion y monto) por celdas editables al hacer doble click:
 
-### 3. PurchaseOrdersModule - Tabla de OCs
+**Nuevo estado:**
+- `editingPaymentId: string | null` - ID del pago en edicion
+- `editingPaymentField: "description" | "amount" | null` - campo en edicion
+- `editingPaymentValue: string` - valor temporal
 
-**Archivo: `src/components/budget/PurchaseOrdersModule.tsx`**
+**Comportamiento:**
+- Doble click en descripcion o monto de un pago: activa modo edicion mostrando un `Input` en la celda
+- Enter o blur: guarda el cambio con update a `oc_payment_plans`
+- Escape: cancela la edicion
+- Solo funciona si `!readOnly && request.status === "pending"`
+- El monto se edita en CLP; al guardar se convierte a UF usando `uf_value_at_entry` del request
 
-- **Tabla**: La columna "Monto" ya muestra CLP como linea principal y UF como secundaria (lineas 1314-1325). Verificar consistencia.
-- **Total OC**: Ya muestra `formatCLP(totalOCClp)` como principal (linea 1151). Correcto.
-- **Dialogo Nueva OC**: Cambiar la pregunta inicial de moneda. En vez del selector UF/CLP inline con el input, agregar un paso previo o selector prominente que diga: **"Crear OC en Pesos ($) o en UF?"**
-  - Si elige CLP: el input acepta pesos directamente, se muestra equivalencia en UF
-  - Si elige UF: el input acepta UF, se convierte a CLP instantaneamente usando UF del dia, el monto CLP es el principal
-  - `uf_value_at_entry` se guarda siempre con la tasa del dia
-- **Validaciones CAPEX/OPEX disponibles**: Cambiar los textos de `formatUF(available)` a `formatCLP(convertUFToPesos(available))` con UF como secundario
+### 4. Formulario "Agregar Pago" en CLP
 
----
+- Cambiar label de "Monto (UF) *" a "Monto ($) *"
+- El input de monto ahora acepta CLP
+- Al guardar (`handleAddPayment`): convertir CLP a UF dividiendo por `ufValue` (o `request.uf_value_at_entry` si existe)
+- Guardar `amount_uf` convertido en la base de datos
 
-### 4. OCRequestDialog - Solicitud de OC (vista de contrato)
-
-**Archivo: `src/components/budget/OCRequestDialog.tsx`**
-
-- Cambiar default `currency: "UF"` a `currency: "CLP"` (linea 66)
-- Ajustar selector de moneda para que sea mas prominente ("Ingresar en Pesos" / "Ingresar en UF")
-- Cuando se elige UF: mostrar conversion instantanea a CLP como monto principal
-- Cambiar equivalencia: siempre mostrar CLP como valor principal, UF como dato
-
----
-
-### 5. OCRequestsList - Tabla de solicitudes
-
-**Archivo: `src/components/budget/OCRequestsList.tsx`**
-
-- **Columna Monto** (lineas 827-835): Cambiar de mostrar `formatUF(request.amount_uf)` a mostrar `formatCLP(request.amount_clp)` como linea principal, con UF debajo como texto secundario
-- **Solicitudes convertidas**: Aplicar mismo cambio
-
----
-
-### 6. CentralizedOrderCreator - Creador centralizado
-
-**Archivo: `src/components/budget/CentralizedOrderCreator.tsx`**
-
-- El selector de moneda ya existe (lineas 118-127). Cambiar default `currency: "CLP"` (ya es "CLP")
-- Asegurar que la conversion equivalente muestre siempre CLP como primario
-- El input de allocation amounts para multi-contrato: mostrar en CLP
-
----
-
-### 7. InvoiceList - Facturas y Notas de Credito
-
-**Archivo: `src/components/budget/InvoiceList.tsx`**
-
-- Asegurar que montos de facturas y notas de credito se muestren siempre en CLP como primario
-- El selector de moneda en el dialogo de nueva factura debe preguntar CLP o UF
-- La tabla de facturas debe mostrar CLP principal
-
----
-
-### 8. ConvertOCRequestDialog
-
-**Archivo: `src/components/budget/ConvertOCRequestDialog.tsx`**
-
-- Verificar que los montos mostrados sean en CLP como primario
-
----
-
-### 9. Resumen de cambios por archivo
+### Archivo afectado
 
 | Archivo | Cambios |
-|---------|---------|
-| `BudgetDashboard.tsx` | Revision menor - ya muestra CLP principal |
-| `PurchaseOrdersModule.tsx` | Selector de moneda prominente en dialogo nueva/editar OC; validaciones en CLP; disponibles en CLP |
-| `OCRequestDialog.tsx` | Default a CLP; selector prominente; conversion instantanea |
-| `OCRequestsList.tsx` | Tabla: columna monto muestra CLP principal, UF secundario |
-| `CentralizedOrderCreator.tsx` | Asegurar CLP como principal en conversiones y displays |
-| `InvoiceList.tsx` | Montos en CLP principal en tabla y dialogos |
-| `ConvertOCRequestDialog.tsx` | Montos en CLP principal |
+|---------|--------|
+| `src/components/budget/OCRequestViewDialog.tsx` | Montos en CLP, eliminar "marcar pagada", edicion inline doble click, formulario agregar pago en CLP |
 
-### Principio general
+### Detalles tecnicos
 
-- **CLP es SIEMPRE la moneda principal de visualizacion**
-- **UF es un dato informativo secundario** (fuente mas pequena, color muted)
-- Al crear en UF, la conversion a CLP se hace con la UF del dia y se guarda en `uf_value_at_entry`
-- Los calculos de presupuesto disponible se muestran en CLP
+**Inline editing state:**
+```text
+editingPaymentId: string | null = null
+editingPaymentField: "description" | "amount" | null = null  
+editingPaymentValue: string = ""
+```
+
+**Double click handler:**
+```text
+onDoubleClick -> setEditingPaymentId(plan.id), setEditingPaymentField(field), setEditingPaymentValue(currentValue)
+```
+
+**Save inline edit:**
+```text
+Si field === "amount":
+  amountClp = parseFloat(editingPaymentValue)
+  amountUf = amountClp / ufValue
+  update oc_payment_plans set amount_uf = amountUf where id = editingPaymentId
+Si field === "description":
+  update oc_payment_plans set description = editingPaymentValue where id = editingPaymentId
+```
+
+**Conversion helper para display:**
+```text
+formatCLP(plan.amount_uf * ufValue)  // linea principal
+formatUF(plan.amount_uf)              // linea secundaria (texto muted pequeno)
+```
 
