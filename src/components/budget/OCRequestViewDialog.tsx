@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -7,13 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Save, Trash2, Plus, Calendar, Check, AlertCircle, Layers, ExternalLink, FileText, Pencil, X, Wrench } from "lucide-react";
+import { Loader2, Save, Trash2, Plus, Calendar, AlertCircle, Layers, ExternalLink, FileText, Pencil, X, Wrench } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { format, isPast, isToday } from "date-fns";
 import { es } from "date-fns/locale";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { formatCLP } from "@/lib/utils";
 
 interface OCRequest {
   id: string;
@@ -32,6 +33,7 @@ interface OCRequest {
   is_multi_contract?: boolean;
   quotation_url?: string | null;
   quotation_file_name?: string | null;
+  uf_value_at_entry?: number;
 }
 
 interface BudgetLineAssignment {
@@ -102,6 +104,14 @@ interface OCRequestViewDialogProps {
   ufValue?: number;
 }
 
+// Helper: get effective UF value for this request
+const getEffectiveUf = (request: OCRequest | null, fallbackUf: number) =>
+  request?.uf_value_at_entry || fallbackUf;
+
+// Helper: convert UF to CLP using request's locked UF
+const ufToClp = (uf: number, request: OCRequest | null, fallbackUf: number) =>
+  Math.round(uf * getEffectiveUf(request, fallbackUf));
+
 export const OCRequestViewDialog = ({
   open,
   onOpenChange,
@@ -140,6 +150,12 @@ export const OCRequestViewDialog = ({
   const [availableForms, setAvailableForms] = useState<AvailableForm[]>([]);
   const [savingForms, setSavingForms] = useState(false);
   const [loadingForms, setLoadingForms] = useState(false);
+
+  // Inline editing state for payments
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [editingPaymentField, setEditingPaymentField] = useState<"description" | "amount" | null>(null);
+  const [editingPaymentValue, setEditingPaymentValue] = useState("");
+  const editInputRef = useRef<HTMLInputElement>(null);
   
   const { toast } = useToast();
 
@@ -149,12 +165,19 @@ export const OCRequestViewDialog = ({
     }
   }, [open, requestId]);
 
+  // Focus input when inline editing starts
+  useEffect(() => {
+    if (editingPaymentId && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [editingPaymentId, editingPaymentField]);
+
   const loadRequest = async () => {
     if (!requestId) return;
     
     setLoading(true);
     try {
-      // Load request data
       const { data: reqData, error: reqError } = await supabase
         .from("oc_requests")
         .select("*")
@@ -173,7 +196,6 @@ export const OCRequestViewDialog = ({
         .select("id, budget_line_id, amount_uf")
         .eq("oc_request_id", requestId);
       
-      // Get line names
       if (linesData && linesData.length > 0) {
         const lineIds = linesData.map(l => l.budget_line_id);
         const { data: lineNames } = await supabase
@@ -224,7 +246,6 @@ export const OCRequestViewDialog = ({
         .eq("oc_request_id", requestId);
       
       if (formsData && formsData.length > 0) {
-        // Get form numbers
         const formIds = formsData.filter(f => f.maintenance_form_id).map(f => f.maintenance_form_id);
         let formNumberMap = new Map<string, string>();
         if (formIds.length > 0) {
@@ -275,13 +296,11 @@ export const OCRequestViewDialog = ({
     setIsEditingAllocations(true);
   };
 
-  // Cancel editing
   const handleCancelEditAllocations = () => {
     setIsEditingAllocations(false);
     setEditableAllocations([]);
   };
 
-  // Add new allocation
   const handleAddAllocation = () => {
     const usedContractIds = editableAllocations.map(a => a.contract_id);
     const availableContract = availableContracts.find(c => !usedContractIds.includes(c.id));
@@ -289,19 +308,13 @@ export const OCRequestViewDialog = ({
     if (availableContract) {
       setEditableAllocations(prev => [
         ...prev,
-        {
-          contract_id: availableContract.id,
-          contract_name: availableContract.name,
-          amount_uf: 0,
-          isNew: true
-        }
+        { contract_id: availableContract.id, contract_name: availableContract.name, amount_uf: 0, isNew: true }
       ]);
     } else {
       toast({ variant: "destructive", title: "Sin contratos disponibles", description: "Todos los contratos ya están asignados" });
     }
   };
 
-  // Update allocation
   const handleUpdateAllocation = (index: number, field: "contract_id" | "amount_uf", value: any) => {
     setEditableAllocations(prev => {
       const updated = [...prev];
@@ -315,16 +328,13 @@ export const OCRequestViewDialog = ({
     });
   };
 
-  // Remove allocation
   const handleRemoveAllocation = (index: number) => {
     setEditableAllocations(prev => prev.filter((_, i) => i !== index));
   };
 
-  // Save allocations
   const handleSaveAllocations = async () => {
     if (!request) return;
 
-    // Validate
     if (editableAllocations.length === 0) {
       toast({ variant: "destructive", title: "Error", description: "Debe asignar al menos un contrato" });
       return;
@@ -333,28 +343,28 @@ export const OCRequestViewDialog = ({
     const totalAllocated = editableAllocations.reduce((sum, a) => sum + a.amount_uf, 0);
     const tolerance = 0.01;
     if (Math.abs(totalAllocated - request.amount_uf) > tolerance) {
+      const effectiveUf = getEffectiveUf(request, ufValue);
       toast({ 
         variant: "destructive", 
         title: "Error de distribución", 
-        description: `El total asignado (${formatUF(totalAllocated)}) no coincide con el monto total (${formatUF(request.amount_uf)})` 
+        description: `El total asignado (${formatCLP(totalAllocated * effectiveUf)}) no coincide con el monto total (${formatCLP(request.amount_clp || request.amount_uf * effectiveUf)})` 
       });
       return;
     }
 
     setSavingAllocations(true);
     try {
-      // Delete existing allocations
       await supabase
         .from("oc_request_contract_allocations")
         .delete()
         .eq("oc_request_id", request.id);
 
-      // Insert new allocations
+      const effectiveUf = getEffectiveUf(request, ufValue);
       const allocations = editableAllocations.map(a => ({
         oc_request_id: request.id,
         contract_id: a.contract_id,
         amount_uf: Math.round(a.amount_uf * 10000) / 10000,
-        amount_clp: Math.round(a.amount_uf * ufValue)
+        amount_clp: Math.round(a.amount_uf * effectiveUf)
       }));
 
       const { error } = await supabase
@@ -432,7 +442,6 @@ export const OCRequestViewDialog = ({
   const handleSaveFormAssignments = async () => {
     if (!request) return;
 
-    // Validate: items without form must have description
     for (const fa of formAssignments) {
       if (!fa.maintenance_form_id && !fa.description.trim()) {
         toast({ variant: "destructive", title: "Error", description: "Los items sin FORM deben tener una descripción" });
@@ -446,16 +455,15 @@ export const OCRequestViewDialog = ({
 
     setSavingForms(true);
     try {
-      // Delete existing
       await supabase.from("oc_request_forms").delete().eq("oc_request_id", request.id);
 
-      // Insert all
       if (formAssignments.length > 0) {
+        const effectiveUf = getEffectiveUf(request, ufValue);
         const inserts = formAssignments.map(fa => ({
           oc_request_id: request.id,
           maintenance_form_id: fa.maintenance_form_id,
           amount_uf: Math.round(fa.amount_uf * 10000) / 10000,
-          amount_clp: Math.round(fa.amount_uf * ufValue),
+          amount_clp: Math.round(fa.amount_uf * effectiveUf),
           description: fa.description || null
         }));
         const { error } = await supabase.from("oc_request_forms").insert(inserts);
@@ -500,8 +508,8 @@ export const OCRequestViewDialog = ({
   const handleAddPayment = async () => {
     if (!request) return;
     
-    const amount = parseFloat(newPayment.amount) || 0;
-    if (amount <= 0) {
+    const amountClp = parseFloat(newPayment.amount) || 0;
+    if (amountClp <= 0) {
       toast({ variant: "destructive", title: "Error", description: "Ingrese un monto válido" });
       return;
     }
@@ -509,12 +517,14 @@ export const OCRequestViewDialog = ({
     setAddingPayment(true);
     try {
       const nextNumber = paymentPlans.length + 1;
+      const effectiveUf = getEffectiveUf(request, ufValue);
+      const amountUf = amountClp / effectiveUf;
       
       const { error } = await supabase.from("oc_payment_plans").insert({
         oc_request_id: request.id,
         payment_number: nextNumber,
         description: newPayment.description || `Pago ${nextNumber}`,
-        amount_uf: amount,
+        amount_uf: Math.round(amountUf * 10000) / 10000,
         due_date: newPayment.due_date || null,
         status: "pending"
       });
@@ -531,23 +541,6 @@ export const OCRequestViewDialog = ({
     }
   };
 
-  const handleMarkPaid = async (id: string) => {
-    try {
-      await supabase
-        .from("oc_payment_plans")
-        .update({ 
-          status: "paid", 
-          paid_date: new Date().toISOString().split('T')[0] 
-        })
-        .eq("id", id);
-
-      toast({ title: "Pago marcado como pagado" });
-      loadRequest();
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
-    }
-  };
-
   const handleDeletePayment = async (id: string) => {
     try {
       await supabase.from("oc_payment_plans").delete().eq("id", id);
@@ -556,6 +549,63 @@ export const OCRequestViewDialog = ({
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
+  };
+
+  // Inline editing handlers
+  const handleStartInlineEdit = (plan: PaymentPlan, field: "description" | "amount") => {
+    if (readOnly || request?.status !== "pending") return;
+    setEditingPaymentId(plan.id);
+    setEditingPaymentField(field);
+    if (field === "amount") {
+      setEditingPaymentValue(String(ufToClp(plan.amount_uf, request, ufValue)));
+    } else {
+      setEditingPaymentValue(plan.description || "");
+    }
+  };
+
+  const handleCancelInlineEdit = () => {
+    setEditingPaymentId(null);
+    setEditingPaymentField(null);
+    setEditingPaymentValue("");
+  };
+
+  const handleSaveInlineEdit = async () => {
+    if (!editingPaymentId || !editingPaymentField || !request) return;
+
+    try {
+      if (editingPaymentField === "amount") {
+        const amountClp = parseFloat(editingPaymentValue) || 0;
+        if (amountClp <= 0) {
+          toast({ variant: "destructive", title: "Error", description: "Monto inválido" });
+          return;
+        }
+        const effectiveUf = getEffectiveUf(request, ufValue);
+        const amountUf = amountClp / effectiveUf;
+        await supabase
+          .from("oc_payment_plans")
+          .update({ amount_uf: Math.round(amountUf * 10000) / 10000 })
+          .eq("id", editingPaymentId);
+      } else {
+        await supabase
+          .from("oc_payment_plans")
+          .update({ description: editingPaymentValue })
+          .eq("id", editingPaymentId);
+      }
+
+      toast({ title: "Pago actualizado" });
+      handleCancelInlineEdit();
+      loadRequest();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
+  const handleInlineEditKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      handleCancelInlineEdit();
+    }
+    // Enter is handled by Input's default blur behavior
   };
 
   const getStatusBadge = (plan: PaymentPlan) => {
@@ -573,12 +623,14 @@ export const OCRequestViewDialog = ({
     navigate(`/contracts/${contractId}?section=ordenes-compra`);
   };
 
-  const totalPlanned = paymentPlans.reduce((sum, p) => sum + p.amount_uf, 0);
-  const totalPaid = paymentPlans.filter(p => p.status === "paid").reduce((sum, p) => sum + p.amount_uf, 0);
-  const remaining = (request?.amount_uf || 0) - totalPlanned;
+  // All CLP-based calculations
+  const effectiveUfVal = getEffectiveUf(request, ufValue);
+  const totalPlannedClp = paymentPlans.reduce((sum, p) => sum + ufToClp(p.amount_uf, request, ufValue), 0);
+  const totalPaidClp = paymentPlans.filter(p => p.status === "paid").reduce((sum, p) => sum + ufToClp(p.amount_uf, request, ufValue), 0);
+  const totalRequestClp = request?.amount_clp || ufToClp(request?.amount_uf || 0, request, ufValue);
+  const remainingClp = totalRequestClp - totalPlannedClp;
 
   const isMultiContract = contractAllocations.length > 0;
-  const tabCount = isMultiContract ? 4 : 3;
 
   if (!open) return null;
 
@@ -636,7 +688,7 @@ export const OCRequestViewDialog = ({
                 )}
               </div>
 
-              {/* Summary */}
+              {/* Summary - CLP principal */}
               <div className="grid grid-cols-2 gap-4 p-3 bg-muted/50 rounded-lg">
                 <div>
                   <p className="text-xs text-muted-foreground">Fecha</p>
@@ -644,12 +696,8 @@ export const OCRequestViewDialog = ({
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Monto Total</p>
-                  <p className="font-medium">{formatUF(request.amount_uf)}</p>
-                  {request.amount_clp > 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      ${Math.round(request.amount_clp).toLocaleString("es-CL")} CLP
-                    </p>
-                  )}
+                  <p className="font-medium">{formatCLP(totalRequestClp)}</p>
+                  <p className="text-[10px] text-muted-foreground">{formatUF(request.amount_uf)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Proyecto</p>
@@ -725,33 +773,18 @@ export const OCRequestViewDialog = ({
                     <span className="text-sm font-medium">Asignación por Contrato</span>
                   </div>
                   {!readOnly && request.status === "pending" && !isEditingAllocations && (
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={handleStartEditAllocations}
-                      className="gap-1"
-                    >
+                    <Button variant="outline" size="sm" onClick={handleStartEditAllocations} className="gap-1">
                       <Pencil className="h-3 w-3" />
                       Editar
                     </Button>
                   )}
                   {isEditingAllocations && (
                     <div className="flex gap-2">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={handleCancelEditAllocations}
-                        className="gap-1"
-                      >
+                      <Button variant="outline" size="sm" onClick={handleCancelEditAllocations} className="gap-1">
                         <X className="h-3 w-3" />
                         Cancelar
                       </Button>
-                      <Button 
-                        size="sm" 
-                        onClick={handleSaveAllocations}
-                        disabled={savingAllocations}
-                        className="gap-1"
-                      >
+                      <Button size="sm" onClick={handleSaveAllocations} disabled={savingAllocations} className="gap-1">
                         {savingAllocations ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
                         Guardar
                       </Button>
@@ -759,7 +792,7 @@ export const OCRequestViewDialog = ({
                   )}
                 </div>
 
-                {/* View Mode */}
+                {/* View Mode - CLP principal */}
                 {!isEditingAllocations && (
                   <>
                     <div className="border rounded-lg overflow-hidden">
@@ -767,8 +800,7 @@ export const OCRequestViewDialog = ({
                         <TableHeader>
                           <TableRow>
                             <TableHead>Contrato</TableHead>
-                            <TableHead className="text-right">Monto (UF)</TableHead>
-                            <TableHead className="text-right">Monto (CLP)</TableHead>
+                            <TableHead className="text-right">Monto</TableHead>
                             <TableHead className="text-right">% del Total</TableHead>
                             <TableHead className="w-[100px]">Acciones</TableHead>
                           </TableRow>
@@ -778,17 +810,18 @@ export const OCRequestViewDialog = ({
                             const percentage = request.amount_uf > 0 
                               ? ((alloc.amount_uf / request.amount_uf) * 100).toFixed(1) 
                               : "0";
+                            const allocClp = alloc.amount_clp || ufToClp(alloc.amount_uf, request, ufValue);
                             
                             return (
                               <TableRow key={alloc.id}>
                                 <TableCell className="font-medium">
                                   {alloc.contract_name}
                                 </TableCell>
-                                <TableCell className="text-right font-mono">
-                                  {formatUF(alloc.amount_uf)}
-                                </TableCell>
-                                <TableCell className="text-right font-mono">
-                                  ${Math.round(alloc.amount_clp).toLocaleString("es-CL")}
+                                <TableCell className="text-right">
+                                  <div className="flex flex-col items-end">
+                                    <span className="font-mono">{formatCLP(allocClp)}</span>
+                                    <span className="text-[10px] text-muted-foreground">{formatUF(alloc.amount_uf)}</span>
+                                  </div>
                                 </TableCell>
                                 <TableCell className="text-right">
                                   <Badge variant="outline" className="text-xs">
@@ -813,22 +846,22 @@ export const OCRequestViewDialog = ({
                       </Table>
                     </div>
 
-                    {/* Summary */}
+                    {/* Summary - CLP principal */}
                     <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
                       <span className="font-medium">Total Asignado</span>
                       <div className="text-right">
                         <span className="font-mono font-medium">
-                          {formatUF(contractAllocations.reduce((sum, a) => sum + a.amount_uf, 0))}
+                          {formatCLP(contractAllocations.reduce((sum, a) => sum + (a.amount_clp || ufToClp(a.amount_uf, request, ufValue)), 0))}
                         </span>
-                        <span className="text-muted-foreground text-sm ml-2">
-                          (${Math.round(contractAllocations.reduce((sum, a) => sum + a.amount_clp, 0)).toLocaleString("es-CL")} CLP)
+                        <span className="text-muted-foreground text-xs ml-2">
+                          {formatUF(contractAllocations.reduce((sum, a) => sum + a.amount_uf, 0))}
                         </span>
                       </div>
                     </div>
                   </>
                 )}
 
-                {/* Edit Mode */}
+                {/* Edit Mode - CLP display */}
                 {isEditingAllocations && (
                   <>
                     <div className="border rounded-lg overflow-hidden">
@@ -836,7 +869,7 @@ export const OCRequestViewDialog = ({
                         <TableHeader>
                           <TableRow>
                             <TableHead>Contrato</TableHead>
-                            <TableHead className="text-right w-[150px]">Monto (UF)</TableHead>
+                            <TableHead className="text-right w-[150px]">Monto ($)</TableHead>
                             <TableHead className="text-right">% del Total</TableHead>
                             <TableHead className="w-[80px]">Acciones</TableHead>
                           </TableRow>
@@ -879,6 +912,9 @@ export const OCRequestViewDialog = ({
                                     className="h-8 text-right font-mono w-[130px]"
                                     placeholder="0.00"
                                   />
+                                  <p className="text-[10px] text-muted-foreground text-right mt-0.5">
+                                    ≈ {formatCLP(alloc.amount_uf * effectiveUfVal)}
+                                  </p>
                                 </TableCell>
                                 <TableCell className="text-right">
                                   <Badge variant="outline" className="text-xs">
@@ -903,7 +939,6 @@ export const OCRequestViewDialog = ({
                       </Table>
                     </div>
 
-                    {/* Add button */}
                     <Button
                       variant="outline"
                       size="sm"
@@ -915,7 +950,7 @@ export const OCRequestViewDialog = ({
                       Agregar Contrato
                     </Button>
 
-                    {/* Edit Summary */}
+                    {/* Edit Summary - CLP */}
                     {(() => {
                       const totalEditable = editableAllocations.reduce((sum, a) => sum + a.amount_uf, 0);
                       const diff = request.amount_uf - totalEditable;
@@ -927,16 +962,16 @@ export const OCRequestViewDialog = ({
                             <span className="font-medium">Total Asignado</span>
                             {!isBalanced && (
                               <span className="text-xs text-yellow-600 dark:text-yellow-400">
-                                {diff > 0 ? `Faltan ${formatUF(diff)} por asignar` : `Exceso de ${formatUF(Math.abs(diff))}`}
+                                {diff > 0 ? `Faltan ${formatCLP(diff * effectiveUfVal)} por asignar` : `Exceso de ${formatCLP(Math.abs(diff) * effectiveUfVal)}`}
                               </span>
                             )}
                           </div>
                           <div className="text-right">
                             <span className={`font-mono font-medium ${isBalanced ? 'text-green-600' : 'text-yellow-600'}`}>
-                              {formatUF(totalEditable)}
+                              {formatCLP(totalEditable * effectiveUfVal)}
                             </span>
                             <span className="text-muted-foreground text-sm ml-2">
-                              / {formatUF(request.amount_uf)}
+                              / {formatCLP(totalRequestClp)}
                             </span>
                           </div>
                         </div>
@@ -953,12 +988,18 @@ export const OCRequestViewDialog = ({
                   {budgetLines.map((line) => (
                     <div key={line.id} className="flex justify-between items-center p-2 bg-muted/30 rounded">
                       <span className="text-sm">{line.line_name}</span>
-                      <span className="font-mono text-sm">{formatUF(line.amount_uf)}</span>
+                      <div className="flex flex-col items-end">
+                        <span className="font-mono text-sm">{formatCLP(ufToClp(line.amount_uf, request, ufValue))}</span>
+                        <span className="text-[10px] text-muted-foreground">{formatUF(line.amount_uf)}</span>
+                      </div>
                     </div>
                   ))}
                   <div className="flex justify-between items-center p-2 border-t font-medium">
                     <span>Total</span>
-                    <span className="font-mono">{formatUF(request.amount_uf)}</span>
+                    <div className="flex flex-col items-end">
+                      <span className="font-mono">{formatCLP(totalRequestClp)}</span>
+                      <span className="text-[10px] text-muted-foreground">{formatUF(request.amount_uf)}</span>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -983,7 +1024,7 @@ export const OCRequestViewDialog = ({
                           <TableRow>
                             <TableHead>FORM</TableHead>
                             <TableHead>Descripción</TableHead>
-                            <TableHead className="text-right w-[130px]">Monto (UF)</TableHead>
+                            <TableHead className="text-right w-[130px]">Monto</TableHead>
                             {!readOnly && request.status === "pending" && <TableHead className="w-[60px]" />}
                           </TableRow>
                         </TableHeader>
@@ -1032,16 +1073,24 @@ export const OCRequestViewDialog = ({
                                 </TableCell>
                                 <TableCell className="text-right">
                                   {!readOnly && request.status === "pending" ? (
-                                    <Input
-                                      type="number"
-                                      step="0.01"
-                                      value={fa.amount_uf || ""}
-                                      onChange={(e) => handleUpdateFormAssignment(index, "amount_uf", e.target.value)}
-                                      className="h-8 text-right font-mono w-[120px] text-xs"
-                                      placeholder="0.00"
-                                    />
+                                    <div>
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        value={fa.amount_uf || ""}
+                                        onChange={(e) => handleUpdateFormAssignment(index, "amount_uf", e.target.value)}
+                                        className="h-8 text-right font-mono w-[120px] text-xs"
+                                        placeholder="0.00"
+                                      />
+                                      <p className="text-[10px] text-muted-foreground text-right mt-0.5">
+                                        ≈ {formatCLP(fa.amount_uf * effectiveUfVal)}
+                                      </p>
+                                    </div>
                                   ) : (
-                                    <span className="font-mono text-sm">{formatUF(fa.amount_uf)}</span>
+                                    <div className="flex flex-col items-end">
+                                      <span className="font-mono text-sm">{formatCLP(ufToClp(fa.amount_uf, request, ufValue))}</span>
+                                      <span className="text-[10px] text-muted-foreground">{formatUF(fa.amount_uf)}</span>
+                                    </div>
                                   )}
                                 </TableCell>
                                 {!readOnly && request.status === "pending" && (
@@ -1070,13 +1119,18 @@ export const OCRequestViewDialog = ({
                     </div>
                   )}
 
-                  {/* Summary */}
+                  {/* Summary - CLP */}
                   {formAssignments.length > 0 && (
                     <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
                       <span className="font-medium text-sm">Total FORMs</span>
-                      <span className="font-mono font-medium">
-                        {formatUF(formAssignments.reduce((sum, fa) => sum + fa.amount_uf, 0))}
-                      </span>
+                      <div className="flex flex-col items-end">
+                        <span className="font-mono font-medium">
+                          {formatCLP(formAssignments.reduce((sum, fa) => sum + ufToClp(fa.amount_uf, request, ufValue), 0))}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {formatUF(formAssignments.reduce((sum, fa) => sum + fa.amount_uf, 0))}
+                        </span>
+                      </div>
                     </div>
                   )}
 
@@ -1100,36 +1154,36 @@ export const OCRequestViewDialog = ({
             </TabsContent>
 
             <TabsContent value="payments" className="space-y-4 mt-4">
-              {/* Summary */}
+              {/* Summary - CLP */}
               <div className="grid grid-cols-4 gap-2 p-3 bg-muted/50 rounded-lg text-sm">
                 <div>
                   <p className="text-muted-foreground text-xs">Total Solicitud</p>
-                  <p className="font-medium">{formatUF(request.amount_uf)}</p>
+                  <p className="font-medium">{formatCLP(totalRequestClp)}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs">Planificado</p>
-                  <p className="font-medium">{formatUF(totalPlanned)}</p>
+                  <p className="font-medium">{formatCLP(totalPlannedClp)}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs">Pagado</p>
-                  <p className="font-medium text-green-600">{formatUF(totalPaid)}</p>
+                  <p className="font-medium text-green-600">{formatCLP(totalPaidClp)}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs">Sin Planificar</p>
-                  <p className={`font-medium ${remaining > 0 ? "text-yellow-600" : remaining < 0 ? "text-destructive" : ""}`}>
-                    {formatUF(remaining)}
+                  <p className={`font-medium ${remainingClp > 0 ? "text-yellow-600" : remainingClp < 0 ? "text-destructive" : ""}`}>
+                    {formatCLP(remainingClp)}
                   </p>
                 </div>
               </div>
 
-              {remaining < 0 && (
+              {remainingClp < 0 && (
                 <div className="flex items-center gap-2 text-sm text-destructive">
                   <AlertCircle className="h-4 w-4" />
                   Los pagos planificados exceden el monto total
                 </div>
               )}
 
-              {/* Payment list */}
+              {/* Payment list with inline editing */}
               {paymentPlans.length > 0 && (
                 <Table>
                   <TableHeader>
@@ -1143,29 +1197,60 @@ export const OCRequestViewDialog = ({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {paymentPlans.map((plan) => (
-                      <TableRow key={plan.id}>
-                        <TableCell className="font-mono">{plan.payment_number}</TableCell>
-                        <TableCell>{plan.description || "-"}</TableCell>
-                        <TableCell className="text-right">{formatUF(plan.amount_uf)}</TableCell>
-                        <TableCell className="text-xs">
-                          {plan.due_date ? format(new Date(plan.due_date), 'dd/MM/yyyy', { locale: es }) : "-"}
-                        </TableCell>
-                        <TableCell>{getStatusBadge(plan)}</TableCell>
-                        {!readOnly && request.status === "pending" && (
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              {plan.status !== "paid" && (
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  onClick={() => handleMarkPaid(plan.id)} 
-                                  className="h-6 px-2"
-                                  title="Marcar como pagado"
-                                >
-                                  <Check className="h-3 w-3" />
-                                </Button>
-                              )}
+                    {paymentPlans.map((plan) => {
+                      const isEditingDesc = editingPaymentId === plan.id && editingPaymentField === "description";
+                      const isEditingAmount = editingPaymentId === plan.id && editingPaymentField === "amount";
+                      const canEdit = !readOnly && request.status === "pending";
+
+                      return (
+                        <TableRow key={plan.id}>
+                          <TableCell className="font-mono">{plan.payment_number}</TableCell>
+                          <TableCell
+                            className={canEdit ? "cursor-pointer" : ""}
+                            onDoubleClick={() => canEdit && handleStartInlineEdit(plan, "description")}
+                            title={canEdit ? "Doble click para editar" : undefined}
+                          >
+                            {isEditingDesc ? (
+                              <Input
+                                ref={editInputRef}
+                                value={editingPaymentValue}
+                                onChange={(e) => setEditingPaymentValue(e.target.value)}
+                                onBlur={handleSaveInlineEdit}
+                                onKeyDown={handleInlineEditKeyDown}
+                                className="h-7 text-sm"
+                              />
+                            ) : (
+                              plan.description || "-"
+                            )}
+                          </TableCell>
+                          <TableCell
+                            className={`text-right ${canEdit ? "cursor-pointer" : ""}`}
+                            onDoubleClick={() => canEdit && handleStartInlineEdit(plan, "amount")}
+                            title={canEdit ? "Doble click para editar" : undefined}
+                          >
+                            {isEditingAmount ? (
+                              <Input
+                                ref={editInputRef}
+                                type="number"
+                                value={editingPaymentValue}
+                                onChange={(e) => setEditingPaymentValue(e.target.value)}
+                                onBlur={handleSaveInlineEdit}
+                                onKeyDown={handleInlineEditKeyDown}
+                                className="h-7 text-sm text-right font-mono w-[120px] ml-auto"
+                              />
+                            ) : (
+                              <div className="flex flex-col items-end">
+                                <span>{formatCLP(ufToClp(plan.amount_uf, request, ufValue))}</span>
+                                <span className="text-[10px] text-muted-foreground">{formatUF(plan.amount_uf)}</span>
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {plan.due_date ? format(new Date(plan.due_date), 'dd/MM/yyyy', { locale: es }) : "-"}
+                          </TableCell>
+                          <TableCell>{getStatusBadge(plan)}</TableCell>
+                          {canEdit && (
+                            <TableCell className="text-right">
                               <Button 
                                 variant="ghost" 
                                 size="sm" 
@@ -1174,16 +1259,16 @@ export const OCRequestViewDialog = ({
                               >
                                 <Trash2 className="h-3 w-3" />
                               </Button>
-                            </div>
-                          </TableCell>
-                        )}
-                      </TableRow>
-                    ))}
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               )}
 
-              {/* Add payment form */}
+              {/* Add payment form - CLP */}
               {!readOnly && request.status === "pending" && (
                 <div className="border rounded-lg p-4 space-y-3">
                   <div className="flex items-center gap-2">
@@ -1200,13 +1285,13 @@ export const OCRequestViewDialog = ({
                       />
                     </div>
                     <div className="col-span-3 space-y-1">
-                      <Label className="text-xs">Monto (UF) *</Label>
+                      <Label className="text-xs">Monto ($) *</Label>
                       <Input
                         type="number"
                         value={newPayment.amount}
                         onChange={(e) => setNewPayment(prev => ({ ...prev, amount: e.target.value }))}
-                        placeholder="0.00"
-                        step="0.01"
+                        placeholder="0"
+                        step="1"
                       />
                     </div>
                     <div className="col-span-3 space-y-1">
@@ -1229,9 +1314,9 @@ export const OCRequestViewDialog = ({
                       </Button>
                     </div>
                   </div>
-                  {remaining > 0 && (
+                  {remainingClp > 0 && (
                     <p className="text-xs text-muted-foreground">
-                      Sugerencia: quedan {formatUF(remaining)} sin planificar
+                      Sugerencia: quedan {formatCLP(remainingClp)} sin planificar
                     </p>
                   )}
                 </div>
@@ -1244,13 +1329,11 @@ export const OCRequestViewDialog = ({
               )}
             </TabsContent>
           </Tabs>
-        ) : null}
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cerrar
-          </Button>
-        </DialogFooter>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground">
+            No se encontró la solicitud
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
