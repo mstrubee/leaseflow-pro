@@ -12,6 +12,7 @@ interface SupplierSelectProps {
   templateLineId?: string | null;
   categoryId?: string | null;
   disabled?: boolean;
+  supplierName?: string | null;
 }
 
 export const SupplierSelect = ({ 
@@ -19,7 +20,8 @@ export const SupplierSelect = ({
   onChange, 
   templateLineId,
   categoryId,
-  disabled = false 
+  disabled = false,
+  supplierName: externalSupplierName
 }: SupplierSelectProps) => {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,17 +64,21 @@ export const SupplierSelect = ({
   };
 
   const selectedSupplier = suppliers.find(s => s.id === value);
+  const displayName = selectedSupplier?.name || externalSupplierName || null;
+
+  // If we have an external supplier name but no ID, try to find the matching supplier
+  const resolvedValue = value || (externalSupplierName ? suppliers.find(s => s.name === externalSupplierName)?.id : null);
 
   return (
     <>
       <Select 
-        value={value || ""} 
+        value={resolvedValue || ""} 
         onValueChange={handleSupplierChange}
         disabled={disabled || loading}
       >
         <SelectTrigger className="h-6 w-36 text-xs">
           <SelectValue placeholder="Proveedor">
-            {selectedSupplier?.name || "Proveedor"}
+            {displayName || "Proveedor"}
           </SelectValue>
         </SelectTrigger>
         <SelectContent>

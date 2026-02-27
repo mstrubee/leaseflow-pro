@@ -917,12 +917,8 @@ const SortableTemplateLineItem = ({
                 value={null}
                 onChange={handleSupplierChange}
                 categoryId={line.category_id}
+                supplierName={line.supplier_name}
               />
-              {line.supplier_name && (
-                <span className="text-xs text-muted-foreground truncate max-w-[80px]">
-                  ({line.supplier_name})
-                </span>
-              )}
             </div>
           </>
         )}
