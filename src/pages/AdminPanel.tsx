@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation, Eye, EyeOff, Upload, Copy } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation, Eye, EyeOff, Upload, Copy, Settings2 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CloudStorageSettings } from "@/components/contracts/CloudStorageSettings";
 import { BudgetTemplateManager } from "@/components/budget/BudgetTemplateManager";
 import { GanttTemplateManager } from "@/components/gantt/GanttTemplateManager";
@@ -232,6 +233,13 @@ const AdminPanel = () => {
   const [updatingUser, setUpdatingUser] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // Activity thresholds
+  interface ActivityThreshold { user_id: string; idle_minutes: number; inactive_minutes: number; }
+  const [activityThresholds, setActivityThresholds] = useState<ActivityThreshold[]>([]);
+  const [editingThresholdUserId, setEditingThresholdUserId] = useState<string | null>(null);
+  const [thresholdIdle, setThresholdIdle] = useState(5);
+  const [thresholdInactive, setThresholdInactive] = useState(15);
+
   useEffect(() => {
     if (!authLoading && roleLoaded && !isAdmin) {
       navigate("/");
@@ -300,22 +308,78 @@ const AdminPanel = () => {
   const loadData = async () => {
     setLoading(true);
     
-    const [profilesRes, rolesRes, permissionsRes, templatesRes] = await Promise.all([
+    const [profilesRes, rolesRes, permissionsRes, templatesRes, thresholdsRes] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("user_roles").select("*"),
       supabase.from("user_permissions").select("*"),
       supabase.from("folder_templates").select("*").order("display_order", { ascending: true }),
+      supabase.from("user_activity_thresholds").select("*" as any),
     ]);
 
     setProfiles(profilesRes.data || []);
     setUserRoles(rolesRes.data || []);
     setUserPermissions(permissionsRes.data || []);
     setFolderTemplates(templatesRes.data || []);
+    setActivityThresholds((thresholdsRes.data as any) || []);
     setLoading(false);
   };
 
   const getUserRole = (userId: string) => {
     return userRoles.find(r => r.user_id === userId)?.role || "user";
+  };
+
+  const getThresholds = (userId: string) => {
+    const t = activityThresholds.find(th => th.user_id === userId);
+    return { idle: t?.idle_minutes ?? 5, inactive: t?.inactive_minutes ?? 15 };
+  };
+
+  const getActivityStatus = (profile: Profile) => {
+    const { idle, inactive } = getThresholds(profile.id);
+    const now = Date.now();
+    const lastSeen = profile.last_seen_at ? new Date(profile.last_seen_at).getTime() : 0;
+    const diffMin = (now - lastSeen) / 60000;
+
+    if (!profile.last_seen_at || diffMin >= inactive) {
+      return {
+        color: "bg-destructive",
+        pulse: false,
+        label: "Inactivo",
+        detail: profile.last_seen_at
+          ? `Visto: ${format(new Date(profile.last_seen_at), "dd/MM/yyyy HH:mm")}`
+          : "Sin actividad registrada",
+        textColor: "text-destructive",
+      };
+    }
+    if (diffMin >= idle || profile.activity_status === "idle") {
+      return {
+        color: "bg-amber-400",
+        pulse: false,
+        label: "Detenido",
+        detail: `Hace ${Math.round(diffMin)} min`,
+        textColor: "text-amber-600 dark:text-amber-400",
+      };
+    }
+    return {
+      color: "bg-green-500",
+      pulse: true,
+      label: "Activo",
+      detail: `Trabajando en ${profile.current_section || "Inicio"}`,
+      textColor: "text-green-600 dark:text-green-400",
+    };
+  };
+
+  const handleSaveThreshold = async (userId: string) => {
+    await supabase.from("user_activity_thresholds" as any).upsert({
+      user_id: userId,
+      idle_minutes: thresholdIdle,
+      inactive_minutes: thresholdInactive,
+    } as any);
+    setEditingThresholdUserId(null);
+    // Update local state
+    setActivityThresholds(prev => {
+      const filtered = prev.filter(t => t.user_id !== userId);
+      return [...filtered, { user_id: userId, idle_minutes: thresholdIdle, inactive_minutes: thresholdInactive }];
+    });
   };
 
   const getUserPermissions = (userId: string) => {
@@ -768,7 +832,7 @@ const AdminPanel = () => {
                 <TableRow>
                   <TableHead>Email</TableHead>
                   <TableHead>Nombre</TableHead>
-                  <TableHead>Estado</TableHead>
+                  <TableHead>Actividad</TableHead>
                   <TableHead>Rol</TableHead>
                   <TableHead>Permisos</TableHead>
                   <TableHead>Fecha Creación</TableHead>
@@ -782,42 +846,52 @@ const AdminPanel = () => {
                     <TableCell>{profile.full_name || "-"}</TableCell>
                     <TableCell>
                       {(() => {
-                        const fiveMinAgo = 5 * 60 * 1000;
-                        const isOnline = profile.last_seen_at && 
-                          (Date.now() - new Date(profile.last_seen_at).getTime()) < fiveMinAgo;
-                        const isActive = isOnline && profile.activity_status === "active";
+                        const status = getActivityStatus(profile);
+                        const { idle, inactive } = getThresholds(profile.id);
                         return (
-                          <div className="flex flex-col gap-0.5">
-                            <div className="flex items-center gap-1.5">
-                              <span className={`h-2.5 w-2.5 rounded-full ${
-                                isActive 
-                                  ? 'bg-green-500 animate-pulse' 
-                                  : isOnline 
-                                    ? 'bg-green-500' 
-                                    : 'bg-muted-foreground/40'
-                              }`} />
-                              <span className={`text-xs font-medium ${
-                                isActive 
-                                  ? 'text-green-600 dark:text-green-400' 
-                                  : isOnline 
-                                    ? 'text-green-600 dark:text-green-400' 
-                                    : 'text-muted-foreground'
-                              }`}>
-                                {isActive ? 'Activo' : isOnline ? 'Conectado' : 'Desconectado'}
+                          <div className="flex items-start gap-1">
+                            <div className="flex flex-col gap-0.5 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${status.color} ${status.pulse ? "animate-pulse" : ""}`} />
+                                <span className={`text-xs font-medium ${status.textColor}`}>
+                                  {status.label}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground ml-4">
+                                {status.detail}
                               </span>
                             </div>
-                            {isOnline && profile.current_section && (
-                              <span className="text-[10px] text-muted-foreground ml-4">
-                                Trabajando en {profile.current_section}
-                              </span>
-                            )}
-                            {!isOnline && (
-                              <span className="text-[10px] text-muted-foreground ml-4">
-                                {profile.last_seen_at 
-                                  ? `Visto: ${format(new Date(profile.last_seen_at), "dd/MM/yyyy HH:mm")}`
-                                  : "Sin actividad registrada"}
-                              </span>
-                            )}
+                            <Popover open={editingThresholdUserId === profile.id} onOpenChange={(open) => {
+                              if (open) {
+                                setEditingThresholdUserId(profile.id);
+                                setThresholdIdle(idle);
+                                setThresholdInactive(inactive);
+                              } else {
+                                setEditingThresholdUserId(null);
+                              }
+                            }}>
+                              <PopoverTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0 mt-0.5">
+                                  <Settings2 className="h-3 w-3 text-muted-foreground" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-56 p-3" side="right">
+                                <div className="space-y-3">
+                                  <p className="text-xs font-semibold">Umbrales de actividad</p>
+                                  <div className="space-y-1">
+                                    <Label className="text-[11px]">Detenido (amarillo) — min</Label>
+                                    <Input type="number" min={1} value={thresholdIdle} onChange={e => setThresholdIdle(Number(e.target.value))} className="h-7 text-xs" />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-[11px]">Inactivo (rojo) — min</Label>
+                                    <Input type="number" min={1} value={thresholdInactive} onChange={e => setThresholdInactive(Number(e.target.value))} className="h-7 text-xs" />
+                                  </div>
+                                  <Button size="sm" className="w-full h-7 text-xs" onClick={() => handleSaveThreshold(profile.id)}>
+                                    Guardar
+                                  </Button>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
                           </div>
                         );
                       })()}

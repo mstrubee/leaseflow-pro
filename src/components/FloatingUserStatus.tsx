@@ -16,22 +16,32 @@ interface Profile {
   current_section: string | null;
 }
 
-function getStatus(profile: Profile) {
+interface Threshold {
+  user_id: string;
+  idle_minutes: number;
+  inactive_minutes: number;
+}
+
+function getStatus(profile: Profile, thresholds: Threshold[]) {
+  const t = thresholds.find(th => th.user_id === profile.id);
+  const idleMin = t?.idle_minutes ?? 5;
+  const inactiveMin = t?.inactive_minutes ?? 15;
+
   const now = Date.now();
   const lastSeen = profile.last_seen_at ? new Date(profile.last_seen_at).getTime() : 0;
-  const isOnline = now - lastSeen < 5 * 60 * 1000;
+  const diffMin = (now - lastSeen) / 60000;
 
-  if (!isOnline) {
+  if (!profile.last_seen_at || diffMin >= inactiveMin) {
     return {
-      color: "bg-gray-400",
+      color: "bg-destructive",
       pulse: false,
       text: profile.last_seen_at
         ? `Visto: ${format(new Date(profile.last_seen_at), "dd/MM/yyyy HH:mm")}`
         : "Sin actividad registrada",
     };
   }
-  if (profile.activity_status === "idle") {
-    return { color: "bg-amber-400", pulse: false, text: "Detenido" };
+  if (diffMin >= idleMin || profile.activity_status === "idle") {
+    return { color: "bg-amber-400", pulse: false, text: `Detenido hace ${Math.round(diffMin)} min` };
   }
   return {
     color: "bg-green-500",
@@ -44,18 +54,21 @@ export function FloatingUserStatus() {
   const { isAdmin, roleLoaded } = useAuth();
   const [open, setOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [thresholds, setThresholds] = useState<Threshold[]>([]);
 
   useEffect(() => {
     if (!open) return;
 
-    const fetchProfiles = async () => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("id, email, full_name, last_seen_at, activity_status, current_section" as any);
-      if (data) setProfiles(data as any);
+    const fetchData = async () => {
+      const [profilesRes, thresholdsRes] = await Promise.all([
+        supabase.from("profiles").select("id, email, full_name, last_seen_at, activity_status, current_section" as any),
+        supabase.from("user_activity_thresholds").select("*" as any),
+      ]);
+      if (profilesRes.data) setProfiles(profilesRes.data as any);
+      if (thresholdsRes.data) setThresholds(thresholdsRes.data as any);
     };
 
-    fetchProfiles();
+    fetchData();
 
     const channel = supabase
       .channel("admin-presence")
@@ -105,7 +118,7 @@ export function FloatingUserStatus() {
           <ScrollArea className="max-h-72">
             <div className="p-2 space-y-1">
               {profiles.map((profile) => {
-                const status = getStatus(profile);
+                const status = getStatus(profile, thresholds);
                 return (
                   <div key={profile.id} className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-accent/50">
                     <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${status.color} ${status.pulse ? "animate-pulse" : ""}`} />
