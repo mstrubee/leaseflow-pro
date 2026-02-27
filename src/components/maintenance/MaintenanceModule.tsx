@@ -904,13 +904,15 @@ export function MaintenanceModule() {
             return (
               <Card
                 key={cat.id}
-                className={`cursor-pointer transition-all flex-1 min-w-0 ${isActive ? "" : "shadow-sm hover:shadow-md"}`}
+                className={`cursor-pointer transition-all flex-1 min-w-0`}
                 style={{
                   borderWidth: isActive ? 3 : undefined,
                   borderColor: isActive ? (cat.color || "hsl(var(--primary))") : undefined,
                   borderLeftWidth: isActive ? 5 : 4,
                   borderLeftColor: cat.color || "hsl(var(--border))",
-                  ...(isActive ? { background: `${cat.color}10` } : {}),
+                  ...(isActive
+                    ? { background: `${cat.color}10` }
+                    : { boxShadow: `0 1px 3px 0 ${cat.color}30, 0 1px 2px -1px ${cat.color}20` }),
                 }}
                 onClick={() => handleCriticalityCardClick(cat.id)}
               >
@@ -944,13 +946,15 @@ export function MaintenanceModule() {
             const ageRange = criticalityAgeRanges["__none__"];
             return (
               <Card
-                className={`cursor-pointer transition-all flex-1 min-w-0 ${isActive ? "" : "shadow-sm hover:shadow-md"}`}
+                className={`cursor-pointer transition-all flex-1 min-w-0`}
                 style={{
                   borderWidth: isActive ? 3 : undefined,
                   borderColor: isActive ? '#f59e0b' : undefined,
                   borderLeftWidth: isActive ? 5 : 4,
                   borderLeftColor: '#f59e0b',
-                  ...(isActive ? { background: '#f59e0b10' } : {}),
+                  ...(isActive
+                    ? { background: '#f59e0b10' }
+                    : { boxShadow: '0 1px 3px 0 #f59e0b30, 0 1px 2px -1px #f59e0b20' }),
                 }}
                 onClick={handleNoCriticalityCardClick}
               >
