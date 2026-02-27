@@ -33,8 +33,10 @@ interface BudgetDashboardProps {
 }
 
 interface BudgetTypeTotals {
-  oc: number;
-  invoices: number;
+  ocClp: number;       // Suma de amount_clp de OCs (valor real bloqueado)
+  ocUf: number;        // Suma de amount_uf de OCs (informativo)
+  invoicesClp: number;  // Suma de amount_clp de facturas - notas de credito
+  invoicesUf: number;   // Suma de amount_uf de facturas - notas de credito (informativo)
 }
 
 interface CarryoverData {
@@ -63,8 +65,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
   const [availableYears, setAvailableYears] = useState<number[]>([]);
   const [capexSummary, setCapexSummary] = useState<BudgetSummary>({ budget: 0, authorized: 0, unauthorized: 0 });
   const [opexSummary, setOpexSummary] = useState<BudgetSummary>({ budget: 0, authorized: 0, unauthorized: 0 });
-  const [capexTotals, setCapexTotals] = useState<BudgetTypeTotals>({ oc: 0, invoices: 0 });
-  const [opexTotals, setOpexTotals] = useState<BudgetTypeTotals>({ oc: 0, invoices: 0 });
+  const [capexTotals, setCapexTotals] = useState<BudgetTypeTotals>({ ocClp: 0, ocUf: 0, invoicesClp: 0, invoicesUf: 0 });
+  const [opexTotals, setOpexTotals] = useState<BudgetTypeTotals>({ ocClp: 0, ocUf: 0, invoicesClp: 0, invoicesUf: 0 });
   const [carryover, setCarryover] = useState<CarryoverData>({ capex: 0, opex: 0, total: 0 });
   const [yearBudgetInfo, setYearBudgetInfo] = useState<YearBudgetInfo>({ hasBudgets: false, capexClosed: false, opexClosed: false, allClosed: false });
   
@@ -258,153 +260,159 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
     // For CAPEX: use budget_classification = 'CAPEX' OR budget_line_id is not null
     // For OPEX: use opex_master_id is not null (centralized OPEX) or opex_category_id is not null
     
-    let directOrders: { id: string; amount_uf: number; order_number: string; is_multi_contract: boolean }[] = [];
+    // Helper to resolve CLP for a record (fallback for legacy data without amount_clp)
+    const resolveClp = (rec: { amount_clp?: number | null; amount_uf: number; uf_value_at_entry?: number | null }): number => {
+      if (rec.amount_clp != null && rec.amount_clp !== 0) return rec.amount_clp;
+      if (rec.uf_value_at_entry) return Math.round(rec.amount_uf * rec.uf_value_at_entry);
+      return Math.round(rec.amount_uf * (ufValue || 1));
+    };
+
+    let directOrders: { id: string; amount_uf: number; amount_clp: number; order_number: string; is_multi_contract: boolean }[] = [];
     
     // Get direct orders for this contract
     if (budgetType === "capex") {
-      // CAPEX orders: have budget_classification = 'CAPEX' or have a budget_line_id
       const { data: capexOrders } = await supabase
         .from("purchase_orders")
-        .select("id, amount_uf, budget_classification, budget_line_id, opex_master_id, opex_category_id, order_number, is_multi_contract")
+        .select("id, amount_uf, amount_clp, uf_value_at_entry, budget_classification, budget_line_id, opex_master_id, opex_category_id, order_number, is_multi_contract")
         .eq("contract_id", contractId)
         .eq("year", year)
         .is("deleted_at", null);
       
-      // Filter CAPEX orders: either budget_classification is CAPEX or has budget_line_id (and no opex references)
       directOrders = (capexOrders || []).filter(o => {
         return o.budget_classification === "CAPEX" || 
                (o.budget_line_id && !o.opex_master_id && !o.opex_category_id);
       }).map(o => ({
         id: o.id,
         amount_uf: o.amount_uf,
+        amount_clp: resolveClp(o),
         order_number: o.order_number,
         is_multi_contract: o.is_multi_contract || false
       }));
     } else {
-      // OPEX orders: have opex_master_id or opex_category_id or budget_classification = 'OPEX'
       const { data: opexOrders } = await supabase
         .from("purchase_orders")
-        .select("id, amount_uf, opex_master_id, opex_category_id, budget_classification, order_number, is_multi_contract")
+        .select("id, amount_uf, amount_clp, uf_value_at_entry, opex_master_id, opex_category_id, budget_classification, order_number, is_multi_contract")
         .eq("contract_id", contractId)
         .eq("year", year)
         .is("deleted_at", null);
       
-      // Filter OPEX orders: have opex_master_id, opex_category_id, or budget_classification is OPEX
       directOrders = (opexOrders || []).filter(o => 
         o.opex_master_id || o.opex_category_id || o.budget_classification === "OPEX"
       ).map(o => ({
         id: o.id,
         amount_uf: o.amount_uf,
+        amount_clp: resolveClp(o),
         order_number: o.order_number,
         is_multi_contract: o.is_multi_contract || false
       }));
     }
 
-    const ocTotal = directOrders.reduce((acc, o) => acc + (o.amount_uf || 0), 0);
+    const ocTotalClp = directOrders.reduce((acc, o) => acc + (o.amount_clp || 0), 0);
+    const ocTotalUf = directOrders.reduce((acc, o) => acc + (o.amount_uf || 0), 0);
 
     // Get invoice totals
-    let invoicesTotal = 0;
+    let invoicesTotalClp = 0;
+    let invoicesTotalUf = 0;
     
     if (directOrders.length > 0) {
-      // Separate multi-contract and single-contract orders
       const singleContractOrders = directOrders.filter(o => !o.is_multi_contract);
       const multiContractOrders = directOrders.filter(o => o.is_multi_contract);
       
-      // For single-contract orders: get invoices directly by purchase_order_id
       if (singleContractOrders.length > 0) {
         const singleOrderIds = singleContractOrders.map(o => o.id);
         
         const { data: invoices } = await supabase
           .from("invoices")
-          .select("purchase_order_id, amount_uf")
+          .select("purchase_order_id, amount_uf, amount_clp, uf_value_at_entry")
           .in("purchase_order_id", singleOrderIds)
           .is("deleted_at", null);
         
         const { data: creditNotes } = await supabase
           .from("credit_notes")
-          .select("purchase_order_id, amount_uf")
+          .select("purchase_order_id, amount_uf, amount_clp, uf_value_at_entry")
           .in("purchase_order_id", singleOrderIds)
           .is("deleted_at", null);
         
         for (const inv of (invoices || [])) {
-          invoicesTotal += inv.amount_uf || 0;
+          invoicesTotalClp += resolveClp(inv);
+          invoicesTotalUf += inv.amount_uf || 0;
         }
         for (const cn of (creditNotes || [])) {
-          invoicesTotal -= cn.amount_uf || 0;
+          invoicesTotalClp -= resolveClp(cn);
+          invoicesTotalUf -= cn.amount_uf || 0;
         }
       }
       
-      // For multi-contract orders: get invoices by order_number and calculate proportional share
       if (multiContractOrders.length > 0) {
         const orderNumbers = [...new Set(multiContractOrders.map(o => o.order_number))];
         
-        // Get all POs with the same order_numbers to find their invoices
         const { data: allMultiPOs } = await supabase
           .from("purchase_orders")
-          .select("id, order_number, amount_uf")
+          .select("id, order_number, amount_uf, amount_clp, uf_value_at_entry")
           .in("order_number", orderNumbers)
           .is("deleted_at", null);
         
         const allMultiPOIds = (allMultiPOs || []).map(po => po.id);
         
         if (allMultiPOIds.length > 0) {
-          // Get all invoices for these order groups
           const { data: multiInvoices } = await supabase
             .from("invoices")
-            .select("purchase_order_id, amount_uf")
+            .select("purchase_order_id, amount_uf, amount_clp, uf_value_at_entry")
             .in("purchase_order_id", allMultiPOIds)
             .is("deleted_at", null);
           
           const { data: multiCreditNotes } = await supabase
             .from("credit_notes")
-            .select("purchase_order_id, amount_uf")
+            .select("purchase_order_id, amount_uf, amount_clp, uf_value_at_entry")
             .in("purchase_order_id", allMultiPOIds)
             .is("deleted_at", null);
           
-          // Build a map of order_number -> total amount for that group
-          const orderNumberTotals = new Map<string, number>();
+          // Build maps for proportional calculation using CLP
+          const orderNumberTotalsClp = new Map<string, number>();
           for (const po of (allMultiPOs || [])) {
-            const current = orderNumberTotals.get(po.order_number) || 0;
-            orderNumberTotals.set(po.order_number, current + (po.amount_uf || 0));
+            const current = orderNumberTotalsClp.get(po.order_number) || 0;
+            orderNumberTotalsClp.set(po.order_number, current + resolveClp(po));
           }
           
-          // Build a map of PO id -> order_number for lookup
           const poIdToOrderNumber = new Map<string, string>();
           for (const po of (allMultiPOs || [])) {
             poIdToOrderNumber.set(po.id, po.order_number);
           }
           
-          // Calculate proportional invoices for each multi-contract order
           for (const order of multiContractOrders) {
-            const totalGroupAmount = orderNumberTotals.get(order.order_number) || 0;
-            if (totalGroupAmount <= 0) continue;
+            const totalGroupClp = orderNumberTotalsClp.get(order.order_number) || 0;
+            if (totalGroupClp <= 0) continue;
             
-            const proportion = order.amount_uf / totalGroupAmount;
+            const proportion = order.amount_clp / totalGroupClp;
             
-            // Sum all invoices for this order_number and apply proportion
-            let groupInvoiceTotal = 0;
+            let groupInvoiceClp = 0;
+            let groupInvoiceUf = 0;
             for (const inv of (multiInvoices || [])) {
               const invOrderNumber = poIdToOrderNumber.get(inv.purchase_order_id);
               if (invOrderNumber === order.order_number) {
-                groupInvoiceTotal += inv.amount_uf || 0;
+                groupInvoiceClp += resolveClp(inv);
+                groupInvoiceUf += inv.amount_uf || 0;
               }
             }
             
-            let groupCreditNoteTotal = 0;
+            let groupCreditNoteClp = 0;
+            let groupCreditNoteUf = 0;
             for (const cn of (multiCreditNotes || [])) {
               const cnOrderNumber = poIdToOrderNumber.get(cn.purchase_order_id);
               if (cnOrderNumber === order.order_number) {
-                groupCreditNoteTotal += cn.amount_uf || 0;
+                groupCreditNoteClp += resolveClp(cn);
+                groupCreditNoteUf += cn.amount_uf || 0;
               }
             }
             
-            invoicesTotal += (groupInvoiceTotal - groupCreditNoteTotal) * proportion;
+            invoicesTotalClp += (groupInvoiceClp - groupCreditNoteClp) * proportion;
+            invoicesTotalUf += (groupInvoiceUf - groupCreditNoteUf) * proportion;
           }
         }
       }
     }
 
-    return { oc: ocTotal, invoices: invoicesTotal };
+    return { ocClp: ocTotalClp, ocUf: ocTotalUf, invoicesClp: invoicesTotalClp, invoicesUf: invoicesTotalUf };
   };
 
   const loadBudgetTypeSummary = async (contractId: string, budgetType: string, year: number): Promise<BudgetSummary> => {
@@ -803,8 +811,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                 <span className="text-muted-foreground">Total OC:</span>
               </div>
               <div className="text-right">
-                <span className="font-medium">{formatCLP(convertUFToPesos(capexTotals.oc + opexTotals.oc))}</span>
-                <span className="text-xs text-muted-foreground ml-1">({formatUF(capexTotals.oc + opexTotals.oc)})</span>
+                <span className="font-medium">{formatCLP(capexTotals.ocClp + opexTotals.ocClp)}</span>
+                <span className="text-xs text-muted-foreground ml-1">({formatUF(capexTotals.ocUf + opexTotals.ocUf)})</span>
               </div>
               
               <div className="flex items-center gap-1.5">
@@ -812,8 +820,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                 <span className="text-muted-foreground">Total Facturación:</span>
               </div>
               <div className="text-right">
-                <span className="font-medium">{formatCLP(convertUFToPesos(capexTotals.invoices + opexTotals.invoices))}</span>
-                <span className="text-xs text-muted-foreground ml-1">({formatUF(capexTotals.invoices + opexTotals.invoices)})</span>
+                <span className="font-medium">{formatCLP(capexTotals.invoicesClp + opexTotals.invoicesClp)}</span>
+                <span className="text-xs text-muted-foreground ml-1">({formatUF(capexTotals.invoicesUf + opexTotals.invoicesUf)})</span>
               </div>
               
               <div className="flex items-center gap-1.5">
@@ -821,8 +829,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                 <span className="text-muted-foreground">Total No Facturado:</span>
               </div>
               <div className="text-right">
-                <span className="font-medium text-red-600">{formatCLP(convertUFToPesos((capexTotals.oc + opexTotals.oc) - (capexTotals.invoices + opexTotals.invoices)))}</span>
-                <span className="text-xs text-muted-foreground ml-1">({formatUF((capexTotals.oc + opexTotals.oc) - (capexTotals.invoices + opexTotals.invoices))})</span>
+                <span className="font-medium text-red-600">{formatCLP((capexTotals.ocClp - capexTotals.invoicesClp) + (opexTotals.ocClp - opexTotals.invoicesClp))}</span>
+                <span className="text-xs text-muted-foreground ml-1">({formatUF((capexTotals.ocUf - capexTotals.invoicesUf) + (opexTotals.ocUf - opexTotals.invoicesUf))})</span>
               </div>
               
               {(capexSummary.unauthorized + opexSummary.unauthorized) > 0 && (
@@ -869,33 +877,33 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                 <p className="text-lg font-bold">{formatCLP(convertUFToPesos(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized))}</p>
                 <p className="text-xs text-muted-foreground">{formatUF(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized)}</p>
               </div>
-              <BudgetSemaphore budget={capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized} consumed={capexTotals.oc} showLabel={false} size="md" />
+              <BudgetSemaphore budget={convertUFToPesos(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized)} consumed={capexTotals.ocClp} showLabel={false} size="md" />
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm border-t pt-2">
               <div className="flex items-center gap-1.5">
                 <FileText className="h-3.5 w-3.5 text-orange-500" />
                 <span className="text-muted-foreground">OC:</span>
               </div>
-              <span className="font-medium text-right">{formatCLP(convertUFToPesos(capexTotals.oc))}</span>
+              <span className="font-medium text-right">{formatCLP(capexTotals.ocClp)}</span>
               
               <div className="flex items-center gap-1.5">
                 <Receipt className="h-3.5 w-3.5 text-purple-500" />
                 <span className="text-muted-foreground">Facturación:</span>
               </div>
-              <span className="font-medium text-right">{formatCLP(convertUFToPesos(capexTotals.invoices))}</span>
+              <span className="font-medium text-right">{formatCLP(capexTotals.invoicesClp)}</span>
               
               <div className="flex items-center gap-1.5">
                 <Clock className="h-3.5 w-3.5 text-red-500" />
                 <span className="text-muted-foreground">No Facturado:</span>
               </div>
-              <span className="font-medium text-right text-red-600">{formatCLP(convertUFToPesos(capexTotals.oc - capexTotals.invoices))}</span>
+              <span className="font-medium text-right text-red-600">{formatCLP(capexTotals.ocClp - capexTotals.invoicesClp)}</span>
               
               <div className="flex items-center gap-1.5">
                 <DollarSign className="h-3.5 w-3.5 text-green-500" />
                 <span className="text-muted-foreground">Disponible:</span>
               </div>
-              <span className={`font-medium text-right ${capexTotals.oc > (capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized) ? "text-destructive" : "text-green-600"}`}>
-                {formatCLP(convertUFToPesos((capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized) - capexTotals.oc))}
+              <span className={`font-medium text-right ${capexTotals.ocClp > convertUFToPesos(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized) ? "text-destructive" : "text-green-600"}`}>
+                {formatCLP(convertUFToPesos(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized) - capexTotals.ocClp)}
               </span>
               
               {capexSummary.unauthorized > 0 && (
@@ -922,8 +930,8 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-lg font-bold">{formatCLP(convertUFToPesos(opexTotals.oc))}</p>
-                <p className="text-xs text-muted-foreground">{formatUF(opexTotals.oc)}</p>
+                <p className="text-lg font-bold">{formatCLP(opexTotals.ocClp)}</p>
+                <p className="text-xs text-muted-foreground">{formatUF(opexTotals.ocUf)}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm border-t pt-2">
@@ -931,19 +939,19 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                 <FileText className="h-3.5 w-3.5 text-orange-500" />
                 <span className="text-muted-foreground">Total OC:</span>
               </div>
-              <span className="font-medium text-right">{formatCLP(convertUFToPesos(opexTotals.oc))}</span>
+              <span className="font-medium text-right">{formatCLP(opexTotals.ocClp)}</span>
               
               <div className="flex items-center gap-1.5">
                 <Receipt className="h-3.5 w-3.5 text-purple-500" />
                 <span className="text-muted-foreground">Total Facturación:</span>
               </div>
-              <span className="font-medium text-right">{formatCLP(convertUFToPesos(opexTotals.invoices))}</span>
+              <span className="font-medium text-right">{formatCLP(opexTotals.invoicesClp)}</span>
               
               <div className="flex items-center gap-1.5">
                 <Clock className="h-3.5 w-3.5 text-red-500" />
                 <span className="text-muted-foreground">Total No Facturado:</span>
               </div>
-              <span className="font-medium text-right text-red-600">{formatCLP(convertUFToPesos(opexTotals.oc - opexTotals.invoices))}</span>
+              <span className="font-medium text-right text-red-600">{formatCLP(opexTotals.ocClp - opexTotals.invoicesClp)}</span>
               
               <div className="col-span-2 pt-2 border-t">
                 <p className="text-xs text-muted-foreground italic">
@@ -975,7 +983,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
             budgetType="capex" 
             title="CAPEX" 
             selectedYear={selectedYear}
-            ocTotal={capexTotals.oc}
+            ocTotal={capexTotals.ocUf}
             onRefresh={() => { refreshData(); }}
             superficieEdificada={superficieEdificada}
           />
@@ -989,7 +997,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
             budgetType="opex" 
             title="OPEX"
             selectedYear={selectedYear}
-            ocTotal={opexTotals.oc}
+            ocTotal={opexTotals.ocUf}
             onRefresh={() => { refreshData(); }}
             superficieEdificada={superficieEdificada}
           />
@@ -1245,11 +1253,17 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
               <p className="text-xs text-muted-foreground">Consumo actual:</p>
               <div className="flex justify-between text-sm">
                 <span>OC emitidas:</span>
-                <span className="font-medium">{formatUF(capexTotals.oc)}</span>
+                <div className="text-right">
+                  <span className="font-medium">{formatCLP(capexTotals.ocClp)}</span>
+                  <span className="text-xs text-muted-foreground ml-1">({formatUF(capexTotals.ocUf)})</span>
+                </div>
               </div>
               <div className="flex justify-between text-sm">
                 <span>Facturado:</span>
-                <span className="font-medium">{formatUF(capexTotals.invoices)}</span>
+                <div className="text-right">
+                  <span className="font-medium">{formatCLP(capexTotals.invoicesClp)}</span>
+                  <span className="text-xs text-muted-foreground ml-1">({formatUF(capexTotals.invoicesUf)})</span>
+                </div>
               </div>
             </div>
           </div>
