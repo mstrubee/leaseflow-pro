@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { format } from "date-fns";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -808,6 +809,13 @@ const AdminPanel = () => {
                             {isOnline && profile.current_section && (
                               <span className="text-[10px] text-muted-foreground ml-4">
                                 Trabajando en {profile.current_section}
+                              </span>
+                            )}
+                            {!isOnline && (
+                              <span className="text-[10px] text-muted-foreground ml-4">
+                                {profile.last_seen_at 
+                                  ? `Visto: ${format(new Date(profile.last_seen_at), "dd/MM/yyyy HH:mm")}`
+                                  : "Sin actividad registrada"}
                               </span>
                             )}
                           </div>
