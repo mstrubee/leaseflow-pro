@@ -156,6 +156,11 @@ export const OCRequestViewDialog = ({
   const [editingPaymentField, setEditingPaymentField] = useState<"description" | "amount" | null>(null);
   const [editingPaymentValue, setEditingPaymentValue] = useState("");
   const editInputRef = useRef<HTMLInputElement>(null);
+
+  // Inline editing for total amount
+  const [editingTotalAmount, setEditingTotalAmount] = useState(false);
+  const [editingTotalValue, setEditingTotalValue] = useState("");
+  const totalAmountInputRef = useRef<HTMLInputElement>(null);
   
   const { toast } = useToast();
 
@@ -172,6 +177,13 @@ export const OCRequestViewDialog = ({
       editInputRef.current.select();
     }
   }, [editingPaymentId, editingPaymentField]);
+
+  useEffect(() => {
+    if (editingTotalAmount && totalAmountInputRef.current) {
+      totalAmountInputRef.current.focus();
+      totalAmountInputRef.current.select();
+    }
+  }, [editingTotalAmount]);
 
   const loadRequest = async () => {
     if (!requestId) return;
@@ -505,6 +517,36 @@ export const OCRequestViewDialog = ({
     }
   };
 
+  // Save total amount edit (CLP -> recalculate UF)
+  const handleSaveTotalAmount = async () => {
+    if (!request) return;
+    const newClp = parseFloat(editingTotalValue) || 0;
+    if (newClp <= 0) {
+      toast({ variant: "destructive", title: "Error", description: "Monto inválido" });
+      return;
+    }
+    const effectiveUf = getEffectiveUf(request, ufValue);
+    const newUf = newClp / effectiveUf;
+
+    try {
+      const { error } = await supabase
+        .from("oc_requests")
+        .update({
+          amount_clp: Math.round(newClp),
+          amount_uf: Math.round(newUf * 10000) / 10000,
+        })
+        .eq("id", request.id);
+      if (error) throw error;
+      toast({ title: "Monto actualizado" });
+      setEditingTotalAmount(false);
+      setEditingTotalValue("");
+      loadRequest();
+      onRefresh?.();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
   const handleAddPayment = async () => {
     if (!request) return;
     
@@ -696,8 +738,42 @@ export const OCRequestViewDialog = ({
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Monto Total</p>
-                  <p className="font-medium">{formatCLP(totalRequestClp)}</p>
-                  <p className="text-[10px] text-muted-foreground">{formatUF(request.amount_uf)}</p>
+                  {editingTotalAmount ? (
+                    <div>
+                      <Input
+                        ref={totalAmountInputRef}
+                        type="number"
+                        value={editingTotalValue}
+                        onChange={(e) => setEditingTotalValue(e.target.value)}
+                        onBlur={handleSaveTotalAmount}
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            setEditingTotalAmount(false);
+                            setEditingTotalValue("");
+                          }
+                        }}
+                        className="h-7 text-sm font-mono w-[140px]"
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        ≈ {formatUF((parseFloat(editingTotalValue) || 0) / getEffectiveUf(request, ufValue))}
+                      </p>
+                    </div>
+                  ) : (
+                    <div
+                      className={!readOnly && request.status === "pending" ? "cursor-pointer" : ""}
+                      onDoubleClick={() => {
+                        if (!readOnly && request.status === "pending") {
+                          setEditingTotalAmount(true);
+                          setEditingTotalValue(String(totalRequestClp));
+                        }
+                      }}
+                      title={!readOnly && request.status === "pending" ? "Doble click para editar" : undefined}
+                    >
+                      <p className="font-medium">{formatCLP(totalRequestClp)}</p>
+                      <p className="text-[10px] text-muted-foreground">{formatUF(request.amount_uf)}</p>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Proyecto</p>
