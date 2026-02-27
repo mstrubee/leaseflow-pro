@@ -50,22 +50,26 @@ export function ContractRowSelector({
   };
 
   const includedCount = contracts.length - excludedContractIds.length;
+  const hasCustomSelection = excludedContractIds.length > 0;
 
   return (
     <Popover>
       <PopoverTrigger asChild>
         <Button 
-          variant="outline" 
+          variant={hasCustomSelection ? "default" : "outline"}
           size="sm"
           className="gap-2"
         >
           <ListFilter className="h-4 w-4" />
-          Filas PDF
+          {hasCustomSelection ? `${includedCount}/${contracts.length}` : "Filas PDF"}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-72" align="end">
         <div className="space-y-3">
           <h4 className="font-medium text-sm">Contratos a incluir</h4>
+          <p className="text-xs text-muted-foreground">
+            💡 Haz clic en "Ninguno" y luego selecciona solo los que necesitas.
+          </p>
           
           <div className="relative">
             <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-muted-foreground" />

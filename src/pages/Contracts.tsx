@@ -822,6 +822,8 @@ const Contracts = () => {
       c => !excludedPdfContractIds.includes(c.id)
     );
     
+    console.log(`[PDF Export] Generando PDF con ${contractsForPdf.length} de ${filteredContracts.length} contratos (${excludedPdfContractIds.length} excluidos)`);
+    
     await generateContractsListPDF(
       contractsForPdf as any, 
       selectedPdfColumns, 
@@ -830,6 +832,8 @@ const Contracts = () => {
       isNego,
       ufValue
     );
+    
+    toast.success(`PDF generado con ${contractsForPdf.length} de ${filteredContracts.length} contratos`);
   };
 
   // Get unique communes for ubicacion filter

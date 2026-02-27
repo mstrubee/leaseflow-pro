@@ -27,6 +27,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import logosHeader from "@/assets/logos-header.png";
+import { toast } from "sonner";
 
 interface ContractPatentData {
   id: string;
@@ -494,6 +495,8 @@ const ReportsDashboard = () => {
     // Filter out excluded contracts
     const pdfContracts = sinPatenteContracts.filter(c => !excludedPdfContractIds.includes(c.id));
     
+    console.log(`[PDF Export Sin Patente] Generando PDF con ${pdfContracts.length} de ${sinPatenteContracts.length} contratos (${excludedPdfContractIds.length} excluidos)`);
+    
     const doc = new jsPDF({ orientation: 'landscape' });
     const today = new Date().toLocaleDateString('es-CL');
     
@@ -612,6 +615,7 @@ const ReportsDashboard = () => {
     }
     
     doc.save('locales-sin-patente-' + today.replace(/\//g, '-') + '.pdf');
+    toast.success(`PDF generado con ${pdfContracts.length} de ${sinPatenteContracts.length} locales`);
   };
 
   // Export PDF function for general report
