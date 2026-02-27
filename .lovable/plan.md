@@ -1,54 +1,62 @@
 
+## Causa raiz: OCs sin clasificacion caen fuera de CAPEX y OPEX
 
-## Correccion sistematica: usar amount_clp almacenado en datos transaccionales
+### Problema encontrado
 
-### Problema
+Despues de auditar la base de datos, descubri que el problema NO es un error de formato UF/CLP. El problema real es que **OCs sin clasificacion son invisibles** en las cards de resumen.
 
-Multiples componentes del sistema de presupuesto siguen usando `convertUFToPesos(amount_uf)` para mostrar montos de datos transaccionales (OC, facturas, notas de credito, solicitudes). Esto causa que los montos fluctuen con la UF del dia en vez de mostrar el valor real en Pesos registrado al momento de la creacion.
+La base de datos muestra este quiebre de OCs para 2026:
 
-El campo `amount_clp` ya existe en todas las tablas relevantes (`purchase_orders`, `invoices`, `credit_notes`, `oc_requests`) pero no se consulta ni usa en varios lugares.
-
----
-
-### Archivos afectados y cambios
-
-**1. `src/components/budget/BudgetModule.tsx` - Detalle de linea (queries y display)**
-
-- **Queries (lineas 816-846)**: Agregar `amount_clp, uf_value_at_entry` a los `.select()` de purchase_orders, invoices, credit_notes, y oc_requests en `handleViewLineDetails`
-- **Interfaces (lineas 98-114)**: Agregar `amount_clp` a las interfaces de `lineDetailsOCs` y `lineDetailsRequests`
-- **Display solicitudes (linea 1416)**: `convertUFToPesos(req.amount_uf)` a `req.amount_clp || convertUFToPesos(req.amount_uf)`
-- **Display OC monto (linea 1438)**: Idem
-- **Display facturas (linea 1466)**: Idem
-- **Display notas credito (linea 1469, 1488)**: Idem
-- **Totales facturado/neto (lineas 1424-1426, 1498, 1502, 1506)**: Sumar `amount_clp` en vez de `amount_uf` y no reconvertir
-
-- **OC select en Invoice dialog (linea 1307)**: Agregar `amount_clp` a la query de lineOCs y usar `oc.amount_clp || convertUFToPesos(oc.amount_uf)` en display
-- **lineOCs query (linea 83)**: Actualizar interfaz para incluir `amount_clp`
-
-Crear un helper local `resolveClp` para fallback:
 ```text
-const resolveClp = (rec: { amount_clp?: number | null; amount_uf: number }) => 
-  rec.amount_clp || Math.round(convertUFToPesos(rec.amount_uf));
+Clasificacion                               | Cant | Total CLP
+--------------------------------------------|------|------------
+CAPEX (con budget_line_id)                   |    3 | $20.824.346
+OPEX (con opex_category + opex_master)       |   26 | $20.990.577
+OPEX (con opex_category, sin opex_master)    |   27 | $20.083.538
+OPEX (solo budget_classification="OPEX")     |    4 | $14.101.008
+NULL (con opex_category + opex_master)       |   14 |  $1.572.812
+NULL (sin nada)                              |    1 | $22.700.000  <-- INVISIBLE
 ```
 
-**2. `src/components/budget/InvoiceList.tsx` - Facturas y notas de credito**
+La ultima fila es el problema: **1 OC por $22.700.000 que no tiene budget_classification, ni budget_line_id, ni opex_category_id, ni opex_master_id**. Esta OC no pasa el filtro CAPEX ni el OPEX, por lo tanto desaparece completamente de las cards.
 
-- **Interfaces (lineas 19-38)**: Agregar `amount_clp: number | null` a `Invoice` y `CreditNote`
-- **Queries**: Agregar `amount_clp` a todos los `.select()` que traen invoices y credit_notes
-- **Display factura (linea 841)**: `convertUFToPesos(invoice.amount_uf)` a `invoice.amount_clp || convertUFToPesos(invoice.amount_uf)`
-- **Display NC badge (linea 850)**: Idem con credit note
-- **Display neto (linea 863)**: Calcular con CLP almacenado
-- **Select factura en NC dialog (linea 1031)**: Idem
+### Filtro actual en `loadBudgetTypeTotals`
 
-**3. `src/components/budget/PurchaseOrdersModule.tsx` - Confirmacion de eliminacion**
+**CAPEX:** `budget_classification === "CAPEX" OR (budget_line_id AND NOT opex)`
+**OPEX:** `opex_master_id OR opex_category_id OR budget_classification === "OPEX"`
 
-- **Linea 2029**: Cambiar `formatUF(deleteOrder?.amount_uf || 0)` a `formatCLP(deleteOrder?.amount_clp || convertUFToPesos(deleteOrder?.amount_uf || 0))` como monto principal
+Una OC sin ningun marcador NO es capturada por ninguno.
+
+### Solucion
+
+**1. Corregir filtro CAPEX en `BudgetDashboard.tsx` (`loadBudgetTypeTotals`)**
+
+Agregar una clausula para que OCs sin ningun marcador OPEX se clasifiquen como CAPEX por defecto:
+
+```text
+CAPEX filter:
+  budget_classification === "CAPEX"
+  OR (budget_line_id AND NOT opex markers)
+  OR (NO budget_classification AND NO budget_line_id AND NO opex markers)
+     ^--- NUEVA CLAUSULA: sin clasificacion = CAPEX por defecto
+```
+
+**2. Agregar logging de diagnostico temporal**
+
+Agregar un `console.warn` cuando se detecte una OC sin clasificacion, para ayudar a detectar futuros problemas de datos.
+
+**3. Validar en `PurchaseOrdersModule.tsx` - `getBudgetTypeForOrder`**
+
+Verificar que la funcion que determina el badge "CAPEX"/"OPEX" en la tabla de OCs tenga la misma logica de fallback, para que sea consistente con las cards.
 
 ---
 
-### Principio aplicado
+### Archivo afectado
 
-- Datos **transaccionales** (OC, facturas, NC, solicitudes): siempre usar `amount_clp` almacenado. Fallback: `convertUFToPesos(amount_uf)` solo si `amount_clp` es null (datos legacy).
-- Datos **de planificacion** (lineas de presupuesto): convertir con UF del dia (correcto, representan valor actual).
-- UF siempre como dato secundario informativo.
+| Archivo | Cambio |
+|---------|--------|
+| `src/components/budget/BudgetDashboard.tsx` | Agregar clausula de fallback en filtro CAPEX de `loadBudgetTypeTotals` |
 
+### Impacto
+
+Con este cambio, la OC de "Orientales" por $22.700.000 aparecera correctamente en la card CAPEX, y el Total General reflejara el monto completo.
