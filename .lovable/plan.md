@@ -1,85 +1,63 @@
 
 
-## Dialogo de resolucion con observaciones y ajuste de columna Fecha
+## Card de filtro "Resuelto con Observaciones" y columna "Comentarios / Observaciones"
 
-### Resumen
+### 1. Nueva Card de estadisticas: "Resuelto con Observaciones"
 
-Dos cambios: (1) Al marcar un Form como "resuelto" (desde SubStatusCell o desde el boton "Guardar y Avanzar" en el EditDialog), se muestra un dialogo intermedio con dos opciones: "Marcar como resuelto" y "Resuelto con observaciones". La segunda opcion abre un campo de texto para ingresar observaciones antes de confirmar. (2) Ensanchar la columna "Fecha" un 20% y mostrar los dias de antiguedad en una segunda linea.
+Agregar una quinta Card en la grilla de estadisticas (cambiar de `grid-cols-4` a `grid-cols-5`):
+- Titulo: "Con Observaciones"
+- Icono: `MessageSquare` (lucide)
+- Color: azul (`text-blue-600`)
+- Cuenta: forms con `sub_status === "resuelto"` y `resolution_observations` no vacio
+- Click: agrega un nuevo filtro `observationsFilter` (boolean) al `FilterState` que filtra solo forms resueltos con observaciones
+- Click de nuevo: desactiva el filtro
+- Borde activo con `ring-2 ring-blue-500`
 
----
+Cambios en `FilterState`:
+- Agregar `observationsFilter: boolean` (default `false`)
+- En el `filtered` useMemo, si `observationsFilter === true`, filtrar solo forms donde `sub_status === "resuelto"` y `resolution_observations?.trim()` no este vacio
 
-### 1. Nueva columna en base de datos
+### 2. Columna "Comentarios / Observaciones"
 
-Agregar campo `resolution_observations` (text, nullable) a la tabla `maintenance_forms` via migracion SQL.
+Renombrar el `TableHead` de "Comentarios" a "Comentarios / Observaciones".
 
-Tambien actualizar el tipo `MaintenanceForm` en `src/components/maintenance/types.ts` para incluir `resolution_observations: string | null`.
-
----
-
-### 2. Nuevo componente: `ResolutionDialog`
-
-Crear `src/components/maintenance/ResolutionDialog.tsx`:
-
-- **Paso 1 (dialogo principal)**: Muestra dos botones:
-  - "Marcar como resuelto" -- cierra el dialogo y ejecuta la accion de marcar como resuelto directamente
-  - "Resuelto con observaciones" -- cambia al paso 2
-  - "Cancelar" -- cierra todo
-
-- **Paso 2 (observaciones)**: Muestra un Textarea con las observaciones existentes (si las hay, precargadas para edicion). Botones:
-  - "Guardar y Resolver" -- guarda observaciones y marca como resuelto
-  - "Cancelar" -- vuelve al paso 1
-
-Props del componente:
-```text
-open: boolean
-onOpenChange: (open: boolean) => void
-existingObservations: string | null
-onResolve: (observations: string | null) => void
-```
-
----
-
-### 3. Integracion en SubStatusCell
-
-En `MaintenanceModule.tsx`, modificar `handleSubStatusChange`:
-- Cuando `newSubStatus === "resuelto"`, en vez de ejecutar directamente, abrir el `ResolutionDialog`
-- Agregar estado: `resolutionTarget` (formId que se quiere resolver) y `resolutionOpen` (boolean)
-- Al confirmar en el dialogo, ejecutar el update incluyendo `resolution_observations` en el payload
-
----
-
-### 4. Integracion en MaintenanceEditDialog
-
-En `MaintenanceEditDialog.tsx`:
-- Agregar `resolution_observations` al formData state
-- Mostrar un campo Textarea "Resuelto con Observaciones - Control de Gestion" (editable) debajo de "Comentarios Tecnicos"
-- Cuando `doSave(advance)` detecta que el `finalSubStatus === "resuelto"`, abrir el `ResolutionDialog` en vez de guardar directamente
-- Si hay observaciones existentes en el form, precargarlas en el dialogo
-
----
-
-### 5. Columna "Fecha" mas ancha con dias de antiguedad
-
-En `MaintenanceModule.tsx`:
-- Cambiar `className="w-28"` de la columna Fecha a `className="w-[8.4rem]"` (20% mas ancho que w-28 = 7rem)
-- En la celda de fecha, agregar una segunda linea con los dias de antiguedad:
-
-```text
-Linea 1: dd/MM/yyyy (fecha formateada)
-Linea 2: "X dias" en texto muted mas pequeno
-```
-
-Calculo: `Math.floor((Date.now() - new Date(f.created_date).getTime()) / 86400000)` dias.
-
----
+Modificar el componente `InlineCommentsCell`:
+- En el popover de lectura (cuando no esta editando), si el form tiene `resolution_observations` con contenido (y `sub_status === "resuelto"`), mostrar una seccion adicional debajo de los comentarios:
+  - Separador visual
+  - Titulo "Observaciones - Control de Gestion" en texto muted
+  - Texto de las observaciones (solo lectura, sin boton editar para esta seccion)
+- El trigger del popover (la celda clickeable) debe mostrar un indicador visual cuando hay observaciones: por ejemplo un pequeno icono o texto truncado que combine ambos
 
 ### Archivos afectados
 
-| Archivo | Accion |
+| Archivo | Cambio |
 |---------|--------|
-| Migracion SQL | Agregar `resolution_observations` a `maintenance_forms` |
-| `src/components/maintenance/types.ts` | Agregar campo `resolution_observations` |
-| `src/components/maintenance/ResolutionDialog.tsx` | Crear componente nuevo (dialogo 2 pasos) |
-| `src/components/maintenance/MaintenanceModule.tsx` | Interceptar cambio a "resuelto" con dialogo, ensanchar columna fecha, agregar dias |
-| `src/components/maintenance/MaintenanceEditDialog.tsx` | Campo observaciones + interceptar resolucion con dialogo |
+| `src/components/maintenance/MaintenanceModule.tsx` | Agregar Card, filtro, renombrar columna, modificar InlineCommentsCell |
+
+### Detalles tecnicos
+
+**FilterState**:
+```text
+observationsFilter: boolean  // nuevo campo, default false
+```
+
+**Conteo**:
+```text
+const withObservationsCount = forms.filter(f => 
+  f.sub_status === "resuelto" && f.resolution_observations?.trim()
+).length;
+```
+
+**Filtro en `filtered` useMemo**:
+```text
+if (observationsFilter && !(f.sub_status === "resuelto" && f.resolution_observations?.trim())) return false;
+```
+
+**InlineCommentsCell popover (modo lectura)**:
+- Mostrar comentarios como antes
+- Si `form.resolution_observations?.trim()` y `form.sub_status === "resuelto"`:
+  - Separador
+  - Label "Observaciones - Control de Gestion" (muted, bold)
+  - Texto de observaciones (solo lectura)
+- Boton "Editar" solo aplica a comentarios, no a observaciones
 
