@@ -32,6 +32,8 @@ interface Profile {
   full_name: string | null;
   created_at: string;
   last_seen_at: string | null;
+  activity_status: string | null;
+  current_section: string | null;
 }
 
 interface UserRole {
@@ -122,6 +124,8 @@ interface Profile {
   full_name: string | null;
   created_at: string;
   last_seen_at: string | null;
+  activity_status: string | null;
+  current_section: string | null;
 }
 
 interface UserRole {
@@ -234,6 +238,26 @@ const AdminPanel = () => {
     }
     if (roleLoaded && isAdmin) {
       loadData();
+
+      // Realtime subscription for profiles updates
+      const channel = supabase
+        .channel("profiles-presence")
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "profiles" },
+          (payload) => {
+            setProfiles((prev) =>
+              prev.map((p) =>
+                p.id === payload.new.id ? { ...p, ...payload.new } : p
+              )
+            );
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [authLoading, isAdmin, roleLoaded, navigate]);
 
@@ -757,14 +781,35 @@ const AdminPanel = () => {
                     <TableCell>{profile.full_name || "-"}</TableCell>
                     <TableCell>
                       {(() => {
+                        const fiveMinAgo = 5 * 60 * 1000;
                         const isOnline = profile.last_seen_at && 
-                          (Date.now() - new Date(profile.last_seen_at).getTime()) < 5 * 60 * 1000;
+                          (Date.now() - new Date(profile.last_seen_at).getTime()) < fiveMinAgo;
+                        const isActive = isOnline && profile.activity_status === "active";
                         return (
-                          <div className="flex items-center gap-1.5">
-                            <span className={`h-2.5 w-2.5 rounded-full ${isOnline ? 'bg-green-500' : 'bg-muted-foreground/40'}`} />
-                            <span className={`text-xs ${isOnline ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
-                              {isOnline ? 'Conectado' : 'Desconectado'}
-                            </span>
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`h-2.5 w-2.5 rounded-full ${
+                                isActive 
+                                  ? 'bg-green-500 animate-pulse' 
+                                  : isOnline 
+                                    ? 'bg-green-500' 
+                                    : 'bg-muted-foreground/40'
+                              }`} />
+                              <span className={`text-xs font-medium ${
+                                isActive 
+                                  ? 'text-green-600 dark:text-green-400' 
+                                  : isOnline 
+                                    ? 'text-green-600 dark:text-green-400' 
+                                    : 'text-muted-foreground'
+                              }`}>
+                                {isActive ? 'Activo' : isOnline ? 'Conectado' : 'Desconectado'}
+                              </span>
+                            </div>
+                            {isOnline && profile.current_section && (
+                              <span className="text-[10px] text-muted-foreground ml-4">
+                                en {profile.current_section}
+                              </span>
+                            )}
                           </div>
                         );
                       })()}
