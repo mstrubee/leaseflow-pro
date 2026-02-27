@@ -1,56 +1,101 @@
 
 
-## Redimensionar ventana flotante de alertas hacia arriba
+## Cambio de moneda principal a Pesos ($) y opcion de ingreso UF/CLP
 
-Agregar una funcionalidad de resize manual en el borde superior de la ventana flotante de alertas, permitiendo al usuario arrastrar hacia arriba para ampliar la lista visible cuando esta expandida.
+Este cambio establece que **todos los calculos y visualizaciones** del sistema de presupuesto (CAPEX, OPEX, OC, Facturas, Notas de Credito) se muestren **siempre en Pesos ($)**, con UF como dato secundario informativo. Al crear una OC o Solicitud de OC, el sistema pregunta si el monto se ingresa en Pesos o UF; si se ingresa en UF, se convierte instantaneamente a Pesos usando la UF del dia de creacion.
 
-### Cambios
+---
 
-**Archivo: `src/components/alerts/TodayAlertsFloating.tsx`**
+### 1. Logica de conversion y almacenamiento (sin cambios de DB)
 
-1. **Nuevo estado para altura personalizada**: Agregar `customHeight` (number | null) que controle la altura maxima del listado de alertas (reemplazando el `max-h-60` fijo).
+El sistema ya almacena `amount_clp`, `amount_uf`, `input_currency` y `uf_value_at_entry`. No se requieren cambios de base de datos. La diferencia es en **como se muestra**: CLP pasa a ser la moneda principal y UF la secundaria.
 
-2. **Handle de resize en el borde superior**: Agregar un elemento pequeno (barra horizontal de 4px) en la parte superior de la Card que actue como "resize handle". El usuario arrastra hacia arriba para aumentar la altura del contenedor de alertas.
+---
 
-3. **Logica de resize**:
-   - `onPointerDown` en el handle: captura la posicion Y inicial y la altura actual
-   - `onPointerMove`: calcula la diferencia Y (hacia arriba = mayor altura) y actualiza `customHeight`
-   - `onPointerUp`: termina el resize
-   - Limites: minimo 240px (equivalente a max-h-60), maximo ~70% del viewport
+### 2. BudgetDashboard - Resumen Cards (ya casi correcto)
 
-4. **Aplicar altura dinamica**: El div del listado (`max-h-60 overflow-y-auto`) usara `style={{ maxHeight: customHeight || 240 }}` en lugar de la clase fija.
+El BudgetDashboard ya muestra `formatCLP(convertUFToPesos(...))` como linea principal. Solo asegurar que UF sea siempre la linea secundaria mas pequena. **Archivo: `src/components/budget/BudgetDashboard.tsx`** - Revision menor, ya esta mayormente correcto.
 
-5. **Reset al colapsar**: Cuando `isOpen` cambia a false, resetear `customHeight` a null para que al reabrir vuelva al tamano por defecto.
+---
 
-6. **Indicador visual**: El handle tendra un cursor `ns-resize` y mostrara una linea sutil (similar a un grip horizontal) para indicar que es arrastrable.
+### 3. PurchaseOrdersModule - Tabla de OCs
 
-### Detalle tecnico
+**Archivo: `src/components/budget/PurchaseOrdersModule.tsx`**
 
-```text
-Estado nuevo:
-  customHeight: number | null  (default: null, usa 240px)
-  isResizing: boolean (default: false)
-  resizeStartY: useRef<number>
-  resizeStartHeight: useRef<number>
+- **Tabla**: La columna "Monto" ya muestra CLP como linea principal y UF como secundaria (lineas 1314-1325). Verificar consistencia.
+- **Total OC**: Ya muestra `formatCLP(totalOCClp)` como principal (linea 1151). Correcto.
+- **Dialogo Nueva OC**: Cambiar la pregunta inicial de moneda. En vez del selector UF/CLP inline con el input, agregar un paso previo o selector prominente que diga: **"Crear OC en Pesos ($) o en UF?"**
+  - Si elige CLP: el input acepta pesos directamente, se muestra equivalencia en UF
+  - Si elige UF: el input acepta UF, se convierte a CLP instantaneamente usando UF del dia, el monto CLP es el principal
+  - `uf_value_at_entry` se guarda siempre con la tasa del dia
+- **Validaciones CAPEX/OPEX disponibles**: Cambiar los textos de `formatUF(available)` a `formatCLP(convertUFToPesos(available))` con UF como secundario
 
-Handle de resize (div encima de la Card):
-  - height: 6px, cursor: ns-resize
-  - Icono: linea horizontal centrada (GripHorizontal de lucide o borde visual)
-  - Solo visible cuando isOpen === true
+---
 
-Logica:
-  onPointerDown -> captura Y, captura height actual, setPointerCapture
-  onPointerMove -> newHeight = startHeight + (startY - currentY)  // hacia arriba = mayor
-  onPointerUp -> fin
-  Clamp entre 150 y window.innerHeight * 0.7
+### 4. OCRequestDialog - Solicitud de OC (vista de contrato)
 
-Listado de alertas:
-  <div style={{ maxHeight: customHeight ?? 240 }} className="space-y-2 overflow-y-auto">
-```
+**Archivo: `src/components/budget/OCRequestDialog.tsx`**
 
-### Archivo afectado
+- Cambiar default `currency: "UF"` a `currency: "CLP"` (linea 66)
+- Ajustar selector de moneda para que sea mas prominente ("Ingresar en Pesos" / "Ingresar en UF")
+- Cuando se elige UF: mostrar conversion instantanea a CLP como monto principal
+- Cambiar equivalencia: siempre mostrar CLP como valor principal, UF como dato
 
-| Archivo | Cambio |
-|---------|--------|
-| `src/components/alerts/TodayAlertsFloating.tsx` | Agregar resize handle, estado de altura, logica de arrastre |
+---
+
+### 5. OCRequestsList - Tabla de solicitudes
+
+**Archivo: `src/components/budget/OCRequestsList.tsx`**
+
+- **Columna Monto** (lineas 827-835): Cambiar de mostrar `formatUF(request.amount_uf)` a mostrar `formatCLP(request.amount_clp)` como linea principal, con UF debajo como texto secundario
+- **Solicitudes convertidas**: Aplicar mismo cambio
+
+---
+
+### 6. CentralizedOrderCreator - Creador centralizado
+
+**Archivo: `src/components/budget/CentralizedOrderCreator.tsx`**
+
+- El selector de moneda ya existe (lineas 118-127). Cambiar default `currency: "CLP"` (ya es "CLP")
+- Asegurar que la conversion equivalente muestre siempre CLP como primario
+- El input de allocation amounts para multi-contrato: mostrar en CLP
+
+---
+
+### 7. InvoiceList - Facturas y Notas de Credito
+
+**Archivo: `src/components/budget/InvoiceList.tsx`**
+
+- Asegurar que montos de facturas y notas de credito se muestren siempre en CLP como primario
+- El selector de moneda en el dialogo de nueva factura debe preguntar CLP o UF
+- La tabla de facturas debe mostrar CLP principal
+
+---
+
+### 8. ConvertOCRequestDialog
+
+**Archivo: `src/components/budget/ConvertOCRequestDialog.tsx`**
+
+- Verificar que los montos mostrados sean en CLP como primario
+
+---
+
+### 9. Resumen de cambios por archivo
+
+| Archivo | Cambios |
+|---------|---------|
+| `BudgetDashboard.tsx` | Revision menor - ya muestra CLP principal |
+| `PurchaseOrdersModule.tsx` | Selector de moneda prominente en dialogo nueva/editar OC; validaciones en CLP; disponibles en CLP |
+| `OCRequestDialog.tsx` | Default a CLP; selector prominente; conversion instantanea |
+| `OCRequestsList.tsx` | Tabla: columna monto muestra CLP principal, UF secundario |
+| `CentralizedOrderCreator.tsx` | Asegurar CLP como principal en conversiones y displays |
+| `InvoiceList.tsx` | Montos en CLP principal en tabla y dialogos |
+| `ConvertOCRequestDialog.tsx` | Montos en CLP principal |
+
+### Principio general
+
+- **CLP es SIEMPRE la moneda principal de visualizacion**
+- **UF es un dato informativo secundario** (fuente mas pequena, color muted)
+- Al crear en UF, la conversion a CLP se hace con la UF del dia y se guarda en `uf_value_at_entry`
+- Los calculos de presupuesto disponible se muestran en CLP
 
