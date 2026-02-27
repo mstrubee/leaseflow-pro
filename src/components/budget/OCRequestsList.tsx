@@ -34,7 +34,9 @@ interface OCRequest {
   purchase_order_id: string | null;
   created_at: string;
   budget_id: string | null;
-  budget_type?: string; // Joined from contract_budgets
+  budget_line_id?: string | null;
+  opex_master_id?: string | null;
+  budget_type?: string; // Derived from fields or contract_budgets
   quotation_url?: string | null;
   quotation_file_name?: string | null;
   // Multi-contract allocation info
@@ -156,7 +158,7 @@ export const OCRequestsList = ({
           oc_requests!inner(
             id, request_number, request_date, line_name, project_name,
             description, amount_uf, amount_clp, supplier_name, status,
-            purchase_order_id, created_at, budget_id, quotation_url, quotation_file_name
+            purchase_order_id, created_at, budget_id, budget_line_id, opex_master_id, quotation_url, quotation_file_name
           )
         `)
         .eq("contract_id", contractId);
@@ -231,9 +233,17 @@ export const OCRequestsList = ({
         }, {} as Record<string, string>);
       }
 
+      // Derive budget_type using the same logic as BudgetDashboard/PurchaseOrdersModule
+      const deriveBudgetType = (req: any): string => {
+        if (req.opex_master_id) return "opex";
+        if (req.budget_id && budgetTypeMap[req.budget_id]) return budgetTypeMap[req.budget_id];
+        if (req.budget_line_id) return "capex";
+        return "capex";
+      };
+
       const requestsWithType: OCRequest[] = combinedRequests.map(req => ({
         ...req,
-        budget_type: req.budget_id ? budgetTypeMap[req.budget_id] : undefined
+        budget_type: deriveBudgetType(req)
       })) as OCRequest[];
 
       // Sort by created_at descending
