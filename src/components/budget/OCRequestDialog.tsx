@@ -23,6 +23,7 @@ interface PaymentPlanItem {
   description: string;
   amount: string;
   due_date: string;
+  input_mode: "clp" | "percent" | "balance";
 }
 
 interface OCRequestDialogProps {
@@ -226,15 +227,32 @@ export const OCRequestDialog = ({
       if (requestData) {
         if (paymentPlan.length > 0) {
           const planEntries = paymentPlan
-            .filter(p => parseFloat(p.amount) > 0)
-            .map((p, idx) => ({
-              oc_request_id: requestData.id,
-              payment_number: idx + 1,
-              description: p.description || `Pago ${idx + 1}`,
-              amount_uf: parseFloat(p.amount),
-              due_date: p.due_date || null,
-              status: "pending"
-            }));
+            .map((p, idx) => {
+              let resolvedClp = 0;
+              if (p.input_mode === "balance") {
+                // Total minus sum of previous payments
+                const previousSum = paymentPlan.slice(0, idx).reduce((sum, prev) => {
+                  if (prev.input_mode === "percent") return sum + (amountClp * (parseFloat(prev.amount) || 0) / 100);
+                  if (prev.input_mode === "balance") return sum; // skip, will be resolved
+                  return sum + (parseFloat(prev.amount) || 0);
+                }, 0);
+                resolvedClp = amountClp - previousSum;
+              } else if (p.input_mode === "percent") {
+                resolvedClp = amountClp * (parseFloat(p.amount) || 0) / 100;
+              } else {
+                resolvedClp = parseFloat(p.amount) || 0;
+              }
+              const resolvedUf = ufValue > 0 ? resolvedClp / ufValue : 0;
+              return {
+                oc_request_id: requestData.id,
+                payment_number: idx + 1,
+                description: p.description || `Pago ${idx + 1}`,
+                amount_uf: Math.round(resolvedUf * 10000) / 10000,
+                due_date: p.due_date || null,
+                status: "pending"
+              };
+            })
+            .filter(e => e.amount_uf > 0);
 
           if (planEntries.length > 0) {
             await supabase.from("oc_payment_plans").insert(planEntries);
@@ -267,7 +285,7 @@ export const OCRequestDialog = ({
   };
 
   const addPaymentItem = () => {
-    setPaymentPlan(prev => [...prev, { description: `Pago ${prev.length + 1}`, amount: "", due_date: "" }]);
+    setPaymentPlan(prev => [...prev, { description: `Pago ${prev.length + 1}`, amount: "", due_date: "", input_mode: "clp" }]);
   };
 
   const removePaymentItem = (index: number) => {
@@ -280,7 +298,18 @@ export const OCRequestDialog = ({
     ));
   };
 
-  const totalPlanned = paymentPlan.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+  const resolvePaymentClp = (item: PaymentPlanItem, idx: number): number => {
+    const totalClp = form.currency === "CLP" ? (parseFloat(form.amount) || 0) : (parseFloat(form.amount) || 0) * ufValue;
+    if (item.input_mode === "percent") return totalClp * (parseFloat(item.amount) || 0) / 100;
+    if (item.input_mode === "balance") {
+      const prevSum = paymentPlan.slice(0, idx).reduce((s, p, i) => s + resolvePaymentClp(p, i), 0);
+      return Math.max(0, totalClp - prevSum);
+    }
+    return parseFloat(item.amount) || 0;
+  };
+
+  const totalPlanned = paymentPlan.reduce((sum, p, idx) => sum + resolvePaymentClp(p, idx), 0);
+  const totalClpForPayments = form.currency === "CLP" ? (parseFloat(form.amount) || 0) : (parseFloat(form.amount) || 0) * ufValue;
   // Amount is always from the form
   const currentTotal = form.currency === "CLP" && ufValue > 0 
     ? (parseFloat(form.amount) || 0) / ufValue 
@@ -435,7 +464,7 @@ export const OCRequestDialog = ({
               <div className="space-y-3">
                 {paymentPlan.map((item, idx) => (
                   <div key={idx} className="grid grid-cols-12 gap-2 items-end">
-                    <div className="col-span-4 space-y-1">
+                    <div className="col-span-3 space-y-1">
                       <Label className="text-xs">Descripción</Label>
                       <Input
                         value={item.description}
@@ -443,22 +472,62 @@ export const OCRequestDialog = ({
                         placeholder={`Pago ${idx + 1}`}
                       />
                     </div>
-                    <div className="col-span-3 space-y-1">
-                      <Label className="text-xs">Monto (UF)</Label>
-                      <Input
-                        type="number"
-                        value={item.amount}
-                        onChange={(e) => updatePaymentItem(idx, "amount", e.target.value)}
-                        placeholder="0.00"
-                      />
+                    <div className="col-span-2 space-y-1">
+                      <Label className="text-xs">Tipo</Label>
+                      <Select
+                        value={item.input_mode}
+                        onValueChange={(v) => {
+                          setPaymentPlan(prev => prev.map((p, i) => i === idx ? { ...p, input_mode: v as "clp" | "percent" | "balance", amount: v === "balance" ? "" : p.amount } : p));
+                        }}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="clp">$ Monto</SelectItem>
+                          <SelectItem value="percent">% del Total</SelectItem>
+                          {idx > 0 && <SelectItem value="balance">Saldo</SelectItem>}
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <div className="col-span-4 space-y-1">
-                      <Label className="text-xs">Vencimiento (opcional)</Label>
+                    <div className="col-span-3 space-y-1">
+                      <Label className="text-xs">
+                        {item.input_mode === "percent" ? "Porcentaje" : "Monto ($)"}
+                      </Label>
+                      {item.input_mode === "balance" ? (
+                        <div className="h-9 flex items-center px-3 border rounded-md bg-muted/50 text-sm font-mono">
+                          $ {Math.round(resolvePaymentClp(item, idx)).toLocaleString("es-CL")}
+                        </div>
+                      ) : (
+                        <Input
+                          type="number"
+                          value={item.amount}
+                          onChange={(e) => updatePaymentItem(idx, "amount", e.target.value)}
+                          placeholder={item.input_mode === "percent" ? "0-100" : "0"}
+                          min="0"
+                          max={item.input_mode === "percent" ? "100" : undefined}
+                        />
+                      )}
+                      {/* Equivalency display */}
+                      {(() => {
+                        const resolved = resolvePaymentClp(item, idx);
+                        if (resolved > 0 && ufValue > 0) {
+                          return (
+                            <p className="text-[10px] text-muted-foreground">
+                              {item.input_mode === "percent" && `= $ ${Math.round(resolved).toLocaleString("es-CL")} · `}
+                              ≈ UF {(resolved / ufValue).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
+                    <div className="col-span-3 space-y-1">
+                      <Label className="text-xs">Vencimiento</Label>
                       <Input
                         type="date"
                         value={item.due_date}
                         onChange={(e) => updatePaymentItem(idx, "due_date", e.target.value)}
-                        placeholder="Sin fecha"
                       />
                     </div>
                     <div className="col-span-1">
@@ -477,15 +546,15 @@ export const OCRequestDialog = ({
                 <div className="p-3 bg-muted/50 rounded-lg text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Total planificado:</span>
-                    <span className={`font-medium ${totalPlanned > currentTotal ? 'text-destructive' : ''}`}>
-                      {formatUF(totalPlanned)}
+                    <span className={`font-medium ${totalPlanned > totalClpForPayments + 1 ? 'text-destructive' : ''}`}>
+                      $ {Math.round(totalPlanned).toLocaleString("es-CL")}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Total solicitud:</span>
-                    <span className="font-medium">{formatUF(currentTotal)}</span>
+                    <span className="font-medium">$ {Math.round(totalClpForPayments).toLocaleString("es-CL")}</span>
                   </div>
-                  {totalPlanned > currentTotal && (
+                  {totalPlanned > totalClpForPayments + 1 && (
                     <p className="text-xs text-destructive mt-1">
                       El plan de pagos excede el monto de la solicitud
                     </p>
