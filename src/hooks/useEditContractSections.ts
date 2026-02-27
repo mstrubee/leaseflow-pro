@@ -43,7 +43,7 @@ const getDefaultSections = (): SectionConfig[] =>
   DEFAULT_ORDER.map((key, index) => ({
     key,
     order: index,
-    collapsed: false,
+    collapsed: true,
   }));
 
 export function useEditContractSections() {
