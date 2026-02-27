@@ -39,11 +39,12 @@ interface BudgetModuleProps {
   title: string;
   selectedYear: number;
   ocTotal?: number;
+  ocTotalClp?: number;
   onRefresh?: () => void;
   superficieEdificada?: number;
 }
 
-export const BudgetModule = ({ contractId, contractName = "", contractCebe, budgetType, title, selectedYear, ocTotal = 0, onRefresh, superficieEdificada = 0 }: BudgetModuleProps) => {
+export const BudgetModule = ({ contractId, contractName = "", contractCebe, budgetType, title, selectedYear, ocTotal = 0, ocTotalClp = 0, onRefresh, superficieEdificada = 0 }: BudgetModuleProps) => {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [templatePricesMap, setTemplatePricesMap] = useState<Record<string, number>>({});
@@ -684,7 +685,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
       toast({ 
         variant: "destructive", 
         title: "Monto excede disponible", 
-        description: `El monto de la OC (${formatUF(amountUf)}) supera el disponible de la línea (${formatUF(ocLineAvailable)})` 
+        description: `El monto de la OC (${formatCLP(convertUFToPesos(amountUf))}) supera el disponible de la línea (${formatCLP(convertUFToPesos(ocLineAvailable))})` 
       });
       return;
     }
@@ -925,27 +926,29 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
             <div className="grid grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg">
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Autorizado</p>
-                <p className="text-xl font-bold text-green-600">{formatUF(authorizedTotal)}</p>
-                <BudgetSemaphore budget={authorizedTotal} consumed={ocTotal} />
+                <p className="text-xl font-bold text-green-600">{formatCLP(convertUFToPesos(authorizedTotal))}</p>
+                <p className="text-xs text-muted-foreground">{formatUF(authorizedTotal)}</p>
+                <BudgetSemaphore budget={convertUFToPesos(authorizedTotal)} consumed={ocTotalClp} />
               </div>
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Consumido (OC)</p>
-                <p className="text-xl font-bold text-orange-600">{formatUF(ocTotal)}</p>
-                <p className="text-sm text-muted-foreground">{formatCLP(convertUFToPesos(ocTotal))}</p>
+                <p className="text-xl font-bold text-orange-600">{formatCLP(ocTotalClp)}</p>
+                <p className="text-xs text-muted-foreground">{formatUF(ocTotal)}</p>
               </div>
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Disponible</p>
                 {(() => {
-                  const disponible = authorizedTotal - ocTotal;
-                  const isSobrepasado = ocTotal > authorizedTotal;
+                  const disponibleClp = convertUFToPesos(authorizedTotal) - ocTotalClp;
+                  const disponibleUf = authorizedTotal - ocTotal;
+                  const isSobrepasado = ocTotalClp > convertUFToPesos(authorizedTotal);
                   return (
                     <>
                       <p className={`text-xl font-bold ${isSobrepasado ? "text-destructive" : "text-foreground"}`}>
-                        {isSobrepasado ? "-" : ""}{formatUF(Math.abs(disponible))}
+                        {isSobrepasado ? "-" : ""}{formatCLP(Math.abs(disponibleClp))}
                         {isSobrepasado && " (Sobrepasado)"}
                       </p>
-                      <p className="text-sm text-muted-foreground">
-                        {formatCLP(convertUFToPesos(Math.abs(disponible)))}
+                      <p className="text-xs text-muted-foreground">
+                        {isSobrepasado ? "-" : ""}{formatUF(Math.abs(disponibleUf))}
                       </p>
                     </>
                   );
@@ -953,7 +956,8 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               </div>
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">No Autorizado</p>
-                <p className="text-xl font-bold text-yellow-600">{formatUF(unauthorizedTotal)}</p>
+                <p className="text-xl font-bold text-yellow-600">{formatCLP(convertUFToPesos(unauthorizedTotal))}</p>
+                <p className="text-xs text-muted-foreground">{formatUF(unauthorizedTotal)}</p>
                 <p className="text-xs text-muted-foreground">Se arrastra al próx. año</p>
               </div>
             </div>
@@ -963,7 +967,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                 <AlertTriangle className="h-4 w-4 text-yellow-600" />
                 <AlertTitle className="text-yellow-700">Ítems pendientes de autorización</AlertTitle>
                 <AlertDescription className="text-yellow-600">
-                  {unauthorizedCount} ítem(s) no autorizado(s) por {formatUF(unauthorizedTotal)}. 
+                  {unauthorizedCount} ítem(s) no autorizado(s) por {formatCLP(convertUFToPesos(unauthorizedTotal))}. 
                   Al cerrar el año, estos se arrastrarán automáticamente al año siguiente.
                 </AlertDescription>
               </Alert>
@@ -1020,9 +1024,9 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                 {superficieEdificada > 0 && (
                   <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
                     <span className="font-medium">Total:</span>
-                    <span>{formatUF(calculateGrandTotal(lines, templatePricesMap, ufValue) / superficieEdificada)} /m²</span>
-                    <span>·</span>
                     <span>{formatCLP(convertUFToPesos(calculateGrandTotal(lines, templatePricesMap, ufValue)) / superficieEdificada)} /m²</span>
+                    <span>·</span>
+                    <span>{formatUF(calculateGrandTotal(lines, templatePricesMap, ufValue) / superficieEdificada)} /m²</span>
                   </div>
                 )}
               </div>
@@ -1180,13 +1184,19 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Presupuesto de línea:</span>
-                  <span className="font-medium">{formatUF(ocLineBudget)}</span>
+                  <div className="text-right">
+                    <span className="font-medium">{formatCLP(convertUFToPesos(ocLineBudget))}</span>
+                    <span className="text-xs text-muted-foreground ml-1">({formatUF(ocLineBudget)})</span>
+                  </div>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Disponible para OC:</span>
-                  <span className={`font-semibold ${ocLineAvailable <= 0 ? 'text-destructive' : 'text-green-600 dark:text-green-400'}`}>
-                    {formatUF(ocLineAvailable)}
-                  </span>
+                  <div className="text-right">
+                    <span className={`font-semibold ${ocLineAvailable <= 0 ? 'text-destructive' : 'text-green-600 dark:text-green-400'}`}>
+                      {formatCLP(convertUFToPesos(ocLineAvailable))}
+                    </span>
+                    <span className="text-xs text-muted-foreground ml-1">({formatUF(ocLineAvailable)})</span>
+                  </div>
                 </div>
               </div>
             )}
@@ -1294,7 +1304,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                   <SelectContent>
                     {lineOCs.map((oc) => (
                       <SelectItem key={oc.id} value={oc.id}>
-                        {oc.order_number} - {oc.supplier_name || "Sin proveedor"} ({formatUF(oc.amount_uf)})
+                        {oc.order_number} - {oc.supplier_name || "Sin proveedor"} ({formatCLP(convertUFToPesos(oc.amount_uf))})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1403,7 +1413,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                           {req.status === "converted" ? "Convertida" : "Pendiente"}
                         </Badge>
                       </div>
-                      <span className="font-mono">{formatUF(req.amount_uf)}</span>
+                      <span className="font-mono">{formatCLP(convertUFToPesos(req.amount_uf))}</span>
                     </div>
                   ))}
                 </div>
@@ -1425,7 +1435,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{formatUF(oc.amount_uf)}</span>
+                        <span className="text-sm font-medium">{formatCLP(convertUFToPesos(oc.amount_uf))}</span>
                         <Badge 
                           variant={
                             oc.status === "cerrada" ? "default" : 
@@ -1453,10 +1463,10 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                                   <span className="text-muted-foreground text-xs">
                                     {new Date(inv.invoice_date).toLocaleDateString("es-CL")}
                                   </span>
-                                  <span className="font-mono">{formatUF(inv.amount_uf)}</span>
+                                  <span className="font-mono">{formatCLP(convertUFToPesos(inv.amount_uf))}</span>
                                   {invCreditNotes.length > 0 && (
                                     <span className="text-xs text-red-600">
-                                      - {formatUF(invCreditNotes.reduce((s, c) => s + c.amount_uf, 0))} NC
+                                      - {formatCLP(convertUFToPesos(invCreditNotes.reduce((s, c) => s + c.amount_uf, 0)))} NC
                                     </span>
                                   )}
                                 </div>
@@ -1475,7 +1485,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                           {oc.credit_notes.map((cn) => (
                             <div key={cn.id} className="text-sm flex items-center justify-between py-1">
                               <span>{cn.credit_note_number}</span>
-                              <span className="font-mono text-red-600">-{formatUF(cn.amount_uf)}</span>
+                              <span className="font-mono text-red-600">-{formatCLP(convertUFToPesos(cn.amount_uf))}</span>
                             </div>
                           ))}
                         </div>
@@ -1485,15 +1495,15 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                     {/* Summary */}
                     <div className="flex justify-end gap-6 pt-2 border-t text-sm">
                       <div className="text-muted-foreground">
-                        Facturado: <span className="font-medium text-foreground">{formatUF(totalInvoiced)}</span>
+                        Facturado: <span className="font-medium text-foreground">{formatCLP(convertUFToPesos(totalInvoiced))}</span>
                       </div>
                       {totalCreditNotes > 0 && (
                         <div className="text-muted-foreground">
-                          NC: <span className="font-medium text-red-600">-{formatUF(totalCreditNotes)}</span>
+                          NC: <span className="font-medium text-red-600">-{formatCLP(convertUFToPesos(totalCreditNotes))}</span>
                         </div>
                       )}
                       <div className="text-muted-foreground">
-                        Neto: <span className="font-medium text-foreground">{formatUF(netInvoiced)}</span>
+                        Neto: <span className="font-medium text-foreground">{formatCLP(convertUFToPesos(netInvoiced))}</span>
                       </div>
                     </div>
                   </div>

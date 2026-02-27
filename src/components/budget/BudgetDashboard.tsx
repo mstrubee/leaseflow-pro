@@ -984,6 +984,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
             title="CAPEX" 
             selectedYear={selectedYear}
             ocTotal={capexTotals.ocUf}
+            ocTotalClp={capexTotals.ocClp}
             onRefresh={() => { refreshData(); }}
             superficieEdificada={superficieEdificada}
           />
@@ -998,6 +999,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
             title="OPEX"
             selectedYear={selectedYear}
             ocTotal={opexTotals.ocUf}
+            ocTotalClp={opexTotals.ocClp}
             onRefresh={() => { refreshData(); }}
             superficieEdificada={superficieEdificada}
           />

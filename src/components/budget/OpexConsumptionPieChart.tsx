@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
 import { Loader2 } from "lucide-react";
+import { useBudgetContext } from "./BudgetContext";
 
 interface OpexConsumptionPieChartProps {
   contractId: string;
@@ -33,6 +34,7 @@ export const OpexConsumptionPieChart = ({ contractId, year }: OpexConsumptionPie
   const [data, setData] = useState<CategoryData[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalAmount, setTotalAmount] = useState(0);
+  const { convertUFToPesos, formatCLP, formatUF } = useBudgetContext();
 
   useEffect(() => {
     const loadData = async () => {
@@ -86,8 +88,8 @@ export const OpexConsumptionPieChart = ({ contractId, year }: OpexConsumptionPie
     loadData();
   }, [contractId, year]);
 
-  const formatUF = (value: number) => {
-    return `${value.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`;
+  const formatUFLocal = (value: number) => {
+    return `UF ${value.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   if (loading) {
@@ -111,7 +113,8 @@ export const OpexConsumptionPieChart = ({ contractId, year }: OpexConsumptionPie
     <div className="space-y-4">
       <div className="text-center">
         <p className="text-sm text-muted-foreground">Consumo Total OPEX {year}</p>
-        <p className="text-2xl font-bold text-primary">{formatUF(totalAmount)}</p>
+        <p className="text-2xl font-bold text-primary">{formatCLP(convertUFToPesos(totalAmount))}</p>
+        <p className="text-xs text-muted-foreground">{formatUFLocal(totalAmount)}</p>
       </div>
       
       <div className="h-[300px] w-full">
@@ -136,7 +139,7 @@ export const OpexConsumptionPieChart = ({ contractId, year }: OpexConsumptionPie
               ))}
             </Pie>
             <Tooltip 
-              formatter={(value: number) => formatUF(value)}
+              formatter={(value: number) => [formatCLP(convertUFToPesos(value)), "Monto"]}
               contentStyle={{
                 backgroundColor: "hsl(var(--popover))",
                 border: "1px solid hsl(var(--border))",
@@ -149,7 +152,7 @@ export const OpexConsumptionPieChart = ({ contractId, year }: OpexConsumptionPie
               verticalAlign="middle"
               formatter={(value, entry: any) => (
                 <span className="text-xs text-foreground">
-                  {value}: {formatUF(entry.payload.value)}
+                  {value}: {formatCLP(convertUFToPesos(entry.payload.value))}
                 </span>
               )}
             />
