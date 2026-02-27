@@ -132,6 +132,7 @@ export function PatentAdminPanel({
   // KPI config state
   const [kpiList, setKpiList] = useState<{ id: string; name: string }[]>([]);
   const [selectedKpiId, setSelectedKpiId] = useState<string | null>(null);
+  const [selectedKpiItemId, setSelectedKpiItemId] = useState<string | null>(null);
   const [savingKpiConfig, setSavingKpiConfig] = useState(false);
 
   // DnD sensors
@@ -178,10 +179,13 @@ export function PatentAdminPanel({
     // Load current config
     const { data: config } = await supabase
       .from("patent_kpi_config")
-      .select("kpi_id")
+      .select("kpi_id, checklist_item_id")
       .limit(1)
       .single();
-    if (config) setSelectedKpiId(config.kpi_id);
+    if (config) {
+      setSelectedKpiId(config.kpi_id);
+      setSelectedKpiItemId(config.checklist_item_id);
+    }
   };
 
   const handleSaveKpiConfig = async () => {
@@ -196,7 +200,7 @@ export function PatentAdminPanel({
       if (existing) {
         const { error } = await supabase
           .from("patent_kpi_config")
-          .update({ kpi_id: selectedKpiId, updated_at: new Date().toISOString() })
+          .update({ kpi_id: selectedKpiId, checklist_item_id: selectedKpiItemId, updated_at: new Date().toISOString() })
           .eq("id", existing.id);
         if (error) throw error;
       }
@@ -1490,7 +1494,7 @@ export function PatentAdminPanel({
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <p className="text-sm text-muted-foreground">
-                    Cuando un documento de patente se marca como "OK", se registrará automáticamente un ingreso en el KPI seleccionado con el nombre del contrato y la fecha.
+                    Cuando el documento seleccionado se marca como "OK", se registrará automáticamente un ingreso en el KPI con el nombre del contrato y la fecha.
                   </p>
                   <div className="space-y-2">
                     <Label>KPI destino</Label>
@@ -1505,6 +1509,28 @@ export function PatentAdminPanel({
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Documento que activa el KPI</Label>
+                    <Select value={selectedKpiItemId || "none"} onValueChange={(v) => setSelectedKpiItemId(v === "none" ? null : v)}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Seleccionar documento..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Cualquier documento</SelectItem>
+                        {localSections.map((section) => {
+                          const sectionItems = localItems.filter(i => i.section_id === section.id);
+                          return sectionItems.map((item) => (
+                            <SelectItem key={item.id} value={item.id}>
+                              {section.name} → {item.name}
+                            </SelectItem>
+                          ));
+                        })}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Si seleccionas un documento específico, solo se registrará el KPI cuando ese documento se marque como "OK".
+                    </p>
                   </div>
                   <Button onClick={handleSaveKpiConfig} disabled={savingKpiConfig}>
                     <Save className="h-4 w-4 mr-2" />
