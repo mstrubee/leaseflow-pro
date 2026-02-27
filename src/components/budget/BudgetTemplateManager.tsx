@@ -218,55 +218,39 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
       if (linesError) throw linesError;
 
       if (originalLines && originalLines.length > 0) {
-        // 3. Map old IDs to new IDs
+        // Pre-generate all new IDs client-side to avoid N sequential inserts
         const idMap = new Map<string, string>();
-        
-        // First pass: create all lines without parent_id
-        for (const line of originalLines) {
-          const { data: newLine, error } = await supabase
-            .from("budget_template_lines")
-            .insert({
-              template_id: newTemplate.id,
-              name: line.name,
-              description: line.description,
-              default_amount_uf: line.default_amount_uf,
-              display_order: line.display_order,
-              quantity: line.quantity,
-              unit_type: line.unit_type,
-              currency: line.currency,
-              supplier_name: line.supplier_name,
-              category_id: line.category_id,
-              quantity_source: (line as any).quantity_source,
-              calc_type: (line as any).calc_type || null,
-              calc_percentage: (line as any).calc_percentage || null,
-              parent_id: null,
-            })
-            .select()
-            .single();
+        originalLines.forEach((line) => {
+          idMap.set(line.id, crypto.randomUUID());
+        });
 
-          if (error) throw error;
-          idMap.set(line.id, newLine.id);
-        }
+        // Single batch insert with all parent_id/calc_source references already resolved
+        const newLines = originalLines.map((line) => ({
+          id: idMap.get(line.id)!,
+          template_id: newTemplate.id,
+          name: line.name,
+          description: line.description,
+          default_amount_uf: line.default_amount_uf,
+          display_order: line.display_order,
+          quantity: line.quantity,
+          unit_type: line.unit_type,
+          currency: line.currency,
+          supplier_name: line.supplier_name,
+          category_id: line.category_id,
+          quantity_source: (line as any).quantity_source,
+          calc_type: (line as any).calc_type || null,
+          calc_percentage: (line as any).calc_percentage || null,
+          parent_id: line.parent_id ? (idMap.get(line.parent_id) || null) : null,
+          calc_source_line_id: (line as any).calc_source_line_id
+            ? (idMap.get((line as any).calc_source_line_id) || null)
+            : null,
+        }));
 
-        // Second pass: update parent_id and calc_source_line_id references
-        for (const line of originalLines) {
-          const updates: Record<string, any> = {};
-          if (line.parent_id && idMap.has(line.parent_id)) {
-            updates.parent_id = idMap.get(line.parent_id);
-          }
-          if ((line as any).calc_source_line_id && idMap.has((line as any).calc_source_line_id)) {
-            updates.calc_source_line_id = idMap.get((line as any).calc_source_line_id);
-          }
-          if (Object.keys(updates).length > 0) {
-            const newId = idMap.get(line.id);
-            if (newId) {
-              await supabase
-                .from("budget_template_lines")
-                .update(updates)
-                .eq("id", newId);
-            }
-          }
-        }
+        const { error: insertError } = await supabase
+          .from("budget_template_lines")
+          .insert(newLines);
+
+        if (insertError) throw insertError;
       }
 
       toast({ title: "Plantilla duplicada", description: `"${template.name} (Copia)" creada` });
