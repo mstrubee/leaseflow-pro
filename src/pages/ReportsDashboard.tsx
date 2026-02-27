@@ -6,6 +6,7 @@ import { ArrowLeft, FileText, Building2, CheckCircle2, AlertTriangle, Clock, XCi
 import { Checkbox } from "@/components/ui/checkbox";
 import { MaintenanceReports } from "@/components/maintenance/MaintenanceReports";
 import { SupplierReports } from "@/components/suppliers/SupplierReports";
+import { ContractRowSelector } from "@/components/contracts/ContractRowSelector";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
@@ -122,6 +123,9 @@ const ReportsDashboard = () => {
     "local", "empresa", "direccion", "prioridad", "comentarios", "proximas_acciones"
   ]);
   
+  // Row selection for PDF export (excluded contract IDs)
+  const [excludedPdfContractIds, setExcludedPdfContractIds] = useState<string[]>([]);
+
   const availablePdfColumns = [
     { key: "local", label: "Local" },
     { key: "empresa", label: "Empresa" },
@@ -487,6 +491,9 @@ const ReportsDashboard = () => {
 
   // Export PDF function for Sin Patente section (respects current filter, sort, and column selection)
   const exportSinPatentePDF = async () => {
+    // Filter out excluded contracts
+    const pdfContracts = sinPatenteContracts.filter(c => !excludedPdfContractIds.includes(c.id));
+    
     const doc = new jsPDF({ orientation: 'landscape' });
     const today = new Date().toLocaleDateString('es-CL');
     
@@ -524,9 +531,9 @@ const ReportsDashboard = () => {
       subtitleParts.push('Ordenado por: ' + sortLabel + ' (' + orderLabel + ')');
     }
     doc.text(subtitleParts.join(' | '), 70, 28);
-    doc.text('Total: ' + sinPatenteContracts.length + ' locales', 14, 40);
+    doc.text('Total: ' + pdfContracts.length + ' locales', 14, 40);
     
-    if (sinPatenteContracts.length === 0) {
+    if (pdfContracts.length === 0) {
       doc.setFontSize(12);
       doc.setTextColor(0);
       doc.text('No hay locales sin patente con los filtros seleccionados.', 14, 55);
@@ -575,7 +582,7 @@ const ReportsDashboard = () => {
       // Filter only selected columns
       const activeColumns = selectedPdfColumns.filter(key => columnMapping[key]);
       const headers = activeColumns.map(key => columnMapping[key].header);
-      const sinPatenteData = sinPatenteContracts.map(c => 
+      const sinPatenteData = pdfContracts.map(c => 
         activeColumns.map(key => columnMapping[key].getValue(c))
       );
       
@@ -1303,11 +1310,16 @@ const ReportsDashboard = () => {
                                 </div>
                               </PopoverContent>
                             </Popover>
+                            <ContractRowSelector
+                              contracts={sinPatenteContracts.map(c => ({ id: c.id, name: c.name }))}
+                              excludedContractIds={excludedPdfContractIds}
+                              onExclusionChange={setExcludedPdfContractIds}
+                            />
                             <Button 
                               variant="ghost" 
                               size="sm"
                               className="rounded-none"
-                              disabled={selectedPdfColumns.length === 0}
+                              disabled={selectedPdfColumns.length === 0 || sinPatenteContracts.length - excludedPdfContractIds.length === 0}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 exportSinPatentePDF();
