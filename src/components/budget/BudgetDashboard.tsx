@@ -284,8 +284,16 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
         .is("deleted_at", null);
       
       directOrders = (capexOrders || []).filter(o => {
-        return o.budget_classification === "CAPEX" || 
-               (o.budget_line_id && !o.opex_master_id && !o.opex_category_id);
+        const isOpex = o.opex_master_id || o.opex_category_id || o.budget_classification === "OPEX";
+        if (isOpex) return false;
+        // CAPEX explicit, or has budget_line without opex markers, or completely unclassified (fallback to CAPEX)
+        if (o.budget_classification === "CAPEX" || o.budget_line_id) return true;
+        // Unclassified OC: no budget_classification, no budget_line_id, no opex markers → CAPEX by default
+        if (!o.budget_classification && !o.budget_line_id) {
+          console.warn(`[BudgetDashboard] OC ${o.order_number} (${o.id}) sin clasificación → asignada a CAPEX por defecto`);
+          return true;
+        }
+        return false;
       }).map(o => ({
         id: o.id,
         amount_uf: o.amount_uf,
