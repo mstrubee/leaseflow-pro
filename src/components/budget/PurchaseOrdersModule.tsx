@@ -35,7 +35,9 @@ interface PurchaseOrder {
   status: string;
   budget_id: string | null;
   budget_line_id: string | null;
+  budget_classification?: string | null;
   opex_category_id: string | null;
+  opex_master_id?: string | null;
   deleted_at: string | null;
   deleted_by: string | null;
   // Multi-contract allocation info
@@ -697,8 +699,12 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
   };
 
   const getBudgetTypeForOrder = (order: PurchaseOrder) => {
+    const isOpex = order.opex_master_id || order.opex_category_id || order.budget_classification === "OPEX";
+    if (isOpex) return "Opex";
+    if (order.budget_classification === "CAPEX" || order.budget_line_id) return "Capex";
     const budget = budgets.find(b => b.id === order.budget_id);
-    return budget ? getBudgetTypeLabel(budget.budget_type) : "-";
+    if (budget) return getBudgetTypeLabel(budget.budget_type);
+    return "Capex";
   };
 
   const toggleExpanded = (orderId: string) => {
