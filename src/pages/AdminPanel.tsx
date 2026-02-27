@@ -341,13 +341,13 @@ const AdminPanel = () => {
 
     if (!profile.last_seen_at || diffMin >= inactive) {
       return {
-        color: "bg-destructive",
+        color: "bg-gray-400",
         pulse: false,
-        label: "Inactivo",
+        label: "Desconectado",
         detail: profile.last_seen_at
           ? `Visto: ${format(new Date(profile.last_seen_at), "dd/MM/yyyy HH:mm")}`
           : "Sin actividad registrada",
-        textColor: "text-destructive",
+        textColor: "text-muted-foreground",
       };
     }
     if (diffMin >= idle || profile.activity_status === "idle") {
@@ -883,7 +883,7 @@ const AdminPanel = () => {
                                     <Input type="number" min={1} value={thresholdIdle} onChange={e => setThresholdIdle(Number(e.target.value))} className="h-7 text-xs" />
                                   </div>
                                   <div className="space-y-1">
-                                    <Label className="text-[11px]">Inactivo (rojo) — min</Label>
+                                    <Label className="text-[11px]">Desconectado (gris) — min</Label>
                                     <Input type="number" min={1} value={thresholdInactive} onChange={e => setThresholdInactive(Number(e.target.value))} className="h-7 text-xs" />
                                   </div>
                                   <Button size="sm" className="w-full h-7 text-xs" onClick={() => handleSaveThreshold(profile.id)}>

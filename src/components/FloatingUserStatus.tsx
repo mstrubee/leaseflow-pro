@@ -33,11 +33,11 @@ function getStatus(profile: Profile, thresholds: Threshold[]) {
 
   if (!profile.last_seen_at || diffMin >= inactiveMin) {
     return {
-      color: "bg-destructive",
+      color: "bg-gray-400",
       pulse: false,
       text: profile.last_seen_at
-        ? `Visto: ${format(new Date(profile.last_seen_at), "dd/MM/yyyy HH:mm")}`
-        : "Sin actividad registrada",
+        ? `Desconectado · Visto: ${format(new Date(profile.last_seen_at), "dd/MM/yyyy HH:mm")}`
+        : "Desconectado",
     };
   }
   if (diffMin >= idleMin || profile.activity_status === "idle") {
