@@ -342,7 +342,7 @@ const PAGE_SIZE = 100;
 const CACHE_KEY_FORMS = "maintenance_forms_cache";
 const CACHE_KEY_CRITICALITY = "maintenance_criticality_cache";
 const CACHE_KEY_COMPANY_MAP = "maintenance_company_map_cache";
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 function readCache<T>(key: string): T | null {
   try {
@@ -427,17 +427,19 @@ export function MaintenanceModule() {
   }, []);
 
   useEffect(() => {
-    const cachedForms = readCache<MaintenanceForm[]>(CACHE_KEY_FORMS);
-    if (cachedForms && !hasFetchedRef.current) {
+    if (!hasFetchedRef.current) {
       hasFetchedRef.current = true;
-      fetchForms(false);
-    } else if (!hasFetchedRef.current) {
-      hasFetchedRef.current = true;
-      fetchForms(true);
+      const cachedForms = readCache<MaintenanceForm[]>(CACHE_KEY_FORMS);
+      if (!cachedForms) {
+        fetchForms(true);
+      }
+      // If cache exists, data is already in state via useState initializer
     }
   }, [fetchForms]);
 
   useEffect(() => {
+    const cached = readCache<CriticalityCategory[]>(CACHE_KEY_CRITICALITY);
+    if (cached) return;
     const fetchCriticalities = async () => {
       const { data } = await (supabase as any)
         .from("maintenance_criticality_categories")
@@ -453,6 +455,8 @@ export function MaintenanceModule() {
   }, []);
 
   useEffect(() => {
+    const cached = readCache<Record<string, string[]>>(CACHE_KEY_COMPANY_MAP);
+    if (cached) return;
     const fetchCompanyMap = async () => {
       const { data } = await supabase
         .from("contract_companies")
