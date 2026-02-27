@@ -845,25 +845,15 @@ const SortableTemplateLineItem = ({
             <span className="text-xs text-muted-foreground text-center">×</span>
             
             {/* Col 7: Currency */}
-            {isEditingCurrency ? (
-              <Select value={editCurrency} onValueChange={handleSaveCurrency} defaultOpen>
-                <SelectTrigger className="h-6 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="UF">UF</SelectItem>
-                  <SelectItem value="CLP">$</SelectItem>
-                </SelectContent>
-              </Select>
-            ) : (
-              <span 
-                className="text-xs text-muted-foreground text-center cursor-pointer hover:bg-accent/50 px-0.5 py-0.5 rounded"
-                onDoubleClick={() => setIsEditingCurrency(true)}
-                title="Doble clic para editar"
-              >
-                {line.currency === "CLP" ? "$" : "UF"}/{line.unit_type || "m2"}
-              </span>
-            )}
+            <Select value={line.currency || "UF"} onValueChange={(val) => onUpdateLine(line.id, { currency: val })}>
+              <SelectTrigger className="h-6 w-[70px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="UF">UF/{line.unit_type || "m²"}</SelectItem>
+                <SelectItem value="CLP">$/{line.unit_type || "m²"}</SelectItem>
+              </SelectContent>
+            </Select>
             
             {/* Col 8: Price/Amount */}
             {isEditingAmount ? (
