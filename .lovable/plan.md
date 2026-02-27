@@ -1,43 +1,51 @@
 
 
-## Agregar card "Sin Criticidad" y rango de antigüedad a todas las cards
+## Indicador de Estado Conectado/Desconectado de Usuarios
 
-### Cambios en `src/components/maintenance/MaintenanceModule.tsx`
+### Objetivo
+Agregar un indicador visual en la tabla de usuarios del Panel de Administracion que muestre si cada usuario esta conectado (online) o desconectado (offline).
 
-**1. Nueva card "Sin Criticidad"**
-- Agregar una card adicional al grid de criticidad que muestre la cantidad de forms en estado "En Proceso" (`status === "proceso"`) que NO tienen `criticality_category_id` asignado.
-- La card tendrá un estilo diferenciado (borde gris/amber) y al hacer clic filtrará por forms sin criticidad.
+### Enfoque
+Se utilizara un campo `last_seen_at` en la tabla `profiles` que se actualiza periodicamente mientras el usuario tiene la aplicacion abierta. Si la ultima actividad fue hace menos de 5 minutos, se considera "conectado".
 
-**2. Rango de antigüedad en cada card (incluida la nueva)**
-- En cada card de criticidad (y en la nueva "Sin Criticidad"), calcular el rango de días de antigüedad de los forms que pertenecen a esa categoría.
-- La antigüedad se calcula como la diferencia en días entre `hoy` y `created_date` de cada form.
-- Se mostrará debajo del nombre como texto pequeño: "1 - 45 días" (mínimo y máximo).
-- Si solo hay 1 form, mostrar "N días". Si no hay forms, no mostrar rango.
+### Cambios
 
-### Detalle técnico
+**1. Base de datos -- agregar campo `last_seen_at`**
+- Agregar columna `last_seen_at` (timestamp with time zone, nullable) a la tabla `profiles`.
+- Crear politica RLS para que cada usuario pueda actualizar su propio `last_seen_at`.
 
-**Nuevo `useMemo` para calcular rangos de antigüedad:**
+**2. Hook de presencia -- `usePresenceHeartbeat`**
+- Crear un nuevo hook `src/hooks/usePresenceHeartbeat.ts`.
+- Cada 60 segundos, actualiza `profiles.last_seen_at = now()` para el usuario autenticado.
+- Se ejecuta al montar y luego en intervalo.
+
+**3. Integrar el heartbeat en la app**
+- Llamar `usePresenceHeartbeat()` desde `MainLayout` (o `App.tsx`) para que funcione en todas las paginas mientras el usuario esta logueado.
+
+**4. Mostrar indicador en la tabla de usuarios (AdminPanel)**
+- Agregar una nueva columna "Estado" en la tabla de usuarios.
+- Mostrar un punto verde con texto "Conectado" si `last_seen_at` fue hace menos de 5 minutos.
+- Mostrar un punto gris con texto "Desconectado" en caso contrario o si es null.
+- Incluir el campo `last_seen_at` en la interfaz `Profile` y en la consulta existente.
+
+### Detalle tecnico
+
 ```text
-// Para cada categoría + "sin criticidad", calcular min/max días
-const criticalityAgeRanges = useMemo(() => {
-  const today = new Date();
-  const ranges: Record<string, {min: number, max: number} | null> = {};
-  
-  // Por cada categoría
-  criticalityCategories.forEach(c => { ... });
-  
-  // Sin criticidad
-  const noCritForms = forms.filter(f => f.status === "proceso" && !f.criticality_category_id);
-  // calcular min/max días desde created_date
-  
-  return ranges;
-}, [forms, criticalityCategories]);
++------------------+       cada 60s        +-------------------+
+|  usePresence     | --------------------> | profiles          |
+|  Heartbeat       |  UPDATE last_seen_at  | .last_seen_at     |
++------------------+                       +-------------------+
+                                                   |
+                                           leido por AdminPanel
+                                                   |
+                                           +-------------------+
+                                           | Indicador visual  |
+                                           | verde/gris        |
+                                           +-------------------+
 ```
 
-**Modificar grid de cards:**
-- Agregar la card "Sin Criticidad" al final del `.map()` de categorías
-- En cada card, agregar un `<span>` debajo del nombre con el rango de días
-- Agregar handler `handleNoCriticalityCardClick` para filtrar forms sin criticidad
-
-### Archivo a modificar
-- `src/components/maintenance/MaintenanceModule.tsx`
+### Archivos afectados
+- **Nueva migracion SQL**: agregar columna `last_seen_at` + politica RLS
+- **Nuevo**: `src/hooks/usePresenceHeartbeat.ts`
+- **Modificado**: `src/components/layout/MainLayout.tsx` (agregar hook)
+- **Modificado**: `src/pages/AdminPanel.tsx` (interfaz Profile, columna en tabla, indicador visual)
