@@ -63,7 +63,7 @@ export const OCRequestDialog = ({
   const [form, setForm] = useState({
     description: "",
     amount: "",
-    currency: "UF",
+    currency: "CLP",
     supplier_id: null as string | null,
     supplier_name: null as string | null
   });
@@ -97,7 +97,7 @@ export const OCRequestDialog = ({
       setForm({
         description: lineName,
         amount: "",
-        currency: "UF",
+        currency: "CLP",
         supplier_id: null,
         supplier_name: null
       });
@@ -161,7 +161,7 @@ export const OCRequestDialog = ({
         toast({ 
           variant: "destructive", 
           title: "Monto excede disponible", 
-          description: `El monto (${formatUF(totalAmountUf)}) supera el disponible (${formatUF(lineAvailable)})` 
+          description: `El monto ($${Math.round(totalAmountUf * ufValue).toLocaleString("es-CL")}) supera el disponible ($${Math.round(lineAvailable * ufValue).toLocaleString("es-CL")})` 
         });
         return;
       }
@@ -363,12 +363,19 @@ export const OCRequestDialog = ({
             
             {/* Show equivalent */}
             {parseFloat(form.amount) > 0 && ufValue > 0 && (
-              <p className="text-xs text-muted-foreground">
-                Equivalente: {form.currency === "CLP" 
-                  ? `UF ${(parseFloat(form.amount) / ufValue).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                  : `$ ${Math.round(parseFloat(form.amount) * ufValue).toLocaleString("es-CL")}`
-                }
-              </p>
+              <div className="text-xs text-muted-foreground space-y-0.5">
+                {form.currency === "CLP" ? (
+                  <>
+                    <p className="font-medium text-foreground">$ {Math.round(parseFloat(form.amount)).toLocaleString("es-CL")}</p>
+                    <p>Equivalente: UF {(parseFloat(form.amount) / ufValue).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-medium text-foreground">$ {Math.round(parseFloat(form.amount) * ufValue).toLocaleString("es-CL")}</p>
+                    <p>Ingresado: UF {parseFloat(form.amount).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  </>
+                )}
+              </div>
             )}
 
             {/* Supplier */}

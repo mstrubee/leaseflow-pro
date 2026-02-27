@@ -369,7 +369,10 @@ export const ConvertOCRequestDialog = ({
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Monto Total</p>
-              <p className="font-medium text-green-600">{formatUF(request.amount_uf)}</p>
+              <p className="font-medium text-green-600">
+                ${Math.round((request.amount_clp || request.amount_uf * ufValue)).toLocaleString("es-CL")}
+              </p>
+              <p className="text-xs text-muted-foreground">{formatUF(request.amount_uf)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">
@@ -406,8 +409,8 @@ export const ConvertOCRequestDialog = ({
                 <TableHeader>
                   <TableRow>
                     <TableHead>Contrato</TableHead>
-                    <TableHead className="text-right">Monto (UF)</TableHead>
-                    <TableHead className="text-right">Monto (CLP)</TableHead>
+                    <TableHead className="text-right">Monto ($)</TableHead>
+                    <TableHead className="text-right">UF</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -415,10 +418,10 @@ export const ConvertOCRequestDialog = ({
                     <TableRow key={alloc.contract_id}>
                       <TableCell className="font-medium">{alloc.contract_name}</TableCell>
                       <TableCell className="text-right font-mono">
-                        {formatUF(alloc.amount_uf)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
                         ${Math.round(alloc.amount_clp).toLocaleString("es-CL")}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs text-muted-foreground">
+                        {formatUF(alloc.amount_uf)}
                       </TableCell>
                     </TableRow>
                   ))}

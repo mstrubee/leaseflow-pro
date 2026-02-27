@@ -464,7 +464,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     if (amount > available) {
       return { 
         valid: false, 
-        message: `Excede OPEX Disponible. Disponible: ${formatUF(displayAvailable)}`,
+        message: `Excede OPEX Disponible. Disponible: ${formatCLP(convertUFToPesos(displayAvailable))}`,
         available: displayAvailable
       };
     }
@@ -540,7 +540,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     if (amount > remainingBudget) {
       return { 
         valid: false, 
-        message: `OC supera el Presupuesto. Disponible: ${formatUF(remainingBudget)}. Solicitar Autorización a Gerencia`,
+        message: `OC supera el Presupuesto. Disponible: ${formatCLP(convertUFToPesos(remainingBudget))}. Solicitar Autorización a Gerencia`,
         exceedsBy: amount - remainingBudget
       };
     }
@@ -570,7 +570,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         }, 0);
         
         if (amountUF > totalAvailable) {
-          setBudgetWarning(`OC supera el Presupuesto disponible. Disponible total: ${formatUF(totalAvailable)}`);
+          setBudgetWarning(`OC supera el Presupuesto disponible. Disponible total: ${formatCLP(convertUFToPesos(totalAvailable))}`);
           return;
         }
       }
@@ -1432,7 +1432,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                           />
                           <span className="flex-1">{line.name}</span>
                           <span className="text-xs text-muted-foreground">
-                            (Disp: {formatUF(available)})
+                            (Disp: {formatCLP(convertUFToPesos(available))})
                           </span>
                         </label>
                       );
@@ -1441,8 +1441,8 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                 </div>
                 {newOrder.budget_line_ids.length > 0 && (
                   <p className="text-xs text-muted-foreground">
-                    {newOrder.budget_line_ids.length} línea(s) seleccionada(s) - Disponible total: {formatUF(
-                      newOrder.budget_line_ids.reduce((sum, id) => sum + getAvailableBudgetForLine(id), 0)
+                    {newOrder.budget_line_ids.length} línea(s) seleccionada(s) - Disponible total: {formatCLP(
+                      convertUFToPesos(newOrder.budget_line_ids.reduce((sum, id) => sum + getAvailableBudgetForLine(id), 0))
                     )}
                   </p>
                 )}
@@ -1468,7 +1468,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                               <span>{category.name}</span>
                               {budgetEntry && (
                                 <span className="text-xs text-muted-foreground">
-                                  (Disponible: {formatUF(available)})
+                                  (Disponible: {formatCLP(convertUFToPesos(available))})
                                 </span>
                               )}
                             </div>
@@ -1482,7 +1482,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                   )}
                   {newOrder.opex_category_id && (
                     <p className="text-xs text-muted-foreground">
-                      Presupuesto disponible: {formatUF(getAvailableOpexForCategory(newOrder.opex_category_id))}
+                      Presupuesto disponible: {formatCLP(convertUFToPesos(getAvailableOpexForCategory(newOrder.opex_category_id)))}
                     </p>
                   )}
                 </div>
@@ -1776,7 +1776,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                           />
                           <span className="flex-1">{line.name}</span>
                           <span className="text-xs text-muted-foreground">
-                            (Disp: {formatUF(available)})
+                            (Disp: {formatCLP(convertUFToPesos(available))})
                           </span>
                         </label>
                       );
@@ -1810,7 +1810,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                               <span>{category.name}</span>
                               {budgetEntry && (
                                 <span className="text-xs text-muted-foreground">
-                                  (Disponible: {formatUF(available)})
+                                  (Disponible: {formatCLP(convertUFToPesos(available))})
                                 </span>
                               )}
                             </div>
@@ -1821,7 +1821,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                   </Select>
                   {editFormData.opex_category_id && (
                     <p className="text-xs text-muted-foreground">
-                      Presupuesto disponible: {formatUF(getAvailableOpexForCategory(editFormData.opex_category_id))}
+                      Presupuesto disponible: {formatCLP(convertUFToPesos(getAvailableOpexForCategory(editFormData.opex_category_id)))}
                     </p>
                   )}
                 </div>
