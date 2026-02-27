@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Home } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { FloatingCalculator } from "@/components/FloatingCalculator";
+import { FloatingUserStatus } from "@/components/FloatingUserStatus";
 import { usePresenceHeartbeat } from "@/hooks/usePresenceHeartbeat";
 
 interface MainLayoutProps {
@@ -43,6 +44,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         </div>
       )}
       {children}
+      {!isHomePage && <FloatingUserStatus />}
       {!isHomePage && <FloatingCalculator />}
     </div>
   );
