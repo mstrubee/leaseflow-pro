@@ -338,11 +338,11 @@ export function PatentChecklist({
           const { supabase: sb } = await import("@/integrations/supabase/client");
           const { data: config } = await sb
             .from("patent_kpi_config")
-            .select("kpi_id")
+            .select("kpi_id, checklist_item_id")
             .limit(1)
             .single();
           
-          if (config?.kpi_id) {
+          if (config?.kpi_id && (!config.checklist_item_id || config.checklist_item_id === itemId)) {
             const item = items.find(i => i.id === itemId);
             const entryName = `${contract.name} - ${item?.name || 'Documento'}`;
             await sb.from("kpi_empresa_entries").insert({
