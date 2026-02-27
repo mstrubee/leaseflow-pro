@@ -1,0 +1,1 @@
+ALTER TABLE public.maintenance_forms ADD COLUMN resolution_observations text;

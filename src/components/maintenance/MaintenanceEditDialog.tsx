@@ -11,6 +11,7 @@ import { Loader2, Link, Info, ArrowRight, ExternalLink, Truck, FileText, Clock, 
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm } from "./types";
+import { ResolutionDialog } from "./ResolutionDialog";
 import { useMaintenanceSubStatuses } from "@/hooks/useMaintenanceSubStatuses";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -32,6 +33,8 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
   const navigate = useNavigate();
   const { subStatuses, subStatusLabels, subStatusInfo, subStatusOrder, getNextSubStatus } = useMaintenanceSubStatuses();
   const [saving, setSaving] = useState(false);
+  const [resolutionOpen, setResolutionOpen] = useState(false);
+  const [pendingAdvance, setPendingAdvance] = useState(false);
   const [formData, setFormData] = useState({
     form_number: "",
     status: "proceso",
@@ -44,6 +47,7 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
     hvac_description: "",
     fixed_assets_description: "",
     additional_comments: "",
+    resolution_observations: "",
   });
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -62,6 +66,7 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
         hvac_description: form.hvac_description || "",
         fixed_assets_description: form.fixed_assets_description || "",
         additional_comments: form.additional_comments || "",
+        resolution_observations: form.resolution_observations || "",
       });
     }
   }, [form]);
@@ -128,7 +133,7 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
 
   const firstSubStatus = subStatusOrder[0] || "solicitado";
 
-  const doSave = async (advance: boolean) => {
+  const doSave = async (advance: boolean, resolutionObservations?: string | null) => {
     if (!form) return;
 
     // Block manual sub-status change if currently "solicitado"
@@ -148,6 +153,14 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
 
       const finalSubStatus = newSubStatus || formData.sub_status;
 
+      // Intercept "resuelto" to open resolution dialog (unless already coming from dialog)
+      if (finalSubStatus === "resuelto" && resolutionObservations === undefined) {
+        setPendingAdvance(advance);
+        setResolutionOpen(true);
+        setSaving(false);
+        return;
+      }
+
       // Auto-set status: "solucionado" when "resuelto", otherwise "proceso"
       let finalStatus: string;
       if (finalSubStatus === "resuelto") {
@@ -158,13 +171,16 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
         finalStatus = "proceso";
       }
 
+      const updatePayload: any = {
+        status: finalStatus,
+        sub_status: finalSubStatus,
+        additional_comments: formData.additional_comments || null,
+        resolution_observations: resolutionObservations !== undefined ? resolutionObservations : (formData.resolution_observations || null),
+        updated_at: new Date().toISOString(),
+      };
+
       const { error } = await (supabase.from("maintenance_forms" as any) as any)
-        .update({
-          status: finalStatus,
-          sub_status: finalSubStatus,
-          additional_comments: formData.additional_comments || null,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq("id", form.id);
 
       if (error) throw error;
@@ -179,11 +195,17 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
     }
   };
 
+  const handleResolutionResolve = (observations: string | null) => {
+    setResolutionOpen(false);
+    doSave(pendingAdvance, observations);
+  };
+
   const set = (key: string, val: string) => setFormData(p => ({ ...p, [key]: val }));
 
   const nextStatus = getNextSubStatus(formData.sub_status);
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
@@ -320,6 +342,10 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
             <Label>Comentarios Técnicos (Jefe Mantenciones)</Label>
             <Textarea value={formData.additional_comments} onChange={e => set("additional_comments", e.target.value)} rows={2} />
           </div>
+          <div className="space-y-1.5">
+            <Label>Resuelto con Observaciones - Control de Gestión</Label>
+            <Textarea value={formData.resolution_observations} onChange={e => set("resolution_observations", e.target.value)} rows={2} placeholder="Observaciones de Control de Gestión..." />
+          </div>
 
           {form?.evidence_links && form.evidence_links.length > 0 && (
             <div className="space-y-1.5">
@@ -396,5 +422,12 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    <ResolutionDialog
+      open={resolutionOpen}
+      onOpenChange={v => { if (!v) setResolutionOpen(false); }}
+      existingObservations={formData.resolution_observations || null}
+      onResolve={handleResolutionResolve}
+    />
+    </>
   );
 }
