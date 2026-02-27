@@ -1,87 +1,54 @@
 
 
-## Correccion de montos: CLP como moneda principal en todo el sistema de presupuesto
+## Correccion sistematica: usar amount_clp almacenado en datos transaccionales
 
-### Problema detectado
+### Problema
 
-`BudgetModule.tsx` y `OpexConsumptionPieChart.tsx` muestran todos los montos con **UF como dato principal** y CLP como secundario. Esto contradice el estandar del sistema donde **Pesos ($) es siempre el dato principal** y UF es solo informativo.
+Multiples componentes del sistema de presupuesto siguen usando `convertUFToPesos(amount_uf)` para mostrar montos de datos transaccionales (OC, facturas, notas de credito, solicitudes). Esto causa que los montos fluctuen con la UF del dia en vez de mostrar el valor real en Pesos registrado al momento de la creacion.
 
-Ademas, `BudgetDashboard.tsx` pasa `ocTotal` en UF a `BudgetModule`, lo que causa que las comparaciones internas (semaforo, disponible) se hagan en UF en vez de CLP.
-
-### Lugares afectados y cambios
+El campo `amount_clp` ya existe en todas las tablas relevantes (`purchase_orders`, `invoices`, `credit_notes`, `oc_requests`) pero no se consulta ni usa en varios lugares.
 
 ---
 
-**1. `src/components/budget/BudgetModule.tsx` - Cards de resumen (lineas 925-958)**
+### Archivos afectados y cambios
 
-Cambiar las 4 celdas del resumen:
+**1. `src/components/budget/BudgetModule.tsx` - Detalle de linea (queries y display)**
 
-- **Autorizado**: `formatUF(authorizedTotal)` → `formatCLP(convertUFToPesos(authorizedTotal))` como principal, `formatUF(authorizedTotal)` como `text-xs text-muted-foreground`
-- **Consumido (OC)**: `formatUF(ocTotal)` → `formatCLP(ocTotalClp)` como principal (nuevo prop), `formatUF(ocTotal)` como secundario
-- **Disponible**: `formatUF(disponible)` → `formatCLP(disponibleClp)` como principal, UF secundario
-- **No Autorizado**: `formatUF(unauthorizedTotal)` → `formatCLP(convertUFToPesos(unauthorizedTotal))` como principal, UF secundario
+- **Queries (lineas 816-846)**: Agregar `amount_clp, uf_value_at_entry` a los `.select()` de purchase_orders, invoices, credit_notes, y oc_requests en `handleViewLineDetails`
+- **Interfaces (lineas 98-114)**: Agregar `amount_clp` a las interfaces de `lineDetailsOCs` y `lineDetailsRequests`
+- **Display solicitudes (linea 1416)**: `convertUFToPesos(req.amount_uf)` a `req.amount_clp || convertUFToPesos(req.amount_uf)`
+- **Display OC monto (linea 1438)**: Idem
+- **Display facturas (linea 1466)**: Idem
+- **Display notas credito (linea 1469, 1488)**: Idem
+- **Totales facturado/neto (lineas 1424-1426, 1498, 1502, 1506)**: Sumar `amount_clp` en vez de `amount_uf` y no reconvertir
 
-**2. `src/components/budget/BudgetModule.tsx` - Props del componente**
+- **OC select en Invoice dialog (linea 1307)**: Agregar `amount_clp` a la query de lineOCs y usar `oc.amount_clp || convertUFToPesos(oc.amount_uf)` en display
+- **lineOCs query (linea 83)**: Actualizar interfaz para incluir `amount_clp`
 
-Agregar `ocTotalClp` como prop adicional para recibir el monto real en CLP almacenado:
-
+Crear un helper local `resolveClp` para fallback:
 ```text
-interface BudgetModuleProps {
-  ...
-  ocTotal?: number;       // UF (mantener para calculos internos)
-  ocTotalClp?: number;    // CLP real almacenado (nuevo)
-}
+const resolveClp = (rec: { amount_clp?: number | null; amount_uf: number }) => 
+  rec.amount_clp || Math.round(convertUFToPesos(rec.amount_uf));
 ```
 
-**3. `src/components/budget/BudgetModule.tsx` - BudgetSemaphore (linea 929)**
+**2. `src/components/budget/InvoiceList.tsx` - Facturas y notas de credito**
 
-Cambiar a CLP: `budget={convertUFToPesos(authorizedTotal)} consumed={ocTotalClp}`
+- **Interfaces (lineas 19-38)**: Agregar `amount_clp: number | null` a `Invoice` y `CreditNote`
+- **Queries**: Agregar `amount_clp` a todos los `.select()` que traen invoices y credit_notes
+- **Display factura (linea 841)**: `convertUFToPesos(invoice.amount_uf)` a `invoice.amount_clp || convertUFToPesos(invoice.amount_uf)`
+- **Display NC badge (linea 850)**: Idem con credit note
+- **Display neto (linea 863)**: Calcular con CLP almacenado
+- **Select factura en NC dialog (linea 1031)**: Idem
 
-**4. `src/components/budget/BudgetModule.tsx` - Disponible (lineas 938-952)**
+**3. `src/components/budget/PurchaseOrdersModule.tsx` - Confirmacion de eliminacion**
 
-Calcular en CLP: `disponibleClp = convertUFToPesos(authorizedTotal) - ocTotalClp`
-
-**5. `src/components/budget/BudgetModule.tsx` - Alerta de items no autorizados (linea 966)**
-
-`formatUF(unauthorizedTotal)` → `formatCLP(convertUFToPesos(unauthorizedTotal))`
-
-**6. `src/components/budget/BudgetModule.tsx` - Dialog OC: presupuesto y disponible de linea (lineas 1182-1189)**
-
-`formatUF(ocLineBudget)` y `formatUF(ocLineAvailable)` → `formatCLP(convertUFToPesos(...))` como principal, UF secundario
-
-**7. `src/components/budget/BudgetModule.tsx` - Validacion monto OC (linea 687)**
-
-Mensaje de error: cambiar `formatUF(amountUf)` por `formatCLP(convertUFToPesos(amountUf))` y similar para disponible
-
-**8. `src/components/budget/BudgetModule.tsx` - Listas de OC, solicitudes y facturas (lineas 1297, 1406, 1428, 1456, 1459)**
-
-Todos los `formatUF(oc.amount_uf)` → `formatCLP(resolveClp(oc))` con UF secundario donde aplique
-
-**9. `src/components/budget/BudgetModule.tsx` - Total UF/m2 (linea 1023)**
-
-Mantener ambas expresiones pero invertir orden: CLP primero, UF segundo
-
-**10. `src/components/budget/BudgetDashboard.tsx` - Pasar ocTotalClp a BudgetModule (lineas 986, 1000)**
-
-Agregar `ocTotalClp={capexTotals.ocClp}` y `ocTotalClp={opexTotals.ocClp}` a las llamadas de BudgetModule
-
-**11. `src/components/budget/OpexConsumptionPieChart.tsx` - Todo el componente**
-
-- Total principal (linea 114): `formatUF(totalAmount)` → `formatCLP(totalAmount * ufValue)` con UF secundario
-- Tooltip y leyenda: mostrar CLP como principal
-- Necesita recibir `ufValue` o usar `useBudgetContext`
+- **Linea 2029**: Cambiar `formatUF(deleteOrder?.amount_uf || 0)` a `formatCLP(deleteOrder?.amount_clp || convertUFToPesos(deleteOrder?.amount_uf || 0))` como monto principal
 
 ---
-
-### Archivos afectados
-
-| Archivo | Cambios |
-|---------|--------|
-| `src/components/budget/BudgetModule.tsx` | Invertir CLP/UF en ~15 lugares; agregar prop `ocTotalClp`; semaforo en CLP |
-| `src/components/budget/BudgetDashboard.tsx` | Pasar `ocTotalClp` a BudgetModule |
-| `src/components/budget/OpexConsumptionPieChart.tsx` | Mostrar CLP como principal usando `useBudgetContext` |
 
 ### Principio aplicado
 
-Todos los montos se expresan en Pesos ($) como dato principal. La UF se muestra como dato informativo secundario en texto mas pequeno y color muted.
+- Datos **transaccionales** (OC, facturas, NC, solicitudes): siempre usar `amount_clp` almacenado. Fallback: `convertUFToPesos(amount_uf)` solo si `amount_clp` es null (datos legacy).
+- Datos **de planificacion** (lineas de presupuesto): convertir con UF del dia (correcto, representan valor actual).
+- UF siempre como dato secundario informativo.
 
