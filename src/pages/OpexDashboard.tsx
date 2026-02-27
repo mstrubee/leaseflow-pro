@@ -173,10 +173,10 @@ const OpexDashboard = () => {
     }
   }, [authLoading, user, navigate]);
   useEffect(() => {
-    if (user) {
+    if (user && ufValue > 0) {
       loadData();
     }
-  }, [user, yearFilter]);
+  }, [user, yearFilter, ufValue]);
   const loadData = async () => {
     setLoading(true);
     const selectedYear = parseInt(yearFilter);

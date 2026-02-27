@@ -152,8 +152,13 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
   };
 
   useEffect(() => {
-    refreshData();
-  }, [contractId, selectedYear, refreshKey]);
+    // CRITICAL: Only calculate summaries when ufValue is loaded.
+    // Without ufValue, CLP budget lines would be treated as UF values,
+    // producing astronomically wrong numbers (e.g. $9M CLP shown as 9M UF).
+    if (ufValue > 0) {
+      refreshData();
+    }
+  }, [contractId, selectedYear, refreshKey, ufValue]);
 
   // Save selected year to localStorage when it changes
   const handleYearChange = (year: number) => {
@@ -715,10 +720,11 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
     }
   };
 
-  if (loading) {
+  if (loading || ufValue <= 0) {
     return (
       <div className="flex items-center justify-center py-8">
         <Loader2 className="h-6 w-6 animate-spin" />
+        {ufValue <= 0 && <span className="ml-2 text-sm text-muted-foreground">Cargando indicadores económicos...</span>}
       </div>
     );
   }

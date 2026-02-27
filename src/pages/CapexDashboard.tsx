@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck } from "lucide-react";
+import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { BudgetModule } from "@/components/budget/BudgetModule";
 import { BudgetProvider } from "@/components/budget/BudgetContext";
@@ -51,7 +51,7 @@ export default function CapexDashboard() {
   }, [authLoading, user, navigate]);
 
   useEffect(() => {
-    if (user) loadBudgets();
+    if (user && ufValue > 0) loadBudgets();
   }, [user, ufValue]);
 
   const loadBudgets = async () => {
@@ -238,7 +238,11 @@ export default function CapexDashboard() {
     );
   }
 
-  if (!user) return null;
+  if (!user || ufValue <= 0) return (
+    <div className="flex items-center justify-center py-8">
+      <Loader2 className="h-6 w-6 animate-spin" />
+    </div>
+  );
 
   const fmtUF = (v: number) => v.toLocaleString("es-CL", { maximumFractionDigits: 2 });
 
