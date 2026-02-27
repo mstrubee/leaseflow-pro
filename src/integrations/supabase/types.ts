@@ -2589,6 +2589,7 @@ export type Database = {
           purchase_order_id: string | null
           purchase_order_number: string | null
           resolution_date: string | null
+          resolution_observations: string | null
           status: string
           status_changed_at: string | null
           sub_status: string
@@ -2624,6 +2625,7 @@ export type Database = {
           purchase_order_id?: string | null
           purchase_order_number?: string | null
           resolution_date?: string | null
+          resolution_observations?: string | null
           status?: string
           status_changed_at?: string | null
           sub_status?: string
@@ -2659,6 +2661,7 @@ export type Database = {
           purchase_order_id?: string | null
           purchase_order_number?: string | null
           resolution_date?: string | null
+          resolution_observations?: string | null
           status?: string
           status_changed_at?: string | null
           sub_status?: string

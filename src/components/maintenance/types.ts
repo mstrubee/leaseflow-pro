@@ -34,6 +34,7 @@ export interface MaintenanceForm {
   purchase_order_id: string | null;
   purchase_order_number: string | null;
   criticality_category_id: string | null;
+  resolution_observations: string | null;
 }
 
 export interface ParsedMaintenanceRow {

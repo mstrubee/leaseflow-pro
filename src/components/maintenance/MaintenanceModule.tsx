@@ -14,6 +14,7 @@ import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Do
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { MaintenanceForm, detectMaintenanceType } from "./types";
+import { ResolutionDialog } from "./ResolutionDialog";
 import { useMaintenanceSubStatuses, MaintenanceSubStatus } from "@/hooks/useMaintenanceSubStatuses";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { MaintenanceExcelUpload } from "./MaintenanceExcelUpload";
@@ -384,6 +385,8 @@ export function MaintenanceModule() {
   const hasFetchedRef = useRef(false);
   const [currentPage, setCurrentPage] = useState(0);
   const formsRef = useRef(forms);
+  const [resolutionTarget, setResolutionTarget] = useState<string | null>(null);
+  const [resolutionOpen, setResolutionOpen] = useState(false);
   formsRef.current = forms;
 
   // Comment editing state removed — now handled by CommentCell
@@ -796,13 +799,14 @@ export function MaintenanceModule() {
       toast({ title: "No permitido", description: "No se puede volver al sub-estado 'Solicitado'.", variant: "destructive" });
       return;
     }
-    const updates: any = { sub_status: newSubStatus, updated_at: new Date().toISOString() };
-    // Auto-set status based on sub-status
+    // Intercept "resuelto" to open resolution dialog
     if (newSubStatus === "resuelto") {
-      updates.status = 'solucionado';
-    } else {
-      updates.status = 'proceso';
+      setResolutionTarget(formId);
+      setResolutionOpen(true);
+      return;
     }
+    const updates: any = { sub_status: newSubStatus, updated_at: new Date().toISOString() };
+    updates.status = 'proceso';
     const { error } = await (supabase as any)
       .from("maintenance_forms")
       .update(updates)
@@ -819,6 +823,33 @@ export function MaintenanceModule() {
       toast({ title: "Sub-estado actualizado" });
     }
   }, []);
+
+  const handleResolve = useCallback(async (observations: string | null) => {
+    if (!resolutionTarget) return;
+    const updates: any = {
+      sub_status: "resuelto",
+      status: "solucionado",
+      resolution_observations: observations,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await (supabase as any)
+      .from("maintenance_forms")
+      .update(updates)
+      .eq("id", resolutionTarget);
+    if (error) {
+      console.error(error);
+      toast({ title: "Error", description: "No se pudo marcar como resuelto", variant: "destructive" });
+    } else {
+      setForms(prev => {
+        const updated = prev.map(fm => fm.id === resolutionTarget ? { ...fm, ...updates } : fm);
+        writeCache(CACHE_KEY_FORMS, updated);
+        return updated;
+      });
+      toast({ title: "FORM marcado como resuelto" });
+    }
+    setResolutionOpen(false);
+    setResolutionTarget(null);
+  }, [resolutionTarget]);
 
   return (
     <div className="space-y-4">
@@ -1196,7 +1227,7 @@ export function MaintenanceModule() {
                     <SortableTableHead label="Estado" sortKey="status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
                     <SortableTableHead label="Sub Estado" sortKey="sub_status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-32" />
                     <SortableTableHead label="Criticidad" sortKey="criticality_category_id" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-36" />
-                    <SortableTableHead label="Fecha" sortKey="created_date" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-28" />
+                    <SortableTableHead label="Fecha" sortKey="created_date" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-[8.4rem]" />
                     <SortableTableHead label="Contrato" sortKey="contract_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} />
                     <TableHead className="w-28">Tipo</TableHead>
                     <TableHead>Descripción</TableHead>
@@ -1241,7 +1272,14 @@ export function MaintenanceModule() {
                               onCriticalityChange={handleCriticalityChange}
                             />
                           </TableCell>
-                          <TableCell className="text-xs">{f.created_date || "-"}</TableCell>
+                          <TableCell className="text-xs">
+                            <div>{f.created_date ? format(new Date(f.created_date + "T12:00:00"), "dd/MM/yyyy") : "-"}</div>
+                            {f.created_date && (
+                              <div className="text-[10px] text-muted-foreground">
+                                {Math.floor((Date.now() - new Date(f.created_date + "T12:00:00").getTime()) / 86400000)} días
+                              </div>
+                            )}
+                          </TableCell>
                           <TableCell className="text-xs">
                             <div className="flex items-center gap-1.5">
                               {f.contract_id && contractCompanyMap[f.contract_id] && (
@@ -1363,6 +1401,12 @@ export function MaintenanceModule() {
 
       <MaintenanceExcelUpload open={uploadOpen} onOpenChange={setUploadOpen} onSuccess={handleDataChanged} />
       <MaintenanceEditDialog form={editForm} open={!!editForm} onOpenChange={v => { if (!v) setEditForm(null); }} onSuccess={handleDataChanged} />
+      <ResolutionDialog
+        open={resolutionOpen}
+        onOpenChange={v => { if (!v) { setResolutionOpen(false); setResolutionTarget(null); } }}
+        existingObservations={formsRef.current.find(f => f.id === resolutionTarget)?.resolution_observations ?? null}
+        onResolve={handleResolve}
+      />
 
       {/* Excel download dialog with checkboxes */}
       {/* Excel download dialog */}
