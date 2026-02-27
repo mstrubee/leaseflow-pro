@@ -21,6 +21,7 @@ interface Invoice {
   invoice_number: string;
   invoice_date: string;
   amount_uf: number;
+  amount_clp?: number | null;
   reception_status: string;
   received_at: string | null;
   email_sent_to: string | null;
@@ -32,6 +33,7 @@ interface CreditNote {
   credit_note_number: string;
   credit_note_date: string;
   amount_uf: number;
+  amount_clp?: number | null;
   invoice_id: string;
   reason: string | null;
   attachment_url: string | null;
@@ -838,7 +840,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                   </TableCell>
                   <TableCell>{new Date(invoice.invoice_date).toLocaleDateString("es-CL")}</TableCell>
                   <TableCell className="text-right font-mono">
-                    <div>{formatCLP(convertUFToPesos(invoice.amount_uf))}</div>
+                    <div>{formatCLP(invoice.amount_clp || Math.round(convertUFToPesos(invoice.amount_uf)))}</div>
                     <div className="text-xs text-muted-foreground">{formatUF(invoice.amount_uf)}</div>
                   </TableCell>
                   <TableCell>
@@ -847,7 +849,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                         {invoiceCreditNotes.map((cn) => (
                           <div key={cn.id} className="flex items-center gap-2 text-sm">
                             <Badge variant="outline" className="text-green-600 border-green-300">
-                              NC {cn.credit_note_number}: -{formatCLP(convertUFToPesos(cn.amount_uf))}
+                              NC {cn.credit_note_number}: -{formatCLP(cn.amount_clp || Math.round(convertUFToPesos(cn.amount_uf)))}
                             </Badge>
                             <Button
                               size="sm"
@@ -860,7 +862,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                           </div>
                         ))}
                         <p className="text-xs text-muted-foreground">
-                          Neto: {formatCLP(convertUFToPesos(invoice.amount_uf - invoiceCreditTotal))}
+                          Neto: {formatCLP((invoice.amount_clp || Math.round(convertUFToPesos(invoice.amount_uf))) - invoiceCreditNotes.reduce((sum, cn) => sum + (cn.amount_clp || Math.round(convertUFToPesos(cn.amount_uf))), 0))}
                         </p>
                       </div>
                     ) : (
@@ -1028,7 +1030,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                 <SelectContent>
                   {invoices.map((invoice) => (
                     <SelectItem key={invoice.id} value={invoice.id}>
-                      {invoice.invoice_number} - {formatCLP(convertUFToPesos(invoice.amount_uf))}
+                      {invoice.invoice_number} - {formatCLP(invoice.amount_clp || Math.round(convertUFToPesos(invoice.amount_uf)))}
                     </SelectItem>
                   ))}
                 </SelectContent>

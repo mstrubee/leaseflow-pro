@@ -2026,7 +2026,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
             <AlertDialogDescription>
               Está a punto de eliminar la OC <strong>{deleteOrder?.order_number}</strong> del proveedor{" "}
               <strong>{deleteOrder?.supplier_name || "Sin nombre"}</strong> por un monto de{" "}
-              <strong>{formatUF(deleteOrder?.amount_uf || 0)}</strong>.
+              <strong>{formatCLP(deleteOrder?.amount_clp || Math.round(convertUFToPesos(deleteOrder?.amount_uf || 0)))}</strong>.
               <br /><br />
               Esta acción también eliminará todas las facturas y notas de crédito asociadas a esta orden.
             </AlertDialogDescription>

@@ -80,7 +80,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
   const [invoiceBudgetLineId, setInvoiceBudgetLineId] = useState("");
   const [invoiceLineName, setInvoiceLineName] = useState("");
-  const [lineOCs, setLineOCs] = useState<{ id: string; order_number: string; supplier_name: string | null; amount_uf: number }[]>([]);
+  const [lineOCs, setLineOCs] = useState<{ id: string; order_number: string; supplier_name: string | null; amount_uf: number; amount_clp?: number | null }[]>([]);
   const [loadingLineOCs, setLoadingLineOCs] = useState(false);
   const [invoiceForm, setInvoiceForm] = useState({
     invoice_number: "",
@@ -100,14 +100,16 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     order_number: string;
     supplier_name: string | null;
     amount_uf: number;
+    amount_clp?: number | null;
     status: string;
-    invoices: { id: string; invoice_number: string; amount_uf: number; invoice_date: string }[];
-    credit_notes: { id: string; credit_note_number: string; amount_uf: number; invoice_id: string }[];
+    invoices: { id: string; invoice_number: string; amount_uf: number; amount_clp?: number | null; invoice_date: string }[];
+    credit_notes: { id: string; credit_note_number: string; amount_uf: number; amount_clp?: number | null; invoice_id: string }[];
   }[]>([]);
   const [lineDetailsRequests, setLineDetailsRequests] = useState<{
     id: string;
     request_number: string;
     amount_uf: number;
+    amount_clp?: number | null;
     status: string;
     supplier_name: string | null;
     request_date: string;
@@ -745,7 +747,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     try {
       const { data, error } = await supabase
         .from("purchase_orders")
-        .select("id, order_number, supplier_name, amount_uf")
+        .select("id, order_number, supplier_name, amount_uf, amount_clp")
         .eq("budget_line_id", budgetLineId)
         .eq("year", selectedYear)
         .order("order_date", { ascending: false });
@@ -815,7 +817,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
       // Fetch OCs for this budget line
       const { data: ocs, error: ocsError } = await supabase
         .from("purchase_orders")
-        .select("id, order_number, supplier_name, amount_uf, status")
+        .select("id, order_number, supplier_name, amount_uf, amount_clp, uf_value_at_entry, status")
         .eq("budget_line_id", budgetLineId)
         .order("order_date", { ascending: false });
 
@@ -824,7 +826,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
       // Fetch OC Requests for this line
       const { data: requests } = await supabase
         .from("oc_requests")
-        .select("id, request_number, amount_uf, status, supplier_name, request_date")
+        .select("id, request_number, amount_uf, amount_clp, uf_value_at_entry, status, supplier_name, request_date")
         .eq("budget_line_id", budgetLineId)
         .order("created_at", { ascending: false });
       
@@ -835,13 +837,13 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
         (ocs || []).map(async (oc) => {
           const { data: invoices } = await supabase
             .from("invoices")
-            .select("id, invoice_number, amount_uf, invoice_date")
+            .select("id, invoice_number, amount_uf, amount_clp, uf_value_at_entry, invoice_date")
             .eq("purchase_order_id", oc.id)
             .order("invoice_date", { ascending: false });
 
           const { data: creditNotes } = await supabase
             .from("credit_notes")
-            .select("id, credit_note_number, amount_uf, invoice_id")
+            .select("id, credit_note_number, amount_uf, amount_clp, uf_value_at_entry, invoice_id")
             .eq("purchase_order_id", oc.id)
             .order("credit_note_date", { ascending: false });
 
@@ -1304,7 +1306,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                   <SelectContent>
                     {lineOCs.map((oc) => (
                       <SelectItem key={oc.id} value={oc.id}>
-                        {oc.order_number} - {oc.supplier_name || "Sin proveedor"} ({formatCLP(convertUFToPesos(oc.amount_uf))})
+                        {oc.order_number} - {oc.supplier_name || "Sin proveedor"} ({formatCLP(oc.amount_clp || Math.round(convertUFToPesos(oc.amount_uf)))})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1413,7 +1415,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                           {req.status === "converted" ? "Convertida" : "Pendiente"}
                         </Badge>
                       </div>
-                      <span className="font-mono">{formatCLP(convertUFToPesos(req.amount_uf))}</span>
+                      <span className="font-mono">{formatCLP(req.amount_clp || Math.round(convertUFToPesos(req.amount_uf)))}</span>
                     </div>
                   ))}
                 </div>
@@ -1421,9 +1423,9 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               
               {/* OCs Section */}
               {lineDetailsOCs.map((oc) => {
-                const totalInvoiced = oc.invoices.reduce((sum, inv) => sum + inv.amount_uf, 0);
-                const totalCreditNotes = oc.credit_notes.reduce((sum, cn) => sum + cn.amount_uf, 0);
-                const netInvoiced = totalInvoiced - totalCreditNotes;
+                const totalInvoicedClp = oc.invoices.reduce((sum, inv) => sum + (inv.amount_clp || Math.round(convertUFToPesos(inv.amount_uf))), 0);
+                const totalCreditNotesClp = oc.credit_notes.reduce((sum, cn) => sum + (cn.amount_clp || Math.round(convertUFToPesos(cn.amount_uf))), 0);
+                const netInvoicedClp = totalInvoicedClp - totalCreditNotesClp;
                 
                 return (
                   <div key={oc.id} className="border rounded-lg p-4 space-y-3">
@@ -1435,7 +1437,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{formatCLP(convertUFToPesos(oc.amount_uf))}</span>
+                        <span className="text-sm font-medium">{formatCLP(oc.amount_clp || Math.round(convertUFToPesos(oc.amount_uf)))}</span>
                         <Badge 
                           variant={
                             oc.status === "cerrada" ? "default" : 
@@ -1463,10 +1465,10 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                                   <span className="text-muted-foreground text-xs">
                                     {new Date(inv.invoice_date).toLocaleDateString("es-CL")}
                                   </span>
-                                  <span className="font-mono">{formatCLP(convertUFToPesos(inv.amount_uf))}</span>
+                                  <span className="font-mono">{formatCLP(inv.amount_clp || Math.round(convertUFToPesos(inv.amount_uf)))}</span>
                                   {invCreditNotes.length > 0 && (
                                     <span className="text-xs text-red-600">
-                                      - {formatCLP(convertUFToPesos(invCreditNotes.reduce((s, c) => s + c.amount_uf, 0)))} NC
+                                      - {formatCLP(invCreditNotes.reduce((s, c) => s + (c.amount_clp || Math.round(convertUFToPesos(c.amount_uf))), 0))} NC
                                     </span>
                                   )}
                                 </div>
@@ -1485,7 +1487,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                           {oc.credit_notes.map((cn) => (
                             <div key={cn.id} className="text-sm flex items-center justify-between py-1">
                               <span>{cn.credit_note_number}</span>
-                              <span className="font-mono text-red-600">-{formatCLP(convertUFToPesos(cn.amount_uf))}</span>
+                              <span className="font-mono text-red-600">-{formatCLP(cn.amount_clp || Math.round(convertUFToPesos(cn.amount_uf)))}</span>
                             </div>
                           ))}
                         </div>
@@ -1495,15 +1497,15 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                     {/* Summary */}
                     <div className="flex justify-end gap-6 pt-2 border-t text-sm">
                       <div className="text-muted-foreground">
-                        Facturado: <span className="font-medium text-foreground">{formatCLP(convertUFToPesos(totalInvoiced))}</span>
+                        Facturado: <span className="font-medium text-foreground">{formatCLP(totalInvoicedClp)}</span>
                       </div>
-                      {totalCreditNotes > 0 && (
+                      {totalCreditNotesClp > 0 && (
                         <div className="text-muted-foreground">
-                          NC: <span className="font-medium text-red-600">-{formatCLP(convertUFToPesos(totalCreditNotes))}</span>
+                          NC: <span className="font-medium text-red-600">-{formatCLP(totalCreditNotesClp)}</span>
                         </div>
                       )}
                       <div className="text-muted-foreground">
-                        Neto: <span className="font-medium text-foreground">{formatCLP(convertUFToPesos(netInvoiced))}</span>
+                        Neto: <span className="font-medium text-foreground">{formatCLP(netInvoicedClp)}</span>
                       </div>
                     </div>
                   </div>
