@@ -690,6 +690,36 @@ export function MaintenanceModule() {
     return counts;
   }, [forms, criticalityCategories]);
 
+  const noCriticalityCount = useMemo(() => {
+    return forms.filter(f => f.status === "proceso" && !f.criticality_category_id).length;
+  }, [forms]);
+
+  const criticalityAgeRanges = useMemo(() => {
+    const today = new Date();
+    const ranges: Record<string, { min: number; max: number } | null> = {};
+
+    const calcRange = (list: MaintenanceForm[]) => {
+      const days = list
+        .filter(f => f.created_date)
+        .map(f => {
+          const created = new Date(f.created_date!);
+          return Math.max(1, Math.ceil((today.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)));
+        });
+      if (days.length === 0) return null;
+      return { min: Math.min(...days), max: Math.max(...days) };
+    };
+
+    criticalityCategories.forEach(c => {
+      const catForms = forms.filter(f => f.status === "proceso" && f.criticality_category_id === c.id);
+      ranges[c.id] = calcRange(catForms);
+    });
+
+    const noCritForms = forms.filter(f => f.status === "proceso" && !f.criticality_category_id);
+    ranges["__none__"] = calcRange(noCritForms);
+
+    return ranges;
+  }, [forms, criticalityCategories]);
+
   const handleCriticalityCardClick = (catId: string) => {
     setCurrentPage(0);
     startTransition(() => {
@@ -697,6 +727,17 @@ export function MaintenanceModule() {
         setFilters(prev => ({ ...prev, statusFilter: "all", criticalityFilter: "all" }));
       } else {
         setFilters(prev => ({ ...prev, statusFilter: "proceso", criticalityFilter: catId }));
+      }
+    });
+  };
+
+  const handleNoCriticalityCardClick = () => {
+    setCurrentPage(0);
+    startTransition(() => {
+      if (filters.criticalityFilter === "none") {
+        setFilters(prev => ({ ...prev, statusFilter: "all", criticalityFilter: "all" }));
+      } else {
+        setFilters(prev => ({ ...prev, statusFilter: "proceso", criticalityFilter: "none" }));
       }
     });
   };
@@ -859,6 +900,7 @@ export function MaintenanceModule() {
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
           {criticalityCategories.map(cat => {
             const isActive = filters.criticalityFilter === cat.id;
+            const ageRange = criticalityAgeRanges[cat.id];
             return (
               <Card
                 key={cat.id}
@@ -871,9 +913,18 @@ export function MaintenanceModule() {
                 onClick={() => handleCriticalityCardClick(cat.id)}
               >
                 <CardContent className="p-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Shield className="h-4 w-4" style={{ color: cat.color || undefined }} />
-                    <span className="text-sm font-medium">{cat.name}</span>
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex items-center gap-2">
+                      <Shield className="h-4 w-4" style={{ color: cat.color || undefined }} />
+                      <span className="text-sm font-medium">{cat.name}</span>
+                    </div>
+                    {ageRange && (
+                      <span className="text-[10px] text-muted-foreground ml-6">
+                        {ageRange.min === ageRange.max
+                          ? `${ageRange.min} día${ageRange.min !== 1 ? "s" : ""}`
+                          : `${ageRange.min} - ${ageRange.max} días`}
+                      </span>
+                    )}
                   </div>
                   <Badge
                     className="text-xs"
@@ -885,6 +936,36 @@ export function MaintenanceModule() {
               </Card>
             );
           })}
+          {/* Sin Criticidad card */}
+          {(() => {
+            const isActive = filters.criticalityFilter === "none";
+            const ageRange = criticalityAgeRanges["__none__"];
+            return (
+              <Card
+                className={`cursor-pointer transition-all hover:shadow-md border-l-4 border-l-amber-400 ${isActive ? "ring-2 ring-amber-400 ring-offset-1" : ""}`}
+                onClick={handleNoCriticalityCardClick}
+              >
+                <CardContent className="p-3 flex items-center justify-between">
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex items-center gap-2">
+                      <XCircle className="h-4 w-4 text-amber-500" />
+                      <span className="text-sm font-medium">Sin Criticidad</span>
+                    </div>
+                    {ageRange && (
+                      <span className="text-[10px] text-muted-foreground ml-6">
+                        {ageRange.min === ageRange.max
+                          ? `${ageRange.min} día${ageRange.min !== 1 ? "s" : ""}`
+                          : `${ageRange.min} - ${ageRange.max} días`}
+                      </span>
+                    )}
+                  </div>
+                  <Badge className="text-xs bg-amber-500 text-white hover:bg-amber-600">
+                    {noCriticalityCount}
+                  </Badge>
+                </CardContent>
+              </Card>
+            );
+          })()}
         </div>
       )}
 
