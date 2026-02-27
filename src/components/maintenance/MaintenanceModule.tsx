@@ -950,7 +950,7 @@ export function MaintenanceModule() {
           }}
         >
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Con Observaciones</CardTitle>
+            <CardTitle className="text-sm font-medium">Resuelto Con Observaciones</CardTitle>
             <MessageSquare className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
