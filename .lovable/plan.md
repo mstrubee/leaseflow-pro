@@ -1,35 +1,51 @@
 
 
-## Fix: PDF exports only selected contracts
+## Optimizar velocidad de carga del Dashboard
 
-### Problem
-The current "Filas PDF" selector uses an **exclusion model** -- all contracts start as included, and you must manually uncheck each one you don't want. When you have many contracts and search to find specific ones, the contracts hidden by the search filter remain included. This makes it appear the PDF "shows everything."
+### Problema identificado
 
-### Solution
-Add a console log for debugging AND change the PDF export to log the count of excluded/included contracts so we can verify the filtering is working. More importantly, improve the UX so the user can easily select only specific contracts:
+La funcion `loadStats()` en `DashboardStats.tsx` realiza una consulta pesada que:
+1. Trae TODOS los contratos con 3 JOINs anidados (`contract_addresses`, `termination_notices`, `contract_companies` con `companies`)
+2. Procesa toda la agregacion (conteos por region, comuna, empresa) en el cliente
+3. Puede chocar con el limite de 1000 filas de la base de datos
+4. El componente `EconomicIndicators` llama a una Edge Function que agrega latencia
+5. El modulo `PatentsModule` se carga inline, bloqueando el render inicial
 
-1. **Add "Ninguno" as default hint** -- When the popover opens, show a clearer message explaining the user can click "Ninguno" first, then select only the contracts they want.
+### Solucion: Mover agregaciones al servidor + carga paralela
 
-2. **Add logging to PDF export** -- Temporarily add a `console.log` in both `handleDownloadReport` (Contracts.tsx) and `exportSinPatentePDF` (ReportsDashboard.tsx) to verify the filtering is executing.
+#### 1. Crear funcion RPC `get_dashboard_stats`
 
-3. **Add a toast notification** -- When the PDF is generated, show a toast confirming how many contracts were included (e.g., "PDF generado con 1 de 45 contratos").
+Una funcion SQL que calcula todas las estadisticas directamente en la base de datos y devuelve el resultado agregado en una sola llamada, eliminando la transferencia de datos crudos y el procesamiento en el cliente.
 
-### Technical Details
+La funcion retornara:
+- Totales generales (contratos, vigentes, negociacion, vencidos, atencion especial)
+- Conteos por empresa (Autoplanet, Agroplanet, Grupo Planet)
+- Desglose por region y comuna
+- Alertas de terminacion
 
-**Files to modify:**
+#### 2. Crear funcion RPC `get_termination_alerts`
 
-- **`src/pages/Contracts.tsx`** (handleDownloadReport):
-  - Add toast notification showing count of included contracts
-  - Add console.log for debugging
+Separar la consulta de alertas de terminacion para mantener la funcion principal ligera.
 
-- **`src/pages/ReportsDashboard.tsx`** (exportSinPatentePDF):
-  - Add toast notification showing count of included contracts
-  - Add console.log for debugging
+#### 3. Modificar `DashboardStats.tsx`
 
-- **`src/components/contracts/ContractRowSelector.tsx`**:
-  - Add a visual indicator showing "X de Y seleccionados" more prominently on the trigger button
-  - This helps the user understand at a glance whether their selection is active
+- Reemplazar la consulta con joins por llamadas a las funciones RPC
+- Ejecutar `loadStats` y la carga de permisos en paralelo
+- Renderizar las tarjetas de estadisticas inmediatamente y cargar la tabla regional de forma diferida (lazy)
 
-### Expected Result
-The user will see exactly how many contracts are being exported, and the button will clearly show when not all contracts are selected, making it obvious if the selection is active or not.
+#### 4. Lazy load del modulo de Patentes
+
+Cargar `PatentsModule` con `React.lazy` + `Suspense` para que no bloquee el render inicial del dashboard.
+
+### Archivos a modificar
+
+- **Nueva migracion SQL**: Crear funciones RPC `get_dashboard_stats` y `get_termination_alerts`
+- **`src/components/dashboard/DashboardStats.tsx`**: Reemplazar `loadStats` por llamadas RPC, lazy load de PatentsModule
+
+### Resultado esperado
+
+- Reduccion significativa del tiempo de carga (de segundos a milisegundos para las estadisticas)
+- Sin limite de 1000 filas ya que la agregacion ocurre en la base de datos
+- Las tarjetas principales aparecen casi instantaneamente
+- El modulo de patentes se carga en segundo plano
 
