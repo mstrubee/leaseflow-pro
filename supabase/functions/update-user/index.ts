@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
     }
 
     // Get request body
-    const { userId, email, fullName, password, role, permissions } = await req.json()
+    const { userId, email, fullName, cargo, password, role, permissions } = await req.json()
 
     if (!userId) {
       return new Response(JSON.stringify({ error: 'User ID is required' }), {
@@ -91,9 +91,10 @@ Deno.serve(async (req) => {
     }
 
     // Update profile
-    const profileUpdate: { email?: string; full_name?: string } = {}
+    const profileUpdate: { email?: string; full_name?: string; cargo?: string | null } = {}
     if (email) profileUpdate.email = email
     if (fullName !== undefined) profileUpdate.full_name = fullName
+    if (cargo !== undefined) profileUpdate.cargo = cargo
 
     if (Object.keys(profileUpdate).length > 0) {
       const { error: profileError } = await supabaseAdmin

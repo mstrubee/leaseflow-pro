@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
     }
 
     // Get request body
-    const { email, password, fullName, role, permissions } = await req.json()
+    const { email, password, fullName, cargo, role, permissions } = await req.json()
 
     if (!email || !password) {
       return new Response(JSON.stringify({ error: 'Email and password are required' }), {
@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
     // Create profile
     await supabaseAdmin
       .from('profiles')
-      .insert({ id: newUserId, email, full_name: fullName })
+      .insert({ id: newUserId, email, full_name: fullName, cargo: cargo || null })
 
     // Assign role
     await supabaseAdmin
