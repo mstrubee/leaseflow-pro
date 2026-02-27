@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Home } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { FloatingCalculator } from "@/components/FloatingCalculator";
+import { usePresenceHeartbeat } from "@/hooks/usePresenceHeartbeat";
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -12,6 +13,7 @@ interface MainLayoutProps {
 export function MainLayout({ children }: MainLayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  usePresenceHeartbeat();
 
   // Don't show Home button on the home page itself or on auth page
   const isHomePage = location.pathname === "/" || location.pathname === "/auth";

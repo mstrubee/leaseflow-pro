@@ -31,6 +31,7 @@ interface Profile {
   email: string;
   full_name: string | null;
   created_at: string;
+  last_seen_at: string | null;
 }
 
 interface UserRole {
@@ -120,6 +121,7 @@ interface Profile {
   email: string;
   full_name: string | null;
   created_at: string;
+  last_seen_at: string | null;
 }
 
 interface UserRole {
@@ -741,6 +743,7 @@ const AdminPanel = () => {
                 <TableRow>
                   <TableHead>Email</TableHead>
                   <TableHead>Nombre</TableHead>
+                  <TableHead>Estado</TableHead>
                   <TableHead>Rol</TableHead>
                   <TableHead>Permisos</TableHead>
                   <TableHead>Fecha Creación</TableHead>
@@ -752,6 +755,20 @@ const AdminPanel = () => {
                   <TableRow key={profile.id}>
                     <TableCell>{profile.email}</TableCell>
                     <TableCell>{profile.full_name || "-"}</TableCell>
+                    <TableCell>
+                      {(() => {
+                        const isOnline = profile.last_seen_at && 
+                          (Date.now() - new Date(profile.last_seen_at).getTime()) < 5 * 60 * 1000;
+                        return (
+                          <div className="flex items-center gap-1.5">
+                            <span className={`h-2.5 w-2.5 rounded-full ${isOnline ? 'bg-green-500' : 'bg-muted-foreground/40'}`} />
+                            <span className={`text-xs ${isOnline ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
+                              {isOnline ? 'Conectado' : 'Desconectado'}
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </TableCell>
                     <TableCell>
                       <span className={`px-2 py-1 rounded text-xs ${
                         getUserRole(profile.id) === "admin" 
