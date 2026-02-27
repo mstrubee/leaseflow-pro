@@ -897,14 +897,14 @@ export function MaintenanceModule() {
 
       {/* Criticality Quick-Filter Cards */}
       {criticalityCategories.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        <div className="flex gap-2 overflow-x-auto">
           {criticalityCategories.map(cat => {
             const isActive = filters.criticalityFilter === cat.id;
             const ageRange = criticalityAgeRanges[cat.id];
             return (
               <Card
                 key={cat.id}
-                className={`cursor-pointer transition-all hover:shadow-md ${isActive ? "ring-2 ring-offset-1" : ""}`}
+                className={`cursor-pointer transition-all hover:shadow-md flex-1 min-w-0 ${isActive ? "ring-2 ring-offset-1" : ""}`}
                 style={{
                   borderLeftWidth: 4,
                   borderLeftColor: cat.color || "hsl(var(--border))",
@@ -942,7 +942,7 @@ export function MaintenanceModule() {
             const ageRange = criticalityAgeRanges["__none__"];
             return (
               <Card
-                className={`cursor-pointer transition-all hover:shadow-md border-l-4 border-l-amber-400 ${isActive ? "ring-2 ring-amber-400 ring-offset-1" : ""}`}
+                className={`cursor-pointer transition-all hover:shadow-md border-l-4 border-l-amber-400 flex-1 min-w-0 ${isActive ? "ring-2 ring-amber-400 ring-offset-1" : ""}`}
                 onClick={handleNoCriticalityCardClick}
               >
                 <CardContent className="p-3 flex items-center justify-between">
