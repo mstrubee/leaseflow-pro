@@ -30,6 +30,7 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
   const [templates, setTemplates] = useState<BudgetTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTemplate, setSelectedTemplate] = useState<BudgetTemplate | null>(null);
+  const [flatLines, setFlatLines] = useState<TemplateLine[]>([]);
   const [lines, setLines] = useState<TemplateLine[]>([]);
   const [loadingLines, setLoadingLines] = useState(false);
   const [activeTab, setActiveTab] = useState<"capex" | "opex">("capex");
@@ -84,7 +85,9 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
         .order("display_order");
 
       if (error) throw error;
-      setLines(buildTree((data || []) as TemplateLine[]));
+      const flat = (data || []) as TemplateLine[];
+      setFlatLines(flat);
+      setLines(buildTree(flat));
     } catch (error) {
       console.error("Error loading template lines:", error);
     } finally {
@@ -135,12 +138,13 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
 
       if (error) throw error;
 
+      const created = data as BudgetTemplate;
+      setTemplates(prev => [created, ...prev]);
       toast({ title: "Plantilla creada", description: `"${newName}" creada exitosamente` });
       setShowNewDialog(false);
       setNewName("");
       setNewDescription("");
-      loadTemplates();
-      setSelectedTemplate(data as BudgetTemplate);
+      setSelectedTemplate(created);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
@@ -162,10 +166,11 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
 
       if (error) throw error;
 
+      const updated = { ...selectedTemplate, name: editName.trim(), description: editDescription.trim() || null };
+      setTemplates(prev => prev.map(t => t.id === selectedTemplate.id ? updated : t));
+      setSelectedTemplate(updated);
       toast({ title: "Plantilla actualizada" });
       setShowEditDialog(false);
-      loadTemplates();
-      setSelectedTemplate({ ...selectedTemplate, name: editName.trim(), description: editDescription.trim() || null });
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
@@ -182,12 +187,13 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
 
       if (error) throw error;
 
-      toast({ title: "Plantilla eliminada" });
+      setTemplates(prev => prev.filter(t => t.id !== template.id));
       if (selectedTemplate?.id === template.id) {
         setSelectedTemplate(null);
+        setFlatLines([]);
         setLines([]);
       }
-      loadTemplates();
+      toast({ title: "Plantilla eliminada" });
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
@@ -253,8 +259,8 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
         if (insertError) throw insertError;
       }
 
+      setTemplates(prev => [newTemplate as BudgetTemplate, ...prev]);
       toast({ title: "Plantilla duplicada", description: `"${template.name} (Copia)" creada` });
-      loadTemplates();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
@@ -282,22 +288,29 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
 
       const maxOrder = siblings && siblings.length > 0 ? (siblings[0].display_order || 0) : 0;
 
-      const { error } = await supabase.from("budget_template_lines").insert({
+      const { data: newLine, error } = await supabase.from("budget_template_lines").insert({
         template_id: selectedTemplate.id,
         parent_id: parentId,
         name: "Nueva línea",
         default_amount_uf: 0,
         display_order: maxOrder + 1,
-      });
+      }).select().single();
 
       if (error) throw error;
-      loadLines(selectedTemplate.id, false);
+      const updatedFlat = [...flatLines, newLine as TemplateLine];
+      setFlatLines(updatedFlat);
+      setLines(buildTree(updatedFlat));
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
   };
 
   const handleUpdateLine = async (id: string, data: Partial<TemplateLine>) => {
+    // Optimistic update
+    const updatedFlat = flatLines.map(l => l.id === id ? { ...l, ...data } : l);
+    setFlatLines(updatedFlat);
+    setLines(buildTree(updatedFlat));
+
     try {
       const { error } = await supabase
         .from("budget_template_lines")
@@ -305,13 +318,26 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
         .eq("id", id);
 
       if (error) throw error;
-      if (selectedTemplate) loadLines(selectedTemplate.id, false);
     } catch (error: any) {
+      // Revert on failure
+      setFlatLines(flatLines);
+      setLines(buildTree(flatLines));
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
   };
 
   const handleDeleteLine = async (id: string) => {
+    // Optimistic: remove line and all descendants
+    const idsToRemove = new Set<string>();
+    const collectChildren = (parentId: string) => {
+      idsToRemove.add(parentId);
+      flatLines.forEach(l => { if (l.parent_id === parentId) collectChildren(l.id); });
+    };
+    collectChildren(id);
+    const updatedFlat = flatLines.filter(l => !idsToRemove.has(l.id));
+    setFlatLines(updatedFlat);
+    setLines(buildTree(updatedFlat));
+
     try {
       const { error } = await supabase
         .from("budget_template_lines")
@@ -319,13 +345,18 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
         .eq("id", id);
 
       if (error) throw error;
-      if (selectedTemplate) loadLines(selectedTemplate.id, false);
     } catch (error: any) {
+      setFlatLines(flatLines);
+      setLines(buildTree(flatLines));
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
   };
 
   const handleReparent = async (lineId: string, newParentId: string | null) => {
+    const updatedFlat = flatLines.map(l => l.id === lineId ? { ...l, parent_id: newParentId } : l);
+    setFlatLines(updatedFlat);
+    setLines(buildTree(updatedFlat));
+
     try {
       const { error } = await supabase
         .from("budget_template_lines")
@@ -334,8 +365,9 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
 
       if (error) throw error;
       toast({ title: "Línea movida", description: "La estructura se ha actualizado" });
-      if (selectedTemplate) loadLines(selectedTemplate.id, false);
     } catch (error: any) {
+      setFlatLines(flatLines);
+      setLines(buildTree(flatLines));
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
   };
