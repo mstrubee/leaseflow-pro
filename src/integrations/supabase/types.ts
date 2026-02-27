@@ -4953,6 +4953,32 @@ export type Database = {
           },
         ]
       }
+      user_activity_thresholds: {
+        Row: {
+          idle_minutes: number
+          inactive_minutes: number
+          user_id: string
+        }
+        Insert: {
+          idle_minutes?: number
+          inactive_minutes?: number
+          user_id: string
+        }
+        Update: {
+          idle_minutes?: number
+          inactive_minutes?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_activity_thresholds_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_permissions: {
         Row: {
           created_at: string
