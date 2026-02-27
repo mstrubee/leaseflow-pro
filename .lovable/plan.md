@@ -1,62 +1,59 @@
 
-## Causa raiz: OCs sin clasificacion caen fuera de CAPEX y OPEX
 
-### Problema encontrado
+## Optimizacion de rendimiento en plantillas de presupuesto
 
-Despues de auditar la base de datos, descubri que el problema NO es un error de formato UF/CLP. El problema real es que **OCs sin clasificacion son invisibles** en las cards de resumen.
+### Problema
 
-La base de datos muestra este quiebre de OCs para 2026:
+Cada operacion (editar, duplicar, eliminar) en `BudgetTemplateManager` dispara una recarga completa desde la base de datos:
+- `handleUpdateLine` -> `loadLines()` (re-fetch completo)
+- `handleDeleteLine` -> `loadLines()` (re-fetch completo)
+- `handleAddLine` -> `loadLines()` (re-fetch completo)
+- `handleDeleteTemplate` -> `loadTemplates()` (re-fetch completo)
+- `handleDuplicateTemplate` -> `loadTemplates()` (re-fetch completo)
+- `handleUpdateTemplate` -> `loadTemplates()` (re-fetch completo)
 
-```text
-Clasificacion                               | Cant | Total CLP
---------------------------------------------|------|------------
-CAPEX (con budget_line_id)                   |    3 | $20.824.346
-OPEX (con opex_category + opex_master)       |   26 | $20.990.577
-OPEX (con opex_category, sin opex_master)    |   27 | $20.083.538
-OPEX (solo budget_classification="OPEX")     |    4 | $14.101.008
-NULL (con opex_category + opex_master)       |   14 |  $1.572.812
-NULL (sin nada)                              |    1 | $22.700.000  <-- INVISIBLE
-```
+Esto genera latencia visible en cada accion porque cada cambio implica un round-trip completo al servidor.
 
-La ultima fila es el problema: **1 OC por $22.700.000 que no tiene budget_classification, ni budget_line_id, ni opex_category_id, ni opex_master_id**. Esta OC no pasa el filtro CAPEX ni el OPEX, por lo tanto desaparece completamente de las cards.
+### Solucion: Actualizaciones optimistas
 
-### Filtro actual en `loadBudgetTypeTotals`
-
-**CAPEX:** `budget_classification === "CAPEX" OR (budget_line_id AND NOT opex)`
-**OPEX:** `opex_master_id OR opex_category_id OR budget_classification === "OPEX"`
-
-Una OC sin ningun marcador NO es capturada por ninguno.
-
-### Solucion
-
-**1. Corregir filtro CAPEX en `BudgetDashboard.tsx` (`loadBudgetTypeTotals`)**
-
-Agregar una clausula para que OCs sin ningun marcador OPEX se clasifiquen como CAPEX por defecto:
-
-```text
-CAPEX filter:
-  budget_classification === "CAPEX"
-  OR (budget_line_id AND NOT opex markers)
-  OR (NO budget_classification AND NO budget_line_id AND NO opex markers)
-     ^--- NUEVA CLAUSULA: sin clasificacion = CAPEX por defecto
-```
-
-**2. Agregar logging de diagnostico temporal**
-
-Agregar un `console.warn` cuando se detecte una OC sin clasificacion, para ayudar a detectar futuros problemas de datos.
-
-**3. Validar en `PurchaseOrdersModule.tsx` - `getBudgetTypeForOrder`**
-
-Verificar que la funcion que determina el badge "CAPEX"/"OPEX" en la tabla de OCs tenga la misma logica de fallback, para que sea consistente con las cards.
+Reemplazar las recargas completas con actualizaciones locales del estado. La base de datos se actualiza en segundo plano, y solo si falla se revierte el estado.
 
 ---
 
+### Cambios en `BudgetTemplateManager.tsx`
+
+**1. Operaciones sobre plantillas (crear, editar, eliminar, duplicar)**
+
+- `handleCreateTemplate`: Insertar la plantilla devuelta por `.select().single()` directamente en el array `templates` sin llamar a `loadTemplates()`.
+- `handleUpdateTemplate`: Actualizar el objeto en `templates` localmente con `setTemplates(prev => prev.map(...))`.
+- `handleDeleteTemplate`: Remover del array local con `setTemplates(prev => prev.filter(...))`.
+- `handleDuplicateTemplate`: Insertar la nueva plantilla devuelta por el insert en el array local.
+
+**2. Operaciones sobre lineas (agregar, editar, eliminar, reparent)**
+
+- `handleAddLine`: Despues del insert exitoso, hacer un `.select().single()` para obtener la linea creada y agregarla al arbol local reconstruyendolo con `buildTree`.
+- `handleUpdateLine`: Actualizar la linea en el arbol local sin re-fetch. Reconstruir el arbol desde un flat array actualizado.
+- `handleDeleteLine`: Remover la linea del flat array local y reconstruir el arbol.
+- `handleReparent`: Cambiar `parent_id` en el flat array local y reconstruir.
+
+**3. Mantener flat array como fuente de verdad**
+
+Agregar un estado `flatLines` ademas de `lines` (arbol). Las mutaciones operan sobre `flatLines` y luego se deriva el arbol con `buildTree`. Esto simplifica todas las operaciones de actualizacion local.
+
+### Detalle tecnico
+
+| Funcion | Antes | Despues |
+|---------|-------|---------|
+| `handleCreateTemplate` | `loadTemplates()` | `setTemplates(prev => [data, ...prev])` |
+| `handleUpdateTemplate` | `loadTemplates()` | `setTemplates(prev => prev.map(...))` |
+| `handleDeleteTemplate` | `loadTemplates()` | `setTemplates(prev => prev.filter(...))` |
+| `handleDuplicateTemplate` | `loadTemplates()` | `setTemplates(prev => [newTemplate, ...prev])` |
+| `handleAddLine` | `loadLines(id)` | Agregar al flat array, rebuild tree |
+| `handleUpdateLine` | `loadLines(id)` | Actualizar en flat array, rebuild tree |
+| `handleDeleteLine` | `loadLines(id)` | Filtrar del flat array, rebuild tree |
+| `handleReparent` | `loadLines(id)` | Cambiar parent_id en flat array, rebuild tree |
+
 ### Archivo afectado
 
-| Archivo | Cambio |
-|---------|--------|
-| `src/components/budget/BudgetDashboard.tsx` | Agregar clausula de fallback en filtro CAPEX de `loadBudgetTypeTotals` |
+`src/components/budget/BudgetTemplateManager.tsx` -- unico archivo a modificar.
 
-### Impacto
-
-Con este cambio, la OC de "Orientales" por $22.700.000 aparecera correctamente en la card CAPEX, y el Total General reflejara el monto completo.
