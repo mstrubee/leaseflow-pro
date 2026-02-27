@@ -3960,6 +3960,7 @@ export type Database = {
       profiles: {
         Row: {
           activity_status: string
+          cargo: string | null
           created_at: string
           current_section: string | null
           email: string
@@ -3970,6 +3971,7 @@ export type Database = {
         }
         Insert: {
           activity_status?: string
+          cargo?: string | null
           created_at?: string
           current_section?: string | null
           email: string
@@ -3980,6 +3982,7 @@ export type Database = {
         }
         Update: {
           activity_status?: string
+          cargo?: string | null
           created_at?: string
           current_section?: string | null
           email?: string

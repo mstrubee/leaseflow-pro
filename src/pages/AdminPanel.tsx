@@ -124,6 +124,7 @@ interface Profile {
   id: string;
   email: string;
   full_name: string | null;
+  cargo: string | null;
   created_at: string;
   last_seen_at: string | null;
   activity_status: string | null;
@@ -200,6 +201,7 @@ const AdminPanel = () => {
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserName, setNewUserName] = useState("");
+  const [newUserCargo, setNewUserCargo] = useState("");
   const [newUserRole, setNewUserRole] = useState<"admin" | "user">("user");
   const [newUserPermissions, setNewUserPermissions] = useState<Record<string, "view" | "edit" | "none">>({});
   const [creating, setCreating] = useState(false);
@@ -227,6 +229,7 @@ const AdminPanel = () => {
   const [editingUserProfile, setEditingUserProfile] = useState<Profile | null>(null);
   const [editUserEmail, setEditUserEmail] = useState("");
   const [editUserName, setEditUserName] = useState("");
+  const [editUserCargo, setEditUserCargo] = useState("");
   const [editUserPassword, setEditUserPassword] = useState("");
   const [editUserRole, setEditUserRole] = useState<"admin" | "user">("user");
   const [editUserPermissions, setEditUserPermissions] = useState<Record<string, "view" | "edit" | "none">>({});
@@ -409,6 +412,7 @@ const AdminPanel = () => {
             email: newUserEmail,
             password: newUserPassword,
             fullName: newUserName,
+            cargo: newUserCargo || null,
             role: newUserRole,
             permissions: newUserPermissions
           })
@@ -426,6 +430,7 @@ const AdminPanel = () => {
       setNewUserEmail("");
       setNewUserPassword("");
       setNewUserName("");
+      setNewUserCargo("");
       setNewUserRole("user");
       setNewUserPermissions({});
       loadData();
@@ -498,6 +503,7 @@ const AdminPanel = () => {
     setEditingUserProfile(profile);
     setEditUserEmail(profile.email);
     setEditUserName(profile.full_name || "");
+    setEditUserCargo(profile.cargo || "");
     setEditUserPassword("");
     setEditUserRole(getUserRole(profile.id) as "admin" | "user");
     // Load existing permissions
@@ -530,6 +536,7 @@ const AdminPanel = () => {
             userId: editingUserProfile.id,
             email: editUserEmail !== editingUserProfile.email ? editUserEmail : undefined,
             fullName: editUserName !== editingUserProfile.full_name ? editUserName : undefined,
+            cargo: editUserCargo !== (editingUserProfile.cargo || "") ? editUserCargo || null : undefined,
             password: editUserPassword || undefined,
             role: editUserRole !== getUserRole(editingUserProfile.id) ? editUserRole : undefined,
             permissions: editUserPermissions,
@@ -727,6 +734,15 @@ const AdminPanel = () => {
                     />
                   </div>
                   <div className="space-y-2">
+                    <Label htmlFor="new-cargo">Cargo</Label>
+                    <Input
+                      id="new-cargo"
+                      value={newUserCargo}
+                      onChange={(e) => setNewUserCargo(e.target.value)}
+                      placeholder="Ej: Gerente de Operaciones"
+                    />
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="new-email">Email</Label>
                     <Input
                       id="new-email"
@@ -831,7 +847,7 @@ const AdminPanel = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Email</TableHead>
-                  <TableHead>Nombre</TableHead>
+                  <TableHead>Nombre y Cargo</TableHead>
                   <TableHead>Actividad</TableHead>
                   <TableHead>Rol</TableHead>
                   <TableHead>Permisos</TableHead>
@@ -843,7 +859,10 @@ const AdminPanel = () => {
                 {profiles.map((profile) => (
                   <TableRow key={profile.id}>
                     <TableCell>{profile.email}</TableCell>
-                    <TableCell>{profile.full_name || "-"}</TableCell>
+                    <TableCell>
+                      <div>{profile.full_name || "-"}</div>
+                      {profile.cargo && <div className="text-xs text-muted-foreground">{profile.cargo}</div>}
+                    </TableCell>
                     <TableCell>
                       {(() => {
                         const status = getActivityStatus(profile);
@@ -1183,6 +1202,15 @@ const AdminPanel = () => {
                   value={editUserName}
                   onChange={(e) => setEditUserName(e.target.value)}
                   placeholder="Juan Pérez"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-cargo">Cargo</Label>
+                <Input
+                  id="edit-cargo"
+                  value={editUserCargo}
+                  onChange={(e) => setEditUserCargo(e.target.value)}
+                  placeholder="Ej: Gerente de Operaciones"
                 />
               </div>
               <div className="space-y-2">
