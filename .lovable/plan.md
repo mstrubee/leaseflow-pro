@@ -1,74 +1,37 @@
 
 
-## Barra de alertas en Welcome + Drag & Drop de cards
+## Mejoras al Welcome Page: alertas, cards uniformes y colores de iconos
 
-### Resumen
+### Cambio 1: Alertas de la semana expandidas por defecto + eliminar "Ver todas"
 
-Dos cambios principales en la pagina de bienvenida:
+**`src/components/alerts/WelcomeAlertsBar.tsx`**:
+- Cambiar estado inicial: `expanded` a `true` y `viewMode` a `"week"` (lineas 53-54)
+- Eliminar el boton "Ver todas" (lineas 234-241)
 
-1. **Reemplazar la ventana flotante de alertas por una barra inferior fija** en la pagina Welcome, manteniendo la flotante en el resto de secciones
-2. **Permitir reordenar las cards de modulos con drag and drop**, guardando el orden en las preferencias del usuario
+### Cambio 2: Cards del mismo tamano
 
----
+**`src/pages/Welcome.tsx`** - en `SortableModuleCard`:
+- Agregar `h-full` al Card (linea 53) para que todas las cards ocupen el alto completo de la celda del grid
+- Agregar `h-full` al div contenedor (linea 52)
+- Hacer lo mismo con la card de Admin (linea 194)
 
-### Cambio 1: Barra de alertas inferior en Welcome
+### Cambio 3: Colores distintos para iconos de cada modulo
 
-**Problema actual:** `TodayAlertsFloating` se renderiza globalmente en `App.tsx` (linea 43), apareciendo en todas las paginas incluyendo Welcome.
-
-**Solucion:**
-
-- **`App.tsx`**: Condicionar `TodayAlertsFloating` para que NO se muestre cuando la ruta es `/` (Welcome page)
-- **Nuevo componente `src/components/alerts/WelcomeAlertsBar.tsx`**: Barra fija en la parte inferior de la pantalla con:
-  - Tres pestanas/tabs: "Hoy", "Semana", "Vencidas" con conteos
-  - Al expandir, muestra las alertas en formato horizontal/lista compacta
-  - Reutiliza la misma logica de carga de datos que `TodayAlertsFloating` (queries a tabla `alerts`)
-  - Acciones rapidas: completar alerta, ir al contrato, ver todas las alertas
-  - Diseño tipo barra/dock: fija al fondo, ancho completo, altura reducida, expandible al hacer clic
-- **`Welcome.tsx`**: Importar y renderizar `WelcomeAlertsBar` dentro de la pagina
-
-**Diseño de la barra:**
-- Estado colapsado: barra delgada con iconos de campana + badges con conteos por categoria (Hoy X | Semana X | Vencidas X)
-- Estado expandido: se expande hacia arriba mostrando la lista de alertas del tab seleccionado en formato horizontal con scroll
-- Transicion suave con animacion
-
----
-
-### Cambio 2: Drag and Drop en las cards del Welcome
-
-**Tecnologia:** El proyecto ya tiene instalado `@dnd-kit/core`, `@dnd-kit/sortable` y `@dnd-kit/utilities`.
-
-**Implementacion:**
-
-- **`Welcome.tsx`**: 
-  - Envolver el grid de modulos con `DndContext` y `SortableContext` de dnd-kit
-  - Crear un componente `SortableModuleCard` que use `useSortable` para cada card
-  - Agregar un icono de arrastre (grip) visible en cada card
-  - Usar `useUserPreferences` con key `welcome_module_order` para persistir el orden personalizado del usuario
-  - Al soltar una card en nueva posicion, guardar el nuevo array de IDs de modulos en preferencias
-  - Al cargar, ordenar `visibleModules` segun el orden guardado, colocando modulos nuevos (sin posicion guardada) al final
-
----
-
-### Archivos a crear
-- `src/components/alerts/WelcomeAlertsBar.tsx` - Barra inferior de alertas para Welcome
+**`src/pages/Welcome.tsx`**:
+- Agregar propiedad `color` al tipo `ModuleItem` (string para clase de Tailwind)
+- Asignar un color unico a cada modulo en `ALL_MODULES`:
+  - Contratos: `text-blue-600 bg-blue-100`
+  - Patentes: `text-purple-600 bg-purple-100`
+  - Ordenes de Compra: `text-orange-600 bg-orange-100`
+  - OPEX: `text-emerald-600 bg-emerald-100`
+  - CAPEX: `text-amber-600 bg-amber-100`
+  - Alertas: `text-red-600 bg-red-100`
+  - Informes: `text-cyan-600 bg-cyan-100`
+  - KPI: `text-indigo-600 bg-indigo-100`
+  - Proveedores: `text-teal-600 bg-teal-100`
+  - Mantenciones: `text-rose-600 bg-rose-100`
+- Usar estos colores en `SortableModuleCard` en vez del generico `bg-primary/10 text-primary`
 
 ### Archivos a modificar
-- `src/App.tsx` - Condicionar TodayAlertsFloating para excluir ruta `/`
-- `src/pages/Welcome.tsx` - Agregar WelcomeAlertsBar + drag and drop con dnd-kit + persistencia de orden con useUserPreferences
-
-### Detalles tecnicos
-
-**WelcomeAlertsBar:**
-- Reutiliza las mismas queries de `TodayAlertsFloating` (alerts con joins a contracts, alert_categories, profiles)
-- Suscripcion realtime al canal de cambios en tabla `alerts`
-- Tres ViewModes: today, week, overdue
-- Dialogo de confirmacion para completar alertas y crear seguimiento (mismo flujo que el flotante)
-
-**Drag and Drop:**
-- `DndContext` con `closestCenter` como estrategia de colision
-- `SortableContext` con `verticalListSortingStrategy` (funciona bien en grids)
-- `useSortable` hook en cada card para obtener listeners, attributes, transform, transition
-- `arrayMove` de `@dnd-kit/sortable` para reordenar el array al hacer drop
-- Preferencia guardada como array de strings (IDs de modulos): `["contracts", "patents", "opex", ...]`
-- Card de Admin (si es admin) siempre se muestra al final, fuera del sortable
-
+- `src/components/alerts/WelcomeAlertsBar.tsx` - expandir semana por defecto, quitar "Ver todas"
+- `src/pages/Welcome.tsx` - cards uniformes en alto, colores de iconos por modulo
