@@ -278,6 +278,7 @@ export function WelcomeAlertsBar() {
                     </Badge>
                   </button>
                 ))}
+              </div>
               <Button
                 variant="ghost"
                 size="icon"
