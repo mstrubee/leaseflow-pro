@@ -50,6 +50,7 @@ const Welcome = () => {
 
   const modules = [
     { id: "contracts", label: "Contratos", desc: "Gestión de contratos inmobiliarios", icon: FileText, path: "/contracts", resource: "contracts" },
+    { id: "patents", label: "Patentes", desc: "Gestión de patentes municipales", icon: Shield, path: "/patents", resource: null },
     { id: "purchase_orders", label: "Órdenes de Compra", desc: "Control de órdenes y presupuestos", icon: ShoppingCart, path: "/purchase-orders", resource: "purchase_orders" },
     { id: "opex", label: "OPEX", desc: "Gastos operacionales", icon: Wallet, path: "/opex", resource: "opex" },
     { id: "capex", label: "CAPEX", desc: "Inversiones de capital", icon: HardHat, path: "/capex", resource: "purchase_orders" },
@@ -60,7 +61,7 @@ const Welcome = () => {
     { id: "maintenance", label: "Mantenciones", desc: "Mantenciones preventivas y correctivas", icon: Wrench, path: "/maintenance", resource: "maintenance" },
   ];
 
-  const visibleModules = modules.filter((m) => hasPermission(m.resource, "view"));
+  const visibleModules = modules.filter((m) => m.resource === null || hasPermission(m.resource, "view"));
 
   if (loading || !roleLoaded) {
     return (

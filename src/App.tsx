@@ -27,6 +27,7 @@ import NotFound from "./pages/NotFound";
 import SuppliersDashboard from "./pages/SuppliersDashboard";
 import MaintenanceDashboard from "./pages/MaintenanceDashboard";
 import Dashboard from "./pages/Dashboard";
+import PatentsDashboard from "./pages/PatentsDashboard";
 
 const queryClient = new QueryClient();
 
@@ -55,7 +56,7 @@ const App = () => (
               <Route path="/contracts/:id/edit" element={<ProtectedRoute resource="contracts"><EditContract /></ProtectedRoute>} />
               <Route path="/deleted" element={<ProtectedRoute resource="contracts"><DeletedContracts /></ProtectedRoute>} />
               <Route path="/alerts" element={<ProtectedRoute resource="alerts"><AlertsDashboard /></ProtectedRoute>} />
-              <Route path="/patents" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+              <Route path="/patents" element={<ProtectedRoute><PatentsDashboard /></ProtectedRoute>} />
               <Route path="/purchase-orders" element={<ProtectedRoute resource="purchase_orders"><PurchaseOrdersDashboard /></ProtectedRoute>} />
               <Route path="/opex" element={<ProtectedRoute resource="opex"><OpexDashboard /></ProtectedRoute>} />
               <Route path="/capex" element={<ProtectedRoute resource="purchase_orders"><CapexDashboard /></ProtectedRoute>} />
