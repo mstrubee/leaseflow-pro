@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { PermissionSelectionProvider } from "@/contexts/PermissionSelectionContext";
 import { FloatingPermissionSelector } from "@/components/admin/FloatingPermissionSelector";
 import { TodayAlertsFloating } from "@/components/alerts/TodayAlertsFloating";
@@ -31,6 +31,12 @@ import PatentsDashboard from "./pages/PatentsDashboard";
 
 const queryClient = new QueryClient();
 
+function ConditionalFloatingAlerts() {
+  const location = useLocation();
+  if (location.pathname === "/") return null;
+  return <TodayAlertsFloating />;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -40,7 +46,7 @@ const App = () => (
         <BrowserRouter>
           <MainLayout>
             <FloatingPermissionSelector />
-            <TodayAlertsFloating />
+            <ConditionalFloatingAlerts />
             <Routes>
               {/* Public routes */}
               <Route path="/auth" element={<Auth />} />
