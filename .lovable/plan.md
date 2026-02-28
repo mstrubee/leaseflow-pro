@@ -1,45 +1,36 @@
 
 
-## Separar modulo de Patentes del Dashboard
-
-### Resumen
-
-Mover el modulo completo de Patentes fuera del Dashboard a su propia pagina dedicada (`/patents`), accesible desde la pagina de bienvenida. En el Dashboard, mantener solo unas tarjetas resumen (espejo) con los conteos principales, que al hacer clic naveguen a `/patents`.
+## Reorganizar modulo de Patentes y logo interactivo
 
 ### Cambios
 
-#### 1. Crear `src/pages/PatentsDashboard.tsx`
+#### 1. Restaurar cards de patentes en el Dashboard (`DashboardStats.tsx`)
 
-Nueva pagina que renderiza el `PatentsModule` completo, con header y boton de retorno a Welcome.
+Reemplazar la card simple actual (lineas 538-558) por cards espejo que muestren los mismos conteos que el modulo de patentes (Total Locales, Definitivas, Provisorias, Sin Patente, Criticos, Docs Pendientes, Vencidos). Se usara el hook `usePatents` con `getCriticalStats()` para obtener los datos. Cada card sera clickeable y navegara a `/patents`.
 
-#### 2. Modificar `src/App.tsx`
+Las cards se mostraran en un grid de 7 columnas, identico al que ya existe en `PatentsModule.tsx` (lineas 133-233), pero al hacer clic navegaran a `/patents` en vez de filtrar localmente.
 
-Cambiar la ruta `/patents` para que apunte a `PatentsDashboard` en lugar de `Index`.
+#### 2. Logo interactivo en Dashboard (`Dashboard.tsx`)
 
-#### 3. Modificar `src/pages/Welcome.tsx`
+Convertir la imagen del logo en el header del Dashboard (linea 42) en un elemento clickeable que navega a `/` (Welcome page). Se agregara `cursor-pointer` y un `onClick={() => navigate("/")}`.
 
-Agregar "Patentes" como modulo en la lista de tarjetas de navegacion (con icono `FileText`, ruta `/patents`). No requiere permiso especial por ahora (o usar el mismo recurso generico).
+#### 3. Patentes en Welcome page
 
-#### 4. Modificar `src/components/dashboard/DashboardStats.tsx`
-
-- Eliminar el import y renderizado de `LazyPatentsModule`
-- Reemplazarlo con tarjetas resumen (espejo) que muestren los conteos basicos de patentes (Total Locales, Definitivas, Provisorias, Sin Patente, Criticos, Pendientes, Vencidos)
-- Cada tarjeta sera clickeable y navegara a `/patents`
-- Los datos para las tarjetas se obtendran con una consulta ligera directa (conteos simples desde la tabla `contracts` filtrando por `patente_status`)
-- Se usara `usePatents().getCriticalStats()` de forma lazy o una consulta RPC liviana
-
-#### 5. Detalle de las tarjetas espejo en Dashboard
-
-Las tarjetas mostraran:
-- Total Locales, Definitivas, Provisorias, Sin Patente (conteos por `patente_status`)
-- Criticos, Docs Pendientes, Vencidos (usando `getCriticalStats` del hook existente)
-- Al hacer clic en cualquier tarjeta, navega a `/patents`
-
-### Archivos a crear
-- `src/pages/PatentsDashboard.tsx`
+Ya esta implementado: la card de Patentes ya aparece en `Welcome.tsx` (linea 53). No requiere cambios.
 
 ### Archivos a modificar
-- `src/App.tsx` - actualizar ruta `/patents`
-- `src/pages/Welcome.tsx` - agregar tarjeta de Patentes
-- `src/components/dashboard/DashboardStats.tsx` - reemplazar modulo completo por tarjetas resumen interactivas
 
+- **`src/components/dashboard/DashboardStats.tsx`**: Importar `usePatents`, reemplazar la card simple de patentes por las 7 cards espejo interactivas con conteos reales
+- **`src/pages/Dashboard.tsx`**: Hacer el logo clickeable para volver al Welcome page
+
+### Detalle tecnico
+
+**DashboardStats.tsx - Cards espejo:**
+- Importar `usePatents` desde `@/hooks/usePatents`
+- Llamar a `getCriticalStats()` para obtener `criticalContracts`, `pendingCount`, `overdueCount`
+- Usar `contracts` del hook para contar por `patente_status` (definitiva, provisoria, sin_patente)
+- Cada card navega a `/patents` al hacer clic
+- Las cards mantienen el mismo estilo visual (colores, iconos) que las del `PatentsModule`
+
+**Dashboard.tsx - Logo interactivo:**
+- Agregar `onClick={() => navigate("/")}` y `className="cursor-pointer"` al `<img>` del logo
