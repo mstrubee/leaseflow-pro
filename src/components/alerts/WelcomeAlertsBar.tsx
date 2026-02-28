@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Bell, Calendar, CalendarDays, AlertTriangle, CheckCircle,
   ExternalLink, ChevronUp, ChevronDown, Plus, CalendarIcon,
@@ -40,6 +42,17 @@ interface WelcomeAlert {
 
 type ViewMode = "today" | "week" | "overdue";
 
+const QUICK_ALERT_TYPES = [
+  { value: "other", label: "General" },
+  { value: "contract_expiration", label: "Vencimiento de contrato" },
+  { value: "contract_renewal", label: "Renovación" },
+  { value: "inspection", label: "Inspección" },
+  { value: "maintenance", label: "Mantención" },
+  { value: "license", label: "Licencia" },
+  { value: "permit", label: "Permiso" },
+  { value: "certificate", label: "Certificado" },
+];
+
 export function WelcomeAlertsBar() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -59,6 +72,14 @@ export function WelcomeAlertsBar() {
   const [followUpTitle, setFollowUpTitle] = useState("");
   const [followUpDate, setFollowUpDate] = useState<Date | undefined>(undefined);
   const [creatingFollowUp, setCreatingFollowUp] = useState(false);
+
+  // Quick create alert state
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [newAlertTitle, setNewAlertTitle] = useState("");
+  const [newAlertDate, setNewAlertDate] = useState<Date | undefined>(undefined);
+  const [newAlertType, setNewAlertType] = useState("other");
+  const [newAlertMessage, setNewAlertMessage] = useState("");
+  const [creatingAlert, setCreatingAlert] = useState(false);
 
   const alertSelectQuery = `
     id, title, due_date, alert_type, contract_id, assigned_to, category_id,
@@ -167,6 +188,35 @@ export function WelcomeAlertsBar() {
     }
   };
 
+  const handleQuickCreateAlert = async () => {
+    if (!newAlertTitle.trim() || !newAlertDate || !user) return;
+    setCreatingAlert(true);
+    try {
+      const { error } = await supabase.from("alerts").insert({
+        title: newAlertTitle.trim(),
+        message: newAlertMessage.trim() || null,
+        alert_type: newAlertType as any,
+        due_date: format(newAlertDate, "yyyy-MM-dd"),
+        channels: ["email"] as any,
+        days_before: [7, 1, 0],
+        assigned_to: user.id,
+        is_active: true,
+        created_by: user.id,
+      });
+      if (error) throw error;
+      toast({ title: "Alerta creada", description: `Alerta programada para el ${format(newAlertDate, "dd/MM/yyyy")}` });
+      setShowCreateDialog(false);
+      setNewAlertTitle("");
+      setNewAlertDate(undefined);
+      setNewAlertType("other");
+      setNewAlertMessage("");
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "No se pudo crear la alerta", variant: "destructive" });
+    } finally {
+      setCreatingAlert(false);
+    }
+  };
+
   const formatAlertDate = (dateStr: string) => {
     const date = new Date(dateStr + "T00:00:00");
     return format(date, "EEE d", { locale: es });
@@ -228,7 +278,15 @@ export function WelcomeAlertsBar() {
                     </Badge>
                   </button>
                 ))}
-              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+                onClick={(e) => { e.stopPropagation(); setShowCreateDialog(true); }}
+                title="Crear alerta"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
             </div>
             <div className="flex items-center gap-2">
               {expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronUp className="h-4 w-4 text-muted-foreground" />}
@@ -361,6 +419,61 @@ export function WelcomeAlertsBar() {
             <Button variant="outline" onClick={() => { setShowFollowUpDialog(false); setCompletedAlert(null); }}>No, gracias</Button>
             <Button onClick={handleCreateFollowUp} disabled={creatingFollowUp || !followUpTitle.trim() || !followUpDate}>
               {creatingFollowUp ? "Creando..." : "Crear alerta"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick Create Alert Dialog */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="h-5 w-5" />
+              Crear nueva alerta
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Título *</Label>
+              <Input value={newAlertTitle} onChange={(e) => setNewAlertTitle(e.target.value)} placeholder="Ej: Revisar vencimiento contrato..." />
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo</Label>
+              <Select value={newAlertType} onValueChange={setNewAlertType}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {QUICK_ALERT_TYPES.map(t => (
+                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Fecha de vencimiento *</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-start">
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {newAlertDate ? format(newAlertDate, "dd/MM/yyyy") : "Seleccionar fecha"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarPicker mode="single" selected={newAlertDate} onSelect={setNewAlertDate} locale={es} disabled={(date) => date < new Date()} />
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="space-y-2">
+              <Label>Descripción (opcional)</Label>
+              <Textarea value={newAlertMessage} onChange={(e) => setNewAlertMessage(e.target.value)} placeholder="Detalles adicionales..." rows={2} />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancelar</Button>
+            <Button onClick={handleQuickCreateAlert} disabled={creatingAlert || !newAlertTitle.trim() || !newAlertDate}>
+              {creatingAlert ? "Creando..." : "Crear alerta"}
             </Button>
           </DialogFooter>
         </DialogContent>
