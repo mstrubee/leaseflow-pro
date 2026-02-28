@@ -17,7 +17,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   usePresenceHeartbeat();
 
   // Don't show Home button on the home page itself or on auth page
-  const isHomePage = location.pathname === "/" || location.pathname === "/auth";
+  const isHomePage = location.pathname === "/" || location.pathname === "/auth" || location.pathname === "/dashboard";
 
   return (
     <div className="min-h-screen bg-background">
