@@ -121,7 +121,7 @@ const Welcome = () => {
   );
 
   const sortedModules = useMemo(() => {
-    if (!orderInitialized || savedOrder.length === 0) return visibleModules;
+    if (!orderInitialized || !savedOrder || savedOrder.length === 0) return visibleModules;
     const ordered: ModuleItem[] = [];
     const visibleIds = new Set(visibleModules.map(m => m.id));
     // Add modules in saved order if visible
