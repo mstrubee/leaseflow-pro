@@ -1,60 +1,45 @@
 
 
-## Crear pagina de bienvenida personalizada
+## Separar modulo de Patentes del Dashboard
 
-### Descripcion
+### Resumen
 
-Reemplazar la carga directa del Dashboard por una pagina de bienvenida que:
-- Saluda al usuario por su nombre (desde la tabla `profiles`)
-- Muestra "Buenos dias" o "Buenas tardes" segun la hora local
-- Presenta botones de acceso directo solo a los modulos que el usuario tiene permiso de ver
-- Incluye un boton para continuar al Dashboard completo
+Mover el modulo completo de Patentes fuera del Dashboard a su propia pagina dedicada (`/patents`), accesible desde la pagina de bienvenida. En el Dashboard, mantener solo unas tarjetas resumen (espejo) con los conteos principales, que al hacer clic naveguen a `/patents`.
 
 ### Cambios
 
-#### 1. Crear `src/pages/Welcome.tsx`
+#### 1. Crear `src/pages/PatentsDashboard.tsx`
 
-Nueva pagina con:
-- Consulta a `profiles` para obtener `full_name` del usuario autenticado
-- Saludo dinamico basado en `new Date().getHours()` (antes de 12: "Buenos dias", 12-19: "Buenas tardes", 20+: "Buenas noches")
-- Grid de tarjetas/botones para cada modulo disponible, filtrados por `hasPermission`:
-  - Contratos (`contracts`)
-  - Ordenes de Compra (`purchase_orders`)
-  - OPEX (`opex`)
-  - CAPEX (`purchase_orders`)
-  - Alertas (`alerts`)
-  - Informes (`reports`)
-  - KPI (`kpi`)
-  - Proveedores (`suppliers`)
-  - Mantenciones (`maintenance`)
-  - Admin (solo si `isAdmin`)
-- Cada tarjeta tendra icono, nombre del modulo y descripcion breve
-- Boton "Ir al Dashboard" que navega a `/dashboard`
+Nueva pagina que renderiza el `PatentsModule` completo, con header y boton de retorno a Welcome.
 
-#### 2. Crear ruta `/dashboard` para el Dashboard actual
+#### 2. Modificar `src/App.tsx`
 
-Mover el Dashboard actual a la ruta `/dashboard` y hacer que `/` muestre la pagina de bienvenida.
+Cambiar la ruta `/patents` para que apunte a `PatentsDashboard` en lugar de `Index`.
 
-- **`src/App.tsx`**: Agregar ruta `/dashboard` con `Dashboard` y cambiar `/` para usar `Welcome`
-- **`src/pages/Index.tsx`**: Cambiar para renderizar `Welcome` en vez de `Dashboard`
+#### 3. Modificar `src/pages/Welcome.tsx`
 
-#### 3. Ajustar `MainLayout.tsx`
+Agregar "Patentes" como modulo en la lista de tarjetas de navegacion (con icono `FileText`, ruta `/patents`). No requiere permiso especial por ahora (o usar el mismo recurso generico).
 
-Agregar `/dashboard` a la lista de paginas donde no se muestra el boton Home (o mantenerlo para volver a Welcome).
+#### 4. Modificar `src/components/dashboard/DashboardStats.tsx`
 
-### Detalles tecnicos
+- Eliminar el import y renderizado de `LazyPatentsModule`
+- Reemplazarlo con tarjetas resumen (espejo) que muestren los conteos basicos de patentes (Total Locales, Definitivas, Provisorias, Sin Patente, Criticos, Pendientes, Vencidos)
+- Cada tarjeta sera clickeable y navegara a `/patents`
+- Los datos para las tarjetas se obtendran con una consulta ligera directa (conteos simples desde la tabla `contracts` filtrando por `patente_status`)
+- Se usara `usePatents().getCriticalStats()` de forma lazy o una consulta RPC liviana
 
-**Archivos a crear:**
-- `src/pages/Welcome.tsx`
+#### 5. Detalle de las tarjetas espejo en Dashboard
 
-**Archivos a modificar:**
-- `src/App.tsx` - agregar ruta `/dashboard`
-- `src/pages/Index.tsx` - renderizar Welcome
-- `src/components/layout/MainLayout.tsx` - ajustar logica del boton Home
+Las tarjetas mostraran:
+- Total Locales, Definitivas, Provisorias, Sin Patente (conteos por `patente_status`)
+- Criticos, Docs Pendientes, Vencidos (usando `getCriticalStats` del hook existente)
+- Al hacer clic en cualquier tarjeta, navega a `/patents`
 
-**Datos del usuario:**
-Se obtiene `full_name` de la tabla `profiles` usando el `user.id` de la sesion actual. Si no tiene nombre, se usa el email como fallback.
+### Archivos a crear
+- `src/pages/PatentsDashboard.tsx`
 
-**Modulos disponibles:**
-Se reutiliza `hasPermission` del hook `useAuth` existente para filtrar que botones mostrar.
+### Archivos a modificar
+- `src/App.tsx` - actualizar ruta `/patents`
+- `src/pages/Welcome.tsx` - agregar tarjeta de Patentes
+- `src/components/dashboard/DashboardStats.tsx` - reemplazar modulo completo por tarjetas resumen interactivas
 
