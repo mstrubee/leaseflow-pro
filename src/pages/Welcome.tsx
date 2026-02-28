@@ -36,6 +36,7 @@ interface ModuleItem {
   icon: LucideIcon;
   path: string;
   resource: string | null;
+  color: string;
 }
 
 function SortableModuleCard({ module, onClick }: { module: ModuleItem; onClick: () => void }) {
@@ -49,10 +50,10 @@ function SortableModuleCard({ module, onClick }: { module: ModuleItem; onClick: 
   };
 
   return (
-    <div ref={setNodeRef} style={style}>
-      <Card className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40 group">
-        <CardContent className="p-5 flex items-start gap-4" onClick={onClick}>
-          <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
+    <div ref={setNodeRef} style={style} className="h-full">
+      <Card className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40 group h-full">
+        <CardContent className="p-5 flex items-start gap-4 h-full" onClick={onClick}>
+          <div className={`rounded-lg p-2.5 ${module.color}`}>
             <module.icon className="h-5 w-5" />
           </div>
           <div className="flex-1 min-w-0">
@@ -74,16 +75,16 @@ function SortableModuleCard({ module, onClick }: { module: ModuleItem; onClick: 
 }
 
 const ALL_MODULES: ModuleItem[] = [
-  { id: "contracts", label: "Contratos", desc: "Gestión de contratos inmobiliarios", icon: FileText, path: "/contracts", resource: "contracts" },
-  { id: "patents", label: "Patentes", desc: "Gestión de patentes municipales", icon: Shield, path: "/patents", resource: null },
-  { id: "purchase_orders", label: "Órdenes de Compra", desc: "Control de órdenes y presupuestos", icon: ShoppingCart, path: "/purchase-orders", resource: "purchase_orders" },
-  { id: "opex", label: "OPEX", desc: "Gastos operacionales", icon: Wallet, path: "/opex", resource: "opex" },
-  { id: "capex", label: "CAPEX", desc: "Inversiones de capital", icon: HardHat, path: "/capex", resource: "purchase_orders" },
-  { id: "alerts", label: "Alertas", desc: "Notificaciones y vencimientos", icon: Bell, path: "/alerts", resource: "alerts" },
-  { id: "reports", label: "Informes", desc: "Reportes y análisis", icon: BarChart3, path: "/reports", resource: "reports" },
-  { id: "kpi", label: "KPI", desc: "Indicadores de gestión", icon: BarChart3, path: "/kpi", resource: "kpi" },
-  { id: "suppliers", label: "Proveedores", desc: "Gestión de proveedores", icon: Users, path: "/suppliers", resource: "suppliers" },
-  { id: "maintenance", label: "Mantenciones", desc: "Mantenciones preventivas y correctivas", icon: Wrench, path: "/maintenance", resource: "maintenance" },
+  { id: "contracts", label: "Contratos", desc: "Gestión de contratos inmobiliarios", icon: FileText, path: "/contracts", resource: "contracts", color: "text-blue-600 bg-blue-100" },
+  { id: "patents", label: "Patentes", desc: "Gestión de patentes municipales", icon: Shield, path: "/patents", resource: null, color: "text-purple-600 bg-purple-100" },
+  { id: "purchase_orders", label: "Órdenes de Compra", desc: "Control de órdenes y presupuestos", icon: ShoppingCart, path: "/purchase-orders", resource: "purchase_orders", color: "text-orange-600 bg-orange-100" },
+  { id: "opex", label: "OPEX", desc: "Gastos operacionales", icon: Wallet, path: "/opex", resource: "opex", color: "text-emerald-600 bg-emerald-100" },
+  { id: "capex", label: "CAPEX", desc: "Inversiones de capital", icon: HardHat, path: "/capex", resource: "purchase_orders", color: "text-amber-600 bg-amber-100" },
+  { id: "alerts", label: "Alertas", desc: "Notificaciones y vencimientos", icon: Bell, path: "/alerts", resource: "alerts", color: "text-red-600 bg-red-100" },
+  { id: "reports", label: "Informes", desc: "Reportes y análisis", icon: BarChart3, path: "/reports", resource: "reports", color: "text-cyan-600 bg-cyan-100" },
+  { id: "kpi", label: "KPI", desc: "Indicadores de gestión", icon: BarChart3, path: "/kpi", resource: "kpi", color: "text-indigo-600 bg-indigo-100" },
+  { id: "suppliers", label: "Proveedores", desc: "Gestión de proveedores", icon: Users, path: "/suppliers", resource: "suppliers", color: "text-teal-600 bg-teal-100" },
+  { id: "maintenance", label: "Mantenciones", desc: "Mantenciones preventivas y correctivas", icon: Wrench, path: "/maintenance", resource: "maintenance", color: "text-rose-600 bg-rose-100" },
 ];
 
 const Welcome = () => {
@@ -192,7 +193,7 @@ const Welcome = () => {
 
               {isAdmin && (
                 <Card
-                  className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40"
+                  className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40 h-full"
                   onClick={() => navigate("/admin")}
                 >
                   <CardContent className="p-5 flex items-start gap-4">

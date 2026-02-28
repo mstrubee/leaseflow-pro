@@ -50,8 +50,8 @@ export function WelcomeAlertsBar() {
   const [overdueAlerts, setOverdueAlerts] = useState<WelcomeAlert[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [expanded, setExpanded] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>("today");
+  const [expanded, setExpanded] = useState(true);
+  const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [completingAlertId, setCompletingAlertId] = useState<string | null>(null);
 
   const [showFollowUpDialog, setShowFollowUpDialog] = useState(false);
@@ -231,14 +231,6 @@ export function WelcomeAlertsBar() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs"
-                onClick={(e) => { e.stopPropagation(); navigate("/alerts"); }}
-              >
-                Ver todas
-              </Button>
               {expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronUp className="h-4 w-4 text-muted-foreground" />}
             </div>
           </div>
