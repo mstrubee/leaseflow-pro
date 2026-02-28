@@ -1,21 +1,44 @@
 
 
-## Eliminar funcionalidad de colapsar en la pagina de Patentes
+## Fix: Error de JSX en WelcomeAlertsBar.tsx
 
-### Que se hara
+### Problema
+Las etiquetas JSX estan mal anidadas en la barra de alertas. El `Button` de crear alerta (linea 281) esta dentro del `div` de tabs cuando deberia estar fuera, y falta un `</div>` de cierre para el contenedor `flex items-center gap-4`.
 
-Remover el `Collapsible`, `CollapsibleTrigger` y `CollapsibleContent` del componente `PatentsModule.tsx`, dejando el contenido siempre visible. Tambien se eliminaran las importaciones y el hook `useSingleCollapsible` que ya no se necesitan.
+### Solucion
+
+**`src/components/alerts/WelcomeAlertsBar.tsx`** - Corregir la estructura JSX en lineas 280-294:
+
+Cambiar de:
+```
+              ))}
+              <Button ...>
+                <Plus ... />
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              ...
+            </div>
+          </div>
+        </div>
+```
+
+A:
+```
+              ))}
+              </div>
+              <Button ...>
+                <Plus ... />
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              ...
+            </div>
+          </div>
+        </div>
+```
+
+Se agrega `</div>` despues de las tabs (linea 280) para cerrar correctamente el `div.flex.items-center.gap-3`, y el `Button` queda como hermano dentro del `div.flex.items-center.gap-4`.
 
 ### Archivo a modificar
-
-**`src/components/patents/PatentsModule.tsx`**:
-
-1. Eliminar importaciones de `Collapsible`, `CollapsibleContent`, `CollapsibleTrigger` (linea 6), `ChevronDown` de lucide (linea 7), y `useSingleCollapsible` (linea 10)
-2. Eliminar la linea del hook `useSingleCollapsible` (linea 39 aprox)
-3. En el return (lineas 108-259):
-   - Reemplazar `<Collapsible>` wrapper por un simple fragmento o nada
-   - Cambiar el `CollapsibleTrigger` + `Button` por un simple `CardTitle` sin boton ni chevron
-   - Reemplazar `<CollapsibleContent>` por renderizado directo del `CardContent`
-
-**Resultado**: El card de Patentes se muestra siempre abierto, sin boton de colapsar ni icono de flecha.
-
+- `src/components/alerts/WelcomeAlertsBar.tsx` (lineas 280-290)
