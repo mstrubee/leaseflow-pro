@@ -1,36 +1,74 @@
 
 
-## Reorganizar modulo de Patentes y logo interactivo
+## Barra de alertas en Welcome + Drag & Drop de cards
 
-### Cambios
+### Resumen
 
-#### 1. Restaurar cards de patentes en el Dashboard (`DashboardStats.tsx`)
+Dos cambios principales en la pagina de bienvenida:
 
-Reemplazar la card simple actual (lineas 538-558) por cards espejo que muestren los mismos conteos que el modulo de patentes (Total Locales, Definitivas, Provisorias, Sin Patente, Criticos, Docs Pendientes, Vencidos). Se usara el hook `usePatents` con `getCriticalStats()` para obtener los datos. Cada card sera clickeable y navegara a `/patents`.
+1. **Reemplazar la ventana flotante de alertas por una barra inferior fija** en la pagina Welcome, manteniendo la flotante en el resto de secciones
+2. **Permitir reordenar las cards de modulos con drag and drop**, guardando el orden en las preferencias del usuario
 
-Las cards se mostraran en un grid de 7 columnas, identico al que ya existe en `PatentsModule.tsx` (lineas 133-233), pero al hacer clic navegaran a `/patents` en vez de filtrar localmente.
+---
 
-#### 2. Logo interactivo en Dashboard (`Dashboard.tsx`)
+### Cambio 1: Barra de alertas inferior en Welcome
 
-Convertir la imagen del logo en el header del Dashboard (linea 42) en un elemento clickeable que navega a `/` (Welcome page). Se agregara `cursor-pointer` y un `onClick={() => navigate("/")}`.
+**Problema actual:** `TodayAlertsFloating` se renderiza globalmente en `App.tsx` (linea 43), apareciendo en todas las paginas incluyendo Welcome.
 
-#### 3. Patentes en Welcome page
+**Solucion:**
 
-Ya esta implementado: la card de Patentes ya aparece en `Welcome.tsx` (linea 53). No requiere cambios.
+- **`App.tsx`**: Condicionar `TodayAlertsFloating` para que NO se muestre cuando la ruta es `/` (Welcome page)
+- **Nuevo componente `src/components/alerts/WelcomeAlertsBar.tsx`**: Barra fija en la parte inferior de la pantalla con:
+  - Tres pestanas/tabs: "Hoy", "Semana", "Vencidas" con conteos
+  - Al expandir, muestra las alertas en formato horizontal/lista compacta
+  - Reutiliza la misma logica de carga de datos que `TodayAlertsFloating` (queries a tabla `alerts`)
+  - Acciones rapidas: completar alerta, ir al contrato, ver todas las alertas
+  - Diseño tipo barra/dock: fija al fondo, ancho completo, altura reducida, expandible al hacer clic
+- **`Welcome.tsx`**: Importar y renderizar `WelcomeAlertsBar` dentro de la pagina
+
+**Diseño de la barra:**
+- Estado colapsado: barra delgada con iconos de campana + badges con conteos por categoria (Hoy X | Semana X | Vencidas X)
+- Estado expandido: se expande hacia arriba mostrando la lista de alertas del tab seleccionado en formato horizontal con scroll
+- Transicion suave con animacion
+
+---
+
+### Cambio 2: Drag and Drop en las cards del Welcome
+
+**Tecnologia:** El proyecto ya tiene instalado `@dnd-kit/core`, `@dnd-kit/sortable` y `@dnd-kit/utilities`.
+
+**Implementacion:**
+
+- **`Welcome.tsx`**: 
+  - Envolver el grid de modulos con `DndContext` y `SortableContext` de dnd-kit
+  - Crear un componente `SortableModuleCard` que use `useSortable` para cada card
+  - Agregar un icono de arrastre (grip) visible en cada card
+  - Usar `useUserPreferences` con key `welcome_module_order` para persistir el orden personalizado del usuario
+  - Al soltar una card en nueva posicion, guardar el nuevo array de IDs de modulos en preferencias
+  - Al cargar, ordenar `visibleModules` segun el orden guardado, colocando modulos nuevos (sin posicion guardada) al final
+
+---
+
+### Archivos a crear
+- `src/components/alerts/WelcomeAlertsBar.tsx` - Barra inferior de alertas para Welcome
 
 ### Archivos a modificar
+- `src/App.tsx` - Condicionar TodayAlertsFloating para excluir ruta `/`
+- `src/pages/Welcome.tsx` - Agregar WelcomeAlertsBar + drag and drop con dnd-kit + persistencia de orden con useUserPreferences
 
-- **`src/components/dashboard/DashboardStats.tsx`**: Importar `usePatents`, reemplazar la card simple de patentes por las 7 cards espejo interactivas con conteos reales
-- **`src/pages/Dashboard.tsx`**: Hacer el logo clickeable para volver al Welcome page
+### Detalles tecnicos
 
-### Detalle tecnico
+**WelcomeAlertsBar:**
+- Reutiliza las mismas queries de `TodayAlertsFloating` (alerts con joins a contracts, alert_categories, profiles)
+- Suscripcion realtime al canal de cambios en tabla `alerts`
+- Tres ViewModes: today, week, overdue
+- Dialogo de confirmacion para completar alertas y crear seguimiento (mismo flujo que el flotante)
 
-**DashboardStats.tsx - Cards espejo:**
-- Importar `usePatents` desde `@/hooks/usePatents`
-- Llamar a `getCriticalStats()` para obtener `criticalContracts`, `pendingCount`, `overdueCount`
-- Usar `contracts` del hook para contar por `patente_status` (definitiva, provisoria, sin_patente)
-- Cada card navega a `/patents` al hacer clic
-- Las cards mantienen el mismo estilo visual (colores, iconos) que las del `PatentsModule`
+**Drag and Drop:**
+- `DndContext` con `closestCenter` como estrategia de colision
+- `SortableContext` con `verticalListSortingStrategy` (funciona bien en grids)
+- `useSortable` hook en cada card para obtener listeners, attributes, transform, transition
+- `arrayMove` de `@dnd-kit/sortable` para reordenar el array al hacer drop
+- Preferencia guardada como array de strings (IDs de modulos): `["contracts", "patents", "opex", ...]`
+- Card de Admin (si es admin) siempre se muestra al final, fuera del sortable
 
-**Dashboard.tsx - Logo interactivo:**
-- Agregar `onClick={() => navigate("/")}` y `className="cursor-pointer"` al `<img>` del logo
