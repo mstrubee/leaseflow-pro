@@ -1,13 +1,12 @@
 import { useState, useMemo } from "react";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
-import { useSingleCollapsible } from "@/hooks/useCollapsibleState";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Search, ArrowUpDown, Eye, X, ChevronDown, ChevronRight } from "lucide-react";
+import { Search, ArrowUpDown, Eye, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ContractWithPatent, PatentPriority, PRIORITY_CONFIG } from "./types";
 import { PatentPriorityBadge } from "./PatentPriorityBadge";
@@ -175,19 +174,9 @@ export function PatentsList({
     };
     return filter ? labels[filter] || filter : '';
   };
-  const {
-    isOpen,
-    setIsOpen
-  } = useSingleCollapsible("patents-list-priorities", false);
   return <Card>
-      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <CardHeader className="flex flex-row items-center justify-between py-3">
-          <CollapsibleTrigger asChild>
-            <Button variant="ghost" className="flex items-center gap-2 p-0 h-auto hover:bg-transparent">
-              {isOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-              <CardTitle className="text-lg">Locales</CardTitle>
-            </Button>
-          </CollapsibleTrigger>
+          <CardTitle className="text-lg">Locales</CardTitle>
           {cardFilter && <Badge variant="secondary" className="gap-1 text-xs">
               Filtro: {getCardFilterLabel(cardFilter)}
               <button onClick={onClearFilter} className="ml-1 hover:text-destructive">
@@ -195,8 +184,7 @@ export function PatentsList({
               </button>
             </Badge>}
         </CardHeader>
-        <CollapsibleContent>
-          <CardContent className="space-y-1">
+        <CardContent className="space-y-1">
             {/* Filters */}
             <div className="flex flex-wrap gap-3">
               <div className="relative flex-1 min-w-[200px]">
@@ -347,8 +335,6 @@ export function PatentsList({
                   </TableRow>}
               </TableBody>
             </Table>
-          </CardContent>
-        </CollapsibleContent>
-      </Collapsible>
-    </Card>;
+        </CardContent>
+      </Card>;
 }
