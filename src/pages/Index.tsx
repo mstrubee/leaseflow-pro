@@ -1,7 +1,7 @@
-import Dashboard from "./Dashboard";
+import Welcome from "./Welcome";
 
 const Index = () => {
-  return <Dashboard />;
+  return <Welcome />;
 };
 
 export default Index;

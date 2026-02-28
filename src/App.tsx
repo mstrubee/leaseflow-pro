@@ -26,6 +26,7 @@ import KPIDashboard from "./pages/KPIDashboard";
 import NotFound from "./pages/NotFound";
 import SuppliersDashboard from "./pages/SuppliersDashboard";
 import MaintenanceDashboard from "./pages/MaintenanceDashboard";
+import Dashboard from "./pages/Dashboard";
 
 const queryClient = new QueryClient();
 
@@ -45,6 +46,7 @@ const App = () => (
               
               {/* Protected routes - require authentication */}
               <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
               <Route path="/contracts" element={<ProtectedRoute resource="contracts"><Contracts /></ProtectedRoute>} />
               <Route path="/contracts/new" element={<ProtectedRoute resource="contracts"><NewContract /></ProtectedRoute>} />
