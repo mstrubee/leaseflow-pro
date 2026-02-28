@@ -39,7 +39,7 @@ const Dashboard = () => {
           <div className="flex flex-col gap-4">
             {/* Primera fila: Logo y título */}
             <div className="flex items-center gap-6">
-              <img src={logos.dashboard_header} alt="AutoPlanet Agroplanet" className="h-[62px] object-contain" />
+              <img src={logos.dashboard_header} alt="AutoPlanet Agroplanet" className="h-[62px] object-contain cursor-pointer hover:opacity-80 transition-opacity" onClick={() => navigate("/")} />
               <div>
                 <h1 className="text-2xl font-semibold text-sky-950">Gerencia Desarrollo</h1>
                 <p className="text-sm text-muted-foreground mt-1">Desarrollo Negocios y Administración Inmobiliaria</p>

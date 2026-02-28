@@ -1,4 +1,4 @@
-import { useEffect, useState, Fragment } from "react";
+import { useEffect, useState, Fragment, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { FileText, CheckCircle, Clock, AlertTriangle, Shield, ArrowRight } from "lucide-react";
+import { usePatents } from "@/hooks/usePatents";
 import { EconomicIndicators } from "./EconomicIndicators";
 import { SelectableElement } from "@/components/admin/SelectableElement";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
@@ -91,6 +92,101 @@ interface Stats {
   byRegion: RegionStats[];
   terminationAlerts: TerminationAlert[];
 }
+
+const PatentsMirrorCards = () => {
+  const navigate = useNavigate();
+  const { contracts, loading, getCriticalStats } = usePatents();
+  const pStats = useMemo(() => getCriticalStats(), [getCriticalStats]);
+  const definitivas = useMemo(() => contracts.filter(c => c.patente_status === 'definitiva').length, [contracts]);
+  const provisorias = useMemo(() => contracts.filter(c => c.patente_status === 'provisoria').length, [contracts]);
+  const sinPatente = useMemo(() => contracts.filter(c => !c.patente_status || c.patente_status === 'sin_patente').length, [contracts]);
+
+  if (loading) return <div className="h-20 bg-muted/50 rounded-lg animate-pulse" />;
+
+  const goPatents = () => navigate("/patents");
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Shield className="h-4 w-4 text-primary" />
+          Patentes Municipales
+        </h3>
+        <Button variant="ghost" size="sm" onClick={goPatents} className="gap-1 text-xs text-muted-foreground">
+          Ver módulo <ArrowRight className="h-3 w-3" />
+        </Button>
+      </div>
+      <div className="grid gap-2 md:grid-cols-4 lg:grid-cols-7">
+        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={goPatents}>
+          <CardContent className="p-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground">Total Locales</p>
+              <p className="text-xl font-bold">{contracts.length}</p>
+            </div>
+            <FileText className="h-4 w-4 text-muted-foreground" />
+          </CardContent>
+        </Card>
+        <Card className="cursor-pointer hover:shadow-md transition-shadow border-green-200 bg-green-50 dark:bg-green-950/20" onClick={goPatents}>
+          <CardContent className="p-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-green-700 dark:text-green-400">Definitivas</p>
+              <p className="text-xl font-bold text-green-700 dark:text-green-400">{definitivas}</p>
+            </div>
+            <CheckCircle className="h-4 w-4 text-green-600" />
+          </CardContent>
+        </Card>
+        <Card className="cursor-pointer hover:shadow-md transition-shadow border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20" onClick={goPatents}>
+          <CardContent className="p-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-yellow-700 dark:text-yellow-400">Provisorias</p>
+              <p className="text-xl font-bold text-yellow-700 dark:text-yellow-400">{provisorias}</p>
+            </div>
+            <FileText className="h-4 w-4 text-yellow-600" />
+          </CardContent>
+        </Card>
+        <Card className="cursor-pointer hover:shadow-md transition-shadow border-gray-200 bg-gray-50 dark:bg-gray-950/20" onClick={goPatents}>
+          <CardContent className="p-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-gray-700 dark:text-gray-400">Sin Patente</p>
+              <p className="text-xl font-bold text-gray-700 dark:text-gray-400">{sinPatente}</p>
+            </div>
+            <FileText className="h-4 w-4 text-gray-500" />
+          </CardContent>
+        </Card>
+        <Card className="cursor-pointer hover:shadow-md transition-shadow border-red-200 bg-red-50 dark:bg-red-950/20" onClick={goPatents}>
+          <CardContent className="p-3 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] text-red-500 dark:text-red-400 uppercase tracking-wide">Documentación</p>
+              <p className="text-xs font-medium text-red-700 dark:text-red-400">Críticos</p>
+              <p className="text-xl font-bold text-red-700 dark:text-red-400">{pStats.criticalContracts}</p>
+            </div>
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+          </CardContent>
+        </Card>
+        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={goPatents}>
+          <CardContent className="p-3 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] text-yellow-600 uppercase tracking-wide">Documentación</p>
+              <p className="text-xs font-medium">Docs Pendientes</p>
+              <p className="text-xl font-bold text-yellow-600">{pStats.pendingCount}</p>
+            </div>
+            <FileText className="h-4 w-4 text-yellow-600" />
+          </CardContent>
+        </Card>
+        <Card className="cursor-pointer hover:shadow-md transition-shadow border-red-200 bg-red-50 dark:bg-red-950/20" onClick={goPatents}>
+          <CardContent className="p-3 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] text-red-500 dark:text-red-400 uppercase tracking-wide">Documentación</p>
+              <p className="text-xs font-medium text-red-700 dark:text-red-400">Vencidos</p>
+              <p className="text-xl font-bold text-red-700 dark:text-red-400">{pStats.overdueCount}</p>
+            </div>
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+};
 
 export const DashboardStats = () => {
   const navigate = useNavigate();
@@ -535,26 +631,10 @@ export const DashboardStats = () => {
         </SelectableElement>
       )}
 
-      {/* Patents Summary Cards */}
+      {/* Patents Summary Cards - Mirror */}
       {!isHidden("dashboard_patents") && (
         <SelectableElement elementId="dashboard_patents" label="Resumen de Patentes">
-          <Card
-            className="cursor-pointer hover:shadow-lg transition-shadow border-primary/20"
-            onClick={() => navigate("/patents")}
-          >
-            <CardContent className="flex items-center justify-between py-4 px-5">
-              <div className="flex items-center gap-4">
-                <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
-                  <Shield className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="font-medium text-foreground">Patentes Municipales</p>
-                  <p className="text-sm text-muted-foreground">Gestión de patentes de locales vigentes</p>
-                </div>
-              </div>
-              <ArrowRight className="h-5 w-5 text-muted-foreground" />
-            </CardContent>
-          </Card>
+          <PatentsMirrorCards />
         </SelectableElement>
       )}
 
