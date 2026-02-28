@@ -1,37 +1,21 @@
 
 
-## Mejoras al Welcome Page: alertas, cards uniformes y colores de iconos
+## Eliminar funcionalidad de colapsar en la pagina de Patentes
 
-### Cambio 1: Alertas de la semana expandidas por defecto + eliminar "Ver todas"
+### Que se hara
 
-**`src/components/alerts/WelcomeAlertsBar.tsx`**:
-- Cambiar estado inicial: `expanded` a `true` y `viewMode` a `"week"` (lineas 53-54)
-- Eliminar el boton "Ver todas" (lineas 234-241)
+Remover el `Collapsible`, `CollapsibleTrigger` y `CollapsibleContent` del componente `PatentsModule.tsx`, dejando el contenido siempre visible. Tambien se eliminaran las importaciones y el hook `useSingleCollapsible` que ya no se necesitan.
 
-### Cambio 2: Cards del mismo tamano
+### Archivo a modificar
 
-**`src/pages/Welcome.tsx`** - en `SortableModuleCard`:
-- Agregar `h-full` al Card (linea 53) para que todas las cards ocupen el alto completo de la celda del grid
-- Agregar `h-full` al div contenedor (linea 52)
-- Hacer lo mismo con la card de Admin (linea 194)
+**`src/components/patents/PatentsModule.tsx`**:
 
-### Cambio 3: Colores distintos para iconos de cada modulo
+1. Eliminar importaciones de `Collapsible`, `CollapsibleContent`, `CollapsibleTrigger` (linea 6), `ChevronDown` de lucide (linea 7), y `useSingleCollapsible` (linea 10)
+2. Eliminar la linea del hook `useSingleCollapsible` (linea 39 aprox)
+3. En el return (lineas 108-259):
+   - Reemplazar `<Collapsible>` wrapper por un simple fragmento o nada
+   - Cambiar el `CollapsibleTrigger` + `Button` por un simple `CardTitle` sin boton ni chevron
+   - Reemplazar `<CollapsibleContent>` por renderizado directo del `CardContent`
 
-**`src/pages/Welcome.tsx`**:
-- Agregar propiedad `color` al tipo `ModuleItem` (string para clase de Tailwind)
-- Asignar un color unico a cada modulo en `ALL_MODULES`:
-  - Contratos: `text-blue-600 bg-blue-100`
-  - Patentes: `text-purple-600 bg-purple-100`
-  - Ordenes de Compra: `text-orange-600 bg-orange-100`
-  - OPEX: `text-emerald-600 bg-emerald-100`
-  - CAPEX: `text-amber-600 bg-amber-100`
-  - Alertas: `text-red-600 bg-red-100`
-  - Informes: `text-cyan-600 bg-cyan-100`
-  - KPI: `text-indigo-600 bg-indigo-100`
-  - Proveedores: `text-teal-600 bg-teal-100`
-  - Mantenciones: `text-rose-600 bg-rose-100`
-- Usar estos colores en `SortableModuleCard` en vez del generico `bg-primary/10 text-primary`
+**Resultado**: El card de Patentes se muestra siempre abierto, sin boton de colapsar ni icono de flecha.
 
-### Archivos a modificar
-- `src/components/alerts/WelcomeAlertsBar.tsx` - expandir semana por defecto, quitar "Ver todas"
-- `src/pages/Welcome.tsx` - cards uniformes en alto, colores de iconos por modulo
