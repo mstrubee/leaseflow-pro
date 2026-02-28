@@ -1,51 +1,60 @@
 
 
-## Optimizar velocidad de carga del Dashboard
+## Crear pagina de bienvenida personalizada
 
-### Problema identificado
+### Descripcion
 
-La funcion `loadStats()` en `DashboardStats.tsx` realiza una consulta pesada que:
-1. Trae TODOS los contratos con 3 JOINs anidados (`contract_addresses`, `termination_notices`, `contract_companies` con `companies`)
-2. Procesa toda la agregacion (conteos por region, comuna, empresa) en el cliente
-3. Puede chocar con el limite de 1000 filas de la base de datos
-4. El componente `EconomicIndicators` llama a una Edge Function que agrega latencia
-5. El modulo `PatentsModule` se carga inline, bloqueando el render inicial
+Reemplazar la carga directa del Dashboard por una pagina de bienvenida que:
+- Saluda al usuario por su nombre (desde la tabla `profiles`)
+- Muestra "Buenos dias" o "Buenas tardes" segun la hora local
+- Presenta botones de acceso directo solo a los modulos que el usuario tiene permiso de ver
+- Incluye un boton para continuar al Dashboard completo
 
-### Solucion: Mover agregaciones al servidor + carga paralela
+### Cambios
 
-#### 1. Crear funcion RPC `get_dashboard_stats`
+#### 1. Crear `src/pages/Welcome.tsx`
 
-Una funcion SQL que calcula todas las estadisticas directamente en la base de datos y devuelve el resultado agregado en una sola llamada, eliminando la transferencia de datos crudos y el procesamiento en el cliente.
+Nueva pagina con:
+- Consulta a `profiles` para obtener `full_name` del usuario autenticado
+- Saludo dinamico basado en `new Date().getHours()` (antes de 12: "Buenos dias", 12-19: "Buenas tardes", 20+: "Buenas noches")
+- Grid de tarjetas/botones para cada modulo disponible, filtrados por `hasPermission`:
+  - Contratos (`contracts`)
+  - Ordenes de Compra (`purchase_orders`)
+  - OPEX (`opex`)
+  - CAPEX (`purchase_orders`)
+  - Alertas (`alerts`)
+  - Informes (`reports`)
+  - KPI (`kpi`)
+  - Proveedores (`suppliers`)
+  - Mantenciones (`maintenance`)
+  - Admin (solo si `isAdmin`)
+- Cada tarjeta tendra icono, nombre del modulo y descripcion breve
+- Boton "Ir al Dashboard" que navega a `/dashboard`
 
-La funcion retornara:
-- Totales generales (contratos, vigentes, negociacion, vencidos, atencion especial)
-- Conteos por empresa (Autoplanet, Agroplanet, Grupo Planet)
-- Desglose por region y comuna
-- Alertas de terminacion
+#### 2. Crear ruta `/dashboard` para el Dashboard actual
 
-#### 2. Crear funcion RPC `get_termination_alerts`
+Mover el Dashboard actual a la ruta `/dashboard` y hacer que `/` muestre la pagina de bienvenida.
 
-Separar la consulta de alertas de terminacion para mantener la funcion principal ligera.
+- **`src/App.tsx`**: Agregar ruta `/dashboard` con `Dashboard` y cambiar `/` para usar `Welcome`
+- **`src/pages/Index.tsx`**: Cambiar para renderizar `Welcome` en vez de `Dashboard`
 
-#### 3. Modificar `DashboardStats.tsx`
+#### 3. Ajustar `MainLayout.tsx`
 
-- Reemplazar la consulta con joins por llamadas a las funciones RPC
-- Ejecutar `loadStats` y la carga de permisos en paralelo
-- Renderizar las tarjetas de estadisticas inmediatamente y cargar la tabla regional de forma diferida (lazy)
+Agregar `/dashboard` a la lista de paginas donde no se muestra el boton Home (o mantenerlo para volver a Welcome).
 
-#### 4. Lazy load del modulo de Patentes
+### Detalles tecnicos
 
-Cargar `PatentsModule` con `React.lazy` + `Suspense` para que no bloquee el render inicial del dashboard.
+**Archivos a crear:**
+- `src/pages/Welcome.tsx`
 
-### Archivos a modificar
+**Archivos a modificar:**
+- `src/App.tsx` - agregar ruta `/dashboard`
+- `src/pages/Index.tsx` - renderizar Welcome
+- `src/components/layout/MainLayout.tsx` - ajustar logica del boton Home
 
-- **Nueva migracion SQL**: Crear funciones RPC `get_dashboard_stats` y `get_termination_alerts`
-- **`src/components/dashboard/DashboardStats.tsx`**: Reemplazar `loadStats` por llamadas RPC, lazy load de PatentsModule
+**Datos del usuario:**
+Se obtiene `full_name` de la tabla `profiles` usando el `user.id` de la sesion actual. Si no tiene nombre, se usa el email como fallback.
 
-### Resultado esperado
-
-- Reduccion significativa del tiempo de carga (de segundos a milisegundos para las estadisticas)
-- Sin limite de 1000 filas ya que la agregacion ocurre en la base de datos
-- Las tarjetas principales aparecen casi instantaneamente
-- El modulo de patentes se carga en segundo plano
+**Modulos disponibles:**
+Se reutiliza `hasPermission` del hook `useAuth` existente para filtrar que botones mostrar.
 
