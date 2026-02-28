@@ -1,4 +1,4 @@
-import { useEffect, useState, Fragment, lazy, Suspense } from "react";
+import { useEffect, useState, Fragment } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,14 +13,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { FileText, CheckCircle, Clock, AlertTriangle } from "lucide-react";
+import { FileText, CheckCircle, Clock, AlertTriangle, Shield, ArrowRight } from "lucide-react";
 import { EconomicIndicators } from "./EconomicIndicators";
 import { SelectableElement } from "@/components/admin/SelectableElement";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { CommuneContractsDialog } from "./CommuneContractsDialog";
 import * as XLSX from "xlsx";
-
-const LazyPatentsModule = lazy(() => import("@/components/patents/PatentsModule").then(m => ({ default: m.PatentsModule })));
 
 // Chilean regions ordered geographically from north to south
 const REGION_ORDER: string[] = [
@@ -537,19 +535,26 @@ export const DashboardStats = () => {
         </SelectableElement>
       )}
 
-      {/* Patents Module - Lazy Loaded */}
+      {/* Patents Summary Cards */}
       {!isHidden("dashboard_patents") && (
-        <SelectableElement elementId="dashboard_patents" label="Módulo de Patentes">
-          <Suspense fallback={
-            <Card>
-              <CardContent className="py-8 text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
-                <p className="mt-2 text-muted-foreground">Cargando módulo de patentes...</p>
-              </CardContent>
-            </Card>
-          }>
-            <LazyPatentsModule />
-          </Suspense>
+        <SelectableElement elementId="dashboard_patents" label="Resumen de Patentes">
+          <Card
+            className="cursor-pointer hover:shadow-lg transition-shadow border-primary/20"
+            onClick={() => navigate("/patents")}
+          >
+            <CardContent className="flex items-center justify-between py-4 px-5">
+              <div className="flex items-center gap-4">
+                <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
+                  <Shield className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Patentes Municipales</p>
+                  <p className="text-sm text-muted-foreground">Gestión de patentes de locales vigentes</p>
+                </div>
+              </div>
+              <ArrowRight className="h-5 w-5 text-muted-foreground" />
+            </CardContent>
+          </Card>
         </SelectableElement>
       )}
 
