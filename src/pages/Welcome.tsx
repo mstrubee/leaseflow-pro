@@ -7,7 +7,7 @@ import { useUserPreferences } from "@/hooks/useUserPreferences";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { WelcomeAlertsBar } from "@/components/alerts/WelcomeAlertsBar";
-import { SpecialAttentionDialog } from "@/components/welcome/SpecialAttentionSection";
+
 import {
   DndContext,
   closestCenter,
@@ -93,7 +93,6 @@ const Welcome = () => {
   const { user, loading, isAdmin, roleLoaded, hasPermission, signOut } = useAuth();
   const { logos } = useAppLogos();
   const [fullName, setFullName] = useState<string>("");
-  const [showSpecialAttention, setShowSpecialAttention] = useState(false);
 
   const { value: savedOrder, setValue: setSavedOrder, initialized: orderInitialized } = useUserPreferences<string[]>({
     preferenceKey: "welcome_module_order",
@@ -185,7 +184,7 @@ const Welcome = () => {
           Ir al Dashboard
         </Button>
 
-        <SpecialAttentionDialog open={showSpecialAttention} onOpenChange={setShowSpecialAttention} />
+        
 
         {/* Sortable module grid */}
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -214,7 +213,7 @@ const Welcome = () => {
 
               <Card
                 className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40 h-full"
-                onClick={() => setShowSpecialAttention(true)}
+                onClick={() => navigate("/special-attention")}
               >
                 <CardContent className="p-5 flex items-start gap-4">
                   <div className="rounded-lg p-2.5 text-amber-600 bg-amber-100">
