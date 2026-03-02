@@ -6,9 +6,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { ContractSearchSelect, type ContractOption } from "@/components/contracts/ContractSearchSelect";
-import { AlertTriangle, ArrowLeft, ExternalLink, Plus, Search } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, Plus, Search, ChevronDown, ChevronRight, ChevronsUpDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 interface SpecialContract {
   id: string;
@@ -98,6 +99,16 @@ const SpecialAttentionPage = () => {
   const [selectedAddId, setSelectedAddId] = useState("");
   const [adding, setAdding] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
   const loadSpecialContracts = useCallback(async () => {
     const { data: rawContracts } = await supabase
       .from("contracts")
@@ -196,6 +207,21 @@ const SpecialAttentionPage = () => {
               className="pl-9 h-9"
             />
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 shrink-0"
+            onClick={() => {
+              if (expandedIds.size === contracts.length) {
+                setExpandedIds(new Set());
+              } else {
+                setExpandedIds(new Set(contracts.map(c => c.id)));
+              }
+            }}
+          >
+            <ChevronsUpDown className="h-4 w-4" />
+            {expandedIds.size === contracts.length ? "Contraer" : "Expandir"}
+          </Button>
           <div className="flex-1" />
           <div className="flex items-center gap-2 w-80">
             <ContractSearchSelect
@@ -241,12 +267,17 @@ const SpecialAttentionPage = () => {
               No se encontraron contratos con "{searchTerm}".
             </p>
           ) : filtered.map((c) => (
-            <Card key={c.id}>
-              <CardContent className="p-5 space-y-3">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3 min-w-0">
+            <Collapsible key={c.id} open={expandedIds.has(c.id)} onOpenChange={() => toggleExpand(c.id)}>
+              <Card>
+                <CardContent className="p-0">
+                  <div className="flex items-center gap-3 px-5 py-3">
+                    <CollapsibleTrigger asChild>
+                      <button className="shrink-0 p-0.5 text-muted-foreground hover:text-foreground transition-colors">
+                        {expandedIds.has(c.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      </button>
+                    </CollapsibleTrigger>
                     <CompanyLogo companyNames={c.companyNames} size="sm" />
-                    <div className="min-w-0">
+                    <div className="flex-1 min-w-0">
                       <p className="font-medium text-foreground truncate">{c.name}</p>
                       {(c.cebe || c.codigo) && (
                         <p className="text-xs text-muted-foreground font-mono">
@@ -254,20 +285,24 @@ const SpecialAttentionPage = () => {
                         </p>
                       )}
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1.5 shrink-0 text-muted-foreground hover:text-foreground"
+                      onClick={() => navigate(`/contracts/${c.id}`)}
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Ver contrato
+                    </Button>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="gap-1.5 shrink-0 text-muted-foreground hover:text-foreground"
-                    onClick={() => navigate(`/contracts/${c.id}`)}
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    Ver contrato
-                  </Button>
-                </div>
-                <InlineReason contract={c} />
-              </CardContent>
-            </Card>
+                  <CollapsibleContent>
+                    <div className="px-5 pb-4 pt-1">
+                      <InlineReason contract={c} />
+                    </div>
+                  </CollapsibleContent>
+                </CardContent>
+              </Card>
+            </Collapsible>
           ));
         })()}
       </main>
