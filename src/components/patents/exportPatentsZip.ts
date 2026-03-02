@@ -4,13 +4,16 @@ import {
   PatentChecklistSection, 
   PatentChecklistItem,
   PatentEmitter,
-  PatentItemEmitter
+  PatentItemEmitter,
+  PatentSharedItem
 } from "./types";
 import { exportPatentsToExcelBuffer } from "./exportPatentsExcel";
 import { getSignedUrl, isStorageUrl } from "@/lib/storageUtils";
+import { supabase } from "@/integrations/supabase/client";
 
 /**
- * Download a ZIP containing the Excel checklist + all uploaded patent documents.
+ * Download a ZIP containing the Excel checklist + all uploaded patent documents
+ * (including files from the shared patents repository).
  */
 export async function exportPatentsWithFiles(
   contract: ContractWithPatent,
@@ -31,22 +34,58 @@ export async function exportPatentsWithFiles(
     : 'todas_secciones';
   zip.file(`patentes_${sectionName}.csv`, excelBuffer);
 
-  // 2. Collect all documents with URLs
+  // 2. Collect all documents with URLs (from patent_documents AND shared repository)
   const sectionsToExport = sectionId 
     ? sections.filter(s => s.id === sectionId)
     : sections;
 
-  const docs: { sectionName: string; itemName: string; url: string }[] = [];
+  const docs: { sectionName: string; itemName: string; url: string; fileName?: string }[] = [];
+
+  // Load shared items mapping
+  const { data: sharedItemsData } = await supabase
+    .from("patent_shared_items")
+    .select("checklist_item_id, shared_folder_id");
+  const sharedItems: PatentSharedItem[] = (sharedItemsData as any[]) || [];
+  const sharedFolderIds = [...new Set(sharedItems.map(si => si.shared_folder_id))];
+
+  // Load shared repository files
+  let sharedFilesCache: Record<string, { name: string; url: string }[]> = {};
+  if (sharedFolderIds.length > 0) {
+    const { data: sharedFiles } = await supabase
+      .from("repository_files")
+      .select("name, url, folder_id")
+      .in("folder_id", sharedFolderIds);
+    (sharedFiles || []).forEach((f: any) => {
+      if (!sharedFilesCache[f.folder_id]) sharedFilesCache[f.folder_id] = [];
+      sharedFilesCache[f.folder_id].push({ name: f.name, url: f.url });
+    });
+  }
+
+  const sharedItemLookup: Record<string, string> = {};
+  sharedItems.forEach(si => { sharedItemLookup[si.checklist_item_id] = si.shared_folder_id; });
 
   sectionsToExport.forEach(section => {
     const sectionItems = items.filter(i => i.section_id === section.id);
+    const cleanSection = section.name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '_');
     sectionItems.forEach(item => {
+      const cleanItem = item.name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '_');
+      
+      // Contract-specific document
       const doc = (contract.patent_documents || []).find(d => d.checklist_item_id === item.id);
       if (doc?.document_url) {
-        docs.push({
-          sectionName: section.name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '_'),
-          itemName: item.name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '_'),
-          url: doc.document_url,
+        docs.push({ sectionName: cleanSection, itemName: cleanItem, url: doc.document_url });
+      }
+      
+      // Shared repository files
+      const sharedFolderId = sharedItemLookup[item.id];
+      if (sharedFolderId && sharedFilesCache[sharedFolderId]) {
+        sharedFilesCache[sharedFolderId].forEach(file => {
+          docs.push({
+            sectionName: `${cleanSection}_Repositorio_Comun`,
+            itemName: cleanItem,
+            url: file.url,
+            fileName: file.name,
+          });
         });
       }
     });
@@ -72,10 +111,10 @@ export async function exportPatentsWithFiles(
 
         const blob = await response.blob();
         
-        // Determine file extension from content-type or URL
-        const ext = getFileExtension(doc.url, response.headers.get("content-type"));
+        // Determine file name
+        const ext = doc.fileName ? '' : getFileExtension(doc.url, response.headers.get("content-type"));
         const folderName = doc.sectionName;
-        const fileName = `${doc.itemName}${ext}`;
+        const fileName = doc.fileName || `${doc.itemName}${ext}`;
 
         const sectionFolder = docsFolder!.folder(folderName);
         sectionFolder!.file(fileName, blob);
