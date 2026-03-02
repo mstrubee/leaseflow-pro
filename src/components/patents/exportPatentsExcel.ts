@@ -3,7 +3,8 @@ import {
   PatentChecklistSection, 
   PatentChecklistItem,
   PatentEmitter,
-  PatentItemEmitter
+  PatentItemEmitter,
+  PatentSharedItem
 } from "./types";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -60,6 +61,27 @@ async function buildCsvContent(
     fixedEmitterLookup[ie.checklist_item_id] = ie.emitter_id;
   });
 
+  // Load shared items to detect items with shared repository files
+  const { data: sharedItemsData } = await supabase
+    .from("patent_shared_items")
+    .select("checklist_item_id, shared_folder_id");
+  const sharedItems: PatentSharedItem[] = (sharedItemsData as any[]) || [];
+  const sharedItemLookup: Record<string, string> = {};
+  sharedItems.forEach(si => { sharedItemLookup[si.checklist_item_id] = si.shared_folder_id; });
+
+  // Check which shared folders have files
+  const sharedFolderIds = [...new Set(Object.values(sharedItemLookup))];
+  const sharedFoldersWithFiles = new Set<string>();
+  if (sharedFolderIds.length > 0) {
+    const { data: sharedFiles } = await supabase
+      .from("repository_files")
+      .select("folder_id")
+      .in("folder_id", sharedFolderIds);
+    (sharedFiles || []).forEach((f: any) => {
+      sharedFoldersWithFiles.add(f.folder_id);
+    });
+  }
+
   // Build rows for each section and item
   sectionsToExport.forEach(section => {
     const sectionItems = items.filter(item => item.section_id === section.id);
@@ -67,8 +89,14 @@ async function buildCsvContent(
     sectionItems.forEach(item => {
       const doc = (contract.patent_documents || []).find(d => d.checklist_item_id === item.id);
       
+      // Determine effective status: if shared folder has files, override to 'ok'
+      const sharedFolderId = sharedItemLookup[item.id];
+      const hasSharedFiles = sharedFolderId && sharedFoldersWithFiles.has(sharedFolderId);
+      const rawStatus = doc?.status || 'pendiente';
+      const effectiveStatus = hasSharedFiles ? 'ok' : rawStatus;
+
       // Skip items with status "no_aplica"
-      if (doc?.status === 'no_aplica') return;
+      if (effectiveStatus === 'no_aplica') return;
 
       // Get emitter - prefer document emitter, fallback to fixed emitter
       let emitterName = '';
@@ -81,7 +109,7 @@ async function buildCsvContent(
       rows.push({
         seccion: section.name,
         documento: item.name,
-        estado: doc?.status ? (statusMap[doc.status] || doc.status) : '',
+        estado: statusMap[effectiveStatus] || effectiveStatus,
         responsable: doc?.responsible || '',
         emisor: emitterName,
         fecha_inicio: doc?.start_date || '',
