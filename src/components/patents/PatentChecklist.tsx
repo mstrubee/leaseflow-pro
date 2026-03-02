@@ -15,7 +15,29 @@ import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download, CheckS
 import { Checkbox } from "@/components/ui/checkbox";
 import { exportPatentsToExcel } from "./exportPatentsExcel";
 import { exportPatentsWithFiles } from "./exportPatentsZip";
-import { format, addDays, differenceInDays } from "date-fns";
+import { addDays, differenceInDays } from "date-fns";
+
+// Parse "yyyy-MM-dd" as local date (avoids UTC shift)
+function parseLocalDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+// Format Date to "yyyy-MM-dd" using local components
+function formatLocalDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+// Format Date to "dd/MM/yyyy" for display
+function formatDisplayDate(date: Date): string {
+  const d = String(date.getDate()).padStart(2, '0');
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const y = date.getFullYear();
+  return `${d}/${m}/${y}`;
+}
 import { es } from "date-fns/locale";
 import { useCollapsibleState } from "@/hooks/useCollapsibleState";
 import { 
@@ -243,23 +265,23 @@ export function PatentChecklist({
   ): { start_date?: string; end_date?: string; deadline_days?: number } => {
     // If we have start + days, calculate end
     if (changedField === 'start_date' && startDate && deadlineDays && deadlineDays > 0) {
-      const end = addDays(new Date(startDate), deadlineDays);
-      return { start_date: startDate, end_date: format(end, 'yyyy-MM-dd'), deadline_days: deadlineDays };
+      const end = addDays(parseLocalDate(startDate), deadlineDays);
+      return { start_date: startDate, end_date: formatLocalDate(end), deadline_days: deadlineDays };
     }
     // If we have end + days, calculate start
     if (changedField === 'end_date' && endDate && deadlineDays && deadlineDays > 0) {
-      const start = addDays(new Date(endDate), -deadlineDays);
-      return { start_date: format(start, 'yyyy-MM-dd'), end_date: endDate, deadline_days: deadlineDays };
+      const start = addDays(parseLocalDate(endDate), -deadlineDays);
+      return { start_date: formatLocalDate(start), end_date: endDate, deadline_days: deadlineDays };
     }
     // If we have days and already have start, calculate end
     if (changedField === 'deadline_days' && deadlineDays && deadlineDays > 0 && startDate) {
-      const end = addDays(new Date(startDate), deadlineDays);
-      return { start_date: startDate, end_date: format(end, 'yyyy-MM-dd'), deadline_days: deadlineDays };
+      const end = addDays(parseLocalDate(startDate), deadlineDays);
+      return { start_date: startDate, end_date: formatLocalDate(end), deadline_days: deadlineDays };
     }
     // If we have days and already have end but no start, calculate start
     if (changedField === 'deadline_days' && deadlineDays && deadlineDays > 0 && endDate && !startDate) {
-      const start = addDays(new Date(endDate), -deadlineDays);
-      return { start_date: format(start, 'yyyy-MM-dd'), end_date: endDate, deadline_days: deadlineDays };
+      const start = addDays(parseLocalDate(endDate), -deadlineDays);
+      return { start_date: formatLocalDate(start), end_date: endDate, deadline_days: deadlineDays };
     }
     // If we have start + end, calculate days
     if (startDate && endDate && !deadlineDays) {
@@ -816,20 +838,21 @@ export function PatentChecklist({
                                   <Button variant="outline" size="sm" className="h-8 w-full justify-start" disabled={disableOtherFields}>
                                     <CalendarIcon className="h-3 w-3 mr-1" />
                                     {getDocValue(item.id, 'start_date') 
-                                      ? format(new Date(getDocValue(item.id, 'start_date') as string), 'dd/MM/yyyy')
+                                      ? formatDisplayDate(parseLocalDate(getDocValue(item.id, 'start_date') as string))
                                       : '-'}
                                   </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-auto p-0" align="start">
                                   <Calendar
                                     mode="single"
-                                    selected={getDocValue(item.id, 'start_date') ? new Date(getDocValue(item.id, 'start_date') as string) : undefined}
+                                    selected={getDocValue(item.id, 'start_date') ? parseLocalDate(getDocValue(item.id, 'start_date') as string) : undefined}
                                     onSelect={(date) => {
                                       if (date) {
-                                        handleDateChange(item.id, 'start_date', format(date, 'yyyy-MM-dd'));
+                                        handleDateChange(item.id, 'start_date', formatLocalDate(date));
                                       }
                                     }}
                                     locale={es}
+                                    className="pointer-events-auto"
                                   />
                                 </PopoverContent>
                               </Popover>
@@ -853,20 +876,21 @@ export function PatentChecklist({
                                   <Button variant="outline" size="sm" className="h-8 w-full justify-start" disabled={disableOtherFields}>
                                     <CalendarIcon className="h-3 w-3 mr-1" />
                                     {getDocValue(item.id, 'end_date') 
-                                      ? format(new Date(getDocValue(item.id, 'end_date') as string), 'dd/MM/yyyy')
+                                      ? formatDisplayDate(parseLocalDate(getDocValue(item.id, 'end_date') as string))
                                       : '-'}
                                   </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-auto p-0" align="start">
                                   <Calendar
                                     mode="single"
-                                    selected={getDocValue(item.id, 'end_date') ? new Date(getDocValue(item.id, 'end_date') as string) : undefined}
+                                    selected={getDocValue(item.id, 'end_date') ? parseLocalDate(getDocValue(item.id, 'end_date') as string) : undefined}
                                     onSelect={(date) => {
                                       if (date) {
-                                        handleDateChange(item.id, 'end_date', format(date, 'yyyy-MM-dd'));
+                                        handleDateChange(item.id, 'end_date', formatLocalDate(date));
                                       }
                                     }}
                                     locale={es}
+                                    className="pointer-events-auto"
                                   />
                                 </PopoverContent>
                               </Popover>
