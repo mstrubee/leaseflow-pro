@@ -33,14 +33,15 @@ async function fetchStatuses(): Promise<Record<string, string>> {
   return statusMap;
 }
 
-export async function exportPatentsToExcel(
+// Internal function to build CSV content string
+async function buildCsvContent(
   contract: ContractWithPatent,
   sections: PatentChecklistSection[],
   items: PatentChecklistItem[],
   emitters: PatentEmitter[],
   itemEmitters: PatentItemEmitter[],
-  sectionId?: string // Optional: filter by specific section
-) {
+  sectionId?: string
+): Promise<string> {
   const statusMap = await fetchStatuses();
   const rows: ExportRow[] = [];
 
@@ -94,7 +95,7 @@ export async function exportPatentsToExcel(
   // Generate CSV content with BOM for Excel UTF-8 compatibility
   const BOM = '\uFEFF';
   const headers = ['Sección', 'Documento', 'Estado', 'Responsable', 'Emisor', 'Fecha Inicio', 'Plazo', 'Fecha Entrega', 'Notas'];
-  const csvContent = BOM + [
+  return BOM + [
     headers.join(';'),
     ...rows.map(row => 
       [row.seccion, row.documento, row.estado, row.responsable, row.emisor, row.fecha_inicio, row.plazo, row.fecha_entrega, row.notas]
@@ -102,15 +103,28 @@ export async function exportPatentsToExcel(
         .join(';')
     )
   ].join('\n');
+}
 
-  // Create filename based on export scope
+/**
+ * Export patents checklist as CSV and trigger browser download.
+ */
+export async function exportPatentsToExcel(
+  contract: ContractWithPatent,
+  sections: PatentChecklistSection[],
+  items: PatentChecklistItem[],
+  emitters: PatentEmitter[],
+  itemEmitters: PatentItemEmitter[],
+  sectionId?: string
+) {
+  const csvContent = await buildCsvContent(contract, sections, items, emitters, itemEmitters, sectionId);
+
+  const sectionsToExport = sectionId ? sections.filter(s => s.id === sectionId) : sections;
   const sectionName = sectionId 
     ? sectionsToExport[0]?.name.replace(/[^a-zA-Z0-9]/g, '_') 
     : 'todas_secciones';
   const contractName = contract.name.replace(/[^a-zA-Z0-9]/g, '_');
   const filename = `patentes_${contractName}_${sectionName}.csv`;
 
-  // Create and download file
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
   const url = URL.createObjectURL(blob);
@@ -121,4 +135,18 @@ export async function exportPatentsToExcel(
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Returns the CSV content as a string buffer (for use in ZIP packaging).
+ */
+export async function exportPatentsToExcelBuffer(
+  contract: ContractWithPatent,
+  sections: PatentChecklistSection[],
+  items: PatentChecklistItem[],
+  emitters: PatentEmitter[],
+  itemEmitters: PatentItemEmitter[],
+  sectionId?: string
+): Promise<string> {
+  return buildCsvContent(contract, sections, items, emitters, itemEmitters, sectionId);
 }
