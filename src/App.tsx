@@ -28,6 +28,7 @@ import SuppliersDashboard from "./pages/SuppliersDashboard";
 import MaintenanceDashboard from "./pages/MaintenanceDashboard";
 import Dashboard from "./pages/Dashboard";
 import PatentsDashboard from "./pages/PatentsDashboard";
+import SpecialAttentionPage from "./pages/SpecialAttentionPage";
 
 const queryClient = new QueryClient();
 
@@ -69,6 +70,7 @@ const App = () => (
               <Route path="/reports" element={<ProtectedRoute resource="reports"><ReportsDashboard /></ProtectedRoute>} />
               <Route path="/kpi" element={<ProtectedRoute resource="kpi"><KPIDashboard /></ProtectedRoute>} />
               <Route path="/suppliers" element={<ProtectedRoute resource="suppliers"><SuppliersDashboard /></ProtectedRoute>} />
+              <Route path="/special-attention" element={<ProtectedRoute><SpecialAttentionPage /></ProtectedRoute>} />
               <Route path="/maintenance" element={<ProtectedRoute resource="maintenance"><MaintenanceDashboard /></ProtectedRoute>} />
               
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
