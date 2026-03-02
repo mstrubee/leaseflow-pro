@@ -7,6 +7,7 @@ import { useUserPreferences } from "@/hooks/useUserPreferences";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { WelcomeAlertsBar } from "@/components/alerts/WelcomeAlertsBar";
+import { SpecialAttentionSection } from "@/components/welcome/SpecialAttentionSection";
 import {
   DndContext,
   closestCenter,
@@ -182,6 +183,8 @@ const Welcome = () => {
           <LayoutDashboard className="h-5 w-5" />
           Ir al Dashboard
         </Button>
+
+        <SpecialAttentionSection />
 
         {/* Sortable module grid */}
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
