@@ -6,7 +6,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { ContractSearchSelect, type ContractOption } from "@/components/contracts/ContractSearchSelect";
-import { AlertTriangle, ArrowLeft, ExternalLink, Plus } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, Plus, Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
 interface SpecialContract {
@@ -96,7 +97,7 @@ const SpecialAttentionPage = () => {
   const [allContracts, setAllContracts] = useState<ContractOption[]>([]);
   const [selectedAddId, setSelectedAddId] = useState("");
   const [adding, setAdding] = useState(false);
-
+  const [searchTerm, setSearchTerm] = useState("");
   const loadSpecialContracts = useCallback(async () => {
     const { data: rawContracts } = await supabase
       .from("contracts")
@@ -186,6 +187,15 @@ const SpecialAttentionPage = () => {
             <AlertTriangle className="h-5 w-5 text-amber-500" />
             <h1 className="text-lg font-semibold text-foreground">Atención Especial Contratos</h1>
           </div>
+          <div className="relative w-64">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Buscar en listado…"
+              className="pl-9 h-9"
+            />
+          </div>
           <div className="flex-1" />
           <div className="flex items-center gap-2 w-80">
             <ContractSearchSelect
@@ -217,8 +227,20 @@ const SpecialAttentionPage = () => {
           <p className="text-center text-muted-foreground py-12">
             No hay contratos marcados con atención especial.
           </p>
-        ) : (
-          contracts.map((c) => (
+        ) : (() => {
+          const term = searchTerm.toLowerCase();
+          const filtered = term
+            ? contracts.filter(c =>
+                c.name.toLowerCase().includes(term) ||
+                (c.cebe && c.cebe.toLowerCase().includes(term)) ||
+                (c.codigo && c.codigo.toLowerCase().includes(term))
+              )
+            : contracts;
+          return filtered.length === 0 ? (
+            <p className="text-center text-muted-foreground py-12">
+              No se encontraron contratos con "{searchTerm}".
+            </p>
+          ) : filtered.map((c) => (
             <Card key={c.id}>
               <CardContent className="p-5 space-y-3">
                 <div className="flex items-center justify-between gap-4">
@@ -246,8 +268,8 @@ const SpecialAttentionPage = () => {
                 <InlineReason contract={c} />
               </CardContent>
             </Card>
-          ))
-        )}
+          ));
+        })()}
       </main>
     </div>
   );
