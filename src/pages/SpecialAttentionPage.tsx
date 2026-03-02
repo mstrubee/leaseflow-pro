@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { useSpecialAttentionNavigation } from "@/components/special-attention/SpecialAttentionReturnButton";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -91,6 +92,7 @@ function InlineReason({ contract }: { contract: SpecialContract }) {
 
 const SpecialAttentionPage = () => {
   const navigate = useNavigate();
+  const { navigateToContract } = useSpecialAttentionNavigation();
   const [contracts, setContracts] = useState<SpecialContract[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -289,7 +291,7 @@ const SpecialAttentionPage = () => {
                       variant="ghost"
                       size="sm"
                       className="gap-1.5 shrink-0 text-muted-foreground hover:text-foreground"
-                      onClick={() => navigate(`/contracts/${c.id}`)}
+                      onClick={() => navigateToContract(c.id)}
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
                       Ver contrato
