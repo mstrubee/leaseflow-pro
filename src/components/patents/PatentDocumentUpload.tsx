@@ -110,7 +110,7 @@ export function PatentDocumentUpload({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Documento: {itemName}</DialogTitle>
         </DialogHeader>
