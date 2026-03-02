@@ -34,6 +34,7 @@ export function PatentDocumentUpload({
   const [manualUrl, setManualUrl] = useState(currentUrl || "");
   const [activeTab, setActiveTab] = useState<'upload' | 'url'>('upload');
   const [selectedFolder, setSelectedFolder] = useState<string>("");
+  const [dragging, setDragging] = useState(false);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -116,9 +117,9 @@ export function PatentDocumentUpload({
         </DialogHeader>
 
         {currentUrl && (
-          <div className="space-y-2">
+          <div className="space-y-2 flex-1 min-h-0">
             <Label className="text-sm text-muted-foreground">Archivos existentes:</Label>
-            <div className="space-y-2 max-h-32 overflow-y-auto">
+            <div className="space-y-2 max-h-[40vh] overflow-y-auto">
               {currentUrl.split('|||').filter(Boolean).map((url, index) => (
                 <div key={index} className="p-2 bg-muted rounded-lg flex items-center justify-between">
                   <div className="flex items-center gap-2 overflow-hidden flex-1">
@@ -175,14 +176,34 @@ export function PatentDocumentUpload({
                 </select>
               </div>
             )}
-            <div className="border-2 border-dashed rounded-lg p-8 text-center">
+            <div
+              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${dragging ? 'border-primary bg-primary/5' : ''}`}
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragging(true); }}
+              onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDragging(false); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDragging(false);
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  const input = document.getElementById('file-upload') as HTMLInputElement;
+                  if (input) {
+                    const dt = new DataTransfer();
+                    for (let i = 0; i < e.dataTransfer.files.length; i++) {
+                      dt.items.add(e.dataTransfer.files[i]);
+                    }
+                    input.files = dt.files;
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                  }
+                }
+              }}
+            >
               <Input
                 type="file"
                 id="file-upload"
                 className="hidden"
                 onChange={handleFileUpload}
                 disabled={uploading}
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.dwg"
                 multiple
               />
               <Label
@@ -191,7 +212,7 @@ export function PatentDocumentUpload({
               >
                 <Upload className="h-8 w-8 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">
-                  {uploading ? "Subiendo..." : "Haz clic o arrastra archivos"}
+                  {uploading ? "Subiendo..." : dragging ? "Suelta los archivos aquí" : "Haz clic o arrastra archivos"}
                 </span>
                 <span className="text-xs text-muted-foreground">
                   PDF, Word, Excel, imágenes (múltiples archivos permitidos)
