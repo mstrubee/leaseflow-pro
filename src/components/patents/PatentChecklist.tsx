@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TextareaWithAI } from "@/components/ui/textarea-with-ai";
+import { SyncedTextareas } from "./SyncedTextareas";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -579,37 +580,12 @@ export function PatentChecklist({
       </div>
 
       {/* Comments and Next Actions Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardContent className="pt-4">
-            <TextareaWithAI
-              label="Comentarios y Observaciones"
-              value={comments}
-              onChange={setComments}
-              placeholder="Escriba sus comentarios u observaciones aquí..."
-              className="text-left font-mono text-sm"
-              rows={5}
-              style={{ lineHeight: '1.5' }}
-              downloadFileName="comentarios-patente"
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-4">
-            <TextareaWithAI
-              label="Próximas Acciones"
-              value={nextActions}
-              onChange={setNextActions}
-              placeholder="Escriba las próximas acciones aquí..."
-              className="text-left font-mono text-sm"
-              rows={5}
-              style={{ lineHeight: '1.5' }}
-              downloadFileName="proximas-acciones-patente"
-            />
-          </CardContent>
-        </Card>
-      </div>
+      <SyncedTextareas
+        comments={comments}
+        nextActions={nextActions}
+        onCommentsChange={setComments}
+        onNextActionsChange={setNextActions}
+      />
 
       {/* Save button for both textareas */}
       {hasCommentsChanged && (
