@@ -13,6 +13,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download, CheckSquare, Square, X, ChevronDown, FolderOpen } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { exportPatentsToExcel } from "./exportPatentsExcel";
+import { exportPatentsWithFiles } from "./exportPatentsZip";
 import { format, addDays, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { useCollapsibleState } from "@/hooks/useCollapsibleState";
@@ -468,19 +469,20 @@ export function PatentChecklist({
             <PopoverTrigger asChild>
               <Button variant="outline" className="gap-2">
                 <Download className="h-4 w-4" />
-                Descargar Excel
+                Descargar
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-56 p-2">
+            <PopoverContent className="w-64 p-2">
               <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground px-2 py-1">Solo Excel</p>
                 <Button 
                   variant="ghost" 
                   className="w-full justify-start text-sm"
                   onClick={() => exportPatentsToExcel(contract, sections, items, emitters, itemEmitters)}
                 >
+                  <FileText className="h-4 w-4 mr-2" />
                   Todas las secciones
                 </Button>
-                <div className="border-t my-1" />
                 {sections.map(section => (
                   <Button 
                     key={section.id}
@@ -488,7 +490,39 @@ export function PatentChecklist({
                     className="w-full justify-start text-sm"
                     onClick={() => exportPatentsToExcel(contract, sections, items, emitters, itemEmitters, section.id)}
                   >
+                    <FileText className="h-4 w-4 mr-2" />
                     {section.name}
+                  </Button>
+                ))}
+                <div className="border-t my-1" />
+                <p className="text-xs font-medium text-muted-foreground px-2 py-1">Excel + Archivos (ZIP)</p>
+                <Button 
+                  variant="ghost" 
+                  className="w-full justify-start text-sm"
+                  onClick={() => {
+                    toast.promise(
+                      exportPatentsWithFiles(contract, sections, items, emitters, itemEmitters),
+                      { loading: "Preparando ZIP con archivos...", success: "ZIP descargado", error: "Error al generar ZIP" }
+                    );
+                  }}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Todas las secciones + archivos
+                </Button>
+                {sections.map(section => (
+                  <Button 
+                    key={`zip-${section.id}`}
+                    variant="ghost" 
+                    className="w-full justify-start text-sm"
+                    onClick={() => {
+                      toast.promise(
+                        exportPatentsWithFiles(contract, sections, items, emitters, itemEmitters, section.id),
+                        { loading: "Preparando ZIP...", success: "ZIP descargado", error: "Error al generar ZIP" }
+                      );
+                    }}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    {section.name} + archivos
                   </Button>
                 ))}
               </div>
