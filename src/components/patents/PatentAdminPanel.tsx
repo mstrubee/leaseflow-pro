@@ -332,6 +332,7 @@ export function PatentAdminPanel({
         .eq("id", section.id);
     }
     toast.success("Orden actualizado");
+    onDataChange();
   };
 
   const handleReorderItems = async (event: DragEndEvent, sectionId: string) => {
@@ -358,6 +359,7 @@ export function PatentAdminPanel({
         .eq("id", item.id);
     }
     toast.success("Orden actualizado");
+    onDataChange();
   };
 
   const handleReorderEmitters = async (event: DragEndEvent) => {
@@ -380,6 +382,7 @@ export function PatentAdminPanel({
         .eq("id", emitter.id);
     }
     toast.success("Orden actualizado");
+    onDataChange();
   };
 
   const handleReorderStatuses = async (event: DragEndEvent) => {
@@ -401,6 +404,7 @@ export function PatentAdminPanel({
         .eq("id", status.id);
     }
     toast.success("Orden actualizado");
+    onDataChange();
   };
 
   // --- ITEMS ---
@@ -452,6 +456,7 @@ export function PatentAdminPanel({
     toast.success("Ítem creado correctamente");
     setNewItemName("");
     setNewItemSection("");
+    onDataChange();
   };
 
   const handleUpdateItem = async (item: PatentChecklistItem) => {
@@ -469,6 +474,7 @@ export function PatentAdminPanel({
     setLocalItems(prev => prev.map(i => i.id === item.id ? item : i));
     toast.success("Ítem actualizado");
     setEditingItem(null);
+    onDataChange();
   };
 
   const handleDeleteItem = async (id: string) => {
@@ -486,6 +492,7 @@ export function PatentAdminPanel({
     setLocalItems(prev => prev.filter(i => i.id !== id));
     toast.success("Ítem eliminado");
     setDeleteConfirm(null);
+    onDataChange();
   };
 
   // --- ITEM EMITTERS ---
@@ -553,6 +560,7 @@ export function PatentAdminPanel({
     toast.success("Sección creada correctamente");
     setNewSectionName("");
     setNewSectionCode("");
+    onDataChange();
   };
 
   const handleUpdateSection = async (section: PatentChecklistSection) => {
@@ -570,6 +578,7 @@ export function PatentAdminPanel({
     setLocalSections(prev => prev.map(s => s.id === section.id ? section : s));
     toast.success("Sección actualizada");
     setEditingSection(null);
+    onDataChange();
   };
 
   const handleUpdateSectionFolder = async (sectionId: string, folderId: string | null) => {
@@ -613,6 +622,7 @@ export function PatentAdminPanel({
     setLocalSections(prev => prev.filter(s => s.id !== id));
     toast.success("Sección eliminada");
     setDeleteConfirm(null);
+    onDataChange();
   };
 
   // --- EMITTERS ---
@@ -647,6 +657,7 @@ export function PatentAdminPanel({
     toast.success("Emisor creado correctamente");
     setNewEmitterName("");
     setNewEmitterSection("");
+    onDataChange();
   };
 
   const handleUpdateEmitter = async (emitter: PatentEmitter & { section_id?: string }) => {
@@ -664,6 +675,7 @@ export function PatentAdminPanel({
     setLocalEmitters(prev => prev.map(e => e.id === emitter.id ? emitter : e));
     toast.success("Emisor actualizado");
     setEditingEmitter(null);
+    onDataChange();
   };
 
   const handleDeleteEmitter = async (id: string) => {
@@ -681,6 +693,7 @@ export function PatentAdminPanel({
     setLocalEmitters(prev => prev.filter(e => e.id !== id));
     toast.success("Emisor eliminado");
     setDeleteConfirm(null);
+    onDataChange();
   };
 
   // --- STATUSES ---
@@ -721,6 +734,7 @@ export function PatentAdminPanel({
     toast.success("Estado creado correctamente");
     setNewStatusCode("");
     setNewStatusName("");
+    onDataChange();
     setNewStatusBgColor("#f3f4f6");
     setNewStatusTextColor("#374151");
   };
@@ -744,6 +758,7 @@ export function PatentAdminPanel({
     setStatuses(prev => prev.map(s => s.id === status.id ? status : s));
     toast.success("Estado actualizado");
     setEditingStatus(null);
+    onDataChange();
   };
 
   const handleDeleteStatus = async (id: string) => {
@@ -761,6 +776,7 @@ export function PatentAdminPanel({
     setStatuses(prev => prev.filter(s => s.id !== id));
     toast.success("Estado eliminado");
     setDeleteConfirm(null);
+    onDataChange();
   };
 
   // Get section-specific emitters or global emitters
