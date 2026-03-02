@@ -7,7 +7,7 @@ import { useUserPreferences } from "@/hooks/useUserPreferences";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { WelcomeAlertsBar } from "@/components/alerts/WelcomeAlertsBar";
-import { SpecialAttentionSection } from "@/components/welcome/SpecialAttentionSection";
+import { SpecialAttentionDialog } from "@/components/welcome/SpecialAttentionSection";
 import {
   DndContext,
   closestCenter,
@@ -26,7 +26,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   FileText, ShoppingCart, Wallet, HardHat, Bell,
   BarChart3, Wrench, Shield, Users, LayoutDashboard,
-  LogOut, GripVertical,
+  LogOut, GripVertical, AlertTriangle,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -93,6 +93,7 @@ const Welcome = () => {
   const { user, loading, isAdmin, roleLoaded, hasPermission, signOut } = useAuth();
   const { logos } = useAppLogos();
   const [fullName, setFullName] = useState<string>("");
+  const [showSpecialAttention, setShowSpecialAttention] = useState(false);
 
   const { value: savedOrder, setValue: setSavedOrder, initialized: orderInitialized } = useUserPreferences<string[]>({
     preferenceKey: "welcome_module_order",
@@ -184,7 +185,7 @@ const Welcome = () => {
           Ir al Dashboard
         </Button>
 
-        <SpecialAttentionSection />
+        <SpecialAttentionDialog open={showSpecialAttention} onOpenChange={setShowSpecialAttention} />
 
         {/* Sortable module grid */}
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -210,6 +211,21 @@ const Welcome = () => {
                   </CardContent>
                 </Card>
               )}
+
+              <Card
+                className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40 h-full"
+                onClick={() => setShowSpecialAttention(true)}
+              >
+                <CardContent className="p-5 flex items-start gap-4">
+                  <div className="rounded-lg p-2.5 text-amber-600 bg-amber-100">
+                    <AlertTriangle className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-foreground">Atención Especial</p>
+                    <p className="text-sm text-muted-foreground">Contratos que requieren atención</p>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </SortableContext>
         </DndContext>
