@@ -437,7 +437,6 @@ export function PatentAdminPanel({
       .from("contracts")
       .select("id")
       .eq("status", "firmado")
-      .eq("patente_status", "vigente")
       .is("deleted_at", null);
 
     if (vigentContracts && vigentContracts.length > 0 && newItem) {
