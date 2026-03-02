@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { AlertTriangle, ArrowLeft, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
@@ -11,6 +12,9 @@ interface SpecialContract {
   id: string;
   name: string;
   special_attention_reason: string | null;
+  companyNames: string[];
+  cebe?: string;
+  codigo?: string;
 }
 
 function InlineReason({ contract }: { contract: SpecialContract }) {
@@ -53,16 +57,67 @@ const SpecialAttentionPage = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase
-      .from("contracts")
-      .select("id, name, special_attention_reason")
-      .eq("requires_special_attention", true)
-      .is("deleted_at", null)
-      .order("name")
-      .then(({ data }) => {
-        setContracts(data || []);
+    const load = async () => {
+      // Fetch contracts with companies
+      const { data: rawContracts } = await supabase
+        .from("contracts")
+        .select("id, name, special_attention_reason, contract_companies(companies(name))")
+        .eq("requires_special_attention", true)
+        .is("deleted_at", null)
+        .order("name");
+
+      if (!rawContracts || rawContracts.length === 0) {
+        setContracts([]);
         setLoading(false);
-      });
+        return;
+      }
+
+      // Fetch CEBE and Codigo custom field definitions
+      const { data: fields } = await supabase
+        .from("contract_custom_fields")
+        .select("id, field_name")
+        .in("field_name", ["cebe", "codigo", "CEBE", "Codigo", "Código"])
+        .eq("is_active", true);
+
+      const cebeField = fields?.find(f => f.field_name.toLowerCase() === "cebe");
+      const codigoField = fields?.find(f =>
+        f.field_name.toLowerCase() === "codigo" || f.field_name.toLowerCase() === "código"
+      );
+      const fieldIds = [cebeField?.id, codigoField?.id].filter(Boolean) as string[];
+
+      let fieldValuesMap: Record<string, { cebe?: string; codigo?: string }> = {};
+
+      if (fieldIds.length > 0) {
+        const contractIds = rawContracts.map(c => c.id);
+        const { data: vals } = await supabase
+          .from("contract_custom_field_values")
+          .select("contract_id, field_id, field_value")
+          .in("contract_id", contractIds)
+          .in("field_id", fieldIds);
+
+        if (vals) {
+          for (const v of vals) {
+            if (!v.field_value) continue;
+            if (!fieldValuesMap[v.contract_id]) fieldValuesMap[v.contract_id] = {};
+            if (cebeField && v.field_id === cebeField.id) fieldValuesMap[v.contract_id].cebe = v.field_value;
+            if (codigoField && v.field_id === codigoField.id) fieldValuesMap[v.contract_id].codigo = v.field_value;
+          }
+        }
+      }
+
+      setContracts(rawContracts.map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        special_attention_reason: c.special_attention_reason,
+        companyNames: (c.contract_companies || [])
+          .map((cc: any) => cc.companies?.name)
+          .filter(Boolean),
+        cebe: fieldValuesMap[c.id]?.cebe,
+        codigo: fieldValuesMap[c.id]?.codigo,
+      })));
+      setLoading(false);
+    };
+    load();
   }, []);
 
   return (
@@ -93,7 +148,17 @@ const SpecialAttentionPage = () => {
             <Card key={c.id}>
               <CardContent className="p-5 space-y-3">
                 <div className="flex items-center justify-between gap-4">
-                  <p className="font-medium text-foreground">{c.name}</p>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <CompanyLogo companyNames={c.companyNames} size="sm" />
+                    <div className="min-w-0">
+                      <p className="font-medium text-foreground truncate">{c.name}</p>
+                      {(c.cebe || c.codigo) && (
+                        <p className="text-xs text-muted-foreground font-mono">
+                          {[c.cebe, c.codigo].filter(Boolean).join(" • ")}
+                        </p>
+                      )}
+                    </div>
+                  </div>
                   <Button
                     variant="ghost"
                     size="sm"
