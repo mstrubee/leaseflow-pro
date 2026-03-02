@@ -133,6 +133,7 @@ export function PatentChecklist({
     startDate?: string;
     endDate?: string;
   } | null>(null);
+  const [includeFiles, setIncludeFiles] = useState(false);
 
   const currentPriority = contract.contract_patents?.priority || 'priority_3';
   const currentPatenteStatus = contract.patente_status || 'sin_patente';
@@ -475,11 +476,25 @@ export function PatentChecklist({
             </PopoverTrigger>
             <PopoverContent className="w-64 p-2">
               <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground px-2 py-1">Solo Excel</p>
+                <div className="flex items-center gap-2 px-2 py-1.5 border-b mb-1">
+                  <Checkbox id="include-files" checked={includeFiles} onCheckedChange={(checked) => setIncludeFiles(!!checked)} />
+                  <label htmlFor="include-files" className="text-xs font-medium text-muted-foreground cursor-pointer select-none">
+                    Incluir archivos (ZIP)
+                  </label>
+                </div>
                 <Button 
                   variant="ghost" 
                   className="w-full justify-start text-sm"
-                  onClick={() => exportPatentsToExcel(contract, sections, items, emitters, itemEmitters)}
+                  onClick={() => {
+                    if (includeFiles) {
+                      toast.promise(
+                        exportPatentsWithFiles(contract, sections, items, emitters, itemEmitters),
+                        { loading: "Preparando ZIP con archivos...", success: "ZIP descargado", error: "Error al generar ZIP" }
+                      );
+                    } else {
+                      exportPatentsToExcel(contract, sections, items, emitters, itemEmitters);
+                    }
+                  }}
                 >
                   <FileText className="h-4 w-4 mr-2" />
                   Todas las secciones
@@ -489,41 +504,19 @@ export function PatentChecklist({
                     key={section.id}
                     variant="ghost" 
                     className="w-full justify-start text-sm"
-                    onClick={() => exportPatentsToExcel(contract, sections, items, emitters, itemEmitters, section.id)}
+                    onClick={() => {
+                      if (includeFiles) {
+                        toast.promise(
+                          exportPatentsWithFiles(contract, sections, items, emitters, itemEmitters, section.id),
+                          { loading: "Preparando ZIP...", success: "ZIP descargado", error: "Error al generar ZIP" }
+                        );
+                      } else {
+                        exportPatentsToExcel(contract, sections, items, emitters, itemEmitters, section.id);
+                      }
+                    }}
                   >
                     <FileText className="h-4 w-4 mr-2" />
                     {section.name}
-                  </Button>
-                ))}
-                <div className="border-t my-1" />
-                <p className="text-xs font-medium text-muted-foreground px-2 py-1">Excel + Archivos (ZIP)</p>
-                <Button 
-                  variant="ghost" 
-                  className="w-full justify-start text-sm"
-                  onClick={() => {
-                    toast.promise(
-                      exportPatentsWithFiles(contract, sections, items, emitters, itemEmitters),
-                      { loading: "Preparando ZIP con archivos...", success: "ZIP descargado", error: "Error al generar ZIP" }
-                    );
-                  }}
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Todas las secciones + archivos
-                </Button>
-                {sections.map(section => (
-                  <Button 
-                    key={`zip-${section.id}`}
-                    variant="ghost" 
-                    className="w-full justify-start text-sm"
-                    onClick={() => {
-                      toast.promise(
-                        exportPatentsWithFiles(contract, sections, items, emitters, itemEmitters, section.id),
-                        { loading: "Preparando ZIP...", success: "ZIP descargado", error: "Error al generar ZIP" }
-                      );
-                    }}
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    {section.name} + archivos
                   </Button>
                 ))}
               </div>
@@ -1076,6 +1069,7 @@ export function PatentChecklist({
         );
       })}
 
+  
 
       {/* Document Upload Dialog */}
       {uploadDialog && (
