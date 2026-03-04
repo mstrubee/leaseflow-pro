@@ -1086,12 +1086,16 @@ const Contracts = () => {
         </div>
       </header>
 
-      <main className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-4">
-        {/* Contract Stats Cards */}
-        <ContractStatsCards />
+      <main className="mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col h-[calc(100vh-80px)]" style={{ width: "130%", maxWidth: "1872px" }}>
+        {/* Fixed top section */}
+        <div className="flex-shrink-0 space-y-4">
+          {/* Contract Stats Cards - centered */}
+          <div className="max-w-[1440px] mx-auto w-full">
+            <ContractStatsCards />
+          </div>
 
-        {/* Search and Filters */}
-        <Card className="p-4 space-y-4" style={{ width: "130%" }}>
+          {/* Search and Filters */}
+          <Card className="p-4 space-y-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -1344,34 +1348,38 @@ const Contracts = () => {
             </>
           )}
         </Card>
+        </div>
 
-        {filteredContracts.length > 0 ? (
-          <ContractsTable
-            contracts={filteredContracts}
-            isFirmadoView={isFirmadoView}
-            onDelete={handleDeleteClick}
-            onUpdateField={updateContractField}
-            onRefresh={loadContracts}
-            sortField={sortField}
-            sortOrder={sortDirection as SortOrder}
-            onSort={handleSort}
-            columnWidths={columnWidths}
-            customFieldsByContract={customFieldsByContract}
-          />
-        ) : (
-          <Card className="p-12">
-            <div className="text-center text-muted-foreground">
-              <p>No se encontraron contratos</p>
-              <Button
-                variant="link"
-                className="mt-2"
-                onClick={() => navigate("/contracts/new")}
-              >
-                Crear primer contrato
-              </Button>
-            </div>
-          </Card>
-        )}
+        {/* Scrollable table section */}
+        <div className="flex-1 overflow-auto mt-4 min-h-0">
+          {filteredContracts.length > 0 ? (
+            <ContractsTable
+              contracts={filteredContracts}
+              isFirmadoView={isFirmadoView}
+              onDelete={handleDeleteClick}
+              onUpdateField={updateContractField}
+              onRefresh={loadContracts}
+              sortField={sortField}
+              sortOrder={sortDirection as SortOrder}
+              onSort={handleSort}
+              columnWidths={columnWidths}
+              customFieldsByContract={customFieldsByContract}
+            />
+          ) : (
+            <Card className="p-12">
+              <div className="text-center text-muted-foreground">
+                <p>No se encontraron contratos</p>
+                <Button
+                  variant="link"
+                  className="mt-2"
+                  onClick={() => navigate("/contracts/new")}
+                >
+                  Crear primer contrato
+                </Button>
+              </div>
+            </Card>
+          )}
+        </div>
       </main>
 
       {/* First confirmation dialog */}
