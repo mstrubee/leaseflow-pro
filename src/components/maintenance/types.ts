@@ -35,6 +35,7 @@ export interface MaintenanceForm {
   purchase_order_number: string | null;
   criticality_category_id: string | null;
   resolution_observations: string | null;
+  ot_file_url: string | null;
 }
 
 export interface ParsedMaintenanceRow {
