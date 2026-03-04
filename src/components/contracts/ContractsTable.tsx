@@ -954,6 +954,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   </>
                 )}
                 <TableCell className="text-center min-w-[126px]" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex justify-center">
                   {editingVenta === contract.id ? (
                     <div className="flex items-center gap-1">
                       <Input
@@ -1040,6 +1041,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                       )}
                     </button>
                   )}
+                  </div>
                 </TableCell>
                 <TableCell className="text-center" style={getColStyle("capex")}>
                   {(() => {
