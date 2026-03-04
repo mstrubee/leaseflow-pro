@@ -339,7 +339,7 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
       {/* Split textareas: left = new checklist item, right = notes */}
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Nuevo ítem checklist</label>
+          <label className="text-xs font-medium text-muted-foreground">Nuevo ítem checklist (inicia con fecha yyyy.mm.dd para asignar fecha personalizada)</label>
           <div className="flex gap-1">
             <Textarea
               value={newItemText}
