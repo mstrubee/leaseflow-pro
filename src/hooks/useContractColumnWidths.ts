@@ -15,7 +15,7 @@ export const DEFAULT_COLUMN_WIDTHS: Record<string, ColumnWidth> = {
   categoria: { key: "categoria", label: "Categoría", width: 10, minWidth: 90 },
   clasificacion: { key: "clasificacion", label: "Clasificación", width: 8, minWidth: 80 },
   origen: { key: "origen", label: "Origen", width: 8, minWidth: 80 },
-  venta_estimada: { key: "venta_estimada", label: "Venta Est.", width: 14, minWidth: 180 },
+  venta_estimada: { key: "venta_estimada", label: "Venta Est.", width: 10, minWidth: 126 },
   costo_arriendo: { key: "costo_arriendo", label: "Costo Arriendo", width: 12, minWidth: 140 },
   duracion: { key: "duracion", label: "Duración", width: 8, minWidth: 80 },
   termino: { key: "termino", label: "Término", width: 8, minWidth: 80 },
