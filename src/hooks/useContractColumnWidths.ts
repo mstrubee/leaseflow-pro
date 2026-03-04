@@ -45,6 +45,14 @@ export function useContractColumnWidths() {
   const columnWidths: ColumnWidthsConfig =
     columnWidthsRaw && typeof columnWidthsRaw === "object" ? columnWidthsRaw : getDefaultWidths();
 
+  // Calculate total for normalization
+  const totalWeight = Object.values(columnWidths).reduce((sum, w) => sum + (w || 0), 0) || 1;
+
+  // Normalized widths as real percentages (sum = 100%)
+  const normalizedWidths: ColumnWidthsConfig = Object.fromEntries(
+    Object.entries(columnWidths).map(([key, w]) => [key, Math.round(((w || 0) / totalWeight) * 100)])
+  );
+
   const updateColumnWidth = (columnKey: string, width: number) => {
     setColumnWidths({ ...columnWidths, [columnKey]: width });
   };
@@ -55,17 +63,19 @@ export function useContractColumnWidths() {
 
   const getColumnStyle = (columnKey: string): CSSProperties => {
     const fallbackWidth = DEFAULT_COLUMN_WIDTHS[columnKey]?.width ?? 10;
-    const width = columnWidths?.[columnKey] ?? fallbackWidth;
+    const rawWidth = columnWidths?.[columnKey] ?? fallbackWidth;
+    const pct = (rawWidth / totalWeight) * 100;
     const minWidth = DEFAULT_COLUMN_WIDTHS[columnKey]?.minWidth ?? 80;
 
     return {
-      width: `${width}%`,
+      width: `${pct.toFixed(1)}%`,
       minWidth: `${minWidth}px`,
     };
   };
 
   return {
     columnWidths,
+    normalizedWidths,
     setColumnWidths,
     updateColumnWidth,
     resetToDefaults,

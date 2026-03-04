@@ -141,7 +141,7 @@ const Contracts = () => {
   const statusFilter = searchParams.get("status") || "todos";
   const { user, loading: authLoading, roleLoaded, isAdmin } = useAuth();
   const { ufValue } = useEconomicIndicators();
-  const { columnWidths, updateColumnWidth, resetToDefaults } = useContractColumnWidths();
+  const { columnWidths, normalizedWidths, updateColumnWidth, resetToDefaults } = useContractColumnWidths();
 
   useEffect(() => {
     // Remember last contracts list URL so the detail "Volver" can restore filters even after refresh
@@ -1022,6 +1022,7 @@ const Contracts = () => {
               {isAdmin && (
                 <ColumnWidthsManager
                   columnWidths={columnWidths}
+                  normalizedWidths={normalizedWidths}
                   onUpdateWidth={updateColumnWidth}
                   onReset={resetToDefaults}
                   visibleColumns={
