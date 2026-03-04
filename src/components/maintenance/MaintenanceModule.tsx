@@ -21,7 +21,7 @@ import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { MaintenanceExcelUpload } from "./MaintenanceExcelUpload";
 import { MaintenanceEditDialog } from "./MaintenanceEditDialog";
 import { SortableTableHead, SortOrder } from "@/components/contracts/SortableTableHead";
-import { exportMaintenanceExcel, exportMaintenancePDF, exportDailyFormsPDF } from "./maintenanceExport";
+import { exportMaintenanceExcel, exportMaintenancePDF, exportDailyFormsPDF, exportMergedFormAndOT } from "./maintenanceExport";
 import { exportOTPDF, downloadBlankOTPDF, downloadBlankOTExcel } from "./otExport";
 import { OTDownloadOfferDialog } from "./OTDownloadOfferDialog";
 import { useNavigate } from "react-router-dom";
@@ -1428,8 +1428,12 @@ export function MaintenanceModule() {
                               </Button>
                               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
                                 const critName = cat?.name;
-                                exportMaintenancePDF(f, f.contract_id ? (contractCompanyMap[f.contract_id] || []).join(", ") : undefined, critName);
-                              }} title="Descargar PDF">
+                                if (f.sub_status === "resuelto") {
+                                  exportMergedFormAndOT(f, f.contract_id ? (contractCompanyMap[f.contract_id] || []).join(", ") : undefined, critName);
+                                } else {
+                                  exportMaintenancePDF(f, f.contract_id ? (contractCompanyMap[f.contract_id] || []).join(", ") : undefined, critName);
+                                }
+                              }} title={f.sub_status === "resuelto" ? "Descargar FORM + OT" : "Descargar PDF"}>
                                 <FileDown className="h-3.5 w-3.5" />
                               </Button>
                               {(f.sub_status === "cotizando" || f.sub_status === "en_ejecucion" || f.sub_status === "resuelto") && (
