@@ -4685,6 +4685,44 @@ export type Database = {
           },
         ]
       }
+      special_attention_checklist: {
+        Row: {
+          completed_at: string | null
+          completed_by: string | null
+          contract_id: string
+          created_at: string
+          id: string
+          is_completed: boolean
+          text: string
+        }
+        Insert: {
+          completed_at?: string | null
+          completed_by?: string | null
+          contract_id: string
+          created_at?: string
+          id?: string
+          is_completed?: boolean
+          text: string
+        }
+        Update: {
+          completed_at?: string | null
+          completed_by?: string | null
+          contract_id?: string
+          created_at?: string
+          id?: string
+          is_completed?: boolean
+          text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "special_attention_checklist_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       storage_settings: {
         Row: {
           active_provider: string
