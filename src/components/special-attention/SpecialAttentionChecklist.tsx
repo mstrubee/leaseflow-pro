@@ -34,6 +34,52 @@ function formatCompletedDate(iso: string): string {
   return `${d.getFullYear()}.${months[d.getMonth()]}.${String(d.getDate()).padStart(2, "0")}`;
 }
 
+const MONTH_NAMES: Record<string, number> = {
+  enero: 0, febrero: 1, marzo: 2, abril: 3, mayo: 4, junio: 5,
+  julio: 6, agosto: 7, septiembre: 8, octubre: 9, noviembre: 10, diciembre: 11,
+  ene: 0, feb: 1, mar: 2, abr: 3, may: 4, jun: 5,
+  jul: 6, ago: 7, sep: 8, oct: 9, nov: 10, dic: 11,
+};
+
+/** Detects a leading date in the text and returns { date, cleanText }. */
+function extractLeadingDate(raw: string): { date: Date | null; cleanText: string } {
+  const text = raw.trim();
+
+  // yyyy.mm.dd or yyyy-mm-dd or yyyy/mm/dd
+  const m1 = text.match(/^(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})\s*(.*)/s);
+  if (m1) {
+    const d = new Date(+m1[1], +m1[2] - 1, +m1[3]);
+    if (!isNaN(d.getTime())) return { date: d, cleanText: m1[4].trim() };
+  }
+
+  // dd.mm.yyyy or dd-mm-yyyy or dd/mm/yyyy
+  const m2 = text.match(/^(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})\s*(.*)/s);
+  if (m2) {
+    const d = new Date(+m2[3], +m2[2] - 1, +m2[1]);
+    if (!isNaN(d.getTime())) return { date: d, cleanText: m2[4].trim() };
+  }
+
+  // dd.mm.yy or dd-mm-yy or dd/mm/yy
+  const m3 = text.match(/^(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{2})\s*(.*)/s);
+  if (m3) {
+    const year = +m3[3] + 2000;
+    const d = new Date(year, +m3[2] - 1, +m3[1]);
+    if (!isNaN(d.getTime())) return { date: d, cleanText: m3[4].trim() };
+  }
+
+  // dd de <month_name>  (uses current year)
+  const m4 = text.match(/^(\d{1,2})\s+de\s+([a-záéíóúñ]+)\s*(.*)/si);
+  if (m4) {
+    const monthIdx = MONTH_NAMES[m4[2].toLowerCase()];
+    if (monthIdx !== undefined) {
+      const d = new Date(new Date().getFullYear(), monthIdx, +m4[1]);
+      if (!isNaN(d.getTime())) return { date: d, cleanText: m4[3].trim() };
+    }
+  }
+
+  return { date: null, cleanText: text };
+}
+
 export function SpecialAttentionChecklist({ contractId, reason }: Props) {
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [newItemText, setNewItemText] = useState("");
@@ -88,9 +134,15 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
     const trimmed = newItemText.trim();
     if (!trimmed) return;
 
+    const { date, cleanText } = extractLeadingDate(trimmed);
+    if (!cleanText) return;
+
+    const insertPayload: any = { contract_id: contractId, text: cleanText };
+    if (date) insertPayload.created_at = date.toISOString();
+
     const { data, error } = await supabase
       .from("special_attention_checklist")
-      .insert({ contract_id: contractId, text: trimmed })
+      .insert(insertPayload)
       .select("id, text, is_completed, completed_at, created_at, parent_id")
       .single();
 
@@ -107,9 +159,15 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
     const trimmed = childText.trim();
     if (!trimmed || !childParentId) return;
 
+    const { date, cleanText } = extractLeadingDate(trimmed);
+    if (!cleanText) return;
+
+    const insertPayload: any = { contract_id: contractId, text: cleanText, parent_id: childParentId };
+    if (date) insertPayload.created_at = date.toISOString();
+
     const { data, error } = await supabase
       .from("special_attention_checklist")
-      .insert({ contract_id: contractId, text: trimmed, parent_id: childParentId })
+      .insert(insertPayload)
       .select("id, text, is_completed, completed_at, created_at, parent_id")
       .single();
 
