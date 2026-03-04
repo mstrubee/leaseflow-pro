@@ -50,8 +50,7 @@ export function ColumnWidthsManager({
         </DialogHeader>
         
         <div className="space-y-6 py-4 max-h-[400px] overflow-y-auto">
-          {visibleColumns
-            .filter((columnKey) => DEFAULT_COLUMN_WIDTHS[columnKey])
+          {Object.keys(DEFAULT_COLUMN_WIDTHS)
             .map((columnKey) => {
               const config = DEFAULT_COLUMN_WIDTHS[columnKey];
               const currentWidth = columnWidths?.[columnKey] ?? config.width;
