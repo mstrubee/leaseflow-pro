@@ -601,7 +601,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
 
   return (
     <div className="rounded-md border overflow-hidden w-full">
-      <Table>
+      <Table className="table-fixed">
         <TableHeader>
           <TableRow className="bg-muted/50">
             <SortableTableHead
@@ -1352,7 +1352,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   </>
                 )}
                 {isAdmin && (
-                  <TableCell onClick={(e) => e.stopPropagation()}>
+                  <TableCell className="w-8 p-1" onClick={(e) => e.stopPropagation()}>
                     <Button
                       variant="ghost"
                       size="icon"
