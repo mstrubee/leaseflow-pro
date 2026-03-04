@@ -20,6 +20,7 @@ import { ContractSurfacesSection } from "@/components/contracts/ContractSurfaces
 import { ContractAlerts } from "@/components/alerts/ContractAlerts";
 import { BudgetDashboard } from "@/components/budget/BudgetDashboard";
 import { GanttModule } from "@/components/gantt/GanttModule";
+import { SpecialAttentionChecklist } from "@/components/special-attention/SpecialAttentionChecklist";
 
 import { ContractStatusActions } from "@/components/contracts/ContractStatusActions";
 import { TerminationNoticesSection } from "@/components/contracts/TerminationNoticesSection";
@@ -782,12 +783,19 @@ const ContractDetail = () => {
       </header>
 
       <main className="max-w-15xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        {/* Special Attention Banner */}
-        {contract.requires_special_attention && contract.special_attention_reason && (
-          <div className="flex items-center gap-2 p-3 border-2 border-destructive rounded-lg bg-destructive/10">
-            <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0" />
-            <p className="font-bold text-foreground">{contract.special_attention_reason}</p>
-          </div>
+        {/* Special Attention Section */}
+        {contract.requires_special_attention && (
+          <Card className="border-2 border-destructive/50 bg-destructive/5">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2 text-destructive">
+                <AlertCircle className="h-4 w-4" />
+                Atención Especial
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <SpecialAttentionChecklist contractId={contract.id} reason={contract.special_attention_reason || null} />
+            </CardContent>
+          </Card>
         )}
 
         {/* Closing Process Banner - for contracts with termination notices */}
@@ -812,14 +820,7 @@ const ContractDetail = () => {
         {/* Section controls for admin */}
         {isAdmin && (
           <div className="flex items-center justify-between gap-2 mb-4">
-            {/* Left side: Special Attention Banner (when no reason) */}
             <div className="flex-1">
-              {contract.requires_special_attention && !contract.special_attention_reason && (
-                <div className="inline-flex items-center gap-2 p-2 border-2 border-destructive rounded-lg bg-destructive/10">
-                  <AlertCircle className="h-4 w-4 text-destructive" />
-                  <span className="font-bold text-foreground text-sm">Requiere Atención Especial</span>
-                </div>
-              )}
             </div>
 
             {/* Right side: Controls */}

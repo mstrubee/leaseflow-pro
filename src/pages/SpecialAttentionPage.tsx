@@ -154,7 +154,7 @@ const SpecialAttentionPage = () => {
     } else {
       toast.success("Contrato agregado a atención especial");
       setSelectedAddId("");
-      await loadSpecialContracts();
+      await Promise.all([loadSpecialContracts(), loadAllContracts()]);
     }
     setAdding(false);
   };
