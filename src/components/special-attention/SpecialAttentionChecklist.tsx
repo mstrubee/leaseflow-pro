@@ -48,6 +48,7 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteWithChildren, setDeleteWithChildren] = useState(false);
 
   // Load checklist items
   useEffect(() => {
@@ -154,14 +155,35 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
     }
   };
 
-  // Delete item
-  const deleteItem = async (id: string) => {
+  // Delete only the item (re-parent children to null)
+  const deleteItemOnly = async (id: string) => {
+    // Move children to top-level
+    const children = items.filter(i => i.parent_id === id);
+    if (children.length > 0) {
+      await supabase
+        .from("special_attention_checklist")
+        .update({ parent_id: null })
+        .in("id", children.map(c => c.id));
+    }
     const { error } = await supabase
       .from("special_attention_checklist")
       .delete()
       .eq("id", id);
+    if (!error) setItems(prev => prev.filter(i => i.id !== id).map(i => i.parent_id === id ? { ...i, parent_id: null } : i));
+  };
 
-    if (!error) setItems(prev => prev.filter(i => i.id !== id && i.parent_id !== id));
+  // Delete item and all its descendants
+  const deleteItemWithChildren = async (id: string) => {
+    const getDescendantIds = (parentId: string): string[] => {
+      const directChildren = items.filter(i => i.parent_id === parentId);
+      return directChildren.flatMap(c => [c.id, ...getDescendantIds(c.id)]);
+    };
+    const allIds = [id, ...getDescendantIds(id)];
+    const { error } = await supabase
+      .from("special_attention_checklist")
+      .delete()
+      .in("id", allIds);
+    if (!error) setItems(prev => prev.filter(i => !allIds.includes(i.id)));
   };
 
   // Edit item text
@@ -342,19 +364,46 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
       </Dialog>
 
       {/* Delete confirmation */}
-      <AlertDialog open={!!deleteConfirmId} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null); }}>
+      <AlertDialog open={!!deleteConfirmId} onOpenChange={(open) => { if (!open) { setDeleteConfirmId(null); setDeleteWithChildren(false); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar ítem?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción no se puede deshacer. Se eliminarán también los sub-ítems asociados.
+              {deleteConfirmId && childrenOf(deleteConfirmId).length > 0
+                ? "Este ítem tiene sub-líneas. ¿Qué deseas hacer?"
+                : "Esta acción no se puede deshacer."}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { if (deleteConfirmId) { deleteItem(deleteConfirmId); setDeleteConfirmId(null); } }}>
-              Eliminar
-            </AlertDialogAction>
+            {deleteConfirmId && childrenOf(deleteConfirmId).length > 0 ? (
+              <>
+                <AlertDialogAction
+                  onClick={() => { if (deleteConfirmId) { deleteItemOnly(deleteConfirmId); setDeleteConfirmId(null); } }}
+                >
+                  Borrar solo la línea
+                </AlertDialogAction>
+                {!deleteWithChildren ? (
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={(e) => { e.preventDefault(); setDeleteWithChildren(true); }}
+                  >
+                    Borrar línea y dependientes
+                  </AlertDialogAction>
+                ) : (
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={() => { if (deleteConfirmId) { deleteItemWithChildren(deleteConfirmId); setDeleteConfirmId(null); setDeleteWithChildren(false); } }}
+                  >
+                    ⚠ Confirmar eliminación total
+                  </AlertDialogAction>
+                )}
+              </>
+            ) : (
+              <AlertDialogAction onClick={() => { if (deleteConfirmId) { deleteItemOnly(deleteConfirmId); setDeleteConfirmId(null); } }}>
+                Eliminar
+              </AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
