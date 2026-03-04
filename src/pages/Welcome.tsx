@@ -28,6 +28,7 @@ import {
   BarChart3, Wrench, Shield, Users, LayoutDashboard,
   LogOut, GripVertical, AlertTriangle,
 } from "lucide-react";
+import { SelectableElement } from "@/components/admin/SelectableElement";
 import type { LucideIcon } from "lucide-react";
 
 interface ModuleItem {
@@ -52,25 +53,27 @@ function SortableModuleCard({ module, onClick }: { module: ModuleItem; onClick: 
 
   return (
     <div ref={setNodeRef} style={style} className="h-full">
-      <Card className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40 group h-full">
-        <CardContent className="p-5 flex items-start gap-4 h-full" onClick={onClick}>
-          <div className={`rounded-lg p-2.5 ${module.color}`}>
-            <module.icon className="h-5 w-5" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-medium text-foreground">{module.label}</p>
-            <p className="text-sm text-muted-foreground">{module.desc}</p>
-          </div>
-          <div
-            {...attributes}
-            {...listeners}
-            className="opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <GripVertical className="h-4 w-4" />
-          </div>
-        </CardContent>
-      </Card>
+      <SelectableElement elementId={module.id} label={module.label}>
+        <Card className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40 group h-full">
+          <CardContent className="p-5 flex items-start gap-4 h-full" onClick={onClick}>
+            <div className={`rounded-lg p-2.5 ${module.color}`}>
+              <module.icon className="h-5 w-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-foreground">{module.label}</p>
+              <p className="text-sm text-muted-foreground">{module.desc}</p>
+            </div>
+            <div
+              {...attributes}
+              {...listeners}
+              className="opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <GripVertical className="h-4 w-4" />
+            </div>
+          </CardContent>
+        </Card>
+      </SelectableElement>
     </div>
   );
 }
@@ -179,10 +182,12 @@ const Welcome = () => {
           <p className="text-muted-foreground mt-1">¿En qué te gustaría trabajar hoy?</p>
         </div>
 
-        <Button size="lg" onClick={() => navigate("/dashboard")} className="gap-2">
-          <LayoutDashboard className="h-5 w-5" />
-          Ir al Dashboard
-        </Button>
+        <SelectableElement elementId="dashboard" label="Dashboard">
+          <Button size="lg" onClick={() => navigate("/dashboard")} className="gap-2">
+            <LayoutDashboard className="h-5 w-5" />
+            Ir al Dashboard
+          </Button>
+        </SelectableElement>
 
         
 
@@ -195,36 +200,40 @@ const Welcome = () => {
               ))}
 
               {isAdmin && (
+                <SelectableElement elementId="admin" label="Admin">
+                  <Card
+                    className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40 h-full"
+                    onClick={() => navigate("/admin")}
+                  >
+                    <CardContent className="p-5 flex items-start gap-4">
+                      <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
+                        <Shield className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-foreground">Admin</p>
+                        <p className="text-sm text-muted-foreground">Panel de administración</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </SelectableElement>
+              )}
+
+              <SelectableElement elementId="special_attention" label="Atención Especial">
                 <Card
                   className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40 h-full"
-                  onClick={() => navigate("/admin")}
+                  onClick={() => navigate("/special-attention")}
                 >
                   <CardContent className="p-5 flex items-start gap-4">
-                    <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
-                      <Shield className="h-5 w-5" />
+                    <div className="rounded-lg p-2.5 text-amber-600 bg-amber-100">
+                      <AlertTriangle className="h-5 w-5" />
                     </div>
                     <div>
-                      <p className="font-medium text-foreground">Admin</p>
-                      <p className="text-sm text-muted-foreground">Panel de administración</p>
+                      <p className="font-medium text-foreground">Atención Especial</p>
+                      <p className="text-sm text-muted-foreground">Contratos que requieren atención</p>
                     </div>
                   </CardContent>
                 </Card>
-              )}
-
-              <Card
-                className="cursor-pointer hover:shadow-md transition-shadow hover:border-primary/40 h-full"
-                onClick={() => navigate("/special-attention")}
-              >
-                <CardContent className="p-5 flex items-start gap-4">
-                  <div className="rounded-lg p-2.5 text-amber-600 bg-amber-100">
-                    <AlertTriangle className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-foreground">Atención Especial</p>
-                    <p className="text-sm text-muted-foreground">Contratos que requieren atención</p>
-                  </div>
-                </CardContent>
-              </Card>
+              </SelectableElement>
             </div>
           </SortableContext>
         </DndContext>

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { KPIModule } from "@/components/kpi/KPIModule";
+import { SelectableElement } from "@/components/admin/SelectableElement";
 
 export default function KPIDashboard() {
   const { user, loading } = useAuth();
@@ -27,7 +28,9 @@ export default function KPIDashboard() {
 
   return (
     <div className="container mx-auto py-6 px-4">
-      <KPIModule />
+      <SelectableElement elementId="kpi" label="KPI">
+        <KPIModule />
+      </SelectableElement>
     </div>
   );
 }
