@@ -213,9 +213,10 @@ export async function exportSpecialAttentionPDF(contracts: SpecialContract[]) {
           fontSize: 7.5,
           cellPadding: 2,
           overflow: "linebreak",
+          halign: "left",
         },
         columnStyles: {
-          0: { cellWidth: pageW - margin * 2 - 25 },
+          0: { cellWidth: pageW - margin * 2 - 25, halign: "left" },
           1: { cellWidth: 23, halign: "center", fontStyle: "bold" },
         },
         alternateRowStyles: {
@@ -223,12 +224,20 @@ export async function exportSpecialAttentionPDF(contracts: SpecialContract[]) {
         },
         margin: { left: margin, right: margin },
         didParseCell(data) {
+          // Gradient-style red for header row
+          if (data.section === "head") {
+            if (data.column.index === 0) {
+              data.cell.styles.fillColor = [200, 30, 30];
+            } else {
+              data.cell.styles.fillColor = [240, 80, 80];
+            }
+          }
           if (data.section === "body" && data.column.index === 1) {
             const val = data.cell.raw as string;
             if (val === "Completado") {
-              data.cell.styles.textColor = [22, 163, 74]; // green-600
+              data.cell.styles.textColor = [22, 163, 74];
             } else {
-              data.cell.styles.textColor = [202, 138, 4]; // amber-600
+              data.cell.styles.textColor = [202, 138, 4];
             }
           }
         },
