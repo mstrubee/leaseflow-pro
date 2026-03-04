@@ -600,8 +600,8 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   };
 
   return (
-    <div className="rounded-md border w-full">
-      <Table>
+    <div className="rounded-md border">
+      <Table className="w-auto">
         <TableHeader>
           <TableRow className="bg-muted/50">
             <SortableTableHead
