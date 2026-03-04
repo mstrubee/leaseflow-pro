@@ -703,7 +703,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 <TableHead className="font-semibold text-center" style={getColStyle("estado")}>Estado</TableHead>
               </>
             )}
-            {isAdmin && <TableHead className="w-[50px]"></TableHead>}
+            {isAdmin && <TableHead className="w-8 p-1"></TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
