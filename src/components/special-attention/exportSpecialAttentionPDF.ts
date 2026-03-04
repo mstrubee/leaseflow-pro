@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { supabase } from "@/integrations/supabase/client";
+import logosHeader from "@/assets/logos-header.png";
 
 interface SpecialContract {
   id: string;
@@ -18,6 +19,7 @@ interface ChecklistItem {
   completed_at: string | null;
   created_at: string;
   parent_id: string | null;
+  contract_id?: string;
 }
 
 function fmtDate(iso: string): string {
@@ -31,10 +33,46 @@ function fmtCompletedDate(iso: string): string {
   return `${d.getFullYear()}.${months[d.getMonth()]}.${String(d.getDate()).padStart(2, "0")}`;
 }
 
+async function loadLogo(): Promise<HTMLImageElement | null> {
+  try {
+    const img = new Image();
+    img.src = logosHeader;
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+    });
+    return img;
+  } catch {
+    return null;
+  }
+}
+
+function buildChecklistRows(
+  items: ChecklistItem[],
+  parentId: string | null,
+  depth: number
+): string[][] {
+  const children = items.filter(i => i.parent_id === parentId);
+  const rows: string[][] = [];
+  for (const item of children) {
+    const indent = "  ".repeat(depth);
+    const check = item.is_completed ? "☑" : "☐";
+    const date = fmtDate(item.created_at);
+    let line = `${indent}${check} ${date}  ${item.text}`;
+    if (item.is_completed && item.completed_at) {
+      line += `  (completado el ${fmtCompletedDate(item.completed_at)})`;
+    }
+    const status = item.is_completed ? "Completado" : "Pendiente";
+    rows.push([line, status]);
+    rows.push(...buildChecklistRows(items, item.id, depth + 1));
+  }
+  return rows;
+}
+
 export async function exportSpecialAttentionPDF(contracts: SpecialContract[]) {
   if (contracts.length === 0) return;
 
-  // Fetch all checklist items for all contracts at once
+  // Fetch all checklist items
   const contractIds = contracts.map(c => c.id);
   const { data: allItems } = await supabase
     .from("special_attention_checklist")
@@ -53,130 +91,170 @@ export async function exportSpecialAttentionPDF(contracts: SpecialContract[]) {
 
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "letter" });
   const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
   const margin = 14;
-  const contentW = pageW - margin * 2;
-  let y = margin;
+  const today = new Date().toLocaleDateString("es-CL");
 
-  // Title
-  doc.setFontSize(14);
+  // ── Header with logo ──
+  const logoImg = await loadLogo();
+  if (logoImg) {
+    doc.addImage(logoImg, "PNG", margin, 8, 50, 20);
+  }
+
+  doc.setFontSize(16);
   doc.setFont("helvetica", "bold");
-  doc.text("Atención Especial Contratos", margin, y + 5);
-  doc.setFontSize(8);
+  doc.text("Atención Especial Contratos", logoImg ? 70 : margin, 18);
+
+  doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
-  doc.text(`Generado: ${fmtDate(new Date().toISOString())}`, pageW - margin, y + 5, { align: "right" });
-  y += 12;
+  doc.setTextColor(100);
+  doc.text(`Generado: ${today}  |  Total: ${contracts.length} contratos`, logoImg ? 70 : margin, 25);
+  doc.setTextColor(0);
 
-  doc.setDrawColor(200);
-  doc.line(margin, y, pageW - margin, y);
-  y += 6;
+  // Summary stats
+  let totalItems = 0, totalCompleted = 0, totalPending = 0;
+  for (const c of contracts) {
+    const items = itemsByContract[c.id] || [];
+    totalItems += items.length;
+    totalCompleted += items.filter(i => i.is_completed).length;
+    totalPending += items.filter(i => !i.is_completed).length;
+  }
 
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.text(
+    `Tareas totales: ${totalItems}  |  Completadas: ${totalCompleted}  |  Pendientes: ${totalPending}`,
+    logoImg ? 70 : margin,
+    30
+  );
+
+  let startY = 36;
+
+  // ── Iterate contracts ──
   for (let ci = 0; ci < contracts.length; ci++) {
     const c = contracts[ci];
     const items = itemsByContract[c.id] || [];
-    const rootItems = items.filter(i => !i.parent_id);
-    const childrenOf = (pid: string) => items.filter(i => i.parent_id === pid);
+    const completed = items.filter(i => i.is_completed).length;
+    const pending = items.filter(i => !i.is_completed).length;
 
-    // Estimate height needed for this contract block
-    const estimatedH = 20 + (items.length * 5) + (c.special_attention_reason ? 12 : 0);
-    if (y + estimatedH > doc.internal.pageSize.getHeight() - 15) {
+    // ── Contract header bar ──
+    if (startY > pageH - 40) {
       doc.addPage();
-      y = margin;
+      startY = margin;
     }
 
-    // Contract header
+    doc.setFillColor(220, 38, 38);
+    doc.rect(margin, startY, pageW - margin * 2, 8, "F");
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    doc.text(`${ci + 1}. ${c.name}`, margin, y);
-    y += 4;
+    doc.setTextColor(255);
 
     const meta: string[] = [];
     if (c.companyNames.length > 0) meta.push(c.companyNames.join(", "));
     if (c.cebe) meta.push(`CEBE: ${c.cebe}`);
-    if (c.codigo) meta.push(`Código: ${c.codigo}`);
+    if (c.codigo) meta.push(`Cód: ${c.codigo}`);
+    const headerText = `${ci + 1}. ${c.name}${meta.length > 0 ? "  —  " + meta.join("  •  ") : ""}`;
+    doc.text(headerText, margin + 2, startY + 5.5);
+    doc.setTextColor(0);
+    startY += 10;
 
-    if (meta.length > 0) {
-      doc.setFontSize(7.5);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(120);
-      doc.text(meta.join("  •  "), margin + 2, y);
-      doc.setTextColor(0);
-      y += 4;
-    }
+    // ── Stats line ──
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(100);
+    doc.text(`Checklist: ${completed + pending} ítems  |  ✓ ${completed} completados  |  ○ ${pending} pendientes`, margin + 2, startY + 3);
+    doc.setTextColor(0);
+    startY += 6;
 
-    // Notes
+    // ── Notes ──
     if (c.special_attention_reason) {
-      doc.setFontSize(8);
-      doc.setFont("helvetica", "italic");
-      doc.setTextColor(80);
-      const noteLines = doc.splitTextToSize(`Notas: ${c.special_attention_reason}`, contentW - 4);
-      for (const line of noteLines) {
-        if (y > doc.internal.pageSize.getHeight() - 15) { doc.addPage(); y = margin; }
-        doc.text(line, margin + 2, y);
-        y += 3.5;
-      }
-      doc.setTextColor(0);
-      doc.setFont("helvetica", "normal");
-      y += 1;
-    }
+      doc.setFillColor(255, 251, 235); // amber-50 tint
+      const noteLines = doc.splitTextToSize(c.special_attention_reason, pageW - margin * 2 - 8);
+      const noteH = noteLines.length * 3.8 + 6;
 
-    // Checklist
-    if (items.length > 0) {
-      const pending = items.filter(i => !i.is_completed).length;
-      const completed = items.filter(i => i.is_completed).length;
+      if (startY + noteH > pageH - 15) {
+        doc.addPage();
+        startY = margin;
+      }
+
+      doc.rect(margin, startY, pageW - margin * 2, noteH, "F");
       doc.setFontSize(7.5);
       doc.setFont("helvetica", "bold");
-      doc.text(`Checklist (${completed}/${items.length} completados, ${pending} pendientes)`, margin + 2, y);
-      y += 4;
-
-      const renderItemPDF = (item: ChecklistItem, depth: number) => {
-        if (y > doc.internal.pageSize.getHeight() - 15) { doc.addPage(); y = margin; }
-
-        const indent = margin + 4 + depth * 6;
-        const checkMark = item.is_completed ? "☑" : "☐";
-        const datePrefix = fmtDate(item.created_at);
-        let line = `${checkMark} ${datePrefix}  ${item.text}`;
-        if (item.is_completed && item.completed_at) {
-          line += ` (completado el ${fmtCompletedDate(item.completed_at)})`;
-        }
-
-        doc.setFontSize(7.5);
-        doc.setFont("helvetica", item.is_completed ? "normal" : "normal");
-        if (item.is_completed) doc.setTextColor(130); else doc.setTextColor(30);
-
-        const splitLines = doc.splitTextToSize(line, contentW - (indent - margin) - 2);
-        for (const sl of splitLines) {
-          if (y > doc.internal.pageSize.getHeight() - 15) { doc.addPage(); y = margin; }
-          doc.text(sl, indent, y);
-          y += 3.5;
-        }
-        doc.setTextColor(0);
-
-        for (const child of childrenOf(item.id)) {
-          renderItemPDF(child, depth + 1);
-        }
-      };
-
-      for (const root of rootItems) {
-        renderItemPDF(root, 0);
+      doc.setTextColor(120, 80, 0);
+      doc.text("Notas:", margin + 3, startY + 4);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(80);
+      let ny = startY + 4;
+      for (const line of noteLines) {
+        ny += 3.8;
+        doc.text(line, margin + 3, ny);
       }
-      y += 2;
+      doc.setTextColor(0);
+      startY += noteH + 2;
     }
 
-    // Separator between contracts
+    // ── Checklist table ──
+    if (items.length > 0) {
+      const checklistRows = buildChecklistRows(items, null, 0);
+
+      autoTable(doc, {
+        startY,
+        head: [["Tarea", "Estado"]],
+        body: checklistRows,
+        theme: "striped",
+        headStyles: {
+          fillColor: [220, 38, 38],
+          textColor: 255,
+          fontStyle: "bold",
+          fontSize: 8,
+          halign: "left",
+        },
+        styles: {
+          fontSize: 7.5,
+          cellPadding: 2,
+          overflow: "linebreak",
+        },
+        columnStyles: {
+          0: { cellWidth: pageW - margin * 2 - 25 },
+          1: { cellWidth: 23, halign: "center", fontStyle: "bold" },
+        },
+        alternateRowStyles: {
+          fillColor: [245, 247, 250],
+        },
+        margin: { left: margin, right: margin },
+        didParseCell(data) {
+          if (data.section === "body" && data.column.index === 1) {
+            const val = data.cell.raw as string;
+            if (val === "Completado") {
+              data.cell.styles.textColor = [22, 163, 74]; // green-600
+            } else {
+              data.cell.styles.textColor = [202, 138, 4]; // amber-600
+            }
+          }
+        },
+      });
+
+      startY = (doc as any).lastAutoTable.finalY + 6;
+    }
+
+    // Separator
     if (ci < contracts.length - 1) {
-      doc.setDrawColor(220);
-      doc.line(margin, y, pageW - margin, y);
-      y += 5;
+      if (startY > pageH - 30) {
+        doc.addPage();
+        startY = margin;
+      } else {
+        startY += 2;
+      }
     }
   }
 
-  // Footer with page numbers
+  // ── Page numbers footer ──
   const totalPages = doc.getNumberOfPages();
   for (let p = 1; p <= totalPages; p++) {
     doc.setPage(p);
     doc.setFontSize(7);
-    doc.setTextColor(150);
-    doc.text(`Página ${p} de ${totalPages}`, pageW - margin, doc.internal.pageSize.getHeight() - 8, { align: "right" });
+    doc.setTextColor(128);
+    doc.text(`Página ${p} de ${totalPages}`, pageW / 2, pageH - 8, { align: "center" });
     doc.setTextColor(0);
   }
 
