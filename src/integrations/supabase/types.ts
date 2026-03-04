@@ -4693,6 +4693,7 @@ export type Database = {
           created_at: string
           id: string
           is_completed: boolean
+          parent_id: string | null
           text: string
         }
         Insert: {
@@ -4702,6 +4703,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_completed?: boolean
+          parent_id?: string | null
           text: string
         }
         Update: {
@@ -4711,6 +4713,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_completed?: boolean
+          parent_id?: string | null
           text?: string
         }
         Relationships: [
@@ -4719,6 +4722,13 @@ export type Database = {
             columns: ["contract_id"]
             isOneToOne: false
             referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "special_attention_checklist_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "special_attention_checklist"
             referencedColumns: ["id"]
           },
         ]
