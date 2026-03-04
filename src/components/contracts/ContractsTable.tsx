@@ -823,6 +823,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 {isNegociacionView && (
                   <>
                     <TableCell className="text-center min-w-[120px]" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex justify-center">
                       <Select
                         value={contract.comite_gp_status || ''}
                         onValueChange={(value) => handleComiteGPChange(contract.id, value)}
@@ -843,6 +844,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                           ))}
                         </SelectContent>
                       </Select>
+                      </div>
                     </TableCell>
                     <TableCell className="text-center min-w-[130px]" onClick={(e) => e.stopPropagation()}>
                       <Select 
