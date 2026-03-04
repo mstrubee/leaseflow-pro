@@ -7,7 +7,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { ContractSearchSelect, type ContractOption } from "@/components/contracts/ContractSearchSelect";
 import { SpecialAttentionChecklist } from "@/components/special-attention/SpecialAttentionChecklist";
-import { AlertTriangle, ArrowLeft, ExternalLink, Plus, Search, ChevronDown, ChevronRight, ChevronsUpDown } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, Plus, Search, ChevronDown, ChevronRight, ChevronsUpDown, FileDown } from "lucide-react";
+import { exportSpecialAttentionPDF } from "@/components/special-attention/exportSpecialAttentionPDF";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -191,6 +192,16 @@ const SpecialAttentionPage = () => {
           >
             <ChevronsUpDown className="h-4 w-4" />
             {expandedIds.size === contracts.length ? "Contraer" : "Expandir"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 shrink-0"
+            disabled={loading || contracts.length === 0}
+            onClick={() => exportSpecialAttentionPDF(contracts)}
+          >
+            <FileDown className="h-4 w-4" />
+            PDF
           </Button>
           <div className="flex-1" />
           <div className="flex items-center gap-2 w-80">
