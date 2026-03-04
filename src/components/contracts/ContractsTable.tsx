@@ -976,7 +976,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                         </div>
                       ) : (
                         <button
-                          className="flex flex-col items-center gap-0.5 text-xs hover:bg-muted/50 px-2 py-1 rounded"
+                          className="flex flex-col items-center text-center gap-0.5 text-xs hover:bg-muted/50 px-2 py-1 rounded"
                           onClick={(e) => {
                             e.stopPropagation();
                             setEditingVenta(contract.id);
