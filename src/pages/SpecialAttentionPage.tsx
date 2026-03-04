@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { ContractSearchSelect, type ContractOption } from "@/components/contracts/ContractSearchSelect";
 import { SpecialAttentionChecklist } from "@/components/special-attention/SpecialAttentionChecklist";
-import { AlertTriangle, ArrowLeft, ExternalLink, Plus, Search, ChevronDown, ChevronRight, ChevronsUpDown, FileDown, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, Plus, Search, ChevronDown, ChevronRight, ChevronsUpDown, FileDown, Trash2 } from "lucide-react";
 import { SelectableElement } from "@/components/admin/SelectableElement";
 import { exportSpecialAttentionPDF } from "@/components/special-attention/exportSpecialAttentionPDF";
 import { Input } from "@/components/ui/input";
@@ -297,10 +297,10 @@ const SpecialAttentionPage = () => {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="shrink-0 h-8 w-8 text-muted-foreground hover:text-destructive"
+                      className="shrink-0 h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                       onClick={() => setRemoveConfirmId(c.id)}
                     >
-                      <X className="h-4 w-4" />
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                   <CollapsibleContent>
@@ -320,8 +320,9 @@ const SpecialAttentionPage = () => {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Quitar contrato del listado?</AlertDialogTitle>
-            <AlertDialogDescription>
-              El contrato será removido de Atención Especial. El historial de checklist y notas se mantendrá dentro del contrato.
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">Se quitará del listado de contratos con Atención Especial.</span>
+              <span className="block">Esta acción <strong className="text-foreground">NO</strong> elimina el contrato de la base de datos. El historial de la atención especial se mantiene en archivo histórico dentro del contrato.</span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
