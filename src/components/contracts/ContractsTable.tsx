@@ -154,8 +154,10 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   // Helper to get column style with width
   const getColStyle = (columnKey: string): React.CSSProperties => {
     if (externalColumnWidths) {
-      const width = externalColumnWidths[columnKey] ?? 10;
-      return { width: `${width}%`, minWidth: '80px' };
+      const total = Object.values(externalColumnWidths).reduce((s, w) => s + (w || 0), 0) || 1;
+      const rawWidth = externalColumnWidths[columnKey] ?? 10;
+      const pct = (rawWidth / total) * 100;
+      return { width: `${pct.toFixed(1)}%`, minWidth: '80px' };
     }
     return getColumnStyle(columnKey);
   };
@@ -659,7 +661,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
               align="center"
               style={getColStyle("venta_estimada")}
             />
-            <TableHead className="font-semibold text-center" style={{ minWidth: '48px', width: '48px' }}>CAPEX</TableHead>
+            <TableHead className="font-semibold text-center" style={getColStyle("capex")}>CAPEX</TableHead>
             <SortableTableHead
               label={<div className="leading-tight">Costo<br/>Arriendo</div>}
               sortKey="costo_arriendo"
@@ -1037,7 +1039,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                     </button>
                   )}
                 </TableCell>
-                <TableCell className="text-center" style={{ minWidth: '48px', width: '48px' }}>
+                <TableCell className="text-center" style={getColStyle("capex")}>
                   {(() => {
                     const capexUF = capexByContract[contract.id] || 0;
                     if (capexUF <= 0) return <span className="text-muted-foreground">-</span>;
