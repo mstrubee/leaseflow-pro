@@ -1,12 +1,12 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSpecialAttentionNavigation } from "@/components/special-attention/SpecialAttentionReturnButton";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { ContractSearchSelect, type ContractOption } from "@/components/contracts/ContractSearchSelect";
+import { SpecialAttentionChecklist } from "@/components/special-attention/SpecialAttentionChecklist";
 import { AlertTriangle, ArrowLeft, ExternalLink, Plus, Search, ChevronDown, ChevronRight, ChevronsUpDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -56,39 +56,7 @@ async function fetchCebeCodigo(contractIds: string[]): Promise<Record<string, { 
   return map;
 }
 
-function InlineReason({ contract }: { contract: SpecialContract }) {
-  const [value, setValue] = useState(contract.special_attention_reason || "");
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const save = useCallback((text: string) => {
-    supabase
-      .from("contracts")
-      .update({ special_attention_reason: text || null })
-      .eq("id", contract.id)
-      .then(({ error }) => {
-        if (error) toast.error("Error al guardar");
-      });
-  }, [contract.id]);
-
-  const handleChange = (text: string) => {
-    setValue(text);
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => save(text), 600);
-  };
-
-  useEffect(() => {
-    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, []);
-
-  return (
-    <Textarea
-      value={value}
-      onChange={(e) => handleChange(e.target.value)}
-      placeholder="Escribe el motivo de atención especial…"
-      className="text-sm min-h-[60px]"
-    />
-  );
-}
+// InlineReason replaced by SpecialAttentionChecklist component
 
 const SpecialAttentionPage = () => {
   const navigate = useNavigate();
@@ -299,7 +267,7 @@ const SpecialAttentionPage = () => {
                   </div>
                   <CollapsibleContent>
                     <div className="px-5 pb-4 pt-1">
-                      <InlineReason contract={c} />
+                      <SpecialAttentionChecklist contractId={c.id} reason={c.special_attention_reason} />
                     </div>
                   </CollapsibleContent>
                 </CardContent>
