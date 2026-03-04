@@ -657,7 +657,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   align="center"
                   style={getColStyle("venta_estimada")}
                 />
-                <TableHead className="font-semibold text-center" style={{ minWidth: '120px' }}>CAPEX</TableHead>
+                <TableHead className="font-semibold text-center" style={{ minWidth: '48px', width: '48px' }}>CAPEX</TableHead>
               </>
             )}
             <SortableTableHead
