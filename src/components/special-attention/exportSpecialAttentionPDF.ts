@@ -56,7 +56,7 @@ function buildChecklistRows(
   const rows: string[][] = [];
   for (const item of children) {
     const indent = "  ".repeat(depth);
-    const check = item.is_completed ? "☑" : "☐";
+    const check = item.is_completed ? "[x]" : "[ ]";
     const date = fmtDate(item.created_at);
     let line = `${indent}${check} ${date}  ${item.text}`;
     if (item.is_completed && item.completed_at) {
@@ -162,7 +162,7 @@ export async function exportSpecialAttentionPDF(contracts: SpecialContract[]) {
     doc.setFontSize(8);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(100);
-    doc.text(`Checklist: ${completed + pending} ítems  |  ✓ ${completed} completados  |  ○ ${pending} pendientes`, margin + 2, startY + 3);
+    doc.text(`Checklist: ${completed + pending} items  |  ${completed} completados  |  ${pending} pendientes`, margin + 2, startY + 3);
     doc.setTextColor(0);
     startY += 6;
 
