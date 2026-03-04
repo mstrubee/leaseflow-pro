@@ -4,6 +4,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -11,12 +12,25 @@ interface ChecklistItem {
   id: string;
   text: string;
   is_completed: boolean;
+  completed_at: string | null;
   created_at: string;
+  parent_id: string | null;
 }
 
 interface Props {
   contractId: string;
   reason: string | null;
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function formatCompletedDate(iso: string): string {
+  const d = new Date(iso);
+  const months = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+  return `${d.getFullYear()}.${months[d.getMonth()]}.${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export function SpecialAttentionChecklist({ contractId, reason }: Props) {
@@ -26,15 +40,20 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
   const [checklistOpen, setChecklistOpen] = useState(true);
   const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Child creation dialog state
+  const [childDialogOpen, setChildDialogOpen] = useState(false);
+  const [childParentId, setChildParentId] = useState<string | null>(null);
+  const [childText, setChildText] = useState("");
+
   // Load checklist items
   useEffect(() => {
     supabase
       .from("special_attention_checklist")
-      .select("id, text, is_completed, created_at")
+      .select("id, text, is_completed, completed_at, created_at, parent_id")
       .eq("contract_id", contractId)
-      .order("created_at", { ascending: false })
+      .order("created_at", { ascending: true })
       .then(({ data }) => {
-        if (data) setItems(data);
+        if (data) setItems(data as ChecklistItem[]);
       });
   }, [contractId]);
 
@@ -59,7 +78,7 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
     return () => { if (notesTimer.current) clearTimeout(notesTimer.current); };
   }, []);
 
-  // Add checklist item
+  // Add checklist item (top-level)
   const addItem = async () => {
     const trimmed = newItemText.trim();
     if (!trimmed) return;
@@ -67,16 +86,36 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
     const { data, error } = await supabase
       .from("special_attention_checklist")
       .insert({ contract_id: contractId, text: trimmed })
-      .select("id, text, is_completed, created_at")
+      .select("id, text, is_completed, completed_at, created_at, parent_id")
       .single();
 
     if (error) {
       toast.error("Error al agregar ítem");
       return;
     }
-    // New items go to the top (newest first)
-    setItems(prev => [data, ...prev]);
+    setItems(prev => [...prev, data as ChecklistItem]);
     setNewItemText("");
+  };
+
+  // Add child item
+  const addChildItem = async () => {
+    const trimmed = childText.trim();
+    if (!trimmed || !childParentId) return;
+
+    const { data, error } = await supabase
+      .from("special_attention_checklist")
+      .insert({ contract_id: contractId, text: trimmed, parent_id: childParentId })
+      .select("id, text, is_completed, completed_at, created_at, parent_id")
+      .single();
+
+    if (error) {
+      toast.error("Error al agregar ítem");
+      return;
+    }
+    setItems(prev => [...prev, data as ChecklistItem]);
+    setChildText("");
+    setChildDialogOpen(false);
+    setChildParentId(null);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -86,13 +125,14 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
     }
   };
 
-  // Toggle completion
+  // Toggle completion — offer child creation
   const toggleItem = async (id: string, completed: boolean) => {
+    const now = completed ? new Date().toISOString() : null;
     const { error } = await supabase
       .from("special_attention_checklist")
       .update({
         is_completed: completed,
-        completed_at: completed ? new Date().toISOString() : null,
+        completed_at: now,
       })
       .eq("id", id);
 
@@ -100,7 +140,14 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
       toast.error("Error al actualizar");
       return;
     }
-    setItems(prev => prev.map(i => i.id === id ? { ...i, is_completed: completed } : i));
+    setItems(prev => prev.map(i => i.id === id ? { ...i, is_completed: completed, completed_at: now } : i));
+
+    // If marking as completed, offer to create child
+    if (completed) {
+      setChildParentId(id);
+      setChildText("");
+      setChildDialogOpen(true);
+    }
   };
 
   // Delete item
@@ -110,10 +157,48 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
       .delete()
       .eq("id", id);
 
-    if (!error) setItems(prev => prev.filter(i => i.id !== id));
+    if (!error) setItems(prev => prev.filter(i => i.id !== id && i.parent_id !== id));
   };
 
+  // Build tree structure
+  const rootItems = items.filter(i => !i.parent_id);
+  const childrenOf = (parentId: string): ChecklistItem[] =>
+    items.filter(i => i.parent_id === parentId);
+
   const completedCount = items.filter(i => i.is_completed).length;
+
+  const renderItem = (item: ChecklistItem, depth: number) => (
+    <div key={item.id}>
+      <div
+        className="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-muted/50 group"
+        style={{ paddingLeft: `${8 + depth * 20}px` }}
+      >
+        <Checkbox
+          checked={item.is_completed}
+          onCheckedChange={(checked) => toggleItem(item.id, !!checked)}
+          className="mt-0.5"
+        />
+        <span className={`text-sm flex-1 ${item.is_completed ? "line-through text-muted-foreground" : "text-foreground"}`}>
+          <span className="font-mono text-xs text-muted-foreground mr-1.5">{formatDate(item.created_at)}</span>
+          {item.text}
+          {item.is_completed && item.completed_at && (
+            <span className="text-xs text-muted-foreground ml-1">
+              (completado el {formatCompletedDate(item.completed_at)})
+            </span>
+          )}
+        </span>
+        <button
+          onClick={() => deleteItem(item.id)}
+          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity p-0.5"
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+      </div>
+      {childrenOf(item.id).map(child => renderItem(child, depth + 1))}
+    </div>
+  );
+
+  const parentItemText = childParentId ? items.find(i => i.id === childParentId)?.text : "";
 
   return (
     <div className="space-y-2">
@@ -161,32 +246,46 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
             </button>
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <div className="space-y-1 max-h-[200px] overflow-y-auto">
-              {items.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-muted/50 group"
-                >
-                  <Checkbox
-                    checked={item.is_completed}
-                    onCheckedChange={(checked) => toggleItem(item.id, !!checked)}
-                    className="mt-0.5"
-                  />
-                  <span className={`text-sm flex-1 ${item.is_completed ? "line-through text-muted-foreground" : "text-foreground"}`}>
-                    {item.text}
-                  </span>
-                  <button
-                    onClick={() => deleteItem(item.id)}
-                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity p-0.5"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
+            <div className="space-y-0.5 max-h-[300px] overflow-y-auto">
+              {rootItems.map((item) => renderItem(item, 0))}
             </div>
           </CollapsibleContent>
         </Collapsible>
       )}
+
+      {/* Dialog for creating child item after completing */}
+      <Dialog open={childDialogOpen} onOpenChange={(open) => {
+        if (!open) { setChildDialogOpen(false); setChildParentId(null); }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm">Crear ítem de seguimiento</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              A partir de: <span className="font-medium text-foreground">{parentItemText}</span>
+            </p>
+            <Textarea
+              value={childText}
+              onChange={(e) => setChildText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addChildItem(); }
+              }}
+              placeholder="Nuevo ítem de seguimiento…"
+              className="text-sm min-h-[80px]"
+              autoFocus
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" size="sm" onClick={() => { setChildDialogOpen(false); setChildParentId(null); }}>
+              Omitir
+            </Button>
+            <Button size="sm" disabled={!childText.trim()} onClick={addChildItem}>
+              <Plus className="h-4 w-4 mr-1" /> Agregar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
