@@ -4,6 +4,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ChevronDown, ChevronRight, Plus, Trash2, Pencil, Check, X } from "lucide-react";
 import { toast } from "sonner";
@@ -46,6 +47,7 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
   const [childText, setChildText] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   // Load checklist items
   useEffect(() => {
@@ -237,7 +239,7 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
                 <Pencil className="h-3 w-3" />
               </button>
               <button
-                onClick={() => deleteItem(item.id)}
+                onClick={() => setDeleteConfirmId(item.id)}
                 className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity p-0.5"
               >
                 <Trash2 className="h-3 w-3" />
@@ -338,6 +340,24 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete confirmation */}
+      <AlertDialog open={!!deleteConfirmId} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar ítem?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. Se eliminarán también los sub-ítems asociados.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { if (deleteConfirmId) { deleteItem(deleteConfirmId); setDeleteConfirmId(null); } }}>
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
