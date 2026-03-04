@@ -30,6 +30,7 @@ import { ContractRowSelector } from "@/components/contracts/ContractRowSelector"
 import { generateContractsListPDF, getAvailableColumns } from "@/components/contracts/ContractsTablePDF";
 import { ColumnWidthsManager } from "@/components/contracts/ColumnWidthsManager";
 import { SortOrder } from "@/components/contracts/SortableTableHead";
+import { ContractStatsCards } from "@/components/contracts/ContractStatsCards";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { useContractColumnWidths, DEFAULT_COLUMN_WIDTHS } from "@/hooks/useContractColumnWidths";
 import { useAuth } from "@/hooks/useAuth";
@@ -1086,6 +1087,9 @@ const Contracts = () => {
       </header>
 
       <main className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-4">
+        {/* Contract Stats Cards */}
+        <ContractStatsCards />
+
         {/* Search and Filters */}
         <Card className="p-4 space-y-4" style={{ width: "130%" }}>
           <div className="flex flex-wrap items-end gap-3">
