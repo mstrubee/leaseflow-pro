@@ -300,7 +300,15 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
               </button>
             </div>
           ) : (
-            <span className={`text-sm flex-1 ${item.is_completed ? "line-through text-muted-foreground" : "text-foreground"}`}>
+            <span
+              className={`text-sm flex-1 ${item.is_completed ? "line-through text-muted-foreground" : "text-foreground"}`}
+              onDoubleClick={() => {
+                if (!item.is_completed) {
+                  setEditingId(item.id);
+                  setEditingText(item.text);
+                }
+              }}
+            >
               <span className="font-mono text-xs text-muted-foreground mr-1.5">{formatDate(item.created_at)}</span>
               {item.text}
               {item.is_completed && item.completed_at && (
