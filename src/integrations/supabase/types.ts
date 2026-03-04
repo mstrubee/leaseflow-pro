@@ -2586,6 +2586,7 @@ export type Database = {
           general_description: string | null
           hvac_description: string | null
           id: string
+          ot_file_url: string | null
           purchase_order_id: string | null
           purchase_order_number: string | null
           resolution_date: string | null
@@ -2622,6 +2623,7 @@ export type Database = {
           general_description?: string | null
           hvac_description?: string | null
           id?: string
+          ot_file_url?: string | null
           purchase_order_id?: string | null
           purchase_order_number?: string | null
           resolution_date?: string | null
@@ -2658,6 +2660,7 @@ export type Database = {
           general_description?: string | null
           hvac_description?: string | null
           id?: string
+          ot_file_url?: string | null
           purchase_order_id?: string | null
           purchase_order_number?: string | null
           resolution_date?: string | null

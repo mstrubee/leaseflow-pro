@@ -427,6 +427,9 @@ export function MaintenanceEditDialog({ form, open, onOpenChange, onSuccess }: P
       onOpenChange={v => { if (!v) setResolutionOpen(false); }}
       existingObservations={formData.resolution_observations || null}
       onResolve={handleResolutionResolve}
+      formId={form?.id || null}
+      formNumber={form?.form_number || ""}
+      onOTUploaded={onSuccess}
     />
     </>
   );

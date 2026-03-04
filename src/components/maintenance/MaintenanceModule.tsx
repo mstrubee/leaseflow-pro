@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Textarea } from "@/components/ui/textarea";
-import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink, Shield, XCircle, ChevronLeft, ChevronRight, MessageSquare } from "lucide-react";
+import { Upload, Search, ClipboardList, Clock, CheckCircle, Pencil, FileDown, Download, Link, CalendarDays, ListFilter, Building2, ExternalLink, Shield, XCircle, ChevronLeft, ChevronRight, MessageSquare, FileText } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -22,6 +22,7 @@ import { MaintenanceExcelUpload } from "./MaintenanceExcelUpload";
 import { MaintenanceEditDialog } from "./MaintenanceEditDialog";
 import { SortableTableHead, SortOrder } from "@/components/contracts/SortableTableHead";
 import { exportMaintenanceExcel, exportMaintenancePDF, exportDailyFormsPDF } from "./maintenanceExport";
+import { exportOTPDF, downloadBlankOTPDF, downloadBlankOTExcel } from "./otExport";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 
@@ -1247,6 +1248,23 @@ export function MaintenanceModule() {
         <Button variant="outline" onClick={() => setExcelDialog(true)} disabled={filtered.length === 0} className="gap-2">
           <Download className="h-4 w-4" /> Descargar Excel
         </Button>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className="gap-2">
+              <FileText className="h-4 w-4" /> Descargar OT
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-48 p-2" align="start">
+            <div className="flex flex-col gap-1">
+              <Button variant="ghost" size="sm" className="justify-start text-sm" onClick={() => downloadBlankOTPDF()}>
+                OT en blanco (PDF)
+              </Button>
+              <Button variant="ghost" size="sm" className="justify-start text-sm" onClick={() => downloadBlankOTExcel()}>
+                OT en blanco (Excel)
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
         
       </div>
 
@@ -1389,6 +1407,11 @@ export function MaintenanceModule() {
                               }} title="Descargar PDF">
                                 <FileDown className="h-3.5 w-3.5" />
                               </Button>
+                              {(f.sub_status === "cotizando" || f.sub_status === "en_ejecucion") && (
+                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => exportOTPDF(f, contractCompanyMap)} title="Descargar OT">
+                                  <FileText className="h-3.5 w-3.5 text-red-600" />
+                                </Button>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -1441,6 +1464,9 @@ export function MaintenanceModule() {
         onOpenChange={v => { if (!v) { setResolutionOpen(false); setResolutionTarget(null); } }}
         existingObservations={formsRef.current.find(f => f.id === resolutionTarget)?.resolution_observations ?? null}
         onResolve={handleResolve}
+        formId={resolutionTarget}
+        formNumber={formsRef.current.find(f => f.id === resolutionTarget)?.form_number || ""}
+        onOTUploaded={handleDataChanged}
       />
 
       {/* Excel download dialog with checkboxes */}
