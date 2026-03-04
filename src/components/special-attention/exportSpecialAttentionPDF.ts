@@ -203,8 +203,8 @@ export async function exportSpecialAttentionPDF(contracts: SpecialContract[]) {
         body: checklistRows,
         theme: "striped",
         headStyles: {
-          fillColor: [220, 38, 38],
-          textColor: 255,
+          fillColor: [237, 146, 146],
+          textColor: [80, 0, 0],
           fontStyle: "bold",
           fontSize: 8,
           halign: "left",
@@ -226,11 +226,8 @@ export async function exportSpecialAttentionPDF(contracts: SpecialContract[]) {
         didParseCell(data) {
           // Gradient-style red for header row
           if (data.section === "head") {
-            if (data.column.index === 0) {
-              data.cell.styles.fillColor = [200, 30, 30];
-            } else {
-              data.cell.styles.fillColor = [240, 80, 80];
-            }
+            data.cell.styles.fillColor = [237, 146, 146];
+            data.cell.styles.textColor = [80, 0, 0];
           }
           if (data.section === "body" && data.column.index === 1) {
             const val = data.cell.raw as string;
