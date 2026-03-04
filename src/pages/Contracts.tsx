@@ -1087,7 +1087,7 @@ const Contracts = () => {
         </div>
       </header>
 
-      <main className="mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col h-[calc(100vh-80px)]" style={{ width: "130%", maxWidth: "1872px" }}>
+      <main className="max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col h-[calc(100vh-80px)]">
         {/* Fixed top section */}
         <div className="flex-shrink-0 space-y-4">
           {/* Contract Stats Cards - centered */}
