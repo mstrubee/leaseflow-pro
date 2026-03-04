@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
-import { Calculator, ChevronDown, ChevronUp, ArrowRightLeft, Trash2, X, GripVertical } from "lucide-react";
+import { Calculator, ChevronDown, ChevronUp, ArrowRightLeft, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -63,6 +63,7 @@ export function FloatingCalculator() {
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
   const returnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draggedRef = useRef(false);
 
   const { ufValue, convertUFToPesos, convertPesosToUF } = useEconomicIndicators();
 
@@ -76,10 +77,9 @@ export function FloatingCalculator() {
 
   // Drag handlers
   const onPointerDown = useCallback((e: ReactPointerEvent<HTMLButtonElement>) => {
-    e.preventDefault();
     setIsDragging(true);
     dragStart.current = { px: e.clientX, py: e.clientY, ox: offset.x, oy: offset.y };
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     if (returnTimer.current) clearTimeout(returnTimer.current);
   }, [offset]);
 
@@ -87,6 +87,7 @@ export function FloatingCalculator() {
     if (!dragStart.current || !isDragging) return;
     const dx = e.clientX - dragStart.current.px;
     const dy = e.clientY - dragStart.current.py;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) draggedRef.current = true;
     setOffset({ x: dragStart.current.ox + dx, y: dragStart.current.oy + dy });
   }, [isDragging]);
 
@@ -358,29 +359,26 @@ export function FloatingCalculator() {
         </div>
       )}
 
-      <div className="flex items-center gap-1">
-        <button
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          className="h-9 w-7 flex items-center justify-center rounded-full bg-card border border-border shadow-lg cursor-grab active:cursor-grabbing hover:bg-accent touch-none"
-        >
-          <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
-        </button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
+      <Button
+        variant="outline"
+        size="sm"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onClick={(e) => {
+          // Only toggle if it wasn't a drag
+          if (!draggedRef.current) {
             setIsOpen(!isOpen);
             setTimeout(() => calcRef.current?.focus(), 100);
-          }}
-          className="h-9 gap-1.5 rounded-full shadow-lg bg-card hover:bg-accent border-border px-3"
-        >
-          <Calculator className="h-4 w-4" />
-          <span className="text-xs font-medium">Calc</span>
-          {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
-        </Button>
-      </div>
+          }
+          draggedRef.current = false;
+        }}
+        className="h-9 gap-1.5 rounded-full shadow-lg bg-card hover:bg-accent border-border px-3 cursor-grab active:cursor-grabbing touch-none"
+      >
+        <Calculator className="h-4 w-4" />
+        <span className="text-xs font-medium">Calc</span>
+        {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
+      </Button>
     </div>
   );
 }
