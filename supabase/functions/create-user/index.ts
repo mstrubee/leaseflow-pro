@@ -67,7 +67,9 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Create user with admin client
+    let newUserId: string;
+
+    // Try to create user first
     const { data: authData, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
@@ -76,25 +78,65 @@ Deno.serve(async (req) => {
     })
 
     if (createError) {
-      return new Response(JSON.stringify({ error: createError.message }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
+      // If user already exists, find and reactivate them
+      if (createError.message.includes('already been registered') || createError.message.includes('already exists')) {
+        // List users to find the existing one by email
+        const { data: listData, error: listError } = await supabaseAdmin.auth.admin.listUsers()
+        
+        if (listError) {
+          return new Response(JSON.stringify({ error: listError.message }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        const existingUser = listData.users.find(u => u.email === email)
+        if (!existingUser) {
+          return new Response(JSON.stringify({ error: 'User exists but could not be found' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        newUserId = existingUser.id
+
+        // Update the existing auth user with new password and metadata
+        await supabaseAdmin.auth.admin.updateUserById(newUserId, {
+          password,
+          email_confirm: true,
+          user_metadata: { full_name: fullName }
+        })
+      } else {
+        return new Response(JSON.stringify({ error: createError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+    } else {
+      newUserId = authData.user.id
     }
 
-    const newUserId = authData.user.id
-
-    // Create profile
+    // Upsert profile (handles both new and re-created users)
     await supabaseAdmin
       .from('profiles')
-      .insert({ id: newUserId, email, full_name: fullName, cargo: cargo || null })
+      .upsert({ id: newUserId, email, full_name: fullName, cargo: cargo || null }, { onConflict: 'id' })
 
-    // Assign role
+    // Delete old role and assign new one
+    await supabaseAdmin
+      .from('user_roles')
+      .delete()
+      .eq('user_id', newUserId)
+
     await supabaseAdmin
       .from('user_roles')
       .insert({ user_id: newUserId, role: role || 'user' })
 
-    // Assign permissions if provided
+    // Delete old permissions and assign new ones
+    await supabaseAdmin
+      .from('user_permissions')
+      .delete()
+      .eq('user_id', newUserId)
+
     if (permissions && Object.keys(permissions).length > 0) {
       const permissionsToInsert = Object.entries(permissions)
         .filter(([_, perm]) => perm !== 'none')
