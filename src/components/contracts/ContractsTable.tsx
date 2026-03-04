@@ -602,7 +602,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   return (
     <div className="rounded-md border">
       <Table className="w-auto">
-        <TableHeader>
+        <TableHeader className="sticky top-0 z-10 bg-background">
           <TableRow className="bg-muted/50">
             <SortableTableHead
               label="Contrato"
