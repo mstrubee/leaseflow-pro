@@ -600,7 +600,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   };
 
   return (
-    <div className="rounded-md border overflow-hidden" style={{ width: "130%" }}>
+    <div className="rounded-md border overflow-hidden w-full">
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/50">
