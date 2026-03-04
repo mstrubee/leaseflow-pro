@@ -62,7 +62,7 @@ export function TodayAlertsFloating() {
   const [weekAlerts, setWeekAlerts] = useState<TodayAlert[]>([]);
   const [overdueAlerts, setOverdueAlerts] = useState<TodayAlert[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("today");
   const [completingAlertId, setCompletingAlertId] = useState<string | null>(null);
