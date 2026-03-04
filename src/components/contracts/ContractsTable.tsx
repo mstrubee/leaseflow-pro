@@ -648,18 +648,18 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   style={getColStyle("clasificacion")}
                 />
                 <TableHead className="font-semibold text-center" style={getColStyle("origen")}>Origen</TableHead>
-                <SortableTableHead
-                  label="Venta Est."
-                  sortKey="venta_estimada"
-                  currentSortKey={sortField || null}
-                  currentSortOrder={sortOrder || null}
-                  onSort={handleSort}
-                  align="center"
-                  style={getColStyle("venta_estimada")}
-                />
-                <TableHead className="font-semibold text-center" style={{ minWidth: '48px', width: '48px' }}>CAPEX</TableHead>
               </>
             )}
+            <SortableTableHead
+              label="Venta Est."
+              sortKey="venta_estimada"
+              currentSortKey={sortField || null}
+              currentSortOrder={sortOrder || null}
+              onSort={handleSort}
+              align="center"
+              style={getColStyle("venta_estimada")}
+            />
+            <TableHead className="font-semibold text-center" style={{ minWidth: '48px', width: '48px' }}>CAPEX</TableHead>
             <SortableTableHead
               label={<div className="leading-tight">Costo<br/>Arriendo</div>}
               sortKey="costo_arriendo"
@@ -947,128 +947,120 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                         </SelectContent>
                       </Select>
                     </TableCell>
-                    <TableCell className="text-center min-w-[180px]" onClick={(e) => e.stopPropagation()}>
-                      {editingVenta === contract.id ? (
-                        <div className="flex items-center gap-1">
-                          <Input
-                            type="text"
-                            value={ventaMinValue}
-                            onChange={(e) => setVentaMinValue(e.target.value)}
-                            placeholder="Min"
-                            className="h-7 w-16 text-xs"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <span className="text-xs text-muted-foreground">-</span>
-                          <Input
-                            type="text"
-                            value={ventaMaxValue}
-                            onChange={(e) => setVentaMaxValue(e.target.value)}
-                            placeholder="Max"
-                            className="h-7 w-16 text-xs"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={(e) => handleSaveVenta(e, contract.id)}>
-                            <Check className="h-3 w-3 text-green-600" />
-                          </Button>
-                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={handleCancelVenta}>
-                            <X className="h-3 w-3 text-red-600" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <button
-                          className="flex flex-col items-center text-center gap-0.5 text-xs hover:bg-muted/50 px-2 py-1 rounded"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingVenta(contract.id);
-                            setVentaMinValue(contract.venta_estimada ? contract.venta_estimada.toLocaleString('es-CL') : "");
-                            setVentaMaxValue(contract.venta_estimada_max ? contract.venta_estimada_max.toLocaleString('es-CL') : "");
-                          }}
-                        >
-                          {contract.venta_estimada ? (
-                            (() => {
-                              // Calculate cost arriendo for the ratio
-                              const currentVersion = contract.contract_versions?.find(v => v.is_current);
-                              const superficie = contract.superficie_edificada_local || 0;
-                              const metrosFrente = contract.metros_lineales_frente || 0;
-                              
-                              // Use weighted average total rent for ratio
-                              let arriendoTotalMensual = 0;
-                              if (currentVersion) {
-                                const { promedio } = calculateWeightedAverageTotalArriendo({
-                                  version: { ...currentVersion, duration_months: currentVersion.duration_months },
-                                  signedDate: contract.signed_date,
-                                  superficie,
-                                  metrosLinealesFrente: metrosFrente,
-                                });
-                                arriendoTotalMensual = promedio;
-                              }
-
-                              // Calculate venta in UF
-                              const ventaMin = contract.venta_estimada || 0;
-                              const ventaMax = contract.venta_estimada_max || ventaMin;
-                              const ventaMinUF = ufValue && ventaMin > 0 ? ventaMin / ufValue : 0;
-                              const ventaMaxUF = ufValue && ventaMax > 0 ? ventaMax / ufValue : 0;
-                              
-                              // Calculate ratio arr/vta (annual rent / annual sales)
-                              const arriendoAnual = arriendoTotalMensual * 12;
-                              const ventaAvgUF = (ventaMinUF + ventaMaxUF) / 2;
-                              const ventaAnualUF = ventaAvgUF * 12;
-                              const ratioArrVta = ventaAnualUF > 0 ? (arriendoAnual / ventaAnualUF) * 100 : 0;
-
-                              return (
-                                <>
-                                  <div className="font-medium text-foreground">
-                                    {ventaMin.toLocaleString('es-CL')}{ventaMax > ventaMin ? `-${ventaMax.toLocaleString('es-CL')}` : ''} MM$
-                                  </div>
-                                  {ufValue && (
-                                    <div className="text-[10px] text-muted-foreground">
-                                      {ventaMinUF.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                      {ventaMaxUF > ventaMinUF ? `-${ventaMaxUF.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : ''} UF
-                                      {superficie > 0 && (
-                                        <span> · {(ventaMinUF / superficie).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}{ventaMaxUF > ventaMinUF ? `-${(ventaMaxUF / superficie).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}` : ''} UF/m²</span>
-                                      )}
-                                    </div>
-                                  )}
-                                  {ratioArrVta > 0 && (
-                                    <div className="text-[10px] font-medium text-amber-600">
-                                      Arr/Vta: {ratioArrVta.toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
-                                    </div>
-                                  )}
-                                </>
-                              );
-                            })()
-                          ) : (
-                            <span className="text-muted-foreground italic">Agregar</span>
-                          )}
-                        </button>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center min-w-[120px]">
-                      {(() => {
-                        const capexUF = capexByContract[contract.id] || 0;
-                        if (capexUF <= 0) return <span className="text-muted-foreground">-</span>;
-                        const capexCLP = convertUFToPesos(capexUF);
-                        const superficie = contract.superficie_edificada_local || 0;
-                        const perM2 = superficie > 0 ? capexUF / superficie : 0;
-                        return (
-                          <div className="flex flex-col items-center">
-                            <span className="font-medium text-xs">
-                              ${capexCLP.toLocaleString('es-CL', { maximumFractionDigits: 0 })}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground">
-                              {capexUF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
-                            </span>
-                            {perM2 > 0 && (
-                              <span className="text-[10px] text-muted-foreground">
-                                {perM2.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF/m²
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </TableCell>
                   </>
                 )}
+                <TableCell className="text-center min-w-[126px]" onClick={(e) => e.stopPropagation()}>
+                  {editingVenta === contract.id ? (
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="text"
+                        value={ventaMinValue}
+                        onChange={(e) => setVentaMinValue(e.target.value)}
+                        placeholder="Min"
+                        className="h-7 w-16 text-xs"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <span className="text-xs text-muted-foreground">-</span>
+                      <Input
+                        type="text"
+                        value={ventaMaxValue}
+                        onChange={(e) => setVentaMaxValue(e.target.value)}
+                        placeholder="Max"
+                        className="h-7 w-16 text-xs"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={(e) => handleSaveVenta(e, contract.id)}>
+                        <Check className="h-3 w-3 text-green-600" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={handleCancelVenta}>
+                        <X className="h-3 w-3 text-red-600" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <button
+                      className="flex flex-col items-center text-center gap-0.5 text-xs hover:bg-muted/50 px-2 py-1 rounded"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingVenta(contract.id);
+                        setVentaMinValue(contract.venta_estimada ? contract.venta_estimada.toLocaleString('es-CL') : "");
+                        setVentaMaxValue(contract.venta_estimada_max ? contract.venta_estimada_max.toLocaleString('es-CL') : "");
+                      }}
+                    >
+                      {contract.venta_estimada ? (
+                        (() => {
+                          const currentVersion = contract.contract_versions?.find(v => v.is_current);
+                          const superficie = contract.superficie_edificada_local || 0;
+                          const metrosFrente = contract.metros_lineales_frente || 0;
+                          let arriendoTotalMensual = 0;
+                          if (currentVersion) {
+                            const { promedio } = calculateWeightedAverageTotalArriendo({
+                              version: { ...currentVersion, duration_months: currentVersion.duration_months },
+                              signedDate: contract.signed_date,
+                              superficie,
+                              metrosLinealesFrente: metrosFrente,
+                            });
+                            arriendoTotalMensual = promedio;
+                          }
+                          const ventaMin = contract.venta_estimada || 0;
+                          const ventaMax = contract.venta_estimada_max || ventaMin;
+                          const ventaMinUF = ufValue && ventaMin > 0 ? ventaMin / ufValue : 0;
+                          const ventaMaxUF = ufValue && ventaMax > 0 ? ventaMax / ufValue : 0;
+                          const arriendoAnual = arriendoTotalMensual * 12;
+                          const ventaAvgUF = (ventaMinUF + ventaMaxUF) / 2;
+                          const ventaAnualUF = ventaAvgUF * 12;
+                          const ratioArrVta = ventaAnualUF > 0 ? (arriendoAnual / ventaAnualUF) * 100 : 0;
+                          return (
+                            <>
+                              <div className="font-medium text-foreground">
+                                {ventaMin.toLocaleString('es-CL')}{ventaMax > ventaMin ? `-${ventaMax.toLocaleString('es-CL')}` : ''} MM$
+                              </div>
+                              {ufValue && (
+                                <div className="text-[10px] text-muted-foreground">
+                                  {ventaMinUF.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                  {ventaMaxUF > ventaMinUF ? `-${ventaMaxUF.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : ''} UF
+                                  {superficie > 0 && (
+                                    <span> · {(ventaMinUF / superficie).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}{ventaMaxUF > ventaMinUF ? `-${(ventaMaxUF / superficie).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}` : ''} UF/m²</span>
+                                  )}
+                                </div>
+                              )}
+                              {ratioArrVta > 0 && (
+                                <div className="text-[10px] font-medium text-amber-600">
+                                  Arr/Vta: {ratioArrVta.toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()
+                      ) : (
+                        <span className="text-muted-foreground italic">Agregar</span>
+                      )}
+                    </button>
+                  )}
+                </TableCell>
+                <TableCell className="text-center" style={{ minWidth: '48px', width: '48px' }}>
+                  {(() => {
+                    const capexUF = capexByContract[contract.id] || 0;
+                    if (capexUF <= 0) return <span className="text-muted-foreground">-</span>;
+                    const capexCLP = convertUFToPesos(capexUF);
+                    const superficie = contract.superficie_edificada_local || 0;
+                    const perM2 = superficie > 0 ? capexUF / superficie : 0;
+                    return (
+                      <div className="flex flex-col items-center">
+                        <span className="font-medium text-xs">
+                          ${capexCLP.toLocaleString('es-CL', { maximumFractionDigits: 0 })}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {capexUF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
+                        </span>
+                        {perM2 > 0 && (
+                          <span className="text-[10px] text-muted-foreground">
+                            {perM2.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF/m²
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </TableCell>
                 <TableCell className="text-center min-w-[140px]">
                   {currentVersion ? (() => {
                     const superficie = contract.superficie_edificada_local || 0;
