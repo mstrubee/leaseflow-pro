@@ -703,7 +703,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 <TableHead className="font-semibold text-center" style={getColStyle("estado")}>Estado</TableHead>
               </>
             )}
-            {isAdmin && <TableHead className="w-8 p-1"></TableHead>}
+            {isAdmin && <TableHead className="w-2 p-0 px-0.5"></TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -1356,11 +1356,11 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   </>
                 )}
                 {isAdmin && (
-                  <TableCell className="w-8 p-1" onClick={(e) => e.stopPropagation()}>
+                  <TableCell className="w-2 p-0 px-0.5" onClick={(e) => e.stopPropagation()}>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      className="h-5 w-5 text-destructive hover:text-destructive hover:bg-destructive/10"
                       onClick={(e) => onDelete(e, contract)}
                     >
                       <Trash2 className="h-4 w-4" />
