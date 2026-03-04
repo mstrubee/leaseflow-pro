@@ -225,7 +225,12 @@ export async function exportOTExcel(form: MaintenanceForm, contractCompanyMap?: 
 }
 
 export function downloadBlankOTPDF() {
-  window.open("/templates/OT-blank.pdf", "_blank");
+  const link = document.createElement("a");
+  link.href = "/templates/OT-blank.pdf";
+  link.download = "OT_en_blanco.pdf";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 export function downloadBlankOTExcel() {
