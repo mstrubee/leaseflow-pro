@@ -7,12 +7,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { ContractSearchSelect, type ContractOption } from "@/components/contracts/ContractSearchSelect";
 import { SpecialAttentionChecklist } from "@/components/special-attention/SpecialAttentionChecklist";
-import { AlertTriangle, ArrowLeft, ExternalLink, Plus, Search, ChevronDown, ChevronRight, ChevronsUpDown, FileDown } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, Plus, Search, ChevronDown, ChevronRight, ChevronsUpDown, FileDown, X } from "lucide-react";
 import { SelectableElement } from "@/components/admin/SelectableElement";
 import { exportSpecialAttentionPDF } from "@/components/special-attention/exportSpecialAttentionPDF";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 interface SpecialContract {
   id: string;
@@ -72,6 +73,7 @@ const SpecialAttentionPage = () => {
   const [adding, setAdding] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [removeConfirmId, setRemoveConfirmId] = useState<string | null>(null);
 
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => {
@@ -157,6 +159,21 @@ const SpecialAttentionPage = () => {
       await Promise.all([loadSpecialContracts(), loadAllContracts()]);
     }
     setAdding(false);
+  };
+
+  const handleRemoveContract = async () => {
+    if (!removeConfirmId) return;
+    const { error } = await supabase
+      .from("contracts")
+      .update({ requires_special_attention: false })
+      .eq("id", removeConfirmId);
+    if (error) {
+      toast.error("Error al quitar contrato");
+    } else {
+      toast.success("Contrato quitado del listado");
+      await Promise.all([loadSpecialContracts(), loadAllContracts()]);
+    }
+    setRemoveConfirmId(null);
   };
 
   return (
@@ -277,6 +294,14 @@ const SpecialAttentionPage = () => {
                       <ExternalLink className="h-3.5 w-3.5" />
                       Ver contrato
                     </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0 h-8 w-8 text-muted-foreground hover:text-destructive"
+                      onClick={() => setRemoveConfirmId(c.id)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
                   </div>
                   <CollapsibleContent>
                     <div className="px-5 pb-4 pt-1">
@@ -289,6 +314,22 @@ const SpecialAttentionPage = () => {
           ));
         })()}
       </main>
+
+      {/* Remove confirmation */}
+      <AlertDialog open={!!removeConfirmId} onOpenChange={(open) => { if (!open) setRemoveConfirmId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Quitar contrato del listado?</AlertDialogTitle>
+            <AlertDialogDescription>
+              El contrato será removido de Atención Especial. El historial de checklist y notas se mantendrá dentro del contrato.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRemoveContract}>Quitar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
     </SelectableElement>
   );
