@@ -155,6 +155,8 @@ const MAIN_RESOURCES = [
   { id: "alerts", label: "Alertas", category: "principal" },
   { id: "reports", label: "Informes", category: "principal" },
   { id: "kpi", label: "KPI", category: "principal" },
+  { id: "patents", label: "Patentes", category: "principal" },
+  { id: "special_attention", label: "Atención Especial", category: "principal" },
 ];
 
 // Secciones del Dashboard

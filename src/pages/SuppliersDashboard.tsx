@@ -4,6 +4,7 @@
  import { ArrowLeft } from "lucide-react";
  import { useAuth } from "@/hooks/useAuth";
  import { SuppliersModule } from "@/components/suppliers/SuppliersModule";
+ import { SelectableElement } from "@/components/admin/SelectableElement";
  
  const SuppliersDashboard = () => {
    const navigate = useNavigate();
@@ -25,25 +26,27 @@
  
    return (
      <div className="min-h-screen bg-background">
-       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
-         <div className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
-           <div className="flex items-center gap-4">
-             <Button variant="ghost" size="icon" onClick={() => navigate("/purchase-orders")}>
-               <ArrowLeft className="h-5 w-5" />
-             </Button>
-             <div>
-               <h1 className="text-2xl font-semibold text-foreground">Proveedores</h1>
-               <p className="text-sm text-muted-foreground">
-                 Gestión de proveedores y rubros
-               </p>
+       <SelectableElement elementId="suppliers" label="Proveedores">
+         <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
+           <div className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
+             <div className="flex items-center gap-4">
+               <Button variant="ghost" size="icon" onClick={() => navigate("/purchase-orders")}>
+                 <ArrowLeft className="h-5 w-5" />
+               </Button>
+               <div>
+                 <h1 className="text-2xl font-semibold text-foreground">Proveedores</h1>
+                 <p className="text-sm text-muted-foreground">
+                   Gestión de proveedores y rubros
+                 </p>
+               </div>
              </div>
            </div>
-         </div>
-       </header>
+         </header>
  
-       <main className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
-         <SuppliersModule />
-       </main>
+         <main className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+           <SuppliersModule />
+         </main>
+       </SelectableElement>
      </div>
    );
  };
