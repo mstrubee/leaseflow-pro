@@ -313,6 +313,13 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
           {!isEditing && (
             <>
               <button
+                onClick={() => { setChildParentId(item.id); setChildText(""); setChildDialogOpen(true); }}
+                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity p-0.5"
+                title="Agregar sub-ítem"
+              >
+                <Plus className="h-3 w-3" />
+              </button>
+              <button
                 onClick={() => { setEditingId(item.id); setEditingText(item.text); }}
                 className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity p-0.5"
               >
