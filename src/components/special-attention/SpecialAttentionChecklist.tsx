@@ -261,9 +261,9 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
   };
 
   // Build tree structure
-  const rootItems = items.filter(i => !i.parent_id);
+  const rootItems = items.filter(i => !i.parent_id).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   const childrenOf = (parentId: string): ChecklistItem[] =>
-    items.filter(i => i.parent_id === parentId);
+    items.filter(i => i.parent_id === parentId).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
   const completedCount = items.filter(i => i.is_completed).length;
 
