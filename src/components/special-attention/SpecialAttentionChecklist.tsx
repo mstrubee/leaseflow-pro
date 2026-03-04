@@ -95,6 +95,10 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
   const [editingText, setEditingText] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteWithChildren, setDeleteWithChildren] = useState(false);
+  const [editingDateId, setEditingDateId] = useState<string | null>(null);
+  const [editingDateYY, setEditingDateYY] = useState("");
+  const [editingDateMM, setEditingDateMM] = useState("");
+  const [editingDateDD, setEditingDateDD] = useState("");
 
   // Load checklist items
   useEffect(() => {
@@ -260,6 +264,49 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
     setEditingId(null);
   };
 
+  const daysInMonth = (month: number, year: number): number => {
+    return new Date(year, month, 0).getDate();
+  };
+
+  const startEditingDate = (item: ChecklistItem) => {
+    const d = new Date(item.created_at);
+    setEditingDateId(item.id);
+    setEditingDateYY(String(d.getFullYear() - 2000).padStart(2, "0"));
+    setEditingDateMM(String(d.getMonth() + 1));
+    setEditingDateDD(String(d.getDate()));
+  };
+
+  const saveDateEdit = async (id: string) => {
+    const yy = parseInt(editingDateYY);
+    const mm = parseInt(editingDateMM);
+    const dd = parseInt(editingDateDD);
+    if (isNaN(yy) || isNaN(mm) || isNaN(dd)) return;
+    if (mm < 1 || mm > 12) return;
+    const year = 2000 + yy;
+    const maxDay = daysInMonth(mm, year);
+    const clampedDD = Math.min(Math.max(dd, 1), maxDay);
+    const newDate = new Date(year, mm - 1, clampedDD);
+    if (isNaN(newDate.getTime())) return;
+
+    const item = items.find(i => i.id === id);
+    if (!item) return;
+    // Preserve the time portion from the original created_at
+    const orig = new Date(item.created_at);
+    newDate.setHours(orig.getHours(), orig.getMinutes(), orig.getSeconds(), orig.getMilliseconds());
+
+    const iso = newDate.toISOString();
+    const { error } = await supabase
+      .from("special_attention_checklist")
+      .update({ created_at: iso })
+      .eq("id", id);
+    if (error) {
+      toast.error("Error al actualizar fecha");
+      return;
+    }
+    setItems(prev => prev.map(i => i.id === id ? { ...i, created_at: iso } : i));
+    setEditingDateId(null);
+  };
+
   // Build tree structure
   const rootItems = items.filter(i => !i.parent_id).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   const childrenOf = (parentId: string): ChecklistItem[] =>
@@ -309,7 +356,71 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
                 }
               }}
             >
-              <span className="font-mono text-xs text-muted-foreground mr-1.5">{formatDate(item.created_at)}</span>
+              {editingDateId === item.id ? (
+                <span className="font-mono text-xs mr-1.5 inline-flex items-center gap-0">
+                  <span className="text-muted-foreground">20</span>
+                  <input
+                    value={editingDateYY}
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/\D/g, "").slice(0, 2);
+                      setEditingDateYY(v);
+                    }}
+                    className="w-5 text-xs font-mono bg-background border border-input rounded px-0.5 py-0 text-center focus:outline-none focus:ring-1 focus:ring-ring"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveDateEdit(item.id);
+                      if (e.key === "Escape") setEditingDateId(null);
+                    }}
+                  />
+                  <span className="text-muted-foreground">.</span>
+                  <input
+                    value={editingDateMM}
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/\D/g, "").slice(0, 2);
+                      const n = parseInt(v);
+                      if (v === "" || (n >= 0 && n <= 12)) setEditingDateMM(v);
+                    }}
+                    className="w-5 text-xs font-mono bg-background border border-input rounded px-0.5 py-0 text-center focus:outline-none focus:ring-1 focus:ring-ring"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveDateEdit(item.id);
+                      if (e.key === "Escape") setEditingDateId(null);
+                    }}
+                  />
+                  <span className="text-muted-foreground">.</span>
+                  <input
+                    value={editingDateDD}
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/\D/g, "").slice(0, 2);
+                      const mm = parseInt(editingDateMM) || 1;
+                      const year = 2000 + (parseInt(editingDateYY) || 26);
+                      const max = daysInMonth(mm, year);
+                      const n = parseInt(v);
+                      if (v === "" || (n >= 0 && n <= max)) setEditingDateDD(v);
+                    }}
+                    className="w-5 text-xs font-mono bg-background border border-input rounded px-0.5 py-0 text-center focus:outline-none focus:ring-1 focus:ring-ring"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveDateEdit(item.id);
+                      if (e.key === "Escape") setEditingDateId(null);
+                    }}
+                  />
+                  <button onClick={() => saveDateEdit(item.id)} className="text-primary hover:text-primary/80 p-0.5 ml-0.5">
+                    <Check className="h-3 w-3" />
+                  </button>
+                  <button onClick={() => setEditingDateId(null)} className="text-muted-foreground hover:text-foreground p-0.5">
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ) : (
+                <span
+                  className="font-mono text-xs text-muted-foreground mr-1.5 cursor-pointer hover:text-foreground"
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    startEditingDate(item);
+                  }}
+                >
+                  {formatDate(item.created_at)}
+                </span>
+              )}
               {item.text}
               {item.is_completed && item.completed_at && (
                 <span className="text-xs text-muted-foreground ml-1">
