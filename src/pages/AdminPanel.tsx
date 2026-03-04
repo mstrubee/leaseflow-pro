@@ -450,12 +450,14 @@ const AdminPanel = () => {
     }
 
     try {
-      // Delete permissions and roles first
-      await supabase.from("user_permissions").delete().eq("user_id", userId);
-      await supabase.from("user_roles").delete().eq("user_id", userId);
-      await supabase.from("profiles").delete().eq("id", userId);
+      const { data, error } = await supabase.functions.invoke("delete-user", {
+        body: { userId },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
       
-      toast({ title: "Usuario eliminado" });
+      toast({ title: "Usuario eliminado completamente" });
       loadData();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
