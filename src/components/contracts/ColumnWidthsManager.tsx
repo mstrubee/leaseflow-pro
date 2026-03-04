@@ -16,6 +16,7 @@ import { DEFAULT_COLUMN_WIDTHS, ColumnWidthsConfig } from "@/hooks/useContractCo
 
 interface ColumnWidthsManagerProps {
   columnWidths: ColumnWidthsConfig;
+  normalizedWidths?: ColumnWidthsConfig;
   onUpdateWidth: (columnKey: string, width: number) => void;
   onReset: () => void;
   visibleColumns: string[];
@@ -23,6 +24,7 @@ interface ColumnWidthsManagerProps {
 
 export function ColumnWidthsManager({
   columnWidths,
+  normalizedWidths,
   onUpdateWidth,
   onReset,
   visibleColumns,
@@ -45,7 +47,7 @@ export function ColumnWidthsManager({
         <DialogHeader>
           <DialogTitle>Configurar Anchos de Columnas</DialogTitle>
           <DialogDescription>
-            Ajusta el ancho de cada columna en porcentaje. Los cambios se guardarán automáticamente.
+            Ajusta el peso relativo de cada columna. El porcentaje real se calcula automáticamente.
           </DialogDescription>
         </DialogHeader>
         
@@ -54,12 +56,13 @@ export function ColumnWidthsManager({
             .map((columnKey) => {
               const config = DEFAULT_COLUMN_WIDTHS[columnKey];
               const currentWidth = columnWidths?.[columnKey] ?? config.width;
+              const normalizedPct = normalizedWidths?.[columnKey] ?? currentWidth;
               
               return (
                 <div key={columnKey} className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label className="text-sm font-medium">{config.label}</Label>
-                    <span className="text-sm text-muted-foreground">{currentWidth}%</span>
+                    <span className="text-sm text-muted-foreground font-mono">{normalizedPct}%</span>
                   </div>
                   <Slider
                     value={[currentWidth]}
