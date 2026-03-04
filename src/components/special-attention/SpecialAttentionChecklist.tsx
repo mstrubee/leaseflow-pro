@@ -5,7 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Trash2, Pencil, Check, X } from "lucide-react";
 import { toast } from "sonner";
 
 interface ChecklistItem {
@@ -44,6 +44,8 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
   const [childDialogOpen, setChildDialogOpen] = useState(false);
   const [childParentId, setChildParentId] = useState<string | null>(null);
   const [childText, setChildText] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
 
   // Load checklist items
   useEffect(() => {
@@ -160,6 +162,22 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
     if (!error) setItems(prev => prev.filter(i => i.id !== id && i.parent_id !== id));
   };
 
+  // Edit item text
+  const saveEdit = async (id: string) => {
+    const trimmed = editingText.trim();
+    if (!trimmed) return;
+    const { error } = await supabase
+      .from("special_attention_checklist")
+      .update({ text: trimmed })
+      .eq("id", id);
+    if (error) {
+      toast.error("Error al editar ítem");
+      return;
+    }
+    setItems(prev => prev.map(i => i.id === id ? { ...i, text: trimmed } : i));
+    setEditingId(null);
+  };
+
   // Build tree structure
   const rootItems = items.filter(i => !i.parent_id);
   const childrenOf = (parentId: string): ChecklistItem[] =>
@@ -167,36 +185,70 @@ export function SpecialAttentionChecklist({ contractId, reason }: Props) {
 
   const completedCount = items.filter(i => i.is_completed).length;
 
-  const renderItem = (item: ChecklistItem, depth: number) => (
-    <div key={item.id}>
-      <div
-        className="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-muted/50 group"
-        style={{ paddingLeft: `${8 + depth * 20}px` }}
-      >
-        <Checkbox
-          checked={item.is_completed}
-          onCheckedChange={(checked) => toggleItem(item.id, !!checked)}
-          className="mt-0.5"
-        />
-        <span className={`text-sm flex-1 ${item.is_completed ? "line-through text-muted-foreground" : "text-foreground"}`}>
-          <span className="font-mono text-xs text-muted-foreground mr-1.5">{formatDate(item.created_at)}</span>
-          {item.text}
-          {item.is_completed && item.completed_at && (
-            <span className="text-xs text-muted-foreground ml-1">
-              (completado el {formatCompletedDate(item.completed_at)})
+  const renderItem = (item: ChecklistItem, depth: number) => {
+    const isEditing = editingId === item.id;
+    return (
+      <div key={item.id}>
+        <div
+          className="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-muted/50 group"
+          style={{ paddingLeft: `${8 + depth * 20}px` }}
+        >
+          <Checkbox
+            checked={item.is_completed}
+            onCheckedChange={(checked) => toggleItem(item.id, !!checked)}
+            className="mt-0.5"
+          />
+          {isEditing ? (
+            <div className="flex-1 flex items-center gap-1">
+              <input
+                value={editingText}
+                onChange={(e) => setEditingText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveEdit(item.id);
+                  if (e.key === "Escape") setEditingId(null);
+                }}
+                className="flex-1 text-sm bg-background border border-input rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-ring"
+                autoFocus
+              />
+              <button onClick={() => saveEdit(item.id)} className="text-primary hover:text-primary/80 p-0.5">
+                <Check className="h-3 w-3" />
+              </button>
+              <button onClick={() => setEditingId(null)} className="text-muted-foreground hover:text-foreground p-0.5">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ) : (
+            <span className={`text-sm flex-1 ${item.is_completed ? "line-through text-muted-foreground" : "text-foreground"}`}>
+              <span className="font-mono text-xs text-muted-foreground mr-1.5">{formatDate(item.created_at)}</span>
+              {item.text}
+              {item.is_completed && item.completed_at && (
+                <span className="text-xs text-muted-foreground ml-1">
+                  (completado el {formatCompletedDate(item.completed_at)})
+                </span>
+              )}
             </span>
           )}
-        </span>
-        <button
-          onClick={() => deleteItem(item.id)}
-          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity p-0.5"
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
+          {!isEditing && (
+            <>
+              <button
+                onClick={() => { setEditingId(item.id); setEditingText(item.text); }}
+                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity p-0.5"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+              <button
+                onClick={() => deleteItem(item.id)}
+                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity p-0.5"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </>
+          )}
+        </div>
+        {childrenOf(item.id).map(child => renderItem(child, depth + 1))}
       </div>
-      {childrenOf(item.id).map(child => renderItem(child, depth + 1))}
-    </div>
-  );
+    );
+  };
 
   const parentItemText = childParentId ? items.find(i => i.id === childParentId)?.text : "";
 
