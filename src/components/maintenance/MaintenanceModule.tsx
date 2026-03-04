@@ -23,6 +23,7 @@ import { MaintenanceEditDialog } from "./MaintenanceEditDialog";
 import { SortableTableHead, SortOrder } from "@/components/contracts/SortableTableHead";
 import { exportMaintenanceExcel, exportMaintenancePDF, exportDailyFormsPDF } from "./maintenanceExport";
 import { exportOTPDF, downloadBlankOTPDF, downloadBlankOTExcel } from "./otExport";
+import { OTDownloadOfferDialog } from "./OTDownloadOfferDialog";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 
@@ -403,6 +404,8 @@ export function MaintenanceModule() {
   const formsRef = useRef(forms);
   const [resolutionTarget, setResolutionTarget] = useState<string | null>(null);
   const [resolutionOpen, setResolutionOpen] = useState(false);
+  const [otOfferTarget, setOtOfferTarget] = useState<string | null>(null);
+  const [otOfferOpen, setOtOfferOpen] = useState(false);
   formsRef.current = forms;
 
   // Comment editing state removed — now handled by CommentCell
@@ -820,6 +823,28 @@ export function MaintenanceModule() {
     if (newSubStatus === "resuelto") {
       setResolutionTarget(formId);
       setResolutionOpen(true);
+      return;
+    }
+    // Intercept "cotizando" to offer OT download after saving
+    if (newSubStatus === "cotizando") {
+      const updates: any = { sub_status: newSubStatus, updated_at: new Date().toISOString(), status: 'proceso' };
+      const { error } = await (supabase as any)
+        .from("maintenance_forms")
+        .update(updates)
+        .eq("id", formId);
+      if (error) {
+        console.error(error);
+        toast({ title: "Error", description: "No se pudo actualizar el sub-estado", variant: "destructive" });
+      } else {
+        setForms(prev => {
+          const updated = prev.map(fm => fm.id === formId ? { ...fm, ...updates } : fm);
+          writeCache(CACHE_KEY_FORMS, updated);
+          return updated;
+        });
+        toast({ title: "Sub-estado actualizado" });
+        setOtOfferTarget(formId);
+        setOtOfferOpen(true);
+      }
       return;
     }
     const updates: any = { sub_status: newSubStatus, updated_at: new Date().toISOString() };
@@ -1407,9 +1432,9 @@ export function MaintenanceModule() {
                               }} title="Descargar PDF">
                                 <FileDown className="h-3.5 w-3.5" />
                               </Button>
-                              {(f.sub_status === "cotizando" || f.sub_status === "en_ejecucion") && (
+                              {(f.sub_status === "cotizando" || f.sub_status === "en_ejecucion" || f.sub_status === "resuelto") && (
                                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => exportOTPDF(f, contractCompanyMap)} title="Descargar OT">
-                                  <FileText className="h-3.5 w-3.5 text-red-600" />
+                                  <FileText className="h-3.5 w-3.5 text-destructive" />
                                 </Button>
                               )}
                             </div>
@@ -1467,6 +1492,20 @@ export function MaintenanceModule() {
         formId={resolutionTarget}
         formNumber={formsRef.current.find(f => f.id === resolutionTarget)?.form_number || ""}
         onOTUploaded={handleDataChanged}
+      />
+      <OTDownloadOfferDialog
+        open={otOfferOpen}
+        onOpenChange={v => { if (!v) { setOtOfferOpen(false); setOtOfferTarget(null); } }}
+        onDownload={() => {
+          const form = formsRef.current.find(f => f.id === otOfferTarget);
+          if (form) exportOTPDF(form, contractCompanyMap);
+          setOtOfferOpen(false);
+          setOtOfferTarget(null);
+        }}
+        onSkip={() => {
+          setOtOfferOpen(false);
+          setOtOfferTarget(null);
+        }}
       />
 
       {/* Excel download dialog with checkboxes */}
