@@ -40,9 +40,12 @@ export function ResolutionDialog({ open, onOpenChange, existingObservations, onR
 
   const handleOTUploadClose = (uploaded: boolean) => {
     setOtUploadOpen(false);
-    // Always resolve regardless of upload
-    onResolve(pendingObservations);
-    if (uploaded && onOTUploaded) onOTUploaded();
+    if (uploaded) {
+      // Only resolve after OT is uploaded
+      onResolve(pendingObservations);
+      if (onOTUploaded) onOTUploaded();
+    }
+    // If not uploaded, do nothing — resolution is blocked
   };
 
   return (
