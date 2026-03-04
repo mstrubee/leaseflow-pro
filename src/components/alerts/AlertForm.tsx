@@ -11,7 +11,7 @@ import { getCompanyNames } from "@/components/contracts/CompanyLogo";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Bell, Mail, MessageSquare, Save, X, Tag, User, Plus, Trash2, Building2 } from "lucide-react";
+import { CalendarIcon, Bell, Mail, MessageSquare, Save, X, Tag, User, Plus, Trash2, Building2, Eye } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -71,6 +71,7 @@ export interface AlertData {
   category_id?: string | null;
   assigned_to?: string | null;
   external_emails?: string[];
+  viewer_ids?: string[];
 }
 
 interface AlertFormProps {
@@ -103,6 +104,7 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
   const [assignedTo, setAssignedTo] = useState<string>("");
   const [externalEmails, setExternalEmails] = useState<string[]>([]);
   const [newExternalEmail, setNewExternalEmail] = useState("");
+  const [viewerIds, setViewerIds] = useState<string[]>([]);
 
   // Contract selection (for standalone alerts)
   const [contracts, setContracts] = useState<ContractOption[]>([]);
@@ -176,6 +178,19 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
       setAssignedTo(editingAlert.assigned_to || "");
       setExternalEmails(editingAlert.external_emails || []);
       setSelectedContractId(editingAlert.contract_id || "");
+      setViewerIds(editingAlert.viewer_ids || []);
+      
+      // Load existing viewers
+      const loadViewers = async () => {
+        const { data } = await supabase
+          .from("alert_viewers")
+          .select("user_id")
+          .eq("alert_id", editingAlert.id);
+        if (data) {
+          setViewerIds(data.map(v => v.user_id));
+        }
+      };
+      loadViewers();
     }
   }, [editingAlert]);
 
@@ -310,18 +325,33 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
 
         if (error) throw error;
 
+        // Update viewers
+        await supabase.from("alert_viewers").delete().eq("alert_id", editingAlert.id);
+        if (viewerIds.length > 0) {
+          await supabase.from("alert_viewers").insert(
+            viewerIds.map(uid => ({ alert_id: editingAlert.id, user_id: uid }))
+          );
+        }
+
         toast({
           title: "Alerta actualizada",
           description: "El recordatorio se ha modificado correctamente",
         });
       } else {
         // Create new alert
-        const { error } = await supabase.from("alerts").insert([{
+        const { data: newAlert, error } = await supabase.from("alerts").insert([{
           ...alertData,
           created_by: user?.id,
-        }]);
+        }]).select("id").single();
 
         if (error) throw error;
+
+        // Save viewers
+        if (newAlert && viewerIds.length > 0) {
+          await supabase.from("alert_viewers").insert(
+            viewerIds.map(uid => ({ alert_id: newAlert.id, user_id: uid }))
+          );
+        }
 
         toast({
           title: "Alerta creada",
@@ -424,6 +454,43 @@ export function AlertForm({ contractId, contractName, initialDueDate, editingAle
             <p className="text-xs text-muted-foreground">
               El responsable recibirá las notificaciones de esta alerta
             </p>
+          </div>
+
+          {/* Visibility / Viewers */}
+          <div className="space-y-3 p-4 border rounded-lg">
+            <Label className="flex items-center gap-1">
+              <Eye className="h-4 w-4" />
+              Visibilidad (usuarios adicionales)
+            </Label>
+            <p className="text-xs text-muted-foreground mb-2">
+              Seleccione usuarios que también podrán ver esta alerta. El creador y el responsable siempre la verán.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {users
+                .filter(u => u.id !== assignedTo)
+                .map(u => {
+                  const isSelected = viewerIds.includes(u.id);
+                  return (
+                    <Badge
+                      key={u.id}
+                      variant={isSelected ? "default" : "outline"}
+                      className="cursor-pointer select-none"
+                      onClick={() => {
+                        setViewerIds(prev =>
+                          isSelected ? prev.filter(id => id !== u.id) : [...prev, u.id]
+                        );
+                      }}
+                    >
+                      {u.full_name || u.email}
+                    </Badge>
+                  );
+                })}
+            </div>
+            {viewerIds.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {viewerIds.length} usuario(s) adicional(es) con visibilidad
+              </p>
+            )}
           </div>
 
           {/* External Emails */}
