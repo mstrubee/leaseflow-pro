@@ -826,7 +826,7 @@ export function MaintenanceModule() {
       return;
     }
     // Intercept "cotizando" to offer OT download after saving
-    if (newSubStatus === "cotizando") {
+    if (newSubStatus === "cotizando" || newSubStatus === "Cotización y aviso") {
       const updates: any = { sub_status: newSubStatus, updated_at: new Date().toISOString(), status: 'proceso' };
       const { error } = await (supabase as any)
         .from("maintenance_forms")
@@ -1436,7 +1436,7 @@ export function MaintenanceModule() {
                               }} title={f.sub_status === "resuelto" ? "Descargar FORM + OT" : "Descargar PDF"}>
                                 <FileDown className="h-3.5 w-3.5" />
                               </Button>
-                              {(f.sub_status === "cotizando" || f.sub_status === "en_ejecucion" || f.sub_status === "resuelto") && (
+                              {(f.sub_status === "cotizando" || f.sub_status === "Cotización y aviso" || f.sub_status === "en_ejecucion" || f.sub_status === "resuelto" || f.sub_status === "resuelto_obs") && (
                                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => exportOTPDF(f, contractCompanyMap)} title="Descargar OT">
                                   <FileText className="h-3.5 w-3.5 text-destructive" />
                                 </Button>
