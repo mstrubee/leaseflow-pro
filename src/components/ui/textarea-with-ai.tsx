@@ -1,11 +1,22 @@
 import * as React from "react";
-import { Bold } from "lucide-react";
+import { Bold, Eye, EyeOff } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { AISummaryAction } from "./ai-summary-action";
 import { Textarea, TextareaProps } from "./textarea";
 import { Button } from "./button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip";
+
+/** Render markdown-style **bold** as <strong> in JSX */
+function renderBoldMarkdown(text: string): React.ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
+    }
+    return <React.Fragment key={i}>{part}</React.Fragment>;
+  });
+}
 
 export interface TextareaWithAIProps extends Omit<TextareaProps, "onChange"> {
   value: string;
@@ -40,6 +51,9 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
   ) => {
     const internalRef = React.useRef<HTMLTextAreaElement>(null);
     const textareaRef = (ref as React.RefObject<HTMLTextAreaElement>) || internalRef;
+
+    const [showPreview, setShowPreview] = React.useState(false);
+    const hasBold = value?.includes("**") || false;
 
     const charCount = value?.length || 0;
     const isOverLimit = maxLength ? charCount > maxLength : false;
@@ -97,6 +111,28 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
               </TooltipContent>
             </Tooltip>
 
+            {hasBold && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowPreview(!showPreview)}
+                    className={cn(
+                      "h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-muted",
+                      showPreview && "text-primary bg-primary/10"
+                    )}
+                  >
+                    {showPreview ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p>{showPreview ? "Ocultar vista previa" : "Ver con formato"}</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+
             {enableAI && (
               <AISummaryAction
                 text={value}
@@ -111,14 +147,27 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
           </div>
         </div>
 
-        <Textarea
-          ref={textareaRef}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          maxLength={maxLength}
-          className={cn(isOverLimit && "border-destructive", className)}
-          {...props}
-        />
+        {showPreview && hasBold ? (
+          <div
+            className={cn(
+              "min-h-[80px] w-full rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm whitespace-pre-wrap cursor-pointer",
+              className
+            )}
+            onClick={() => setShowPreview(false)}
+            title="Clic para volver a editar"
+          >
+            {renderBoldMarkdown(value || "")}
+          </div>
+        ) : (
+          <Textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            maxLength={maxLength}
+            className={cn(isOverLimit && "border-destructive", className)}
+            {...props}
+          />
+        )}
 
         {showCharCount && maxLength && (
           <span
@@ -137,4 +186,4 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
 
 TextareaWithAI.displayName = "TextareaWithAI";
 
-export { TextareaWithAI };
+export { TextareaWithAI, renderBoldMarkdown };
