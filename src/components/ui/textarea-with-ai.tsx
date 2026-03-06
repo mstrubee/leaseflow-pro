@@ -186,4 +186,4 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
 
 TextareaWithAI.displayName = "TextareaWithAI";
 
-export { TextareaWithAI };
+export { TextareaWithAI, renderBoldMarkdown };
