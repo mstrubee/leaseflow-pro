@@ -147,14 +147,27 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
           </div>
         </div>
 
-        <Textarea
-          ref={textareaRef}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          maxLength={maxLength}
-          className={cn(isOverLimit && "border-destructive", className)}
-          {...props}
-        />
+        {showPreview && hasBold ? (
+          <div
+            className={cn(
+              "min-h-[80px] w-full rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm whitespace-pre-wrap cursor-pointer",
+              className
+            )}
+            onClick={() => setShowPreview(false)}
+            title="Clic para volver a editar"
+          >
+            {renderBoldMarkdown(value || "")}
+          </div>
+        ) : (
+          <Textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            maxLength={maxLength}
+            className={cn(isOverLimit && "border-destructive", className)}
+            {...props}
+          />
+        )}
 
         {showCharCount && maxLength && (
           <span
