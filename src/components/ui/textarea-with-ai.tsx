@@ -1,8 +1,11 @@
 import * as React from "react";
+import { Bold } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { AISummaryAction } from "./ai-summary-action";
 import { Textarea, TextareaProps } from "./textarea";
+import { Button } from "./button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip";
 
 export interface TextareaWithAIProps extends Omit<TextareaProps, "onChange"> {
   value: string;
@@ -35,8 +38,37 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
     },
     ref
   ) => {
+    const internalRef = React.useRef<HTMLTextAreaElement>(null);
+    const textareaRef = (ref as React.RefObject<HTMLTextAreaElement>) || internalRef;
+
     const charCount = value?.length || 0;
     const isOverLimit = maxLength ? charCount > maxLength : false;
+
+    const handleBold = () => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+      const selected = value.substring(start, end);
+
+      if (selected.startsWith("**") && selected.endsWith("**") && selected.length > 4) {
+        // Remove bold
+        const newValue = value.substring(0, start) + selected.slice(2, -2) + value.substring(end);
+        onChange(newValue);
+        requestAnimationFrame(() => {
+          ta.focus();
+          ta.setSelectionRange(start, end - 4);
+        });
+      } else {
+        // Add bold
+        const newValue = value.substring(0, start) + `**${selected}**` + value.substring(end);
+        onChange(newValue);
+        requestAnimationFrame(() => {
+          ta.focus();
+          ta.setSelectionRange(start, end + 4);
+        });
+      }
+    };
 
     return (
       <div className="space-y-1.5">
@@ -47,21 +79,40 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
             <span />
           )}
 
-          {enableAI && (
-            <AISummaryAction
-              text={value}
-              maxLength={maxLength}
-              buttonLabel={aiButtonLabel}
-              downloadFileName={downloadFileName}
-              confirmButtonLabel={confirmButtonLabel}
-              showOriginalInPreview={showOriginalInPreview}
-              onConfirmReplace={onChange}
-            />
-          )}
+          <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleBold}
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-muted"
+                >
+                  <Bold className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p>Negrita (seleccionar texto primero)</p>
+              </TooltipContent>
+            </Tooltip>
+
+            {enableAI && (
+              <AISummaryAction
+                text={value}
+                maxLength={maxLength}
+                buttonLabel={aiButtonLabel}
+                downloadFileName={downloadFileName}
+                confirmButtonLabel={confirmButtonLabel}
+                showOriginalInPreview={showOriginalInPreview}
+                onConfirmReplace={onChange}
+              />
+            )}
+          </div>
         </div>
 
         <Textarea
-          ref={ref}
+          ref={textareaRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           maxLength={maxLength}
