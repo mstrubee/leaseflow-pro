@@ -778,9 +778,9 @@ export function CommercialConditionsSummary({
         return row;
       });
 
-      const colStyles: Record<number, { halign: string }> = {};
+      const colStyles: Record<string, Partial<{ halign: "left" | "right" | "center" | "justify" }>> = {};
       for (let i = 0; i < periodHead.length; i++) {
-        colStyles[i] = { halign: i === 0 ? "left" : "right" };
+        colStyles[i.toString()] = { halign: i === 0 ? "left" : "right" };
       }
 
       autoTable(doc, {
