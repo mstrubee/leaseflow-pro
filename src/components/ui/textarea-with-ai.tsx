@@ -1,11 +1,22 @@
 import * as React from "react";
-import { Bold } from "lucide-react";
+import { Bold, Eye, EyeOff } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { AISummaryAction } from "./ai-summary-action";
 import { Textarea, TextareaProps } from "./textarea";
 import { Button } from "./button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip";
+
+/** Render markdown-style **bold** as <strong> in JSX */
+function renderBoldMarkdown(text: string): React.ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
+    }
+    return <React.Fragment key={i}>{part}</React.Fragment>;
+  });
+}
 
 export interface TextareaWithAIProps extends Omit<TextareaProps, "onChange"> {
   value: string;
