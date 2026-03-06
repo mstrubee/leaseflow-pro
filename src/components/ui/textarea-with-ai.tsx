@@ -52,6 +52,9 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
     const internalRef = React.useRef<HTMLTextAreaElement>(null);
     const textareaRef = (ref as React.RefObject<HTMLTextAreaElement>) || internalRef;
 
+    const [showPreview, setShowPreview] = React.useState(false);
+    const hasBold = value?.includes("**") || false;
+
     const charCount = value?.length || 0;
     const isOverLimit = maxLength ? charCount > maxLength : false;
 
