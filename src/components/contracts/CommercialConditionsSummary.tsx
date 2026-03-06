@@ -754,17 +754,34 @@ export function CommercialConditionsSummary({
       y += 4;
 
       const hasSurface = superficieEdificadaLocal && superficieEdificadaLocal > 0;
-      const periodHead = ["Periodo", "Canon", "GGCC", "F.Prom", "Otros", "Total"];
+      const hasAnyGGCC = escalationPeriods.some(p => p.ggcc > 0);
+      const hasAnyFProm = escalationPeriods.some(p => p.fProm > 0);
+      const hasAnyOtros = escalationPeriods.some(p => p.otros > 0);
+
+      const periodHead: string[] = ["Periodo", "Canon"];
+      if (hasAnyGGCC) periodHead.push("GGCC");
+      if (hasAnyFProm) periodHead.push("F.Prom");
+      if (hasAnyOtros) periodHead.push("Otros");
+      periodHead.push("Total");
       if (hasSurface) periodHead.push("UF/m²");
 
       const fmt2 = (v: number) => v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       const fmt3 = (v: number | null) => v != null ? v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 }) : "-";
 
       const periodBody = escalationPeriods.map(p => {
-        const row = [p.label, fmt2(p.canon), p.ggcc > 0 ? fmt2(p.ggcc) : "-", p.fProm > 0 ? fmt2(p.fProm) : "-", p.otros > 0 ? fmt2(p.otros) : "-", fmt2(p.total)];
+        const row: string[] = [p.label, fmt2(p.canon)];
+        if (hasAnyGGCC) row.push(p.ggcc > 0 ? fmt2(p.ggcc) : "-");
+        if (hasAnyFProm) row.push(p.fProm > 0 ? fmt2(p.fProm) : "-");
+        if (hasAnyOtros) row.push(p.otros > 0 ? fmt2(p.otros) : "-");
+        row.push(fmt2(p.total));
         if (hasSurface) row.push(fmt3(p.ufM2));
         return row;
       });
+
+      const colStyles: Record<string, Partial<{ halign: "left" | "right" | "center" | "justify" }>> = {};
+      for (let i = 0; i < periodHead.length; i++) {
+        colStyles[i.toString()] = { halign: i === 0 ? "left" : "right" };
+      }
 
       autoTable(doc, {
         startY: y,
@@ -773,15 +790,7 @@ export function CommercialConditionsSummary({
         theme: "grid",
         styles: { fontSize: 8, cellPadding: 2 },
         headStyles: { fillColor: [220, 38, 38], textColor: 255, fontStyle: "bold" },
-        columnStyles: {
-          0: { halign: "left" },
-          1: { halign: "right" },
-          2: { halign: "right" },
-          3: { halign: "right" },
-          4: { halign: "right" },
-          5: { halign: "right" },
-          ...(hasSurface ? { 6: { halign: "right" } } : {}),
-        },
+        columnStyles: colStyles,
         margin: { left: 14, right: 14 },
       });
     }
