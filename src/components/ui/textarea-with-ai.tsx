@@ -111,6 +111,28 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
               </TooltipContent>
             </Tooltip>
 
+            {hasBold && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowPreview(!showPreview)}
+                    className={cn(
+                      "h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-muted",
+                      showPreview && "text-primary bg-primary/10"
+                    )}
+                  >
+                    {showPreview ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p>{showPreview ? "Ocultar vista previa" : "Ver con formato"}</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+
             {enableAI && (
               <AISummaryAction
                 text={value}
