@@ -647,26 +647,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
     }
   };
 
-  // Handle close year
-  const handleCloseYear = async () => {
-    setClosingYear(true);
-    try {
-      // Close all budgets for this year
-      await supabase
-        .from("contract_budgets")
-        .update({ is_closed: true, closed_at: new Date().toISOString() })
-        .eq("contract_id", contractId)
-        .eq("year", selectedYear);
 
-      toast({ title: "Año cerrado", description: `Presupuestos de ${selectedYear} cerrados` });
-      setShowCloseYearDialog(false);
-      setRefreshKey(k => k + 1);
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
-    } finally {
-      setClosingYear(false);
-    }
-  };
 
   // Handle edit CAPEX amount
   const handleOpenEditCapex = () => {
