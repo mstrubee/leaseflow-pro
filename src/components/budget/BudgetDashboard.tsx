@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BudgetTemplateSelector, applyBudgetTemplate } from "./BudgetTemplateSelector";
+import { CapexCloseYearDialog } from "./CapexCloseYearDialog";
 
 interface BudgetSummary {
   budget: number;
@@ -646,26 +647,7 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
     }
   };
 
-  // Handle close year
-  const handleCloseYear = async () => {
-    setClosingYear(true);
-    try {
-      // Close all budgets for this year
-      await supabase
-        .from("contract_budgets")
-        .update({ is_closed: true, closed_at: new Date().toISOString() })
-        .eq("contract_id", contractId)
-        .eq("year", selectedYear);
 
-      toast({ title: "Año cerrado", description: `Presupuestos de ${selectedYear} cerrados` });
-      setShowCloseYearDialog(false);
-      setRefreshKey(k => k + 1);
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
-    } finally {
-      setClosingYear(false);
-    }
-  };
 
   // Handle edit CAPEX amount
   const handleOpenEditCapex = () => {
@@ -1150,33 +1132,18 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
         </DialogContent>
       </Dialog>
 
-      {/* Dialog: Cerrar Año */}
-      <Dialog open={showCloseYearDialog} onOpenChange={setShowCloseYearDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cerrar Año {selectedYear}</DialogTitle>
-            <DialogDescription>
-              Esta acción cerrará todos los presupuestos del año {selectedYear}.
-            </DialogDescription>
-          </DialogHeader>
-          <Alert className="border-amber-500 bg-amber-50 dark:bg-amber-950/20">
-            <AlertCircle className="h-4 w-4 text-amber-600" />
-            <AlertTitle className="text-amber-700">Atención</AlertTitle>
-            <AlertDescription className="text-amber-600">
-              Una vez cerrado, no podrá modificar los presupuestos ni agregar nuevas líneas para este año.
-            </AlertDescription>
-          </Alert>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCloseYearDialog(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleCloseYear} disabled={closingYear}>
-              {closingYear && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Cerrar Año
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Dialog: Cerrar Año CAPEX */}
+      <CapexCloseYearDialog
+        open={showCloseYearDialog}
+        onOpenChange={setShowCloseYearDialog}
+        contractId={contractId}
+        year={selectedYear}
+        onSuccess={() => {
+          setRefreshKey(k => k + 1);
+          loadYearBudgetInfo();
+          loadAvailableYears();
+        }}
+      />
 
       {/* AlertDialog: Primera confirmación de eliminación */}
       <AlertDialog open={showDeleteYearDialog1} onOpenChange={setShowDeleteYearDialog1}>
