@@ -119,9 +119,9 @@ export const CapexCloseYearDialog = ({ open, onOpenChange, contractId, year, onS
         .is("deleted_at", null);
 
       for (const oc of (directOCs || [])) {
-        if (oc.budget_line_id && !validOcAmounts[oc.budget_line_id]) {
+        if (oc.budget_line_id) {
           // Only count if not already counted via junction table
-          const alreadyCounted = ocAssociations?.some(a => a.purchase_order_id === oc.id && a.budget_line_id === oc.budget_line_id);
+          const alreadyCounted = ocAssociations?.some(a => a.purchase_order_id === oc.id);
           if (!alreadyCounted) {
             validOcAmounts[oc.budget_line_id] = (validOcAmounts[oc.budget_line_id] || 0) + (oc.amount_uf || 0);
           }
