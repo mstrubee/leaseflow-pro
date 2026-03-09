@@ -224,21 +224,25 @@ export const CapexCloseYearDialog = ({ open, onOpenChange, contractId, year, onS
         if (nextBudget) {
           const selectedLines = carryoverLines.filter(l => selectedIds.has(l.id));
           
-          const newLines = selectedLines.map((line, idx) => ({
-            budget_id: nextBudget!.id,
-            name: line.name,
-            description: `Traspasada (${year})`,
-            amount_uf: line.available_uf,
-            status: "autorizado" as const,
-            display_order: idx + 1,
-            supplier_id: line.supplier_id,
-            supplier_name: line.supplier_name,
-            category_id: line.category_id,
-            quantity: line.quantity,
-            unit_type: line.unit_type,
-            currency: line.currency,
-            unit_price: line.unit_price,
-          }));
+          const newLines = selectedLines.map((line, idx) => {
+            // Lock the CLP value at carryover time to prevent daily UF fluctuations
+            const availableClp = Math.round(convertUFToPesos(line.available_uf));
+            return {
+              budget_id: nextBudget!.id,
+              name: line.name,
+              description: `Traspasada (${year})`,
+              amount_uf: line.available_uf,
+              status: "autorizado" as const,
+              display_order: idx + 1,
+              supplier_id: line.supplier_id,
+              supplier_name: line.supplier_name,
+              category_id: line.category_id,
+              quantity: 1,
+              unit_type: line.unit_type,
+              currency: "CLP",
+              unit_price: availableClp,
+            };
+          });
 
           await supabase.from("budget_lines").insert(newLines);
         }
