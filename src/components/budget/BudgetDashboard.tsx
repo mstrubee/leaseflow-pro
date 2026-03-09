@@ -785,8 +785,18 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                 <span className="text-muted-foreground">Total Presupuesto:</span>
               </div>
               <div className="text-right">
-                <span className="font-medium">{formatCLP(capexTotals.ocClp + opexTotals.ocClp)}</span>
-                <span className="text-xs text-muted-foreground ml-1">({formatUF(capexTotals.ocUf + opexTotals.ocUf)})</span>
+                {(() => {
+                  const capexAuthorizedClp = convertUFToPesos(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized);
+                  const totalPresupuesto = capexAuthorizedClp + opexTotals.ocClp;
+                  const capexAuthorizedUf = capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized;
+                  const totalPresupuestoUf = capexAuthorizedUf + opexTotals.ocUf;
+                  return (
+                    <>
+                      <span className="font-medium">{formatCLP(totalPresupuesto)}</span>
+                      <span className="text-xs text-muted-foreground ml-1">({formatUF(totalPresupuestoUf)})</span>
+                    </>
+                  );
+                })()}
               </div>
               
               {carryover.total > 0 && (
