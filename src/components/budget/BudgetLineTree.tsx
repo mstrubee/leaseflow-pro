@@ -786,6 +786,26 @@ const BudgetLineItemInner = ({
               </Tooltip>
             </TooltipProvider>}
           
+          {/* View details button - for leaf lines */}
+          {!isParent && onViewLineDetails && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onViewLineDetails(line.id, line.name)}
+                    className="h-6 px-2 text-[10px] border-muted-foreground/30 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  >
+                    <FileText className="h-3 w-3 mr-1" />
+                    Ver OC/Fact.
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Ver Órdenes de Compra y Facturas</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+
           {/* Supplier dropdown - for all lines (parent and leaf) */}
           {!readOnly && (
             <SupplierSelect
