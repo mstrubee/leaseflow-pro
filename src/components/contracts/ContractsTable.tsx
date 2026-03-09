@@ -822,6 +822,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 </TableCell>
                 {isNegociacionView && (
                   <>
+                    {contract.status === 'en_negociacion' ? (
                     <TableCell className="text-center min-w-[120px]" onClick={(e) => e.stopPropagation()}>
                       <div className="flex justify-center">
                       <Select
