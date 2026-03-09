@@ -1151,33 +1151,18 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
         </DialogContent>
       </Dialog>
 
-      {/* Dialog: Cerrar Año */}
-      <Dialog open={showCloseYearDialog} onOpenChange={setShowCloseYearDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cerrar Año {selectedYear}</DialogTitle>
-            <DialogDescription>
-              Esta acción cerrará todos los presupuestos del año {selectedYear}.
-            </DialogDescription>
-          </DialogHeader>
-          <Alert className="border-amber-500 bg-amber-50 dark:bg-amber-950/20">
-            <AlertCircle className="h-4 w-4 text-amber-600" />
-            <AlertTitle className="text-amber-700">Atención</AlertTitle>
-            <AlertDescription className="text-amber-600">
-              Una vez cerrado, no podrá modificar los presupuestos ni agregar nuevas líneas para este año.
-            </AlertDescription>
-          </Alert>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCloseYearDialog(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleCloseYear} disabled={closingYear}>
-              {closingYear && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Cerrar Año
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Dialog: Cerrar Año CAPEX */}
+      <CapexCloseYearDialog
+        open={showCloseYearDialog}
+        onOpenChange={setShowCloseYearDialog}
+        contractId={contractId}
+        year={selectedYear}
+        onSuccess={() => {
+          setRefreshKey(k => k + 1);
+          loadYearBudgetInfo();
+          loadAvailableYears();
+        }}
+      />
 
       {/* AlertDialog: Primera confirmación de eliminación */}
       <AlertDialog open={showDeleteYearDialog1} onOpenChange={setShowDeleteYearDialog1}>
