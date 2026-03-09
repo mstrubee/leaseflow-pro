@@ -835,8 +835,20 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
                 <span className="text-muted-foreground">Total No Facturado:</span>
               </div>
               <div className="text-right">
-                <span className="font-medium text-red-600">{formatCLP((capexTotals.ocClp - capexTotals.invoicesClp) + (opexTotals.ocClp - opexTotals.invoicesClp))}</span>
-                <span className="text-xs text-muted-foreground ml-1">({formatUF((capexTotals.ocUf - capexTotals.invoicesUf) + (opexTotals.ocUf - opexTotals.invoicesUf))})</span>
+                {(() => {
+                  const capexAuthorizedClp = convertUFToPesos(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized);
+                  const capexNoFacturado = capexAuthorizedClp - capexTotals.invoicesClp;
+                  const opexNoFacturado = opexTotals.ocClp - opexTotals.invoicesClp;
+                  const capexAuthorizedUf = capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized;
+                  const capexNoFacturadoUf = capexAuthorizedUf - capexTotals.invoicesUf;
+                  const opexNoFacturadoUf = opexTotals.ocUf - opexTotals.invoicesUf;
+                  return (
+                    <>
+                      <span className="font-medium text-red-600">{formatCLP(capexNoFacturado + opexNoFacturado)}</span>
+                      <span className="text-xs text-muted-foreground ml-1">({formatUF(capexNoFacturadoUf + opexNoFacturadoUf)})</span>
+                    </>
+                  );
+                })()}
               </div>
               
               {(capexSummary.unauthorized + opexSummary.unauthorized) > 0 && (
