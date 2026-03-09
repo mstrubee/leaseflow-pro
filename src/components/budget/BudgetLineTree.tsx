@@ -493,20 +493,13 @@ const BudgetLineItemInner = ({
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <span 
-                  className={cn(
-                    "text-sm flex-shrink-0 w-[280px] min-w-[280px] max-w-[280px] truncate", 
-                    level === 0 ? "font-semibold" : "font-medium",
-                    !readOnly && "cursor-text hover:bg-accent/30 px-1 py-0.5 rounded",
-                    !isParent && onViewLineDetails && "cursor-pointer hover:underline hover:text-primary"
-                  )}
-                  onClick={(e) => {
-                    if (!isParent && onViewLineDetails) {
-                      e.stopPropagation();
-                      onViewLineDetails(line.id, line.name);
-                    }
-                  }}
-                  onDoubleClick={(e) => {
+                 <span 
+                   className={cn(
+                     "text-sm flex-shrink-0 w-[280px] min-w-[280px] max-w-[280px] truncate", 
+                     level === 0 ? "font-semibold" : "font-medium",
+                     !readOnly && "cursor-text hover:bg-accent/30 px-1 py-0.5 rounded"
+                   )}
+                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     if (!readOnly) {
                       setEditName(line.name);
