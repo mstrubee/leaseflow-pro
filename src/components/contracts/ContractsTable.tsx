@@ -821,6 +821,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                   </div>
                 </TableCell>
                 {isNegociacionView && (
+                  contract.status === 'en_negociacion' ? (
                   <>
                     <TableCell className="text-center min-w-[120px]" onClick={(e) => e.stopPropagation()}>
                       <div className="flex justify-center">
@@ -952,6 +953,14 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                       </Select>
                     </TableCell>
                   </>
+                  ) : (
+                  <>
+                    <TableCell />
+                    <TableCell />
+                    <TableCell />
+                    <TableCell />
+                  </>
+                  )
                 )}
                 <TableCell className="text-center min-w-[126px]" onClick={(e) => e.stopPropagation()}>
                   <div className="flex justify-center">
