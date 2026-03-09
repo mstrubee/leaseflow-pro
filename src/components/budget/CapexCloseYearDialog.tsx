@@ -224,27 +224,50 @@ export const CapexCloseYearDialog = ({ open, onOpenChange, contractId, year, onS
         if (nextBudget) {
           const selectedLines = carryoverLines.filter(l => selectedIds.has(l.id));
           
-          const newLines = selectedLines.map((line, idx) => {
-            // Lock the CLP value at carryover time to prevent daily UF fluctuations
-            const availableClp = Math.round(convertUFToPesos(line.available_uf));
-            return {
+          // 1. Create parent line "Traspasos año (year)"
+          const parentTotalUf = selectedLines.reduce((sum, l) => sum + l.available_uf, 0);
+          const parentTotalClp = Math.round(convertUFToPesos(parentTotalUf));
+          
+          const { data: parentLine } = await supabase
+            .from("budget_lines")
+            .insert({
               budget_id: nextBudget!.id,
-              name: line.name,
-              description: `Traspasada (${year})`,
-              amount_uf: line.available_uf,
+              name: `Traspasos año ${year}`,
+              description: `Líneas traspasadas desde CAPEX ${year}`,
+              amount_uf: parentTotalUf,
               status: "autorizado" as const,
-              display_order: idx + 1,
-              supplier_id: line.supplier_id,
-              supplier_name: line.supplier_name,
-              category_id: line.category_id,
+              display_order: 0,
               quantity: 1,
-              unit_type: line.unit_type,
               currency: "CLP",
-              unit_price: availableClp,
-            };
-          });
+              unit_price: parentTotalClp,
+            })
+            .select("id")
+            .single();
 
-          await supabase.from("budget_lines").insert(newLines);
+          if (parentLine) {
+            // 2. Create child lines under the parent
+            const childLines = selectedLines.map((line, idx) => {
+              const availableClp = Math.round(convertUFToPesos(line.available_uf));
+              return {
+                budget_id: nextBudget!.id,
+                parent_id: parentLine.id,
+                name: line.name,
+                description: `Traspasada (${year})`,
+                amount_uf: line.available_uf,
+                status: "autorizado" as const,
+                display_order: idx + 1,
+                supplier_id: line.supplier_id,
+                supplier_name: line.supplier_name,
+                category_id: line.category_id,
+                quantity: 1,
+                unit_type: line.unit_type,
+                currency: "CLP",
+                unit_price: availableClp,
+              };
+            });
+
+            await supabase.from("budget_lines").insert(childLines);
+          }
         }
       }
 
