@@ -69,7 +69,10 @@ export function ContractStatsCards() {
 
   return (
     <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
-      <Card>
+      <Card
+        className="cursor-pointer hover:shadow-lg transition-shadow"
+        onClick={() => handleCardClick()}
+      >
         <CardContent className="flex items-center justify-between py-3 px-4">
           <div>
             <p className="text-xs text-muted-foreground font-medium">Total General</p>
