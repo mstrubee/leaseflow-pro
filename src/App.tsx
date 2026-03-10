@@ -29,6 +29,7 @@ import MaintenanceDashboard from "./pages/MaintenanceDashboard";
 import Dashboard from "./pages/Dashboard";
 import PatentsDashboard from "./pages/PatentsDashboard";
 import SpecialAttentionPage from "./pages/SpecialAttentionPage";
+import GoogleDriveCallback from "./pages/GoogleDriveCallback";
 
 const queryClient = new QueryClient();
 
