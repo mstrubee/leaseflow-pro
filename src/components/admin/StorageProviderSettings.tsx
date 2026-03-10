@@ -17,7 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Loader2, Cloud, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import { Loader2, Cloud, CheckCircle2, XCircle, RefreshCw, LogIn } from "lucide-react";
 
 interface StorageSettings {
   id: string;
@@ -30,7 +30,7 @@ const PROVIDERS = [
     id: "google_drive",
     name: "Google Drive",
     icon: "https://upload.wikimedia.org/wikipedia/commons/1/12/Google_Drive_icon_%282020%29.svg",
-    description: "Almacenamiento en Google Drive usando cuenta de servicio",
+    description: "Almacenamiento en Google Drive usando OAuth o cuenta de servicio",
     secretsRequired: ["GOOGLE_SERVICE_ACCOUNT_KEY", "GOOGLE_DRIVE_ROOT_FOLDER_ID"],
   },
   {
@@ -55,9 +55,12 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [pendingProvider, setPendingProvider] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<Record<string, boolean | null>>({});
+  const [oauthStatus, setOauthStatus] = useState<{ hasClientCredentials: boolean; hasRefreshToken: boolean; isConnected: boolean } | null>(null);
+  const [connectingOAuth, setConnectingOAuth] = useState(false);
 
   useEffect(() => {
     loadSettings();
+    checkOAuthStatus();
   }, []);
 
   const loadSettings = async () => {
@@ -73,6 +76,19 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
       setSelectedProvider(data.active_provider);
     }
     setLoading(false);
+  };
+
+  const checkOAuthStatus = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke("google-drive", {
+        body: { action: "checkOAuthStatus" },
+      });
+      if (data && !error) {
+        setOauthStatus(data);
+      }
+    } catch {
+      // Ignore - OAuth status check is optional
+    }
   };
 
   const handleProviderChange = (value: string) => {
@@ -122,8 +138,10 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
       if (error) throw error;
 
       setConnectionStatus(prev => ({ ...prev, [providerId]: true }));
+      
+      const authMethod = data?.authMethod === 'oauth' ? ' (OAuth)' : ' (Service Account)';
       toast.success("Conexión exitosa", {
-        description: `La conexión con ${PROVIDERS.find(p => p.id === providerId)?.name} funciona correctamente`
+        description: `Conectado a ${PROVIDERS.find(p => p.id === providerId)?.name}${providerId === 'google_drive' ? authMethod : ''}`
       });
     } catch (error: any) {
       setConnectionStatus(prev => ({ ...prev, [providerId]: false }));
@@ -132,6 +150,48 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
       });
     } finally {
       setTesting(null);
+    }
+  };
+
+  const startOAuthFlow = async () => {
+    setConnectingOAuth(true);
+    try {
+      const redirectUri = `${window.location.origin}/google-drive-callback`;
+
+      const { data, error } = await supabase.functions.invoke("google-drive", {
+        body: { action: "getOAuthUrl", redirectUri },
+      });
+
+      if (error) throw error;
+
+      if (data?.url) {
+        window.open(data.url, "_blank", "width=600,height=700");
+        toast.info("Autorización iniciada", {
+          description: "Completa el proceso en la ventana emergente y luego vuelve aquí."
+        });
+
+        // Poll for status change
+        const pollInterval = setInterval(async () => {
+          const { data: status } = await supabase.functions.invoke("google-drive", {
+            body: { action: "checkOAuthStatus" },
+          });
+          if (status?.isConnected) {
+            clearInterval(pollInterval);
+            setOauthStatus(status);
+            setConnectingOAuth(false);
+            toast.success("Google Drive OAuth conectado exitosamente");
+          }
+        }, 3000);
+
+        // Stop polling after 5 minutes
+        setTimeout(() => {
+          clearInterval(pollInterval);
+          setConnectingOAuth(false);
+        }, 300000);
+      }
+    } catch (error: any) {
+      toast.error("Error al iniciar OAuth", { description: error.message });
+      setConnectingOAuth(false);
     }
   };
 
@@ -191,6 +251,38 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
                     )}
                   </div>
                   <p className="text-sm text-muted-foreground">{provider.description}</p>
+
+                  {/* Google Drive OAuth section */}
+                  {provider.id === "google_drive" && oauthStatus && (
+                    <div className="mt-2 p-3 rounded-md bg-muted/50 space-y-2">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="font-medium">OAuth:</span>
+                        {oauthStatus.isConnected ? (
+                          <Badge variant="default" className="text-xs bg-green-600">Conectado</Badge>
+                        ) : oauthStatus.hasClientCredentials ? (
+                          <Badge variant="outline" className="text-xs">Credenciales configuradas - Sin autorizar</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs">No configurado</Badge>
+                        )}
+                      </div>
+                      {oauthStatus.hasClientCredentials && !oauthStatus.isConnected && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={startOAuthFlow}
+                          disabled={connectingOAuth}
+                        >
+                          {connectingOAuth ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          ) : (
+                            <LogIn className="h-4 w-4 mr-2" />
+                          )}
+                          Autorizar con Google
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
                   <div className="flex items-center gap-2 pt-2">
                     <Button
                       variant="outline"

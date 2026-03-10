@@ -29,6 +29,7 @@ import MaintenanceDashboard from "./pages/MaintenanceDashboard";
 import Dashboard from "./pages/Dashboard";
 import PatentsDashboard from "./pages/PatentsDashboard";
 import SpecialAttentionPage from "./pages/SpecialAttentionPage";
+import GoogleDriveCallback from "./pages/GoogleDriveCallback";
 
 const queryClient = new QueryClient();
 
@@ -72,6 +73,8 @@ const App = () => (
               <Route path="/suppliers" element={<ProtectedRoute resource="suppliers"><SuppliersDashboard /></ProtectedRoute>} />
               <Route path="/special-attention" element={<ProtectedRoute><SpecialAttentionPage /></ProtectedRoute>} />
               <Route path="/maintenance" element={<ProtectedRoute resource="maintenance"><MaintenanceDashboard /></ProtectedRoute>} />
+              
+              <Route path="/google-drive-callback" element={<ProtectedRoute><GoogleDriveCallback /></ProtectedRoute>} />
               
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
