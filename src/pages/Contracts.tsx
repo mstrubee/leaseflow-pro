@@ -138,7 +138,7 @@ const Contracts = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const statusFilter = searchParams.get("status") || "todos";
+  const statusFilter = searchParams.get("status") || "firmado";
   const { user, loading: authLoading, roleLoaded, isAdmin } = useAuth();
   const { ufValue } = useEconomicIndicators();
   const { columnWidths, normalizedWidths, updateColumnWidth, resetToDefaults } = useContractColumnWidths();
