@@ -248,6 +248,7 @@ const EditContract = () => {
         // Parse emails: split by comma or semicolon
         const emailList = contact.email?.split(/[,;]/).map((e: string) => e.trim()).filter(Boolean) || [""];
         setEmails(emailList.length > 0 ? emailList : [""]);
+        setDomicilioComercial(contact.domicilio_comercial || "");
       }
       
       // Get country code from address
