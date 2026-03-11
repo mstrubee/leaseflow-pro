@@ -484,6 +484,7 @@ const EditContract = () => {
             name: contactName || "",
             phone: fullPhone,
             email: fullEmail,
+            domicilio_comercial: domicilioComercial || null,
           })
           .select()
           .single();
