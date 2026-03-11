@@ -958,12 +958,10 @@ const ContractDetail = () => {
                                 <p className="font-medium text-muted-foreground">No se ha entregado</p>
                               )}
                             </div>
-                            {contact.domicilio_comercial && (
-                              <div className="md:col-span-2">
-                                <p className="text-sm text-muted-foreground">Domicilio Comercial (Dirección)</p>
-                                <p className="font-medium">{contact.domicilio_comercial}</p>
-                              </div>
-                            )}
+                            <div className="md:col-span-2">
+                              <p className="text-sm text-muted-foreground">Domicilio Comercial (Dirección)</p>
+                              <p className="font-medium">{contact.domicilio_comercial || <span className="text-muted-foreground">No se ha entregado</span>}</p>
+                            </div>
                           </div>
                         ) : (
                           <p className="text-muted-foreground">
