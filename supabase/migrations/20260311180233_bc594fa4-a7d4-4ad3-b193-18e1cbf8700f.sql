@@ -1,0 +1,1 @@
+ALTER TABLE public.contract_contacts ALTER COLUMN email DROP NOT NULL, ALTER COLUMN email SET DEFAULT '';

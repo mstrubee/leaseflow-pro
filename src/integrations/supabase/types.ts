@@ -1000,7 +1000,7 @@ export type Database = {
           contract_id: string
           created_at: string
           domicilio_comercial: string | null
-          email: string
+          email: string | null
           id: string
           name: string
           phone: string
@@ -1011,7 +1011,7 @@ export type Database = {
           contract_id: string
           created_at?: string
           domicilio_comercial?: string | null
-          email: string
+          email?: string | null
           id?: string
           name: string
           phone: string
@@ -1022,7 +1022,7 @@ export type Database = {
           contract_id?: string
           created_at?: string
           domicilio_comercial?: string | null
-          email?: string
+          email?: string | null
           id?: string
           name?: string
           phone?: string
