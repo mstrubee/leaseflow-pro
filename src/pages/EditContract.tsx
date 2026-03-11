@@ -459,7 +459,7 @@ const EditContract = () => {
       }
 
       // Update or create contact - always save if any contact data exists
-      const hasContactData = company || contactName || fullEmail || fullPhone;
+      const hasContactData = company || contactName || fullEmail || fullPhone || domicilioComercial;
       
       if (contactId) {
         const { error: contactError } = await supabase
