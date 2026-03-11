@@ -927,7 +927,7 @@ const ContractDetail = () => {
                         onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
                         isDraggable={canReorder}
                       >
-                        {contact && (contact.company || contact.name || contact.phone || contact.email) ? (
+                        {contact && (contact.company || contact.name || contact.phone || contact.email || contact.domicilio_comercial) ? (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {contact.company && (
                               <div>
@@ -957,6 +957,12 @@ const ContractDetail = () => {
                                 <p className="font-medium text-muted-foreground">No se ha entregado</p>
                               )}
                             </div>
+                            {contact.domicilio_comercial && (
+                              <div className="md:col-span-2">
+                                <p className="text-sm text-muted-foreground">Domicilio Comercial (Dirección)</p>
+                                <p className="font-medium">{contact.domicilio_comercial}</p>
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <p className="text-muted-foreground">
