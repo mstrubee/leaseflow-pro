@@ -1029,8 +1029,17 @@ const EditContract = () => {
                       placeholder="912345678"
                       maxLength={9}
                     />
-                  </div>
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="domicilioComercial">Domicilio Comercial (Dirección)</Label>
+                  <Input
+                    id="domicilioComercial"
+                    value={domicilioComercial}
+                    onChange={(e) => { setDomicilioComercial(e.target.value); setHasUnsavedChanges(true); }}
+                    placeholder="Dirección del arrendador"
+                  />
+                </div>
+              </div>
               </div>
               
               {/* Multiple Emails */}
