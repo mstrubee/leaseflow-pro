@@ -74,6 +74,7 @@ const EditContract = () => {
   const [phoneDigits, setPhoneDigits] = useState("");
   const [emails, setEmails] = useState<string[]>([""]);
   const [countryCode, setCountryCode] = useState("+56");
+  const [domicilioComercial, setDomicilioComercial] = useState("");
   
   // Unsaved changes tracking
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -247,6 +248,7 @@ const EditContract = () => {
         // Parse emails: split by comma or semicolon
         const emailList = contact.email?.split(/[,;]/).map((e: string) => e.trim()).filter(Boolean) || [""];
         setEmails(emailList.length > 0 ? emailList : [""]);
+        setDomicilioComercial(contact.domicilio_comercial || "");
       }
       
       // Get country code from address
@@ -457,7 +459,7 @@ const EditContract = () => {
       }
 
       // Update or create contact - always save if any contact data exists
-      const hasContactData = company || contactName || fullEmail || fullPhone;
+      const hasContactData = company || contactName || fullEmail || fullPhone || domicilioComercial;
       
       if (contactId) {
         const { error: contactError } = await supabase
@@ -467,6 +469,7 @@ const EditContract = () => {
             name: contactName || "",
             phone: fullPhone,
             email: fullEmail,
+            domicilio_comercial: domicilioComercial || null,
           })
           .eq("id", contactId);
 
@@ -481,6 +484,7 @@ const EditContract = () => {
             name: contactName || "",
             phone: fullPhone,
             email: fullEmail,
+            domicilio_comercial: domicilioComercial || null,
           })
           .select()
           .single();
@@ -1025,8 +1029,17 @@ const EditContract = () => {
                       placeholder="912345678"
                       maxLength={9}
                     />
-                  </div>
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="domicilioComercial">Domicilio Comercial (Dirección)</Label>
+                  <Input
+                    id="domicilioComercial"
+                    value={domicilioComercial}
+                    onChange={(e) => { setDomicilioComercial(e.target.value); setHasUnsavedChanges(true); }}
+                    placeholder="Dirección del arrendador"
+                  />
+                </div>
+              </div>
               </div>
               
               {/* Multiple Emails */}
