@@ -469,6 +469,7 @@ const EditContract = () => {
             name: contactName || "",
             phone: fullPhone,
             email: fullEmail,
+            domicilio_comercial: domicilioComercial || null,
           })
           .eq("id", contactId);
 
