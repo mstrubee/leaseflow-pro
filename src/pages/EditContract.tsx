@@ -74,6 +74,7 @@ const EditContract = () => {
   const [phoneDigits, setPhoneDigits] = useState("");
   const [emails, setEmails] = useState<string[]>([""]);
   const [countryCode, setCountryCode] = useState("+56");
+  const [domicilioComercial, setDomicilioComercial] = useState("");
   
   // Unsaved changes tracking
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
