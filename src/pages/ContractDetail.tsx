@@ -83,6 +83,7 @@ interface Contract {
     name: string;
     phone: string;
     email: string;
+    domicilio_comercial: string | null;
   }>;
   contract_versions: Array<{
     id: string;
