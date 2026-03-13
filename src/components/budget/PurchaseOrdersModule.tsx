@@ -742,16 +742,19 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     }
 
     // Net invoiced for THIS specific purchase_order row (its own invoices)
-    const netInvoiced = data.totalInvoiced - data.totalCreditNotes;
-    // The order.amount_uf is already the allocated amount for multi-contract OCs
-    const orderAmount = order.amount_uf;
+    const netInvoicedCLP = data.totalInvoicedCLP - data.totalCreditNotesCLP;
+    const orderAmountCLP = order.amount_clp ?? (
+      order.uf_value_at_entry && order.uf_value_at_entry > 0
+        ? order.amount_uf * order.uf_value_at_entry
+        : convertUFToPesos(order.amount_uf)
+    );
 
-    if (netInvoiced > orderAmount + 0.01) {
+    if (netInvoicedCLP > orderAmountCLP + 1) {
       return <Badge variant="destructive" className="flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Sobrepasado</Badge>;
-    } else if (Math.abs(netInvoiced - orderAmount) < 0.01) {
+    } else if (Math.abs(netInvoicedCLP - orderAmountCLP) <= 1) {
       return <Badge className="bg-blue-500">Cerrada</Badge>;
     } else {
-      const percentage = orderAmount > 0 ? (netInvoiced / orderAmount) * 100 : 0;
+      const percentage = orderAmountCLP > 0 ? (netInvoicedCLP / orderAmountCLP) * 100 : 0;
       return <Badge className="bg-green-500">OK ({percentage.toFixed(0)}%)</Badge>;
     }
   };
