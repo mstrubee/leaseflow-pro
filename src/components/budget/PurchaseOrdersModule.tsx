@@ -733,18 +733,12 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       }
     }
 
-    const rawNetInvoiced = data.totalInvoiced - data.totalCreditNotes;
-
-    // For multi-contract OCs, show status proportionally to the local allocation
-    const totalOrderAmountUF = order.is_multi_contract && order.total_order_amount_uf ? order.total_order_amount_uf : order.amount_uf;
-    const groupPercentage = totalOrderAmountUF > 0 ? rawNetInvoiced / totalOrderAmountUF : 0;
-    const netInvoiced = order.is_multi_contract && order.total_order_amount_uf
-      ? order.amount_uf * groupPercentage
-      : rawNetInvoiced;
-
+    // Net invoiced for THIS specific purchase_order row (its own invoices)
+    const netInvoiced = data.totalInvoiced - data.totalCreditNotes;
+    // The order.amount_uf is already the allocated amount for multi-contract OCs
     const orderAmount = order.amount_uf;
 
-    if (netInvoiced > orderAmount) {
+    if (netInvoiced > orderAmount + 0.01) {
       return <Badge variant="destructive" className="flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Sobrepasado</Badge>;
     } else if (Math.abs(netInvoiced - orderAmount) < 0.01) {
       return <Badge className="bg-blue-500">Cerrada</Badge>;
