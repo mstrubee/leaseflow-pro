@@ -1009,14 +1009,15 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                   value={newInvoice.amount} 
                   onChange={(e) => setNewInvoice({ ...newInvoice, amount: e.target.value })} 
                   className="flex-1"
+                  placeholder={newInvoice.currency === "CLP" ? "Monto en pesos" : "Monto en UF"}
                 />
                 <Select value={newInvoice.currency} onValueChange={(v) => setNewInvoice({ ...newInvoice, currency: v as "UF" | "CLP" })}>
                   <SelectTrigger className="w-24">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="UF">UF</SelectItem>
                     <SelectItem value="CLP">CLP</SelectItem>
+                    <SelectItem value="UF">UF</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
