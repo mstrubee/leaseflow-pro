@@ -659,6 +659,8 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
       amount: invoice.amount_clp ? Math.round(invoice.amount_clp).toString() : Math.round(convertUFToPesos(invoice.amount_uf)).toString(),
       currency: "CLP",
       purchase_order_id: purchaseOrder.id,
+      attachment_url: invoice.attachment_url || "",
+      attachment_name: invoice.attachment_url ? (invoice.attachment_url.split("/").pop() || "Archivo adjunto") : "",
     });
     setShowEditDialog(true);
     
