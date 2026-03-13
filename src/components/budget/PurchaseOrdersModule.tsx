@@ -225,6 +225,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         .select(`
           purchase_order_id,
           amount_uf,
+          amount_clp,
           purchase_orders!inner(
             id, order_number, supplier_name, order_date, amount_uf,
             description, attachment_url, year, status, budget_id,
