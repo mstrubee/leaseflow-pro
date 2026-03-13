@@ -491,11 +491,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     await loadFolderContents(parentFolder?.id || null);
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    // Validate file before upload
+  const processFileUpload = async (file: File) => {
     const validation = validateFile(file);
     if (!validation.isValid) {
       toast({
@@ -503,9 +499,6 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         title: "Archivo no válido",
         description: validation.error,
       });
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
       return;
     }
 
@@ -539,8 +532,6 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
 
       if (uploadError) throw uploadError;
 
-      // Store the storage path reference instead of public URL for security
-      // The path will be converted to a signed URL when accessed
       const storagePath = `storage://repository-files/${filePath}`;
 
       const { data: newFile, error: dbError } = await supabase
@@ -567,6 +558,33 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         fileInputRef.current.value = "";
       }
     }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    await processFileUpload(file);
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    await processFileUpload(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
   };
 
   const handleConfirmReceived = async (fileUrl: string) => {
