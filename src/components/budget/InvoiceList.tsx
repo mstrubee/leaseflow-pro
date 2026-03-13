@@ -300,13 +300,15 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   const displayedTotalInvoicedCLP = localTotalInvoicedCLP * allocationWeight;
   const displayedTotalCreditNotesCLP = localTotalCreditNotesCLP * allocationWeight;
   const displayedNetInvoicedCLP = displayedTotalInvoicedCLP - displayedTotalCreditNotesCLP;
+  const displayedOrderAmountCLP = convertUFToPesos(localAmountUF);
+  const pendingAmountCLP = displayedOrderAmountCLP - displayedNetInvoicedCLP;
   const pendingAmount = localAmountUF - displayedNetInvoiced;
-  
-  // Determine OC status
+
+  // Determine OC status using the same displayed CLP calculation
   const getOCStatus = () => {
-    if (displayedNetInvoiced > localAmountUF) {
+    if (displayedNetInvoicedCLP > displayedOrderAmountCLP + 1) {
       return "sobrepasado";
-    } else if (Math.abs(displayedNetInvoiced - localAmountUF) < 0.01) {
+    } else if (Math.abs(displayedNetInvoicedCLP - displayedOrderAmountCLP) <= 1) {
       return "cerrada";
     } else {
       return "ok";
@@ -314,7 +316,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   };
 
   const ocStatus = getOCStatus();
-  const percentageConsumed = localAmountUF > 0 ? (displayedNetInvoiced / localAmountUF) * 100 : 0;
+  const percentageConsumed = displayedOrderAmountCLP > 0 ? (displayedNetInvoicedCLP / displayedOrderAmountCLP) * 100 : 0;
 
   // Validate invoice amount
   const validateInvoiceAmount = (amount: number, excludeInvoiceId?: string) => {
@@ -738,7 +740,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         <div className="flex items-center gap-6">
            <div>
              <p className="text-xs text-muted-foreground">Monto OC</p>
-             <p className="font-bold">{formatCLP(convertUFToPesos(localAmountUF))}</p>
+             <p className="font-bold">{formatCLP(Math.round(displayedOrderAmountCLP))}</p>
              <p className="text-xs text-muted-foreground">{formatUF(localAmountUF)}</p>
            </div>
            <div>
@@ -755,8 +757,8 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
            )}
            <div>
              <p className="text-xs text-muted-foreground">Pendiente</p>
-             <p className={cn("font-bold", pendingAmount < 0 && "text-red-600")}>
-               {formatCLP(Math.round(convertUFToPesos(localAmountUF) - displayedNetInvoicedCLP))}
+             <p className={cn("font-bold", pendingAmountCLP < -1 && "text-red-600")}>
+               {formatCLP(Math.round(pendingAmountCLP))}
              </p>
              <p className="text-xs text-muted-foreground">{formatUF(pendingAmount)}</p>
            </div>
