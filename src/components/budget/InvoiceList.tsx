@@ -1422,7 +1422,16 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                 </TabsContent>
 
                 <TabsContent value="upload" className="space-y-4">
-                  <div className="border-2 border-dashed rounded-lg p-8 text-center">
+                  <div 
+                    className={cn(
+                      "border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer",
+                      isDragging ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50"
+                    )}
+                    onDrop={handleDrop}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onClick={() => !uploading && fileInputRef.current?.click()}
+                  >
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -1430,17 +1439,13 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                       onChange={handleFileUpload}
                       accept=".pdf"
                     />
-                    <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-4" />
-                    <p className="text-muted-foreground mb-4">
-                      El archivo se guardará en la carpeta Facturas del repositorio
+                    <Upload className={cn("h-10 w-10 mx-auto mb-4", isDragging ? "text-primary" : "text-muted-foreground")} />
+                    <p className={cn("mb-2 font-medium", isDragging ? "text-primary" : "text-muted-foreground")}>
+                      {isDragging ? "Suelte el archivo aquí" : uploading ? "Subiendo..." : "Arrastre un archivo o haga click para seleccionar"}
                     </p>
-                    <Button
-                      variant="outline"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploading}
-                    >
-                      {uploading ? "Subiendo..." : "Seleccionar Archivo PDF"}
-                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      PDF — Se guardará en la carpeta Facturas del repositorio
+                    </p>
                   </div>
                 </TabsContent>
               </Tabs>
