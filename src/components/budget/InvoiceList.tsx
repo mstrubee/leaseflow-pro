@@ -690,21 +690,35 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         setInvoiceWarning(validation.warning);
       }
 
+      const isReassigning = editInvoice.purchase_order_id !== purchaseOrder.id;
+
+      const updatePayload: any = {
+        invoice_number: editInvoice.invoice_number,
+        invoice_date: editInvoice.invoice_date,
+        amount_uf: amountUF,
+        amount_clp: amountCLP,
+        input_currency: editInvoice.currency,
+        uf_value_at_entry: ufValue,
+      };
+
+      if (isReassigning) {
+        updatePayload.purchase_order_id = editInvoice.purchase_order_id;
+      }
+
       const { error } = await supabase
         .from("invoices")
-        .update({
-          invoice_number: editInvoice.invoice_number,
-          invoice_date: editInvoice.invoice_date,
-          amount_uf: amountUF,
-          amount_clp: amountCLP,
-          input_currency: editInvoice.currency,
-          uf_value_at_entry: ufValue,
-        })
+        .update(updatePayload)
         .eq("id", selectedInvoice.id);
 
       if (error) throw error;
 
-      if (!validation.valid) {
+      if (isReassigning) {
+        const targetOC = compatibleOCs.find(oc => oc.id === editInvoice.purchase_order_id);
+        toast({ 
+          title: "Factura reasignada", 
+          description: `Factura movida a OC ${targetOC?.order_number || ""}` 
+        });
+      } else if (!validation.valid) {
         toast({ 
           variant: "destructive",
           title: "Advertencia", 
