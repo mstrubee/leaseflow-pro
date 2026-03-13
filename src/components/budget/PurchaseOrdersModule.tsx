@@ -280,7 +280,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
           .in("purchase_order_id", orderIds)
           .is("deleted_at", null);
 
-        const invoiceDataMap: Record<string, { totalInvoiced: number; totalCreditNotes: number }> = {};
+        const invoiceDataMap: Record<string, { totalInvoiced: number; totalCreditNotes: number; totalInvoicedCLP: number; totalCreditNotesCLP: number }> = {};
         
         orderIds.forEach(orderId => {
           const orderInvoices = (invoicesData || []).filter(inv => inv.purchase_order_id === orderId);
@@ -289,6 +289,8 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
           invoiceDataMap[orderId] = {
             totalInvoiced: orderInvoices.reduce((sum, inv) => sum + inv.amount_uf, 0),
             totalCreditNotes: orderCreditNotes.reduce((sum, cn) => sum + cn.amount_uf, 0),
+            totalInvoicedCLP: orderInvoices.reduce((sum, inv) => sum + (inv.amount_clp ?? Math.round(convertUFToPesos(inv.amount_uf))), 0),
+            totalCreditNotesCLP: orderCreditNotes.reduce((sum, cn) => sum + (cn.amount_clp ?? Math.round(convertUFToPesos(cn.amount_uf))), 0),
           };
         });
         
