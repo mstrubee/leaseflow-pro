@@ -275,9 +275,11 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     return data?.[0] || null;
   };
 
-  // Calculate totals
+  // Calculate totals (UF for status logic, CLP from historical stored values)
   const localTotalInvoiced = invoices.reduce((sum, inv) => sum + inv.amount_uf, 0);
   const localTotalCreditNotes = creditNotes.reduce((sum, cn) => sum + cn.amount_uf, 0);
+  const localTotalInvoicedCLP = invoices.reduce((sum, inv) => sum + (inv.amount_clp || Math.round(convertUFToPesos(inv.amount_uf))), 0);
+  const localTotalCreditNotesCLP = creditNotes.reduce((sum, cn) => sum + (cn.amount_clp || Math.round(convertUFToPesos(cn.amount_uf))), 0);
 
   // For multi-contract OCs shown in a contract context, we display invoicing proportionally
   // to the allocated amount (so % and amounts match the global OC status).
@@ -293,6 +295,11 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   const displayedTotalInvoiced = sourceTotalInvoiced * allocationWeight;
   const displayedTotalCreditNotes = sourceTotalCreditNotes * allocationWeight;
   const displayedNetInvoiced = displayedTotalInvoiced - displayedTotalCreditNotes;
+
+  // CLP totals from historical values (not converted from UF with today's rate)
+  const displayedTotalInvoicedCLP = localTotalInvoicedCLP * allocationWeight;
+  const displayedTotalCreditNotesCLP = localTotalCreditNotesCLP * allocationWeight;
+  const displayedNetInvoicedCLP = displayedTotalInvoicedCLP - displayedTotalCreditNotesCLP;
   const pendingAmount = localAmountUF - displayedNetInvoiced;
   
   // Determine OC status
@@ -729,30 +736,30 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
       )}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <div>
-            <p className="text-xs text-muted-foreground">Monto OC</p>
-            <p className="font-bold">{formatCLP(convertUFToPesos(localAmountUF))}</p>
-            <p className="text-xs text-muted-foreground">{formatUF(localAmountUF)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Facturado</p>
-            <p className="font-bold">{formatCLP(convertUFToPesos(displayedNetInvoiced))}</p>
-            <p className="text-xs text-muted-foreground">{formatUF(displayedNetInvoiced)}</p>
-          </div>
-          {displayedTotalCreditNotes > 0 && (
-            <div>
-              <p className="text-xs text-muted-foreground">Notas Crédito</p>
-              <p className="font-bold text-green-600">-{formatCLP(convertUFToPesos(displayedTotalCreditNotes))}</p>
-              <p className="text-xs text-muted-foreground">-{formatUF(displayedTotalCreditNotes)}</p>
-            </div>
-          )}
-          <div>
-            <p className="text-xs text-muted-foreground">Pendiente</p>
-            <p className={cn("font-bold", pendingAmount < 0 && "text-red-600")}>
-              {formatCLP(convertUFToPesos(pendingAmount))}
-            </p>
-            <p className="text-xs text-muted-foreground">{formatUF(pendingAmount)}</p>
-          </div>
+           <div>
+             <p className="text-xs text-muted-foreground">Monto OC</p>
+             <p className="font-bold">{formatCLP(convertUFToPesos(localAmountUF))}</p>
+             <p className="text-xs text-muted-foreground">{formatUF(localAmountUF)}</p>
+           </div>
+           <div>
+             <p className="text-xs text-muted-foreground">Facturado</p>
+             <p className="font-bold">{formatCLP(Math.round(displayedNetInvoicedCLP))}</p>
+             <p className="text-xs text-muted-foreground">{formatUF(displayedNetInvoiced)}</p>
+           </div>
+           {displayedTotalCreditNotes > 0 && (
+             <div>
+               <p className="text-xs text-muted-foreground">Notas Crédito</p>
+               <p className="font-bold text-green-600">-{formatCLP(Math.round(displayedTotalCreditNotesCLP))}</p>
+               <p className="text-xs text-muted-foreground">-{formatUF(displayedTotalCreditNotes)}</p>
+             </div>
+           )}
+           <div>
+             <p className="text-xs text-muted-foreground">Pendiente</p>
+             <p className={cn("font-bold", pendingAmount < 0 && "text-red-600")}>
+               {formatCLP(Math.round(convertUFToPesos(localAmountUF) - displayedNetInvoicedCLP))}
+             </p>
+             <p className="text-xs text-muted-foreground">{formatUF(pendingAmount)}</p>
+           </div>
           <div className="flex items-center gap-2">
             {ocStatus === "ok" && (
               <Badge className="bg-green-500">
