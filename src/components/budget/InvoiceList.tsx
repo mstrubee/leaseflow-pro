@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, FileText, Mail, CheckCircle, Clock, Trash2, Upload, Folder, ArrowLeft, Paperclip, ExternalLink, Check, Pencil, AlertTriangle, CreditCard, Send } from "lucide-react";
+import { Plus, FileText, Mail, CheckCircle, Clock, Trash2, Upload, Folder, ArrowLeft, Paperclip, ExternalLink, Check, Pencil, AlertTriangle, CreditCard, Send, ArrowRightLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useBudgetContext } from "./BudgetContext";
 import { BudgetSemaphore } from "./BudgetSemaphore";
@@ -89,7 +89,10 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     invoice_date: "",
     amount: "",
     currency: "UF" as "UF" | "CLP",
+    purchase_order_id: "",
   });
+  const [compatibleOCs, setCompatibleOCs] = useState<{ id: string; order_number: string; supplier_name: string | null; amount_clp: number | null; amount_uf: number }[]>([]);
+  const [loadingOCs, setLoadingOCs] = useState(false);
   const [email, setEmail] = useState("");
   const [newInvoice, setNewInvoice] = useState({
     invoice_number: "",
@@ -623,15 +626,46 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     }
   };
 
-  const handleEditClick = (invoice: Invoice) => {
+  const handleEditClick = async (invoice: Invoice) => {
     setSelectedInvoice(invoice);
     setEditInvoice({
       invoice_number: invoice.invoice_number,
       invoice_date: invoice.invoice_date,
       amount: invoice.amount_uf.toString(),
       currency: "UF",
+      purchase_order_id: purchaseOrder.id,
     });
     setShowEditDialog(true);
+    
+    // Load compatible OCs (same supplier, same contract)
+    setLoadingOCs(true);
+    try {
+      // First get supplier_name from current OC
+      const { data: currentOC } = await supabase
+        .from("purchase_orders")
+        .select("supplier_name, contract_id")
+        .eq("id", purchaseOrder.id)
+        .single();
+      
+      if (currentOC) {
+        let query = supabase
+          .from("purchase_orders")
+          .select("id, order_number, supplier_name, amount_clp, amount_uf")
+          .eq("contract_id", currentOC.contract_id)
+          .is("deleted_at", null);
+        
+        if (currentOC.supplier_name) {
+          query = query.eq("supplier_name", currentOC.supplier_name);
+        }
+        
+        const { data: ocs } = await query.order("order_date", { ascending: false });
+        setCompatibleOCs(ocs || []);
+      }
+    } catch (error) {
+      console.error("Error loading compatible OCs:", error);
+    } finally {
+      setLoadingOCs(false);
+    }
   };
 
   const handleUpdateInvoice = async () => {
@@ -656,21 +690,35 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         setInvoiceWarning(validation.warning);
       }
 
+      const isReassigning = editInvoice.purchase_order_id !== purchaseOrder.id;
+
+      const updatePayload: any = {
+        invoice_number: editInvoice.invoice_number,
+        invoice_date: editInvoice.invoice_date,
+        amount_uf: amountUF,
+        amount_clp: amountCLP,
+        input_currency: editInvoice.currency,
+        uf_value_at_entry: ufValue,
+      };
+
+      if (isReassigning) {
+        updatePayload.purchase_order_id = editInvoice.purchase_order_id;
+      }
+
       const { error } = await supabase
         .from("invoices")
-        .update({
-          invoice_number: editInvoice.invoice_number,
-          invoice_date: editInvoice.invoice_date,
-          amount_uf: amountUF,
-          amount_clp: amountCLP,
-          input_currency: editInvoice.currency,
-          uf_value_at_entry: ufValue,
-        })
+        .update(updatePayload)
         .eq("id", selectedInvoice.id);
 
       if (error) throw error;
 
-      if (!validation.valid) {
+      if (isReassigning) {
+        const targetOC = compatibleOCs.find(oc => oc.id === editInvoice.purchase_order_id);
+        toast({ 
+          title: "Factura reasignada", 
+          description: `Factura movida a OC ${targetOC?.order_number || ""}` 
+        });
+      } else if (!validation.valid) {
         toast({ 
           variant: "destructive",
           title: "Advertencia", 
@@ -1104,12 +1152,29 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
       </Dialog>
 
       {/* Edit Invoice Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={(open) => { setShowEditDialog(open); if (!open) setInvoiceWarning(null); }}>
+      <Dialog open={showEditDialog} onOpenChange={(open) => { setShowEditDialog(open); if (!open) { setInvoiceWarning(null); setCompatibleOCs([]); } }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Editar Factura</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Current OC info */}
+            <div className="p-3 rounded-lg border bg-muted/30">
+              <div className="flex items-center gap-2 mb-1">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">OC Asignada</span>
+              </div>
+              <p className="text-sm font-mono">
+                {editInvoice.purchase_order_id === purchaseOrder.id 
+                  ? `${purchaseOrder.order_number} — ${formatCLP(purchaseOrder.amount_clp || Math.round(convertUFToPesos(purchaseOrder.amount_uf)))}`
+                  : (() => {
+                      const oc = compatibleOCs.find(o => o.id === editInvoice.purchase_order_id);
+                      return oc ? `${oc.order_number} — ${formatCLP(oc.amount_clp || Math.round(convertUFToPesos(oc.amount_uf)))}` : "";
+                    })()
+                }
+              </p>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Nº Factura</Label>
@@ -1159,6 +1224,48 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
               )}
             </div>
 
+            {/* OC Reassignment */}
+            {compatibleOCs.length > 1 && (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <ArrowRightLeft className="h-4 w-4" />
+                  Reasignar a otra OC (mismo proveedor)
+                </Label>
+                <Select 
+                  value={editInvoice.purchase_order_id} 
+                  onValueChange={(v) => setEditInvoice({ ...editInvoice, purchase_order_id: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {compatibleOCs.map((oc) => (
+                      <SelectItem key={oc.id} value={oc.id}>
+                        OC {oc.order_number} — {formatCLP(oc.amount_clp || Math.round(convertUFToPesos(oc.amount_uf)))}
+                        {oc.id === purchaseOrder.id ? " (actual)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {editInvoice.purchase_order_id !== purchaseOrder.id && (
+                  <p className="text-xs text-amber-600 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    La factura será movida a otra OC
+                  </p>
+                )}
+              </div>
+            )}
+
+            {loadingOCs && compatibleOCs.length === 0 && (
+              <p className="text-xs text-muted-foreground">Cargando OCs compatibles...</p>
+            )}
+
+            {!loadingOCs && compatibleOCs.length <= 1 && (
+              <p className="text-xs text-muted-foreground">
+                No hay otras OC con el mismo proveedor disponibles para reasignar.
+              </p>
+            )}
+
             {invoiceWarning && (
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
                 <div className="flex items-start gap-2">
@@ -1172,7 +1279,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowEditDialog(false); setInvoiceWarning(null); }}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setShowEditDialog(false); setInvoiceWarning(null); setCompatibleOCs([]); }}>Cancelar</Button>
             <Button onClick={handleUpdateInvoice}>Guardar</Button>
           </DialogFooter>
         </DialogContent>
