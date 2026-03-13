@@ -736,30 +736,30 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
       )}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <div>
-            <p className="text-xs text-muted-foreground">Monto OC</p>
-            <p className="font-bold">{formatCLP(convertUFToPesos(localAmountUF))}</p>
-            <p className="text-xs text-muted-foreground">{formatUF(localAmountUF)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Facturado</p>
-            <p className="font-bold">{formatCLP(convertUFToPesos(displayedNetInvoiced))}</p>
-            <p className="text-xs text-muted-foreground">{formatUF(displayedNetInvoiced)}</p>
-          </div>
-          {displayedTotalCreditNotes > 0 && (
-            <div>
-              <p className="text-xs text-muted-foreground">Notas Crédito</p>
-              <p className="font-bold text-green-600">-{formatCLP(convertUFToPesos(displayedTotalCreditNotes))}</p>
-              <p className="text-xs text-muted-foreground">-{formatUF(displayedTotalCreditNotes)}</p>
-            </div>
-          )}
-          <div>
-            <p className="text-xs text-muted-foreground">Pendiente</p>
-            <p className={cn("font-bold", pendingAmount < 0 && "text-red-600")}>
-              {formatCLP(convertUFToPesos(pendingAmount))}
-            </p>
-            <p className="text-xs text-muted-foreground">{formatUF(pendingAmount)}</p>
-          </div>
+           <div>
+             <p className="text-xs text-muted-foreground">Monto OC</p>
+             <p className="font-bold">{formatCLP(convertUFToPesos(localAmountUF))}</p>
+             <p className="text-xs text-muted-foreground">{formatUF(localAmountUF)}</p>
+           </div>
+           <div>
+             <p className="text-xs text-muted-foreground">Facturado</p>
+             <p className="font-bold">{formatCLP(Math.round(displayedNetInvoicedCLP))}</p>
+             <p className="text-xs text-muted-foreground">{formatUF(displayedNetInvoiced)}</p>
+           </div>
+           {displayedTotalCreditNotes > 0 && (
+             <div>
+               <p className="text-xs text-muted-foreground">Notas Crédito</p>
+               <p className="font-bold text-green-600">-{formatCLP(Math.round(displayedTotalCreditNotesCLP))}</p>
+               <p className="text-xs text-muted-foreground">-{formatUF(displayedTotalCreditNotes)}</p>
+             </div>
+           )}
+           <div>
+             <p className="text-xs text-muted-foreground">Pendiente</p>
+             <p className={cn("font-bold", pendingAmount < 0 && "text-red-600")}>
+               {formatCLP(Math.round(convertUFToPesos(localAmountUF) - displayedNetInvoicedCLP))}
+             </p>
+             <p className="text-xs text-muted-foreground">{formatUF(pendingAmount)}</p>
+           </div>
           <div className="flex items-center gap-2">
             {ocStatus === "ok" && (
               <Badge className="bg-green-500">
