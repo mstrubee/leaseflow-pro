@@ -93,7 +93,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
   const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [opexMasterBudget, setOpexMasterBudget] = useState<OpexBudgetData[]>([]);
-  const [orderInvoiceData, setOrderInvoiceData] = useState<Record<string, { totalInvoiced: number; totalCreditNotes: number }>>({});
+  const [orderInvoiceData, setOrderInvoiceData] = useState<Record<string, { totalInvoiced: number; totalCreditNotes: number; totalInvoicedCLP: number; totalCreditNotesCLP: number }>>({});
   const selectedYear = initialYear ?? new Date().getFullYear();
 
   const [loading, setLoading] = useState(true);
@@ -270,17 +270,17 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         
         const { data: invoicesData } = await supabase
           .from("invoices")
-          .select("purchase_order_id, amount_uf")
+          .select("purchase_order_id, amount_uf, amount_clp")
           .in("purchase_order_id", orderIds)
           .is("deleted_at", null);
 
         const { data: creditNotesData } = await supabase
           .from("credit_notes")
-          .select("purchase_order_id, amount_uf")
+          .select("purchase_order_id, amount_uf, amount_clp")
           .in("purchase_order_id", orderIds)
           .is("deleted_at", null);
 
-        const invoiceDataMap: Record<string, { totalInvoiced: number; totalCreditNotes: number }> = {};
+        const invoiceDataMap: Record<string, { totalInvoiced: number; totalCreditNotes: number; totalInvoicedCLP: number; totalCreditNotesCLP: number }> = {};
         
         orderIds.forEach(orderId => {
           const orderInvoices = (invoicesData || []).filter(inv => inv.purchase_order_id === orderId);
@@ -289,6 +289,8 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
           invoiceDataMap[orderId] = {
             totalInvoiced: orderInvoices.reduce((sum, inv) => sum + inv.amount_uf, 0),
             totalCreditNotes: orderCreditNotes.reduce((sum, cn) => sum + cn.amount_uf, 0),
+            totalInvoicedCLP: orderInvoices.reduce((sum, inv) => sum + (inv.amount_clp ?? Math.round(convertUFToPesos(inv.amount_uf))), 0),
+            totalCreditNotesCLP: orderCreditNotes.reduce((sum, cn) => sum + (cn.amount_clp ?? Math.round(convertUFToPesos(cn.amount_uf))), 0),
           };
         });
         
@@ -740,16 +742,19 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     }
 
     // Net invoiced for THIS specific purchase_order row (its own invoices)
-    const netInvoiced = data.totalInvoiced - data.totalCreditNotes;
-    // The order.amount_uf is already the allocated amount for multi-contract OCs
-    const orderAmount = order.amount_uf;
+    const netInvoicedCLP = data.totalInvoicedCLP - data.totalCreditNotesCLP;
+    const orderAmountCLP = order.amount_clp ?? (
+      order.uf_value_at_entry && order.uf_value_at_entry > 0
+        ? order.amount_uf * order.uf_value_at_entry
+        : convertUFToPesos(order.amount_uf)
+    );
 
-    if (netInvoiced > orderAmount + 0.01) {
+    if (netInvoicedCLP > orderAmountCLP + 1) {
       return <Badge variant="destructive" className="flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Sobrepasado</Badge>;
-    } else if (Math.abs(netInvoiced - orderAmount) < 0.01) {
+    } else if (Math.abs(netInvoicedCLP - orderAmountCLP) <= 1) {
       return <Badge className="bg-blue-500">Cerrada</Badge>;
     } else {
-      const percentage = orderAmount > 0 ? (netInvoiced / orderAmount) * 100 : 0;
+      const percentage = orderAmountCLP > 0 ? (netInvoicedCLP / orderAmountCLP) * 100 : 0;
       return <Badge className="bg-green-500">OK ({percentage.toFixed(0)}%)</Badge>;
     }
   };
