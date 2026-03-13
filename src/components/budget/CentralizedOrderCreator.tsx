@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, Trash2, Upload, FileText, X, Wrench, ArrowUpDown, ArrowUp, ArrowDown, Eye } from "lucide-react";
+import { Loader2, Plus, Trash2, Upload, FileText, X, Wrench, ArrowUpDown, ArrowUp, ArrowDown, Eye, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
 import { useAuth } from "@/hooks/useAuth";
@@ -113,6 +113,8 @@ export const CentralizedOrderCreator = ({
   // Quotation file state
   const [quotationFile, setQuotationFile] = useState<File | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [duplicateOCWarning, setDuplicateOCWarning] = useState(false);
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [formData, setFormData] = useState({
@@ -126,6 +128,26 @@ export const CentralizedOrderCreator = ({
     project_name: ""
   });
   
+  // Check for duplicate OC number
+  const checkDuplicateOCNumber = useCallback(async (orderNumber: string) => {
+    if (!orderNumber.trim()) {
+      setDuplicateOCWarning(false);
+      return;
+    }
+    setCheckingDuplicate(true);
+    try {
+      const { count } = await supabase
+        .from("purchase_orders")
+        .select("id", { count: "exact", head: true })
+        .eq("order_number", orderNumber.trim());
+      setDuplicateOCWarning((count ?? 0) > 0);
+    } catch {
+      setDuplicateOCWarning(false);
+    } finally {
+      setCheckingDuplicate(false);
+    }
+  }, []);
+
   // Load initial data
   useEffect(() => {
     if (open) {
@@ -366,6 +388,24 @@ export const CentralizedOrderCreator = ({
   // Handle form submission
   const handleSubmit = async () => {
     // Validation
+    if (mode === "order" && duplicateOCWarning) {
+      toast({ title: "Error", description: "Número de OC ya existe. No se puede guardar.", variant: "destructive" });
+      return;
+    }
+    
+    // Re-check duplicate if order_number was entered
+    if (mode === "order" && formData.order_number.trim()) {
+      const { count } = await supabase
+        .from("purchase_orders")
+        .select("id", { count: "exact", head: true })
+        .eq("order_number", formData.order_number.trim());
+      if ((count ?? 0) > 0) {
+        setDuplicateOCWarning(true);
+        toast({ title: "Error", description: "Número de OC ya existe. No se puede guardar.", variant: "destructive" });
+        return;
+      }
+    }
+    
     if (!enteredAmount || enteredAmount <= 0) {
       toast({ title: "Error", description: "Ingrese un monto válido", variant: "destructive" });
       return;
@@ -704,6 +744,8 @@ export const CentralizedOrderCreator = ({
     setSingleFormIds([]);
     setContractForms({});
     setQuotationFile(null);
+    setDuplicateOCWarning(false);
+    setCheckingDuplicate(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -754,9 +796,20 @@ export const CentralizedOrderCreator = ({
                       <Label>Número OC</Label>
                       <Input
                         value={formData.order_number}
-                        onChange={(e) => setFormData(prev => ({ ...prev, order_number: e.target.value }))}
+                        onChange={(e) => {
+                          setFormData(prev => ({ ...prev, order_number: e.target.value }));
+                          setDuplicateOCWarning(false);
+                        }}
+                        onBlur={(e) => checkDuplicateOCNumber(e.target.value)}
                         placeholder="Auto-generado si vacío"
+                        className={duplicateOCWarning ? "border-destructive" : ""}
                       />
+                      {duplicateOCWarning && (
+                        <p className="text-sm text-destructive flex items-center gap-1">
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                          Número de OC ya existe
+                        </p>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label>Fecha OC</Label>
