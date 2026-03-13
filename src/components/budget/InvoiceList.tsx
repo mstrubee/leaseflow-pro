@@ -90,6 +90,8 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     amount: "",
     currency: "CLP" as "UF" | "CLP",
     purchase_order_id: "",
+    attachment_url: "",
+    attachment_name: "",
   });
   const [compatibleOCs, setCompatibleOCs] = useState<{ id: string; order_number: string; supplier_name: string | null; amount_clp: number | null; amount_uf: number }[]>([]);
   const [loadingOCs, setLoadingOCs] = useState(false);
@@ -121,11 +123,15 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   const [selectedFile, setSelectedFile] = useState<RepositoryFile | null>(null);
   const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isDraggingAttachment, setIsDraggingAttachment] = useState(false);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [activeTab, setActiveTab] = useState<"select" | "upload">("select");
   const [uploadedFile, setUploadedFile] = useState<RepositoryFile | null>(null);
   const [askSendEmail, setAskSendEmail] = useState(false);
   const [contractId, setContractId] = useState<string>("");
+  const [filePickerTarget, setFilePickerTarget] = useState<"newInvoice" | "editInvoice" | "creditNote">("newInvoice");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos, convertPesosToUF, ufValue } = useBudgetContext();
@@ -653,6 +659,8 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
       amount: invoice.amount_clp ? Math.round(invoice.amount_clp).toString() : Math.round(convertUFToPesos(invoice.amount_uf)).toString(),
       currency: "CLP",
       purchase_order_id: purchaseOrder.id,
+      attachment_url: invoice.attachment_url || "",
+      attachment_name: invoice.attachment_url ? (invoice.attachment_url.split("/").pop() || "Archivo adjunto") : "",
     });
     setShowEditDialog(true);
     
@@ -718,8 +726,8 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         amount_clp: amountCLP,
         input_currency: editInvoice.currency,
         uf_value_at_entry: ufValue,
+        attachment_url: editInvoice.attachment_url || null,
       };
-
       if (isReassigning) {
         updatePayload.purchase_order_id = editInvoice.purchase_order_id;
       }
@@ -757,9 +765,80 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     }
   };
 
-  const openFilePicker = () => {
+  const openFilePicker = (target: "newInvoice" | "editInvoice" | "creditNote" = "newInvoice") => {
+    setFilePickerTarget(target);
     setShowFilePicker(true);
     loadFolderContents(null);
+  };
+
+  const processAttachmentUpload = async (file: File, target: "newInvoice" | "editInvoice" | "creditNote") => {
+    const validation = validateFile(file);
+    if (!validation.isValid) {
+      toast({ variant: "destructive", title: "Archivo no válido", description: validation.error });
+      return;
+    }
+    setUploadingAttachment(true);
+    try {
+      let targetFolder = await findFacturasFolder();
+      if (!targetFolder) {
+        const { data: newFolder, error: folderError } = await supabase
+          .from("repository_folders")
+          .insert({ contract_id: contractId, name: "Facturas", is_base_folder: false, folder_type: "facturas" })
+          .select()
+          .single();
+        if (folderError) throw folderError;
+        targetFolder = newFolder;
+      }
+      const fileExt = file.name.split(".").pop();
+      const sanitizedName = sanitizeFileName(file.name);
+      const fileName = `${Date.now()}-${sanitizedName}`;
+      const filePath = `${contractId}/${targetFolder.id}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage.from("repository-files").upload(filePath, file);
+      if (uploadError) throw uploadError;
+
+      const storagePath = `storage://repository-files/${filePath}`;
+      const { data: newFile, error: dbError } = await supabase
+        .from("repository_files")
+        .insert({ folder_id: targetFolder.id, name: file.name, url: storagePath, file_type: fileExt || null })
+        .select()
+        .single();
+      if (dbError) throw dbError;
+
+      if (target === "newInvoice") {
+        setNewInvoice(prev => ({ ...prev, attachment_url: storagePath, attachment_name: file.name }));
+      } else if (target === "editInvoice") {
+        setEditInvoice(prev => ({ ...prev, attachment_url: storagePath, attachment_name: file.name }));
+      } else if (target === "creditNote") {
+        setNewCreditNote(prev => ({ ...prev, attachment_url: storagePath, attachment_name: file.name }));
+      }
+      toast({ title: "Archivo subido", description: `${file.name} guardado en carpeta Facturas` });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setUploadingAttachment(false);
+      if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+    }
+  };
+
+  const handleAttachmentDrop = (e: React.DragEvent<HTMLDivElement>, target: "newInvoice" | "editInvoice" | "creditNote") => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingAttachment(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) processAttachmentUpload(file, target);
+  };
+
+  const handleAttachmentDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingAttachment(true);
+  };
+
+  const handleAttachmentDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingAttachment(false);
   };
 
   const handleRequestCreditNote = () => {
@@ -1034,28 +1113,52 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
             </div>
             <div className="space-y-2">
               <Label>Archivo Adjunto</Label>
-              <div className="flex items-center gap-2">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={openFilePicker}
-                  className="flex items-center gap-2"
-                >
-                  <Paperclip className="h-4 w-4" />
-                  {newInvoice.attachment_name || "Seleccionar archivo"}
-                </Button>
-                {newInvoice.attachment_url && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => window.open(newInvoice.attachment_url, "_blank")}
-                  >
-                    <ExternalLink className="h-4 w-4" />
+              {newInvoice.attachment_name ? (
+                <div className="flex items-center gap-2 p-2 border rounded-lg bg-muted/30">
+                  <FileText className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                  <span className="text-sm truncate flex-1">{newInvoice.attachment_name}</span>
+                  {newInvoice.attachment_url && (
+                    <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => window.open(newInvoice.attachment_url, "_blank")}>
+                      <ExternalLink className="h-3 w-3" />
+                    </Button>
+                  )}
+                  <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={() => setNewInvoice(prev => ({ ...prev, attachment_url: "", attachment_name: "" }))}>
+                    <Trash2 className="h-3 w-3" />
                   </Button>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div
+                  className={cn(
+                    "border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer",
+                    isDraggingAttachment ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50"
+                  )}
+                  onDrop={(e) => handleAttachmentDrop(e, "newInvoice")}
+                  onDragOver={handleAttachmentDragOver}
+                  onDragLeave={handleAttachmentDragLeave}
+                  onClick={() => {
+                    if (!uploadingAttachment) {
+                      attachmentInputRef.current?.click();
+                      setFilePickerTarget("newInvoice");
+                    }
+                  }}
+                >
+                  <input
+                    ref={attachmentInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) processAttachmentUpload(f, "newInvoice"); }}
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
+                  />
+                  <Upload className={cn("h-6 w-6 mx-auto mb-2", isDraggingAttachment ? "text-primary" : "text-muted-foreground")} />
+                  <p className={cn("text-sm", isDraggingAttachment ? "text-primary" : "text-muted-foreground")}>
+                    {uploadingAttachment ? "Subiendo..." : isDraggingAttachment ? "Suelte el archivo aquí" : "Arrastre un archivo o haga click para seleccionar"}
+                  </p>
+                </div>
+              )}
+              <Button type="button" variant="outline" size="sm" onClick={() => openFilePicker("newInvoice")} className="flex items-center gap-2">
+                <Folder className="h-4 w-4" />
+                Seleccionar del repositorio
+              </Button>
             </div>
 
             {invoiceWarning && (
@@ -1149,6 +1252,43 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                     : formatCLP(convertUFToPesos(parseFloat(newCreditNote.amount)))}
                 </p>
               )}
+            </div>
+            <div className="space-y-2">
+              <Label>Archivo Adjunto</Label>
+              {newCreditNote.attachment_name ? (
+                <div className="flex items-center gap-2 p-2 border rounded-lg bg-muted/30">
+                  <FileText className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                  <span className="text-sm truncate flex-1">{newCreditNote.attachment_name}</span>
+                  <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={() => setNewCreditNote(prev => ({ ...prev, attachment_url: "", attachment_name: "" }))}>
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  className={cn(
+                    "border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer",
+                    isDraggingAttachment ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50"
+                  )}
+                  onDrop={(e) => handleAttachmentDrop(e, "creditNote")}
+                  onDragOver={handleAttachmentDragOver}
+                  onDragLeave={handleAttachmentDragLeave}
+                  onClick={() => {
+                    if (!uploadingAttachment) {
+                      attachmentInputRef.current?.click();
+                      setFilePickerTarget("creditNote");
+                    }
+                  }}
+                >
+                  <Upload className={cn("h-6 w-6 mx-auto mb-2", isDraggingAttachment ? "text-primary" : "text-muted-foreground")} />
+                  <p className={cn("text-sm", isDraggingAttachment ? "text-primary" : "text-muted-foreground")}>
+                    {uploadingAttachment ? "Subiendo..." : isDraggingAttachment ? "Suelte el archivo aquí" : "Arrastre un archivo o haga click"}
+                  </p>
+                </div>
+              )}
+              <Button type="button" variant="outline" size="sm" onClick={() => openFilePicker("creditNote")} className="flex items-center gap-2">
+                <Folder className="h-4 w-4" />
+                Seleccionar del repositorio
+              </Button>
             </div>
             <div className="space-y-2">
               <Label>Motivo</Label>
@@ -1285,6 +1425,45 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                 No hay otras OC con el mismo proveedor disponibles para reasignar.
               </p>
             )}
+
+            {/* Attachment section for Edit */}
+            <div className="space-y-2">
+              <Label>Archivo Adjunto</Label>
+              {editInvoice.attachment_name ? (
+                <div className="flex items-center gap-2 p-2 border rounded-lg bg-muted/30">
+                  <FileText className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                  <span className="text-sm truncate flex-1">{editInvoice.attachment_name}</span>
+                  <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={() => setEditInvoice(prev => ({ ...prev, attachment_url: "", attachment_name: "" }))}>
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  className={cn(
+                    "border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer",
+                    isDraggingAttachment ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50"
+                  )}
+                  onDrop={(e) => handleAttachmentDrop(e, "editInvoice")}
+                  onDragOver={handleAttachmentDragOver}
+                  onDragLeave={handleAttachmentDragLeave}
+                  onClick={() => {
+                    if (!uploadingAttachment) {
+                      attachmentInputRef.current?.click();
+                      setFilePickerTarget("editInvoice");
+                    }
+                  }}
+                >
+                  <Upload className={cn("h-6 w-6 mx-auto mb-2", isDraggingAttachment ? "text-primary" : "text-muted-foreground")} />
+                  <p className={cn("text-sm", isDraggingAttachment ? "text-primary" : "text-muted-foreground")}>
+                    {uploadingAttachment ? "Subiendo..." : isDraggingAttachment ? "Suelte el archivo aquí" : "Arrastre un archivo o haga click"}
+                  </p>
+                </div>
+              )}
+              <Button type="button" variant="outline" size="sm" onClick={() => openFilePicker("editInvoice")} className="flex items-center gap-2">
+                <Folder className="h-4 w-4" />
+                Seleccionar del repositorio
+              </Button>
+            </div>
 
             {invoiceWarning && (
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
@@ -1548,7 +1727,13 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
             <Button 
               onClick={() => {
                 if (selectedFile) {
-                  setNewInvoice({ ...newInvoice, attachment_url: selectedFile.url, attachment_name: selectedFile.name });
+                  if (filePickerTarget === "newInvoice") {
+                    setNewInvoice(prev => ({ ...prev, attachment_url: selectedFile.url, attachment_name: selectedFile.name }));
+                  } else if (filePickerTarget === "editInvoice") {
+                    setEditInvoice(prev => ({ ...prev, attachment_url: selectedFile.url, attachment_name: selectedFile.name }));
+                  } else if (filePickerTarget === "creditNote") {
+                    setNewCreditNote(prev => ({ ...prev, attachment_url: selectedFile.url, attachment_name: selectedFile.name }));
+                  }
                   setShowFilePicker(false);
                   setSelectedFile(null);
                 }
