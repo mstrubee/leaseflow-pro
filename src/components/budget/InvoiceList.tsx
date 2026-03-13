@@ -727,7 +727,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         input_currency: editInvoice.currency,
         uf_value_at_entry: ufValue,
         attachment_url: editInvoice.attachment_url || null,
-
+      };
       if (isReassigning) {
         updatePayload.purchase_order_id = editInvoice.purchase_order_id;
       }
