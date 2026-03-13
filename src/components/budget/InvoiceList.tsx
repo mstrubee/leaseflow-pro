@@ -59,6 +59,8 @@ interface InvoiceListProps {
     id: string;
     order_number: string;
     amount_uf: number;
+    amount_clp?: number | null;
+    uf_value_at_entry?: number | null;
     // Multi-contract allocation info (optional)
     is_multi_contract?: boolean;
     allocated_amount_uf?: number;
@@ -300,7 +302,11 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   const displayedTotalInvoicedCLP = localTotalInvoicedCLP * allocationWeight;
   const displayedTotalCreditNotesCLP = localTotalCreditNotesCLP * allocationWeight;
   const displayedNetInvoicedCLP = displayedTotalInvoicedCLP - displayedTotalCreditNotesCLP;
-  const displayedOrderAmountCLP = convertUFToPesos(localAmountUF);
+  const displayedOrderAmountCLP = purchaseOrder.amount_clp ?? (
+    purchaseOrder.uf_value_at_entry && purchaseOrder.uf_value_at_entry > 0
+      ? localAmountUF * purchaseOrder.uf_value_at_entry
+      : convertUFToPesos(localAmountUF)
+  );
   const pendingAmountCLP = displayedOrderAmountCLP - displayedNetInvoicedCLP;
   const pendingAmount = localAmountUF - displayedNetInvoiced;
 
