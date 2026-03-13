@@ -744,6 +744,8 @@ export const CentralizedOrderCreator = ({
     setSingleFormIds([]);
     setContractForms({});
     setQuotationFile(null);
+    setDuplicateOCWarning(false);
+    setCheckingDuplicate(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
