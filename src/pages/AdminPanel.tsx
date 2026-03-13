@@ -697,7 +697,7 @@ const AdminPanel = () => {
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     }
-  
+  };
 
   const getSubfolders = (parentId: string): FolderTemplate[] => {
     return folderTemplates.filter(t => t.parent_id === parentId);
