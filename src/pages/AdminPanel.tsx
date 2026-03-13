@@ -65,16 +65,30 @@ const FolderTemplateItem = ({
   getSubfolders,
   onAddSubfolder,
   onDelete,
+  onRename,
 }: {
   template: FolderTemplate;
   level: number;
   getSubfolders: (parentId: string) => FolderTemplate[];
   onAddSubfolder: (parentId: string) => void;
   onDelete: (id: string, name: string) => void;
+  onRename: (id: string, newName: string) => void;
 }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(template.name);
   const subfolders = getSubfolders(template.id);
   const isRoot = level === 0;
-  const paddingLeft = level * 16; // 16px per level
+  const paddingLeft = level * 16;
+
+  const handleSave = () => {
+    const trimmed = editName.trim();
+    if (trimmed && trimmed !== template.name) {
+      onRename(template.id, trimmed);
+    } else {
+      setEditName(template.name);
+    }
+    setIsEditing(false);
+  };
   
   return (
     <div className="space-y-1">
@@ -85,9 +99,33 @@ const FolderTemplateItem = ({
         <div className="flex items-center gap-2">
           {!isRoot && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
           <Folder className={`${isRoot ? 'h-4 w-4' : 'h-3 w-3'} text-muted-foreground`} />
-          <span className={isRoot ? 'font-medium' : 'text-sm'}>{template.name}</span>
+          {isEditing ? (
+            <Input
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onBlur={handleSave}
+              onKeyDown={(e) => { if (e.key === "Escape") { setEditName(template.name); setIsEditing(false); } }}
+              className="h-7 text-sm w-40"
+              autoFocus
+            />
+          ) : (
+            <span
+              className={`${isRoot ? 'font-medium' : 'text-sm'} cursor-pointer hover:underline`}
+              onDoubleClick={() => setIsEditing(true)}
+            >
+              {template.name}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsEditing(true)}
+            title="Renombrar"
+          >
+            <Pencil className={`${isRoot ? 'h-4 w-4' : 'h-3 w-3'} text-muted-foreground`} />
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -105,7 +143,6 @@ const FolderTemplateItem = ({
           </Button>
         </div>
       </div>
-      {/* Recursive render of subfolders */}
       {subfolders.map((subfolder) => (
         <FolderTemplateItem
           key={subfolder.id}
@@ -114,6 +151,7 @@ const FolderTemplateItem = ({
           getSubfolders={getSubfolders}
           onAddSubfolder={onAddSubfolder}
           onDelete={onDelete}
+          onRename={onRename}
         />
       ))}
     </div>
