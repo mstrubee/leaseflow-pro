@@ -270,13 +270,13 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
         
         const { data: invoicesData } = await supabase
           .from("invoices")
-          .select("purchase_order_id, amount_uf")
+          .select("purchase_order_id, amount_uf, amount_clp")
           .in("purchase_order_id", orderIds)
           .is("deleted_at", null);
 
         const { data: creditNotesData } = await supabase
           .from("credit_notes")
-          .select("purchase_order_id, amount_uf")
+          .select("purchase_order_id, amount_uf, amount_clp")
           .in("purchase_order_id", orderIds)
           .is("deleted_at", null);
 
