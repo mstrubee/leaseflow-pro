@@ -683,6 +683,22 @@ const AdminPanel = () => {
     }
   };
 
+  const handleRenameTemplate = async (templateId: string, newName: string) => {
+    try {
+      const { error } = await supabase
+        .from("folder_templates")
+        .update({ name: newName })
+        .eq("id", templateId);
+
+      if (error) throw error;
+
+      toast({ title: "Carpeta renombrada" });
+      loadData();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  
+
   const getSubfolders = (parentId: string): FolderTemplate[] => {
     return folderTemplates.filter(t => t.parent_id === parentId);
   };
