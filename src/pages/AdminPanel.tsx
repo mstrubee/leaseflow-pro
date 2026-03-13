@@ -1128,6 +1128,7 @@ const AdminPanel = () => {
                   setSubfolderDialogOpen(true);
                 }}
                 onDelete={handleDeleteTemplate}
+                onRename={handleRenameTemplate}
               />
             ))}
             {getRootTemplates().length === 0 && (
