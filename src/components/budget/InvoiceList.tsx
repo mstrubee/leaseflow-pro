@@ -89,7 +89,10 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     invoice_date: "",
     amount: "",
     currency: "UF" as "UF" | "CLP",
+    purchase_order_id: "",
   });
+  const [compatibleOCs, setCompatibleOCs] = useState<{ id: string; order_number: string; supplier_name: string | null; amount_clp: number | null; amount_uf: number }[]>([]);
+  const [loadingOCs, setLoadingOCs] = useState(false);
   const [email, setEmail] = useState("");
   const [newInvoice, setNewInvoice] = useState({
     invoice_number: "",
