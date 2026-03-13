@@ -120,6 +120,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   const [folderPath, setFolderPath] = useState<RepositoryFolder[]>([]);
   const [selectedFile, setSelectedFile] = useState<RepositoryFile | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [activeTab, setActiveTab] = useState<"select" | "upload">("select");
   const [uploadedFile, setUploadedFile] = useState<RepositoryFile | null>(null);
   const [askSendEmail, setAskSendEmail] = useState(false);
@@ -490,11 +491,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     await loadFolderContents(parentFolder?.id || null);
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    // Validate file before upload
+  const processFileUpload = async (file: File) => {
     const validation = validateFile(file);
     if (!validation.isValid) {
       toast({
@@ -502,9 +499,6 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         title: "Archivo no válido",
         description: validation.error,
       });
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
       return;
     }
 
@@ -538,8 +532,6 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
 
       if (uploadError) throw uploadError;
 
-      // Store the storage path reference instead of public URL for security
-      // The path will be converted to a signed URL when accessed
       const storagePath = `storage://repository-files/${filePath}`;
 
       const { data: newFile, error: dbError } = await supabase
@@ -566,6 +558,33 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         fileInputRef.current.value = "";
       }
     }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    await processFileUpload(file);
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    await processFileUpload(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
   };
 
   const handleConfirmReceived = async (fileUrl: string) => {
@@ -1403,7 +1422,16 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                 </TabsContent>
 
                 <TabsContent value="upload" className="space-y-4">
-                  <div className="border-2 border-dashed rounded-lg p-8 text-center">
+                  <div 
+                    className={cn(
+                      "border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer",
+                      isDragging ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50"
+                    )}
+                    onDrop={handleDrop}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onClick={() => !uploading && fileInputRef.current?.click()}
+                  >
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -1411,17 +1439,13 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                       onChange={handleFileUpload}
                       accept=".pdf"
                     />
-                    <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-4" />
-                    <p className="text-muted-foreground mb-4">
-                      El archivo se guardará en la carpeta Facturas del repositorio
+                    <Upload className={cn("h-10 w-10 mx-auto mb-4", isDragging ? "text-primary" : "text-muted-foreground")} />
+                    <p className={cn("mb-2 font-medium", isDragging ? "text-primary" : "text-muted-foreground")}>
+                      {isDragging ? "Suelte el archivo aquí" : uploading ? "Subiendo..." : "Arrastre un archivo o haga click para seleccionar"}
                     </p>
-                    <Button
-                      variant="outline"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploading}
-                    >
-                      {uploading ? "Subiendo..." : "Seleccionar Archivo PDF"}
-                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      PDF — Se guardará en la carpeta Facturas del repositorio
+                    </p>
                   </div>
                 </TabsContent>
               </Tabs>
