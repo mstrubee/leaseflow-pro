@@ -137,33 +137,73 @@ export const EscalationDialog = ({
             <div className="space-y-2">
               <Label>Escalones definidos ({escalations.length})</Label>
               <div className="space-y-2 max-h-48 overflow-y-auto">
-                {escalations.map((escalation) => (
+                {escalations.map((escalation, idx) => (
                   <div
-                    key={escalation.month_number}
-                    className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border"
+                    key={idx}
+                    className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg border border-border"
                   >
-                    <div className="flex items-center gap-4">
-                      <div className="text-sm">
-                        <span className="text-muted-foreground">Mes </span>
-                        <span className="font-semibold">{escalation.month_number}</span>
-                      </div>
-                      <div className="text-sm">
-                        <span className="text-muted-foreground">Canon: </span>
-                        <span className="font-semibold text-primary">
-                          {formatCurrency(escalation.amount, escalation.is_uf_m2)}
-                        </span>
-                        {escalation.is_uf_m2 && superficieM2 > 0 && (
-                          <span className="text-muted-foreground ml-2">
-                            (Total: UF {(escalation.amount * superficieM2).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
-                          </span>
-                        )}
-                      </div>
+                    <div className="flex items-center gap-1 min-w-0">
+                      <span className="text-sm text-muted-foreground whitespace-nowrap">Mes</span>
+                      <Input
+                        type="number"
+                        className="w-[70px] h-8 text-sm"
+                        value={escalation.month_number}
+                        min={1}
+                        max={durationMonths}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value);
+                          if (isNaN(val)) return;
+                          const updated = [...escalations];
+                          updated[idx] = { ...updated[idx], month_number: val };
+                          setEscalations(updated.sort((a, b) => a.month_number - b.month_number));
+                        }}
+                      />
                     </div>
+                    <div className="flex items-center gap-1 flex-1 min-w-0">
+                      <span className="text-sm text-muted-foreground whitespace-nowrap">Canon:</span>
+                      <Input
+                        type="number"
+                        className="h-8 text-sm flex-1 min-w-[80px]"
+                        value={escalation.amount}
+                        min={0}
+                        step="0.001"
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          if (isNaN(val)) return;
+                          const updated = [...escalations];
+                          updated[idx] = { ...updated[idx], amount: val };
+                          setEscalations(updated);
+                        }}
+                      />
+                      {superficieM2 > 0 && (
+                        <Select
+                          value={escalation.is_uf_m2 ? "uf_m2" : "fixed"}
+                          onValueChange={(v) => {
+                            const updated = [...escalations];
+                            updated[idx] = { ...updated[idx], is_uf_m2: v === "uf_m2" };
+                            setEscalations(updated);
+                          }}
+                        >
+                          <SelectTrigger className="w-[72px] h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="fixed">Fijo</SelectItem>
+                            <SelectItem value="uf_m2">UF/m²</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                    {escalation.is_uf_m2 && superficieM2 > 0 && (
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        (UF {(escalation.amount * superficieM2).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                      </span>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => handleRemove(escalation.month_number)}
-                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
