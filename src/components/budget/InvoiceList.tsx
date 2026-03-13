@@ -275,9 +275,11 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     return data?.[0] || null;
   };
 
-  // Calculate totals
+  // Calculate totals (UF for status logic, CLP from historical stored values)
   const localTotalInvoiced = invoices.reduce((sum, inv) => sum + inv.amount_uf, 0);
   const localTotalCreditNotes = creditNotes.reduce((sum, cn) => sum + cn.amount_uf, 0);
+  const localTotalInvoicedCLP = invoices.reduce((sum, inv) => sum + (inv.amount_clp || Math.round(convertUFToPesos(inv.amount_uf))), 0);
+  const localTotalCreditNotesCLP = creditNotes.reduce((sum, cn) => sum + (cn.amount_clp || Math.round(convertUFToPesos(cn.amount_uf))), 0);
 
   // For multi-contract OCs shown in a contract context, we display invoicing proportionally
   // to the allocated amount (so % and amounts match the global OC status).
@@ -293,6 +295,11 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   const displayedTotalInvoiced = sourceTotalInvoiced * allocationWeight;
   const displayedTotalCreditNotes = sourceTotalCreditNotes * allocationWeight;
   const displayedNetInvoiced = displayedTotalInvoiced - displayedTotalCreditNotes;
+
+  // CLP totals from historical values (not converted from UF with today's rate)
+  const displayedTotalInvoicedCLP = localTotalInvoicedCLP * allocationWeight;
+  const displayedTotalCreditNotesCLP = localTotalCreditNotesCLP * allocationWeight;
+  const displayedNetInvoicedCLP = displayedTotalInvoicedCLP - displayedTotalCreditNotesCLP;
   const pendingAmount = localAmountUF - displayedNetInvoiced;
   
   // Determine OC status
