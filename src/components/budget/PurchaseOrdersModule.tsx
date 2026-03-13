@@ -26,9 +26,9 @@ interface PurchaseOrder {
   supplier_name: string | null;
   order_date: string;
   amount_uf: number;
-  amount_clp?: number;
+  amount_clp?: number | null;
   input_currency?: string;
-  uf_value_at_entry?: number;
+  uf_value_at_entry?: number | null;
   description: string | null;
   attachment_url: string | null;
   year: number;
