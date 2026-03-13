@@ -388,6 +388,24 @@ export const CentralizedOrderCreator = ({
   // Handle form submission
   const handleSubmit = async () => {
     // Validation
+    if (mode === "order" && duplicateOCWarning) {
+      toast({ title: "Error", description: "Número de OC ya existe. No se puede guardar.", variant: "destructive" });
+      return;
+    }
+    
+    // Re-check duplicate if order_number was entered
+    if (mode === "order" && formData.order_number.trim()) {
+      const { count } = await supabase
+        .from("purchase_orders")
+        .select("id", { count: "exact", head: true })
+        .eq("order_number", formData.order_number.trim());
+      if ((count ?? 0) > 0) {
+        setDuplicateOCWarning(true);
+        toast({ title: "Error", description: "Número de OC ya existe. No se puede guardar.", variant: "destructive" });
+        return;
+      }
+    }
+    
     if (!enteredAmount || enteredAmount <= 0) {
       toast({ title: "Error", description: "Ingrese un monto válido", variant: "destructive" });
       return;
