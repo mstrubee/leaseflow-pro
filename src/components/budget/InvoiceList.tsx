@@ -1727,7 +1727,13 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
             <Button 
               onClick={() => {
                 if (selectedFile) {
-                  setNewInvoice({ ...newInvoice, attachment_url: selectedFile.url, attachment_name: selectedFile.name });
+                  if (filePickerTarget === "newInvoice") {
+                    setNewInvoice(prev => ({ ...prev, attachment_url: selectedFile.url, attachment_name: selectedFile.name }));
+                  } else if (filePickerTarget === "editInvoice") {
+                    setEditInvoice(prev => ({ ...prev, attachment_url: selectedFile.url, attachment_name: selectedFile.name }));
+                  } else if (filePickerTarget === "creditNote") {
+                    setNewCreditNote(prev => ({ ...prev, attachment_url: selectedFile.url, attachment_name: selectedFile.name }));
+                  }
                   setShowFilePicker(false);
                   setSelectedFile(null);
                 }
