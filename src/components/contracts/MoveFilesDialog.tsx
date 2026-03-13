@@ -313,7 +313,7 @@ export function MoveFilesDialog({
               )}
             </div>
 
-            <ScrollArea className="flex-1 max-h-[250px]">
+            <ScrollArea className="flex-1 min-h-0 max-h-[40vh]">
               {loading ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
