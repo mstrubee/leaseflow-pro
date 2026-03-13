@@ -1152,12 +1152,29 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
       </Dialog>
 
       {/* Edit Invoice Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={(open) => { setShowEditDialog(open); if (!open) setInvoiceWarning(null); }}>
+      <Dialog open={showEditDialog} onOpenChange={(open) => { setShowEditDialog(open); if (!open) { setInvoiceWarning(null); setCompatibleOCs([]); } }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Editar Factura</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Current OC info */}
+            <div className="p-3 rounded-lg border bg-muted/30">
+              <div className="flex items-center gap-2 mb-1">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">OC Asignada</span>
+              </div>
+              <p className="text-sm font-mono">
+                {editInvoice.purchase_order_id === purchaseOrder.id 
+                  ? `${purchaseOrder.order_number} — ${formatCLP(purchaseOrder.amount_clp || Math.round(convertUFToPesos(purchaseOrder.amount_uf)))}`
+                  : (() => {
+                      const oc = compatibleOCs.find(o => o.id === editInvoice.purchase_order_id);
+                      return oc ? `${oc.order_number} — ${formatCLP(oc.amount_clp || Math.round(convertUFToPesos(oc.amount_uf)))}` : "";
+                    })()
+                }
+              </p>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Nº Factura</Label>
@@ -1207,6 +1224,48 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
               )}
             </div>
 
+            {/* OC Reassignment */}
+            {compatibleOCs.length > 1 && (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <ArrowRightLeft className="h-4 w-4" />
+                  Reasignar a otra OC (mismo proveedor)
+                </Label>
+                <Select 
+                  value={editInvoice.purchase_order_id} 
+                  onValueChange={(v) => setEditInvoice({ ...editInvoice, purchase_order_id: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {compatibleOCs.map((oc) => (
+                      <SelectItem key={oc.id} value={oc.id}>
+                        OC {oc.order_number} — {formatCLP(oc.amount_clp || Math.round(convertUFToPesos(oc.amount_uf)))}
+                        {oc.id === purchaseOrder.id ? " (actual)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {editInvoice.purchase_order_id !== purchaseOrder.id && (
+                  <p className="text-xs text-amber-600 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    La factura será movida a otra OC
+                  </p>
+                )}
+              </div>
+            )}
+
+            {loadingOCs && compatibleOCs.length === 0 && (
+              <p className="text-xs text-muted-foreground">Cargando OCs compatibles...</p>
+            )}
+
+            {!loadingOCs && compatibleOCs.length <= 1 && (
+              <p className="text-xs text-muted-foreground">
+                No hay otras OC con el mismo proveedor disponibles para reasignar.
+              </p>
+            )}
+
             {invoiceWarning && (
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
                 <div className="flex items-start gap-2">
@@ -1220,7 +1279,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowEditDialog(false); setInvoiceWarning(null); }}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setShowEditDialog(false); setInvoiceWarning(null); setCompatibleOCs([]); }}>Cancelar</Button>
             <Button onClick={handleUpdateInvoice}>Guardar</Button>
           </DialogFooter>
         </DialogContent>
