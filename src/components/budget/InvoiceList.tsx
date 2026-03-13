@@ -121,11 +121,15 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   const [selectedFile, setSelectedFile] = useState<RepositoryFile | null>(null);
   const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isDraggingAttachment, setIsDraggingAttachment] = useState(false);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [activeTab, setActiveTab] = useState<"select" | "upload">("select");
   const [uploadedFile, setUploadedFile] = useState<RepositoryFile | null>(null);
   const [askSendEmail, setAskSendEmail] = useState(false);
   const [contractId, setContractId] = useState<string>("");
+  const [filePickerTarget, setFilePickerTarget] = useState<"newInvoice" | "editInvoice" | "creditNote">("newInvoice");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos, convertPesosToUF, ufValue } = useBudgetContext();
