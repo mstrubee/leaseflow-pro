@@ -761,9 +761,80 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     }
   };
 
-  const openFilePicker = () => {
+  const openFilePicker = (target: "newInvoice" | "editInvoice" | "creditNote" = "newInvoice") => {
+    setFilePickerTarget(target);
     setShowFilePicker(true);
     loadFolderContents(null);
+  };
+
+  const processAttachmentUpload = async (file: File, target: "newInvoice" | "editInvoice" | "creditNote") => {
+    const validation = validateFile(file);
+    if (!validation.isValid) {
+      toast({ variant: "destructive", title: "Archivo no válido", description: validation.error });
+      return;
+    }
+    setUploadingAttachment(true);
+    try {
+      let targetFolder = await findFacturasFolder();
+      if (!targetFolder) {
+        const { data: newFolder, error: folderError } = await supabase
+          .from("repository_folders")
+          .insert({ contract_id: contractId, name: "Facturas", is_base_folder: false, folder_type: "facturas" })
+          .select()
+          .single();
+        if (folderError) throw folderError;
+        targetFolder = newFolder;
+      }
+      const fileExt = file.name.split(".").pop();
+      const sanitizedName = sanitizeFileName(file.name);
+      const fileName = `${Date.now()}-${sanitizedName}`;
+      const filePath = `${contractId}/${targetFolder.id}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage.from("repository-files").upload(filePath, file);
+      if (uploadError) throw uploadError;
+
+      const storagePath = `storage://repository-files/${filePath}`;
+      const { data: newFile, error: dbError } = await supabase
+        .from("repository_files")
+        .insert({ folder_id: targetFolder.id, name: file.name, url: storagePath, file_type: fileExt || null })
+        .select()
+        .single();
+      if (dbError) throw dbError;
+
+      if (target === "newInvoice") {
+        setNewInvoice(prev => ({ ...prev, attachment_url: storagePath, attachment_name: file.name }));
+      } else if (target === "editInvoice") {
+        setEditInvoice(prev => ({ ...prev, attachment_url: storagePath, attachment_name: file.name }));
+      } else if (target === "creditNote") {
+        setNewCreditNote(prev => ({ ...prev, attachment_url: storagePath, attachment_name: file.name }));
+      }
+      toast({ title: "Archivo subido", description: `${file.name} guardado en carpeta Facturas` });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setUploadingAttachment(false);
+      if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+    }
+  };
+
+  const handleAttachmentDrop = (e: React.DragEvent<HTMLDivElement>, target: "newInvoice" | "editInvoice" | "creditNote") => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingAttachment(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) processAttachmentUpload(file, target);
+  };
+
+  const handleAttachmentDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingAttachment(true);
+  };
+
+  const handleAttachmentDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingAttachment(false);
   };
 
   const handleRequestCreditNote = () => {
