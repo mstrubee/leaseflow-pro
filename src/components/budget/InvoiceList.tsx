@@ -98,7 +98,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     invoice_number: "",
     invoice_date: new Date().toISOString().split("T")[0],
     amount: "",
-    currency: "UF" as "UF" | "CLP",
+    currency: "CLP" as "UF" | "CLP",
     attachment_url: "",
     attachment_name: "",
   });
