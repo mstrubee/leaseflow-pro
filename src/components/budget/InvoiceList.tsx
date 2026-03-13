@@ -88,7 +88,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     invoice_number: "",
     invoice_date: "",
     amount: "",
-    currency: "UF" as "UF" | "CLP",
+    currency: "CLP" as "UF" | "CLP",
     purchase_order_id: "",
   });
   const [compatibleOCs, setCompatibleOCs] = useState<{ id: string; order_number: string; supplier_name: string | null; amount_clp: number | null; amount_uf: number }[]>([]);
@@ -98,7 +98,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     invoice_number: "",
     invoice_date: new Date().toISOString().split("T")[0],
     amount: "",
-    currency: "UF" as "UF" | "CLP",
+    currency: "CLP" as "UF" | "CLP",
     attachment_url: "",
     attachment_name: "",
   });
@@ -106,7 +106,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     credit_note_number: "",
     credit_note_date: new Date().toISOString().split("T")[0],
     amount: "",
-    currency: "UF" as "UF" | "CLP",
+    currency: "CLP" as "UF" | "CLP",
     invoice_id: "",
     reason: "",
     attachment_url: "",
@@ -396,7 +396,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         invoice_number: "", 
         invoice_date: new Date().toISOString().split("T")[0], 
         amount: "", 
-        currency: "UF",
+        currency: "CLP",
         attachment_url: "",
         attachment_name: "",
       });
@@ -443,7 +443,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
         credit_note_number: "", 
         credit_note_date: new Date().toISOString().split("T")[0], 
         amount: "", 
-        currency: "UF",
+        currency: "CLP",
         invoice_id: "",
         reason: "",
         attachment_url: "",
@@ -650,8 +650,8 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     setEditInvoice({
       invoice_number: invoice.invoice_number,
       invoice_date: invoice.invoice_date,
-      amount: invoice.amount_uf.toString(),
-      currency: "UF",
+      amount: invoice.amount_clp ? Math.round(invoice.amount_clp).toString() : Math.round(convertUFToPesos(invoice.amount_uf)).toString(),
+      currency: "CLP",
       purchase_order_id: purchaseOrder.id,
     });
     setShowEditDialog(true);
@@ -1009,14 +1009,15 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                   value={newInvoice.amount} 
                   onChange={(e) => setNewInvoice({ ...newInvoice, amount: e.target.value })} 
                   className="flex-1"
+                  placeholder={newInvoice.currency === "CLP" ? "Monto en pesos" : "Monto en UF"}
                 />
                 <Select value={newInvoice.currency} onValueChange={(v) => setNewInvoice({ ...newInvoice, currency: v as "UF" | "CLP" })}>
                   <SelectTrigger className="w-24">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="UF">UF</SelectItem>
                     <SelectItem value="CLP">CLP</SelectItem>
+                    <SelectItem value="UF">UF</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1135,9 +1136,9 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                   <SelectTrigger className="w-24">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="UF">UF</SelectItem>
+                   <SelectContent>
                     <SelectItem value="CLP">CLP</SelectItem>
+                    <SelectItem value="UF">UF</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1229,8 +1230,8 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="UF">UF</SelectItem>
                     <SelectItem value="CLP">CLP</SelectItem>
+                    <SelectItem value="UF">UF</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
