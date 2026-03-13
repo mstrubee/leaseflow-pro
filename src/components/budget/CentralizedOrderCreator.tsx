@@ -113,6 +113,8 @@ export const CentralizedOrderCreator = ({
   // Quotation file state
   const [quotationFile, setQuotationFile] = useState<File | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [duplicateOCWarning, setDuplicateOCWarning] = useState(false);
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [formData, setFormData] = useState({
