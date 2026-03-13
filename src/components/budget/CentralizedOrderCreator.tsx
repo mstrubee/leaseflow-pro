@@ -691,7 +691,7 @@ export const CentralizedOrderCreator = ({
             supplier_name: formData.supplier_name,
             year: year,
             status: "abierta",
-            budget_classification: "OPEX",
+            budget_classification: budgetType.toUpperCase(),
             attachment_url: attachmentUrl,
             is_multi_contract: false,
             maintenance_form_ids: (assignToForm && singleFormIds.length > 0) ? singleFormIds : []
