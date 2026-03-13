@@ -2394,15 +2394,20 @@ const PurchaseOrdersDashboard = () => {
                                 {groupedOrder.supplier_name || "-"}
                               </TableCell>
                               <TableCell>
-                                {groupedOrder.budget_classification ? (
-                                  <Badge
-                                    variant={groupedOrder.budget_classification === "CAPEX" ? "default" : "secondary"}
-                                  >
-                                    {groupedOrder.budget_classification}
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="secondary">OPEX</Badge>
-                                )}
+                                <div className="flex flex-col">
+                                  {groupedOrder.budget_classification ? (
+                                    <Badge
+                                      variant={groupedOrder.budget_classification === "CAPEX" ? "default" : "secondary"}
+                                    >
+                                      {groupedOrder.budget_classification}
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="secondary">OPEX</Badge>
+                                  )}
+                                  {groupedOrder.budget_classification === "CAPEX" && !groupedOrder.budget_line_name && (
+                                    <span className="text-[10px] text-destructive font-medium">sin línea</span>
+                                  )}
+                                </div>
                               </TableCell>
                               <TableCell>
                                 {groupedOrder.opex_category_name || groupedOrder.budget_line_name || "-"}

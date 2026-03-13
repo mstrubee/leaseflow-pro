@@ -1308,14 +1308,19 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
                     <TableCell>{new Date(order.order_date).toLocaleDateString("es-CL")}</TableCell>
                     <TableCell>{order.supplier_name || "-"}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Badge variant="outline" className="text-xs">
-                          {getBudgetTypeForOrder(order)}
-                        </Badge>
-                        {order.is_multi_contract && (
-                          <Badge variant="secondary" className="text-[9px] px-1">
-                            Multi
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-1">
+                          <Badge variant="outline" className="text-xs">
+                            {getBudgetTypeForOrder(order)}
                           </Badge>
+                          {order.is_multi_contract && (
+                            <Badge variant="secondary" className="text-[9px] px-1">
+                              Multi
+                            </Badge>
+                          )}
+                        </div>
+                        {getBudgetTypeForOrder(order) === "Capex" && !order.budget_line_id && (
+                          <span className="text-[10px] text-destructive font-medium">sin línea</span>
                         )}
                       </div>
                     </TableCell>
