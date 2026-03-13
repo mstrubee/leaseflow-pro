@@ -1254,6 +1254,43 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
               )}
             </div>
             <div className="space-y-2">
+              <Label>Archivo Adjunto</Label>
+              {newCreditNote.attachment_name ? (
+                <div className="flex items-center gap-2 p-2 border rounded-lg bg-muted/30">
+                  <FileText className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                  <span className="text-sm truncate flex-1">{newCreditNote.attachment_name}</span>
+                  <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={() => setNewCreditNote(prev => ({ ...prev, attachment_url: "", attachment_name: "" }))}>
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  className={cn(
+                    "border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer",
+                    isDraggingAttachment ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50"
+                  )}
+                  onDrop={(e) => handleAttachmentDrop(e, "creditNote")}
+                  onDragOver={handleAttachmentDragOver}
+                  onDragLeave={handleAttachmentDragLeave}
+                  onClick={() => {
+                    if (!uploadingAttachment) {
+                      attachmentInputRef.current?.click();
+                      setFilePickerTarget("creditNote");
+                    }
+                  }}
+                >
+                  <Upload className={cn("h-6 w-6 mx-auto mb-2", isDraggingAttachment ? "text-primary" : "text-muted-foreground")} />
+                  <p className={cn("text-sm", isDraggingAttachment ? "text-primary" : "text-muted-foreground")}>
+                    {uploadingAttachment ? "Subiendo..." : isDraggingAttachment ? "Suelte el archivo aquí" : "Arrastre un archivo o haga click"}
+                  </p>
+                </div>
+              )}
+              <Button type="button" variant="outline" size="sm" onClick={() => openFilePicker("creditNote")} className="flex items-center gap-2">
+                <Folder className="h-4 w-4" />
+                Seleccionar del repositorio
+              </Button>
+            </div>
+            <div className="space-y-2">
               <Label>Motivo</Label>
               <Input 
                 value={newCreditNote.reason} 
