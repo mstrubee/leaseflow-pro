@@ -106,7 +106,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     credit_note_number: "",
     credit_note_date: new Date().toISOString().split("T")[0],
     amount: "",
-    currency: "UF" as "UF" | "CLP",
+    currency: "CLP" as "UF" | "CLP",
     invoice_id: "",
     reason: "",
     attachment_url: "",
