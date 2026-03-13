@@ -252,7 +252,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
               allocated_amount_uf: alloc.amount_uf,
               total_order_amount_uf: order.amount_uf,
               amount_uf: alloc.amount_uf,
-              amount_clp: (alloc as any).amount_clp ?? order.amount_clp,
+              amount_clp: alloc.amount_clp ?? order.amount_clp,
             });
             addedIds.add(order.id);
           }
