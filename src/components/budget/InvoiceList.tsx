@@ -626,15 +626,46 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     }
   };
 
-  const handleEditClick = (invoice: Invoice) => {
+  const handleEditClick = async (invoice: Invoice) => {
     setSelectedInvoice(invoice);
     setEditInvoice({
       invoice_number: invoice.invoice_number,
       invoice_date: invoice.invoice_date,
       amount: invoice.amount_uf.toString(),
       currency: "UF",
+      purchase_order_id: purchaseOrder.id,
     });
     setShowEditDialog(true);
+    
+    // Load compatible OCs (same supplier, same contract)
+    setLoadingOCs(true);
+    try {
+      // First get supplier_name from current OC
+      const { data: currentOC } = await supabase
+        .from("purchase_orders")
+        .select("supplier_name, contract_id")
+        .eq("id", purchaseOrder.id)
+        .single();
+      
+      if (currentOC) {
+        let query = supabase
+          .from("purchase_orders")
+          .select("id, order_number, supplier_name, amount_clp, amount_uf")
+          .eq("contract_id", currentOC.contract_id)
+          .is("deleted_at", null);
+        
+        if (currentOC.supplier_name) {
+          query = query.eq("supplier_name", currentOC.supplier_name);
+        }
+        
+        const { data: ocs } = await query.order("order_date", { ascending: false });
+        setCompatibleOCs(ocs || []);
+      }
+    } catch (error) {
+      console.error("Error loading compatible OCs:", error);
+    } finally {
+      setLoadingOCs(false);
+    }
   };
 
   const handleUpdateInvoice = async () => {
