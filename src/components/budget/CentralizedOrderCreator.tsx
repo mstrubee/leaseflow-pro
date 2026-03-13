@@ -776,9 +776,20 @@ export const CentralizedOrderCreator = ({
                       <Label>Número OC</Label>
                       <Input
                         value={formData.order_number}
-                        onChange={(e) => setFormData(prev => ({ ...prev, order_number: e.target.value }))}
+                        onChange={(e) => {
+                          setFormData(prev => ({ ...prev, order_number: e.target.value }));
+                          setDuplicateOCWarning(false);
+                        }}
+                        onBlur={(e) => checkDuplicateOCNumber(e.target.value)}
                         placeholder="Auto-generado si vacío"
+                        className={duplicateOCWarning ? "border-destructive" : ""}
                       />
+                      {duplicateOCWarning && (
+                        <p className="text-sm text-destructive flex items-center gap-1">
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                          Número de OC ya existe
+                        </p>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label>Fecha OC</Label>
