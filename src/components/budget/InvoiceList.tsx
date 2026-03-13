@@ -650,8 +650,8 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     setEditInvoice({
       invoice_number: invoice.invoice_number,
       invoice_date: invoice.invoice_date,
-      amount: invoice.amount_uf.toString(),
-      currency: "UF",
+      amount: invoice.amount_clp ? Math.round(invoice.amount_clp).toString() : Math.round(convertUFToPesos(invoice.amount_uf)).toString(),
+      currency: "CLP",
       purchase_order_id: purchaseOrder.id,
     });
     setShowEditDialog(true);
