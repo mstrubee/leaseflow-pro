@@ -120,6 +120,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   const [folderPath, setFolderPath] = useState<RepositoryFolder[]>([]);
   const [selectedFile, setSelectedFile] = useState<RepositoryFile | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [activeTab, setActiveTab] = useState<"select" | "upload">("select");
   const [uploadedFile, setUploadedFile] = useState<RepositoryFile | null>(null);
   const [askSendEmail, setAskSendEmail] = useState(false);
