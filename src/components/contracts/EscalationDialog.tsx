@@ -155,7 +155,10 @@ export const EscalationDialog = ({
                           if (isNaN(val)) return;
                           const updated = [...escalations];
                           updated[idx] = { ...updated[idx], month_number: val };
-                          setEscalations(updated.sort((a, b) => a.month_number - b.month_number));
+                          setEscalations(updated);
+                        }}
+                        onBlur={() => {
+                          setEscalations(prev => [...prev].sort((a, b) => a.month_number - b.month_number));
                         }}
                       />
                     </div>
