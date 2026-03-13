@@ -93,7 +93,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
   const [opexCategories, setOpexCategories] = useState<OpexCategory[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [opexMasterBudget, setOpexMasterBudget] = useState<OpexBudgetData[]>([]);
-  const [orderInvoiceData, setOrderInvoiceData] = useState<Record<string, { totalInvoiced: number; totalCreditNotes: number }>>({});
+  const [orderInvoiceData, setOrderInvoiceData] = useState<Record<string, { totalInvoiced: number; totalCreditNotes: number; totalInvoicedCLP: number; totalCreditNotesCLP: number }>>({});
   const selectedYear = initialYear ?? new Date().getFullYear();
 
   const [loading, setLoading] = useState(true);
