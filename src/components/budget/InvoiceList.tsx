@@ -59,6 +59,8 @@ interface InvoiceListProps {
     id: string;
     order_number: string;
     amount_uf: number;
+    amount_clp?: number | null;
+    uf_value_at_entry?: number | null;
     // Multi-contract allocation info (optional)
     is_multi_contract?: boolean;
     allocated_amount_uf?: number;

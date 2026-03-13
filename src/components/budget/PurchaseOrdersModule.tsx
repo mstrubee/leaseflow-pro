@@ -187,28 +187,32 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
       const directOrderNumbers = new Set(directOrders.map(o => o.order_number));
 
       // Get allocations for these direct orders to get proper allocated amounts
-      let allocationsMap: Record<string, number> = {};
+      let allocationsMap: Record<string, { amount_uf: number; amount_clp: number | null }> = {};
       if (directIds.length > 0) {
         const { data: allocForDirect } = await supabase
           .from("purchase_order_contract_allocations")
-          .select("purchase_order_id, amount_uf")
+          .select("purchase_order_id, amount_uf, amount_clp")
           .in("purchase_order_id", directIds)
           .eq("contract_id", contractId);
         
         for (const alloc of (allocForDirect || [])) {
-          allocationsMap[alloc.purchase_order_id] = alloc.amount_uf;
+          allocationsMap[alloc.purchase_order_id] = {
+            amount_uf: alloc.amount_uf,
+            amount_clp: alloc.amount_clp ?? null,
+          };
         }
       }
 
       // Build final list from direct orders, using allocation amounts for multi-contract
       const allOrders: PurchaseOrder[] = directOrders.map(order => {
-        const allocatedAmount = allocationsMap[order.id];
-        if (order.is_multi_contract && allocatedAmount !== undefined) {
+        const allocation = allocationsMap[order.id];
+        if (order.is_multi_contract && allocation) {
           return {
             ...order,
-            allocated_amount_uf: allocatedAmount,
+            allocated_amount_uf: allocation.amount_uf,
             total_order_amount_uf: order.amount_uf,
-            amount_uf: allocatedAmount // Display allocated amount
+            amount_uf: allocation.amount_uf, // Display allocated amount
+            amount_clp: allocation.amount_clp ?? order.amount_clp,
           };
         }
         return order;
