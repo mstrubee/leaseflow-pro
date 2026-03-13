@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, FileText, Mail, CheckCircle, Clock, Trash2, Upload, Folder, ArrowLeft, Paperclip, ExternalLink, Check, Pencil, AlertTriangle, CreditCard, Send } from "lucide-react";
+import { Plus, FileText, Mail, CheckCircle, Clock, Trash2, Upload, Folder, ArrowLeft, Paperclip, ExternalLink, Check, Pencil, AlertTriangle, CreditCard, Send, ArrowRightLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useBudgetContext } from "./BudgetContext";
 import { BudgetSemaphore } from "./BudgetSemaphore";
