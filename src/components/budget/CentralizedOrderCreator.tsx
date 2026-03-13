@@ -128,6 +128,26 @@ export const CentralizedOrderCreator = ({
     project_name: ""
   });
   
+  // Check for duplicate OC number
+  const checkDuplicateOCNumber = useCallback(async (orderNumber: string) => {
+    if (!orderNumber.trim()) {
+      setDuplicateOCWarning(false);
+      return;
+    }
+    setCheckingDuplicate(true);
+    try {
+      const { count } = await supabase
+        .from("purchase_orders")
+        .select("id", { count: "exact", head: true })
+        .eq("order_number", orderNumber.trim());
+      setDuplicateOCWarning((count ?? 0) > 0);
+    } catch {
+      setDuplicateOCWarning(false);
+    } finally {
+      setCheckingDuplicate(false);
+    }
+  }, []);
+
   // Load initial data
   useEffect(() => {
     if (open) {
