@@ -1136,9 +1136,9 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                   <SelectTrigger className="w-24">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="UF">UF</SelectItem>
+                   <SelectContent>
                     <SelectItem value="CLP">CLP</SelectItem>
+                    <SelectItem value="UF">UF</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
