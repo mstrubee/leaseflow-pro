@@ -157,9 +157,14 @@ export default function CapexDashboard() {
     return budgets.filter(b => {
       if (yearFilter !== "todos" && b.year !== parseInt(yearFilter)) return false;
       if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+      if (companyFilter !== "todas") {
+        const hasCompany = b.company_names.some(n => n.toLowerCase().includes(companyFilter.toLowerCase()));
+        if (!hasCompany) return false;
+      }
+      if (clasificacionFilter !== "todas" && b.clasificacion !== clasificacionFilter) return false;
       return true;
     });
-  }, [budgets, yearFilter, searchTerm]);
+  }, [budgets, yearFilter, searchTerm, companyFilter, clasificacionFilter]);
 
   // Group by contract, filtering out those with zero total amounts
   const contractGroups = React.useMemo(() => {
