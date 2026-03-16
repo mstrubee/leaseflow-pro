@@ -1054,26 +1054,17 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 <TableCell className="text-center" style={getColStyle("capex")}>
                   {(() => {
                     const capexData = capexByContract[contract.id];
-                    const authUF = capexData?.authorized || 0;
-                    const unauthUF = capexData?.unauthorized || 0;
-                    const totalUF = authUF + unauthUF;
+                    const totalUF = (capexData?.authorized || 0) + (capexData?.unauthorized || 0);
                     if (totalUF <= 0) return <span className="text-muted-foreground">-</span>;
                     const superficie = contract.superficie_edificada_local || 0;
                     const perM2 = superficie > 0 ? totalUF / superficie : 0;
                     return (
                       <div className="flex flex-col items-center">
-                        {authUF > 0 && (
-                          <span className="font-medium text-xs text-green-600 dark:text-green-400">
-                            Aut: {authUF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
-                          </span>
-                        )}
-                        {unauthUF > 0 && (
-                          <span className="font-medium text-xs text-yellow-600 dark:text-yellow-400">
-                            No Aut: {unauthUF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
-                          </span>
-                        )}
+                        <span className="font-medium text-xs">
+                          ${convertUFToPesos(totalUF).toLocaleString('es-CL', { maximumFractionDigits: 0 })}
+                        </span>
                         <span className="text-[10px] text-muted-foreground">
-                          Total: ${convertUFToPesos(totalUF).toLocaleString('es-CL', { maximumFractionDigits: 0 })}
+                          {totalUF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
                         </span>
                         {perM2 > 0 && (
                           <span className="text-[10px] text-muted-foreground">
