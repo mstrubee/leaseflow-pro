@@ -43,6 +43,9 @@ export default function CapexDashboard() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
+  const [companyFilter, setCompanyFilter] = useState("todas");
+  const [clasificacionFilter, setClasificacionFilter] = useState("todas");
+  const [sortBy, setSortBy] = useState<"nombre" | "empresa" | "clasificacion">("nombre");
   const [expandedContract, setExpandedContract] = useState<string | null>(null);
   const [authByBudget, setAuthByBudget] = useState<AuthByBudget>({});
 
