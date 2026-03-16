@@ -7,13 +7,15 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2 } from "lucide-react";
+import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation } from "lucide-react";
 import { toast } from "sonner";
 import { BudgetModule } from "@/components/budget/BudgetModule";
 import { BudgetProvider } from "@/components/budget/BudgetContext";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { formatCLP } from "@/lib/utils";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
+import { Button } from "@/components/ui/button";
+import { generateCapexPPT } from "@/components/budget/CapexPPTExport";
 
 interface ContractBudget {
   contract_id: string;
@@ -285,6 +287,62 @@ export default function CapexDashboard() {
     return { totalNuevoUF: nuevo, totalReemplazoUF: reemplazo, totalRegularizacionUF: regularizacion, countNuevo: cNuevo, countReemplazo: cReemplazo, countRegularizacion: cRegularizacion };
   }, [filteredBudgets, authByContract]);
 
+  const handleExportPPT = async () => {
+    try {
+      toast.info("Generando presentación...");
+      const pptCompanyGroups = companyGroups.map(({ company, contracts }) => {
+        const stats = companyClasificacionStats[company];
+        return {
+          company,
+          contracts: contracts.map(([contractId, cBudgets]) => {
+            const bd = authByContract[contractId] || { authorized: 0, unauthorized: 0 };
+            const totalUf = bd.authorized + bd.unauthorized;
+            const superficie = cBudgets[0].superficie || 0;
+            return {
+              contract_id: contractId,
+              contract_name: cBudgets[0].contract_name,
+              clasificacion: cBudgets[0].clasificacion,
+              superficie,
+              company_names: cBudgets[0].company_names,
+              authorized: bd.authorized,
+              unauthorized: bd.unauthorized,
+              total_uf: totalUf,
+              total_clp: totalUf * (ufValue || 0),
+              uf_m2: superficie > 0 ? totalUf / superficie : 0,
+            };
+          }),
+          totals: {
+            nuevo: stats?.nuevo || 0,
+            reemplazo: stats?.reemplazo || 0,
+            regularizacion: stats?.regularizacion || 0,
+            cNuevo: stats?.cNuevo || 0,
+            cReemplazo: stats?.cReemplazo || 0,
+            cRegularizacion: stats?.cRegularizacion || 0,
+            total: (stats?.nuevo || 0) + (stats?.reemplazo || 0) + (stats?.regularizacion || 0),
+          },
+        };
+      });
+
+      await generateCapexPPT({
+        year: yearFilter !== "todos" ? yearFilter : new Date().getFullYear().toString(),
+        ufValue: ufValue || 0,
+        totalCapexUF,
+        totalNuevoUF,
+        totalReemplazoUF,
+        totalRegularizacionUF,
+        countNuevo,
+        countReemplazo,
+        countRegularizacion,
+        totalLocales: contractGroups.length,
+        companyGroups: pptCompanyGroups,
+      });
+      toast.success("Presentación descargada");
+    } catch (err) {
+      console.error("PPT export error:", err);
+      toast.error("Error al generar la presentación");
+    }
+  };
+
   const handleClasificacionChange = async (contractId: string, value: string) => {
     const { error } = await supabase
       .from("contracts")
@@ -323,6 +381,10 @@ export default function CapexDashboard() {
             <h1 className="text-2xl font-semibold text-foreground">Presupuesto CAPEX</h1>
             <p className="text-sm text-muted-foreground mt-1">Gestión de presupuestos CAPEX por local</p>
           </div>
+          <Button variant="outline" size="sm" onClick={handleExportPPT} className="gap-2">
+            <Presentation className="h-4 w-4" />
+            Descargar PPT
+          </Button>
         </div>
 
         {/* Summary Cards Row 1 */}
