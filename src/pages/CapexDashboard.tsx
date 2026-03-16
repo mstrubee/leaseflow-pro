@@ -97,9 +97,7 @@ export default function CapexDashboard() {
           from += PAGE_SIZE;
         }
 
-        // Filter out budgets with zero lines (empty CAPEX)
-        const budgetIdsWithLines = new Set(allLines.map(l => l.budget_id));
-        setBudgets(prev => prev.filter(b => budgetIdsWithLines.has(b.budget_id)));
+        // No longer filter out budgets without lines — they may have manual amount_uf
 
         if (allLines.length > 0) {
           // Find parent IDs to exclude (avoid double-counting)
@@ -132,8 +130,7 @@ export default function CapexDashboard() {
           setAuthByBudget(breakdown);
         }
       } else {
-        // No budgets at all — clear
-        setBudgets([]);
+        // No budget lines — keep budgets with manual amount_uf
       }
     } catch (error) {
       console.error("Error loading CAPEX budgets:", error);
@@ -170,7 +167,7 @@ export default function CapexDashboard() {
       .filter(([, cBudgets]) => {
         const total = cBudgets.reduce((sum, b) => {
           const bd = authByBudget[b.budget_id];
-          return sum + (bd ? bd.authorized + bd.unauthorized : 0);
+          return sum + (bd ? bd.authorized + bd.unauthorized : b.amount_uf);
         }, 0);
         return total > 0;
       })
@@ -182,20 +179,24 @@ export default function CapexDashboard() {
     const result: Record<string, AuthBreakdown> = {};
     filteredBudgets.forEach(b => {
       const bd = authByBudget[b.budget_id];
-      if (!bd) return;
       if (!result[b.contract_id]) result[b.contract_id] = { authorized: 0, unauthorized: 0 };
-      result[b.contract_id].authorized += bd.authorized;
-      result[b.contract_id].unauthorized += bd.unauthorized;
+      if (bd) {
+        result[b.contract_id].authorized += bd.authorized;
+        result[b.contract_id].unauthorized += bd.unauthorized;
+      } else {
+        // Fallback: use manual amount_uf as unauthorized
+        result[b.contract_id].unauthorized += b.amount_uf;
+      }
     });
     return result;
   }, [filteredBudgets, authByBudget]);
 
   const totalCapexUF = React.useMemo(() => {
-    const seen = new Set<string>();
     let total = 0;
     filteredBudgets.forEach(b => {
       const bd = authByBudget[b.budget_id];
       if (bd) total += bd.authorized + bd.unauthorized;
+      else total += b.amount_uf;
     });
     return total;
   }, [filteredBudgets, authByBudget]);
