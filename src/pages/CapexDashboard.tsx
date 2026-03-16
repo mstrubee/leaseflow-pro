@@ -369,6 +369,37 @@ export default function CapexDashboard() {
               ))}
             </SelectContent>
           </Select>
+          <Select value={companyFilter} onValueChange={setCompanyFilter}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="Empresa" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas las empresas</SelectItem>
+              <SelectItem value="autoplanet">Autoplanet</SelectItem>
+              <SelectItem value="agroplanet">Agroplanet</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={clasificacionFilter} onValueChange={setClasificacionFilter}>
+            <SelectTrigger className="w-[170px]">
+              <SelectValue placeholder="Clasificación" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas las clasificaciones</SelectItem>
+              <SelectItem value="nuevo">Nuevo</SelectItem>
+              <SelectItem value="reemplazo">Reemplazo</SelectItem>
+              <SelectItem value="regularizacion">Regularización</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="Ordenar por" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="nombre">Ordenar: Nombre</SelectItem>
+              <SelectItem value="empresa">Ordenar: Empresa</SelectItem>
+              <SelectItem value="clasificacion">Ordenar: Clasificación</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Contract List with expandable CAPEX */}
