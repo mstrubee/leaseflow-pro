@@ -97,9 +97,7 @@ export default function CapexDashboard() {
           from += PAGE_SIZE;
         }
 
-        // Filter out budgets with zero lines (empty CAPEX)
-        const budgetIdsWithLines = new Set(allLines.map(l => l.budget_id));
-        setBudgets(prev => prev.filter(b => budgetIdsWithLines.has(b.budget_id)));
+        // No longer filter out budgets without lines — they may have manual amount_uf
 
         if (allLines.length > 0) {
           // Find parent IDs to exclude (avoid double-counting)
