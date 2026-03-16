@@ -61,7 +61,7 @@ export default function CapexDashboard() {
     try {
       const { data, error } = await supabase
         .from("contract_budgets")
-        .select("id, contract_id, year, amount_uf, budget_type, contracts(name, clasificacion, superficie_edificada_local)")
+        .select("id, contract_id, year, amount_uf, budget_type, contracts(name, clasificacion, superficie_edificada_local, contract_companies(companies(name)))")
         .eq("budget_type", "capex")
         .order("year", { ascending: false });
 
@@ -75,6 +75,7 @@ export default function CapexDashboard() {
         amount_uf: b.amount_uf,
         budget_id: b.id,
         superficie: b.contracts?.superficie_edificada_local || 0,
+        company_names: (b.contracts?.contract_companies || []).map((cc: any) => cc.companies?.name).filter(Boolean) as string[],
       }));
       setBudgets(processed);
 
