@@ -101,7 +101,7 @@ export const BudgetLineTree = ({
   const effectiveLinesMap = externalLinesMap || rootLinesMap || EMPTY_LINES_MAP;
 
   return <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
-      {lines.map(line => <BudgetLineItem 
+    {lines.map(line => <BudgetLineItem 
         key={line.id} 
         line={line} 
         level={level} 
@@ -114,6 +114,7 @@ export const BudgetLineTree = ({
         onCreateInvoice={onCreateInvoice} 
         onViewLineDetails={onViewLineDetails} 
         readOnly={readOnly}
+        compactView={compactView}
         parentCategoryId={line.category_id || parentCategoryId}
         globalExpandState={globalExpandState}
         templatePricesMap={templatePricesMap}
