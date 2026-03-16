@@ -220,8 +220,12 @@ export default function CapexDashboard() {
     contractGroups.forEach(entry => {
       const [, cBudgets] = entry;
       const names = cBudgets[0].company_names;
-      const companyKey = names.find(n => n.toLowerCase().includes("autoplanet")) ? "Autoplanet"
-        : names.find(n => n.toLowerCase().includes("agroplanet")) ? "Agroplanet"
+      const hasAgroplanet = names.some(n => n.toLowerCase().includes("agroplanet"));
+      const hasAutoplanet = names.some(n => n.toLowerCase().includes("autoplanet"));
+      // Multi-company contracts go to Agroplanet
+      const companyKey = (hasAgroplanet && hasAutoplanet) ? "Agroplanet"
+        : hasAutoplanet ? "Autoplanet"
+        : hasAgroplanet ? "Agroplanet"
         : "Otra";
       const existing = groups.get(companyKey) || [];
       existing.push(entry);
