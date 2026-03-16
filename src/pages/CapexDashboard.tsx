@@ -13,6 +13,7 @@ import { BudgetModule } from "@/components/budget/BudgetModule";
 import { BudgetProvider } from "@/components/budget/BudgetContext";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { formatCLP } from "@/lib/utils";
+import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 
 interface ContractBudget {
   contract_id: string;
@@ -22,6 +23,7 @@ interface ContractBudget {
   amount_uf: number;
   budget_id: string;
   superficie: number;
+  company_names: string[];
 }
 
 interface AuthBreakdown {
