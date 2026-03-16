@@ -13,6 +13,7 @@ import { BudgetModule } from "@/components/budget/BudgetModule";
 import { BudgetProvider } from "@/components/budget/BudgetContext";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { formatCLP } from "@/lib/utils";
+import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 
 interface ContractBudget {
   contract_id: string;
@@ -22,6 +23,7 @@ interface ContractBudget {
   amount_uf: number;
   budget_id: string;
   superficie: number;
+  company_names: string[];
 }
 
 interface AuthBreakdown {
@@ -59,7 +61,7 @@ export default function CapexDashboard() {
     try {
       const { data, error } = await supabase
         .from("contract_budgets")
-        .select("id, contract_id, year, amount_uf, budget_type, contracts(name, clasificacion, superficie_edificada_local)")
+        .select("id, contract_id, year, amount_uf, budget_type, contracts(name, clasificacion, superficie_edificada_local, contract_companies(companies(name)))")
         .eq("budget_type", "capex")
         .order("year", { ascending: false });
 
@@ -73,6 +75,7 @@ export default function CapexDashboard() {
         amount_uf: b.amount_uf,
         budget_id: b.id,
         superficie: b.contracts?.superficie_edificada_local || 0,
+        company_names: (b.contracts?.contract_companies || []).map((cc: any) => cc.companies?.name).filter(Boolean) as string[],
       }));
       setBudgets(processed);
 
@@ -360,6 +363,7 @@ export default function CapexDashboard() {
               const isExpanded = expandedContract === contractId;
               const contractName = contractBudgets[0].contract_name;
               const clasificacion = contractBudgets[0].clasificacion;
+              const companyNames = contractBudgets[0].company_names;
               const selectedYear = yearFilter !== "todos" ? parseInt(yearFilter) : contractBudgets[0].year;
               const breakdown = authByContract[contractId] || { authorized: 0, unauthorized: 0 };
               const superficie = contractBudgets[0].superficie || 0;
@@ -379,8 +383,9 @@ export default function CapexDashboard() {
                   <Card>
                     <CollapsibleTrigger asChild>
                       <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
-                        <div className="grid grid-cols-[24px_200px_140px_1fr] items-center gap-3">
+                        <div className="grid grid-cols-[24px_auto_200px_140px_1fr] items-center gap-3">
                           <ChevronDown className={`h-5 w-5 shrink-0 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
+                          <CompanyLogo companyNames={companyNames} size="sm" />
                           <CardTitle className="text-base whitespace-nowrap">{contractName}</CardTitle>
                           <div onClick={(e) => e.stopPropagation()}>
                             <Select
