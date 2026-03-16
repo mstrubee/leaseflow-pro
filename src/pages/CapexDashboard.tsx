@@ -342,6 +342,8 @@ export default function CapexDashboard() {
       toast.error("Error al generar la presentación");
     }
   };
+
+  const handleClasificacionChange = async (contractId: string, value: string) => {
     const { error } = await supabase
       .from("contracts")
       .update({ clasificacion: value })
