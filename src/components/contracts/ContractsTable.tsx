@@ -1053,18 +1053,27 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 </TableCell>
                 <TableCell className="text-center" style={getColStyle("capex")}>
                   {(() => {
-                    const capexUF = capexByContract[contract.id] || 0;
-                    if (capexUF <= 0) return <span className="text-muted-foreground">-</span>;
-                    const capexCLP = convertUFToPesos(capexUF);
+                    const capexData = capexByContract[contract.id];
+                    const authUF = capexData?.authorized || 0;
+                    const unauthUF = capexData?.unauthorized || 0;
+                    const totalUF = authUF + unauthUF;
+                    if (totalUF <= 0) return <span className="text-muted-foreground">-</span>;
                     const superficie = contract.superficie_edificada_local || 0;
-                    const perM2 = superficie > 0 ? capexUF / superficie : 0;
+                    const perM2 = superficie > 0 ? totalUF / superficie : 0;
                     return (
                       <div className="flex flex-col items-center">
-                        <span className="font-medium text-xs">
-                          ${capexCLP.toLocaleString('es-CL', { maximumFractionDigits: 0 })}
-                        </span>
+                        {authUF > 0 && (
+                          <span className="font-medium text-xs text-green-600 dark:text-green-400">
+                            Aut: {authUF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
+                          </span>
+                        )}
+                        {unauthUF > 0 && (
+                          <span className="font-medium text-xs text-yellow-600 dark:text-yellow-400">
+                            No Aut: {unauthUF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
+                          </span>
+                        )}
                         <span className="text-[10px] text-muted-foreground">
-                          {capexUF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
+                          Total: {formatCLP(totalUF * (ufValue || 0))}
                         </span>
                         {perM2 > 0 && (
                           <span className="text-[10px] text-muted-foreground">
