@@ -374,7 +374,7 @@ export default function CapexDashboard() {
               <SelectValue placeholder="Empresa" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="todas">Todas las empresas</SelectItem>
+              <SelectItem value="todas">Empresa</SelectItem>
               <SelectItem value="autoplanet">Autoplanet</SelectItem>
               <SelectItem value="agroplanet">Agroplanet</SelectItem>
             </SelectContent>
@@ -384,7 +384,7 @@ export default function CapexDashboard() {
               <SelectValue placeholder="Clasificación" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="todas">Todas las clasificaciones</SelectItem>
+              <SelectItem value="todas">Clasificación</SelectItem>
               <SelectItem value="nuevo">Nuevo</SelectItem>
               <SelectItem value="reemplazo">Reemplazo</SelectItem>
               <SelectItem value="regularizacion">Regularización</SelectItem>
