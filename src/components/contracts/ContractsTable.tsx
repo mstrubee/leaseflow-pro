@@ -146,7 +146,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
   const [comiteGPStatuses, setComiteGPStatuses] = useState<ComiteGPStatus[]>([]);
   const [comiteGPConfirm, setComiteGPConfirm] = useState<{ contractId: string; contractName: string } | null>(null);
   const [rechazadaConfirm, setRechazadaConfirm] = useState<{ contractId: string; contractName: string } | null>(null);
-  const [capexByContract, setCapexByContract] = useState<Record<string, number>>({});
+  const [capexByContract, setCapexByContract] = useState<Record<string, { authorized: number; unauthorized: number }>>({});
   
   // Use external column widths if provided, otherwise use defaults from hook
   const columnWidths = externalColumnWidths || defaultColumnWidths;
