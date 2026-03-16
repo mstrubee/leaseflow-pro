@@ -1045,6 +1045,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               onCreateInvoice={handleCreateInvoiceFromLine}
               onViewLineDetails={handleViewLineDetails}
               readOnly={isClosed || forceReadOnly}
+              compactView={forceReadOnly}
               globalExpandState={globalExpandState}
               templatePricesMap={templatePricesMap}
               collapsedIds={collapsedIds}
