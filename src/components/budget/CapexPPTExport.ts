@@ -134,7 +134,7 @@ export async function generateCapexPPT(data: CapexPPTData) {
     fontSize: 24, fontFace: "Arial", color: "CADCFC",
   });
 
-  s1.addShape(pres.shapes.LINE, {
+  s1.addShape(SHAPES.LINE, {
     x: 0.5, y: 3.5, w: 3, h: 0,
     line: { color: ACCENT, width: 3 },
   });
@@ -155,13 +155,13 @@ export async function generateCapexPPT(data: CapexPPTData) {
     fontSize: 28, fontFace: "Arial", color: PRIMARY, bold: true, margin: 0,
   });
 
-  s2.addShape(pres.shapes.LINE, {
+  s2.addShape(SHAPES.LINE, {
     x: 0.5, y: 0.85, w: 9, h: 0,
     line: { color: ACCENT, width: 2 },
   });
 
   // Big total card
-  s2.addShape(pres.shapes.RECTANGLE, {
+  s2.addShape(SHAPES.RECTANGLE, {
     x: 0.5, y: 1.2, w: 9, h: 1.2,
     fill: { color: PRIMARY },
   });
@@ -197,13 +197,13 @@ export async function generateCapexPPT(data: CapexPPTData) {
     const x = 0.5 + i * 3.1;
     const y = 2.7;
 
-    s2.addShape(pres.shapes.RECTANGLE, {
+    s2.addShape(SHAPES.RECTANGLE, {
       x, y, w: 2.8, h: 1.4,
       fill: { color: LIGHT_BG },
     });
 
     // Left accent
-    s2.addShape(pres.shapes.RECTANGLE, {
+    s2.addShape(SHAPES.RECTANGLE, {
       x, y, w: 0.06, h: 1.4,
       fill: { color: card.color },
     });
@@ -230,7 +230,7 @@ export async function generateCapexPPT(data: CapexPPTData) {
   });
 
   // Pie chart
-  s2.addChart(pres.charts.PIE, [{
+  s2.addChart(CHARTS.PIE, [{
     name: "Distribución",
     labels: ["Nuevos", "Reemplazo", "Regularización"],
     values: [data.totalNuevoUF, data.totalReemplazoUF, data.totalRegularizacionUF],
@@ -258,7 +258,7 @@ export async function generateCapexPPT(data: CapexPPTData) {
       fontSize: 28, fontFace: "Arial", color: PRIMARY, bold: true, margin: 0,
     });
 
-    s.addShape(pres.shapes.LINE, {
+    s.addShape(SHAPES.LINE, {
       x: 0.5, y: 0.85, w: 9, h: 0,
       line: { color: ACCENT, width: 2 },
     });
@@ -273,12 +273,12 @@ export async function generateCapexPPT(data: CapexPPTData) {
     companyCards.forEach((card, i) => {
       const x = 0.5 + i * 3.1;
 
-      s.addShape(pres.shapes.RECTANGLE, {
+      s.addShape(SHAPES.RECTANGLE, {
         x, y: 1.1, w: 2.8, h: 0.9,
         fill: { color: LIGHT_BG },
       });
 
-      s.addShape(pres.shapes.RECTANGLE, {
+      s.addShape(SHAPES.RECTANGLE, {
         x, y: 1.1, w: 0.06, h: 0.9,
         fill: { color: card.color },
       });
