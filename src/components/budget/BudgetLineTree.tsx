@@ -782,7 +782,7 @@ const BudgetLineItemInner = ({
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          {isNotAuthorized && <TooltipProvider>
+          {isNotAuthorized && !compactView && <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
                   <ArrowRight className="h-3 w-3 text-yellow-600" />
