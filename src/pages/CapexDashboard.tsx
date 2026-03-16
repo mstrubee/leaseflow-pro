@@ -43,6 +43,9 @@ export default function CapexDashboard() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
+  const [companyFilter, setCompanyFilter] = useState("todas");
+  const [clasificacionFilter, setClasificacionFilter] = useState("todas");
+  const [sortBy, setSortBy] = useState<"nombre" | "empresa" | "clasificacion">("nombre");
   const [expandedContract, setExpandedContract] = useState<string | null>(null);
   const [authByBudget, setAuthByBudget] = useState<AuthByBudget>({});
 
@@ -154,9 +157,14 @@ export default function CapexDashboard() {
     return budgets.filter(b => {
       if (yearFilter !== "todos" && b.year !== parseInt(yearFilter)) return false;
       if (searchTerm && !b.contract_name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+      if (companyFilter !== "todas") {
+        const hasCompany = b.company_names.some(n => n.toLowerCase().includes(companyFilter.toLowerCase()));
+        if (!hasCompany) return false;
+      }
+      if (clasificacionFilter !== "todas" && b.clasificacion !== clasificacionFilter) return false;
       return true;
     });
-  }, [budgets, yearFilter, searchTerm]);
+  }, [budgets, yearFilter, searchTerm, companyFilter, clasificacionFilter]);
 
   // Group by contract, filtering out those with zero total amounts
   const contractGroups = React.useMemo(() => {
@@ -174,8 +182,21 @@ export default function CapexDashboard() {
         }, 0);
         return total > 0;
       })
-      .sort((a, b) => a[1][0].contract_name.localeCompare(b[1][0].contract_name));
-  }, [filteredBudgets, authByBudget]);
+      .sort((a, b) => {
+        const aB = a[1][0], bB = b[1][0];
+        if (sortBy === "empresa") {
+          const aComp = aB.company_names[0] || "";
+          const bComp = bB.company_names[0] || "";
+          return aComp.localeCompare(bComp) || aB.contract_name.localeCompare(bB.contract_name);
+        }
+        if (sortBy === "clasificacion") {
+          const aC = aB.clasificacion || "zzz";
+          const bC = bB.clasificacion || "zzz";
+          return aC.localeCompare(bC) || aB.contract_name.localeCompare(bB.contract_name);
+        }
+        return aB.contract_name.localeCompare(bB.contract_name);
+      });
+  }, [filteredBudgets, authByBudget, sortBy]);
 
   // Aggregate authByBudget → authByContract using only filtered budgets (year-specific)
   const authByContract = React.useMemo(() => {
@@ -346,6 +367,37 @@ export default function CapexDashboard() {
               {availableYears.map(y => (
                 <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+          <Select value={companyFilter} onValueChange={setCompanyFilter}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="Empresa" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas las empresas</SelectItem>
+              <SelectItem value="autoplanet">Autoplanet</SelectItem>
+              <SelectItem value="agroplanet">Agroplanet</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={clasificacionFilter} onValueChange={setClasificacionFilter}>
+            <SelectTrigger className="w-[170px]">
+              <SelectValue placeholder="Clasificación" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas las clasificaciones</SelectItem>
+              <SelectItem value="nuevo">Nuevo</SelectItem>
+              <SelectItem value="reemplazo">Reemplazo</SelectItem>
+              <SelectItem value="regularizacion">Regularización</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="Ordenar por" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="nombre">Ordenar: Nombre</SelectItem>
+              <SelectItem value="empresa">Ordenar: Empresa</SelectItem>
+              <SelectItem value="clasificacion">Ordenar: Clasificación</SelectItem>
             </SelectContent>
           </Select>
         </div>
