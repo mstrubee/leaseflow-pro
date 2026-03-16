@@ -489,6 +489,7 @@ export default function CapexDashboard() {
                             selectedYear={selectedYear}
                             onRefresh={loadBudgets}
                             superficieEdificada={superficie}
+                            readOnly
                           />
                         </BudgetProvider>
                       </CardContent>

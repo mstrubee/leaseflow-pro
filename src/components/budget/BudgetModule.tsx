@@ -42,9 +42,10 @@ interface BudgetModuleProps {
   ocTotalClp?: number;
   onRefresh?: () => void;
   superficieEdificada?: number;
+  readOnly?: boolean;
 }
 
-export const BudgetModule = ({ contractId, contractName = "", contractCebe, budgetType, title, selectedYear, ocTotal = 0, ocTotalClp = 0, onRefresh, superficieEdificada = 0 }: BudgetModuleProps) => {
+export const BudgetModule = ({ contractId, contractName = "", contractCebe, budgetType, title, selectedYear, ocTotal = 0, ocTotalClp = 0, onRefresh, superficieEdificada = 0, readOnly: forceReadOnly = false }: BudgetModuleProps) => {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [templatePricesMap, setTemplatePricesMap] = useState<Record<string, number>>({});
@@ -964,7 +965,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               </div>
             </div>
 
-            {unauthorizedCount > 0 && !isClosed && (
+            {unauthorizedCount > 0 && !isClosed && !forceReadOnly && (
               <Alert className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20">
                 <AlertTriangle className="h-4 w-4 text-yellow-600" />
                 <AlertTitle className="text-yellow-700">Ítems pendientes de autorización</AlertTitle>
@@ -977,7 +978,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
 
             {currentBudget && (
               <div className="flex justify-end gap-2">
-                {!isClosed && (
+                {!isClosed && !forceReadOnly && (
                   <>
                     <Button
                       variant="outline"
@@ -1043,7 +1044,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               onCreateOCRequest={handleCreateOCRequestFromLine}
               onCreateInvoice={handleCreateInvoiceFromLine}
               onViewLineDetails={handleViewLineDetails}
-              readOnly={isClosed}
+              readOnly={isClosed || forceReadOnly}
               globalExpandState={globalExpandState}
               templatePricesMap={templatePricesMap}
               collapsedIds={collapsedIds}
@@ -1052,7 +1053,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
             />
             
             {/* Trash Panel - shows deleted lines and audit history */}
-            {currentBudget && (
+            {currentBudget && !forceReadOnly && (
               <div className="mt-4">
                 <BudgetTrashPanel 
                   budgetId={currentBudget.id} 

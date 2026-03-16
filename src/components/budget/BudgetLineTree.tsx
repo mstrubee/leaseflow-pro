@@ -787,7 +787,7 @@ const BudgetLineItemInner = ({
             </TooltipProvider>}
           
           {/* View details button - for leaf lines */}
-          {!isParent && onViewLineDetails && (
+          {!isParent && !readOnly && onViewLineDetails && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
