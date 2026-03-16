@@ -821,7 +821,7 @@ const BudgetLineItemInner = ({
               disabled={readOnly}
             />
           )}
-          {readOnly && line.supplier_name && (
+          {readOnly && !compactView && line.supplier_name && (
             <span className="text-xs bg-muted/30 px-1.5 py-0.5 rounded truncate max-w-[140px]">
               {line.supplier_name}
             </span>
