@@ -1053,7 +1053,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
             />
             
             {/* Trash Panel - shows deleted lines and audit history */}
-            {currentBudget && (
+            {currentBudget && !forceReadOnly && (
               <div className="mt-4">
                 <BudgetTrashPanel 
                   budgetId={currentBudget.id} 
