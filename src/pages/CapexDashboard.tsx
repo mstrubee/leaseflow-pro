@@ -198,6 +198,47 @@ export default function CapexDashboard() {
       });
   }, [filteredBudgets, authByBudget, sortBy]);
 
+  // Group contractGroups by company
+  const companyGroups = React.useMemo(() => {
+    const groups = new Map<string, typeof contractGroups>();
+    contractGroups.forEach(entry => {
+      const [, cBudgets] = entry;
+      const names = cBudgets[0].company_names;
+      const companyKey = names.find(n => n.toLowerCase().includes("autoplanet")) ? "Autoplanet"
+        : names.find(n => n.toLowerCase().includes("agroplanet")) ? "Agroplanet"
+        : "Otra";
+      const existing = groups.get(companyKey) || [];
+      existing.push(entry);
+      groups.set(companyKey, existing);
+    });
+    // Sort: Autoplanet first, then Agroplanet, then others
+    const order = ["Autoplanet", "Agroplanet", "Otra"];
+    return order
+      .filter(k => groups.has(k))
+      .map(k => ({ company: k, contracts: groups.get(k)! }));
+  }, [contractGroups]);
+
+  // Per-company clasificacion stats
+  const companyClasificacionStats = React.useMemo(() => {
+    const stats: Record<string, { nuevo: number; reemplazo: number; regularizacion: number; cNuevo: number; cReemplazo: number; cRegularizacion: number }> = {};
+    companyGroups.forEach(({ company, contracts }) => {
+      const s = { nuevo: 0, reemplazo: 0, regularizacion: 0, cNuevo: 0, cReemplazo: 0, cRegularizacion: 0 };
+      const seen = new Set<string>();
+      contracts.forEach(([contractId, cBudgets]) => {
+        if (seen.has(contractId)) return;
+        seen.add(contractId);
+        const bd = authByContract[contractId];
+        const uf = bd ? bd.authorized + bd.unauthorized : 0;
+        const cl = cBudgets[0].clasificacion;
+        if (cl === "nuevo") { s.nuevo += uf; s.cNuevo++; }
+        else if (cl === "reemplazo") { s.reemplazo += uf; s.cReemplazo++; }
+        else if (cl === "regularizacion") { s.regularizacion += uf; s.cRegularizacion++; }
+      });
+      stats[company] = s;
+    });
+    return stats;
+  }, [companyGroups, authByContract]);
+
   // Aggregate authByBudget → authByContract using only filtered budgets (year-specific)
   const authByContract = React.useMemo(() => {
     const result: Record<string, AuthBreakdown> = {};
