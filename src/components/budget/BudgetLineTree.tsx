@@ -100,8 +100,20 @@ export const BudgetLineTree = ({
 
   const effectiveLinesMap = externalLinesMap || rootLinesMap || EMPTY_LINES_MAP;
 
+  const sortedLines = useMemo(() => {
+    if (!compactView) return lines;
+    return [...lines].sort((a, b) => {
+      // "No Autorizado" always at end
+      if (a.status !== b.status) {
+        if (a.status === "no_autorizado") return 1;
+        if (b.status === "no_autorizado") return -1;
+      }
+      return a.name.localeCompare(b.name, "es");
+    });
+  }, [lines, compactView]);
+
   return <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
-    {lines.map(line => <BudgetLineItem 
+    {sortedLines.map(line => <BudgetLineItem
         key={line.id} 
         line={line} 
         level={level} 
