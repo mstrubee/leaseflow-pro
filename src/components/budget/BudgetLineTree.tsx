@@ -103,6 +103,11 @@ export const BudgetLineTree = ({
   const sortedLines = useMemo(() => {
     if (!compactView) return lines;
     return [...lines].sort((a, b) => {
+      // "Proyectos" always first
+      const aIsProyectos = a.name.toLowerCase() === "proyectos";
+      const bIsProyectos = b.name.toLowerCase() === "proyectos";
+      if (aIsProyectos && !bIsProyectos) return -1;
+      if (!aIsProyectos && bIsProyectos) return 1;
       // "No Autorizado" always at end
       if (a.status !== b.status) {
         if (a.status === "no_autorizado") return 1;
