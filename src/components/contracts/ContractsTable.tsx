@@ -192,17 +192,16 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
         return;
       }
 
-      // For budgets with amount_uf = 0, fallback to sum of budget lines (authorized first, then unauthorized)
-      const budgetsNeedingLines = budgets.filter(b => !b.amount_uf || b.amount_uf === 0);
+      const budgetIds = budgets.map(b => b.id);
       let authorizedByBudget: Record<string, number> = {};
       let unauthorizedByBudget: Record<string, number> = {};
       
-      if (budgetsNeedingLines.length > 0) {
-        const budgetIds = budgetsNeedingLines.map(b => b.id);
+      if (budgetIds.length > 0) {
         const { data: lines } = await supabase
           .from("budget_lines")
           .select("budget_id, amount_uf, status, parent_id, id")
-          .in("budget_id", budgetIds);
+          .in("budget_id", budgetIds)
+          .is("deleted_at", null);
         
         if (lines) {
           const parentIds = new Set(lines.filter(l => l.parent_id).map(l => l.parent_id));
@@ -218,13 +217,13 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
         }
       }
 
-      const map: Record<string, number> = {};
+      const map: Record<string, { authorized: number; unauthorized: number }> = {};
       budgets.forEach(row => {
-        const budgetAmount = row.amount_uf || 0;
-        const authorized = authorizedByBudget[row.id] || 0;
-        const unauthorized = unauthorizedByBudget[row.id] || 0;
-        const effectiveAmount = budgetAmount > 0 ? budgetAmount : (authorized > 0 ? authorized : unauthorized);
-        map[row.contract_id] = (map[row.contract_id] || 0) + effectiveAmount;
+        const auth = authorizedByBudget[row.id] || 0;
+        const unauth = unauthorizedByBudget[row.id] || 0;
+        if (!map[row.contract_id]) map[row.contract_id] = { authorized: 0, unauthorized: 0 };
+        map[row.contract_id].authorized += auth;
+        map[row.contract_id].unauthorized += unauth;
       });
       setCapexByContract(map);
     };
