@@ -978,7 +978,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
 
             {currentBudget && (
               <div className="flex justify-end gap-2">
-                {!isClosed && (
+                {!isClosed && !forceReadOnly && (
                   <>
                     <Button
                       variant="outline"
