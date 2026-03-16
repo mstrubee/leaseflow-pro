@@ -1044,7 +1044,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               onCreateOCRequest={handleCreateOCRequestFromLine}
               onCreateInvoice={handleCreateInvoiceFromLine}
               onViewLineDetails={handleViewLineDetails}
-              readOnly={isClosed}
+              readOnly={isClosed || forceReadOnly}
               globalExpandState={globalExpandState}
               templatePricesMap={templatePricesMap}
               collapsedIds={collapsedIds}
