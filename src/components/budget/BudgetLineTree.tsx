@@ -166,6 +166,7 @@ const BudgetLineItemInner = ({
   onCreateInvoice,
   onViewLineDetails,
   readOnly = false,
+  compactView = false,
   parentCategoryId = null,
   globalExpandState = null,
   templatePricesMap: externalTemplatePricesMap = {},
