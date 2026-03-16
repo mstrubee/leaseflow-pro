@@ -441,8 +441,8 @@ export default function CapexDashboard() {
           </Select>
         </div>
 
-        {/* Contract List with expandable CAPEX */}
-        <div className="space-y-2">
+        {/* Contract List grouped by company */}
+        <div className="space-y-8">
           {contractGroups.length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center text-muted-foreground">
@@ -450,91 +450,147 @@ export default function CapexDashboard() {
               </CardContent>
             </Card>
           ) : (
-            contractGroups.map(([contractId, contractBudgets]) => {
-              const isExpanded = expandedContract === contractId;
-              const contractName = contractBudgets[0].contract_name;
-              const clasificacion = contractBudgets[0].clasificacion;
-              const companyNames = contractBudgets[0].company_names;
-              const selectedYear = yearFilter !== "todos" ? parseInt(yearFilter) : contractBudgets[0].year;
-              const breakdown = authByContract[contractId] || { authorized: 0, unauthorized: 0 };
-              const superficie = contractBudgets[0].superficie || 0;
+            companyGroups.map(({ company, contracts }) => {
+              const stats = companyClasificacionStats[company];
               const currentUF = ufValue || 0;
-
-              const authCLP = breakdown.authorized * currentUF;
-              const unauthCLP = breakdown.unauthorized * currentUF;
-              const totalUF = breakdown.authorized + breakdown.unauthorized;
-              const ufM2 = superficie > 0 ? totalUF / superficie : 0;
-
               return (
-                <Collapsible
-                  key={contractId}
-                  open={isExpanded}
-                  onOpenChange={(open) => setExpandedContract(open ? contractId : null)}
-                >
-                  <Card>
-                    <CollapsibleTrigger asChild>
-                      <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
-                        <div className="grid grid-cols-[24px_auto_200px_140px_1fr] items-center gap-3">
-                          <ChevronDown className={`h-5 w-5 shrink-0 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
-                          <CompanyLogo companyNames={companyNames} size="sm" />
-                          <CardTitle className="text-base whitespace-nowrap">{contractName}</CardTitle>
-                          <div onClick={(e) => e.stopPropagation()}>
-                            <Select
-                              value={clasificacion || ""}
-                              onValueChange={(val) => handleClasificacionChange(contractId, val)}
-                            >
-                              <SelectTrigger className="h-7 w-[140px] text-xs">
-                                <SelectValue placeholder="Clasificar..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="nuevo">Nuevo</SelectItem>
-                                <SelectItem value="reemplazo">Reemplazo</SelectItem>
-                                <SelectItem value="regularizacion">Regularización</SelectItem>
-                              </SelectContent>
-                            </Select>
+                <div key={company} className="space-y-3">
+                  {/* Company header */}
+                  <div className="flex items-center gap-2">
+                    <CompanyLogo companyName={company} size="md" />
+                    <h2 className="text-lg font-semibold text-foreground">{company}</h2>
+                    <Badge variant="secondary" className="text-xs">{contracts.length} {contracts.length === 1 ? "local" : "locales"}</Badge>
+                  </div>
+
+                  {/* Per-company clasificacion cards */}
+                  <div className="grid gap-3 md:grid-cols-3">
+                    {stats.cNuevo > 0 && (
+                      <Card>
+                        <CardContent className="p-3 flex items-center gap-3">
+                          <Building2 className="h-6 w-6 text-chart-1 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-xs text-muted-foreground">Nuevos ({stats.cNuevo})</p>
+                            <p className="text-sm font-bold">{fmtUF(stats.nuevo)} UF</p>
+                            <p className="text-xs text-muted-foreground">{formatCLP(stats.nuevo * currentUF)}</p>
                           </div>
-                          <div className="text-right space-y-0.5">
-                            {totalUF > 0 ? (
-                              <>
-                                <div>
-                                  <span className="font-medium text-sm">
-                                    {formatCLP((authCLP + unauthCLP))}
-                                  </span>
-                                  <span className="text-xs text-muted-foreground ml-1">
-                                    ({fmtUF(totalUF)} UF)
-                                  </span>
-                                </div>
-                                {superficie > 0 && (
-                                  <div className="text-xs text-muted-foreground">
-                                    UF {fmtUF(ufM2)}/m²
+                        </CardContent>
+                      </Card>
+                    )}
+                    {stats.cReemplazo > 0 && (
+                      <Card>
+                        <CardContent className="p-3 flex items-center gap-3">
+                          <RefreshCw className="h-6 w-6 text-chart-2 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-xs text-muted-foreground">Reemplazo ({stats.cReemplazo})</p>
+                            <p className="text-sm font-bold">{fmtUF(stats.reemplazo)} UF</p>
+                            <p className="text-xs text-muted-foreground">{formatCLP(stats.reemplazo * currentUF)}</p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                    {stats.cRegularizacion > 0 && (
+                      <Card>
+                        <CardContent className="p-3 flex items-center gap-3">
+                          <FileCheck className="h-6 w-6 text-chart-3 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-xs text-muted-foreground">Regularización ({stats.cRegularizacion})</p>
+                            <p className="text-sm font-bold">{fmtUF(stats.regularizacion)} UF</p>
+                            <p className="text-xs text-muted-foreground">{formatCLP(stats.regularizacion * currentUF)}</p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+
+                  {/* Contracts list */}
+                  <div className="space-y-2">
+                    {contracts.map(([contractId, contractBudgets]) => {
+                      const isExpanded = expandedContract === contractId;
+                      const contractName = contractBudgets[0].contract_name;
+                      const clasificacion = contractBudgets[0].clasificacion;
+                      const companyNames = contractBudgets[0].company_names;
+                      const selectedYear = yearFilter !== "todos" ? parseInt(yearFilter) : contractBudgets[0].year;
+                      const breakdown = authByContract[contractId] || { authorized: 0, unauthorized: 0 };
+                      const superficie = contractBudgets[0].superficie || 0;
+
+                      const authCLP = breakdown.authorized * currentUF;
+                      const unauthCLP = breakdown.unauthorized * currentUF;
+                      const totalUFVal = breakdown.authorized + breakdown.unauthorized;
+                      const ufM2 = superficie > 0 ? totalUFVal / superficie : 0;
+
+                      return (
+                        <Collapsible
+                          key={contractId}
+                          open={isExpanded}
+                          onOpenChange={(open) => setExpandedContract(open ? contractId : null)}
+                        >
+                          <Card>
+                            <CollapsibleTrigger asChild>
+                              <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
+                                <div className="grid grid-cols-[24px_200px_140px_1fr] items-center gap-3">
+                                  <ChevronDown className={`h-5 w-5 shrink-0 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
+                                  <CardTitle className="text-base whitespace-nowrap">{contractName}</CardTitle>
+                                  <div onClick={(e) => e.stopPropagation()}>
+                                    <Select
+                                      value={clasificacion || ""}
+                                      onValueChange={(val) => handleClasificacionChange(contractId, val)}
+                                    >
+                                      <SelectTrigger className="h-7 w-[140px] text-xs">
+                                        <SelectValue placeholder="Clasificar..." />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="nuevo">Nuevo</SelectItem>
+                                        <SelectItem value="reemplazo">Reemplazo</SelectItem>
+                                        <SelectItem value="regularizacion">Regularización</SelectItem>
+                                      </SelectContent>
+                                    </Select>
                                   </div>
-                                )}
-                              </>
-                            ) : (
-                              <span className="text-muted-foreground text-sm">$0</span>
-                            )}
-                          </div>
-                        </div>
-                      </CardHeader>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <CardContent className="pt-0">
-                        <BudgetProvider>
-                          <BudgetModule
-                            contractId={contractId}
-                            contractName={contractName}
-                            budgetType="capex"
-                            title="CAPEX"
-                            selectedYear={selectedYear}
-                            onRefresh={loadBudgets}
-                            superficieEdificada={superficie}
-                            readOnly
-                          />
-                        </BudgetProvider>
-                      </CardContent>
-                    </CollapsibleContent>
-                  </Card>
-                </Collapsible>
+                                  <div className="text-right space-y-0.5">
+                                    {totalUFVal > 0 ? (
+                                      <>
+                                        <div>
+                                          <span className="font-medium text-sm">
+                                            {formatCLP((authCLP + unauthCLP))}
+                                          </span>
+                                          <span className="text-xs text-muted-foreground ml-1">
+                                            ({fmtUF(totalUFVal)} UF)
+                                          </span>
+                                        </div>
+                                        {superficie > 0 && (
+                                          <div className="text-xs text-muted-foreground">
+                                            UF {fmtUF(ufM2)}/m²
+                                          </div>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <span className="text-muted-foreground text-sm">$0</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </CardHeader>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent>
+                              <CardContent className="pt-0">
+                                <BudgetProvider>
+                                  <BudgetModule
+                                    contractId={contractId}
+                                    contractName={contractName}
+                                    budgetType="capex"
+                                    title="CAPEX"
+                                    selectedYear={selectedYear}
+                                    onRefresh={loadBudgets}
+                                    superficieEdificada={superficie}
+                                    readOnly
+                                  />
+                                </BudgetProvider>
+                              </CardContent>
+                            </CollapsibleContent>
+                          </Card>
+                        </Collapsible>
+                      );
+                    })}
+                  </div>
+                </div>
               );
             })
           )}
