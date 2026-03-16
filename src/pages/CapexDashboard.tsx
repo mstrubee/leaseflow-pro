@@ -14,6 +14,8 @@ import { BudgetProvider } from "@/components/budget/BudgetContext";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
 import { formatCLP } from "@/lib/utils";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
+import { Button } from "@/components/ui/button";
+import { generateCapexPPT } from "@/components/budget/CapexPPTExport";
 
 interface ContractBudget {
   contract_id: string;
