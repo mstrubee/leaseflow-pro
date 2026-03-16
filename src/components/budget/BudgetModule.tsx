@@ -965,7 +965,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               </div>
             </div>
 
-            {unauthorizedCount > 0 && !isClosed && (
+            {unauthorizedCount > 0 && !isClosed && !forceReadOnly && (
               <Alert className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20">
                 <AlertTriangle className="h-4 w-4 text-yellow-600" />
                 <AlertTitle className="text-yellow-700">Ítems pendientes de autorización</AlertTitle>
