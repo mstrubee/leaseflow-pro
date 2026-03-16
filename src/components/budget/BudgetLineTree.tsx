@@ -140,6 +140,7 @@ interface BudgetLineItemProps {
   onCreateInvoice?: (budgetLineId: string, lineName: string) => void;
   onViewLineDetails?: (budgetLineId: string, lineName: string) => void;
   readOnly?: boolean;
+  compactView?: boolean;
   parentCategoryId?: string | null;
   globalExpandState?: "expanded" | "collapsed" | null;
   templatePricesMap?: Record<string, number>;
