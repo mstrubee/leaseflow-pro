@@ -1073,7 +1073,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                           </span>
                         )}
                         <span className="text-[10px] text-muted-foreground">
-                          Total: {formatCLP(totalUF * (ufValue || 0))}
+                          Total: ${convertUFToPesos(totalUF).toLocaleString('es-CL', { maximumFractionDigits: 0 })}
                         </span>
                         {perM2 > 0 && (
                           <span className="text-[10px] text-muted-foreground">
