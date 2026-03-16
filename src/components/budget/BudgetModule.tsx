@@ -42,9 +42,10 @@ interface BudgetModuleProps {
   ocTotalClp?: number;
   onRefresh?: () => void;
   superficieEdificada?: number;
+  readOnly?: boolean;
 }
 
-export const BudgetModule = ({ contractId, contractName = "", contractCebe, budgetType, title, selectedYear, ocTotal = 0, ocTotalClp = 0, onRefresh, superficieEdificada = 0 }: BudgetModuleProps) => {
+export const BudgetModule = ({ contractId, contractName = "", contractCebe, budgetType, title, selectedYear, ocTotal = 0, ocTotalClp = 0, onRefresh, superficieEdificada = 0, readOnly: forceReadOnly = false }: BudgetModuleProps) => {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [templatePricesMap, setTemplatePricesMap] = useState<Record<string, number>>({});
