@@ -55,6 +55,7 @@ interface BudgetLineTreeProps {
   onViewLineDetails?: (budgetLineId: string, lineName: string) => void;
   level?: number;
   readOnly?: boolean;
+  compactView?: boolean;
   parentCategoryId?: string | null;
   globalExpandState?: "expanded" | "collapsed" | null;
   templatePricesMap?: Record<string, number>;
@@ -74,6 +75,7 @@ export const BudgetLineTree = ({
   onViewLineDetails,
   level = 0,
   readOnly = false,
+  compactView = false,
   parentCategoryId = null,
   globalExpandState = null,
   templatePricesMap = {},
@@ -99,7 +101,7 @@ export const BudgetLineTree = ({
   const effectiveLinesMap = externalLinesMap || rootLinesMap || EMPTY_LINES_MAP;
 
   return <div className={cn("space-y-1", level > 0 && "ml-6 border-l border-border pl-4")}>
-      {lines.map(line => <BudgetLineItem 
+    {lines.map(line => <BudgetLineItem 
         key={line.id} 
         line={line} 
         level={level} 
@@ -112,6 +114,7 @@ export const BudgetLineTree = ({
         onCreateInvoice={onCreateInvoice} 
         onViewLineDetails={onViewLineDetails} 
         readOnly={readOnly}
+        compactView={compactView}
         parentCategoryId={line.category_id || parentCategoryId}
         globalExpandState={globalExpandState}
         templatePricesMap={templatePricesMap}
@@ -137,6 +140,7 @@ interface BudgetLineItemProps {
   onCreateInvoice?: (budgetLineId: string, lineName: string) => void;
   onViewLineDetails?: (budgetLineId: string, lineName: string) => void;
   readOnly?: boolean;
+  compactView?: boolean;
   parentCategoryId?: string | null;
   globalExpandState?: "expanded" | "collapsed" | null;
   templatePricesMap?: Record<string, number>;
@@ -162,6 +166,7 @@ const BudgetLineItemInner = ({
   onCreateInvoice,
   onViewLineDetails,
   readOnly = false,
+  compactView = false,
   parentCategoryId = null,
   globalExpandState = null,
   templatePricesMap: externalTemplatePricesMap = {},
@@ -816,7 +821,7 @@ const BudgetLineItemInner = ({
               disabled={readOnly}
             />
           )}
-          {readOnly && line.supplier_name && (
+          {readOnly && !compactView && line.supplier_name && (
             <span className="text-xs bg-muted/30 px-1.5 py-0.5 rounded truncate max-w-[140px]">
               {line.supplier_name}
             </span>
@@ -893,7 +898,7 @@ const BudgetLineItemInner = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} />}
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
