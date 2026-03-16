@@ -1,4 +1,13 @@
 import PptxGenJS from "pptxgenjs";
+
+// Shape/chart type helpers to avoid .shapes/.charts accessor issues
+const SHAPES = {
+  LINE: "line" as const,
+  RECTANGLE: "rect" as const,
+};
+const CHARTS = {
+  PIE: "pie" as const,
+};
 import { formatCLP } from "@/lib/utils";
 import logosHeader from "@/assets/logos-header.png";
 
