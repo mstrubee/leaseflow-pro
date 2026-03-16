@@ -198,6 +198,22 @@ export default function CapexDashboard() {
       });
   }, [filteredBudgets, authByBudget, sortBy]);
 
+  // Aggregate authByBudget → authByContract using only filtered budgets (year-specific)
+  const authByContract = React.useMemo(() => {
+    const result: Record<string, AuthBreakdown> = {};
+    filteredBudgets.forEach(b => {
+      const bd = authByBudget[b.budget_id];
+      if (!result[b.contract_id]) result[b.contract_id] = { authorized: 0, unauthorized: 0 };
+      if (bd) {
+        result[b.contract_id].authorized += bd.authorized;
+        result[b.contract_id].unauthorized += bd.unauthorized;
+      } else {
+        result[b.contract_id].unauthorized += b.amount_uf;
+      }
+    });
+    return result;
+  }, [filteredBudgets, authByBudget]);
+
   // Group contractGroups by company
   const companyGroups = React.useMemo(() => {
     const groups = new Map<string, typeof contractGroups>();
@@ -211,7 +227,6 @@ export default function CapexDashboard() {
       existing.push(entry);
       groups.set(companyKey, existing);
     });
-    // Sort: Autoplanet first, then Agroplanet, then others
     const order = ["Autoplanet", "Agroplanet", "Otra"];
     return order
       .filter(k => groups.has(k))
@@ -238,23 +253,6 @@ export default function CapexDashboard() {
     });
     return stats;
   }, [companyGroups, authByContract]);
-
-  // Aggregate authByBudget → authByContract using only filtered budgets (year-specific)
-  const authByContract = React.useMemo(() => {
-    const result: Record<string, AuthBreakdown> = {};
-    filteredBudgets.forEach(b => {
-      const bd = authByBudget[b.budget_id];
-      if (!result[b.contract_id]) result[b.contract_id] = { authorized: 0, unauthorized: 0 };
-      if (bd) {
-        result[b.contract_id].authorized += bd.authorized;
-        result[b.contract_id].unauthorized += bd.unauthorized;
-      } else {
-        // Fallback: use manual amount_uf as unauthorized
-        result[b.contract_id].unauthorized += b.amount_uf;
-      }
-    });
-    return result;
-  }, [filteredBudgets, authByBudget]);
 
   const totalCapexUF = React.useMemo(() => {
     let total = 0;
