@@ -179,20 +179,24 @@ export default function CapexDashboard() {
     const result: Record<string, AuthBreakdown> = {};
     filteredBudgets.forEach(b => {
       const bd = authByBudget[b.budget_id];
-      if (!bd) return;
       if (!result[b.contract_id]) result[b.contract_id] = { authorized: 0, unauthorized: 0 };
-      result[b.contract_id].authorized += bd.authorized;
-      result[b.contract_id].unauthorized += bd.unauthorized;
+      if (bd) {
+        result[b.contract_id].authorized += bd.authorized;
+        result[b.contract_id].unauthorized += bd.unauthorized;
+      } else {
+        // Fallback: use manual amount_uf as unauthorized
+        result[b.contract_id].unauthorized += b.amount_uf;
+      }
     });
     return result;
   }, [filteredBudgets, authByBudget]);
 
   const totalCapexUF = React.useMemo(() => {
-    const seen = new Set<string>();
     let total = 0;
     filteredBudgets.forEach(b => {
       const bd = authByBudget[b.budget_id];
       if (bd) total += bd.authorized + bd.unauthorized;
+      else total += b.amount_uf;
     });
     return total;
   }, [filteredBudgets, authByBudget]);
