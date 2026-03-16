@@ -381,6 +381,10 @@ export default function CapexDashboard() {
             <h1 className="text-2xl font-semibold text-foreground">Presupuesto CAPEX</h1>
             <p className="text-sm text-muted-foreground mt-1">Gestión de presupuestos CAPEX por local</p>
           </div>
+          <Button variant="outline" size="sm" onClick={handleExportPPT} className="gap-2">
+            <Presentation className="h-4 w-4" />
+            Descargar PPT
+          </Button>
         </div>
 
         {/* Summary Cards Row 1 */}
