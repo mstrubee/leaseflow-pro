@@ -130,8 +130,7 @@ export default function CapexDashboard() {
           setAuthByBudget(breakdown);
         }
       } else {
-        // No budgets at all — clear
-        setBudgets([]);
+        // No budget lines — keep budgets with manual amount_uf
       }
     } catch (error) {
       console.error("Error loading CAPEX budgets:", error);
