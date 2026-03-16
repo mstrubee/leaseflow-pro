@@ -182,8 +182,21 @@ export default function CapexDashboard() {
         }, 0);
         return total > 0;
       })
-      .sort((a, b) => a[1][0].contract_name.localeCompare(b[1][0].contract_name));
-  }, [filteredBudgets, authByBudget]);
+      .sort((a, b) => {
+        const aB = a[1][0], bB = b[1][0];
+        if (sortBy === "empresa") {
+          const aComp = aB.company_names[0] || "";
+          const bComp = bB.company_names[0] || "";
+          return aComp.localeCompare(bComp) || aB.contract_name.localeCompare(bB.contract_name);
+        }
+        if (sortBy === "clasificacion") {
+          const aC = aB.clasificacion || "zzz";
+          const bC = bB.clasificacion || "zzz";
+          return aC.localeCompare(bC) || aB.contract_name.localeCompare(bB.contract_name);
+        }
+        return aB.contract_name.localeCompare(bB.contract_name);
+      });
+  }, [filteredBudgets, authByBudget, sortBy]);
 
   // Aggregate authByBudget → authByContract using only filtered budgets (year-specific)
   const authByContract = React.useMemo(() => {
