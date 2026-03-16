@@ -55,6 +55,7 @@ interface BudgetLineTreeProps {
   onViewLineDetails?: (budgetLineId: string, lineName: string) => void;
   level?: number;
   readOnly?: boolean;
+  compactView?: boolean;
   parentCategoryId?: string | null;
   globalExpandState?: "expanded" | "collapsed" | null;
   templatePricesMap?: Record<string, number>;
@@ -74,6 +75,7 @@ export const BudgetLineTree = ({
   onViewLineDetails,
   level = 0,
   readOnly = false,
+  compactView = false,
   parentCategoryId = null,
   globalExpandState = null,
   templatePricesMap = {},
