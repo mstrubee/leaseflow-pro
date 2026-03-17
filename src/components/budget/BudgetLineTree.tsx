@@ -101,19 +101,22 @@ export const BudgetLineTree = ({
   const effectiveLinesMap = externalLinesMap || rootLinesMap || EMPTY_LINES_MAP;
 
   const sortedLines = useMemo(() => {
-    if (!compactView) return lines;
     return [...lines].sort((a, b) => {
-      // "Proyectos" always first
-      const aIsProyectos = a.name.toLowerCase() === "proyectos";
-      const bIsProyectos = b.name.toLowerCase() === "proyectos";
-      if (aIsProyectos && !bIsProyectos) return -1;
-      if (!aIsProyectos && bIsProyectos) return 1;
-      // "No Autorizado" always at end
+      // "Proyectos" always first (only in compact view)
+      if (compactView) {
+        const aIsProyectos = a.name.toLowerCase() === "proyectos";
+        const bIsProyectos = b.name.toLowerCase() === "proyectos";
+        if (aIsProyectos && !bIsProyectos) return -1;
+        if (!aIsProyectos && bIsProyectos) return 1;
+      }
+      // "No Autorizado" always at end within each parent
       if (a.status !== b.status) {
         if (a.status === "no_autorizado") return 1;
         if (b.status === "no_autorizado") return -1;
       }
-      return a.name.localeCompare(b.name, "es");
+      // In compact view, sort alphabetically; otherwise preserve display_order
+      if (compactView) return a.name.localeCompare(b.name, "es");
+      return (a.display_order ?? 0) - (b.display_order ?? 0);
     });
   }, [lines, compactView]);
 
