@@ -221,9 +221,15 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
       budgets.forEach(row => {
         const auth = authorizedByBudget[row.id] || 0;
         const unauth = unauthorizedByBudget[row.id] || 0;
+        const hasLines = auth > 0 || unauth > 0;
         if (!map[row.contract_id]) map[row.contract_id] = { authorized: 0, unauthorized: 0 };
-        map[row.contract_id].authorized += auth;
-        map[row.contract_id].unauthorized += unauth;
+        if (hasLines) {
+          map[row.contract_id].authorized += auth;
+          map[row.contract_id].unauthorized += unauth;
+        } else if ((row.amount_uf || 0) > 0) {
+          // Fallback: use manually entered budget amount when no lines exist
+          map[row.contract_id].authorized += (row.amount_uf || 0);
+        }
       });
       setCapexByContract(map);
     };
