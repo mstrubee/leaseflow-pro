@@ -490,29 +490,7 @@ export const DocumentVersions = ({
 
   return (
     <>
-      <Card>
-        <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-          <CollapsibleTrigger asChild>
-            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    {isOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-                    <FileText className="h-5 w-5" />
-                    Contrato de Arriendo
-                  </CardTitle>
-                  <CardDescription className="ml-12">
-                    {documents.length} versiones registradas
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                </div>
-              </div>
-            </CardHeader>
-          </CollapsibleTrigger>
-          
-          <CollapsibleContent>
-            <CardContent className="space-y-6">
+      <div className="space-y-6">
               {/* Document list */}
               {sortedDocuments.length > 0 ? (
                 <div className="space-y-3">
