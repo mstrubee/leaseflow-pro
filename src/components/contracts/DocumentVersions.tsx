@@ -247,7 +247,7 @@ export const DocumentVersions = ({
 
       const { error: uploadError } = await supabase.storage
         .from("repository-files")
-        .upload(filePath, selectedFile);
+        .upload(filePath, selectedFile, { upsert: true });
 
       if (uploadError) throw uploadError;
 
