@@ -2,11 +2,9 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, FileText, Check, Star, Upload, ChevronDown, ChevronRight, Cloud, Link, Send, FileCheck, Signature, RefreshCw, Sparkles, Trash2, Pencil } from "lucide-react";
+import { Plus, FileText, Check, Star, Upload, Cloud, Link, Send, FileCheck, Signature, RefreshCw, Sparkles, Trash2, Pencil } from "lucide-react";
 import { format } from "date-fns";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
@@ -109,7 +107,7 @@ export const DocumentVersions = ({
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const [isOpen, setIsOpen] = useState(false);
+  
   const [newUrl, setNewUrl] = useState("");
   const [newName, setNewName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -490,29 +488,7 @@ export const DocumentVersions = ({
 
   return (
     <>
-      <Card>
-        <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-          <CollapsibleTrigger asChild>
-            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    {isOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-                    <FileText className="h-5 w-5" />
-                    Contrato de Arriendo
-                  </CardTitle>
-                  <CardDescription className="ml-12">
-                    {documents.length} versiones registradas
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                </div>
-              </div>
-            </CardHeader>
-          </CollapsibleTrigger>
-          
-          <CollapsibleContent>
-            <CardContent className="space-y-6">
+      <div className="space-y-6">
               {/* Document list */}
               {sortedDocuments.length > 0 ? (
                 <div className="space-y-3">
@@ -794,10 +770,7 @@ export const DocumentVersions = ({
                   )}
                 </div>
               )}
-            </CardContent>
-          </CollapsibleContent>
-        </Collapsible>
-      </Card>
+      </div>
 
       {/* File upload dialog */}
       <Dialog open={fileDialogOpen} onOpenChange={setFileDialogOpen}>
