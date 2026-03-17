@@ -772,10 +772,7 @@ export const DocumentVersions = ({
                   )}
                 </div>
               )}
-            </CardContent>
-          </CollapsibleContent>
-        </Collapsible>
-      </Card>
+      </div>
 
       {/* File upload dialog */}
       <Dialog open={fileDialogOpen} onOpenChange={setFileDialogOpen}>
