@@ -666,17 +666,38 @@ export const DocumentVersions = ({
                         className="hidden"
                         accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
                       />
-                      <Button
-                        variant="outline"
+                      <div
+                        className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors cursor-pointer ${
+                          dragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
+                        }`}
                         onClick={() => fileInputRef.current?.click()}
-                        className="w-full gap-2"
+                        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+                        onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(false); }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDragOver(false);
+                          const file = e.dataTransfer.files?.[0];
+                          if (file) {
+                            const validation = validateFile(file);
+                            if (!validation.isValid) {
+                              toast({ variant: "destructive", title: "Archivo no válido", description: validation.error });
+                              return;
+                            }
+                            setSelectedFile(file);
+                            setSuggestedFileName(generateSuggestedName());
+                            setFileDialogOpen(true);
+                          }
+                        }}
                       >
-                        <Upload className="h-4 w-4" />
-                        Seleccionar archivo desde tu computadora
-                      </Button>
-                      <p className="text-xs text-muted-foreground">
-                        Formatos aceptados: PDF, Word, Excel, PowerPoint
-                      </p>
+                        <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                        <p className="text-sm font-medium">
+                          {dragOver ? "Suelta el archivo aquí" : "Arrastra un archivo o haz clic para seleccionar"}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          PDF, Word, Excel, PowerPoint
+                        </p>
+                      </div>
                     </div>
                   )}
 
