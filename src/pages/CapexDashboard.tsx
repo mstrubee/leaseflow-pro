@@ -597,7 +597,7 @@ export default function CapexDashboard() {
                                   <ChevronDown className={`h-5 w-5 shrink-0 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
                                   <CompanyLogo companyNames={companyNames} size="sm" />
                                   <CardTitle className="text-base whitespace-nowrap">{contractName}</CardTitle>
-                                  <div onClick={(e) => e.stopPropagation()}>
+                                  <div onClick={(e) => e.stopPropagation()} className="flex justify-center">
                                     <Select
                                       value={clasificacion || ""}
                                       onValueChange={(val) => handleClasificacionChange(contractId, val)}
