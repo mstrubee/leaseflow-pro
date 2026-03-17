@@ -999,7 +999,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>{new Date(invoice.invoice_date).toLocaleDateString("es-CL")}</TableCell>
+                  <TableCell>{(() => { const [y, m, d] = invoice.invoice_date.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString("es-CL"); })()}</TableCell>
                   <TableCell className="text-right font-mono">
                     <div>{formatCLP(invoice.amount_clp || Math.round(convertUFToPesos(invoice.amount_uf)))}</div>
                     <div className="text-xs text-muted-foreground">{formatUF(invoice.amount_uf)}</div>
