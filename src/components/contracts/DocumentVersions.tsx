@@ -114,6 +114,7 @@ export const DocumentVersions = ({
   const [newName, setNewName] = useState("");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   
   // File upload dialog
   const [fileDialogOpen, setFileDialogOpen] = useState(false);
