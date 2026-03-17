@@ -107,7 +107,7 @@ export const DocumentVersions = ({
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const [isOpen, setIsOpen] = useState(false);
+  
   const [newUrl, setNewUrl] = useState("");
   const [newName, setNewName] = useState("");
   const [loading, setLoading] = useState(false);
