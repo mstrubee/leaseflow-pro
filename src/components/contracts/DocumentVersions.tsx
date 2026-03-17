@@ -533,7 +533,7 @@ export const DocumentVersions = ({
                         </div>
                         <div className="flex items-center gap-1 mb-0.5">
                           <p className="text-sm font-medium truncate">
-                            {decodeURIComponent(doc.url.split('/').pop() || 'Documento')}
+                            {decodeURIComponent((doc.url.split('/').pop() || 'Documento').replace(/^\d{10,}_/, ''))}
                           </p>
                           {!readOnly && (
                             <Button
