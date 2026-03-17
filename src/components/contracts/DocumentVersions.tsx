@@ -243,7 +243,7 @@ export const DocumentVersions = ({
     try {
       const ext = selectedFile.name.split('.').pop() || '';
       const sanitizedName = sanitizeFileName(suggestedFileName.trim());
-      const filePath = `contracts/${contractId}/${Date.now()}_${sanitizedName}.${ext}`;
+      const filePath = `contracts/${contractId}/${sanitizedName}.${ext}`;
 
       const { error: uploadError } = await supabase.storage
         .from("repository-files")
