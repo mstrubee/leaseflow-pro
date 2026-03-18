@@ -4,7 +4,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, FileCheck, AlertCircle, RefreshCw } from "lucide-react";
+import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, FileCheck, AlertCircle, RefreshCw, FileDown } from "lucide-react";
+import { generateOfferLetter } from "@/lib/generateOfferLetter";
+import { getLogoUrls } from "@/hooks/useAppLogos";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { DocumentVersions, DocumentVersion } from "@/components/contracts/DocumentVersions";
@@ -230,6 +232,7 @@ const ContractDetail = () => {
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
   const [signingContract, setSigningContract] = useState(false);
   const [closingNotesRefresh, setClosingNotesRefresh] = useState(0);
+  const [generatingOffer, setGeneratingOffer] = useState(false);
 
   // DnD sensors
   const sensors = useSensors(
@@ -771,6 +774,51 @@ const ContractDetail = () => {
               )}
             </div>
             <div className="flex items-center gap-2">
+              {contract.status === "en_negociacion" && (
+                <Button
+                  variant="outline"
+                  disabled={generatingOffer}
+                  className="gap-2"
+                  onClick={async () => {
+                    if (!contract) return;
+                    setGeneratingOffer(true);
+                    try {
+                      const currentVersion = contract.contract_versions?.find(v => v.is_current);
+                      if (!currentVersion) {
+                        toast({ variant: "destructive", title: "Error", description: "No se encontró la versión actual del contrato" });
+                        return;
+                      }
+                      const logos = await getLogoUrls();
+                      const companyLower = companyNames.map(n => n.toLowerCase()).join(" ");
+                      const logoUrl = companyLower.includes("agroplanet") ? logos.agroplanet : companyLower.includes("autoplanet") ? logos.autoplanet : null;
+
+                      // Fetch escalations
+                      const { data: escData } = await supabase
+                        .from("rent_escalations")
+                        .select("month_number, amount, is_uf_m2")
+                        .eq("version_id", currentVersion.id);
+
+                      await generateOfferLetter({
+                        contractName: contract.name,
+                        contacts: contract.contract_contacts?.map(c => ({ name: c.name, company: c.company })) || [],
+                        address: contract.contract_addresses?.[0] || null,
+                        version: { ...currentVersion, rent_escalations: escData || currentVersion.rent_escalations || [] },
+                        superficie: contract.superficie_edificada_local || 0,
+                        logoUrl,
+                      });
+                      toast({ title: "Carta Oferta generada", description: "El archivo Word se ha descargado" });
+                    } catch (error) {
+                      console.error("Error generating offer letter:", error);
+                      toast({ variant: "destructive", title: "Error", description: "No se pudo generar la Carta Oferta" });
+                    } finally {
+                      setGeneratingOffer(false);
+                    }
+                  }}
+                >
+                  {generatingOffer ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+                  Carta Oferta
+                </Button>
+              )}
               {isAdmin && (isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} requiresSpecialAttention={contract.requires_special_attention} specialAttentionReason={contract.special_attention_reason} hasTerminationNotices={(contract.termination_notices?.length || 0) > 0} onStatusChange={() => { loadContract(); setClosingNotesRefresh(p => p + 1); }} />}
               {isAdmin && (
                 <Button variant="outline" onClick={() => navigate(`/contracts/${contract.id}/edit`)} className="gap-2">

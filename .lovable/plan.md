@@ -1,42 +1,44 @@
 
 
-## Plan: Carta Oferta en Word (.docx) — Revisado
+## Fix: Error de JSX en WelcomeAlertsBar.tsx
 
-### Cambio solicitado
-Solo incluir en la carta los ítems comerciales que tengan valor definido (> 0 o no nulo). Si Gastos Comunes, Fondo de Promoción, u otros campos no tienen valor, simplemente no se mencionan.
+### Problema
+Las etiquetas JSX estan mal anidadas en la barra de alertas. El `Button` de crear alerta (linea 281) esta dentro del `div` de tabs cuando deberia estar fuera, y falta un `</div>` de cierre para el contenedor `flex items-center gap-4`.
 
-### Implementación
+### Solucion
 
-**1. Instalar dependencia `docx`** para generación de Word desde el navegador.
+**`src/components/alerts/WelcomeAlertsBar.tsx`** - Corregir la estructura JSX en lineas 280-294:
 
-**2. Nuevo archivo: `src/lib/generateOfferLetter.ts`**
-- Función `generateOfferLetter(contract, version, contacts, companyNames, logoUrl)`
-- Genera .docx con:
-  - **Logo** de la empresa (Autoplanet/Agroplanet) en el encabezado
-  - **Fecha**: Santiago, [fecha actual]
-  - **Destinatario**: nombre(s) de `contract_contacts`
-  - **REF**: Nombre del local + dirección completa
-  - **Cuerpo**: texto formal de oferta
-  - **Condiciones comerciales** — solo los ítems con valor definido:
-    - Superficie Aproximada (siempre)
-    - Canon de Arriendo Régimen (siempre)
-    - Canon de Arriendo Inicial (solo si difiere del régimen)
-    - Duración (siempre)
-    - Garantía (solo si tiene valor)
-    - Gastos Comunes (solo si UF/m² > 0 o porcentaje > 0)
-    - Fondo de Promoción (solo si porcentaje > 0)
-    - Meses de Gracia (solo si > 0)
-    - Escalaciones (solo si existen)
-    - Renovación automática (solo si está activada)
-    - Otros egresos (solo si > 0)
-  - **Sin fecha de inicio**
-  - **Firma**: Matías Strube, Gerente de Desarrollo
-- Lógica condicional: cada ítem se agrega al array de párrafos solo si su valor es truthy/mayor a 0
+Cambiar de:
+```
+              ))}
+              <Button ...>
+                <Plus ... />
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              ...
+            </div>
+          </div>
+        </div>
+```
 
-**3. Modificar: `src/pages/ContractDetail.tsx`**
-- Agregar botón "Carta Oferta" en el header, visible solo cuando `status === "en_negociacion"`
-- Al click: obtiene logo URL, llama a `generateOfferLetter()`, descarga el .docx
+A:
+```
+              ))}
+              </div>
+              <Button ...>
+                <Plus ... />
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              ...
+            </div>
+          </div>
+        </div>
+```
 
-### Dependencia nueva
-- `docx` (npm) — generación de documentos Word desde el navegador
+Se agrega `</div>` despues de las tabs (linea 280) para cerrar correctamente el `div.flex.items-center.gap-3`, y el `Button` queda como hermano dentro del `div.flex.items-center.gap-4`.
 
+### Archivo a modificar
+- `src/components/alerts/WelcomeAlertsBar.tsx` (lineas 280-290)
