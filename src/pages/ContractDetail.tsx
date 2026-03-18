@@ -232,6 +232,7 @@ const ContractDetail = () => {
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
   const [signingContract, setSigningContract] = useState(false);
   const [closingNotesRefresh, setClosingNotesRefresh] = useState(0);
+  const [generatingOffer, setGeneratingOffer] = useState(false);
 
   // DnD sensors
   const sensors = useSensors(
