@@ -235,8 +235,7 @@ const ContractDetail = () => {
   const [signingContract, setSigningContract] = useState(false);
   const [closingNotesRefresh, setClosingNotesRefresh] = useState(0);
   const [generatingOffer, setGeneratingOffer] = useState(false);
-  const [uploadingBusinessCase, setUploadingBusinessCase] = useState(false);
-  const businessCaseInputId = `business-case-upload-${id}`;
+  const [businessCaseOpen, setBusinessCaseOpen] = useState(false);
 
   // DnD sensors
   const sensors = useSensors(
