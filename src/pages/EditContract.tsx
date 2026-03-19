@@ -1469,7 +1469,7 @@ const EditContract = () => {
                                       <span className="text-sm text-muted-foreground">× Arriendo Promedio</span>
                                     </div>
                                     <p className="text-xs text-muted-foreground italic">
-                                      El monto se calculará automáticamente basado en el promedio ponderado del arriendo total (Canon + GGCC + F.Prom + Otros) a lo largo de todo el contrato.
+                                      El monto se calculará automáticamente basado en el promedio ponderado del canon de arriendo a lo largo de todo el contrato.
                                     </p>
                                   </div>
                                 )}
