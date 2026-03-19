@@ -1156,9 +1156,9 @@ export function CommercialConditionsSummary({
               </div>
               <p className="text-sm font-medium">
                 {formatPrimary(gastosComunesTotalUF)}
-                {gastosComunesMethodology === "uf_m2" && version.gastos_comunes_uf_m2 != null && version.gastos_comunes_uf_m2 > 0 && (
+                {gastosComunesMethodology === "uf_m2" && superficieEdificadaLocal > 0 && gastosComunesTotalUF > 0 && (
                   <span className="text-xs font-normal text-muted-foreground ml-1">
-                    ({version.gastos_comunes_uf_m2.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)
+                    ({(gastosComunesTotalUF / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)
                   </span>
                 )}
               </p>
