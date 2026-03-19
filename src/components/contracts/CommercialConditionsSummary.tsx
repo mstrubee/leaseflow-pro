@@ -667,7 +667,7 @@ export function CommercialConditionsSummary({
 
   // Weighted average total arriendo across all escalation periods
   const totalArriendoPromedio = useMemo(() => {
-    if (!hasEscalations || escalationPeriods.length <= 1) return totalArriendo;
+    if (escalationPeriods.length <= 1) return totalArriendo;
     const durationMonths = version.duration_months;
     if (durationMonths <= 0) return totalArriendo;
     const graceMonths = version.grace_months || 0;
