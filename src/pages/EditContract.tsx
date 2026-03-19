@@ -563,7 +563,7 @@ const EditContract = () => {
               : noticeType === "sin_termino" 
                 ? (contractEndNoticeMonths || "6")
                 : (noticeValue || "3"),
-            guarantee_multiplier: guaranteeType === 'multiplier' && guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
+            guarantee_multiplier: (guaranteeType === 'multiplier' || guaranteeType === 'avg_rent') && guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
             guarantee_type: guaranteeType,
             guarantee_fixed_amount: (guaranteeType === 'fixed_uf' || guaranteeType === 'fixed_clp') && guaranteeFixedAmount ? parseFloat(guaranteeFixedAmount) : null,
             guarantee_fixed_currency: guaranteeType === 'fixed_clp' ? 'CLP' : 'UF',
