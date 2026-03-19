@@ -569,12 +569,6 @@ export function CommercialConditionsSummary({
     }
     const escalations = version.rent_escalations || [];
     const sortedEsc = [...escalations].sort((a, b) => a.month_number - b.month_number);
-    const superficie = superficieEdificadaLocal || 0;
-    const graceMonths = version.grace_months || 0;
-    const fondoPct = version.fondo_promocion_percentage || 0;
-    const otros = version.otros_egresos_amount || 0;
-    const ggcc = gastosComunesTotalUF || 0;
-    const durationMonths = version.duration_months;
     const isRentUfM2 = version.regime_rent_is_uf_m2 === true;
 
     // Build milestones: months where rent changes (escalations or adjustments)
