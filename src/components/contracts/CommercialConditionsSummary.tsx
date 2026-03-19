@@ -358,32 +358,7 @@ export function CommercialConditionsSummary({
         : version.initial_rent)
     : null;
   
-  // Calculate guarantee amount based on type
-  // For CLP guarantees, use the historical UF value from the signed date
   const guaranteeType = version.guarantee_type || 'multiplier';
-  const guaranteeAmount = useMemo(() => {
-    if (guaranteeType === 'multiplier' && version.guarantee_multiplier) {
-      const baseRent = hasEscalations && actualInitialRent ? actualInitialRent : actualRegimeRent;
-      return version.guarantee_multiplier * baseRent;
-    }
-    if (guaranteeType === 'avg_rent' && version.guarantee_multiplier) {
-      const avgTotal = escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo;
-      return version.guarantee_multiplier * avgTotal;
-    }
-    if ((guaranteeType === 'fixed_uf' || guaranteeType === 'fixed_clp') && version.guarantee_fixed_amount) {
-      if (version.guarantee_fixed_currency === 'CLP' && displayCurrency === 'UF') {
-        const ufForConversion = historicalUFForGuarantee || ufValue;
-        if (ufForConversion > 0) {
-          return version.guarantee_fixed_amount / ufForConversion;
-        }
-      }
-      if (version.guarantee_fixed_currency === 'UF' && displayCurrency === 'CLP' && ufValue > 0) {
-        return version.guarantee_fixed_amount * ufValue;
-      }
-      return version.guarantee_fixed_amount;
-    }
-    return null;
-  }, [guaranteeType, version.guarantee_multiplier, version.guarantee_fixed_amount, version.guarantee_fixed_currency, actualRegimeRent, actualInitialRent, hasEscalations, displayCurrency, ufValue, historicalUFForGuarantee, escalationPeriods, totalArriendoPromedio, totalArriendo]);
 
   // Determine if contract has not started yet (in negotiation or future start date)
   const isContractNotStarted = useMemo(() => {
