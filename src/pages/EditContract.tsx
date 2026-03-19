@@ -1478,19 +1478,31 @@ const EditContract = () => {
                                           const baseInitial = isRegimeRentUfM2 && superficie > 0 ? initial * superficie : initial;
                                           
                                           // Calculate weighted average canon
-                                          if (hasEscalation && escalations.length > 0 && duration) {
-                                            const durationMonths = parseInt(duration) || 0;
-                                            const gm = graceMonths || 0;
-                                            const sortedEsc = [...escalations].sort((a, b) => a.month_number - b.month_number);
+                                          const durationMonths = parseInt(duration) || 0;
+                                          const gm = graceMonths || 0;
+                                          const sortedEsc = hasEscalation ? [...escalations].sort((a, b) => a.month_number - b.month_number) : [];
+                                          const hasAdj = hasPeriodicAdjustments && parseFloat(adjustmentValue) > 0 && parseInt(firstAdjustmentMonth) > 0;
+                                          
+                                          if ((sortedEsc.length > 0 || hasAdj) && durationMonths > 0) {
                                             const milestones = new Set<number>();
                                             const initialStart = gm > 0 ? gm + 1 : 1;
                                             milestones.add(initialStart);
                                             for (const esc of sortedEsc) {
                                               if (esc.month_number <= durationMonths) milestones.add(esc.month_number);
                                             }
+                                            if (hasAdj) {
+                                              const firstAdj = parseInt(firstAdjustmentMonth) || 0;
+                                              const period = parseInt(adjustmentPeriodicityMonths) || 12;
+                                              let m = firstAdj;
+                                              while (m <= durationMonths) { milestones.add(m); m += period; }
+                                            }
                                             const sorted = Array.from(milestones).sort((a, b) => a - b);
                                             
                                             let runningCanon = baseInitial;
+                                            const adjVal = parseFloat(adjustmentValue) || 0;
+                                            const adjPeriod = parseInt(adjustmentPeriodicityMonths) || 12;
+                                            const firstAdj = hasAdj ? (parseInt(firstAdjustmentMonth) || 0) : Infinity;
+                                            
                                             let weightedSum = 0;
                                             for (let i = 0; i < sorted.length; i++) {
                                               const ms = sorted[i];
@@ -1499,6 +1511,21 @@ const EditContract = () => {
                                                 const esc = escAtMs[escAtMs.length - 1];
                                                 const needsMult = esc.is_uf_m2 || (isRegimeRentUfM2 && !esc.is_uf_m2);
                                                 runningCanon = needsMult && superficie > 0 ? esc.amount * superficie : esc.amount;
+                                              }
+                                              const isAdjMs = hasAdj && ms >= firstAdj && (ms - firstAdj) % adjPeriod === 0;
+                                              if (isAdjMs && escAtMs.length === 0) {
+                                                const prevAdjMonth = ms - adjPeriod;
+                                                const escBetween = sortedEsc.filter(e => e.month_number > prevAdjMonth && e.month_number <= ms);
+                                                if (escBetween.length > 0) {
+                                                  const last = escBetween[escBetween.length - 1];
+                                                  const needsMult = last.is_uf_m2 || (isRegimeRentUfM2 && !last.is_uf_m2);
+                                                  runningCanon = needsMult && superficie > 0 ? last.amount * superficie : last.amount;
+                                                }
+                                                if (adjustmentType === "percentage") {
+                                                  runningCanon = runningCanon * (1 + adjVal / 100);
+                                                } else {
+                                                  runningCanon = runningCanon + adjVal;
+                                                }
                                               }
                                               const endMonth = i < sorted.length - 1 ? sorted[i + 1] - 1 : durationMonths;
                                               weightedSum += runningCanon * (endMonth - ms + 1);
