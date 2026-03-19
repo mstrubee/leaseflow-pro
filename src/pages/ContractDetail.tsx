@@ -327,7 +327,57 @@ const ContractDetail = () => {
       setLoading(false);
     }
   };
-  const handleAddDocument = async (url: string, name: string) => {
+
+  const handleBusinessCaseUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !contract) return;
+    
+    if (!file.type.startsWith("image/")) {
+      toast({ variant: "destructive", title: "Error", description: "Solo se permiten archivos de imagen" });
+      return;
+    }
+    
+    setUploadingBusinessCase(true);
+    try {
+      const ext = file.name.split(".").pop() || "png";
+      const filePath = `${contract.id}/business_case_${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from("repository-files")
+        .upload(filePath, file, { upsert: true });
+      if (uploadError) throw uploadError;
+
+      const storagePath = `storage://repository-files/${filePath}`;
+      const { error: updateError } = await supabase
+        .from("contracts")
+        .update({ business_case_url: storagePath })
+        .eq("id", contract.id);
+      if (updateError) throw updateError;
+
+      toast({ title: "Business Case subido", description: "La imagen se guardó correctamente" });
+      loadContract();
+    } catch (error) {
+      console.error("Error uploading business case:", error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudo subir la imagen" });
+    } finally {
+      setUploadingBusinessCase(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleRemoveBusinessCase = async () => {
+    if (!contract) return;
+    try {
+      const { error } = await supabase
+        .from("contracts")
+        .update({ business_case_url: null })
+        .eq("id", contract.id);
+      if (error) throw error;
+      toast({ title: "Business Case eliminado" });
+      loadContract();
+    } catch (error) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo eliminar" });
+    }
+  };
     if (!contract) return;
     const currentVersion = contract.contract_versions?.find(v => v.is_current);
     const isSigned = contract.status === "firmado";
