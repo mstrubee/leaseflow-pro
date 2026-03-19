@@ -1112,7 +1112,7 @@ export function CommercialConditionsSummary({
               </p>
               <p className="text-xs text-muted-foreground">
                 {guaranteeType === 'avg_rent'
-                  ? `(${version.guarantee_multiplier}× arriendo promedio)`
+                  ? `(${version.guarantee_multiplier}× canon promedio)`
                   : guaranteeType === 'multiplier' 
                     ? historicalUFForGuarantee && signedDate
                       ? `(${version.guarantee_multiplier}× canon, UF al ${format(parseISO(signedDate), "dd/MM/yyyy")}: ${historicalUFForGuarantee.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
