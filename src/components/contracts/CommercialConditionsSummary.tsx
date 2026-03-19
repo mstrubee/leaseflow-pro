@@ -1095,15 +1095,17 @@ export function CommercialConditionsSummary({
                 {formatSecondaryGuarantee(guaranteeAmount)}
               </p>
               <p className="text-xs text-muted-foreground">
-                {guaranteeType === 'multiplier' 
-                  ? historicalUFForGuarantee && signedDate
-                    ? `(${version.guarantee_multiplier}× canon, UF al ${format(parseISO(signedDate), "dd/MM/yyyy")}: ${historicalUFForGuarantee.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
-                    : `(${version.guarantee_multiplier}× canon)`
-                  : version.guarantee_fixed_currency === 'CLP' && historicalUFForGuarantee && signedDate
-                    ? `(monto fijo en $, UF al ${format(parseISO(signedDate), "dd/MM/yyyy")}: ${historicalUFForGuarantee.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
-                    : historicalUFForGuarantee && signedDate
-                      ? `(monto fijo en ${version.guarantee_fixed_currency}, UF al ${format(parseISO(signedDate), "dd/MM/yyyy")}: ${historicalUFForGuarantee.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
-                      : `(monto fijo en ${version.guarantee_fixed_currency})`
+                {guaranteeType === 'avg_rent'
+                  ? `(${version.guarantee_multiplier}× arriendo promedio)`
+                  : guaranteeType === 'multiplier' 
+                    ? historicalUFForGuarantee && signedDate
+                      ? `(${version.guarantee_multiplier}× canon, UF al ${format(parseISO(signedDate), "dd/MM/yyyy")}: ${historicalUFForGuarantee.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
+                      : `(${version.guarantee_multiplier}× canon)`
+                    : version.guarantee_fixed_currency === 'CLP' && historicalUFForGuarantee && signedDate
+                      ? `(monto fijo en $, UF al ${format(parseISO(signedDate), "dd/MM/yyyy")}: ${historicalUFForGuarantee.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
+                      : historicalUFForGuarantee && signedDate
+                        ? `(monto fijo en ${version.guarantee_fixed_currency}, UF al ${format(parseISO(signedDate), "dd/MM/yyyy")}: ${historicalUFForGuarantee.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
+                        : `(monto fijo en ${version.guarantee_fixed_currency})`
                 }
               </p>
             </div>}
