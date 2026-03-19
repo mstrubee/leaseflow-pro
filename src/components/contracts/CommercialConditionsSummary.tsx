@@ -545,7 +545,28 @@ export function CommercialConditionsSummary({
 
   // Full periods breakdown: escalations + periodic adjustments through contract end
   const escalationPeriods = useMemo(() => {
-    if (!hasEscalations && !hasAdjustments) return [];
+    const superficie = superficieEdificadaLocal || 0;
+    const graceMonths = version.grace_months || 0;
+    const fondoPct = version.fondo_promocion_percentage || 0;
+    const otros = version.otros_egresos_amount || 0;
+    const ggcc = gastosComunesTotalUF || 0;
+    const durationMonths = version.duration_months;
+
+    // When no escalations/adjustments, return a single period row
+    if (!hasEscalations && !hasAdjustments) {
+      const periodCanon = currentRent;
+      const periodFProm = periodCanon * (fondoPct / 100);
+      const periodTotal = periodCanon + ggcc + periodFProm + otros;
+      return [{
+        label: `M1-M${durationMonths}`,
+        canon: periodCanon,
+        ggcc,
+        fProm: periodFProm,
+        otros,
+        total: periodTotal,
+        ufM2: superficie > 0 ? periodTotal / superficie : null,
+      }];
+    }
     const escalations = version.rent_escalations || [];
     const sortedEsc = [...escalations].sort((a, b) => a.month_number - b.month_number);
     const superficie = superficieEdificadaLocal || 0;
