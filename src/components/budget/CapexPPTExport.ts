@@ -304,8 +304,6 @@ export async function generateCapexPPT(data: CapexPPTData) {
       { text: "Local", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "left" } },
       { text: "Clasificación", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "center" } },
       { text: "m²", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "center" } },
-      { text: "Autorizado (UF)", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "right" } },
-      { text: "No Autorizado (UF)", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "right" } },
       { text: "Total UF", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "right" } },
       { text: "Total CLP", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "right" } },
     ];
