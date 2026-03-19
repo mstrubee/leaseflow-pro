@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ImagePlus, Loader2, Trash2, X } from "lucide-react";
+import { ImagePlus, Loader2, Trash2, FileSpreadsheet } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { getSignedUrl, isStorageUrl } from "@/lib/storageUtils";
@@ -112,8 +112,13 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
       let count = 0;
 
       for (const file of Array.from(files)) {
-        if (!file.type.startsWith("image/")) {
-          toast.error(`${file.name}: Solo se permiten imágenes`);
+        const isImage = file.type.startsWith("image/");
+        const isExcel = /\.(xls|xlsx)$/i.test(file.name) ||
+          file.type === "application/vnd.ms-excel" ||
+          file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+        if (!isImage && !isExcel) {
+          toast.error(`${file.name}: Solo se permiten imágenes y archivos Excel`);
           continue;
         }
         if (file.size > 20 * 1024 * 1024) {
@@ -211,7 +216,7 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
           ) : (
             <div className="flex flex-col items-center gap-1 text-muted-foreground">
               <ImagePlus className="h-6 w-6" />
-              <span className="text-sm">Haz clic o arrastra imágenes aquí</span>
+              <span className="text-sm">Haz clic o arrastra imágenes o archivos Excel aquí</span>
             </div>
           )}
         </div>
@@ -230,7 +235,15 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 py-2">
               {images.map((img) => (
                 <div key={img.id} className="group relative rounded-lg overflow-hidden border bg-muted aspect-video">
-                  {img.signedUrl ? (
+                  {img.signedUrl && /\.(xls|xlsx)$/i.test(img.name) ? (
+                    <div
+                      className="w-full h-full flex flex-col items-center justify-center gap-1 cursor-pointer"
+                      onClick={() => window.open(img.signedUrl!, "_blank")}
+                    >
+                      <FileSpreadsheet className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+                      <span className="text-xs text-muted-foreground">Excel</span>
+                    </div>
+                  ) : img.signedUrl ? (
                     <img
                       src={img.signedUrl}
                       alt={img.name}
