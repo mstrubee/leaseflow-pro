@@ -824,54 +824,20 @@ const ContractDetail = () => {
                   Carta Oferta
                 </Button>
               )}
-              {/* Business Case upload/view */}
-              <input
-                type="file"
-                id={businessCaseInputId}
-                className="hidden"
-                accept="image/*"
-                onChange={handleBusinessCaseUpload}
+              {/* Business Case */}
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => setBusinessCaseOpen(true)}
+              >
+                <ImagePlus className="h-4 w-4" />
+                Business Case
+              </Button>
+              <BusinessCaseDialog
+                open={businessCaseOpen}
+                onOpenChange={setBusinessCaseOpen}
+                contractId={contract.id}
               />
-              {contract.business_case_url ? (
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    className="gap-2"
-                    onClick={async () => {
-                      const { getSignedUrl, isStorageUrl } = await import("@/lib/storageUtils");
-                      let url = contract.business_case_url!;
-                      if (isStorageUrl(url)) {
-                        const signed = await getSignedUrl(url);
-                        if (signed) url = signed;
-                      }
-                      window.open(url, "_blank");
-                    }}
-                  >
-                    <Image className="h-4 w-4" />
-                    Business Case
-                  </Button>
-                  {isAdmin && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-destructive"
-                      onClick={handleRemoveBusinessCase}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  disabled={uploadingBusinessCase}
-                  onClick={() => document.getElementById(businessCaseInputId)?.click()}
-                >
-                  {uploadingBusinessCase ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-                  Business Case
-                </Button>
-              )}
               {isAdmin && (isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} requiresSpecialAttention={contract.requires_special_attention} specialAttentionReason={contract.special_attention_reason} hasTerminationNotices={(contract.termination_notices?.length || 0) > 0} onStatusChange={() => { loadContract(); setClosingNotesRefresh(p => p + 1); }} />}
               {isAdmin && (
                 <Button variant="outline" onClick={() => navigate(`/contracts/${contract.id}/edit`)} className="gap-2">
