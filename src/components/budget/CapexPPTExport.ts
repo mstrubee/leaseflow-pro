@@ -373,7 +373,7 @@ export async function generateCapexPPT(data: CapexPPTData) {
 
       targetSlide.addTable(rows, {
         x: 0.3, y: tableY, w: 9.4,
-        colW: [2.4, 1.1, 0.7, 1.2, 1.2, 1.2, 1.6],
+        colW: [3.2, 1.5, 1.0, 1.8, 1.9],
         border: { pt: 0.5, color: "E2E8F0" },
       });
 
