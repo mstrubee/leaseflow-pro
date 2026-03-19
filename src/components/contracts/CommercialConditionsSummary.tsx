@@ -669,8 +669,24 @@ export function CommercialConditionsSummary({
       return version.guarantee_multiplier * baseRent;
     }
     if (guaranteeType === 'avg_rent' && version.guarantee_multiplier) {
-      const avgTotal = escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo;
-      return version.guarantee_multiplier * avgTotal;
+      // Weighted average of CANON only (not total arriendo)
+      if (escalationPeriods.length > 1) {
+        const durationMonths = version.duration_months;
+        const graceMonths = version.grace_months || 0;
+        const initialStart = graceMonths > 0 ? graceMonths + 1 : 1;
+        let weightedSum = 0;
+        for (const p of escalationPeriods) {
+          const match = p.label.match(/M(\d+)-M(\d+)/);
+          if (match) {
+            const months = parseInt(match[2]) - parseInt(match[1]) + 1;
+            weightedSum += p.canon * months;
+          }
+        }
+        const totalMonths = durationMonths - (initialStart - 1);
+        const avgCanon = totalMonths > 0 ? weightedSum / totalMonths : currentRent;
+        return version.guarantee_multiplier * avgCanon;
+      }
+      return version.guarantee_multiplier * currentRent;
     }
     if ((guaranteeType === 'fixed_uf' || guaranteeType === 'fixed_clp') && version.guarantee_fixed_amount) {
       if (version.guarantee_fixed_currency === 'CLP' && displayCurrency === 'UF') {
@@ -1096,7 +1112,7 @@ export function CommercialConditionsSummary({
               </p>
               <p className="text-xs text-muted-foreground">
                 {guaranteeType === 'avg_rent'
-                  ? `(${version.guarantee_multiplier}× arriendo promedio)`
+                  ? `(${version.guarantee_multiplier}× canon promedio)`
                   : guaranteeType === 'multiplier' 
                     ? historicalUFForGuarantee && signedDate
                       ? `(${version.guarantee_multiplier}× canon, UF al ${format(parseISO(signedDate), "dd/MM/yyyy")}: ${historicalUFForGuarantee.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
