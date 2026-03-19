@@ -1037,31 +1037,31 @@ export function CommercialConditionsSummary({
             )}
           </div>
 
-          {/* Canon actual o Canon en Régimen */}
+          {/* Canon Inicial (sin considerar meses de gracia) */}
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <DollarSign className="h-3 w-3" />
-              {canonLabel}
+              Canon Inicial
               {version.regime_rent_is_uf_m2 && (
                 <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">UF/m²</Badge>
               )}
             </div>
             <p className="text-sm font-semibold text-primary">
-              {formatPrimary(currentRent)}
+              {formatPrimary(actualInitialRent || actualRegimeRent)}
             </p>
             <p className="text-xs text-muted-foreground">
-              {formatSecondary(currentRent)}
+              {formatSecondary(actualInitialRent || actualRegimeRent)}
             </p>
             {/* Show UF/m² breakdown when user entered value in UF/m² mode */}
             {version.regime_rent_is_uf_m2 && superficieEdificadaLocal && (
               <p className="text-xs text-muted-foreground">
-                ({superficieEdificadaLocal.toLocaleString("es-CL", { maximumFractionDigits: 2 })} m² × {(currentRent / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} UF/m²)
+                ({superficieEdificadaLocal.toLocaleString("es-CL", { maximumFractionDigits: 2 })} m² × {((actualInitialRent || actualRegimeRent) / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} UF/m²)
               </p>
             )}
             {/* Show calculated UF/m² when NOT in UF/m² mode */}
-            {!version.regime_rent_is_uf_m2 && canonPerM2 !== null && (
+            {!version.regime_rent_is_uf_m2 && superficieEdificadaLocal && superficieEdificadaLocal > 0 && (
               <p className="text-xs text-muted-foreground">
-                {displayCurrency === "CLP" ? `($${Math.round(canonPerM2).toLocaleString("es-CL")}/m²)` : `(${canonPerM2.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)`}
+                {displayCurrency === "CLP" ? `($${Math.round((actualInitialRent || actualRegimeRent) / superficieEdificadaLocal).toLocaleString("es-CL")}/m²)` : `(${((actualInitialRent || actualRegimeRent) / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)`}
               </p>
             )}
           </div>
