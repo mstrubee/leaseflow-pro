@@ -235,7 +235,15 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 py-2">
               {images.map((img) => (
                 <div key={img.id} className="group relative rounded-lg overflow-hidden border bg-muted aspect-video">
-                  {img.signedUrl ? (
+                  {img.signedUrl && /\.(xls|xlsx)$/i.test(img.name) ? (
+                    <div
+                      className="w-full h-full flex flex-col items-center justify-center gap-1 cursor-pointer"
+                      onClick={() => window.open(img.signedUrl!, "_blank")}
+                    >
+                      <FileSpreadsheet className="h-8 w-8 text-green-600" />
+                      <span className="text-xs text-muted-foreground">Excel</span>
+                    </div>
+                  ) : img.signedUrl ? (
                     <img
                       src={img.signedUrl}
                       alt={img.name}
