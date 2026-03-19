@@ -657,6 +657,22 @@ export default function CapexDashboard() {
                                       <span className="text-muted-foreground text-sm">$0</span>
                                     )}
                                   </div>
+                                  <div onClick={(e) => e.stopPropagation()}>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7"
+                                      title="Descargar PPT individual"
+                                      disabled={downloadingPPT === contractId}
+                                      onClick={() => handleSinglePPT(contractId, contractName, companyNames)}
+                                    >
+                                      {downloadingPPT === contractId ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <Download className="h-4 w-4" />
+                                      )}
+                                    </Button>
+                                  </div>
                                 </div>
                               </CardHeader>
                             </CollapsibleTrigger>
