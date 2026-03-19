@@ -216,7 +216,7 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
           ) : (
             <div className="flex flex-col items-center gap-1 text-muted-foreground">
               <ImagePlus className="h-6 w-6" />
-              <span className="text-sm">Haz clic o arrastra imágenes aquí</span>
+              <span className="text-sm">Haz clic o arrastra imágenes o archivos Excel aquí</span>
             </div>
           )}
         </div>
