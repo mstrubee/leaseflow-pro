@@ -64,6 +64,7 @@ interface Contract {
   status: string;
   signed_date: string | null;
   created_at: string;
+  business_case_url?: string | null;
   superficie_edificada_local: number | null;
   metros_lineales_frente: number | null;
   display_currency?: "UF" | "CLP";
