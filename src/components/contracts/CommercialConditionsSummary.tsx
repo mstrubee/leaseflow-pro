@@ -667,7 +667,7 @@ export function CommercialConditionsSummary({
 
   // Weighted average total arriendo across all escalation periods
   const totalArriendoPromedio = useMemo(() => {
-    if (!hasEscalations || escalationPeriods.length <= 1) return totalArriendo;
+    if (escalationPeriods.length <= 1) return totalArriendo;
     const durationMonths = version.duration_months;
     if (durationMonths <= 0) return totalArriendo;
     const graceMonths = version.grace_months || 0;
@@ -935,14 +935,14 @@ export function CommercialConditionsSummary({
           <div className="space-y-1 col-span-2 md:col-span-1 bg-primary/5 rounded-lg p-3 -m-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <DollarSign className="h-3 w-3" />
-              {hasEscalations && escalationPeriods.length > 1 ? "Total Arriendo Promedio" : "Total Arriendo"}
+              {escalationPeriods.length > 1 ? "Total Arriendo Promedio" : "Total Arriendo"}
             </div>
             <p className="text-lg font-bold text-primary">
-              {formatPrimary(hasEscalations && escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo)}
+              {formatPrimary(escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo)}
             </p>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               {(() => {
-                const displayTotal = hasEscalations && escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo;
+                const displayTotal = escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo;
                 return (
                   <>
                     <span>{formatSecondary(displayTotal)}</span>
