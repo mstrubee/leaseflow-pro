@@ -16,6 +16,8 @@ import { formatCLP } from "@/lib/utils";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { Button } from "@/components/ui/button";
 import { generateCapexPPT } from "@/components/budget/CapexPPTExport";
+import { generateSingleContractPPT } from "@/components/budget/CapexSinglePPTExport";
+import { CapexTemplateManager } from "@/components/budget/CapexTemplateManager";
 
 interface ContractBudget {
   contract_id: string;
