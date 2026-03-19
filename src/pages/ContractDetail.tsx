@@ -378,6 +378,7 @@ const ContractDetail = () => {
       toast({ variant: "destructive", title: "Error", description: "No se pudo eliminar" });
     }
   };
+  const handleAddDocument = async (url: string, name: string) => {
     if (!contract) return;
     const currentVersion = contract.contract_versions?.find(v => v.is_current);
     const isSigned = contract.status === "firmado";
