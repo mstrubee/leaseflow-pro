@@ -992,71 +992,48 @@ export function CommercialConditionsSummary({
             </div>
             {totalArriendoExpanded && (
               <div className="text-[10px] text-muted-foreground space-y-0.5 animate-in slide-in-from-top-1 duration-200">
-                {/* When escalations exist, only show per-period breakdown */}
-                {hasEscalations && escalationPeriods.length > 1 ? (
-                  <div>
+                <div>
+                  {escalationPeriods.length > 1 && (
                     <p className="text-[10px] font-medium text-foreground mb-1">Arriendo por periodo</p>
-                    <table className="w-full text-[10px]">
-                      <thead>
-                        <tr className="text-muted-foreground">
-                          <th className="text-left font-normal pb-0.5">Periodo</th>
-                          <th className="text-right font-normal pb-0.5">Canon</th>
-                          <th className="text-right font-normal pb-0.5">GGCC</th>
-                          <th className="text-right font-normal pb-0.5">F.Prom</th>
-                          <th className="text-right font-normal pb-0.5">Otros</th>
-                          <th className="text-right font-normal pb-0.5">Total</th>
+                  )}
+                  <table className="w-full text-[10px]">
+                    <thead>
+                      <tr className="text-muted-foreground">
+                        <th className="text-left font-normal pb-0.5">Periodo</th>
+                        <th className="text-right font-normal pb-0.5">Canon</th>
+                        <th className="text-right font-normal pb-0.5">GGCC</th>
+                        <th className="text-right font-normal pb-0.5">F.Prom</th>
+                        <th className="text-right font-normal pb-0.5">Otros</th>
+                        <th className="text-right font-normal pb-0.5">Total</th>
+                        {superficieEdificadaLocal && superficieEdificadaLocal > 0 && (
+                          <th className="text-right font-normal pb-0.5">UF/m²</th>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {escalationPeriods.map((p, idx) => (
+                        <tr key={idx} className="border-t border-border/30">
+                          <td className="py-0.5 text-muted-foreground">{p.label}</td>
+                          <td className="py-0.5 text-right">{p.canon.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td className="py-0.5 text-right">{p.ggcc > 0 ? p.ggcc.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}</td>
+                          <td className="py-0.5 text-right">{p.fProm > 0 ? p.fProm.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}</td>
+                          <td className="py-0.5 text-right">{p.otros > 0 ? p.otros.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}</td>
+                          <td className="py-0.5 text-right font-medium text-foreground">{p.total.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                           {superficieEdificadaLocal && superficieEdificadaLocal > 0 && (
-                            <th className="text-right font-normal pb-0.5">UF/m²</th>
+                            <td className="py-0.5 text-right text-muted-foreground">{p.ufM2?.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })}</td>
                           )}
                         </tr>
-                      </thead>
-                      <tbody>
-                        {escalationPeriods.map((p, idx) => (
-                          <tr key={idx} className="border-t border-border/30">
-                            <td className="py-0.5 text-muted-foreground">{p.label}</td>
-                            <td className="py-0.5 text-right">{p.canon.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                            <td className="py-0.5 text-right">{p.ggcc > 0 ? p.ggcc.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}</td>
-                            <td className="py-0.5 text-right">{p.fProm > 0 ? p.fProm.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}</td>
-                            <td className="py-0.5 text-right">{p.otros > 0 ? p.otros.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}</td>
-                            <td className="py-0.5 text-right font-medium text-foreground">{p.total.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                            {superficieEdificadaLocal && superficieEdificadaLocal > 0 && (
-                              <td className="py-0.5 text-right text-muted-foreground">{p.ufM2?.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })}</td>
-                            )}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {version.variable_rent_percentage !== null && version.variable_rent_percentage > 0 && (
-                      <div className="flex justify-between mt-1 pt-1 border-t border-border/30 text-primary font-medium">
-                        <span>Variable:</span>
-                        <span>{version.variable_rent_percentage}%</span>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex justify-between">
-                      <span>{canonLabel === "Canon Actual" ? "Canon actual" : "Canon"}:</span>
-                      <span>{formatPrimary(currentRent)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>GGCC:</span>
-                      <span>{gastosComunesTotalUF ? formatPrimary(gastosComunesTotalUF) : "-"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>F. Prom:</span>
-                      <span>{fondoPromocionAmount ? formatPrimary(fondoPromocionAmount) : "-"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Otros:</span>
-                      <span>{otrosEgresosAmount > 0 ? formatPrimary(otrosEgresosAmount) : "-"}</span>
-                    </div>
-                    <div className="flex justify-between text-primary font-medium">
+                      ))}
+                    </tbody>
+                  </table>
+                  {version.variable_rent_percentage !== null && version.variable_rent_percentage > 0 && (
+                    <div className="flex justify-between mt-1 pt-1 border-t border-border/30 text-primary font-medium">
                       <span>Variable:</span>
-                      <span>{version.variable_rent_percentage !== null && version.variable_rent_percentage > 0 ? `${version.variable_rent_percentage}%` : "-"}</span>
+                      <span>{version.variable_rent_percentage}%</span>
                     </div>
-                  </>
-                )}
+                  )}
+                </div>
+              </div>
               </div>
             )}
           </div>
