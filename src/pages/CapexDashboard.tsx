@@ -703,6 +703,7 @@ export default function CapexDashboard() {
           )}
         </div>
       </div>
+      <CapexTemplateManager open={templateOpen} onOpenChange={setTemplateOpen} />
     </div>
   );
 }
