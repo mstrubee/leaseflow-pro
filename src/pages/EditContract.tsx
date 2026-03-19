@@ -1324,7 +1324,7 @@ const EditContract = () => {
                                   <RadioGroup
                                     value={guaranteeType}
                                     onValueChange={(value) => {
-                                      setGuaranteeType(value as "multiplier" | "fixed_uf" | "fixed_clp");
+                                      setGuaranteeType(value as "multiplier" | "fixed_uf" | "fixed_clp" | "avg_rent");
                                       setHasUnsavedChanges(true);
                                     }}
                                     className="flex flex-col gap-2"
