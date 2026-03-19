@@ -52,6 +52,8 @@ export default function CapexDashboard() {
   const [sortBy, setSortBy] = useState<"nombre" | "empresa" | "clasificacion">("nombre");
   const [expandedContract, setExpandedContract] = useState<string | null>(null);
   const [authByBudget, setAuthByBudget] = useState<AuthByBudget>({});
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const [downloadingPPT, setDownloadingPPT] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
