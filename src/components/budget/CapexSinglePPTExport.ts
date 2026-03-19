@@ -106,9 +106,9 @@ export async function generateSingleContractPPT(data: SingleContractPPTData) {
   const logoUrl = isAgroplanet ? logos.agroplanet : logos.autoplanet;
 
   // Load logo as base64
-  let logoBase64: string | null = null;
+  let logoData: ImageData | null = null;
   try {
-    logoBase64 = await loadImageAsBase64(logoUrl);
+    logoData = await loadImageAsBase64(logoUrl);
   } catch {
     console.log("Could not load company logo for PPT");
   }
@@ -119,12 +119,12 @@ export async function generateSingleContractPPT(data: SingleContractPPTData) {
   // Get business case images
   const imageUrls = await getBusinessCaseImages(data.contractId);
 
-  // Load images as base64
-  const imageBase64List: string[] = [];
+  // Load images as base64 with dimensions
+  const imageDataList: ImageData[] = [];
   for (const url of imageUrls) {
     try {
-      const b64 = await loadImageAsBase64(url);
-      imageBase64List.push(b64);
+      const imgData = await loadImageAsBase64(url);
+      imageDataList.push(imgData);
     } catch {
       console.log("Could not load business case image:", url);
     }
