@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation } from "lucide-react";
+import { ChevronDown, Search, DollarSign, Building2, RefreshCw, FileCheck, Loader2, Presentation, Download, FileSliders } from "lucide-react";
 import { toast } from "sonner";
 import { BudgetModule } from "@/components/budget/BudgetModule";
 import { BudgetProvider } from "@/components/budget/BudgetContext";
@@ -16,6 +16,8 @@ import { formatCLP } from "@/lib/utils";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { Button } from "@/components/ui/button";
 import { generateCapexPPT } from "@/components/budget/CapexPPTExport";
+import { generateSingleContractPPT } from "@/components/budget/CapexSinglePPTExport";
+import { CapexTemplateManager } from "@/components/budget/CapexTemplateManager";
 
 interface ContractBudget {
   contract_id: string;
@@ -50,6 +52,8 @@ export default function CapexDashboard() {
   const [sortBy, setSortBy] = useState<"nombre" | "empresa" | "clasificacion">("nombre");
   const [expandedContract, setExpandedContract] = useState<string | null>(null);
   const [authByBudget, setAuthByBudget] = useState<AuthByBudget>({});
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const [downloadingPPT, setDownloadingPPT] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -343,6 +347,20 @@ export default function CapexDashboard() {
     }
   };
 
+  const handleSinglePPT = async (contractId: string, contractName: string, companyNames: string[]) => {
+    setDownloadingPPT(contractId);
+    try {
+      toast.info("Generando PPT individual...");
+      await generateSingleContractPPT({ contractId, contractName, companyNames });
+      toast.success("PPT descargado");
+    } catch (err) {
+      console.error("Single PPT error:", err);
+      toast.error("Error al generar PPT individual");
+    } finally {
+      setDownloadingPPT(null);
+    }
+  };
+
   const handleClasificacionChange = async (contractId: string, value: string) => {
     const { error } = await supabase
       .from("contracts")
@@ -381,10 +399,16 @@ export default function CapexDashboard() {
             <h1 className="text-2xl font-semibold text-foreground">Presupuesto CAPEX</h1>
             <p className="text-sm text-muted-foreground mt-1">Gestión de presupuestos CAPEX por local</p>
           </div>
-          <Button variant="outline" size="sm" onClick={handleExportPPT} className="gap-2">
-            <Presentation className="h-4 w-4" />
-            Descargar PPT
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleExportPPT} className="gap-2">
+              <Presentation className="h-4 w-4" />
+              PPT General
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setTemplateOpen(true)} className="gap-2">
+              <FileSliders className="h-4 w-4" />
+              Template PPT Single
+            </Button>
+          </div>
         </div>
 
         {/* Summary Cards Row 1 */}
@@ -593,7 +617,7 @@ export default function CapexDashboard() {
                           <Card>
                             <CollapsibleTrigger asChild>
                               <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
-                                <div className="grid grid-cols-[24px_auto_200px_140px_1fr] items-center gap-3">
+                                <div className="grid grid-cols-[24px_auto_200px_140px_1fr_32px] items-center gap-3">
                                   <ChevronDown className={`h-5 w-5 shrink-0 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
                                   <CompanyLogo companyNames={companyNames} size="sm" />
                                   <CardTitle className="text-base whitespace-nowrap">{contractName}</CardTitle>
@@ -633,6 +657,22 @@ export default function CapexDashboard() {
                                       <span className="text-muted-foreground text-sm">$0</span>
                                     )}
                                   </div>
+                                  <div onClick={(e) => e.stopPropagation()}>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7"
+                                      title="Descargar PPT individual"
+                                      disabled={downloadingPPT === contractId}
+                                      onClick={() => handleSinglePPT(contractId, contractName, companyNames)}
+                                    >
+                                      {downloadingPPT === contractId ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <Download className="h-4 w-4" />
+                                      )}
+                                    </Button>
+                                  </div>
                                 </div>
                               </CardHeader>
                             </CollapsibleTrigger>
@@ -663,6 +703,7 @@ export default function CapexDashboard() {
           )}
         </div>
       </div>
+      <CapexTemplateManager open={templateOpen} onOpenChange={setTemplateOpen} />
     </div>
   );
 }
