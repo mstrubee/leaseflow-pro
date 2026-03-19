@@ -16,7 +16,13 @@ interface SingleContractPPTData {
   address?: string;
 }
 
-async function loadImageAsBase64(src: string): Promise<string> {
+interface ImageData {
+  base64: string;
+  width: number;
+  height: number;
+}
+
+async function loadImageAsBase64(src: string): Promise<ImageData> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
@@ -26,7 +32,11 @@ async function loadImageAsBase64(src: string): Promise<string> {
       canvas.height = img.naturalHeight;
       const ctx = canvas.getContext("2d");
       ctx?.drawImage(img, 0, 0);
-      resolve(canvas.toDataURL("image/png"));
+      resolve({
+        base64: canvas.toDataURL("image/png"),
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+      });
     };
     img.onerror = reject;
     img.src = src;
