@@ -75,8 +75,12 @@ async function getBusinessCaseImages(contractId: string): Promise<string[]> {
 
   if (!files) return [];
 
-  // Filter only images (exclude Excel files)
-  const imageFiles = files.filter(f => !/\.(xls|xlsx)$/i.test(f.name));
+  // Filter only images (exclude Excel files and "Graficos")
+  const imageFiles = files.filter(f => {
+    if (/\.(xls|xlsx)$/i.test(f.name)) return false;
+    if (/graficos/i.test(f.name.replace(/\.[^.]+$/, ""))) return false;
+    return true;
+  });
 
   const urls: string[] = [];
   for (const f of imageFiles) {
