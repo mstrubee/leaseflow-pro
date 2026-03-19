@@ -347,6 +347,20 @@ export default function CapexDashboard() {
     }
   };
 
+  const handleSinglePPT = async (contractId: string, contractName: string, companyNames: string[]) => {
+    setDownloadingPPT(contractId);
+    try {
+      toast.info("Generando PPT individual...");
+      await generateSingleContractPPT({ contractId, contractName, companyNames });
+      toast.success("PPT descargado");
+    } catch (err) {
+      console.error("Single PPT error:", err);
+      toast.error("Error al generar PPT individual");
+    } finally {
+      setDownloadingPPT(null);
+    }
+  };
+
   const handleClasificacionChange = async (contractId: string, value: string) => {
     const { error } = await supabase
       .from("contracts")
