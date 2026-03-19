@@ -348,8 +348,6 @@ export async function generateCapexPPT(data: CapexPPTData) {
           { text: c.contract_name, options: cellOpts("left") },
           { text: clasificacionLabel(c.clasificacion), options: cellOpts("center") },
           { text: c.superficie > 0 ? c.superficie.toLocaleString("es-CL") : "-", options: cellOpts("center") },
-          { text: fmtUF2(c.authorized), options: cellOpts("right") },
-          { text: fmtUF2(c.unauthorized), options: cellOpts("right") },
           { text: fmtUF2(c.total_uf), options: { ...cellOpts("right"), bold: true } },
           { text: formatCLP(c.total_clp), options: cellOpts("right") },
         ]);
