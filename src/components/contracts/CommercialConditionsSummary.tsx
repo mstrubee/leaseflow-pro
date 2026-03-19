@@ -363,26 +363,27 @@ export function CommercialConditionsSummary({
   const guaranteeType = version.guarantee_type || 'multiplier';
   const guaranteeAmount = useMemo(() => {
     if (guaranteeType === 'multiplier' && version.guarantee_multiplier) {
-      // When there are escalations, use initial rent (canon inicial) as base
       const baseRent = hasEscalations && actualInitialRent ? actualInitialRent : actualRegimeRent;
       return version.guarantee_multiplier * baseRent;
     }
+    if (guaranteeType === 'avg_rent' && version.guarantee_multiplier) {
+      const avgTotal = escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo;
+      return version.guarantee_multiplier * avgTotal;
+    }
     if ((guaranteeType === 'fixed_uf' || guaranteeType === 'fixed_clp') && version.guarantee_fixed_amount) {
-      // If fixed in CLP and display is UF, convert using historical UF (signed date) or current as fallback
       if (version.guarantee_fixed_currency === 'CLP' && displayCurrency === 'UF') {
         const ufForConversion = historicalUFForGuarantee || ufValue;
         if (ufForConversion > 0) {
           return version.guarantee_fixed_amount / ufForConversion;
         }
       }
-      // If fixed in UF and display is CLP, convert using current UF
       if (version.guarantee_fixed_currency === 'UF' && displayCurrency === 'CLP' && ufValue > 0) {
         return version.guarantee_fixed_amount * ufValue;
       }
       return version.guarantee_fixed_amount;
     }
     return null;
-  }, [guaranteeType, version.guarantee_multiplier, version.guarantee_fixed_amount, version.guarantee_fixed_currency, actualRegimeRent, actualInitialRent, hasEscalations, displayCurrency, ufValue, historicalUFForGuarantee]);
+  }, [guaranteeType, version.guarantee_multiplier, version.guarantee_fixed_amount, version.guarantee_fixed_currency, actualRegimeRent, actualInitialRent, hasEscalations, displayCurrency, ufValue, historicalUFForGuarantee, escalationPeriods, totalArriendoPromedio, totalArriendo]);
 
   // Determine if contract has not started yet (in negotiation or future start date)
   const isContractNotStarted = useMemo(() => {
