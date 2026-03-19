@@ -385,10 +385,16 @@ export default function CapexDashboard() {
             <h1 className="text-2xl font-semibold text-foreground">Presupuesto CAPEX</h1>
             <p className="text-sm text-muted-foreground mt-1">Gestión de presupuestos CAPEX por local</p>
           </div>
-          <Button variant="outline" size="sm" onClick={handleExportPPT} className="gap-2">
-            <Presentation className="h-4 w-4" />
-            Descargar PPT
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleExportPPT} className="gap-2">
+              <Presentation className="h-4 w-4" />
+              PPT General
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setTemplateOpen(true)} className="gap-2">
+              <FileSliders className="h-4 w-4" />
+              Template PPT Single
+            </Button>
+          </div>
         </div>
 
         {/* Summary Cards Row 1 */}
