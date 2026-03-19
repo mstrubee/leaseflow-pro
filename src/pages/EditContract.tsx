@@ -1347,6 +1347,12 @@ const EditContract = () => {
                                         Monto fijo en Pesos ($)
                                       </Label>
                                     </div>
+                                    <div className="flex items-center space-x-2">
+                                      <RadioGroupItem value="avg_rent" id="guarantee_avg_rent" />
+                                      <Label htmlFor="guarantee_avg_rent" className="text-sm font-normal cursor-pointer">
+                                        Arriendo Promedio (autocalculado)
+                                      </Label>
+                                    </div>
                                   </RadioGroup>
                                 </div>
 
