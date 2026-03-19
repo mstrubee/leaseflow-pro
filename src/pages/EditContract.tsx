@@ -1450,6 +1450,30 @@ const EditContract = () => {
                                   </div>
                                 )}
 
+                                {guaranteeType === "avg_rent" && (
+                                  <div className="space-y-2">
+                                    <Label>Multiplicador</Label>
+                                    <div className="flex items-center gap-4">
+                                      <Input
+                                        type="number"
+                                        step="0.5"
+                                        min="0"
+                                        placeholder="Ej: 2"
+                                        value={guaranteeMultiplier}
+                                        onChange={(e) => {
+                                          setGuaranteeMultiplier(e.target.value);
+                                          setHasUnsavedChanges(true);
+                                        }}
+                                        className="w-24"
+                                      />
+                                      <span className="text-sm text-muted-foreground">× Arriendo Promedio</span>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground italic">
+                                      El monto se calculará automáticamente basado en el promedio ponderado del arriendo total (Canon + GGCC + F.Prom + Otros) a lo largo de todo el contrato.
+                                    </p>
+                                  </div>
+                                )}
+
                                 <p className="text-xs text-muted-foreground">
                                   Monto de Garantía de Arriendo{isRegimeRentUfM2 && guaranteeType === "multiplier" ? " (calculado sobre arriendo total)" : ""}
                                 </p>
