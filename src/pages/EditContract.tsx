@@ -107,7 +107,7 @@ const EditContract = () => {
   const [multipleNotices, setMultipleNotices] = useState<NoticeEntry[]>([]);
   
   // Guarantee and periodic adjustments
-  const [guaranteeType, setGuaranteeType] = useState<"multiplier" | "fixed_uf" | "fixed_clp">("multiplier");
+  const [guaranteeType, setGuaranteeType] = useState<"multiplier" | "fixed_uf" | "fixed_clp" | "avg_rent">("multiplier");
   const [guaranteeMultiplier, setGuaranteeMultiplier] = useState("");
   const [guaranteeFixedAmount, setGuaranteeFixedAmount] = useState("");
   const [hasPeriodicAdjustments, setHasPeriodicAdjustments] = useState(false);
