@@ -112,8 +112,13 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
       let count = 0;
 
       for (const file of Array.from(files)) {
-        if (!file.type.startsWith("image/")) {
-          toast.error(`${file.name}: Solo se permiten imágenes`);
+        const isImage = file.type.startsWith("image/");
+        const isExcel = /\.(xls|xlsx)$/i.test(file.name) ||
+          file.type === "application/vnd.ms-excel" ||
+          file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+        if (!isImage && !isExcel) {
+          toast.error(`${file.name}: Solo se permiten imágenes y archivos Excel`);
           continue;
         }
         if (file.size > 20 * 1024 * 1024) {
