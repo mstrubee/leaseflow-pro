@@ -107,7 +107,7 @@ const EditContract = () => {
   const [multipleNotices, setMultipleNotices] = useState<NoticeEntry[]>([]);
   
   // Guarantee and periodic adjustments
-  const [guaranteeType, setGuaranteeType] = useState<"multiplier" | "fixed_uf" | "fixed_clp">("multiplier");
+  const [guaranteeType, setGuaranteeType] = useState<"multiplier" | "fixed_uf" | "fixed_clp" | "avg_rent">("multiplier");
   const [guaranteeMultiplier, setGuaranteeMultiplier] = useState("");
   const [guaranteeFixedAmount, setGuaranteeFixedAmount] = useState("");
   const [hasPeriodicAdjustments, setHasPeriodicAdjustments] = useState(false);
@@ -511,7 +511,7 @@ const EditContract = () => {
               : noticeType === "sin_termino" 
                 ? (contractEndNoticeMonths || "6")
                 : (noticeValue || "3"),
-            guarantee_multiplier: guaranteeType === 'multiplier' && guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
+            guarantee_multiplier: (guaranteeType === 'multiplier' || guaranteeType === 'avg_rent') && guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
             guarantee_type: guaranteeType,
             guarantee_fixed_amount: (guaranteeType === 'fixed_uf' || guaranteeType === 'fixed_clp') && guaranteeFixedAmount ? parseFloat(guaranteeFixedAmount) : null,
             guarantee_fixed_currency: guaranteeType === 'fixed_clp' ? 'CLP' : 'UF',
@@ -563,7 +563,7 @@ const EditContract = () => {
               : noticeType === "sin_termino" 
                 ? (contractEndNoticeMonths || "6")
                 : (noticeValue || "3"),
-            guarantee_multiplier: guaranteeType === 'multiplier' && guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
+            guarantee_multiplier: (guaranteeType === 'multiplier' || guaranteeType === 'avg_rent') && guaranteeMultiplier ? parseFloat(guaranteeMultiplier) : null,
             guarantee_type: guaranteeType,
             guarantee_fixed_amount: (guaranteeType === 'fixed_uf' || guaranteeType === 'fixed_clp') && guaranteeFixedAmount ? parseFloat(guaranteeFixedAmount) : null,
             guarantee_fixed_currency: guaranteeType === 'fixed_clp' ? 'CLP' : 'UF',
@@ -1324,7 +1324,7 @@ const EditContract = () => {
                                   <RadioGroup
                                     value={guaranteeType}
                                     onValueChange={(value) => {
-                                      setGuaranteeType(value as "multiplier" | "fixed_uf" | "fixed_clp");
+                                      setGuaranteeType(value as "multiplier" | "fixed_uf" | "fixed_clp" | "avg_rent");
                                       setHasUnsavedChanges(true);
                                     }}
                                     className="flex flex-col gap-2"
@@ -1345,6 +1345,12 @@ const EditContract = () => {
                                       <RadioGroupItem value="fixed_clp" id="guarantee_fixed_clp" />
                                       <Label htmlFor="guarantee_fixed_clp" className="text-sm font-normal cursor-pointer">
                                         Monto fijo en Pesos ($)
+                                      </Label>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                      <RadioGroupItem value="avg_rent" id="guarantee_avg_rent" />
+                                      <Label htmlFor="guarantee_avg_rent" className="text-sm font-normal cursor-pointer">
+                                        Arriendo Promedio (autocalculado)
                                       </Label>
                                     </div>
                                   </RadioGroup>
@@ -1441,6 +1447,30 @@ const EditContract = () => {
                                         ≈ {(parseFloat(guaranteeFixedAmount) / ufValue).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
                                       </p>
                                     )}
+                                  </div>
+                                )}
+
+                                {guaranteeType === "avg_rent" && (
+                                  <div className="space-y-2">
+                                    <Label>Multiplicador</Label>
+                                    <div className="flex items-center gap-4">
+                                      <Input
+                                        type="number"
+                                        step="0.5"
+                                        min="0"
+                                        placeholder="Ej: 2"
+                                        value={guaranteeMultiplier}
+                                        onChange={(e) => {
+                                          setGuaranteeMultiplier(e.target.value);
+                                          setHasUnsavedChanges(true);
+                                        }}
+                                        className="w-24"
+                                      />
+                                      <span className="text-sm text-muted-foreground">× Arriendo Promedio</span>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground italic">
+                                      El monto se calculará automáticamente basado en el promedio ponderado del arriendo total (Canon + GGCC + F.Prom + Otros) a lo largo de todo el contrato.
+                                    </p>
                                   </div>
                                 )}
 

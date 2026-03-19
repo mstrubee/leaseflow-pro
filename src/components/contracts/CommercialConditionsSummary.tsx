@@ -358,31 +358,7 @@ export function CommercialConditionsSummary({
         : version.initial_rent)
     : null;
   
-  // Calculate guarantee amount based on type
-  // For CLP guarantees, use the historical UF value from the signed date
   const guaranteeType = version.guarantee_type || 'multiplier';
-  const guaranteeAmount = useMemo(() => {
-    if (guaranteeType === 'multiplier' && version.guarantee_multiplier) {
-      // When there are escalations, use initial rent (canon inicial) as base
-      const baseRent = hasEscalations && actualInitialRent ? actualInitialRent : actualRegimeRent;
-      return version.guarantee_multiplier * baseRent;
-    }
-    if ((guaranteeType === 'fixed_uf' || guaranteeType === 'fixed_clp') && version.guarantee_fixed_amount) {
-      // If fixed in CLP and display is UF, convert using historical UF (signed date) or current as fallback
-      if (version.guarantee_fixed_currency === 'CLP' && displayCurrency === 'UF') {
-        const ufForConversion = historicalUFForGuarantee || ufValue;
-        if (ufForConversion > 0) {
-          return version.guarantee_fixed_amount / ufForConversion;
-        }
-      }
-      // If fixed in UF and display is CLP, convert using current UF
-      if (version.guarantee_fixed_currency === 'UF' && displayCurrency === 'CLP' && ufValue > 0) {
-        return version.guarantee_fixed_amount * ufValue;
-      }
-      return version.guarantee_fixed_amount;
-    }
-    return null;
-  }, [guaranteeType, version.guarantee_multiplier, version.guarantee_fixed_amount, version.guarantee_fixed_currency, actualRegimeRent, actualInitialRent, hasEscalations, displayCurrency, ufValue, historicalUFForGuarantee]);
 
   // Determine if contract has not started yet (in negotiation or future start date)
   const isContractNotStarted = useMemo(() => {
@@ -686,7 +662,29 @@ export function CommercialConditionsSummary({
     return totalMonths > 0 ? weightedSum / totalMonths : totalArriendo;
   }, [hasEscalations, escalationPeriods, totalArriendo, version.duration_months, version.grace_months]);
 
-  // Weighted average Fondo Promoción across escalation periods
+  // Calculate guarantee amount based on type
+  const guaranteeAmount = useMemo(() => {
+    if (guaranteeType === 'multiplier' && version.guarantee_multiplier) {
+      const baseRent = hasEscalations && actualInitialRent ? actualInitialRent : actualRegimeRent;
+      return version.guarantee_multiplier * baseRent;
+    }
+    if (guaranteeType === 'avg_rent' && version.guarantee_multiplier) {
+      const avgTotal = escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo;
+      return version.guarantee_multiplier * avgTotal;
+    }
+    if ((guaranteeType === 'fixed_uf' || guaranteeType === 'fixed_clp') && version.guarantee_fixed_amount) {
+      if (version.guarantee_fixed_currency === 'CLP' && displayCurrency === 'UF') {
+        const ufForConversion = historicalUFForGuarantee || ufValue;
+        if (ufForConversion > 0) return version.guarantee_fixed_amount / ufForConversion;
+      }
+      if (version.guarantee_fixed_currency === 'UF' && displayCurrency === 'CLP' && ufValue > 0) {
+        return version.guarantee_fixed_amount * ufValue;
+      }
+      return version.guarantee_fixed_amount;
+    }
+    return null;
+  }, [guaranteeType, version.guarantee_multiplier, version.guarantee_fixed_amount, version.guarantee_fixed_currency, actualRegimeRent, actualInitialRent, hasEscalations, displayCurrency, ufValue, historicalUFForGuarantee, escalationPeriods, totalArriendoPromedio, totalArriendo]);
+
   const fondoPromocionPromedio = useMemo(() => {
     if (!hasEscalations || escalationPeriods.length <= 1 || !fondoPromocionAmount) return fondoPromocionAmount;
     const durationMonths = version.duration_months;
@@ -1097,15 +1095,17 @@ export function CommercialConditionsSummary({
                 {formatSecondaryGuarantee(guaranteeAmount)}
               </p>
               <p className="text-xs text-muted-foreground">
-                {guaranteeType === 'multiplier' 
-                  ? historicalUFForGuarantee && signedDate
-                    ? `(${version.guarantee_multiplier}× canon, UF al ${format(parseISO(signedDate), "dd/MM/yyyy")}: ${historicalUFForGuarantee.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
-                    : `(${version.guarantee_multiplier}× canon)`
-                  : version.guarantee_fixed_currency === 'CLP' && historicalUFForGuarantee && signedDate
-                    ? `(monto fijo en $, UF al ${format(parseISO(signedDate), "dd/MM/yyyy")}: ${historicalUFForGuarantee.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
-                    : historicalUFForGuarantee && signedDate
-                      ? `(monto fijo en ${version.guarantee_fixed_currency}, UF al ${format(parseISO(signedDate), "dd/MM/yyyy")}: ${historicalUFForGuarantee.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
-                      : `(monto fijo en ${version.guarantee_fixed_currency})`
+                {guaranteeType === 'avg_rent'
+                  ? `(${version.guarantee_multiplier}× arriendo promedio)`
+                  : guaranteeType === 'multiplier' 
+                    ? historicalUFForGuarantee && signedDate
+                      ? `(${version.guarantee_multiplier}× canon, UF al ${format(parseISO(signedDate), "dd/MM/yyyy")}: ${historicalUFForGuarantee.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
+                      : `(${version.guarantee_multiplier}× canon)`
+                    : version.guarantee_fixed_currency === 'CLP' && historicalUFForGuarantee && signedDate
+                      ? `(monto fijo en $, UF al ${format(parseISO(signedDate), "dd/MM/yyyy")}: ${historicalUFForGuarantee.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
+                      : historicalUFForGuarantee && signedDate
+                        ? `(monto fijo en ${version.guarantee_fixed_currency}, UF al ${format(parseISO(signedDate), "dd/MM/yyyy")}: ${historicalUFForGuarantee.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
+                        : `(monto fijo en ${version.guarantee_fixed_currency})`
                 }
               </p>
             </div>}
