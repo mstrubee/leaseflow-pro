@@ -1034,7 +1034,6 @@ export function CommercialConditionsSummary({
                   )}
                 </div>
               </div>
-              </div>
             )}
           </div>
 
