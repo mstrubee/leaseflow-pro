@@ -355,8 +355,6 @@ export async function generateCapexPPT(data: CapexPPTData) {
 
       // Totals row
       if (pageIdx === pages.length - 1) {
-        const totalAuth = group.contracts.reduce((s, c) => s + c.authorized, 0);
-        const totalUnauth = group.contracts.reduce((s, c) => s + c.unauthorized, 0);
         const totalUF = group.contracts.reduce((s, c) => s + c.total_uf, 0);
         const totalCLP = group.contracts.reduce((s, c) => s + c.total_clp, 0);
 
@@ -368,8 +366,6 @@ export async function generateCapexPPT(data: CapexPPTData) {
           { text: "TOTAL", options: totOpts("left") },
           { text: "", options: totOpts("center") },
           { text: "", options: totOpts("center") },
-          { text: fmtUF2(totalAuth), options: totOpts("right") },
-          { text: fmtUF2(totalUnauth), options: totOpts("right") },
           { text: fmtUF2(totalUF), options: totOpts("right") },
           { text: formatCLP(totalCLP), options: totOpts("right") },
         ]);
