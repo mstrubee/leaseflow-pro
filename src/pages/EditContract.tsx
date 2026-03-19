@@ -1466,10 +1466,56 @@ const EditContract = () => {
                                         }}
                                         className="w-24"
                                       />
-                                      <span className="text-sm text-muted-foreground">× Arriendo Promedio</span>
+                                      <span className="text-sm text-muted-foreground">× Canon Promedio</span>
+                                      <span className="text-sm text-muted-foreground">=</span>
+                                      <span className="text-sm font-medium">
+                                        {(() => {
+                                          if (!guaranteeMultiplier) return `0 ${currency}`;
+                                          const mult = parseFloat(guaranteeMultiplier);
+                                          const superficie = superficieEdificadaLocal || 0;
+                                          const regime = parseFloat(regimeRent) || 0;
+                                          const initial = hasEscalation && initialRent ? parseFloat(initialRent) : regime;
+                                          const baseInitial = isRegimeRentUfM2 && superficie > 0 ? initial * superficie : initial;
+                                          
+                                          // Calculate weighted average canon
+                                          if (hasEscalation && escalations.length > 0 && duration) {
+                                            const durationMonths = parseInt(duration) || 0;
+                                            const gm = graceMonths || 0;
+                                            const sortedEsc = [...escalations].sort((a, b) => a.month_number - b.month_number);
+                                            const milestones = new Set<number>();
+                                            const initialStart = gm > 0 ? gm + 1 : 1;
+                                            milestones.add(initialStart);
+                                            for (const esc of sortedEsc) {
+                                              if (esc.month_number <= durationMonths) milestones.add(esc.month_number);
+                                            }
+                                            const sorted = Array.from(milestones).sort((a, b) => a - b);
+                                            
+                                            let runningCanon = baseInitial;
+                                            let weightedSum = 0;
+                                            for (let i = 0; i < sorted.length; i++) {
+                                              const ms = sorted[i];
+                                              const escAtMs = sortedEsc.filter(e => e.month_number === ms);
+                                              if (escAtMs.length > 0) {
+                                                const esc = escAtMs[escAtMs.length - 1];
+                                                const needsMult = esc.is_uf_m2 || (isRegimeRentUfM2 && !esc.is_uf_m2);
+                                                runningCanon = needsMult && superficie > 0 ? esc.amount * superficie : esc.amount;
+                                              }
+                                              const endMonth = i < sorted.length - 1 ? sorted[i + 1] - 1 : durationMonths;
+                                              weightedSum += runningCanon * (endMonth - ms + 1);
+                                            }
+                                            const totalMonths = durationMonths - (initialStart - 1);
+                                            const avgCanon = totalMonths > 0 ? weightedSum / totalMonths : baseInitial;
+                                            const result = mult * avgCanon;
+                                            return `${result.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+                                          }
+                                          
+                                          const result = mult * baseInitial;
+                                          return `${result.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+                                        })()}
+                                      </span>
                                     </div>
                                     <p className="text-xs text-muted-foreground italic">
-                                      El monto se calculará automáticamente basado en el promedio ponderado del canon de arriendo a lo largo de todo el contrato.
+                                      El monto se calcula automáticamente basado en el promedio ponderado del canon de arriendo a lo largo de todo el contrato.
                                     </p>
                                   </div>
                                 )}
