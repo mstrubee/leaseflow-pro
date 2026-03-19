@@ -304,8 +304,6 @@ export async function generateCapexPPT(data: CapexPPTData) {
       { text: "Local", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "left" } },
       { text: "Clasificación", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "center" } },
       { text: "m²", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "center" } },
-      { text: "Autorizado (UF)", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "right" } },
-      { text: "No Autorizado (UF)", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "right" } },
       { text: "Total UF", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "right" } },
       { text: "Total CLP", options: { bold: true, color: WHITE, fill: { color: PRIMARY }, fontSize: 9, fontFace: "Arial", align: "right" } },
     ];
@@ -350,8 +348,6 @@ export async function generateCapexPPT(data: CapexPPTData) {
           { text: c.contract_name, options: cellOpts("left") },
           { text: clasificacionLabel(c.clasificacion), options: cellOpts("center") },
           { text: c.superficie > 0 ? c.superficie.toLocaleString("es-CL") : "-", options: cellOpts("center") },
-          { text: fmtUF2(c.authorized), options: cellOpts("right") },
-          { text: fmtUF2(c.unauthorized), options: cellOpts("right") },
           { text: fmtUF2(c.total_uf), options: { ...cellOpts("right"), bold: true } },
           { text: formatCLP(c.total_clp), options: cellOpts("right") },
         ]);
@@ -359,8 +355,6 @@ export async function generateCapexPPT(data: CapexPPTData) {
 
       // Totals row
       if (pageIdx === pages.length - 1) {
-        const totalAuth = group.contracts.reduce((s, c) => s + c.authorized, 0);
-        const totalUnauth = group.contracts.reduce((s, c) => s + c.unauthorized, 0);
         const totalUF = group.contracts.reduce((s, c) => s + c.total_uf, 0);
         const totalCLP = group.contracts.reduce((s, c) => s + c.total_clp, 0);
 
@@ -372,8 +366,6 @@ export async function generateCapexPPT(data: CapexPPTData) {
           { text: "TOTAL", options: totOpts("left") },
           { text: "", options: totOpts("center") },
           { text: "", options: totOpts("center") },
-          { text: fmtUF2(totalAuth), options: totOpts("right") },
-          { text: fmtUF2(totalUnauth), options: totOpts("right") },
           { text: fmtUF2(totalUF), options: totOpts("right") },
           { text: formatCLP(totalCLP), options: totOpts("right") },
         ]);
@@ -381,7 +373,7 @@ export async function generateCapexPPT(data: CapexPPTData) {
 
       targetSlide.addTable(rows, {
         x: 0.3, y: tableY, w: 9.4,
-        colW: [2.4, 1.1, 0.7, 1.2, 1.2, 1.2, 1.6],
+        colW: [3.2, 1.5, 1.0, 1.8, 1.9],
         border: { pt: 0.5, color: "E2E8F0" },
       });
 
