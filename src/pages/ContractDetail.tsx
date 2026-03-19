@@ -4,7 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, FileCheck, AlertCircle, RefreshCw, FileDown, ImagePlus, Image, X } from "lucide-react";
+import { ArrowLeft, MapPin, User, Calendar, DollarSign, Edit, Loader2, Trash2, ChevronsUpDown, RotateCcw, FileText, FolderOpen, Bell, LayoutGrid, FileCheck, AlertCircle, RefreshCw, FileDown, ImagePlus } from "lucide-react";
+import { BusinessCaseDialog } from "@/components/contracts/BusinessCaseDialog";
 import { generateOfferLetter } from "@/lib/generateOfferLetter";
 import { getLogoUrls } from "@/hooks/useAppLogos";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -64,7 +65,7 @@ interface Contract {
   status: string;
   signed_date: string | null;
   created_at: string;
-  business_case_url?: string | null;
+  
   superficie_edificada_local: number | null;
   metros_lineales_frente: number | null;
   display_currency?: "UF" | "CLP";
@@ -234,8 +235,7 @@ const ContractDetail = () => {
   const [signingContract, setSigningContract] = useState(false);
   const [closingNotesRefresh, setClosingNotesRefresh] = useState(0);
   const [generatingOffer, setGeneratingOffer] = useState(false);
-  const [uploadingBusinessCase, setUploadingBusinessCase] = useState(false);
-  const businessCaseInputId = `business-case-upload-${id}`;
+  const [businessCaseOpen, setBusinessCaseOpen] = useState(false);
 
   // DnD sensors
   const sensors = useSensors(
@@ -328,56 +328,7 @@ const ContractDetail = () => {
     }
   };
 
-  const handleBusinessCaseUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !contract) return;
-    
-    if (!file.type.startsWith("image/")) {
-      toast({ variant: "destructive", title: "Error", description: "Solo se permiten archivos de imagen" });
-      return;
-    }
-    
-    setUploadingBusinessCase(true);
-    try {
-      const ext = file.name.split(".").pop() || "png";
-      const filePath = `${contract.id}/business_case_${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from("repository-files")
-        .upload(filePath, file, { upsert: true });
-      if (uploadError) throw uploadError;
-
-      const storagePath = `storage://repository-files/${filePath}`;
-      const { error: updateError } = await supabase
-        .from("contracts")
-        .update({ business_case_url: storagePath })
-        .eq("id", contract.id);
-      if (updateError) throw updateError;
-
-      toast({ title: "Business Case subido", description: "La imagen se guardó correctamente" });
-      loadContract();
-    } catch (error) {
-      console.error("Error uploading business case:", error);
-      toast({ variant: "destructive", title: "Error", description: "No se pudo subir la imagen" });
-    } finally {
-      setUploadingBusinessCase(false);
-      e.target.value = "";
-    }
-  };
-
-  const handleRemoveBusinessCase = async () => {
-    if (!contract) return;
-    try {
-      const { error } = await supabase
-        .from("contracts")
-        .update({ business_case_url: null })
-        .eq("id", contract.id);
-      if (error) throw error;
-      toast({ title: "Business Case eliminado" });
-      loadContract();
-    } catch (error) {
-      toast({ variant: "destructive", title: "Error", description: "No se pudo eliminar" });
-    }
-  };
+  
   const handleAddDocument = async (url: string, name: string) => {
     if (!contract) return;
     const currentVersion = contract.contract_versions?.find(v => v.is_current);
@@ -873,54 +824,20 @@ const ContractDetail = () => {
                   Carta Oferta
                 </Button>
               )}
-              {/* Business Case upload/view */}
-              <input
-                type="file"
-                id={businessCaseInputId}
-                className="hidden"
-                accept="image/*"
-                onChange={handleBusinessCaseUpload}
+              {/* Business Case */}
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => setBusinessCaseOpen(true)}
+              >
+                <ImagePlus className="h-4 w-4" />
+                Business Case
+              </Button>
+              <BusinessCaseDialog
+                open={businessCaseOpen}
+                onOpenChange={setBusinessCaseOpen}
+                contractId={contract.id}
               />
-              {contract.business_case_url ? (
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    className="gap-2"
-                    onClick={async () => {
-                      const { getSignedUrl, isStorageUrl } = await import("@/lib/storageUtils");
-                      let url = contract.business_case_url!;
-                      if (isStorageUrl(url)) {
-                        const signed = await getSignedUrl(url);
-                        if (signed) url = signed;
-                      }
-                      window.open(url, "_blank");
-                    }}
-                  >
-                    <Image className="h-4 w-4" />
-                    Business Case
-                  </Button>
-                  {isAdmin && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-destructive"
-                      onClick={handleRemoveBusinessCase}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  disabled={uploadingBusinessCase}
-                  onClick={() => document.getElementById(businessCaseInputId)?.click()}
-                >
-                  {uploadingBusinessCase ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-                  Business Case
-                </Button>
-              )}
               {isAdmin && (isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} requiresSpecialAttention={contract.requires_special_attention} specialAttentionReason={contract.special_attention_reason} hasTerminationNotices={(contract.termination_notices?.length || 0) > 0} onStatusChange={() => { loadContract(); setClosingNotesRefresh(p => p + 1); }} />}
               {isAdmin && (
                 <Button variant="outline" onClick={() => navigate(`/contracts/${contract.id}/edit`)} className="gap-2">
