@@ -693,8 +693,9 @@ export function CommercialConditionsSummary({
         const ufForConversion = historicalUFForGuarantee || ufValue;
         if (ufForConversion > 0) return version.guarantee_fixed_amount / ufForConversion;
       }
-      if (version.guarantee_fixed_currency === 'UF' && displayCurrency === 'CLP' && ufValue > 0) {
-        return version.guarantee_fixed_amount * ufValue;
+      if (version.guarantee_fixed_currency === 'UF' && displayCurrency === 'CLP') {
+        const ufForConversion = historicalUFForGuarantee || ufValue;
+        if (ufForConversion > 0) return version.guarantee_fixed_amount * ufForConversion;
       }
       return version.guarantee_fixed_amount;
     }
