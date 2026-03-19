@@ -220,12 +220,16 @@ export function CommercialConditionsSummary({
 
   // Secondary format for guarantee - always uses historical UF from signed date
   const formatSecondaryGuarantee = (amount: number) => {
-    if (displayCurrency === "CLP" && ufValue > 0) {
-      const uf = amount / ufValue;
-      return `${uf.toLocaleString("es-CL", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-      })} UF`;
+    if (displayCurrency === "CLP") {
+      const ufForConversion = historicalUFForGuarantee || ufValue;
+      if (ufForConversion > 0) {
+        const uf = amount / ufForConversion;
+        return `${uf.toLocaleString("es-CL", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        })} UF`;
+      }
+      return "";
     } else if (displayCurrency === "UF") {
       // Always use historical UF from signed date for guarantee conversion
       const ufForConversion = historicalUFForGuarantee || ufValue;
