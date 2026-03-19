@@ -942,7 +942,7 @@ export function CommercialConditionsSummary({
             </p>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               {(() => {
-                const displayTotal = hasEscalations && escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo;
+                const displayTotal = escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo;
                 return (
                   <>
                     <span>{formatSecondary(displayTotal)}</span>
