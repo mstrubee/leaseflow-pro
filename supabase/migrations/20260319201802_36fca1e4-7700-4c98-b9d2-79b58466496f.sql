@@ -1,0 +1,1 @@
+ALTER TABLE public.contracts ADD COLUMN business_case_url TEXT;

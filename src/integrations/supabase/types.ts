@@ -1387,6 +1387,7 @@ export type Database = {
       }
       contracts: {
         Row: {
+          business_case_url: string | null
           clasificacion: string | null
           comite_gp_status: string | null
           company_id: string | null
@@ -1425,6 +1426,7 @@ export type Database = {
           venta_estimada_max: number | null
         }
         Insert: {
+          business_case_url?: string | null
           clasificacion?: string | null
           comite_gp_status?: string | null
           company_id?: string | null
@@ -1463,6 +1465,7 @@ export type Database = {
           venta_estimada_max?: number | null
         }
         Update: {
+          business_case_url?: string | null
           clasificacion?: string | null
           comite_gp_status?: string | null
           company_id?: string | null
