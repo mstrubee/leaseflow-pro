@@ -935,7 +935,7 @@ export function CommercialConditionsSummary({
           <div className="space-y-1 col-span-2 md:col-span-1 bg-primary/5 rounded-lg p-3 -m-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <DollarSign className="h-3 w-3" />
-              {hasEscalations && escalationPeriods.length > 1 ? "Total Arriendo Promedio" : "Total Arriendo"}
+              {escalationPeriods.length > 1 ? "Total Arriendo Promedio" : "Total Arriendo"}
             </div>
             <p className="text-lg font-bold text-primary">
               {formatPrimary(hasEscalations && escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo)}
