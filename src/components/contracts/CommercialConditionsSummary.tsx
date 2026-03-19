@@ -1037,34 +1037,33 @@ export function CommercialConditionsSummary({
             )}
           </div>
 
-          {/* Canon Inicial (sin considerar meses de gracia) */}
-          <div className="space-y-1">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <DollarSign className="h-3 w-3" />
-              Canon Inicial
-              {version.regime_rent_is_uf_m2 && (
-                <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">UF/m²</Badge>
-              )}
-            </div>
-            <p className="text-sm font-semibold text-primary">
-              {formatPrimary(actualInitialRent || actualRegimeRent)}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {formatSecondary(actualInitialRent || actualRegimeRent)}
-            </p>
-            {/* Show UF/m² breakdown when user entered value in UF/m² mode */}
-            {version.regime_rent_is_uf_m2 && superficieEdificadaLocal && (
-              <p className="text-xs text-muted-foreground">
-                ({superficieEdificadaLocal.toLocaleString("es-CL", { maximumFractionDigits: 2 })} m² × {((actualInitialRent || actualRegimeRent) / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} UF/m²)
-              </p>
-            )}
-            {/* Show calculated UF/m² when NOT in UF/m² mode */}
-            {!version.regime_rent_is_uf_m2 && superficieEdificadaLocal && superficieEdificadaLocal > 0 && (
-              <p className="text-xs text-muted-foreground">
-                {displayCurrency === "CLP" ? `($${Math.round((actualInitialRent || actualRegimeRent) / superficieEdificadaLocal).toLocaleString("es-CL")}/m²)` : `(${((actualInitialRent || actualRegimeRent) / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)`}
-              </p>
-            )}
-          </div>
+          {/* Total Arriendo Inicial (canon + GGCC + F.Prom + Otros, sin meses de gracia) */}
+          {(() => {
+            const firstPeriod = escalationPeriods[0];
+            const initialTotal = firstPeriod ? firstPeriod.total : (actualInitialRent || actualRegimeRent);
+            return (
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <DollarSign className="h-3 w-3" />
+                  Arriendo Inicial
+                  {version.regime_rent_is_uf_m2 && (
+                    <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">UF/m²</Badge>
+                  )}
+                </div>
+                <p className="text-sm font-semibold text-primary">
+                  {formatPrimary(initialTotal)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {formatSecondary(initialTotal)}
+                </p>
+                {superficieEdificadaLocal && superficieEdificadaLocal > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    ({(initialTotal / superficieEdificadaLocal).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} UF/m²)
+                  </p>
+                )}
+              </div>
+            );
+          })()}
 
           {/* % Variable */}
           {version.variable_rent_percentage !== null && version.variable_rent_percentage > 0 && <div className="space-y-1">
