@@ -938,7 +938,7 @@ export function CommercialConditionsSummary({
               {escalationPeriods.length > 1 ? "Total Arriendo Promedio" : "Total Arriendo"}
             </div>
             <p className="text-lg font-bold text-primary">
-              {formatPrimary(hasEscalations && escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo)}
+              {formatPrimary(escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo)}
             </p>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               {(() => {
