@@ -662,7 +662,29 @@ export function CommercialConditionsSummary({
     return totalMonths > 0 ? weightedSum / totalMonths : totalArriendo;
   }, [hasEscalations, escalationPeriods, totalArriendo, version.duration_months, version.grace_months]);
 
-  // Weighted average Fondo Promoción across escalation periods
+  // Calculate guarantee amount based on type
+  const guaranteeAmount = useMemo(() => {
+    if (guaranteeType === 'multiplier' && version.guarantee_multiplier) {
+      const baseRent = hasEscalations && actualInitialRent ? actualInitialRent : actualRegimeRent;
+      return version.guarantee_multiplier * baseRent;
+    }
+    if (guaranteeType === 'avg_rent' && version.guarantee_multiplier) {
+      const avgTotal = escalationPeriods.length > 1 ? totalArriendoPromedio : totalArriendo;
+      return version.guarantee_multiplier * avgTotal;
+    }
+    if ((guaranteeType === 'fixed_uf' || guaranteeType === 'fixed_clp') && version.guarantee_fixed_amount) {
+      if (version.guarantee_fixed_currency === 'CLP' && displayCurrency === 'UF') {
+        const ufForConversion = historicalUFForGuarantee || ufValue;
+        if (ufForConversion > 0) return version.guarantee_fixed_amount / ufForConversion;
+      }
+      if (version.guarantee_fixed_currency === 'UF' && displayCurrency === 'CLP' && ufValue > 0) {
+        return version.guarantee_fixed_amount * ufValue;
+      }
+      return version.guarantee_fixed_amount;
+    }
+    return null;
+  }, [guaranteeType, version.guarantee_multiplier, version.guarantee_fixed_amount, version.guarantee_fixed_currency, actualRegimeRent, actualInitialRent, hasEscalations, displayCurrency, ufValue, historicalUFForGuarantee, escalationPeriods, totalArriendoPromedio, totalArriendo]);
+
   const fondoPromocionPromedio = useMemo(() => {
     if (!hasEscalations || escalationPeriods.length <= 1 || !fondoPromocionAmount) return fondoPromocionAmount;
     const durationMonths = version.duration_months;
