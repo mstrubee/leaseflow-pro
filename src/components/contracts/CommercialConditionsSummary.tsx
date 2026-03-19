@@ -663,7 +663,7 @@ export function CommercialConditionsSummary({
     }
 
     return periods;
-  }, [hasEscalations, hasAdjustments, version, superficieEdificadaLocal, gastosComunesTotalUF, actualInitialRent, actualRegimeRent]);
+  }, [hasEscalations, hasAdjustments, version, superficieEdificadaLocal, gastosComunesTotalUF, actualInitialRent, actualRegimeRent, currentRent]);
 
   // Weighted average total arriendo across all escalation periods
   const totalArriendoPromedio = useMemo(() => {
