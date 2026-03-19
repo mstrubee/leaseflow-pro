@@ -240,7 +240,7 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
                       className="w-full h-full flex flex-col items-center justify-center gap-1 cursor-pointer"
                       onClick={() => window.open(img.signedUrl!, "_blank")}
                     >
-                      <FileSpreadsheet className="h-8 w-8 text-green-600" />
+                      <FileSpreadsheet className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
                       <span className="text-xs text-muted-foreground">Excel</span>
                     </div>
                   ) : img.signedUrl ? (
