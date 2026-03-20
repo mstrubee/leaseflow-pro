@@ -94,15 +94,19 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
     if (open) loadImages();
   }, [open, loadImages]);
 
-  // Listen for paste events when dialog is open
+  // Listen for paste events on the dialog content element
   useEffect(() => {
     if (!open) return;
-    const handler = (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items;
+    const el = contentRef.current;
+    if (!el) return;
+
+    const handler = (e: Event) => {
+      const ce = e as ClipboardEvent;
+      const items = ce.clipboardData?.items;
       if (!items) return;
       for (const item of Array.from(items)) {
         if (item.type.startsWith("image/")) {
-          e.preventDefault();
+          ce.preventDefault();
           const file = item.getAsFile();
           if (file) {
             setPastedFile(file);
@@ -113,8 +117,14 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
         }
       }
     };
-    document.addEventListener("paste", handler);
-    return () => document.removeEventListener("paste", handler);
+
+    // Attach to the dialog element and also to window as fallback
+    el.addEventListener("paste", handler);
+    window.addEventListener("paste", handler);
+    return () => {
+      el.removeEventListener("paste", handler);
+      window.removeEventListener("paste", handler);
+    };
   }, [open]);
 
   // Cleanup preview URL
