@@ -31,6 +31,15 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
   const [pasteName, setPasteName] = useState("");
   const contentRef = useRef<HTMLDivElement>(null);
 
+  const handleClipboardImage = useCallback((file: File) => {
+    setPastedFile(file);
+    setPastedPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+    setPasteName("");
+  }, []);
+
   const ensureFolder = useCallback(async (): Promise<string> => {
     const { data: existing } = await supabase
       .from("repository_folders")
@@ -94,38 +103,76 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
     if (open) loadImages();
   }, [open, loadImages]);
 
-  // Listen for paste events on the dialog content element
+  // Ensure dialog can receive keyboard focus for paste shortcut handling
   useEffect(() => {
     if (!open) return;
-    const el = contentRef.current;
-    if (!el) return;
+    const timeout = window.setTimeout(() => {
+      contentRef.current?.focus();
+    }, 0);
 
-    const handler = (e: Event) => {
-      const ce = e as ClipboardEvent;
-      const items = ce.clipboardData?.items;
-      if (!items) return;
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [open]);
+
+  // Listen for paste events globally while dialog is open
+  useEffect(() => {
+    if (!open) return;
+
+    const extractImageFromItems = (items?: DataTransferItemList | null) => {
+      if (!items) return false;
+
       for (const item of Array.from(items)) {
-        if (item.type.startsWith("image/")) {
-          ce.preventDefault();
-          const file = item.getAsFile();
-          if (file) {
-            setPastedFile(file);
-            setPastedPreview(URL.createObjectURL(file));
-            setPasteName("");
-          }
-          return;
-        }
+        if (!item.type.startsWith("image/")) continue;
+        const file = item.getAsFile();
+        if (!file) continue;
+        handleClipboardImage(file);
+        return true;
+      }
+
+      return false;
+    };
+
+    const pasteHandler = (event: Event) => {
+      const clipboardEvent = event as ClipboardEvent;
+      const hasImage = extractImageFromItems(clipboardEvent.clipboardData?.items);
+      if (hasImage) {
+        clipboardEvent.preventDefault();
+        clipboardEvent.stopPropagation();
       }
     };
 
-    // Attach to the dialog element and also to window as fallback
-    el.addEventListener("paste", handler);
-    window.addEventListener("paste", handler);
-    return () => {
-      el.removeEventListener("paste", handler);
-      window.removeEventListener("paste", handler);
+    const keydownHandler = async (event: KeyboardEvent) => {
+      const isPasteShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v";
+      if (!isPasteShortcut || !navigator.clipboard?.read) return;
+
+      try {
+        const clipboardItems = await navigator.clipboard.read();
+        for (const clipboardItem of clipboardItems) {
+          const imageType = clipboardItem.types.find((type) => type.startsWith("image/"));
+          if (!imageType) continue;
+
+          const blob = await clipboardItem.getType(imageType);
+          const extension = imageType.split("/")[1] || "png";
+          handleClipboardImage(new File([blob], `clipboard.${extension}`, { type: imageType }));
+          event.preventDefault();
+          return;
+        }
+      } catch {
+        // If clipboard API is not available/authorized, regular paste event remains as fallback.
+      }
     };
-  }, [open]);
+
+    document.addEventListener("paste", pasteHandler, true);
+    window.addEventListener("paste", pasteHandler, true);
+    document.addEventListener("keydown", keydownHandler, true);
+
+    return () => {
+      document.removeEventListener("paste", pasteHandler, true);
+      window.removeEventListener("paste", pasteHandler, true);
+      document.removeEventListener("keydown", keydownHandler, true);
+    };
+  }, [open, handleClipboardImage]);
 
   // Cleanup preview URL
   useEffect(() => {
@@ -244,7 +291,7 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col" ref={contentRef}>
+      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col" ref={contentRef} tabIndex={-1}>
         <DialogHeader className="flex-shrink-0">
           <DialogTitle>Business Case — Imágenes</DialogTitle>
         </DialogHeader>
