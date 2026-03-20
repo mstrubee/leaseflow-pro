@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ImagePlus, Loader2, Trash2, FileSpreadsheet } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { ImagePlus, Loader2, Trash2, FileSpreadsheet, ClipboardPaste } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { getSignedUrl, isStorageUrl } from "@/lib/storageUtils";
@@ -25,9 +26,12 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [pastedFile, setPastedFile] = useState<File | null>(null);
+  const [pastedPreview, setPastedPreview] = useState<string | null>(null);
+  const [pasteName, setPasteName] = useState("");
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const ensureFolder = useCallback(async (): Promise<string> => {
-    // Find or create the "Caso de Negocio" folder for this contract
     const { data: existing } = await supabase
       .from("repository_folders")
       .select("id")
@@ -62,10 +66,7 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
         .eq("name", "Caso de Negocio")
         .maybeSingle();
 
-      if (!folder) {
-        setImages([]);
-        return;
-      }
+      if (!folder) { setImages([]); return; }
 
       const { data: files } = await supabase
         .from("repository_files")
@@ -73,24 +74,14 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
         .eq("folder_id", folder.id)
         .order("uploaded_at", { ascending: false });
 
-      if (!files) {
-        setImages([]);
-        return;
-      }
+      if (!files) { setImages([]); return; }
 
-      // Resolve signed URLs for display
       const resolved = await Promise.all(
         files.map(async (f) => {
-          let signedUrl: string | null = null;
-          if (isStorageUrl(f.url)) {
-            signedUrl = await getSignedUrl(f.url);
-          } else {
-            signedUrl = f.url;
-          }
+          const signedUrl = isStorageUrl(f.url) ? await getSignedUrl(f.url) : f.url;
           return { ...f, signedUrl };
         })
       );
-
       setImages(resolved);
     } catch (error) {
       console.error("Error loading business case images:", error);
@@ -103,7 +94,35 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
     if (open) loadImages();
   }, [open, loadImages]);
 
-  const handleUpload = async (files: FileList | File[]) => {
+  // Listen for paste events when dialog is open
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith("image/")) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) {
+            setPastedFile(file);
+            setPastedPreview(URL.createObjectURL(file));
+            setPasteName("");
+          }
+          return;
+        }
+      }
+    };
+    document.addEventListener("paste", handler);
+    return () => document.removeEventListener("paste", handler);
+  }, [open]);
+
+  // Cleanup preview URL
+  useEffect(() => {
+    return () => { if (pastedPreview) URL.revokeObjectURL(pastedPreview); };
+  }, [pastedPreview]);
+
+  const handleUpload = async (files: FileList | File[], overrideName?: string) => {
     if (!files || files.length === 0) return;
 
     setUploading(true);
@@ -126,7 +145,25 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
           continue;
         }
 
-        const sanitized = sanitizeFileName(file.name);
+        const finalName = overrideName || file.name;
+        const ext = file.type.startsWith("image/png") ? ".png" : file.type.startsWith("image/webp") ? ".webp" : ".jpg";
+        const displayName = overrideName
+          ? (overrideName.includes(".") ? overrideName : overrideName + ext)
+          : finalName;
+
+        // Check if a file with this name already exists → replace it
+        const existing = images.find((img) => img.name === displayName);
+        if (existing) {
+          // Delete old storage file
+          if (isStorageUrl(existing.url)) {
+            const { extractStoragePath } = await import("@/lib/storageUtils");
+            const oldPath = extractStoragePath(existing.url);
+            if (oldPath) await supabase.storage.from("repository-files").remove([oldPath]);
+          }
+          await supabase.from("repository_files").delete().eq("id", existing.id);
+        }
+
+        const sanitized = sanitizeFileName(displayName);
         const path = `${contractId}/business_case/${Date.now()}_${sanitized}`;
 
         const { error: uploadError } = await supabase.storage
@@ -134,14 +171,14 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
           .upload(path, file, { upsert: true });
 
         if (uploadError) {
-          toast.error(`Error al subir ${file.name}`);
+          toast.error(`Error al subir ${displayName}`);
           continue;
         }
 
         const storagePath = `storage://repository-files/${path}`;
         await supabase.from("repository_files").insert({
           folder_id: folderId,
-          name: file.name,
+          name: displayName,
           url: storagePath,
           file_type: file.type,
         });
@@ -150,28 +187,43 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
       }
 
       if (count > 0) {
-        toast.success(`${count} imagen(es) subida(s)`);
+        toast.success(count === 1 && overrideName
+          ? `"${overrideName}" guardada`
+          : `${count} archivo(s) subido(s)`);
         loadImages();
       }
     } catch (error) {
       console.error("Error uploading:", error);
-      toast.error("Error al subir imágenes");
+      toast.error("Error al subir archivos");
     } finally {
       setUploading(false);
     }
   };
 
+  const handlePasteSave = async () => {
+    if (!pastedFile || !pasteName.trim()) {
+      toast.error("Ingresa un nombre para la imagen");
+      return;
+    }
+    await handleUpload([pastedFile], pasteName.trim());
+    setPastedFile(null);
+    setPastedPreview(null);
+    setPasteName("");
+  };
+
+  const cancelPaste = () => {
+    setPastedFile(null);
+    setPastedPreview(null);
+    setPasteName("");
+  };
+
   const handleDelete = async (image: BusinessCaseImage) => {
     try {
-      // Delete from storage
       if (isStorageUrl(image.url)) {
         const { extractStoragePath } = await import("@/lib/storageUtils");
         const path = extractStoragePath(image.url);
-        if (path) {
-          await supabase.storage.from("repository-files").remove([path]);
-        }
+        if (path) await supabase.storage.from("repository-files").remove([path]);
       }
-      // Delete from DB
       await supabase.from("repository_files").delete().eq("id", image.id);
       toast.success("Imagen eliminada");
       loadImages();
@@ -182,10 +234,41 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col" ref={contentRef}>
         <DialogHeader className="flex-shrink-0">
           <DialogTitle>Business Case — Imágenes</DialogTitle>
         </DialogHeader>
+
+        {/* Paste preview panel */}
+        {pastedFile && pastedPreview && (
+          <div className="border rounded-lg p-4 bg-muted/30 flex-shrink-0 space-y-3">
+            <p className="text-sm font-medium">Imagen pegada desde portapapeles</p>
+            <div className="flex gap-4 items-start">
+              <img src={pastedPreview} alt="Pasted" className="h-24 w-auto rounded border object-contain" />
+              <div className="flex-1 space-y-2">
+                <Input
+                  placeholder="Nombre de la imagen (ej: Plano Local)"
+                  value={pasteName}
+                  onChange={(e) => setPasteName(e.target.value)}
+                  autoFocus
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handlePasteSave(); } }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Si ya existe una imagen con este nombre, será reemplazada.
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={handlePasteSave} disabled={uploading || !pasteName.trim()}>
+                    {uploading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                    Guardar
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={cancelPaste} disabled={uploading}>
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Upload area */}
         <div
@@ -208,7 +291,7 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
             input.click();
           }}
         >
-          {uploading ? (
+          {uploading && !pastedFile ? (
             <div className="flex items-center justify-center gap-2 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
               <span className="text-sm">Subiendo...</span>
@@ -217,6 +300,9 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
             <div className="flex flex-col items-center gap-1 text-muted-foreground">
               <ImagePlus className="h-6 w-6" />
               <span className="text-sm">Haz clic o arrastra imágenes o archivos Excel aquí</span>
+              <span className="text-xs flex items-center gap-1 mt-1">
+                <ClipboardPaste className="h-3 w-3" /> También puedes pegar (Ctrl+V) una imagen
+              </span>
             </div>
           )}
         </div>
