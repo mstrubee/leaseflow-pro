@@ -78,7 +78,7 @@ export const calculateCurrentRentUF = (params: {
 
   const isRentUfM2 = version.regime_rent_is_uf_m2 === true;
   // initial_rent inherits UF/m² from regime if its own flag is not explicitly set
-  const isInitialRentUfM2 = version.initial_rent_is_uf_m2 === true || (isRentUfM2 && version.initial_rent_is_uf_m2 !== false);
+  const isInitialRentUfM2 = version.initial_rent_is_uf_m2 === true || isRentUfM2;
 
   const baseRegimeRent = isRentUfM2 ? version.regime_rent * superficie : version.regime_rent;
 

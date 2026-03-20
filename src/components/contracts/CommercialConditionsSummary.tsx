@@ -357,7 +357,7 @@ export function CommercialConditionsSummary({
     ? parseFloat((version.regime_rent * superficieEdificadaLocal).toFixed(3))
     : version.regime_rent;
   // initial_rent inherits UF/m² from regime if its own flag is not explicitly true
-  const isInitialRentUfM2 = version.initial_rent_is_uf_m2 === true || (version.regime_rent_is_uf_m2 === true && version.initial_rent_is_uf_m2 !== false);
+  const isInitialRentUfM2 = version.initial_rent_is_uf_m2 === true || version.regime_rent_is_uf_m2 === true;
   const actualInitialRent = version.initial_rent 
     ? (isInitialRentUfM2 && superficieEdificadaLocal 
         ? parseFloat((version.initial_rent * superficieEdificadaLocal).toFixed(3))
