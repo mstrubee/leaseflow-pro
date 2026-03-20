@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ImagePlus, Loader2, Trash2, FileSpreadsheet, ClipboardPaste } from "lucide-react";
+import { ImagePlus, Loader2, Trash2, FileSpreadsheet, ClipboardPaste, CheckSquare, Square, X } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { getSignedUrl, isStorageUrl } from "@/lib/storageUtils";
@@ -29,7 +30,42 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
   const [pastedFile, setPastedFile] = useState<File | null>(null);
   const [pastedPreview, setPastedPreview] = useState<string | null>(null);
   const [pasteName, setPasteName] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) return;
+    const toDelete = images.filter((img) => selectedIds.has(img.id));
+    try {
+      for (const image of toDelete) {
+        if (isStorageUrl(image.url)) {
+          const { extractStoragePath } = await import("@/lib/storageUtils");
+          const path = extractStoragePath(image.url);
+          if (path) await supabase.storage.from("repository-files").remove([path]);
+        }
+        await supabase.from("repository_files").delete().eq("id", image.id);
+      }
+      toast.success(`${toDelete.length} archivo(s) eliminado(s)`);
+      exitSelectionMode();
+      loadImages();
+    } catch {
+      toast.error("Error al eliminar archivos");
+    }
+  };
+
 
   const handleClipboardImage = useCallback((file: File) => {
     setPastedFile(file);
@@ -294,6 +330,41 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
       <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col" ref={contentRef} tabIndex={-1}>
         <DialogHeader className="flex-shrink-0">
           <DialogTitle>Business Case — Imágenes</DialogTitle>
+          {images.length > 0 && (
+            <div className="flex items-center gap-2 pt-1">
+              {selectionMode ? (
+                <>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={selectedIds.size === 0}
+                    onClick={handleDeleteSelected}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1" />
+                    Eliminar ({selectedIds.size})
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => {
+                    if (selectedIds.size === images.length) {
+                      setSelectedIds(new Set());
+                    } else {
+                      setSelectedIds(new Set(images.map((i) => i.id)));
+                    }
+                  }}>
+                    {selectedIds.size === images.length ? "Deseleccionar todo" : "Seleccionar todo"}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={exitSelectionMode}>
+                    <X className="h-3.5 w-3.5 mr-1" />
+                    Cancelar
+                  </Button>
+                </>
+              ) : (
+                <Button size="sm" variant="outline" onClick={() => setSelectionMode(true)}>
+                  <CheckSquare className="h-3.5 w-3.5 mr-1" />
+                  Seleccionar
+                </Button>
+              )}
+            </div>
+          )}
         </DialogHeader>
 
         {/* Paste preview panel */}
@@ -377,11 +448,26 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 py-2">
               {images.map((img) => (
-                <div key={img.id} className="group relative rounded-lg overflow-hidden border bg-muted aspect-video">
+                <div
+                  key={img.id}
+                  className={`group relative rounded-lg overflow-hidden border bg-muted aspect-video ${
+                    selectionMode && selectedIds.has(img.id) ? "ring-2 ring-primary" : ""
+                  }`}
+                  onClick={selectionMode ? (e) => { e.stopPropagation(); toggleSelect(img.id); } : undefined}
+                >
+                  {selectionMode && (
+                    <div className="absolute top-1 left-1 z-10">
+                      <Checkbox
+                        checked={selectedIds.has(img.id)}
+                        onCheckedChange={() => toggleSelect(img.id)}
+                        className="h-5 w-5 bg-background/80 border-muted-foreground/50"
+                      />
+                    </div>
+                  )}
                   {img.signedUrl && /\.(xls|xlsx)$/i.test(img.name) ? (
                     <div
-                      className="w-full h-full flex flex-col items-center justify-center gap-1 cursor-pointer"
-                      onClick={() => window.open(img.signedUrl!, "_blank")}
+                      className={`w-full h-full flex flex-col items-center justify-center gap-1 ${selectionMode ? "cursor-pointer" : "cursor-pointer"}`}
+                      onClick={selectionMode ? undefined : () => window.open(img.signedUrl!, "_blank")}
                     >
                       <FileSpreadsheet className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
                       <span className="text-xs text-muted-foreground">Excel</span>
@@ -390,22 +476,24 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
                     <img
                       src={img.signedUrl}
                       alt={img.name}
-                      className="w-full h-full object-cover cursor-pointer"
-                      onClick={() => window.open(img.signedUrl!, "_blank")}
+                      className={`w-full h-full object-cover ${selectionMode ? "cursor-pointer" : "cursor-pointer"}`}
+                      onClick={selectionMode ? undefined : () => window.open(img.signedUrl!, "_blank")}
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
                       Sin vista previa
                     </div>
                   )}
-                  <Button
-                    variant="destructive"
-                    size="icon"
-                    className="absolute top-1 right-1 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={() => handleDelete(img)}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
+                  {!selectionMode && (
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      className="absolute top-1 right-1 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => handleDelete(img)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  )}
                   <div className="absolute bottom-0 inset-x-0 bg-background/80 px-2 py-1">
                     <span className="text-xs truncate block">{img.name}</span>
                   </div>
