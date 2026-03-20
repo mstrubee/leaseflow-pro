@@ -482,7 +482,8 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
       (version.first_adjustment_month || 0) > 0;
     
     const isRentUfM2 = version.regime_rent_is_uf_m2 ?? false;
-    const isInitialRentUfM2 = version.initial_rent_is_uf_m2 ?? false;
+    // initial_rent inherits UF/m² from regime if its own flag is not explicitly set
+    const isInitialRentUfM2 = version.initial_rent_is_uf_m2 === true || isRentUfM2;
     
     // Calculate current month
     const startDate = version.effective_date
