@@ -4,10 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Upload, FolderOpen, Link, X, File, ExternalLink } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Upload, FolderOpen, Link, X, File, ExternalLink, Download, CheckSquare } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
+import { getSignedUrl, isStorageUrl } from "@/lib/storageUtils";
 
 interface PatentDocumentUploadProps {
   open: boolean;
