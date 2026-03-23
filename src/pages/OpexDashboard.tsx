@@ -931,11 +931,13 @@ const OpexDashboard = () => {
                             content={({ active, payload }) => {
                               if (active && payload && payload.length > 0) {
                                 const data = payload[0].payload;
+                                const clpAmount = data.total_consumed * (ufValue || 0);
                                 return (
                                   <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
                                     <p className="font-semibold text-foreground mb-2">{data.name}</p>
                                     <p className="text-sm text-muted-foreground">
-                                      Consumido: <span className="font-medium text-foreground">{data.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF</span>
+                                      Consumido: <span className="font-medium text-foreground">$ {Math.round(clpAmount).toLocaleString("es-CL")}</span>
+                                      <span className="text-xs ml-1">({data.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</span>
                                     </p>
                                     <p className="text-sm text-muted-foreground">
                                       % del total: <span className="font-medium text-foreground">{data.percent_of_total.toFixed(1)}%</span>
