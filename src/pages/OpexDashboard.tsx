@@ -628,36 +628,56 @@ const OpexDashboard = () => {
                   $ {Math.round(globalTotals.budgetCLP).toLocaleString("es-CL")}
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  ≈ {globalTotals.budgetUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                  ({globalTotals.budgetUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF)
                 </div>
               </div>
               <div className="pt-2 border-t border-border space-y-1.5">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Con OC</span>
-                  <span className="font-medium text-orange-600">
-                    {globalTotals.consumedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
-                  </span>
+                  <div className="text-right">
+                    <span className="font-medium text-orange-600">
+                      $ {Math.round(globalTotals.consumedCLP).toLocaleString("es-CL")}
+                    </span>
+                    <span className="text-xs text-muted-foreground ml-1">
+                      ({globalTotals.consumedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF)
+                    </span>
+                  </div>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Facturado</span>
-                  <span className="font-medium text-blue-600">
-                    {globalTotals.invoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
-                  </span>
+                  <div className="text-right">
+                    <span className="font-medium text-blue-600">
+                      $ {Math.round(globalTotals.invoicedCLP).toLocaleString("es-CL")}
+                    </span>
+                    <span className="text-xs text-muted-foreground ml-1">
+                      ({globalTotals.invoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF)
+                    </span>
+                  </div>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">No Facturado</span>
-                  <span className="font-medium text-amber-600">
-                    {globalTotals.notInvoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
-                  </span>
+                  <div className="text-right">
+                    <span className="font-medium text-amber-600">
+                      $ {Math.round(Math.abs(globalTotals.notInvoicedCLP)).toLocaleString("es-CL")}
+                    </span>
+                    <span className="text-xs text-muted-foreground ml-1">
+                      ({globalTotals.notInvoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF)
+                    </span>
+                  </div>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Disponible</span>
-                  <span className={`font-medium ${globalTotals.availableUF < 0 ? "text-destructive" : "text-green-600"}`}>
-                    {globalTotals.availableUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
-                  </span>
+                  <div className="text-right">
+                    <span className={`font-medium ${globalTotals.availableCLP < 0 ? "text-destructive" : "text-green-600"}`}>
+                      $ {Math.round(Math.abs(globalTotals.availableCLP)).toLocaleString("es-CL")}
+                    </span>
+                    <span className="text-xs text-muted-foreground ml-1">
+                      ({globalTotals.availableUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF)
+                    </span>
+                  </div>
                 </div>
               </div>
-              <Progress value={globalTotals.budgetUF > 0 ? (globalTotals.consumedUF / globalTotals.budgetUF) * 100 : 0} className="h-2" />
+              <Progress value={globalTotals.budgetCLP > 0 ? (globalTotals.consumedCLP / globalTotals.budgetCLP) * 100 : 0} className="h-2" />
             </CardContent>
           </Card>
           
@@ -674,7 +694,7 @@ const OpexDashboard = () => {
                 $ {Math.round(globalTotals.additionalCLP).toLocaleString("es-CL")}
               </div>
               <div className="text-sm text-muted-foreground">
-                ≈ {globalTotals.additionalUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                ({globalTotals.additionalUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF)
               </div>
             </CardContent>
           </Card>
@@ -692,23 +712,29 @@ const OpexDashboard = () => {
                 <div>
                   <div className="text-sm text-muted-foreground">Facturado</div>
                   <div className="text-xl font-bold text-blue-600">
-                    {globalTotals.invoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                    $ {Math.round(globalTotals.invoicedCLP).toLocaleString("es-CL")}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    ({globalTotals.invoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF)
                   </div>
                 </div>
                 <div className="text-right">
                   <div className="text-sm text-muted-foreground">No Facturado</div>
                   <div className="text-xl font-bold text-amber-600">
-                    {globalTotals.notInvoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF
+                    $ {Math.round(Math.abs(globalTotals.notInvoicedCLP)).toLocaleString("es-CL")}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    ({globalTotals.notInvoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF)
                   </div>
                 </div>
               </div>
               <Progress 
-                value={globalTotals.consumedUF > 0 ? (globalTotals.invoicedUF / globalTotals.consumedUF) * 100 : 0} 
+                value={globalTotals.consumedCLP > 0 ? (globalTotals.invoicedCLP / globalTotals.consumedCLP) * 100 : 0} 
                 className="h-2" 
               />
               <div className="text-xs text-center text-muted-foreground">
-                {globalTotals.consumedUF > 0 
-                  ? `${((globalTotals.invoicedUF / globalTotals.consumedUF) * 100).toFixed(0)}% facturado del consumo`
+                {globalTotals.consumedCLP > 0 
+                  ? `${((globalTotals.invoicedCLP / globalTotals.consumedCLP) * 100).toFixed(0)}% facturado del consumo`
                   : "Sin consumo registrado"
                 }
               </div>
