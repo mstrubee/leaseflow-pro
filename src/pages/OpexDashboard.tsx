@@ -1111,19 +1111,16 @@ const OpexDashboard = () => {
                                       </div>
                                       <div className="flex items-center gap-4 mt-1">
                                         <span className="text-sm text-muted-foreground">
-                                          Presupuesto: {Math.abs(summary.total_budget).toLocaleString("es-CL", {
-                                      minimumFractionDigits: 2
-                                    })} UF
+                                          Presupuesto: $ {Math.round(Math.abs(summary.total_budget) * (ufValue || 0)).toLocaleString("es-CL")}
+                                          <span className="text-xs ml-1">({Math.abs(summary.total_budget).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</span>
                                         </span>
                                         <span className="text-sm text-orange-600">
-                                          Consumido: {Math.abs(summary.total_consumed).toLocaleString("es-CL", {
-                                      minimumFractionDigits: 2
-                                    })} UF
+                                          Consumido: $ {Math.round(Math.abs(summary.total_consumed) * (ufValue || 0)).toLocaleString("es-CL")}
+                                          <span className="text-xs ml-1">({Math.abs(summary.total_consumed).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</span>
                                         </span>
                                         <span className={`text-sm ${summary.total_available < 0 ? "text-destructive" : "text-green-600"}`}>
-                                          Disponible: {Math.abs(summary.total_available).toLocaleString("es-CL", {
-                                      minimumFractionDigits: 2
-                                    })} UF
+                                          Disponible: $ {Math.round(Math.abs(summary.total_available) * (ufValue || 0)).toLocaleString("es-CL")}
+                                          <span className="text-xs ml-1">({Math.abs(summary.total_available).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</span>
                                         </span>
                                       </div>
                                     </div>
