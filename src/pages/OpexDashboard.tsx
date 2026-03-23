@@ -839,11 +839,13 @@ const OpexDashboard = () => {
                             content={({ active, payload }) => {
                               if (active && payload && payload.length > 0) {
                                 const data = payload[0].payload;
+                                const clpAmount = data.total_consumed * (ufValue || 0);
                                 return (
                                   <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
                                     <p className="font-semibold text-foreground mb-2">{data.name}</p>
                                     <p className="text-sm text-muted-foreground">
-                                      Consumido: <span className="font-medium text-foreground">{data.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF</span>
+                                      Consumido: <span className="font-medium text-foreground">$ {Math.round(clpAmount).toLocaleString("es-CL")}</span>
+                                      <span className="text-xs ml-1">({data.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</span>
                                     </p>
                                     <p className="text-sm text-muted-foreground">
                                       % del total: <span className="font-medium text-foreground">{data.percent_of_total.toFixed(1)}%</span>
@@ -871,7 +873,7 @@ const OpexDashboard = () => {
                           />
                           <span className="text-xs font-medium truncate flex-1">{item.name}</span>
                           <span className="text-xs text-muted-foreground">
-                            {item.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 1 })} UF
+                            $ {Math.round(item.total_consumed * (ufValue || 0)).toLocaleString("es-CL")} ({item.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)
                           </span>
                           <Badge variant="outline" className="text-xs h-5">
                             {item.percent_of_total.toFixed(0)}%
@@ -929,11 +931,13 @@ const OpexDashboard = () => {
                             content={({ active, payload }) => {
                               if (active && payload && payload.length > 0) {
                                 const data = payload[0].payload;
+                                const clpAmount = data.total_consumed * (ufValue || 0);
                                 return (
                                   <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
                                     <p className="font-semibold text-foreground mb-2">{data.name}</p>
                                     <p className="text-sm text-muted-foreground">
-                                      Consumido: <span className="font-medium text-foreground">{data.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF</span>
+                                      Consumido: <span className="font-medium text-foreground">$ {Math.round(clpAmount).toLocaleString("es-CL")}</span>
+                                      <span className="text-xs ml-1">({data.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</span>
                                     </p>
                                     <p className="text-sm text-muted-foreground">
                                       % del total: <span className="font-medium text-foreground">{data.percent_of_total.toFixed(1)}%</span>
@@ -961,7 +965,7 @@ const OpexDashboard = () => {
                           />
                           <span className="text-xs font-medium truncate flex-1">{item.name}</span>
                           <span className="text-xs text-muted-foreground">
-                            {item.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 1 })} UF
+                            $ {Math.round(item.total_consumed * (ufValue || 0)).toLocaleString("es-CL")} ({item.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)
                           </span>
                           <Badge variant="outline" className="text-xs h-5">
                             {item.percent_of_total.toFixed(0)}%
@@ -1107,19 +1111,16 @@ const OpexDashboard = () => {
                                       </div>
                                       <div className="flex items-center gap-4 mt-1">
                                         <span className="text-sm text-muted-foreground">
-                                          Presupuesto: {Math.abs(summary.total_budget).toLocaleString("es-CL", {
-                                      minimumFractionDigits: 2
-                                    })} UF
+                                          Presupuesto: $ {Math.round(Math.abs(summary.total_budget) * (ufValue || 0)).toLocaleString("es-CL")}
+                                          <span className="text-xs ml-1">({Math.abs(summary.total_budget).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</span>
                                         </span>
                                         <span className="text-sm text-orange-600">
-                                          Consumido: {Math.abs(summary.total_consumed).toLocaleString("es-CL", {
-                                      minimumFractionDigits: 2
-                                    })} UF
+                                          Consumido: $ {Math.round(Math.abs(summary.total_consumed) * (ufValue || 0)).toLocaleString("es-CL")}
+                                          <span className="text-xs ml-1">({Math.abs(summary.total_consumed).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</span>
                                         </span>
                                         <span className={`text-sm ${summary.total_available < 0 ? "text-destructive" : "text-green-600"}`}>
-                                          Disponible: {Math.abs(summary.total_available).toLocaleString("es-CL", {
-                                      minimumFractionDigits: 2
-                                    })} UF
+                                          Disponible: $ {Math.round(Math.abs(summary.total_available) * (ufValue || 0)).toLocaleString("es-CL")}
+                                          <span className="text-xs ml-1">({Math.abs(summary.total_available).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</span>
                                         </span>
                                       </div>
                                     </div>
@@ -1160,29 +1161,24 @@ const OpexDashboard = () => {
                                 return <TableRow key={cat.category_id}>
                                           <TableCell className="font-medium">{cat.category_name}</TableCell>
                                           <TableCell className="text-right">
-                                            {Math.abs(cat.master_budget).toLocaleString("es-CL", {
-                                      minimumFractionDigits: 2
-                                    })} UF
+                                            <div>$ {Math.round(Math.abs(cat.master_budget) * (ufValue || 0)).toLocaleString("es-CL")}</div>
+                                            <div className="text-xs text-muted-foreground">({Math.abs(cat.master_budget).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</div>
                                           </TableCell>
                                           <TableCell className="text-right">
-                                            {Math.abs(cat.additional_budget).toLocaleString("es-CL", {
-                                      minimumFractionDigits: 2
-                                    })} UF
+                                            <div>$ {Math.round(Math.abs(cat.additional_budget) * (ufValue || 0)).toLocaleString("es-CL")}</div>
+                                            <div className="text-xs text-muted-foreground">({Math.abs(cat.additional_budget).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</div>
                                           </TableCell>
                                           <TableCell className="text-right font-medium">
-                                            {Math.abs(totalBudget).toLocaleString("es-CL", {
-                                      minimumFractionDigits: 2
-                                    })} UF
+                                            <div>$ {Math.round(Math.abs(totalBudget) * (ufValue || 0)).toLocaleString("es-CL")}</div>
+                                            <div className="text-xs text-muted-foreground">({Math.abs(totalBudget).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</div>
                                           </TableCell>
                                           <TableCell className="text-right text-orange-600">
-                                            {Math.abs(cat.consumed).toLocaleString("es-CL", {
-                                      minimumFractionDigits: 2
-                                    })} UF
+                                            <div>$ {Math.round(Math.abs(cat.consumed) * (ufValue || 0)).toLocaleString("es-CL")}</div>
+                                            <div className="text-xs text-muted-foreground">({Math.abs(cat.consumed).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</div>
                                           </TableCell>
                                           <TableCell className={`text-right ${cat.available < 0 ? "text-destructive" : "text-green-600"}`}>
-                                            {Math.abs(cat.available).toLocaleString("es-CL", {
-                                      minimumFractionDigits: 2
-                                    })} UF
+                                            <div>$ {Math.round(Math.abs(cat.available) * (ufValue || 0)).toLocaleString("es-CL")}</div>
+                                            <div className="text-xs text-muted-foreground">({Math.abs(cat.available).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</div>
                                           </TableCell>
                                           <TableCell>
                                             <div className="flex items-center gap-2">
