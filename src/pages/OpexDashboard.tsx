@@ -1161,29 +1161,24 @@ const OpexDashboard = () => {
                                 return <TableRow key={cat.category_id}>
                                           <TableCell className="font-medium">{cat.category_name}</TableCell>
                                           <TableCell className="text-right">
-                                            {Math.abs(cat.master_budget).toLocaleString("es-CL", {
-                                      minimumFractionDigits: 2
-                                    })} UF
+                                            <div>$ {Math.round(Math.abs(cat.master_budget) * (ufValue || 0)).toLocaleString("es-CL")}</div>
+                                            <div className="text-xs text-muted-foreground">({Math.abs(cat.master_budget).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</div>
                                           </TableCell>
                                           <TableCell className="text-right">
-                                            {Math.abs(cat.additional_budget).toLocaleString("es-CL", {
-                                      minimumFractionDigits: 2
-                                    })} UF
+                                            <div>$ {Math.round(Math.abs(cat.additional_budget) * (ufValue || 0)).toLocaleString("es-CL")}</div>
+                                            <div className="text-xs text-muted-foreground">({Math.abs(cat.additional_budget).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</div>
                                           </TableCell>
                                           <TableCell className="text-right font-medium">
-                                            {Math.abs(totalBudget).toLocaleString("es-CL", {
-                                      minimumFractionDigits: 2
-                                    })} UF
+                                            <div>$ {Math.round(Math.abs(totalBudget) * (ufValue || 0)).toLocaleString("es-CL")}</div>
+                                            <div className="text-xs text-muted-foreground">({Math.abs(totalBudget).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</div>
                                           </TableCell>
                                           <TableCell className="text-right text-orange-600">
-                                            {Math.abs(cat.consumed).toLocaleString("es-CL", {
-                                      minimumFractionDigits: 2
-                                    })} UF
+                                            <div>$ {Math.round(Math.abs(cat.consumed) * (ufValue || 0)).toLocaleString("es-CL")}</div>
+                                            <div className="text-xs text-muted-foreground">({Math.abs(cat.consumed).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</div>
                                           </TableCell>
                                           <TableCell className={`text-right ${cat.available < 0 ? "text-destructive" : "text-green-600"}`}>
-                                            {Math.abs(cat.available).toLocaleString("es-CL", {
-                                      minimumFractionDigits: 2
-                                    })} UF
+                                            <div>$ {Math.round(Math.abs(cat.available) * (ufValue || 0)).toLocaleString("es-CL")}</div>
+                                            <div className="text-xs text-muted-foreground">({Math.abs(cat.available).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)</div>
                                           </TableCell>
                                           <TableCell>
                                             <div className="flex items-center gap-2">
