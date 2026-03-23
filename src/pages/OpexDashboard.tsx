@@ -628,7 +628,7 @@ const OpexDashboard = () => {
                   $ {Math.round(globalTotals.budgetCLP).toLocaleString("es-CL")}
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  ({globalTotals.budgetUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF)
+                  ({globalTotals.budgetUF.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)
                 </div>
               </div>
               <div className="pt-2 border-t border-border space-y-1.5">
@@ -639,7 +639,7 @@ const OpexDashboard = () => {
                       $ {Math.round(globalTotals.consumedCLP).toLocaleString("es-CL")}
                     </span>
                     <span className="text-xs text-muted-foreground ml-1">
-                      ({globalTotals.consumedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF)
+                      ({globalTotals.consumedUF.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)
                     </span>
                   </div>
                 </div>
@@ -650,7 +650,7 @@ const OpexDashboard = () => {
                       $ {Math.round(globalTotals.invoicedCLP).toLocaleString("es-CL")}
                     </span>
                     <span className="text-xs text-muted-foreground ml-1">
-                      ({globalTotals.invoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF)
+                      ({globalTotals.invoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)
                     </span>
                   </div>
                 </div>
@@ -661,7 +661,7 @@ const OpexDashboard = () => {
                       $ {Math.round(Math.abs(globalTotals.notInvoicedCLP)).toLocaleString("es-CL")}
                     </span>
                     <span className="text-xs text-muted-foreground ml-1">
-                      ({globalTotals.notInvoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF)
+                      ({globalTotals.notInvoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)
                     </span>
                   </div>
                 </div>
@@ -672,7 +672,7 @@ const OpexDashboard = () => {
                       $ {Math.round(Math.abs(globalTotals.availableCLP)).toLocaleString("es-CL")}
                     </span>
                     <span className="text-xs text-muted-foreground ml-1">
-                      ({globalTotals.availableUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF)
+                      ({globalTotals.availableUF.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)
                     </span>
                   </div>
                 </div>
@@ -694,7 +694,7 @@ const OpexDashboard = () => {
                 $ {Math.round(globalTotals.additionalCLP).toLocaleString("es-CL")}
               </div>
               <div className="text-sm text-muted-foreground">
-                ({globalTotals.additionalUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF)
+                ({globalTotals.additionalUF.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)
               </div>
             </CardContent>
           </Card>
@@ -715,7 +715,7 @@ const OpexDashboard = () => {
                     $ {Math.round(globalTotals.invoicedCLP).toLocaleString("es-CL")}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    ({globalTotals.invoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF)
+                    ({globalTotals.invoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)
                   </div>
                 </div>
                 <div className="text-right">
@@ -724,7 +724,7 @@ const OpexDashboard = () => {
                     $ {Math.round(Math.abs(globalTotals.notInvoicedCLP)).toLocaleString("es-CL")}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    ({globalTotals.notInvoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF)
+                    ({globalTotals.notInvoicedUF.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)
                   </div>
                 </div>
               </div>
