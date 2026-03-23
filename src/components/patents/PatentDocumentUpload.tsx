@@ -37,6 +37,56 @@ export function PatentDocumentUpload({
   const [activeTab, setActiveTab] = useState<'upload' | 'url'>('upload');
   const [selectedFolder, setSelectedFolder] = useState<string>("");
   const [dragging, setDragging] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [downloading, setDownloading] = useState(false);
+
+  const urls = currentUrl ? currentUrl.split('|||').filter(Boolean) : [];
+
+  const toggleSelection = (index: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const handleDownloadSelected = async () => {
+    if (selectedIds.size === 0) return;
+    setDownloading(true);
+    try {
+      for (const index of selectedIds) {
+        const url = urls[index];
+        if (!url) continue;
+        let downloadUrl = url;
+        if (isStorageUrl(url)) {
+          const signed = await getSignedUrl(url);
+          if (!signed) {
+            toast.error(`No se pudo acceder al archivo ${url.split('/').pop()}`);
+            continue;
+          }
+          downloadUrl = signed;
+        }
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.download = url.split('/').pop() || 'archivo';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        // Small delay between downloads to avoid browser blocking
+        if (selectedIds.size > 1) await new Promise(r => setTimeout(r, 500));
+      }
+      toast.success(`${selectedIds.size} archivo(s) descargado(s)`);
+    } catch (error) {
+      console.error("Error downloading files:", error);
+      toast.error("Error al descargar archivos");
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
