@@ -628,7 +628,7 @@ const OpexDashboard = () => {
                   $ {Math.round(globalTotals.budgetCLP).toLocaleString("es-CL")}
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  ({globalTotals.budgetUF.toLocaleString("es-CL", { minimumFractionDigits: 2 })} UF)
+                  ({globalTotals.budgetUF.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)
                 </div>
               </div>
               <div className="pt-2 border-t border-border space-y-1.5">
