@@ -873,7 +873,7 @@ const OpexDashboard = () => {
                           />
                           <span className="text-xs font-medium truncate flex-1">{item.name}</span>
                           <span className="text-xs text-muted-foreground">
-                            {item.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 1 })} UF
+                            $ {Math.round(item.total_consumed * (ufValue || 0)).toLocaleString("es-CL")} ({item.total_consumed.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF)
                           </span>
                           <Badge variant="outline" className="text-xs h-5">
                             {item.percent_of_total.toFixed(0)}%
