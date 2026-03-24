@@ -257,7 +257,8 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
             </TableHeader>
             <TableBody>
               {filteredSuppliers.map(supplier => (
-                <TableRow key={supplier.id} className={selectedIds.has(supplier.id) ? "bg-muted/50" : ""}>
+                <React.Fragment key={supplier.id}>
+                <TableRow className={selectedIds.has(supplier.id) ? "bg-muted/50" : ""}>
                   <TableCell>
                     <Checkbox
                       checked={selectedIds.has(supplier.id)}
@@ -367,6 +368,7 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
                     </TableCell>
                   </TableRow>
                 )}
+                </React.Fragment>
               ))}
             </TableBody>
           </Table>
