@@ -88,6 +88,75 @@ const EditableNameInput = ({
   );
 };
 
+const MoveDropdown = ({
+  targets,
+  onMove,
+}: {
+  targets: { id: string | null; name: string; level: number }[];
+  onMove: (targetId: string | null) => void;
+}) => {
+  const [moveSearch, setMoveSearch] = useState("");
+  const filtered = useMemo(() => {
+    if (!moveSearch.trim()) return targets;
+    const lower = moveSearch.toLowerCase();
+    return targets.filter(t => t.name.toLowerCase().includes(lower));
+  }, [targets, moveSearch]);
+
+  return (
+    <DropdownMenu onOpenChange={(open) => { if (!open) setMoveSearch(""); }}>
+      <DropdownMenuTrigger asChild>
+        <Button size="icon" variant="ghost" className="h-6 w-6" title="Mover a otro rubro">
+          <MoveRight className="h-3 w-3" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-[280px] p-0">
+        <div className="p-2 border-b">
+          <div className="relative">
+            <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Buscar rubro..."
+              value={moveSearch}
+              onChange={e => setMoveSearch(e.target.value)}
+              className="h-7 text-xs pl-7"
+              onKeyDown={e => e.stopPropagation()}
+            />
+          </div>
+        </div>
+        <div className="max-h-[512px] overflow-y-auto p-1">
+          {filtered.length === 0 ? (
+            <DropdownMenuItem disabled>No hay destinos disponibles</DropdownMenuItem>
+          ) : (
+            filtered.map((target, idx) => {
+              const isRoot = target.id === null;
+              const showSeparator = !isRoot && target.level === 0 && idx > 0;
+              return (
+                <div key={target.id ?? "root"}>
+                  {showSeparator && <div className="h-px bg-border my-1" />}
+                  <DropdownMenuItem
+                    onClick={() => onMove(target.id)}
+                    className="cursor-pointer"
+                  >
+                    <span className="flex items-center gap-1.5" style={{ paddingLeft: isRoot ? 0 : target.level * 12 }}>
+                      {isRoot ? (
+                        <Home className="h-3 w-3 text-muted-foreground" />
+                      ) : target.level > 0 ? (
+                        <CornerDownRight className="h-3 w-3 text-muted-foreground" />
+                      ) : null}
+                      <span className={cn("text-sm", target.level === 0 && !isRoot && "font-semibold")}>
+                        {target.level > 0 && "↳ "}{target.name}
+                      </span>
+                    </span>
+                  </DropdownMenuItem>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+};
+
 const LEVEL_COLORS = [
   { bg: "bg-primary/20", border: "border-primary/40", text: "text-primary" },
   { bg: "bg-primary/12", border: "border-primary/25", text: "text-primary/90" },
