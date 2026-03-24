@@ -281,6 +281,15 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => toggleSupplierOCs(supplier.id)}
+                        title="Ver OC asociadas"
+                        className={expandedOCSupplier === supplier.id ? "text-primary" : ""}
+                      >
+                        <ShoppingCart className="h-4 w-4" />
+                      </Button>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button size="icon" variant="ghost" title="Exportar">
@@ -313,6 +322,51 @@ export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
                     </div>
                   </TableCell>
                 </TableRow>
+                {expandedOCSupplier === supplier.id && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="bg-muted/30 p-0">
+                      <div className="px-6 py-3">
+                        {loadingOCs ? (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Cargando OC...
+                          </div>
+                        ) : supplierOCs.length === 0 ? (
+                          <p className="text-sm text-muted-foreground py-2">Sin órdenes de compra asociadas</p>
+                        ) : (
+                          <div className="space-y-1">
+                            <p className="text-xs font-medium text-muted-foreground mb-2">
+                              {supplierOCs.length} OC asociada(s)
+                            </p>
+                            {supplierOCs.map(oc => (
+                              <div key={oc.id} className="flex items-center justify-between text-sm py-1 border-b border-border/50 last:border-0">
+                                <div className="flex items-center gap-3">
+                                  <span className="font-medium">OC #{oc.order_number}</span>
+                                  <span className="text-muted-foreground">
+                                    {oc.order_date ? format(new Date(oc.order_date), "dd MMM yyyy", { locale: es }) : "-"}
+                                  </span>
+                                  {oc.contract?.name && (
+                                    <Badge variant="outline" className="text-xs">{oc.contract.name}</Badge>
+                                  )}
+                                </div>
+                                <span className="font-medium">{oc.amount_uf?.toFixed(2)} UF</span>
+                              </div>
+                            ))}
+                            <Button
+                              variant="link"
+                              size="sm"
+                              className="mt-1 px-0"
+                              onClick={() => navigate("/purchase-orders")}
+                            >
+                              <ExternalLink className="h-3 w-3 mr-1" />
+                              Ver en Dashboard OC
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
               ))}
             </TableBody>
           </Table>
