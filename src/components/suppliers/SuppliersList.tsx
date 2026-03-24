@@ -5,7 +5,10 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Pencil, Trash2, Search, Building2, Download, FileSpreadsheet } from "lucide-react";
+import { Pencil, Trash2, Search, Building2, Download, FileSpreadsheet, ShoppingCart, Loader2, ExternalLink } from "lucide-react";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Supplier } from "./types";
 import {
