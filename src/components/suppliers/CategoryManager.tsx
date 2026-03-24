@@ -4,7 +4,8 @@ import { useCollapsibleState } from "@/hooks/useCollapsibleState";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home, ArrowUpLeft, Eye, EyeOff, Users, Building2, UserPlus, ShoppingCart, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home, ArrowUpLeft, Eye, EyeOff, Users, Building2, UserPlus, ShoppingCart, Search, Loader2, ExternalLink } from "lucide-react";
+import { format } from "date-fns";
 import { SupplierForm } from "./SupplierForm";
 import { Supplier } from "./types";
 import {
@@ -437,6 +438,43 @@ export const CategoryManager = () => {
   const [loadingSuppliers, setLoadingSuppliers] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [isCreatingSupplier, setIsCreatingSupplier] = useState(false);
+  const [expandedSupplierOCs, setExpandedSupplierOCs] = useState<string | null>(null);
+  const [supplierOCs, setSupplierOCs] = useState<{ id: string; order_number: string; order_date: string; amount_uf: number; status: string; description: string | null; contract_name: string | null }[]>([]);
+  const [loadingOCs, setLoadingOCs] = useState(false);
+
+  const toggleSupplierOCs = async (supplierId: string) => {
+    if (expandedSupplierOCs === supplierId) {
+      setExpandedSupplierOCs(null);
+      setSupplierOCs([]);
+      return;
+    }
+    setExpandedSupplierOCs(supplierId);
+    setLoadingOCs(true);
+    try {
+      const { data, error } = await supabase
+        .from("purchase_orders")
+        .select("id, order_number, order_date, amount_uf, status, description, contract_id, contracts(name)")
+        .eq("supplier_id", supplierId)
+        .is("deleted_at", null)
+        .order("order_date", { ascending: false });
+      if (error) throw error;
+      setSupplierOCs((data || []).map((d: any) => ({
+        id: d.id,
+        order_number: d.order_number,
+        order_date: d.order_date,
+        amount_uf: d.amount_uf,
+        status: d.status,
+        description: d.description,
+        contract_name: d.contracts?.name || null,
+      })));
+    } catch (err) {
+      console.error("Error loading OCs:", err);
+      toast.error("Error al cargar órdenes de compra");
+      setSupplierOCs([]);
+    } finally {
+      setLoadingOCs(false);
+    }
+  };
 
   // Reassign dialog state
   const [reassignDialog, setReassignDialog] = useState<{
@@ -1063,36 +1101,80 @@ export const CategoryManager = () => {
               ) : (
                 <div className="space-y-1">
                     {categorySuppliers.map(s => (
-                    <div 
-                      key={s.id} 
-                      className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 border transition-colors"
-                    >
+                    <div key={s.id}>
                       <div 
-                        className="flex-1 cursor-pointer"
-                        onClick={() => handleEditSupplier(s.id)}
-                        title="Pincha para editar"
+                        className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 border transition-colors"
                       >
-                        <p className="text-sm font-medium">{s.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {s.rut || "Sin RUT"}
-                          {s.category_name && ` · ${s.category_name}`}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigateToPurchaseOrdersFromSuppliers(s.name);
-                          }}
-                          title="Ver Órdenes de Compra de este proveedor"
+                        <div 
+                          className="flex-1 cursor-pointer"
+                          onClick={() => handleEditSupplier(s.id)}
+                          title="Pincha para editar"
                         >
-                          <ShoppingCart className="h-3.5 w-3.5 text-muted-foreground" />
-                        </Button>
-                        <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                          <p className="text-sm font-medium">{s.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {s.rut || "Sin RUT"}
+                            {s.category_name && ` · ${s.category_name}`}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleSupplierOCs(s.id);
+                            }}
+                            title="Ver Órdenes de Compra de este proveedor"
+                          >
+                            <ShoppingCart className={cn("h-3.5 w-3.5", expandedSupplierOCs === s.id ? "text-primary" : "text-muted-foreground")} />
+                          </Button>
+                          <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                        </div>
                       </div>
+                      {expandedSupplierOCs === s.id && (
+                        <div className="ml-4 mt-1 mb-2 border-l-2 border-primary/20 pl-3">
+                          {loadingOCs ? (
+                            <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+                              <Loader2 className="h-3 w-3 animate-spin" /> Cargando OC...
+                            </div>
+                          ) : supplierOCs.length === 0 ? (
+                            <p className="text-xs text-muted-foreground py-2">Sin órdenes de compra</p>
+                          ) : (
+                            <div className="space-y-1 py-1">
+                              <p className="text-xs font-medium text-muted-foreground mb-1">
+                                {supplierOCs.length} OC{supplierOCs.length !== 1 ? "s" : ""}
+                              </p>
+                              {supplierOCs.map(oc => (
+                                <div key={oc.id} className="flex items-center justify-between text-xs p-1.5 rounded bg-muted/30 hover:bg-muted/50 transition-colors">
+                                  <div className="flex-1 min-w-0">
+                                    <span className="font-medium">OC #{oc.order_number}</span>
+                                    <span className="text-muted-foreground ml-2">{format(new Date(oc.order_date), "dd/MM/yyyy")}</span>
+                                    {oc.contract_name && (
+                                      <span className="text-muted-foreground ml-1 truncate">· {oc.contract_name}</span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    <span className="font-medium">{oc.amount_uf.toFixed(2)} UF</span>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-5 w-5"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        navigateToPurchaseOrdersFromSuppliers(s.name);
+                                      }}
+                                      title="Ir al Dashboard de OC"
+                                    >
+                                      <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                   <p className="text-xs text-muted-foreground text-center pt-2">
