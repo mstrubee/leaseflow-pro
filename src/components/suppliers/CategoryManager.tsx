@@ -1129,7 +1129,18 @@ export const CategoryManager = () => {
                           >
                             <ShoppingCart className={cn("h-3.5 w-3.5", expandedSupplierOCs === s.id ? "text-primary" : "text-muted-foreground")} />
                           </Button>
-                          <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditSupplier(s.id);
+                            }}
+                            title="Editar proveedor"
+                          >
+                            <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                          </Button>
                         </div>
                       </div>
                       {expandedSupplierOCs === s.id && (
