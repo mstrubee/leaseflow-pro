@@ -39,11 +39,37 @@ interface SupplierWithEmails extends Omit<Supplier, 'emails'> {
 }
 
 export const SuppliersList = ({ onEdit, refreshKey }: SuppliersListProps) => {
+  const navigate = useNavigate();
   const [suppliers, setSuppliers] = useState<SupplierWithEmails[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [expandedOCSupplier, setExpandedOCSupplier] = useState<string | null>(null);
+  const [supplierOCs, setSupplierOCs] = useState<any[]>([]);
+  const [loadingOCs, setLoadingOCs] = useState(false);
+
+  const toggleSupplierOCs = async (supplierId: string) => {
+    if (expandedOCSupplier === supplierId) {
+      setExpandedOCSupplier(null);
+      return;
+    }
+    setExpandedOCSupplier(supplierId);
+    setLoadingOCs(true);
+    try {
+      const { data } = await supabase
+        .from("purchase_orders")
+        .select("id, order_number, order_date, amount_uf, contract:contracts(name)")
+        .eq("supplier_id", supplierId)
+        .is("deleted_at", null)
+        .order("order_date", { ascending: false });
+      setSupplierOCs(data || []);
+    } catch {
+      setSupplierOCs([]);
+    } finally {
+      setLoadingOCs(false);
+    }
+  };
 
   useEffect(() => {
     loadSuppliers();
