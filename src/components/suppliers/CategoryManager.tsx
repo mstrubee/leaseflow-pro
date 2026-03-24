@@ -438,6 +438,43 @@ export const CategoryManager = () => {
   const [loadingSuppliers, setLoadingSuppliers] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [isCreatingSupplier, setIsCreatingSupplier] = useState(false);
+  const [expandedSupplierOCs, setExpandedSupplierOCs] = useState<string | null>(null);
+  const [supplierOCs, setSupplierOCs] = useState<{ id: string; order_number: string; order_date: string; amount_uf: number; status: string; description: string | null; contract_name: string | null }[]>([]);
+  const [loadingOCs, setLoadingOCs] = useState(false);
+
+  const toggleSupplierOCs = async (supplierId: string) => {
+    if (expandedSupplierOCs === supplierId) {
+      setExpandedSupplierOCs(null);
+      setSupplierOCs([]);
+      return;
+    }
+    setExpandedSupplierOCs(supplierId);
+    setLoadingOCs(true);
+    try {
+      const { data, error } = await supabase
+        .from("purchase_orders")
+        .select("id, order_number, order_date, amount_uf, status, description, contract_id, contracts(name)")
+        .eq("supplier_id", supplierId)
+        .is("deleted_at", null)
+        .order("order_date", { ascending: false });
+      if (error) throw error;
+      setSupplierOCs((data || []).map((d: any) => ({
+        id: d.id,
+        order_number: d.order_number,
+        order_date: d.order_date,
+        amount_uf: d.amount_uf,
+        status: d.status,
+        description: d.description,
+        contract_name: d.contracts?.name || null,
+      })));
+    } catch (err) {
+      console.error("Error loading OCs:", err);
+      toast.error("Error al cargar órdenes de compra");
+      setSupplierOCs([]);
+    } finally {
+      setLoadingOCs(false);
+    }
+  };
 
   // Reassign dialog state
   const [reassignDialog, setReassignDialog] = useState<{
