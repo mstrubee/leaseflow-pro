@@ -235,35 +235,10 @@ const SortableCategoryRow = ({
               <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onStartAddSub(cat.id)} title="Agregar sub-rubro">
                 <Plus className="h-3 w-3" />
               </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="icon" variant="ghost" className="h-6 w-6" title="Mover a otro rubro">
-                    <MoveRight className="h-3 w-3" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto min-w-[200px]">
-                  {targets.length === 0 ? (
-                    <DropdownMenuItem disabled>No hay destinos disponibles</DropdownMenuItem>
-                  ) : (
-                    targets.map(target => (
-                      <DropdownMenuItem
-                        key={target.id ?? "root"}
-                        onClick={() => onMove(cat.id, target.id)}
-                        className="cursor-pointer"
-                      >
-                        <span className="flex items-center gap-1.5">
-                          {target.id === null ? (
-                            <Home className="h-3 w-3 text-muted-foreground" />
-                          ) : (
-                            <CornerDownRight className="h-3 w-3 text-muted-foreground" style={{ marginLeft: target.level * 8 }} />
-                          )}
-                          <span className="text-sm">{target.name}</span>
-                        </span>
-                      </DropdownMenuItem>
-                    ))
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <MoveDropdown
+                targets={targets}
+                onMove={(targetId) => onMove(cat.id, targetId)}
+              />
               <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onSetEditingId(cat.id)} title="Editar">
                 <Pencil className="h-3 w-3" />
               </Button>
