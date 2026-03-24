@@ -622,8 +622,13 @@ export const CategoryManager = () => {
     setFlatCategories(updatedFlat);
     setCategories(buildTree(updatedFlat));
     try {
-      const { error } = await supabase.from("supplier_categories").delete().eq("id", id);
-      if (error) throw error;
+      // Delete bottom-up: descendants first, then the parent
+      // Reverse so deepest children are deleted before their parents
+      const orderedIds = [...idsToRemove].reverse();
+      for (const delId of orderedIds) {
+        const { error } = await supabase.from("supplier_categories").delete().eq("id", delId);
+        if (error) throw error;
+      }
       toast.success("Rubro eliminado");
     } catch {
       setFlatCategories(oldFlat);
