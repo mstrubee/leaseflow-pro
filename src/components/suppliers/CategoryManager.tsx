@@ -4,7 +4,8 @@ import { useCollapsibleState } from "@/hooks/useCollapsibleState";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home, ArrowUpLeft, Eye, EyeOff, Users, Building2, UserPlus, ShoppingCart, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, ChevronRight, ChevronDown, FolderTree, GripVertical, ChevronsUpDown, ChevronsDownUp, MoveRight, CornerDownRight, Home, ArrowUpLeft, Eye, EyeOff, Users, Building2, UserPlus, ShoppingCart, Search, Loader2, ExternalLink } from "lucide-react";
+import { format } from "date-fns";
 import { SupplierForm } from "./SupplierForm";
 import { Supplier } from "./types";
 import {
