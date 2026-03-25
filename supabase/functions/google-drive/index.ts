@@ -21,7 +21,35 @@ const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 async function getAccessToken(): Promise<string> {
   const clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID');
   const clientSecret = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET');
-  const refreshToken = Deno.env.get('GOOGLE_OAUTH_REFRESH_TOKEN');
+  let refreshToken = Deno.env.get('GOOGLE_OAUTH_REFRESH_TOKEN');
+
+  // If no env-based refresh token, try to load from cloud_storage_tokens table
+  if (clientId && clientSecret && !refreshToken) {
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const supabase = createClient(supabaseUrl, supabaseKey);
+      const { data: conn } = await supabase
+        .from('cloud_storage_connections')
+        .select('id')
+        .eq('provider', 'google_drive_oauth')
+        .limit(1)
+        .single();
+      if (conn) {
+        const { data: tokenRow } = await supabase
+          .from('cloud_storage_tokens')
+          .select('refresh_token')
+          .eq('connection_id', conn.id)
+          .single();
+        if (tokenRow?.refresh_token) {
+          refreshToken = tokenRow.refresh_token;
+          console.log("Loaded OAuth refresh token from cloud_storage_tokens");
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to load refresh token from DB:", e);
+    }
+  }
 
   if (clientId && clientSecret && refreshToken) {
     return getAccessTokenFromOAuth(clientId, clientSecret, refreshToken);
@@ -1123,6 +1151,21 @@ serve(async (req) => {
       case "testConnection": {
         if (!rootFolderMeta) throw new Error("Root folder metadata unavailable");
 
+        // Identify the authenticated user
+        let authenticatedUser: any = null;
+        try {
+          const aboutRes = await fetch(
+            "https://www.googleapis.com/drive/v3/about?fields=user",
+            { headers: { Authorization: `Bearer ${accessToken}` } },
+          );
+          if (aboutRes.ok) {
+            const aboutData = await aboutRes.json();
+            authenticatedUser = aboutData.user;
+          }
+        } catch (e) {
+          console.error("about user error:", e);
+        }
+
         // List shared drives for diagnostics
         let sharedDrives: any[] = [];
         let directDriveTest: any = null;
@@ -1180,6 +1223,7 @@ serve(async (req) => {
           configuredRootId: Deno.env.get('GOOGLE_DRIVE_ROOT_FOLDER_ID')?.trim() || "(not set)",
           directDriveTest,
           sharedDrives,
+          authenticatedUser,
         };
         break;
       }
