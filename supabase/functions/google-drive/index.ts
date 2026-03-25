@@ -1195,6 +1195,7 @@ serve(async (req) => {
           configuredRootId: Deno.env.get('GOOGLE_DRIVE_ROOT_FOLDER_ID')?.trim() || "(not set)",
           directDriveTest,
           sharedDrives,
+          authenticatedUser,
         };
         break;
       }
