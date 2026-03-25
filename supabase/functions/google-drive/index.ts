@@ -264,6 +264,74 @@ async function getFolderById(
   return await response.json();
 }
 
+function looksLikeOAuthClientId(value: string | null | undefined): boolean {
+  return !!value && value.includes(".apps.googleusercontent.com");
+}
+
+async function resolveRootFolder(
+  accessToken: string,
+): Promise<{ id: string; name: string; webViewLink: string; source: string }> {
+  const configuredRootId = Deno.env.get('GOOGLE_DRIVE_ROOT_FOLDER_ID')?.trim() || "";
+  const configuredSharedDriveId = Deno.env.get('GOOGLE_DRIVE_SHARED_DRIVE_ID')?.trim() || "";
+
+  const candidates: Array<{ id: string; source: string }> = [];
+
+  if (configuredRootId && !looksLikeOAuthClientId(configuredRootId)) {
+    candidates.push({ id: configuredRootId, source: 'GOOGLE_DRIVE_ROOT_FOLDER_ID' });
+  } else if (configuredRootId) {
+    console.error("GOOGLE_DRIVE_ROOT_FOLDER_ID appears misconfigured: it looks like an OAuth client ID");
+  }
+
+  if (configuredSharedDriveId && configuredSharedDriveId !== configuredRootId) {
+    candidates.push({ id: configuredSharedDriveId, source: 'GOOGLE_DRIVE_SHARED_DRIVE_ID' });
+  }
+
+  // Final fallback for OAuth-connected personal drives
+  candidates.push({ id: 'root', source: 'oauth-root-alias' });
+
+  let lastError = "";
+
+  for (const candidate of candidates) {
+    try {
+      const folder = await getFolderById(accessToken, candidate.id);
+      if (!folder) {
+        lastError = `Folder not found (${candidate.source})`;
+        continue;
+      }
+
+      if (folder.mimeType && folder.mimeType !== "application/vnd.google-apps.folder") {
+        lastError = `Target is not a folder (${candidate.source})`;
+        continue;
+      }
+
+      if (folder.trashed) {
+        lastError = `Folder is trashed (${candidate.source})`;
+        continue;
+      }
+
+      return {
+        id: folder.id,
+        name: folder.name || "Google Drive Root",
+        webViewLink: folder.webViewLink || "",
+        source: candidate.source,
+      };
+    } catch (error: any) {
+      lastError = error?.message || String(error);
+      console.warn(`Failed drive root candidate (${candidate.source})`, lastError);
+    }
+  }
+
+  if (configuredRootId && looksLikeOAuthClientId(configuredRootId)) {
+    throw new Error(
+      "Google Drive root folder is misconfigured: the configured value looks like an OAuth client ID instead of a Drive folder ID.",
+    );
+  }
+
+  throw new Error(
+    `Google Drive root folder is not accessible. Configure GOOGLE_DRIVE_ROOT_FOLDER_ID with a valid folder/shared-drive ID.${lastError ? ` Last error: ${lastError}` : ''}`,
+  );
+}
+
 async function listChildFolders(
   accessToken: string,
   parentId: string,
@@ -635,9 +703,6 @@ serve(async (req) => {
 
     // ── All other actions need Drive access ──────────────────────────────
 
-    const rootFolderId = Deno.env.get('GOOGLE_DRIVE_ROOT_FOLDER_ID');
-    if (!rootFolderId) throw new Error("Google Drive root folder ID not configured");
-
     // Try to get access token - first check DB for OAuth refresh token, then env
     let accessToken: string;
     const clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID');
@@ -674,6 +739,19 @@ serve(async (req) => {
     } else {
       accessToken = await getAccessToken();
     }
+
+    const actionsRequiringRootFolder = new Set([
+      'ensureStatusFolders',
+      'syncAllContracts',
+      'syncSingleContract',
+      'ensureProjectStructure',
+      'testConnection',
+    ]);
+
+    const rootFolderMeta = actionsRequiringRootFolder.has(action)
+      ? await resolveRootFolder(accessToken)
+      : null;
+    const rootFolderId = rootFolderMeta?.id ?? "";
 
     let result: any;
 
@@ -1001,26 +1079,18 @@ serve(async (req) => {
       }
 
       case "testConnection": {
-        const rootFolderResponse = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${rootFolderId}?fields=id,name,webViewLink&supportsAllDrives=true`,
-          { headers: { Authorization: `Bearer ${accessToken}` } },
-        );
+        if (!rootFolderMeta) throw new Error("Root folder metadata unavailable");
 
-        if (!rootFolderResponse.ok) {
-          const error = await rootFolderResponse.text();
-          throw new Error(`Cannot access root folder: ${error}`);
-        }
-
-        const rootFolderData = await rootFolderResponse.json();
         result = {
           success: true,
           message: "Conexión exitosa con Google Drive",
           authMethod: (Deno.env.get('GOOGLE_OAUTH_CLIENT_ID') && Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET')) ? 'oauth' : 'service_account',
           rootFolder: {
-            id: rootFolderData.id,
-            name: rootFolderData.name,
-            webViewLink: rootFolderData.webViewLink,
+            id: rootFolderMeta.id,
+            name: rootFolderMeta.name,
+            webViewLink: rootFolderMeta.webViewLink,
           },
+          rootSource: rootFolderMeta.source,
         };
         break;
       }
