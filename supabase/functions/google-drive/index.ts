@@ -1123,6 +1123,23 @@ serve(async (req) => {
       case "testConnection": {
         if (!rootFolderMeta) throw new Error("Root folder metadata unavailable");
 
+        // List shared drives for diagnostics
+        let sharedDrives: any[] = [];
+        try {
+          const sdRes = await fetch(
+            "https://www.googleapis.com/drive/v3/drives?pageSize=100&fields=drives(id,name)",
+            { headers: { Authorization: `Bearer ${accessToken}` } },
+          );
+          if (sdRes.ok) {
+            const sdData = await sdRes.json();
+            sharedDrives = sdData.drives || [];
+          } else {
+            console.error("listDrives failed:", sdRes.status, await sdRes.text().catch(() => ""));
+          }
+        } catch (e) {
+          console.error("listDrives error:", e);
+        }
+
         result = {
           success: true,
           message: "Conexión exitosa con Google Drive",
@@ -1133,6 +1150,8 @@ serve(async (req) => {
             webViewLink: rootFolderMeta.webViewLink,
           },
           rootSource: rootFolderMeta.source,
+          configuredRootId: Deno.env.get('GOOGLE_DRIVE_ROOT_FOLDER_ID')?.trim() || "(not set)",
+          sharedDrives,
         };
         break;
       }
