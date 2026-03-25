@@ -63,6 +63,11 @@ export const CloudStorageSettings = ({ defaultCollapsed = false }: CloudStorageS
   const [syncing, setSyncing] = useState(false);
   const [lastSyncResult, setLastSyncResult] = useState<{ success: boolean; count: number } | null>(null);
   
+  // OAuth status
+  const [oauthStatus, setOauthStatus] = useState<{ hasClientCredentials: boolean; hasRefreshToken: boolean; isConnected: boolean } | null>(null);
+  const [checkingOAuth, setCheckingOAuth] = useState(false);
+  const [startingOAuth, setStartingOAuth] = useState(false);
+
   // Form states
   const [newProvider, setNewProvider] = useState("");
   const [newName, setNewName] = useState("");
