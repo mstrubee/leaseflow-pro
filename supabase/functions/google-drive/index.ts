@@ -268,11 +268,40 @@ function looksLikeOAuthClientId(value: string | null | undefined): boolean {
   return !!value && value.includes(".apps.googleusercontent.com");
 }
 
+async function getSharedDriveById(
+  accessToken: string,
+  driveId: string,
+): Promise<{ id: string; name: string; webViewLink: string } | null> {
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/drives/${driveId}?fields=id,name`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!response.ok) return null;
+  const data = await response.json();
+  return {
+    id: data.id,
+    name: data.name || "Shared Drive",
+    webViewLink: `https://drive.google.com/drive/folders/${data.id}`,
+  };
+}
+
+function extractDriveId(value: string): string {
+  // If value is a full Drive URL, extract the folder/drive ID
+  const urlMatch = value.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (urlMatch) return urlMatch[1];
+  const driveMatch = value.match(/\/drive\/([a-zA-Z0-9_-]+)/);
+  if (driveMatch) return driveMatch[1];
+  return value;
+}
+
 async function resolveRootFolder(
   accessToken: string,
 ): Promise<{ id: string; name: string; webViewLink: string; source: string }> {
-  const configuredRootId = Deno.env.get('GOOGLE_DRIVE_ROOT_FOLDER_ID')?.trim() || "";
-  const configuredSharedDriveId = Deno.env.get('GOOGLE_DRIVE_SHARED_DRIVE_ID')?.trim() || "";
+  const rawRootId = Deno.env.get('GOOGLE_DRIVE_ROOT_FOLDER_ID')?.trim() || "";
+  const rawSharedDriveId = Deno.env.get('GOOGLE_DRIVE_SHARED_DRIVE_ID')?.trim() || "";
+  const configuredRootId = extractDriveId(rawRootId);
+  const configuredSharedDriveId = extractDriveId(rawSharedDriveId);
+  console.log("resolveRootFolder: configuredRootId =", configuredRootId);
 
   const candidates: Array<{ id: string; source: string }> = [];
 
@@ -294,27 +323,35 @@ async function resolveRootFolder(
   for (const candidate of candidates) {
     try {
       const folder = await getFolderById(accessToken, candidate.id);
-      if (!folder) {
-        lastError = `Folder not found (${candidate.source})`;
-        continue;
+      if (folder) {
+        if (folder.mimeType && folder.mimeType !== "application/vnd.google-apps.folder") {
+          lastError = `Target is not a folder (${candidate.source})`;
+          continue;
+        }
+        if (folder.trashed) {
+          lastError = `Folder is trashed (${candidate.source})`;
+          continue;
+        }
+        return {
+          id: folder.id,
+          name: folder.name || "Google Drive Root",
+          webViewLink: folder.webViewLink || "",
+          source: candidate.source,
+        };
       }
 
-      if (folder.mimeType && folder.mimeType !== "application/vnd.google-apps.folder") {
-        lastError = `Target is not a folder (${candidate.source})`;
-        continue;
+      // Try as a Shared Drive ID
+      if (candidate.id !== 'root') {
+        const sharedDrive = await getSharedDriveById(accessToken, candidate.id);
+        if (sharedDrive) {
+          console.log(`Resolved ${candidate.source} as Shared Drive: ${sharedDrive.name}`);
+          return { ...sharedDrive, source: candidate.source };
+        }
       }
 
-      if (folder.trashed) {
-        lastError = `Folder is trashed (${candidate.source})`;
-        continue;
-      }
-
-      return {
-        id: folder.id,
-        name: folder.name || "Google Drive Root",
-        webViewLink: folder.webViewLink || "",
-        source: candidate.source,
-      };
+      lastError = `Folder/Drive not found (${candidate.source})`;
+      lastError = `Folder/Drive not found (${candidate.source})`;
+      console.warn(`Candidate ${candidate.id} (${candidate.source}) not accessible as file or shared drive`);
     } catch (error: any) {
       lastError = error?.message || String(error);
       console.warn(`Failed drive root candidate (${candidate.source})`, lastError);
