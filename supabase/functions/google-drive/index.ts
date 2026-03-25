@@ -1125,6 +1125,7 @@ serve(async (req) => {
 
         // List shared drives for diagnostics
         let sharedDrives: any[] = [];
+        let directDriveTest: any = null;
         try {
           const sdRes = await fetch(
             "https://www.googleapis.com/drive/v3/drives?pageSize=100&fields=drives(id,name)",
@@ -1140,6 +1141,32 @@ serve(async (req) => {
           console.error("listDrives error:", e);
         }
 
+        // Direct test of configured root ID
+        const testId = extractDriveId(Deno.env.get('GOOGLE_DRIVE_ROOT_FOLDER_ID')?.trim() || "");
+        if (testId && testId !== 'root') {
+          try {
+            // Test as file
+            const fileRes = await fetch(
+              `https://www.googleapis.com/drive/v3/files/${testId}?fields=id,name,mimeType,trashed&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+              { headers: { Authorization: `Bearer ${accessToken}` } },
+            );
+            const fileBody = await fileRes.text();
+            // Test as shared drive
+            const driveRes = await fetch(
+              `https://www.googleapis.com/drive/v3/drives/${testId}?fields=id,name`,
+              { headers: { Authorization: `Bearer ${accessToken}` } },
+            );
+            const driveBody = await driveRes.text();
+            directDriveTest = {
+              extractedId: testId,
+              fileApi: { status: fileRes.status, body: fileBody },
+              drivesApi: { status: driveRes.status, body: driveBody },
+            };
+          } catch (e: any) {
+            directDriveTest = { error: e.message };
+          }
+        }
+
         result = {
           success: true,
           message: "Conexión exitosa con Google Drive",
@@ -1151,6 +1178,7 @@ serve(async (req) => {
           },
           rootSource: rootFolderMeta.source,
           configuredRootId: Deno.env.get('GOOGLE_DRIVE_ROOT_FOLDER_ID')?.trim() || "(not set)",
+          directDriveTest,
           sharedDrives,
         };
         break;
