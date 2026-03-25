@@ -12,7 +12,10 @@ import {
   ExternalLink,
   RefreshCw,
   Loader2,
-  CheckCircle2
+  CheckCircle2,
+  Link2,
+  Unlink2,
+  ShieldCheck
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
