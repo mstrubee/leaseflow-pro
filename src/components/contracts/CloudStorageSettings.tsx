@@ -76,7 +76,45 @@ export const CloudStorageSettings = ({ defaultCollapsed = false }: CloudStorageS
 
   useEffect(() => {
     loadConnections();
+    checkOAuthStatus();
   }, []);
+
+  const checkOAuthStatus = async () => {
+    setCheckingOAuth(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("google-drive", {
+        body: { action: "checkOAuthStatus" },
+      });
+      if (error) throw error;
+      setOauthStatus(data);
+    } catch (err) {
+      console.error("Error checking OAuth status:", err);
+    } finally {
+      setCheckingOAuth(false);
+    }
+  };
+
+  const handleStartOAuth = async () => {
+    setStartingOAuth(true);
+    try {
+      const redirectUri = `${window.location.origin}/google-drive-callback`;
+      const { data, error } = await supabase.functions.invoke("google-drive", {
+        body: { action: "getOAuthUrl", redirectUri },
+      });
+      if (error) throw error;
+      if (data?.url) {
+        window.open(data.url, "_self");
+      }
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: err.message || "No se pudo iniciar la autorización OAuth",
+      });
+    } finally {
+      setStartingOAuth(false);
+    }
+  };
 
   const handleSyncAllContracts = async () => {
     setSyncing(true);
