@@ -276,8 +276,13 @@ async function getSharedDriveById(
     `https://www.googleapis.com/drive/v3/drives/${driveId}?fields=id,name`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
-  if (!response.ok) return null;
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    console.error(`getSharedDriveById failed for ${driveId}: ${response.status} ${errText}`);
+    return null;
+  }
   const data = await response.json();
+  console.log(`getSharedDriveById success: ${data.id} - ${data.name}`);
   return {
     id: data.id,
     name: data.name || "Shared Drive",
