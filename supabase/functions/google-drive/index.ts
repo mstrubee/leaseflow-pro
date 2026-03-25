@@ -285,12 +285,23 @@ async function getSharedDriveById(
   };
 }
 
+function extractDriveId(value: string): string {
+  // If value is a full Drive URL, extract the folder/drive ID
+  const urlMatch = value.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (urlMatch) return urlMatch[1];
+  const driveMatch = value.match(/\/drive\/([a-zA-Z0-9_-]+)/);
+  if (driveMatch) return driveMatch[1];
+  return value;
+}
+
 async function resolveRootFolder(
   accessToken: string,
 ): Promise<{ id: string; name: string; webViewLink: string; source: string }> {
-  const configuredRootId = Deno.env.get('GOOGLE_DRIVE_ROOT_FOLDER_ID')?.trim() || "";
-  const configuredSharedDriveId = Deno.env.get('GOOGLE_DRIVE_SHARED_DRIVE_ID')?.trim() || "";
-  console.log("resolveRootFolder: configuredRootId =", configuredRootId, "configuredSharedDriveId =", configuredSharedDriveId);
+  const rawRootId = Deno.env.get('GOOGLE_DRIVE_ROOT_FOLDER_ID')?.trim() || "";
+  const rawSharedDriveId = Deno.env.get('GOOGLE_DRIVE_SHARED_DRIVE_ID')?.trim() || "";
+  const configuredRootId = extractDriveId(rawRootId);
+  const configuredSharedDriveId = extractDriveId(rawSharedDriveId);
+  console.log("resolveRootFolder: configuredRootId =", configuredRootId);
 
   const candidates: Array<{ id: string; source: string }> = [];
 
