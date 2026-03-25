@@ -12,7 +12,10 @@ import {
   ExternalLink,
   RefreshCw,
   Loader2,
-  CheckCircle2
+  CheckCircle2,
+  Link2,
+  Unlink2,
+  ShieldCheck
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -60,6 +63,11 @@ export const CloudStorageSettings = ({ defaultCollapsed = false }: CloudStorageS
   const [syncing, setSyncing] = useState(false);
   const [lastSyncResult, setLastSyncResult] = useState<{ success: boolean; count: number } | null>(null);
   
+  // OAuth status
+  const [oauthStatus, setOauthStatus] = useState<{ hasClientCredentials: boolean; hasRefreshToken: boolean; isConnected: boolean } | null>(null);
+  const [checkingOAuth, setCheckingOAuth] = useState(false);
+  const [startingOAuth, setStartingOAuth] = useState(false);
+
   // Form states
   const [newProvider, setNewProvider] = useState("");
   const [newName, setNewName] = useState("");
@@ -68,7 +76,45 @@ export const CloudStorageSettings = ({ defaultCollapsed = false }: CloudStorageS
 
   useEffect(() => {
     loadConnections();
+    checkOAuthStatus();
   }, []);
+
+  const checkOAuthStatus = async () => {
+    setCheckingOAuth(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("google-drive", {
+        body: { action: "checkOAuthStatus" },
+      });
+      if (error) throw error;
+      setOauthStatus(data);
+    } catch (err) {
+      console.error("Error checking OAuth status:", err);
+    } finally {
+      setCheckingOAuth(false);
+    }
+  };
+
+  const handleStartOAuth = async () => {
+    setStartingOAuth(true);
+    try {
+      const redirectUri = `${window.location.origin}/google-drive-callback`;
+      const { data, error } = await supabase.functions.invoke("google-drive", {
+        body: { action: "getOAuthUrl", redirectUri },
+      });
+      if (error) throw error;
+      if (data?.url) {
+        window.open(data.url, "_self");
+      }
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: err.message || "No se pudo iniciar la autorización OAuth",
+      });
+    } finally {
+      setStartingOAuth(false);
+    }
+  };
 
   const handleSyncAllContracts = async () => {
     setSyncing(true);
@@ -284,7 +330,67 @@ export const CloudStorageSettings = ({ defaultCollapsed = false }: CloudStorageS
               className="gap-2" 
               size="sm"
               disabled={syncing}
-            >
+      >
+          {/* OAuth Status Section */}
+          <div className="mb-4 p-4 rounded-lg border bg-card">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <ShieldCheck className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <p className="font-medium text-sm">Autorización Google Drive (OAuth)</p>
+                  {checkingOAuth ? (
+                    <p className="text-xs text-muted-foreground">Verificando estado...</p>
+                  ) : oauthStatus?.isConnected ? (
+                    <p className="text-xs text-green-600 flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3" /> Conectado — refresh token almacenado
+                    </p>
+                  ) : oauthStatus?.hasClientCredentials ? (
+                    <p className="text-xs text-yellow-600 flex items-center gap-1">
+                      <Link2 className="h-3 w-3" /> Credenciales configuradas, falta autorizar
+                    </p>
+                  ) : (
+                    <p className="text-xs text-destructive flex items-center gap-1">
+                      <Unlink2 className="h-3 w-3" /> Sin credenciales OAuth configuradas
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={checkOAuthStatus}
+                  disabled={checkingOAuth}
+                >
+                  {checkingOAuth ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                </Button>
+                {oauthStatus?.hasClientCredentials && !oauthStatus?.isConnected && (
+                  <Button
+                    size="sm"
+                    onClick={handleStartOAuth}
+                    disabled={startingOAuth}
+                    className="gap-1"
+                  >
+                    {startingOAuth ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
+                    Autorizar Google Drive
+                  </Button>
+                )}
+                {oauthStatus?.isConnected && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleStartOAuth}
+                    disabled={startingOAuth}
+                    className="gap-1"
+                  >
+                    {startingOAuth ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                    Re-autorizar
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+
               {syncing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : lastSyncResult?.success ? (
