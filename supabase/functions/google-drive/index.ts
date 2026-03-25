@@ -290,6 +290,7 @@ async function resolveRootFolder(
 ): Promise<{ id: string; name: string; webViewLink: string; source: string }> {
   const configuredRootId = Deno.env.get('GOOGLE_DRIVE_ROOT_FOLDER_ID')?.trim() || "";
   const configuredSharedDriveId = Deno.env.get('GOOGLE_DRIVE_SHARED_DRIVE_ID')?.trim() || "";
+  console.log("resolveRootFolder: configuredRootId =", configuredRootId, "configuredSharedDriveId =", configuredSharedDriveId);
 
   const candidates: Array<{ id: string; source: string }> = [];
 
@@ -338,6 +339,8 @@ async function resolveRootFolder(
       }
 
       lastError = `Folder/Drive not found (${candidate.source})`;
+      lastError = `Folder/Drive not found (${candidate.source})`;
+      console.warn(`Candidate ${candidate.id} (${candidate.source}) not accessible as file or shared drive`);
     } catch (error: any) {
       lastError = error?.message || String(error);
       console.warn(`Failed drive root candidate (${candidate.source})`, lastError);
