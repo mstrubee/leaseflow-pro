@@ -1123,6 +1123,21 @@ serve(async (req) => {
       case "testConnection": {
         if (!rootFolderMeta) throw new Error("Root folder metadata unavailable");
 
+        // Identify the authenticated user
+        let authenticatedUser: any = null;
+        try {
+          const aboutRes = await fetch(
+            "https://www.googleapis.com/drive/v3/about?fields=user",
+            { headers: { Authorization: `Bearer ${accessToken}` } },
+          );
+          if (aboutRes.ok) {
+            const aboutData = await aboutRes.json();
+            authenticatedUser = aboutData.user;
+          }
+        } catch (e) {
+          console.error("about user error:", e);
+        }
+
         // List shared drives for diagnostics
         let sharedDrives: any[] = [];
         let directDriveTest: any = null;
