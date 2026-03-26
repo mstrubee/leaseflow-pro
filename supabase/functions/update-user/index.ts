@@ -46,14 +46,23 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Check if requesting user is admin
-    const { data: roleData } = await supabaseAdmin
+    // Check if requesting user is admin (robust against multiple-role rows)
+    const { data: roleData, error: roleError } = await supabaseAdmin
       .from('user_roles')
       .select('role')
       .eq('user_id', requestingUser.id)
-      .single()
+      .eq('role', 'admin')
+      .maybeSingle()
 
-    if (roleData?.role !== 'admin') {
+    if (roleError) {
+      console.error('Admin role lookup failed:', roleError.message)
+      return new Response(JSON.stringify({ error: 'Failed to validate admin permissions' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    if (!roleData) {
       return new Response(JSON.stringify({ error: 'Only admins can update users' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
