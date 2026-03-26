@@ -116,7 +116,7 @@ export function PatentAdminPanel({
   
   // Form states
   const [newItemName, setNewItemName] = useState("");
-  const [newItemSection, setNewItemSection] = useState("");
+  const [newItemSections, setNewItemSections] = useState<string[]>([]);
   const [newSectionName, setNewSectionName] = useState("");
   const [newSectionCode, setNewSectionCode] = useState("");
   const [newEmitterName, setNewEmitterName] = useState("");
@@ -409,32 +409,9 @@ export function PatentAdminPanel({
 
   // --- ITEMS ---
   const handleAddItem = async () => {
-    if (!newItemName.trim() || !newItemSection) {
-      toast.error("Nombre y sección son requeridos");
+    if (!newItemName.trim() || newItemSections.length === 0) {
+      toast.error("Nombre y al menos una sección son requeridos");
       return;
-    }
-
-    const sectionItems = localItems.filter(i => i.section_id === newItemSection);
-    const maxOrder = Math.max(0, ...sectionItems.map(i => i.display_order));
-
-    const { data: newItem, error } = await supabase
-      .from("patent_checklist_items")
-      .insert({
-        name: newItemName.trim(),
-        section_id: newItemSection,
-        display_order: maxOrder + 1,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      toast.error("Error al crear ítem");
-      return;
-    }
-
-    // Update local state immediately
-    if (newItem) {
-      setLocalItems(prev => [...prev, newItem as PatentChecklistItem]);
     }
 
     const { data: vigentContracts } = await supabase
@@ -443,19 +420,49 @@ export function PatentAdminPanel({
       .eq("status", "firmado")
       .is("deleted_at", null);
 
-    if (vigentContracts && vigentContracts.length > 0 && newItem) {
-      await supabase.from("patent_documents").insert(
-        vigentContracts.map(c => ({
-          contract_id: c.id,
-          checklist_item_id: newItem.id,
-          status: 'nuevo_doc' as const,
-        }))
-      );
+    const createdItems: PatentChecklistItem[] = [];
+
+    for (const sectionId of newItemSections) {
+      const sectionItems = localItems.filter(i => i.section_id === sectionId);
+      const maxOrder = Math.max(0, ...sectionItems.map(i => i.display_order));
+
+      const { data: newItem, error } = await supabase
+        .from("patent_checklist_items")
+        .insert({
+          name: newItemName.trim(),
+          section_id: sectionId,
+          display_order: maxOrder + 1,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        toast.error(`Error al crear ítem en sección`);
+        continue;
+      }
+
+      if (newItem) {
+        createdItems.push(newItem as PatentChecklistItem);
+
+        if (vigentContracts && vigentContracts.length > 0) {
+          await supabase.from("patent_documents").insert(
+            vigentContracts.map(c => ({
+              contract_id: c.id,
+              checklist_item_id: newItem.id,
+              status: 'nuevo_doc' as const,
+            }))
+          );
+        }
+      }
     }
 
-    toast.success("Ítem creado correctamente");
+    if (createdItems.length > 0) {
+      setLocalItems(prev => [...prev, ...createdItems]);
+      toast.success(`Ítem creado en ${createdItems.length} sección(es)`);
+    }
+
     setNewItemName("");
-    setNewItemSection("");
+    setNewItemSections([]);
     onDataChange();
   };
 
@@ -865,18 +872,38 @@ export function PatentAdminPanel({
                         onChange={(e) => setNewItemName(e.target.value)}
                       />
                     </div>
-                    <Select value={newItemSection} onValueChange={setNewItemSection}>
-                      <SelectTrigger className="w-[200px]">
-                        <SelectValue placeholder="Sección" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {sortedSections.map(section => (
-                          <SelectItem key={section.id} value={section.id}>
-                            {section.code}: {section.name.substring(0, 30)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="w-[250px] justify-between text-left font-normal">
+                          {newItemSections.length === 0 
+                            ? "Seleccionar secciones..." 
+                            : `${newItemSections.length} sección(es)`}
+                          <Plus className="h-3 w-3 ml-1 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[300px] p-2" align="start">
+                        <div className="space-y-1">
+                          {sortedSections.map(section => (
+                            <label
+                              key={section.id}
+                              className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer text-sm"
+                            >
+                              <Checkbox
+                                checked={newItemSections.includes(section.id)}
+                                onCheckedChange={(checked) => {
+                                  setNewItemSections(prev =>
+                                    checked
+                                      ? [...prev, section.id]
+                                      : prev.filter(id => id !== section.id)
+                                  );
+                                }}
+                              />
+                              {section.code}: {section.name.substring(0, 30)}
+                            </label>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                     <Button onClick={handleAddItem}>
                       <Plus className="h-4 w-4 mr-1" />
                       Agregar
