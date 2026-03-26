@@ -30,8 +30,8 @@ const BLOCKED_EXTENSIONS = [
   '.vbe', '.vbs', '.ws', '.wsf', '.wsc', '.wsh', '.reg',
 ];
 
-// Maximum file size (10 MB)
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+// Maximum file size (200 MB)
+const MAX_FILE_SIZE = 200 * 1024 * 1024;
 
 export interface FileValidationResult {
   isValid: boolean;
