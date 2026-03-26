@@ -76,7 +76,13 @@ Deno.serve(async (req) => {
     // Update auth user
     const updateData: { email?: string; password?: string; user_metadata?: { full_name: string } } = {}
     if (email) updateData.email = email
-    if (password) updateData.password = password
+    if (password && password.length >= 6) updateData.password = password
+    else if (password && password.length > 0 && password.length < 6) {
+      return new Response(JSON.stringify({ error: 'Password should be at least 6 characters.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
     if (fullName !== undefined) updateData.user_metadata = { full_name: fullName }
 
     if (Object.keys(updateData).length > 0) {
