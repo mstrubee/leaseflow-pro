@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Folder, FolderPlus, Trash2, Pencil, ChevronRight, ChevronDown, Loader2, Upload, FileText, ExternalLink } from "lucide-react";
+import { Folder, FolderPlus, Trash2, Pencil, ChevronRight, ChevronDown, Loader2, Upload, FileText, ExternalLink, RefreshCw } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
 
@@ -397,6 +397,23 @@ export const GeneralFoldersManager = () => {
   };
 
   const parentName = parentForNew ? folders.find((f) => f.id === parentForNew)?.name : null;
+  const [syncing, setSyncing] = useState(false);
+
+  const handleSyncDrive = async () => {
+    setSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("google-drive", {
+        body: { action: "syncGeneralFolders" },
+      });
+      if (error) throw error;
+      toast({ title: "Sincronización completada", description: `Se sincronizaron ${data?.syncedFolders?.length || 0} carpetas con Drive.` });
+      loadFolders();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error de sincronización", description: err.message });
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   if (loading) return <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>;
 
@@ -404,15 +421,20 @@ export const GeneralFoldersManager = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Carpetas generales independientes de contratos. Se sincronizan en Drive bajo "Carpeta General".
+          Carpetas generales independientes de contratos. Se sincronizan en Drive bajo "Información General".
         </p>
-        <Dialog open={createDialogOpen} onOpenChange={(o) => { setCreateDialogOpen(o); if (!o) setParentForNew(null); }}>
-          <DialogTrigger asChild>
-            <Button size="sm" onClick={() => setParentForNew(null)}>
-              <FolderPlus className="mr-2 h-4 w-4" />
-              Nueva Carpeta
-            </Button>
-          </DialogTrigger>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={handleSyncDrive} disabled={syncing}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? "Sincronizando..." : "Sincronizar Drive"}
+          </Button>
+          <Dialog open={createDialogOpen} onOpenChange={(o) => { setCreateDialogOpen(o); if (!o) setParentForNew(null); }}>
+            <DialogTrigger asChild>
+              <Button size="sm" onClick={() => setParentForNew(null)}>
+                <FolderPlus className="mr-2 h-4 w-4" />
+                Nueva Carpeta
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{parentName ? `Subcarpeta de "${parentName}"` : "Nueva Carpeta General"}</DialogTitle>
@@ -437,6 +459,7 @@ export const GeneralFoldersManager = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
