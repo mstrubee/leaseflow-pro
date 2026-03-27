@@ -7,6 +7,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,7 +19,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Loader2, Cloud, CheckCircle2, XCircle, RefreshCw, LogIn, Eye, EyeOff, Copy } from "lucide-react";
+import { Loader2, Cloud, CheckCircle2, XCircle, RefreshCw, LogIn, Eye, EyeOff, Copy, ChevronDown, ChevronRight, Settings2 } from "lucide-react";
 
 interface StorageSettings {
   id: string;
