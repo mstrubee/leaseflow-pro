@@ -15,10 +15,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation, Eye, EyeOff, Upload, Copy, Settings2 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CloudStorageSettings } from "@/components/contracts/CloudStorageSettings";
+import { UnifiedCloudStorage } from "@/components/admin/UnifiedCloudStorage";
 import { BudgetTemplateManager } from "@/components/budget/BudgetTemplateManager";
 import { GanttTemplateManager } from "@/components/gantt/GanttTemplateManager";
-import { StorageProviderSettings } from "@/components/admin/StorageProviderSettings";
 import { CompanyManager } from "@/components/admin/CompanyManager";
 import { StorageMonitor } from "@/components/admin/StorageMonitor";
 import { OCRequestTemplateManager } from "@/components/admin/OCRequestTemplateManager";
@@ -1063,8 +1062,8 @@ const AdminPanel = () => {
           <LogoManager />
         </CollapsibleCard>
 
-        {/* Cloud Storage Settings */}
-        <CloudStorageSettings defaultCollapsed />
+        {/* Unified Cloud Storage */}
+        <UnifiedCloudStorage defaultCollapsed />
 
         {/* Budget Templates */}
         <BudgetTemplateManager defaultCollapsed />
@@ -1138,9 +1137,6 @@ const AdminPanel = () => {
             )}
           </div>
         </CollapsibleCard>
-
-        {/* Storage Provider Settings */}
-        <StorageProviderSettings defaultCollapsed />
 
         {/* Comité GP Statuses */}
         <CollapsibleCard
