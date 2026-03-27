@@ -331,8 +331,66 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
         (f: DriveFile) => f.mimeType !== 'application/vnd.google-apps.folder'
       );
       setDriveFiles(filesOnly);
+
+      // Auto-import: register Drive files not yet tracked in repository_files
+      if (filesOnly.length > 0 && currentFolder) {
+        await importDriveFilesToDB(filesOnly, currentFolder.id);
+      }
     } catch (error: any) {
       console.error("Error loading drive files:", error);
+    }
+  };
+
+  /**
+   * Import Drive files into repository_files if they don't already exist (matched by drive_file_id).
+   * This ensures files added manually in Google Drive appear in the system.
+   */
+  const importDriveFilesToDB = async (driveFilesList: DriveFile[], folderId: string) => {
+    try {
+      // Get existing DB files for this folder that have drive_file_id
+      const { data: existingFiles } = await supabase
+        .from("repository_files")
+        .select("drive_file_id")
+        .eq("folder_id", folderId)
+        .not("drive_file_id", "is", null);
+
+      const existingDriveIds = new Set((existingFiles || []).map(f => f.drive_file_id));
+
+      // Find Drive files not yet in DB
+      const newFiles = driveFilesList.filter(f => !existingDriveIds.has(f.id));
+
+      if (newFiles.length === 0) return;
+
+      // Insert new records
+      const records = newFiles.map(f => ({
+        folder_id: folderId,
+        name: f.name,
+        url: f.webViewLink || f.webContentLink || `https://drive.google.com/file/d/${f.id}/view`,
+        file_type: f.name.split('.').pop() || null,
+        drive_file_id: f.id,
+      }));
+
+      const { error: insertError } = await supabase
+        .from("repository_files")
+        .insert(records);
+
+      if (insertError) {
+        console.error("Error importing Drive files to DB:", insertError);
+        return;
+      }
+
+      console.log(`Imported ${newFiles.length} Drive file(s) into repository_files`);
+      
+      // Reload DB files to show the newly imported ones
+      const { data: fileData } = await supabase
+        .from("repository_files")
+        .select("*")
+        .eq("folder_id", folderId)
+        .order("uploaded_at", { ascending: false });
+
+      if (fileData) setFiles(fileData);
+    } catch (error) {
+      console.error("Error in importDriveFilesToDB:", error);
     }
   };
 
