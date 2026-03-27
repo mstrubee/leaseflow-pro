@@ -819,7 +819,7 @@ serve(async (req) => {
     }
 
     if (action === "updateCredentials") {
-      const { clientId: newClientId, clientSecret: newClientSecret, rootFolderId: newRootFolderId } = body;
+      const { clientId: newClientId, clientSecret: newClientSecret, rootFolderId: newRootFolderId } = params;
       
       const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
       const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
