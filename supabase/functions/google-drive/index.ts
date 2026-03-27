@@ -41,17 +41,16 @@ async function getAccessToken(): Promise<string> {
       if (dbConfig.client_id) clientId = dbConfig.client_id;
       if (dbConfig.client_secret) clientSecret = dbConfig.client_secret;
 
-      // Load refresh token from cloud_storage_tokens
-      if (!refreshToken) {
-        const { data: tokenRow } = await supabase
-          .from('cloud_storage_tokens')
-          .select('refresh_token')
-          .eq('connection_id', conn.id)
-          .single();
-        if (tokenRow?.refresh_token) {
-          refreshToken = tokenRow.refresh_token;
-          console.log("Loaded OAuth refresh token from cloud_storage_tokens");
-        }
+      // Always prefer DB token when available (avoids stale env refresh tokens)
+      const { data: tokenRow } = await supabase
+        .from('cloud_storage_tokens')
+        .select('refresh_token')
+        .eq('connection_id', conn.id)
+        .single();
+
+      if (tokenRow?.refresh_token) {
+        refreshToken = tokenRow.refresh_token;
+        console.log("Loaded OAuth refresh token from cloud_storage_tokens");
       }
     }
   } catch (e) {
@@ -59,7 +58,18 @@ async function getAccessToken(): Promise<string> {
   }
 
   if (clientId && clientSecret && refreshToken) {
-    return getAccessTokenFromOAuth(clientId, clientSecret, refreshToken);
+    try {
+      return await getAccessTokenFromOAuth(clientId, clientSecret, refreshToken);
+    } catch (oauthError) {
+      const message = oauthError instanceof Error ? oauthError.message : String(oauthError);
+      const canFallbackToServiceAccount = /deleted client|deleted_client|invalid_client|invalid_grant|unauthorized_client/i.test(message);
+
+      if (!canFallbackToServiceAccount) {
+        throw oauthError;
+      }
+
+      console.warn("OAuth refresh failed, trying service account fallback:", message);
+    }
   }
 
   // Fallback: service account
