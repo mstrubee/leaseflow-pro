@@ -63,6 +63,11 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
   const [showClientId, setShowClientId] = useState(false);
   const [showClientSecret, setShowClientSecret] = useState(false);
   const [credentialsOpen, setCredentialsOpen] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editClientId, setEditClientId] = useState("");
+  const [editClientSecret, setEditClientSecret] = useState("");
+  const [editRootFolderId, setEditRootFolderId] = useState("");
+  const [savingCredentials, setSavingCredentials] = useState(false);
 
   useEffect(() => {
     loadSettings();
