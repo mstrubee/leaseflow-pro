@@ -67,7 +67,6 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
   useEffect(() => {
     loadSettings();
     checkOAuthStatus();
-    loadCredentials();
   }, []);
 
   const loadSettings = async () => {
