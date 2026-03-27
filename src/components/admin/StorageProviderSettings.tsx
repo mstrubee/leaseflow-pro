@@ -7,6 +7,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,7 +19,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Loader2, Cloud, CheckCircle2, XCircle, RefreshCw, LogIn, Eye, EyeOff, Copy } from "lucide-react";
+import { Loader2, Cloud, CheckCircle2, XCircle, RefreshCw, LogIn, Eye, EyeOff, Copy, ChevronDown, ChevronRight, Settings2 } from "lucide-react";
 
 interface StorageSettings {
   id: string;
@@ -61,11 +62,11 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
   const [credentials, setCredentials] = useState<{ clientId: string; clientIdFull: string; clientSecret: string; clientSecretFull: string; rootFolderId: string } | null>(null);
   const [showClientId, setShowClientId] = useState(false);
   const [showClientSecret, setShowClientSecret] = useState(false);
+  const [credentialsOpen, setCredentialsOpen] = useState(false);
 
   useEffect(() => {
     loadSettings();
     checkOAuthStatus();
-    loadCredentials();
   }, []);
 
   const loadSettings = async () => {
@@ -278,11 +279,26 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
                   {/* Google Drive credentials & OAuth section */}
                   {provider.id === "google_drive" && (
                     <div className="mt-2 space-y-3">
-                      {/* Credentials viewer */}
-                      {credentials && (
-                        <div className="p-3 rounded-md bg-muted/50 space-y-3">
-                          <h5 className="text-sm font-medium">Credenciales Google OAuth</h5>
-                          
+                      {/* Expandable Credentials section */}
+                      <Collapsible open={credentialsOpen} onOpenChange={(open) => { setCredentialsOpen(open); if (open && !credentials) loadCredentials(); }}>
+                        <CollapsibleTrigger asChild>
+                          <Button variant="outline" size="sm" className="w-full justify-between">
+                            <span className="flex items-center gap-2">
+                              <Settings2 className="h-4 w-4" />
+                              Credenciales Google OAuth
+                            </span>
+                            {credentialsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          {!credentials ? (
+                            <div className="p-3 mt-2 rounded-md bg-muted/50">
+                              <Skeleton className="h-8 w-full mb-2" />
+                              <Skeleton className="h-8 w-full mb-2" />
+                              <Skeleton className="h-8 w-full" />
+                            </div>
+                          ) : (
+                        <div className="p-3 mt-2 rounded-md bg-muted/50 space-y-3">
                           {/* Redirect URL */}
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground">Redirect URL</Label>
@@ -379,7 +395,9 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
                             </div>
                           </div>
                         </div>
-                      )}
+                          )}
+                        </CollapsibleContent>
+                      </Collapsible>
 
                       {/* OAuth status */}
                       {oauthStatus && (
