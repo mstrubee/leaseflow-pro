@@ -396,7 +396,9 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
                             </div>
                           </div>
                         </div>
-                      )}
+                          )}
+                        </CollapsibleContent>
+                      </Collapsible>
 
                       {/* OAuth status */}
                       {oauthStatus && (
