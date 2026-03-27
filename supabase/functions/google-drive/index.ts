@@ -1456,6 +1456,79 @@ serve(async (req) => {
 
           syncedFolders.push({ id: folder.id, name: folder.name, driveFolderId: driveFolder.id });
 
+          // ── Upload local files to Drive ──
+          const { data: localFiles } = await sb
+            .from('general_folder_files')
+            .select('*')
+            .eq('folder_id', folder.id);
+
+          for (const file of (localFiles || [])) {
+            if (file.drive_file_id) continue; // already synced
+
+            // Upload file from Supabase Storage to Drive
+            if (file.url?.startsWith('storage://')) {
+              const storagePath = file.url.replace('storage://repository-files/', '');
+              const { data: fileData, error: dlErr } = await sb.storage.from('repository-files').download(storagePath);
+              if (dlErr || !fileData) { console.error("Download failed:", file.name, dlErr); continue; }
+
+              const mimeType = file.file_type === 'pdf' ? 'application/pdf' : 'application/octet-stream';
+              const boundary = '-------314159265358979323846';
+              const metadata = JSON.stringify({ name: sanitizeDriveName(file.name), parents: [driveFolder.id] });
+              const fileBytes = new Uint8Array(await fileData.arrayBuffer());
+
+              const parts = [
+                `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`,
+                `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
+              ];
+              const encoder = new TextEncoder();
+              const head = encoder.encode(parts[0]);
+              const mid = encoder.encode(parts[1]);
+              const tail = encoder.encode(`\r\n--${boundary}--`);
+              const body = new Uint8Array(head.length + mid.length + fileBytes.length + tail.length);
+              body.set(head, 0);
+              body.set(mid, head.length);
+              body.set(fileBytes, head.length + mid.length);
+              body.set(tail, head.length + mid.length + fileBytes.length);
+
+              const uploadRes = await fetch(
+                'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,webViewLink',
+                { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': `multipart/related; boundary=${boundary}` }, body }
+              );
+              if (uploadRes.ok) {
+                const uploaded = await uploadRes.json();
+                await sb.from('general_folder_files').update({ drive_file_id: uploaded.id }).eq('id', file.id);
+                console.log(`Uploaded file "${file.name}" to Drive`);
+              } else {
+                console.error("File upload failed:", file.name, uploadRes.status);
+              }
+            }
+          }
+
+          // ── Index files from Drive → DB ──
+          const listRes = await fetch(
+            `https://www.googleapis.com/drive/v3/files?q='${driveFolder.id}'+in+parents+and+trashed=false+and+mimeType!='application/vnd.google-apps.folder'&fields=files(id,name,mimeType,webViewLink)&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          );
+          if (listRes.ok) {
+            const listData = await listRes.json();
+            const driveFiles = listData.files || [];
+            const existingDriveIds = new Set((localFiles || []).filter((f: any) => f.drive_file_id).map((f: any) => f.drive_file_id));
+
+            for (const df of driveFiles) {
+              if (!existingDriveIds.has(df.id)) {
+                const ext = df.name.includes('.') ? df.name.split('.').pop() : null;
+                await sb.from('general_folder_files').insert({
+                  folder_id: folder.id,
+                  name: df.name,
+                  url: df.webViewLink || '',
+                  file_type: ext,
+                  drive_file_id: df.id,
+                });
+                console.log(`Indexed Drive file "${df.name}" into folder "${folder.name}"`);
+              }
+            }
+          }
+
           // Sync children
           const children = (generalFolders || []).filter((f: any) => f.parent_id === folder.id);
           for (const child of children) {
