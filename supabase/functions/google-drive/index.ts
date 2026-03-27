@@ -32,7 +32,7 @@ async function getAccessToken(): Promise<string> {
     const { data: conn } = await supabase
       .from('cloud_storage_connections')
       .select('id, config')
-      .eq('provider', 'google_drive_oauth')
+      .eq('provider', 'google_drive')
       .limit(1)
       .single();
 
@@ -347,7 +347,7 @@ async function resolveRootFolder(
     const { data: conn } = await sb
       .from('cloud_storage_connections')
       .select('config')
-      .eq('provider', 'google_drive_oauth')
+      .eq('provider', 'google_drive')
       .limit(1)
       .single();
     const dbConfig = (conn?.config as Record<string, string>) || {};
@@ -700,7 +700,7 @@ serve(async (req) => {
         const sbUrl = Deno.env.get('SUPABASE_URL')!;
         const sbKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
         const sb = createClient(sbUrl, sbKey);
-        const { data: conn } = await sb.from('cloud_storage_connections').select('config').eq('provider', 'google_drive_oauth').limit(1).single();
+        const { data: conn } = await sb.from('cloud_storage_connections').select('config').eq('provider', 'google_drive').limit(1).single();
         const dbConfig = (conn?.config as Record<string, string>) || {};
         if (dbConfig.client_id) clientId = dbConfig.client_id;
       } catch {}
@@ -725,7 +725,7 @@ serve(async (req) => {
         const sbUrl = Deno.env.get('SUPABASE_URL')!;
         const sbKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
         const sb = createClient(sbUrl, sbKey);
-        const { data: conn } = await sb.from('cloud_storage_connections').select('config').eq('provider', 'google_drive_oauth').limit(1).single();
+        const { data: conn } = await sb.from('cloud_storage_connections').select('config').eq('provider', 'google_drive').limit(1).single();
         const dbConfig = (conn?.config as Record<string, string>) || {};
         if (dbConfig.client_id) clientId = dbConfig.client_id;
         if (dbConfig.client_secret) clientSecret = dbConfig.client_secret;
@@ -744,11 +744,11 @@ serve(async (req) => {
       const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
       const supabase = createClient(supabaseUrl, supabaseKey);
 
-      // Store in a known location - use 'google_drive_oauth' as connection identifier
+      // Store in a known location - use 'google_drive' as connection identifier
       const { data: existingConn } = await supabase
         .from('cloud_storage_connections')
         .select('id')
-        .eq('provider', 'google_drive_oauth')
+        .eq('provider', 'google_drive')
         .limit(1)
         .single();
 
@@ -759,7 +759,7 @@ serve(async (req) => {
       } else {
         const { data: newConn, error: connError } = await supabase
           .from('cloud_storage_connections')
-          .insert({ provider: 'google_drive_oauth', name: 'Google Drive OAuth', is_active: true })
+          .insert({ provider: 'google_drive', name: 'Google Drive OAuth', is_active: true })
           .select('id')
           .single();
         if (connError) throw connError;
@@ -792,7 +792,7 @@ serve(async (req) => {
       const { data: conn } = await sbAdmin
         .from('cloud_storage_connections')
         .select('config')
-        .eq('provider', 'google_drive_oauth')
+        .eq('provider', 'google_drive')
         .limit(1)
         .single();
 
@@ -829,14 +829,14 @@ serve(async (req) => {
       let { data: conn } = await sbAdmin
         .from('cloud_storage_connections')
         .select('id, config')
-        .eq('provider', 'google_drive_oauth')
+        .eq('provider', 'google_drive')
         .limit(1)
         .single();
 
       if (!conn) {
         const { data: newConn, error: createErr } = await sbAdmin
           .from('cloud_storage_connections')
-          .insert({ name: 'Google Drive OAuth', provider: 'google_drive_oauth', is_active: true, config: {} })
+          .insert({ name: 'Google Drive OAuth', provider: 'google_drive', is_active: true, config: {} })
           .select('id, config')
           .single();
         if (createErr) throw createErr;
@@ -876,7 +876,7 @@ serve(async (req) => {
       const { data: conn } = await supabase
         .from('cloud_storage_connections')
         .select('id, config')
-        .eq('provider', 'google_drive_oauth')
+        .eq('provider', 'google_drive')
         .limit(1)
         .single();
 
@@ -922,7 +922,7 @@ serve(async (req) => {
       const { data: conn } = await supabase
         .from('cloud_storage_connections')
         .select('id')
-        .eq('provider', 'google_drive_oauth')
+        .eq('provider', 'google_drive')
         .limit(1)
         .single();
 
