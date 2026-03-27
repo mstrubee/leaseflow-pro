@@ -344,7 +344,28 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
                             </div>
                           ) : (
                         <div className="p-3 mt-2 rounded-md bg-muted/50 space-y-3">
-                          {/* Redirect URL */}
+                          {/* Header with edit/save buttons */}
+                          <div className="flex items-center justify-end gap-2">
+                            {!editMode ? (
+                              <Button variant="outline" size="sm" onClick={enterEditMode}>
+                                <Pencil className="h-3.5 w-3.5 mr-1" />
+                                Editar
+                              </Button>
+                            ) : (
+                              <>
+                                <Button variant="outline" size="sm" onClick={cancelEditMode} disabled={savingCredentials}>
+                                  <X className="h-3.5 w-3.5 mr-1" />
+                                  Cancelar
+                                </Button>
+                                <Button size="sm" onClick={saveCredentials} disabled={savingCredentials}>
+                                  {savingCredentials ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                                  Guardar
+                                </Button>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Redirect URL (always read-only) */}
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground">Redirect URL</Label>
                             <div className="flex items-center gap-2">
@@ -353,12 +374,7 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
                                 readOnly
                                 className="text-xs h-8 bg-background font-mono"
                               />
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0"
-                                onClick={() => copyToClipboard(`${window.location.origin}/google-drive-callback`)}
-                              >
+                              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => copyToClipboard(`${window.location.origin}/google-drive-callback`)}>
                                 <Copy className="h-3.5 w-3.5" />
                               </Button>
                             </div>
@@ -368,27 +384,30 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground">Client ID</Label>
                             <div className="flex items-center gap-2">
-                              <Input
-                                value={showClientId ? credentials.clientIdFull : credentials.clientId}
-                                readOnly
-                                className="text-xs h-8 bg-background font-mono"
-                              />
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0"
-                                onClick={() => setShowClientId(!showClientId)}
-                              >
-                                {showClientId ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0"
-                                onClick={() => copyToClipboard(credentials.clientIdFull)}
-                              >
-                                <Copy className="h-3.5 w-3.5" />
-                              </Button>
+                              {editMode ? (
+                                <Input
+                                  value={editClientId}
+                                  onChange={(e) => setEditClientId(e.target.value)}
+                                  className="text-xs h-8 font-mono"
+                                  placeholder="Tu Client ID de Google OAuth"
+                                />
+                              ) : (
+                                <Input
+                                  value={showClientId ? credentials.clientIdFull : credentials.clientId}
+                                  readOnly
+                                  className="text-xs h-8 bg-background font-mono"
+                                />
+                              )}
+                              {!editMode && (
+                                <>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setShowClientId(!showClientId)}>
+                                    {showClientId ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => copyToClipboard(credentials.clientIdFull)}>
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </Button>
+                                </>
+                              )}
                             </div>
                           </div>
 
@@ -396,27 +415,30 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground">Client Secret</Label>
                             <div className="flex items-center gap-2">
-                              <Input
-                                value={showClientSecret ? credentials.clientSecretFull : credentials.clientSecret}
-                                readOnly
-                                className="text-xs h-8 bg-background font-mono"
-                              />
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0"
-                                onClick={() => setShowClientSecret(!showClientSecret)}
-                              >
-                                {showClientSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0"
-                                onClick={() => copyToClipboard(credentials.clientSecretFull)}
-                              >
-                                <Copy className="h-3.5 w-3.5" />
-                              </Button>
+                              {editMode ? (
+                                <Input
+                                  value={editClientSecret}
+                                  onChange={(e) => setEditClientSecret(e.target.value)}
+                                  className="text-xs h-8 font-mono"
+                                  placeholder="Tu Client Secret de Google OAuth"
+                                />
+                              ) : (
+                                <Input
+                                  value={showClientSecret ? credentials.clientSecretFull : credentials.clientSecret}
+                                  readOnly
+                                  className="text-xs h-8 bg-background font-mono"
+                                />
+                              )}
+                              {!editMode && (
+                                <>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setShowClientSecret(!showClientSecret)}>
+                                    {showClientSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => copyToClipboard(credentials.clientSecretFull)}>
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </Button>
+                                </>
+                              )}
                             </div>
                           </div>
 
@@ -424,19 +446,25 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground">Root Folder ID</Label>
                             <div className="flex items-center gap-2">
-                              <Input
-                                value={credentials.rootFolderId || "(no configurado)"}
-                                readOnly
-                                className="text-xs h-8 bg-background font-mono"
-                              />
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0"
-                                onClick={() => copyToClipboard(credentials.rootFolderId)}
-                              >
-                                <Copy className="h-3.5 w-3.5" />
-                              </Button>
+                              {editMode ? (
+                                <Input
+                                  value={editRootFolderId}
+                                  onChange={(e) => setEditRootFolderId(e.target.value)}
+                                  className="text-xs h-8 font-mono"
+                                  placeholder="ID de carpeta raíz en Google Drive"
+                                />
+                              ) : (
+                                <Input
+                                  value={credentials.rootFolderId || "(no configurado)"}
+                                  readOnly
+                                  className="text-xs h-8 bg-background font-mono"
+                                />
+                              )}
+                              {!editMode && (
+                                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => copyToClipboard(credentials.rootFolderId)}>
+                                  <Copy className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
                             </div>
                           </div>
                         </div>
