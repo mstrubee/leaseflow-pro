@@ -927,6 +927,7 @@ serve(async (req) => {
       'syncAllContracts',
       'syncSingleContract',
       'ensureProjectStructure',
+      'syncGeneralFolders',
       'testConnection',
     ]);
 
@@ -1384,6 +1385,77 @@ serve(async (req) => {
           sharedDrives,
           authenticatedUser,
         };
+        break;
+      }
+
+      case "syncGeneralFolders": {
+        // Ensure "Carpeta General" root folder exists
+        let generalRoot = await getFolderByName(accessToken, "Carpeta General", rootFolderId);
+        if (!generalRoot) {
+          generalRoot = await createDriveFolder(accessToken, "Carpeta General", rootFolderId);
+          console.log("Created 'Carpeta General' root folder");
+        }
+
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sb = createClient(supabaseUrl, supabaseKey);
+
+        const { data: generalFolders } = await sb
+          .from('general_folders')
+          .select('*')
+          .order('display_order', { ascending: true });
+
+        const syncedFolders: any[] = [];
+
+        // Recursive sync function
+        const syncFolder = async (folder: any, parentDriveId: string) => {
+          let driveFolder: { id: string; webViewLink: string } | null = null;
+
+          if (folder.drive_folder_id) {
+            // Verify it still exists
+            try {
+              const checkRes = await fetch(
+                `https://www.googleapis.com/drive/v3/files/${folder.drive_folder_id}?fields=id,webViewLink,trashed&supportsAllDrives=true`,
+                { headers: { Authorization: `Bearer ${accessToken}` } }
+              );
+              if (checkRes.ok) {
+                const checkData = await checkRes.json();
+                if (!checkData.trashed) {
+                  driveFolder = { id: checkData.id, webViewLink: checkData.webViewLink };
+                }
+              }
+            } catch (_) {}
+          }
+
+          if (!driveFolder) {
+            driveFolder = await getFolderByName(accessToken, folder.name, parentDriveId);
+          }
+
+          if (!driveFolder) {
+            driveFolder = await createDriveFolder(accessToken, folder.name, parentDriveId);
+          }
+
+          // Update drive_folder_id in DB
+          if (driveFolder.id !== folder.drive_folder_id) {
+            await sb.from('general_folders').update({ drive_folder_id: driveFolder.id }).eq('id', folder.id);
+          }
+
+          syncedFolders.push({ id: folder.id, name: folder.name, driveFolderId: driveFolder.id });
+
+          // Sync children
+          const children = (generalFolders || []).filter((f: any) => f.parent_id === folder.id);
+          for (const child of children) {
+            await syncFolder(child, driveFolder.id);
+          }
+        };
+
+        // Sync root folders
+        const roots = (generalFolders || []).filter((f: any) => f.parent_id === null);
+        for (const root of roots) {
+          await syncFolder(root, generalRoot.id);
+        }
+
+        result = { success: true, generalRootId: generalRoot.id, syncedFolders };
         break;
       }
 
