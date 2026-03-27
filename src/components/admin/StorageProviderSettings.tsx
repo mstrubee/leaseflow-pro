@@ -370,11 +370,11 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
                             <Label className="text-xs text-muted-foreground">Redirect URL</Label>
                             <div className="flex items-center gap-2">
                               <Input
-                                value={`${window.location.origin}/google-drive-callback`}
+                                value={redirectUri}
                                 readOnly
                                 className="text-xs h-8 bg-background font-mono"
                               />
-                              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => copyToClipboard(`${window.location.origin}/google-drive-callback`)}>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => copyToClipboard(redirectUri)}>
                                 <Copy className="h-3.5 w-3.5" />
                               </Button>
                             </div>
