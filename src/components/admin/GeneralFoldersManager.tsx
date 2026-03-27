@@ -173,7 +173,14 @@ export const GeneralFoldersManager = () => {
   const [parentForNew, setParentForNew] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
-  useEffect(() => { loadFolders(); }, []);
+  // Fire-and-forget Drive sync
+  const syncDriveInBackground = () => {
+    supabase.functions.invoke("google-drive", { body: { action: "syncGeneralFolders" } })
+      .then(({ error }) => { if (error) console.error("Drive sync error:", error); })
+      .catch((err) => console.error("Drive sync error:", err));
+  };
+
+  useEffect(() => { loadFolders(); syncDriveInBackground(); }, []);
 
   useEffect(() => {
     if (selectedFolder) loadFiles(selectedFolder.id);
