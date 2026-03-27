@@ -34,6 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { getGoogleDriveRedirectUri } from "@/lib/googleDriveOAuth";
 
 interface CloudConnection {
   id: string;
@@ -73,6 +74,7 @@ export const CloudStorageSettings = ({ defaultCollapsed = false }: CloudStorageS
   const [newName, setNewName] = useState("");
   const [newFolderUrl, setNewFolderUrl] = useState("");
   const [saving, setSaving] = useState(false);
+  const redirectUri = getGoogleDriveRedirectUri();
 
   useEffect(() => {
     loadConnections();
@@ -97,7 +99,6 @@ export const CloudStorageSettings = ({ defaultCollapsed = false }: CloudStorageS
   const handleStartOAuth = async () => {
     setStartingOAuth(true);
     try {
-      const redirectUri = `${window.location.origin}/google-drive-callback`;
       const { data, error } = await supabase.functions.invoke("google-drive", {
         body: { action: "getOAuthUrl", redirectUri },
       });
