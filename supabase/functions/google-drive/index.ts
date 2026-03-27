@@ -693,7 +693,18 @@ serve(async (req) => {
     // ── OAuth setup actions (don't need Drive access token) ──────────────
 
     if (action === "getOAuthUrl") {
-      const clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID');
+      let clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID');
+
+      // Check DB config override
+      try {
+        const sbUrl = Deno.env.get('SUPABASE_URL')!;
+        const sbKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sb = createClient(sbUrl, sbKey);
+        const { data: conn } = await sb.from('cloud_storage_connections').select('config').eq('provider', 'google_drive_oauth').limit(1).single();
+        const dbConfig = (conn?.config as Record<string, string>) || {};
+        if (dbConfig.client_id) clientId = dbConfig.client_id;
+      } catch {}
+
       if (!clientId) throw new Error("GOOGLE_OAUTH_CLIENT_ID no está configurado");
 
       const { redirectUri } = params;
@@ -706,8 +717,20 @@ serve(async (req) => {
     }
 
     if (action === "oauthCallback") {
-      const clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID');
-      const clientSecret = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET');
+      let clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID');
+      let clientSecret = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET');
+
+      // Check DB config override
+      try {
+        const sbUrl = Deno.env.get('SUPABASE_URL')!;
+        const sbKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sb = createClient(sbUrl, sbKey);
+        const { data: conn } = await sb.from('cloud_storage_connections').select('config').eq('provider', 'google_drive_oauth').limit(1).single();
+        const dbConfig = (conn?.config as Record<string, string>) || {};
+        if (dbConfig.client_id) clientId = dbConfig.client_id;
+        if (dbConfig.client_secret) clientSecret = dbConfig.client_secret;
+      } catch {}
+
       if (!clientId || !clientSecret) throw new Error("OAuth credentials not configured");
 
       const { code, redirectUri } = params;
