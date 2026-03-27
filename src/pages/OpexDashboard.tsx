@@ -1011,7 +1011,7 @@ const OpexDashboard = () => {
                   consumed_clp: consumed,
                   consumed_uf: ufValue > 0 ? consumed / ufValue : 0
                 };
-              })} ufValue={ufValue} />
+              })} ufValue={ufValue} year={parseInt(yearFilter)} />
                 </CardContent>
               </CollapsibleContent>
             </Card>
