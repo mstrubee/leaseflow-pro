@@ -737,6 +737,28 @@ serve(async (req) => {
       });
     }
 
+    if (action === "getCredentials") {
+      const clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID') || '';
+      const clientSecret = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET') || '';
+      const rootFolderId = Deno.env.get('GOOGLE_DRIVE_ROOT_FOLDER_ID') || '';
+
+      const mask = (val: string) => {
+        if (!val) return '';
+        if (val.length <= 8) return '••••••••';
+        return val.substring(0, 4) + '••••' + val.substring(val.length - 4);
+      };
+
+      return new Response(JSON.stringify({
+        clientId: mask(clientId),
+        clientIdFull: clientId,
+        clientSecret: mask(clientSecret),
+        clientSecretFull: clientSecret,
+        rootFolderId: rootFolderId,
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (action === "checkOAuthStatus") {
       const clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID');
       const clientSecret = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET');
