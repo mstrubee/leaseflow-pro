@@ -846,6 +846,8 @@ export function PatentChecklist({
                                 className="h-8"
                                 value={getDocValue(item.id, 'responsible') || ''}
                                 onChange={(e) => handleDocumentFieldChange(item.id, 'responsible', e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur(); } }}
+                                onBlur={() => commitTextField(item.id)}
                                 placeholder="Responsable"
                                 disabled={disableOtherFields}
                               />
@@ -1065,6 +1067,8 @@ export function PatentChecklist({
                                 maxLength={150}
                                 value={getDocValue(item.id, 'notes') || ''}
                                 onChange={(e) => handleDocumentFieldChange(item.id, 'notes', e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur(); } }}
+                                onBlur={() => commitTextField(item.id)}
                                 placeholder="Notas (máx 150)"
                                 disabled={disableOtherFields}
                               />
