@@ -256,6 +256,7 @@ export const GeneralFoldersManager = () => {
       setCreateDialogOpen(false);
       setParentForNew(null);
       loadFolders();
+      syncDriveInBackground();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
@@ -266,7 +267,7 @@ export const GeneralFoldersManager = () => {
   const handleRename = async (id: string, newName: string) => {
     const { error } = await supabase.from("general_folders").update({ name: newName }).eq("id", id);
     if (error) toast({ variant: "destructive", title: "Error", description: error.message });
-    else { toast({ title: "Carpeta renombrada" }); loadFolders(); }
+    else { toast({ title: "Carpeta renombrada" }); loadFolders(); syncDriveInBackground(); }
   };
 
   const handleDelete = async (id: string, name: string) => {
@@ -277,6 +278,7 @@ export const GeneralFoldersManager = () => {
       toast({ title: "Carpeta eliminada" });
       if (selectedFolder?.id === id) setSelectedFolder(null);
       loadFolders();
+      syncDriveInBackground();
     }
   };
 
@@ -388,6 +390,7 @@ export const GeneralFoldersManager = () => {
 
       toast({ title: "Archivo subido", description: file.name });
       loadFiles(selectedFolder.id);
+      syncDriveInBackground();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
