@@ -1078,64 +1078,86 @@ const AdminPanel = () => {
         {/* Folder Templates */}
         <CollapsibleCard
           title="Carpetas del Repositorio"
-          description="Define las carpetas base que se crearán automáticamente en todos los contratos"
+          description="Gestiona las carpetas generales y las carpetas comunes de contratos"
           icon={<Folder className="h-5 w-5" />}
-          headerActions={
-            <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm">
-                  <FolderPlus className="mr-2 h-4 w-4" />
-                  Nueva Carpeta
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Agregar Carpeta al Template</DialogTitle>
-                  <DialogDescription>
-                    Esta carpeta se creará automáticamente en todos los contratos existentes y futuros.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label>Nombre de la Carpeta *</Label>
-                    <Input
-                      value={newTemplateName}
-                      onChange={(e) => setNewTemplateName(e.target.value)}
-                      placeholder="Ej: Documentos Legales"
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setTemplateDialogOpen(false)}>Cancelar</Button>
-                  <Button onClick={handleCreateTemplate} disabled={creatingTemplate}>
-                    {creatingTemplate && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Crear Carpeta
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          }
         >
-          <div className="space-y-2">
-            {getRootTemplates().map((template) => (
-              <FolderTemplateItem
-                key={template.id}
-                template={template}
-                level={0}
-                getSubfolders={getSubfolders}
-                onAddSubfolder={(id) => {
-                  setSelectedParentTemplate(id);
-                  setSubfolderDialogOpen(true);
-                }}
-                onDelete={handleDeleteTemplate}
-                onRename={handleRenameTemplate}
-              />
-            ))}
-            {getRootTemplates().length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No hay carpetas definidas
-              </p>
-            )}
+          <div className="space-y-6">
+            {/* Carpetas Generales */}
+            <div className="space-y-3">
+              <div className="border-b pb-2">
+                <h3 className="text-base font-semibold">Carpetas Generales</h3>
+                <p className="text-sm text-muted-foreground">
+                  Carpetas independientes de contratos. Se sincronizan en Drive bajo la carpeta "Carpeta General".
+                </p>
+              </div>
+              <GeneralFoldersManager />
+            </div>
+
+            {/* Carpetas Comunes de Contratos */}
+            <div className="space-y-3">
+              <div className="border-b pb-2 flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-semibold">Carpetas Comunes de Repositorios de Contratos</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Se crean automáticamente en cada contrato existente y futuro, y se sincronizan con Drive.
+                  </p>
+                </div>
+                <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm">
+                      <FolderPlus className="mr-2 h-4 w-4" />
+                      Nueva Carpeta
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Agregar Carpeta al Template</DialogTitle>
+                      <DialogDescription>
+                        Esta carpeta se creará automáticamente en todos los contratos existentes y futuros.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label>Nombre de la Carpeta *</Label>
+                        <Input
+                          value={newTemplateName}
+                          onChange={(e) => setNewTemplateName(e.target.value)}
+                          placeholder="Ej: Documentos Legales"
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setTemplateDialogOpen(false)}>Cancelar</Button>
+                      <Button onClick={handleCreateTemplate} disabled={creatingTemplate}>
+                        {creatingTemplate && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Crear Carpeta
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+              <div className="space-y-2">
+                {getRootTemplates().map((template) => (
+                  <FolderTemplateItem
+                    key={template.id}
+                    template={template}
+                    level={0}
+                    getSubfolders={getSubfolders}
+                    onAddSubfolder={(id) => {
+                      setSelectedParentTemplate(id);
+                      setSubfolderDialogOpen(true);
+                    }}
+                    onDelete={handleDeleteTemplate}
+                    onRename={handleRenameTemplate}
+                  />
+                ))}
+                {getRootTemplates().length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No hay carpetas definidas
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
         </CollapsibleCard>
 
