@@ -1273,40 +1273,45 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
           ))}
         </div>
 
-        {/* Files from Google Drive */}
-        {currentFolder && driveFiles.length > 0 && (
-          <div className="space-y-2 pt-4 border-t border-border">
-            <p className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Cloud className="h-4 w-4" />
-              Archivos en Google Drive
-            </p>
-            <div className="space-y-2">
-              {driveFiles.map((file) => (
-                <div
-                  key={file.id}
-                  className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30"
-                >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <FileText className="h-4 w-4 text-blue-500 flex-shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-sm truncate">{file.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDate(file.createdTime)}
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => window.open(file.webViewLink, "_blank")}
+        {/* Files from Google Drive (only show those NOT already tracked in DB) */}
+        {currentFolder && (() => {
+          const trackedDriveIds = new Set(files.filter(f => f.drive_file_id).map(f => f.drive_file_id));
+          const untrackedDriveFiles = driveFiles.filter(f => !trackedDriveIds.has(f.id));
+          if (untrackedDriveFiles.length === 0) return null;
+          return (
+            <div className="space-y-2 pt-4 border-t border-border">
+              <p className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <Cloud className="h-4 w-4" />
+                Archivos en Google Drive (sin registrar)
+              </p>
+              <div className="space-y-2">
+                {untrackedDriveFiles.map((file) => (
+                  <div
+                    key={file.id}
+                    className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30"
                   >
-                    <ExternalLink className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <FileText className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-sm truncate">{file.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatDate(file.createdTime)}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => window.open(file.webViewLink, "_blank")}
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Files from local DB (fallback display) */}
         {currentFolder && files.length > 0 && (
