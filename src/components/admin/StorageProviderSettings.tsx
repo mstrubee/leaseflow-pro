@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { Loader2, Cloud, CheckCircle2, XCircle, RefreshCw, LogIn, Eye, EyeOff, Copy, ChevronDown, ChevronRight, Settings2, Pencil, Save, X } from "lucide-react";
+import { getGoogleDriveRedirectUri } from "@/lib/googleDriveOAuth";
 
 interface StorageSettings {
   id: string;
@@ -68,6 +69,7 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
   const [editClientSecret, setEditClientSecret] = useState("");
   const [editRootFolderId, setEditRootFolderId] = useState("");
   const [savingCredentials, setSavingCredentials] = useState(false);
+  const redirectUri = getGoogleDriveRedirectUri();
 
   useEffect(() => {
     loadSettings();
