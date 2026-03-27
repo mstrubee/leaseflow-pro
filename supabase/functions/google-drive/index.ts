@@ -1389,11 +1389,25 @@ serve(async (req) => {
       }
 
       case "syncGeneralFolders": {
-        // Ensure "Carpeta General" root folder exists
-        let generalRoot = await getFolderByName(accessToken, "Carpeta General", rootFolderId);
+        // Ensure "Información General" root folder exists in Drive
+        // Check for legacy name first and rename if found
+        let generalRoot = await getFolderByName(accessToken, "Información General", rootFolderId);
         if (!generalRoot) {
-          generalRoot = await createDriveFolder(accessToken, "Carpeta General", rootFolderId);
-          console.log("Created 'Carpeta General' root folder");
+          // Check for old name "Carpeta General" and rename it
+          const legacyRoot = await getFolderByName(accessToken, "Carpeta General", rootFolderId);
+          if (legacyRoot) {
+            // Rename legacy folder
+            await fetch(`https://www.googleapis.com/drive/v3/files/${legacyRoot.id}?supportsAllDrives=true`, {
+              method: "PATCH",
+              headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ name: "Información General" }),
+            });
+            generalRoot = legacyRoot;
+            console.log("Renamed 'Carpeta General' to 'Información General'");
+          } else {
+            generalRoot = await createDriveFolder(accessToken, "Información General", rootFolderId);
+            console.log("Created 'Información General' root folder");
+          }
         }
 
         const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
