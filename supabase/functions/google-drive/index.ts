@@ -1421,12 +1421,33 @@ serve(async (req) => {
 
         const syncedFolders: any[] = [];
 
+        // Helper: find ALL folders matching a name in a parent (for dedup)
+        const findAllFoldersByName = async (name: string, parentId: string): Promise<{ id: string; webViewLink: string; createdTime?: string }[]> => {
+          const sanitizedName = sanitizeForDriveQuery(sanitizeDriveName(name));
+          const q = `name='${sanitizedName}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${parentId}' in parents`;
+          const res = await fetch(
+            `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,webViewLink,createdTime)&orderBy=createdTime asc&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`,
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          );
+          if (!res.ok) return [];
+          const data = await res.json();
+          return data.files || [];
+        };
+
+        // Helper: trash a Drive folder
+        const trashDriveFolder = async (folderId: string) => {
+          await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}?supportsAllDrives=true`, {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trashed: true }),
+          });
+        };
+
         // Recursive sync function
         const syncFolder = async (folder: any, parentDriveId: string) => {
           let driveFolder: { id: string; webViewLink: string } | null = null;
 
           if (folder.drive_folder_id) {
-            // Verify it still exists
             try {
               const checkRes = await fetch(
                 `https://www.googleapis.com/drive/v3/files/${folder.drive_folder_id}?fields=id,webViewLink,trashed&supportsAllDrives=true`,
@@ -1442,7 +1463,16 @@ serve(async (req) => {
           }
 
           if (!driveFolder) {
-            driveFolder = await getFolderByName(accessToken, folder.name, parentDriveId);
+            // Search by name - take the oldest one
+            const matches = await findAllFoldersByName(folder.name, parentDriveId);
+            if (matches.length > 0) {
+              driveFolder = matches[0]; // keep oldest
+              // Trash duplicates
+              for (let i = 1; i < matches.length; i++) {
+                console.log(`Trashing duplicate folder "${folder.name}" (${matches[i].id})`);
+                await trashDriveFolder(matches[i].id);
+              }
+            }
           }
 
           if (!driveFolder) {
