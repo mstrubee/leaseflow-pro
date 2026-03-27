@@ -1,0 +1,1 @@
+ALTER TABLE public.cloud_storage_connections ADD COLUMN IF NOT EXISTS config jsonb DEFAULT '{}'::jsonb;

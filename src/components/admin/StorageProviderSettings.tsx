@@ -19,7 +19,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Loader2, Cloud, CheckCircle2, XCircle, RefreshCw, LogIn, Eye, EyeOff, Copy, ChevronDown, ChevronRight, Settings2 } from "lucide-react";
+import { Loader2, Cloud, CheckCircle2, XCircle, RefreshCw, LogIn, Eye, EyeOff, Copy, ChevronDown, ChevronRight, Settings2, Pencil, Save, X } from "lucide-react";
 
 interface StorageSettings {
   id: string;
@@ -63,6 +63,11 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
   const [showClientId, setShowClientId] = useState(false);
   const [showClientSecret, setShowClientSecret] = useState(false);
   const [credentialsOpen, setCredentialsOpen] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editClientId, setEditClientId] = useState("");
+  const [editClientSecret, setEditClientSecret] = useState("");
+  const [editRootFolderId, setEditRootFolderId] = useState("");
+  const [savingCredentials, setSavingCredentials] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -107,6 +112,46 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
       }
     } catch {
       // Ignore
+    }
+  };
+
+  const enterEditMode = () => {
+    if (credentials) {
+      setEditClientId(credentials.clientIdFull);
+      setEditClientSecret(credentials.clientSecretFull);
+      setEditRootFolderId(credentials.rootFolderId);
+    }
+    setEditMode(true);
+  };
+
+  const cancelEditMode = () => {
+    setEditMode(false);
+  };
+
+  const saveCredentials = async () => {
+    setSavingCredentials(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("google-drive", {
+        body: {
+          action: "updateCredentials",
+          clientId: editClientId,
+          clientSecret: editClientSecret,
+          rootFolderId: editRootFolderId,
+        },
+      });
+      if (error) throw error;
+      toast.success("Credenciales actualizadas", {
+        description: data?.message || "Los cambios se aplicarán en la próxima invocación.",
+      });
+      setEditMode(false);
+      // Reload credentials
+      await loadCredentials();
+      // Refresh OAuth status
+      await checkOAuthStatus();
+    } catch (error: any) {
+      toast.error("Error al guardar credenciales", { description: error.message });
+    } finally {
+      setSavingCredentials(false);
     }
   };
 
@@ -299,7 +344,28 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
                             </div>
                           ) : (
                         <div className="p-3 mt-2 rounded-md bg-muted/50 space-y-3">
-                          {/* Redirect URL */}
+                          {/* Header with edit/save buttons */}
+                          <div className="flex items-center justify-end gap-2">
+                            {!editMode ? (
+                              <Button variant="outline" size="sm" onClick={enterEditMode}>
+                                <Pencil className="h-3.5 w-3.5 mr-1" />
+                                Editar
+                              </Button>
+                            ) : (
+                              <>
+                                <Button variant="outline" size="sm" onClick={cancelEditMode} disabled={savingCredentials}>
+                                  <X className="h-3.5 w-3.5 mr-1" />
+                                  Cancelar
+                                </Button>
+                                <Button size="sm" onClick={saveCredentials} disabled={savingCredentials}>
+                                  {savingCredentials ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                                  Guardar
+                                </Button>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Redirect URL (always read-only) */}
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground">Redirect URL</Label>
                             <div className="flex items-center gap-2">
@@ -308,12 +374,7 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
                                 readOnly
                                 className="text-xs h-8 bg-background font-mono"
                               />
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0"
-                                onClick={() => copyToClipboard(`${window.location.origin}/google-drive-callback`)}
-                              >
+                              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => copyToClipboard(`${window.location.origin}/google-drive-callback`)}>
                                 <Copy className="h-3.5 w-3.5" />
                               </Button>
                             </div>
@@ -323,27 +384,30 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground">Client ID</Label>
                             <div className="flex items-center gap-2">
-                              <Input
-                                value={showClientId ? credentials.clientIdFull : credentials.clientId}
-                                readOnly
-                                className="text-xs h-8 bg-background font-mono"
-                              />
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0"
-                                onClick={() => setShowClientId(!showClientId)}
-                              >
-                                {showClientId ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0"
-                                onClick={() => copyToClipboard(credentials.clientIdFull)}
-                              >
-                                <Copy className="h-3.5 w-3.5" />
-                              </Button>
+                              {editMode ? (
+                                <Input
+                                  value={editClientId}
+                                  onChange={(e) => setEditClientId(e.target.value)}
+                                  className="text-xs h-8 font-mono"
+                                  placeholder="Tu Client ID de Google OAuth"
+                                />
+                              ) : (
+                                <Input
+                                  value={showClientId ? credentials.clientIdFull : credentials.clientId}
+                                  readOnly
+                                  className="text-xs h-8 bg-background font-mono"
+                                />
+                              )}
+                              {!editMode && (
+                                <>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setShowClientId(!showClientId)}>
+                                    {showClientId ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => copyToClipboard(credentials.clientIdFull)}>
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </Button>
+                                </>
+                              )}
                             </div>
                           </div>
 
@@ -351,27 +415,30 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground">Client Secret</Label>
                             <div className="flex items-center gap-2">
-                              <Input
-                                value={showClientSecret ? credentials.clientSecretFull : credentials.clientSecret}
-                                readOnly
-                                className="text-xs h-8 bg-background font-mono"
-                              />
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0"
-                                onClick={() => setShowClientSecret(!showClientSecret)}
-                              >
-                                {showClientSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0"
-                                onClick={() => copyToClipboard(credentials.clientSecretFull)}
-                              >
-                                <Copy className="h-3.5 w-3.5" />
-                              </Button>
+                              {editMode ? (
+                                <Input
+                                  value={editClientSecret}
+                                  onChange={(e) => setEditClientSecret(e.target.value)}
+                                  className="text-xs h-8 font-mono"
+                                  placeholder="Tu Client Secret de Google OAuth"
+                                />
+                              ) : (
+                                <Input
+                                  value={showClientSecret ? credentials.clientSecretFull : credentials.clientSecret}
+                                  readOnly
+                                  className="text-xs h-8 bg-background font-mono"
+                                />
+                              )}
+                              {!editMode && (
+                                <>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setShowClientSecret(!showClientSecret)}>
+                                    {showClientSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => copyToClipboard(credentials.clientSecretFull)}>
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </Button>
+                                </>
+                              )}
                             </div>
                           </div>
 
@@ -379,19 +446,25 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground">Root Folder ID</Label>
                             <div className="flex items-center gap-2">
-                              <Input
-                                value={credentials.rootFolderId || "(no configurado)"}
-                                readOnly
-                                className="text-xs h-8 bg-background font-mono"
-                              />
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0"
-                                onClick={() => copyToClipboard(credentials.rootFolderId)}
-                              >
-                                <Copy className="h-3.5 w-3.5" />
-                              </Button>
+                              {editMode ? (
+                                <Input
+                                  value={editRootFolderId}
+                                  onChange={(e) => setEditRootFolderId(e.target.value)}
+                                  className="text-xs h-8 font-mono"
+                                  placeholder="ID de carpeta raíz en Google Drive"
+                                />
+                              ) : (
+                                <Input
+                                  value={credentials.rootFolderId || "(no configurado)"}
+                                  readOnly
+                                  className="text-xs h-8 bg-background font-mono"
+                                />
+                              )}
+                              {!editMode && (
+                                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => copyToClipboard(credentials.rootFolderId)}>
+                                  <Copy className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
                             </div>
                           </div>
                         </div>
