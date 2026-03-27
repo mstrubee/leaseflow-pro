@@ -2116,6 +2116,88 @@ export type Database = {
           },
         ]
       }
+      general_folder_files: {
+        Row: {
+          drive_file_id: string | null
+          file_type: string | null
+          folder_id: string
+          id: string
+          name: string
+          uploaded_at: string | null
+          uploaded_by: string | null
+          url: string
+        }
+        Insert: {
+          drive_file_id?: string | null
+          file_type?: string | null
+          folder_id: string
+          id?: string
+          name: string
+          uploaded_at?: string | null
+          uploaded_by?: string | null
+          url: string
+        }
+        Update: {
+          drive_file_id?: string | null
+          file_type?: string | null
+          folder_id?: string
+          id?: string
+          name?: string
+          uploaded_at?: string | null
+          uploaded_by?: string | null
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "general_folder_files_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "general_folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      general_folders: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          display_order: number | null
+          drive_folder_id: string | null
+          id: string
+          name: string
+          parent_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          display_order?: number | null
+          drive_folder_id?: string | null
+          id?: string
+          name: string
+          parent_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          display_order?: number | null
+          drive_folder_id?: string | null
+          id?: string
+          name?: string
+          parent_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "general_folders_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "general_folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       holidays: {
         Row: {
           country: string
