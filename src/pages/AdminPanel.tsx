@@ -27,6 +27,7 @@ import { ComiteGPStatusManager } from "@/components/admin/ComiteGPStatusManager"
 import { OrgChartManager } from "@/components/admin/OrgChartManager";
 import { MaintenanceCriticalityManager } from "@/components/admin/MaintenanceCriticalityManager";
 import { MaintenanceSubStatusManager } from "@/components/admin/MaintenanceSubStatusManager";
+import { GeneralFoldersManager } from "@/components/admin/GeneralFoldersManager";
 interface Profile {
   id: string;
   email: string;
