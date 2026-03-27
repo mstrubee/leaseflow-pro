@@ -340,6 +340,39 @@ export function MultiFileUploadDialog({
 
       if (dbError) throw dbError;
 
+      // Mirror to general folder if contract has one
+      try {
+        const { data: generalFolder } = await supabase
+          .from("general_folders")
+          .select("id")
+          .eq("contract_id", contractId)
+          .limit(1)
+          .maybeSingle();
+
+        if (generalFolder) {
+          // Check if already mirrored
+          const { data: existing } = await supabase
+            .from("general_folder_files")
+            .select("id")
+            .eq("folder_id", generalFolder.id)
+            .eq("name", finalFileName)
+            .eq("url", fileUrl)
+            .limit(1);
+
+          if (!existing || existing.length === 0) {
+            await supabase.from("general_folder_files").insert({
+              folder_id: generalFolder.id,
+              name: finalFileName,
+              url: fileUrl,
+              file_type: ext,
+              drive_file_id: driveFileId,
+            });
+          }
+        }
+      } catch (mirrorErr) {
+        console.error("Error mirroring to general folder:", mirrorErr);
+      }
+
       setFiles(prev => prev.map((f, i) => 
         i === index ? { ...f, status: "success", progress: 100 } : f
       ));
