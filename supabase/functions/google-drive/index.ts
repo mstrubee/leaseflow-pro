@@ -1420,8 +1420,13 @@ serve(async (req) => {
           .order('display_order', { ascending: true });
 
         const syncedFolders: any[] = [];
+        const claimedDriveIds = new Set(
+          (generalFolders || [])
+            .map((f: any) => f.drive_folder_id)
+            .filter((id: string | null) => !!id)
+        );
 
-        // Helper: find ALL folders matching a name in a parent (for dedup)
+        // Helper: find ALL folders matching a name in a parent
         const findAllFoldersByName = async (name: string, parentId: string): Promise<{ id: string; webViewLink: string; createdTime?: string }[]> => {
           const sanitizedName = sanitizeForDriveQuery(sanitizeDriveName(name));
           const q = `name='${sanitizedName}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${parentId}' in parents`;
@@ -1432,15 +1437,6 @@ serve(async (req) => {
           if (!res.ok) return [];
           const data = await res.json();
           return data.files || [];
-        };
-
-        // Helper: trash a Drive folder
-        const trashDriveFolder = async (folderId: string) => {
-          await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}?supportsAllDrives=true`, {
-            method: 'PATCH',
-            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ trashed: true }),
-          });
         };
 
         // Recursive sync function
@@ -1457,21 +1453,19 @@ serve(async (req) => {
                 const checkData = await checkRes.json();
                 if (!checkData.trashed) {
                   driveFolder = { id: checkData.id, webViewLink: checkData.webViewLink };
+                } else {
+                  claimedDriveIds.delete(folder.drive_folder_id);
                 }
               }
             } catch (_) {}
           }
 
           if (!driveFolder) {
-            // Search by name - take the oldest one
+            // Pick a match not already claimed by another local folder
             const matches = await findAllFoldersByName(folder.name, parentDriveId);
-            if (matches.length > 0) {
-              driveFolder = matches[0]; // keep oldest
-              // Trash duplicates
-              for (let i = 1; i < matches.length; i++) {
-                console.log(`Trashing duplicate folder "${folder.name}" (${matches[i].id})`);
-                await trashDriveFolder(matches[i].id);
-              }
+            const unclaimed = matches.find((m) => !claimedDriveIds.has(m.id));
+            if (unclaimed) {
+              driveFolder = unclaimed;
             }
           }
 
@@ -1483,6 +1477,7 @@ serve(async (req) => {
           if (driveFolder.id !== folder.drive_folder_id) {
             await sb.from('general_folders').update({ drive_folder_id: driveFolder.id }).eq('id', folder.id);
           }
+          claimedDriveIds.add(driveFolder.id);
 
           syncedFolders.push({ id: folder.id, name: folder.name, driveFolderId: driveFolder.id });
 
