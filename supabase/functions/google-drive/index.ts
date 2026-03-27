@@ -738,9 +738,22 @@ serve(async (req) => {
     }
 
     if (action === "getCredentials") {
-      const clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID') || '';
-      const clientSecret = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET') || '';
-      const rootFolderId = Deno.env.get('GOOGLE_DRIVE_ROOT_FOLDER_ID') || '';
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const sbAdmin = createClient(supabaseUrl, supabaseKey);
+
+      // Try to load overrides from DB
+      const { data: conn } = await sbAdmin
+        .from('cloud_storage_connections')
+        .select('config')
+        .eq('provider', 'google_drive_oauth')
+        .limit(1)
+        .single();
+
+      const dbConfig = (conn?.config as Record<string, string>) || {};
+      const clientId = dbConfig.client_id || Deno.env.get('GOOGLE_OAUTH_CLIENT_ID') || '';
+      const clientSecret = dbConfig.client_secret || Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET') || '';
+      const rootFolderId = dbConfig.root_folder_id || Deno.env.get('GOOGLE_DRIVE_ROOT_FOLDER_ID') || '';
 
       const mask = (val: string) => {
         if (!val) return '';
@@ -766,40 +779,41 @@ serve(async (req) => {
       const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
       const sbAdmin = createClient(supabaseUrl, supabaseKey);
 
-      // Update secrets via Supabase Vault
-      const updates: { name: string; value: string }[] = [];
-      if (typeof newClientId === 'string' && newClientId.trim()) {
-        updates.push({ name: 'GOOGLE_OAUTH_CLIENT_ID', value: newClientId.trim() });
-      }
-      if (typeof newClientSecret === 'string' && newClientSecret.trim()) {
-        updates.push({ name: 'GOOGLE_OAUTH_CLIENT_SECRET', value: newClientSecret.trim() });
-      }
-      if (typeof newRootFolderId === 'string') {
-        updates.push({ name: 'GOOGLE_DRIVE_ROOT_FOLDER_ID', value: newRootFolderId.trim() });
+      // Get or create the google_drive_oauth connection
+      let { data: conn } = await sbAdmin
+        .from('cloud_storage_connections')
+        .select('id, config')
+        .eq('provider', 'google_drive_oauth')
+        .limit(1)
+        .single();
+
+      if (!conn) {
+        const { data: newConn, error: createErr } = await sbAdmin
+          .from('cloud_storage_connections')
+          .insert({ name: 'Google Drive OAuth', provider: 'google_drive_oauth', is_active: true, config: {} })
+          .select('id, config')
+          .single();
+        if (createErr) throw createErr;
+        conn = newConn;
       }
 
-      if (updates.length === 0) {
-        return new Response(JSON.stringify({ error: "No values to update" }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
+      const existingConfig = (conn?.config as Record<string, string>) || {};
+      const updatedConfig: Record<string, string> = { ...existingConfig };
 
-      // Update each secret using vault
-      for (const { name, value } of updates) {
-        // Delete existing and re-insert
-        await sbAdmin.rpc('delete_secret', { secret_name: name }).catch(() => {});
-        const { error: insertErr } = await sbAdmin.rpc('insert_secret', { name, value });
-        if (insertErr) {
-          console.error(`Failed to update secret ${name}:`, insertErr);
-          // Fallback: just log the error, the edge function env won't update until redeployment
-        }
-      }
+      if (typeof newClientId === 'string') updatedConfig.client_id = newClientId.trim();
+      if (typeof newClientSecret === 'string') updatedConfig.client_secret = newClientSecret.trim();
+      if (typeof newRootFolderId === 'string') updatedConfig.root_folder_id = newRootFolderId.trim();
+
+      const { error: updateErr } = await sbAdmin
+        .from('cloud_storage_connections')
+        .update({ config: updatedConfig, updated_at: new Date().toISOString() })
+        .eq('id', conn!.id);
+
+      if (updateErr) throw updateErr;
 
       return new Response(JSON.stringify({ 
         success: true, 
-        message: "Credenciales actualizadas. Los cambios se aplicarán en la próxima invocación de la función.",
-        updatedFields: updates.map(u => u.name),
+        message: "Credenciales actualizadas correctamente.",
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
