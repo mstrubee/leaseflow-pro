@@ -180,7 +180,7 @@ export const GeneralFoldersManager = () => {
       .catch((err) => console.error("Drive sync error:", err));
   };
 
-  useEffect(() => { loadFolders(); syncDriveInBackground(); }, []);
+  useEffect(() => { loadFolders(); }, []);
 
   useEffect(() => {
     if (selectedFolder) loadFiles(selectedFolder.id);
