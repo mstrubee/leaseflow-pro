@@ -115,6 +115,46 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
     }
   };
 
+  const enterEditMode = () => {
+    if (credentials) {
+      setEditClientId(credentials.clientIdFull);
+      setEditClientSecret(credentials.clientSecretFull);
+      setEditRootFolderId(credentials.rootFolderId);
+    }
+    setEditMode(true);
+  };
+
+  const cancelEditMode = () => {
+    setEditMode(false);
+  };
+
+  const saveCredentials = async () => {
+    setSavingCredentials(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("google-drive", {
+        body: {
+          action: "updateCredentials",
+          clientId: editClientId,
+          clientSecret: editClientSecret,
+          rootFolderId: editRootFolderId,
+        },
+      });
+      if (error) throw error;
+      toast.success("Credenciales actualizadas", {
+        description: data?.message || "Los cambios se aplicarán en la próxima invocación.",
+      });
+      setEditMode(false);
+      // Reload credentials
+      await loadCredentials();
+      // Refresh OAuth status
+      await checkOAuthStatus();
+    } catch (error: any) {
+      toast.error("Error al guardar credenciales", { description: error.message });
+    } finally {
+      setSavingCredentials(false);
+    }
+  };
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast.success("Copiado al portapapeles");
