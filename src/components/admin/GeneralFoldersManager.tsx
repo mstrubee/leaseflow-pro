@@ -449,7 +449,7 @@ export const GeneralFoldersManager = () => {
               <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={collapseAll}>Colapsar</Button>
             </div>
           </div>
-          <ScrollArea className="max-h-[400px]">
+          <ScrollArea className="h-[400px]">
             {getRootFolders().length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">No hay carpetas generales</p>
             ) : (
@@ -496,7 +496,7 @@ export const GeneralFoldersManager = () => {
               </>
             )}
           </div>
-          <ScrollArea className="max-h-[350px]">
+          <ScrollArea className="h-[400px]">
             {!selectedFolder ? (
               <p className="text-sm text-muted-foreground text-center py-8">Haz clic en una carpeta para ver sus archivos</p>
             ) : files.length === 0 ? (
