@@ -58,10 +58,14 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
   const [connectionStatus, setConnectionStatus] = useState<Record<string, boolean | null>>({});
   const [oauthStatus, setOauthStatus] = useState<{ hasClientCredentials: boolean; hasRefreshToken: boolean; isConnected: boolean } | null>(null);
   const [connectingOAuth, setConnectingOAuth] = useState(false);
+  const [credentials, setCredentials] = useState<{ clientId: string; clientIdFull: string; clientSecret: string; clientSecretFull: string; rootFolderId: string } | null>(null);
+  const [showClientId, setShowClientId] = useState(false);
+  const [showClientSecret, setShowClientSecret] = useState(false);
 
   useEffect(() => {
     loadSettings();
     checkOAuthStatus();
+    loadCredentials();
   }, []);
 
   const loadSettings = async () => {
