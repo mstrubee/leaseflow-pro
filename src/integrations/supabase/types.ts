@@ -2159,36 +2159,49 @@ export type Database = {
       }
       general_folders: {
         Row: {
+          contract_id: string | null
           created_at: string | null
           created_by: string | null
           display_order: number | null
           drive_folder_id: string | null
           id: string
+          is_contract_root: boolean | null
           name: string
           parent_id: string | null
           updated_at: string | null
         }
         Insert: {
+          contract_id?: string | null
           created_at?: string | null
           created_by?: string | null
           display_order?: number | null
           drive_folder_id?: string | null
           id?: string
+          is_contract_root?: boolean | null
           name: string
           parent_id?: string | null
           updated_at?: string | null
         }
         Update: {
+          contract_id?: string | null
           created_at?: string | null
           created_by?: string | null
           display_order?: number | null
           drive_folder_id?: string | null
           id?: string
+          is_contract_root?: boolean | null
           name?: string
           parent_id?: string | null
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "general_folders_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "general_folders_parent_id_fkey"
             columns: ["parent_id"]
