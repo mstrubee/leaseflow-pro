@@ -1171,14 +1171,61 @@ serve(async (req) => {
         const statusFolderName = getStatusFolderName(status || 'en_negociacion');
         const statusFolder = statusFolders[statusFolderName];
 
-        const existingFolder = await getFolderByName(accessToken, contractName, statusFolder.id);
+        // Check across ALL status folders to prevent duplicates
+        let existingFolder: { id: string; webViewLink: string } | null = null;
+        let existingInFolder: string | null = null;
+
+        for (const [folderName, folder] of Object.entries(statusFolders)) {
+          const found = await getFolderByName(accessToken, contractName, folder.id);
+          if (found) {
+            existingFolder = found;
+            existingInFolder = folderName;
+            break;
+          }
+        }
+
+        // Also check root level
+        if (!existingFolder) {
+          existingFolder = await getFolderByName(accessToken, contractName, rootFolderId);
+          if (existingFolder) existingInFolder = 'root';
+        }
 
         if (existingFolder) {
+          // Move to correct status folder if needed
+          if (existingInFolder && existingInFolder !== statusFolderName && existingInFolder !== 'root') {
+            const sourceFolder = statusFolders[existingInFolder];
+            if (sourceFolder) {
+              await moveToFolder(accessToken, existingFolder.id, statusFolder.id, sourceFolder.id);
+              console.log(`Moved ${contractName} from ${existingInFolder} to ${statusFolderName}`);
+            }
+          } else if (existingInFolder === 'root') {
+            await moveToFolder(accessToken, existingFolder.id, statusFolder.id, rootFolderId);
+            console.log(`Moved ${contractName} from root to ${statusFolderName}`);
+          }
+
+          // Ensure subfolders exist (don't duplicate)
+          const existingChildren = await listChildFolders(accessToken, existingFolder.id);
+          const createdSubfolders: any[] = [];
+          for (const subfolder of subfolders || []) {
+            const key = sanitizeDriveName(subfolder.name);
+            let child = existingChildren[key];
+            if (!child) {
+              child = await createDriveFolder(accessToken, subfolder.name, existingFolder.id);
+            }
+            createdSubfolders.push({
+              localId: subfolder.id,
+              name: subfolder.name,
+              driveFolderId: child.id,
+              webViewLink: child.webViewLink,
+            });
+          }
+
           result = {
-            exists: true,
+            exists: false,
             projectFolderId: existingFolder.id,
             webViewLink: existingFolder.webViewLink,
-            message: `La carpeta "${contractName}" ya existe en Google Drive`,
+            subfolders: createdSubfolders,
+            statusFolder: statusFolderName,
           };
         } else {
           const projectFolder = await createDriveFolder(accessToken, contractName, statusFolder.id);
