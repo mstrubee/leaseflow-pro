@@ -19,23 +19,30 @@ const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
  * Falls back to service account JWT if OAuth credentials are not configured.
  */
 async function getAccessToken(): Promise<string> {
-  const clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID');
-  const clientSecret = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET');
+  let clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID');
+  let clientSecret = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET');
   let refreshToken = Deno.env.get('GOOGLE_OAUTH_REFRESH_TOKEN');
 
-  // If no env-based refresh token, try to load from cloud_storage_tokens table
-  if (clientId && clientSecret && !refreshToken) {
-    try {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-      const supabase = createClient(supabaseUrl, supabaseKey);
-      const { data: conn } = await supabase
-        .from('cloud_storage_connections')
-        .select('id')
-        .eq('provider', 'google_drive_oauth')
-        .limit(1)
-        .single();
-      if (conn) {
+  // Try to load overrides from cloud_storage_connections config
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  try {
+    const { data: conn } = await supabase
+      .from('cloud_storage_connections')
+      .select('id, config')
+      .eq('provider', 'google_drive_oauth')
+      .limit(1)
+      .single();
+
+    if (conn) {
+      const dbConfig = (conn.config as Record<string, string>) || {};
+      if (dbConfig.client_id) clientId = dbConfig.client_id;
+      if (dbConfig.client_secret) clientSecret = dbConfig.client_secret;
+
+      // Load refresh token from cloud_storage_tokens
+      if (!refreshToken) {
         const { data: tokenRow } = await supabase
           .from('cloud_storage_tokens')
           .select('refresh_token')
@@ -46,9 +53,9 @@ async function getAccessToken(): Promise<string> {
           console.log("Loaded OAuth refresh token from cloud_storage_tokens");
         }
       }
-    } catch (e) {
-      console.warn("Failed to load refresh token from DB:", e);
     }
+  } catch (e) {
+    console.warn("Failed to load config from DB:", e);
   }
 
   if (clientId && clientSecret && refreshToken) {
