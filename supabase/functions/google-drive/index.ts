@@ -908,42 +908,9 @@ serve(async (req) => {
 
     // ── All other actions need Drive access ──────────────────────────────
 
-    // Try to get access token - first check DB for OAuth refresh token, then env
-    let accessToken: string;
-    const clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID');
-    const clientSecret = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET');
-
-    if (clientId && clientSecret) {
-      // Check DB for refresh token
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-      const supabase = createClient(supabaseUrl, supabaseKey);
-
-      const { data: conn } = await supabase
-        .from('cloud_storage_connections')
-        .select('id')
-        .eq('provider', 'google_drive')
-        .limit(1)
-        .single();
-
-      if (conn) {
-        const { data: tokenData } = await supabase
-          .from('cloud_storage_tokens')
-          .select('refresh_token')
-          .eq('connection_id', conn.id)
-          .single();
-
-        if (tokenData?.refresh_token) {
-          accessToken = await getAccessTokenFromOAuth(clientId, clientSecret, tokenData.refresh_token);
-        } else {
-          accessToken = await getAccessToken();
-        }
-      } else {
-        accessToken = await getAccessToken();
-      }
-    } else {
-      accessToken = await getAccessToken();
-    }
+    // Always resolve OAuth credentials and tokens via getAccessToken(),
+    // which prioritizes cloud_storage_connections.config over env secrets.
+    const accessToken = await getAccessToken();
 
     const actionsRequiringRootFolder = new Set([
       'ensureStatusFolders',
