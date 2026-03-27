@@ -275,33 +275,141 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
                   </div>
                   <p className="text-sm text-muted-foreground">{provider.description}</p>
 
-                  {/* Google Drive OAuth section */}
-                  {provider.id === "google_drive" && oauthStatus && (
-                    <div className="mt-2 p-3 rounded-md bg-muted/50 space-y-2">
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="font-medium">OAuth:</span>
-                        {oauthStatus.isConnected ? (
-                          <Badge variant="default" className="text-xs bg-green-600">Conectado</Badge>
-                        ) : oauthStatus.hasClientCredentials ? (
-                          <Badge variant="outline" className="text-xs">Credenciales configuradas - Sin autorizar</Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-xs">No configurado</Badge>
-                        )}
-                      </div>
-                      {oauthStatus.hasClientCredentials && !oauthStatus.isConnected && (
-                        <Button
-                          variant="default"
-                          size="sm"
-                          onClick={startOAuthFlow}
-                          disabled={connectingOAuth}
-                        >
-                          {connectingOAuth ? (
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                          ) : (
-                            <LogIn className="h-4 w-4 mr-2" />
+                  {/* Google Drive credentials & OAuth section */}
+                  {provider.id === "google_drive" && (
+                    <div className="mt-2 space-y-3">
+                      {/* Credentials viewer */}
+                      {credentials && (
+                        <div className="p-3 rounded-md bg-muted/50 space-y-3">
+                          <h5 className="text-sm font-medium">Credenciales Google OAuth</h5>
+                          
+                          {/* Redirect URL */}
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Redirect URL</Label>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={`${window.location.origin}/google-drive-callback`}
+                                readOnly
+                                className="text-xs h-8 bg-background font-mono"
+                              />
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 shrink-0"
+                                onClick={() => copyToClipboard(`${window.location.origin}/google-drive-callback`)}
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+
+                          {/* Client ID */}
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Client ID</Label>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={showClientId ? credentials.clientIdFull : credentials.clientId}
+                                readOnly
+                                className="text-xs h-8 bg-background font-mono"
+                              />
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 shrink-0"
+                                onClick={() => setShowClientId(!showClientId)}
+                              >
+                                {showClientId ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 shrink-0"
+                                onClick={() => copyToClipboard(credentials.clientIdFull)}
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+
+                          {/* Client Secret */}
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Client Secret</Label>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={showClientSecret ? credentials.clientSecretFull : credentials.clientSecret}
+                                readOnly
+                                className="text-xs h-8 bg-background font-mono"
+                              />
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 shrink-0"
+                                onClick={() => setShowClientSecret(!showClientSecret)}
+                              >
+                                {showClientSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 shrink-0"
+                                onClick={() => copyToClipboard(credentials.clientSecretFull)}
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+
+                          {/* Root Folder ID */}
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Root Folder ID</Label>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={credentials.rootFolderId || "(no configurado)"}
+                                readOnly
+                                className="text-xs h-8 bg-background font-mono"
+                              />
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 shrink-0"
+                                onClick={() => copyToClipboard(credentials.rootFolderId)}
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* OAuth status */}
+                      {oauthStatus && (
+                        <div className="p-3 rounded-md bg-muted/50 space-y-2">
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className="font-medium">OAuth:</span>
+                            {oauthStatus.isConnected ? (
+                              <Badge variant="default" className="text-xs bg-green-600">Conectado</Badge>
+                            ) : oauthStatus.hasClientCredentials ? (
+                              <Badge variant="outline" className="text-xs">Credenciales configuradas - Sin autorizar</Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-xs">No configurado</Badge>
+                            )}
+                          </div>
+                          {oauthStatus.hasClientCredentials && !oauthStatus.isConnected && (
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={startOAuthFlow}
+                              disabled={connectingOAuth}
+                            >
+                              {connectingOAuth ? (
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                              ) : (
+                                <LogIn className="h-4 w-4 mr-2" />
+                              )}
+                              Autorizar con Google
+                            </Button>
                           )}
-                          Autorizar con Google
-                        </Button>
+                        </div>
                       )}
                     </div>
                   )}
