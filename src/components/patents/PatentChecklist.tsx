@@ -411,7 +411,7 @@ export function PatentChecklist({
     }
   }, [contract.id, onUpdateDocument]);
 
-  const handleDocumentFieldChange = (itemId: string, field: keyof PatentDocument, value: any) => {
+  const handleDocumentFieldChange = (itemId: string, field: keyof PatentDocument, value: any, immediatelySave = false) => {
     const currentEdits = docEdits[itemId] || {};
     const doc = getDocument(itemId);
     
@@ -432,13 +432,31 @@ export function PatentChecklist({
     // Clear existing timeout for this item
     if (saveTimeoutsRef.current[itemId]) {
       clearTimeout(saveTimeoutsRef.current[itemId]);
+      delete saveTimeoutsRef.current[itemId];
     }
 
-    // Set new timeout for auto-save (800ms debounce)
+    // For text fields (notes, responsible), don't auto-save — wait for Enter/blur
+    const textFields: (keyof PatentDocument)[] = ['notes', 'responsible'];
+    if (textFields.includes(field) && !immediatelySave) {
+      return;
+    }
+
+    // For non-text fields, auto-save with short debounce
     saveTimeoutsRef.current[itemId] = setTimeout(() => {
       autoSaveDocument(itemId, updates);
       delete saveTimeoutsRef.current[itemId];
-    }, 800);
+    }, 400);
+  };
+
+  const commitTextField = (itemId: string) => {
+    const edits = docEdits[itemId];
+    if (edits && Object.keys(edits).length > 0) {
+      if (saveTimeoutsRef.current[itemId]) {
+        clearTimeout(saveTimeoutsRef.current[itemId]);
+        delete saveTimeoutsRef.current[itemId];
+      }
+      autoSaveDocument(itemId, edits);
+    }
   };
 
   // Cleanup timeouts on unmount
