@@ -96,6 +96,24 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
     }
   };
 
+  const loadCredentials = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke("google-drive", {
+        body: { action: "getCredentials" },
+      });
+      if (data && !error) {
+        setCredentials(data);
+      }
+    } catch {
+      // Ignore
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success("Copiado al portapapeles");
+  };
+
   const handleProviderChange = (value: string) => {
     if (value !== settings?.active_provider) {
       setPendingProvider(value);
