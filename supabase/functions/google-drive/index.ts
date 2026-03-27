@@ -337,7 +337,23 @@ function extractDriveId(value: string): string {
 async function resolveRootFolder(
   accessToken: string,
 ): Promise<{ id: string; name: string; webViewLink: string; source: string }> {
-  const rawRootId = Deno.env.get('GOOGLE_DRIVE_ROOT_FOLDER_ID')?.trim() || "";
+  let rawRootId = Deno.env.get('GOOGLE_DRIVE_ROOT_FOLDER_ID')?.trim() || "";
+
+  // Try DB config override
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const sb = createClient(supabaseUrl, supabaseKey);
+    const { data: conn } = await sb
+      .from('cloud_storage_connections')
+      .select('config')
+      .eq('provider', 'google_drive_oauth')
+      .limit(1)
+      .single();
+    const dbConfig = (conn?.config as Record<string, string>) || {};
+    if (dbConfig.root_folder_id) rawRootId = dbConfig.root_folder_id.trim();
+  } catch {}
+
   const rawSharedDriveId = Deno.env.get('GOOGLE_DRIVE_SHARED_DRIVE_ID')?.trim() || "";
   const configuredRootId = extractDriveId(rawRootId);
   const configuredSharedDriveId = extractDriveId(rawSharedDriveId);
