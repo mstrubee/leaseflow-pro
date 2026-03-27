@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { Loader2, Cloud, CheckCircle2, XCircle, RefreshCw, LogIn, Eye, EyeOff, Copy, ChevronDown, ChevronRight, Settings2, Pencil, Save, X } from "lucide-react";
+import { getGoogleDriveRedirectUri } from "@/lib/googleDriveOAuth";
 
 interface StorageSettings {
   id: string;
@@ -68,6 +69,7 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
   const [editClientSecret, setEditClientSecret] = useState("");
   const [editRootFolderId, setEditRootFolderId] = useState("");
   const [savingCredentials, setSavingCredentials] = useState(false);
+  const redirectUri = getGoogleDriveRedirectUri();
 
   useEffect(() => {
     loadSettings();
@@ -225,8 +227,6 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
   const startOAuthFlow = async () => {
     setConnectingOAuth(true);
     try {
-      const redirectUri = `${window.location.origin}/google-drive-callback`;
-
       const { data, error } = await supabase.functions.invoke("google-drive", {
         body: { action: "getOAuthUrl", redirectUri },
       });
@@ -370,11 +370,11 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
                             <Label className="text-xs text-muted-foreground">Redirect URL</Label>
                             <div className="flex items-center gap-2">
                               <Input
-                                value={`${window.location.origin}/google-drive-callback`}
+                                value={redirectUri}
                                 readOnly
                                 className="text-xs h-8 bg-background font-mono"
                               />
-                              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => copyToClipboard(`${window.location.origin}/google-drive-callback`)}>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => copyToClipboard(redirectUri)}>
                                 <Copy className="h-3.5 w-3.5" />
                               </Button>
                             </div>
