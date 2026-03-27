@@ -396,6 +396,7 @@ export const GeneralFoldersManager = () => {
     else { toast({ title: "Archivo eliminado" }); if (selectedFolder) loadFiles(selectedFolder.id); }
   };
 
+  const parentName = parentForNew ? folders.find((f) => f.id === parentForNew)?.name : null;
   const [syncing, setSyncing] = useState(false);
 
   const handleSyncDrive = async () => {
