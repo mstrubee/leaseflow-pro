@@ -19,7 +19,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Loader2, Cloud, CheckCircle2, XCircle, RefreshCw, LogIn, Eye, EyeOff, Copy, ChevronDown, ChevronRight, Settings2 } from "lucide-react";
+import { Loader2, Cloud, CheckCircle2, XCircle, RefreshCw, LogIn, Eye, EyeOff, Copy, ChevronDown, ChevronRight, Settings2, Pencil, Save, X } from "lucide-react";
 
 interface StorageSettings {
   id: string;
