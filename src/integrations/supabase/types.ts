@@ -745,6 +745,7 @@ export type Database = {
       }
       cloud_storage_connections: {
         Row: {
+          config: Json | null
           created_at: string
           folder_url: string | null
           id: string
@@ -754,6 +755,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          config?: Json | null
           created_at?: string
           folder_url?: string | null
           id?: string
@@ -763,6 +765,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          config?: Json | null
           created_at?: string
           folder_url?: string | null
           id?: string
