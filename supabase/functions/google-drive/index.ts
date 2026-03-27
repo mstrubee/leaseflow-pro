@@ -843,8 +843,8 @@ serve(async (req) => {
     }
 
     if (action === "checkOAuthStatus") {
-      const clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID');
-      const clientSecret = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET');
+      let clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID');
+      let clientSecret = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET');
       
       const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
       const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -852,10 +852,17 @@ serve(async (req) => {
 
       const { data: conn } = await supabase
         .from('cloud_storage_connections')
-        .select('id')
+        .select('id, config')
         .eq('provider', 'google_drive_oauth')
         .limit(1)
         .single();
+
+      // Override with DB config if available
+      if (conn) {
+        const dbConfig = (conn.config as Record<string, string>) || {};
+        if (dbConfig.client_id) clientId = dbConfig.client_id;
+        if (dbConfig.client_secret) clientSecret = dbConfig.client_secret;
+      }
 
       let hasRefreshToken = false;
       if (conn) {
