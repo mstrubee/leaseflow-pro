@@ -74,7 +74,7 @@ const App = () => (
               <Route path="/special-attention" element={<ProtectedRoute><SpecialAttentionPage /></ProtectedRoute>} />
               <Route path="/maintenance" element={<ProtectedRoute resource="maintenance"><MaintenanceDashboard /></ProtectedRoute>} />
               
-              <Route path="/google-drive-callback" element={<ProtectedRoute><GoogleDriveCallback /></ProtectedRoute>} />
+              <Route path="/google-drive-callback" element={<GoogleDriveCallback />} />
               
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />

@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getGoogleDriveRedirectUri } from "@/lib/googleDriveOAuth";
 
 export default function GoogleDriveCallback() {
   const [searchParams] = useSearchParams();
@@ -28,7 +29,7 @@ export default function GoogleDriveCallback() {
 
     const exchangeCode = async () => {
       try {
-        const redirectUri = `${window.location.origin}/google-drive-callback`;
+        const redirectUri = getGoogleDriveRedirectUri();
 
         const { data, error: fnError } = await supabase.functions.invoke("google-drive", {
           body: { action: "oauthCallback", code, redirectUri },
