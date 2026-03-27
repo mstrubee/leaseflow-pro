@@ -227,8 +227,6 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
   const startOAuthFlow = async () => {
     setConnectingOAuth(true);
     try {
-      const redirectUri = `${window.location.origin}/google-drive-callback`;
-
       const { data, error } = await supabase.functions.invoke("google-drive", {
         body: { action: "getOAuthUrl", redirectUri },
       });
