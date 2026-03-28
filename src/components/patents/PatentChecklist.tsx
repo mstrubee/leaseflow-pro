@@ -100,7 +100,7 @@ export function PatentChecklist({
   const { user, isAdmin } = useAuth();
   
   // File destination settings - hierarchical: section-level and item-level
-  const [fileDestContext, setFileDestContext] = useState<{ type: 'section' | 'item'; id: string; label: string } | null>(null);
+  const [fileDestContext, setFileDestContext] = useState<{ type: 'section' | 'item'; id: string; label: string; sectionId?: string } | null>(null);
   const [tempPatentFolder, setTempPatentFolder] = useState("");
   const [savingFileDest, setSavingFileDest] = useState(false);
   const [sectionFolders, setSectionFolders] = useState<Record<string, string>>({});
@@ -131,10 +131,10 @@ export function PatentChecklist({
     loadPatentFolderSettings();
   }, []);
 
-  const openFolderDestDialog = (type: 'section' | 'item', id: string, label: string) => {
+  const openFolderDestDialog = (type: 'section' | 'item', id: string, label: string, sectionId?: string) => {
     const currentValue = type === 'section' ? (sectionFolders[id] || '') : (itemFolders[id] || '');
     setTempPatentFolder(currentValue);
-    setFileDestContext({ type, id, label });
+    setFileDestContext({ type, id, label, sectionId });
   };
 
   const saveFolderDest = async () => {
