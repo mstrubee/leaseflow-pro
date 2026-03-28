@@ -1762,7 +1762,9 @@ serve(async (req) => {
               if (uploadRes.ok) {
                 const uploaded = await uploadRes.json();
                 await sb.from('general_folder_files').update({ drive_file_id: uploaded.id }).eq('id', file.id);
-                console.log(`Uploaded file "${file.name}" to Drive`);
+                // Clean up local storage copy now that file is in Drive
+                await cleanupStorageFile(sb, file.url);
+                console.log(`Uploaded file "${file.name}" to Drive (storage cleaned)`);
               } else {
                 console.error("File upload failed:", file.name, uploadRes.status);
               }
@@ -1966,6 +1968,9 @@ serve(async (req) => {
                     drive_file_id: driveFile.id,
                   });
                 }
+
+                // Clean up local storage copy now that file is in Drive
+                await cleanupStorageFile(sb, storageUrl);
 
                 uploaded.push(`${fileName} → ${dest.name}`);
               } catch (uploadErr: any) {
