@@ -576,7 +576,14 @@ async function uploadFileToDrive(
     "Content-Transfer-Encoding: base64\r\n\r\n",
   );
 
-  const fileBase64 = btoa(String.fromCharCode(...fileContent));
+  // Convert to base64 in chunks to avoid stack overflow for large files
+  const chunkSize = 8192;
+  let binaryStr = '';
+  for (let i = 0; i < fileContent.length; i += chunkSize) {
+    const chunk = fileContent.subarray(i, Math.min(i + chunkSize, fileContent.length));
+    binaryStr += String.fromCharCode(...chunk);
+  }
+  const fileBase64 = btoa(binaryStr);
   const fileBytes = new TextEncoder().encode(fileBase64);
   const closeBytes = new TextEncoder().encode(closeDelimiter);
 
