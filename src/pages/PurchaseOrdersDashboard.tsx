@@ -77,6 +77,9 @@ import {
   Settings,
   FolderOpen,
   Save,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
@@ -216,6 +219,8 @@ const COLORS = [
   "#FF8042",
 ];
 
+type OCSortField = "local" | "order_number" | "description" | "supplier" | "type" | "category" | "amount" | "invoices" | "status" | "date";
+
 const PurchaseOrdersDashboard = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading, isAdmin } = useAuth();
@@ -342,7 +347,19 @@ const PurchaseOrdersDashboard = () => {
   // Contract to company mapping
   const [contractCompanyMap, setContractCompanyMap] = useState<Map<string, string>>(new Map());
 
-  // Collapse state per contract
+  // Sorting state for the OC table
+  const [sortField, setSortField] = useState<OCSortField>("date");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+
+  const handleSort = (field: OCSortField) => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
   const [expandedContracts, setExpandedContracts] = useState<Set<string>>(new Set());
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
 
@@ -919,14 +936,41 @@ const PurchaseOrdersDashboard = () => {
       });
     });
 
-    // Sort by order_date descending
+    // Sort based on current sort state
+    const dir = sortDirection === "asc" ? 1 : -1;
     return result.sort((a, b) => {
-      if (!a.order_date && !b.order_date) return 0;
-      if (!a.order_date) return 1;
-      if (!b.order_date) return -1;
-      return b.order_date.localeCompare(a.order_date);
+      switch (sortField) {
+        case "local": {
+          const aName = a.contracts[0]?.contract_name || "";
+          const bName = b.contracts[0]?.contract_name || "";
+          return dir * aName.localeCompare(bName);
+        }
+        case "order_number":
+          return dir * (a.order_number || "").localeCompare(b.order_number || "");
+        case "description":
+          return dir * (a.description || "").localeCompare(b.description || "");
+        case "supplier":
+          return dir * (a.supplier_name || "").localeCompare(b.supplier_name || "");
+        case "type":
+          return dir * (a.budget_classification || "OPEX").localeCompare(b.budget_classification || "OPEX");
+        case "category":
+          return dir * (a.opex_category_name || a.budget_line_name || "").localeCompare(b.opex_category_name || b.budget_line_name || "");
+        case "amount":
+          return dir * (a.total_amount_uf - b.total_amount_uf);
+        case "invoices":
+          return dir * (a.total_invoices_count - b.total_invoices_count);
+        case "status":
+          return dir * a.status.localeCompare(b.status);
+        case "date":
+        default: {
+          if (!a.order_date && !b.order_date) return 0;
+          if (!a.order_date) return 1;
+          if (!b.order_date) return -1;
+          return dir * a.order_date.localeCompare(b.order_date);
+        }
+      }
     });
-  }, [orders, searchTerm, contractFilter, yearFilter, categoryFilter, classificationFilter, amountFilter, chartContractFilter, chartCategoryFilter]);
+  }, [orders, searchTerm, contractFilter, yearFilter, categoryFilter, classificationFilter, amountFilter, chartContractFilter, chartCategoryFilter, sortField, sortDirection]);
 
   const toggleContract = (contractId: string) => {
     setExpandedContracts((prev) => {
@@ -2408,16 +2452,32 @@ const PurchaseOrdersDashboard = () => {
                     <TableHeader>
                       <TableRow>
                         {isAdmin && <TableHead className="w-[40px]"></TableHead>}
-                        <TableHead>Local</TableHead>
-                        <TableHead>Nº OC</TableHead>
-                        <TableHead>Titulo</TableHead>
-                        <TableHead>Proveedor</TableHead>
-                        <TableHead>Tipo</TableHead>
-                        <TableHead>Categoría</TableHead>
-                        <TableHead className="text-right">Monto Total</TableHead>
-                        <TableHead className="text-center">Facturas</TableHead>
-                        <TableHead>Estado</TableHead>
-                        <TableHead>Fecha</TableHead>
+                        {([
+                          { field: "local" as OCSortField, label: "Local", className: "" },
+                          { field: "order_number" as OCSortField, label: "Nº OC", className: "" },
+                          { field: "description" as OCSortField, label: "Titulo", className: "" },
+                          { field: "supplier" as OCSortField, label: "Proveedor", className: "" },
+                          { field: "type" as OCSortField, label: "Tipo", className: "" },
+                          { field: "category" as OCSortField, label: "Categoría", className: "" },
+                          { field: "amount" as OCSortField, label: "Monto Total", className: "text-right" },
+                          { field: "invoices" as OCSortField, label: "Facturas", className: "text-center" },
+                          { field: "status" as OCSortField, label: "Estado", className: "" },
+                          { field: "date" as OCSortField, label: "Fecha", className: "" },
+                        ]).map(col => (
+                          <TableHead key={col.field} className={col.className}>
+                            <button
+                              className="flex items-center gap-1 hover:text-foreground transition-colors w-full"
+                              onClick={() => handleSort(col.field)}
+                            >
+                              {col.label}
+                              {sortField === col.field ? (
+                                sortDirection === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                              ) : (
+                                <ArrowUpDown className="h-3 w-3 opacity-30" />
+                              )}
+                            </button>
+                          </TableHead>
+                        ))}
                         <TableHead>Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
