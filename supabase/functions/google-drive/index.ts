@@ -682,6 +682,102 @@ function getStatusFolderName(status: string): string {
   }
 }
 
+function parseDestinationEntries(raw: string): { source: string; name: string }[] {
+  if (!raw) return [];
+  return raw
+    .split('|')
+    .filter(Boolean)
+    .map((part) => {
+      const trimmed = part.trim();
+      const match = trimmed.match(/^(repo|general)::(.+)$/);
+      if (match) return { source: match[1], name: match[2].trim() };
+      return { source: 'repo', name: trimmed };
+    })
+    .filter((entry) => entry.name.length > 0);
+}
+
+async function ensureDriveFolderForRepositoryFolder(
+  sb: any,
+  accessToken: string,
+  contractId: string,
+  folderId: string,
+  visited: Set<string> = new Set(),
+): Promise<string | null> {
+  if (visited.has(folderId)) return null;
+  visited.add(folderId);
+
+  const { data: folder } = await sb
+    .from('repository_folders')
+    .select('id, name, parent_id, drive_folder_id')
+    .eq('id', folderId)
+    .single();
+
+  if (!folder) return null;
+
+  if (folder.drive_folder_id) {
+    const meta = await getFolderById(accessToken, folder.drive_folder_id).catch(() => null);
+    if (meta && !meta.trashed && meta.mimeType === 'application/vnd.google-apps.folder') {
+      return folder.drive_folder_id;
+    }
+
+    await sb.from('repository_folders').update({ drive_folder_id: null }).eq('id', folder.id);
+  }
+
+  let parentDriveFolderId: string | null = null;
+
+  if (folder.parent_id) {
+    parentDriveFolderId = await ensureDriveFolderForRepositoryFolder(
+      sb,
+      accessToken,
+      contractId,
+      folder.parent_id,
+      visited,
+    );
+  } else {
+    const { data: contract } = await sb
+      .from('contracts')
+      .select('drive_folder_id')
+      .eq('id', contractId)
+      .single();
+    parentDriveFolderId = contract?.drive_folder_id || null;
+  }
+
+  if (!parentDriveFolderId) return null;
+
+  let driveFolder = await getFolderByName(accessToken, folder.name, parentDriveFolderId);
+  if (!driveFolder) {
+    driveFolder = await createDriveFolder(accessToken, folder.name, parentDriveFolderId);
+  }
+
+  await sb
+    .from('repository_folders')
+    .update({ drive_folder_id: driveFolder.id })
+    .eq('id', folder.id);
+
+  return driveFolder.id;
+}
+
+async function listDriveFoldersByNameUnderParent(
+  accessToken: string,
+  folderName: string,
+  parentId: string,
+): Promise<Array<{ id: string; name: string }>> {
+  const sanitizedName = sanitizeForDriveQuery(sanitizeDriveName(folderName));
+  const query = `name='${sanitizedName}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${parentId}' in parents`;
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&pageSize=50&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed listing folders by name: ${response.status} ${errorText}`);
+  }
+
+  const data = await response.json();
+  return data.files || [];
+}
+
 async function ensureStatusFolders(accessToken: string, rootFolderId: string): Promise<Record<string, { id: string; webViewLink: string }>> {
   const statusFolders: Record<string, { id: string; webViewLink: string }> = {};
   const folderNames = ['Contratos Vigentes', 'Contratos En Negociación', 'Contratos Vencidos'];
