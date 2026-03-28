@@ -206,6 +206,34 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
     }
   }, [hasLoaded, loadStats]);
 
+  const handleCleanupSynced = useCallback(async () => {
+    setCleaning(true);
+    setCleanResult(null);
+    try {
+      let totalCleaned = 0;
+      let totalErrors = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await supabase.functions.invoke('google-drive', {
+          body: { action: 'cleanupSyncedFiles' }
+        });
+        if (error) throw error;
+        totalCleaned += data.cleaned || 0;
+        totalErrors += data.errors || 0;
+        hasMore = data.hasMore || false;
+      }
+
+      setCleanResult({ cleaned: totalCleaned, errors: totalErrors });
+      if (hasLoaded) loadStats(); // Refresh storage stats
+    } catch (error) {
+      console.error('Cleanup error:', error);
+      setCleanResult({ cleaned: 0, errors: 1 });
+    } finally {
+      setCleaning(false);
+    }
+  }, [hasLoaded, loadStats]);
+
   const dbPercentage = stats ? Math.min((stats.database.estimatedSizeMB / DATABASE_LIMIT_MB) * 100, 100) : 0;
   const filesPercentage = stats ? Math.min((stats.files.totalSizeBytes / FILE_STORAGE_LIMIT_BYTES) * 100, 100) : 0;
   const dbStatus = getStatusColor(dbPercentage);
