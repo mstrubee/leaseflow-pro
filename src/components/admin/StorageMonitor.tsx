@@ -15,7 +15,8 @@ import {
   File,
   AlertTriangle,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Trash2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -114,6 +115,8 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanResult, setCleanResult] = useState<{ cleaned: number; errors: number } | null>(null);
 
   const listAllFiles = useCallback(async (bucket: string, path: string): Promise<any[]> => {
     const { data, error } = await supabase.storage.from(bucket).list(path, { limit: 1000 });
@@ -203,6 +206,34 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
     }
   }, [hasLoaded, loadStats]);
 
+  const handleCleanupSynced = useCallback(async () => {
+    setCleaning(true);
+    setCleanResult(null);
+    try {
+      let totalCleaned = 0;
+      let totalErrors = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await supabase.functions.invoke('google-drive', {
+          body: { action: 'cleanupSyncedFiles' }
+        });
+        if (error) throw error;
+        totalCleaned += data.cleaned || 0;
+        totalErrors += data.errors || 0;
+        hasMore = data.hasMore || false;
+      }
+
+      setCleanResult({ cleaned: totalCleaned, errors: totalErrors });
+      if (hasLoaded) loadStats(); // Refresh storage stats
+    } catch (error) {
+      console.error('Cleanup error:', error);
+      setCleanResult({ cleaned: 0, errors: 1 });
+    } finally {
+      setCleaning(false);
+    }
+  }, [hasLoaded, loadStats]);
+
   const dbPercentage = stats ? Math.min((stats.database.estimatedSizeMB / DATABASE_LIMIT_MB) * 100, 100) : 0;
   const filesPercentage = stats ? Math.min((stats.files.totalSizeBytes / FILE_STORAGE_LIMIT_BYTES) * 100, 100) : 0;
   const dbStatus = getStatusColor(dbPercentage);
@@ -216,17 +247,41 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
       defaultOpen={!defaultCollapsed}
       onToggle={handleToggle}
       headerActions={
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={loadStats}
-          disabled={refreshing}
-        >
-          <RefreshCw className={cn("h-4 w-4 mr-2", refreshing && "animate-spin")} />
-          Actualizar
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCleanupSynced}
+            disabled={cleaning}
+            title="Eliminar archivos locales ya sincronizados con Google Drive"
+          >
+            <Trash2 className={cn("h-4 w-4 mr-2", cleaning && "animate-pulse")} />
+            {cleaning ? "Limpiando..." : "Limpiar sincronizados"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={loadStats}
+            disabled={refreshing}
+          >
+            <RefreshCw className={cn("h-4 w-4 mr-2", refreshing && "animate-spin")} />
+            Actualizar
+          </Button>
+        </div>
       }
     >
+      {cleanResult && (
+        <div className={cn(
+          "rounded-md p-3 text-sm mb-4",
+          cleanResult.cleaned > 0 ? "bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200" : "bg-muted"
+        )}>
+          {cleanResult.cleaned > 0 
+            ? `✅ Se eliminaron ${cleanResult.cleaned} archivos del almacenamiento local (ya sincronizados con Drive).`
+            : "No se encontraron archivos para limpiar."
+          }
+          {cleanResult.errors > 0 && ` ⚠️ ${cleanResult.errors} errores.`}
+        </div>
+      )}
       {loading ? (
         <div className="space-y-4">
           <Skeleton className="h-24 w-full" />

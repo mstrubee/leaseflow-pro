@@ -613,6 +613,26 @@ async function uploadFileToDrive(
   return await response.json();
 }
 
+/**
+ * Delete a file from Supabase Storage after it has been successfully synced to Drive.
+ * Silently ignores errors (file may already be deleted or not exist).
+ */
+async function cleanupStorageFile(sb: any, storageUrl: string): Promise<void> {
+  try {
+    if (!storageUrl || !storageUrl.startsWith('storage://repository-files/')) return;
+    const storagePath = storageUrl.replace('storage://repository-files/', '');
+    const { error } = await sb.storage.from('repository-files').remove([storagePath]);
+    if (error) {
+      console.warn(`Storage cleanup warning for ${storagePath}:`, error.message);
+    } else {
+      console.log(`Cleaned up storage file: ${storagePath}`);
+    }
+  } catch (e) {
+    // Non-critical - don't fail the sync
+    console.warn('Storage cleanup error:', e);
+  }
+}
+
 async function listFilesInFolder(accessToken: string, folderId: string): Promise<any[]> {
   const query = `'${folderId}' in parents and trashed=false`;
   const allFiles: any[] = [];
@@ -1742,7 +1762,9 @@ serve(async (req) => {
               if (uploadRes.ok) {
                 const uploaded = await uploadRes.json();
                 await sb.from('general_folder_files').update({ drive_file_id: uploaded.id }).eq('id', file.id);
-                console.log(`Uploaded file "${file.name}" to Drive`);
+                // Clean up local storage copy now that file is in Drive
+                await cleanupStorageFile(sb, file.url);
+                console.log(`Uploaded file "${file.name}" to Drive (storage cleaned)`);
               } else {
                 console.error("File upload failed:", file.name, uploadRes.status);
               }
@@ -1946,6 +1968,9 @@ serve(async (req) => {
                     drive_file_id: driveFile.id,
                   });
                 }
+
+                // Clean up local storage copy now that file is in Drive
+                await cleanupStorageFile(sb, storageUrl);
 
                 uploaded.push(`${fileName} → ${dest.name}`);
               } catch (uploadErr: any) {
@@ -2154,6 +2179,150 @@ serve(async (req) => {
         }
 
         result = { success: true, fixes, errors: fixErrors };
+        break;
+      }
+
+      case "cleanupSyncedFiles": {
+        // Remove files from Supabase Storage that are already synced to Drive
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sb = createClient(supabaseUrl, supabaseKey);
+
+        const cleaned: string[] = [];
+        const cleanErrors: string[] = [];
+
+        // 1. Clean repository_files with drive_file_id and storage:// URL
+        const { data: repoFiles } = await sb
+          .from('repository_files')
+          .select('id, name, url, drive_file_id')
+          .not('drive_file_id', 'is', null)
+          .like('url', 'storage://repository-files/%')
+          .limit(500);
+
+        for (const file of repoFiles || []) {
+          try {
+            const storagePath = file.url.replace('storage://repository-files/', '');
+            const { error } = await sb.storage.from('repository-files').remove([storagePath]);
+            if (error) {
+              cleanErrors.push(`repo ${file.name}: ${error.message}`);
+            } else {
+              // Update URL to Drive URL
+              const driveUrl = `https://drive.google.com/file/d/${file.drive_file_id}/view`;
+              await sb.from('repository_files').update({ url: driveUrl }).eq('id', file.id);
+              cleaned.push(`repo: ${file.name}`);
+            }
+          } catch (e: any) {
+            cleanErrors.push(`repo ${file.name}: ${e.message}`);
+          }
+        }
+
+        // 2. Clean general_folder_files with drive_file_id and storage:// URL
+        const { data: generalFiles } = await sb
+          .from('general_folder_files')
+          .select('id, name, url, drive_file_id')
+          .not('drive_file_id', 'is', null)
+          .like('url', 'storage://repository-files/%')
+          .limit(500);
+
+        for (const file of generalFiles || []) {
+          try {
+            const storagePath = file.url.replace('storage://repository-files/', '');
+            const { error } = await sb.storage.from('repository-files').remove([storagePath]);
+            if (error) {
+              cleanErrors.push(`general ${file.name}: ${error.message}`);
+            } else {
+              const driveUrl = `https://drive.google.com/file/d/${file.drive_file_id}/view`;
+              await sb.from('general_folder_files').update({ url: driveUrl }).eq('id', file.id);
+              cleaned.push(`general: ${file.name}`);
+            }
+          } catch (e: any) {
+            cleanErrors.push(`general ${file.name}: ${e.message}`);
+          }
+        }
+
+        // 3. Clean invoices with drive_file_id and storage:// attachment_url
+        const { data: invoices } = await sb
+          .from('invoices')
+          .select('id, invoice_number, attachment_url, drive_file_id')
+          .not('drive_file_id', 'is', null)
+          .like('attachment_url', 'storage://repository-files/%')
+          .limit(500);
+
+        for (const inv of invoices || []) {
+          try {
+            const storagePath = inv.attachment_url.replace('storage://repository-files/', '');
+            const { error } = await sb.storage.from('repository-files').remove([storagePath]);
+            if (error) {
+              cleanErrors.push(`invoice ${inv.invoice_number}: ${error.message}`);
+            } else {
+              const driveUrl = `https://drive.google.com/file/d/${inv.drive_file_id}/view`;
+              await sb.from('invoices').update({ attachment_url: driveUrl }).eq('id', inv.id);
+              cleaned.push(`invoice: ${inv.invoice_number}`);
+            }
+          } catch (e: any) {
+            cleanErrors.push(`invoice ${inv.invoice_number}: ${e.message}`);
+          }
+        }
+
+        // 4. Clean credit_notes with drive_file_id and storage:// attachment_url
+        const { data: creditNotes } = await sb
+          .from('credit_notes')
+          .select('id, credit_note_number, attachment_url, drive_file_id')
+          .not('drive_file_id', 'is', null)
+          .like('attachment_url', 'storage://repository-files/%')
+          .limit(500);
+
+        for (const cn of creditNotes || []) {
+          try {
+            const storagePath = cn.attachment_url.replace('storage://repository-files/', '');
+            const { error } = await sb.storage.from('repository-files').remove([storagePath]);
+            if (error) {
+              cleanErrors.push(`credit_note ${cn.credit_note_number}: ${error.message}`);
+            } else {
+              const driveUrl = `https://drive.google.com/file/d/${cn.drive_file_id}/view`;
+              await sb.from('credit_notes').update({ attachment_url: driveUrl }).eq('id', cn.id);
+              cleaned.push(`credit_note: ${cn.credit_note_number}`);
+            }
+          } catch (e: any) {
+            cleanErrors.push(`credit_note ${cn.credit_note_number}: ${e.message}`);
+          }
+        }
+
+        // 5. Clean purchase_orders with drive_file_id and storage:// attachment_url
+        const { data: pos } = await sb
+          .from('purchase_orders')
+          .select('id, order_number, attachment_url, drive_file_id')
+          .not('drive_file_id', 'is', null)
+          .like('attachment_url', 'storage://repository-files/%')
+          .limit(500);
+
+        for (const po of pos || []) {
+          try {
+            const storagePath = po.attachment_url.replace('storage://repository-files/', '');
+            const { error } = await sb.storage.from('repository-files').remove([storagePath]);
+            if (error) {
+              cleanErrors.push(`PO ${po.order_number}: ${error.message}`);
+            } else {
+              const driveUrl = `https://drive.google.com/file/d/${po.drive_file_id}/view`;
+              await sb.from('purchase_orders').update({ attachment_url: driveUrl }).eq('id', po.id);
+              cleaned.push(`PO: ${po.order_number}`);
+            }
+          } catch (e: any) {
+            cleanErrors.push(`PO ${po.order_number}: ${e.message}`);
+          }
+        }
+
+        const hasMore = (repoFiles?.length === 500) || (generalFiles?.length === 500) || 
+                        (invoices?.length === 500) || (creditNotes?.length === 500) || (pos?.length === 500);
+
+        result = {
+          success: true,
+          cleaned: cleaned.length,
+          errors: cleanErrors.length,
+          cleanedFiles: cleaned,
+          errorDetails: cleanErrors,
+          hasMore,
+        };
         break;
       }
 
