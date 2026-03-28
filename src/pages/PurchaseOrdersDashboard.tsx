@@ -2602,13 +2602,35 @@ const PurchaseOrdersDashboard = () => {
                               <TableCell>
                                 {groupedOrder.opex_category_name || groupedOrder.budget_line_name || "-"}
                               </TableCell>
-                              <TableCell className="text-right font-medium">
+                              <TableCell
+                                className="text-right font-medium cursor-pointer hover:bg-muted/50 transition-colors"
+                                onClick={() => {
+                                  setExpandedInvoiceSections(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(groupedOrder.order_number)) next.delete(groupedOrder.order_number);
+                                    else next.add(groupedOrder.order_number);
+                                    return next;
+                                  });
+                                }}
+                                title="Ver facturas"
+                              >
                                 <div className="flex flex-col items-end">
                                   <span>{formatCLP(groupedOrder.total_amount_clp || Math.round(groupedOrder.total_amount_uf * ufValue))}</span>
                                   <span className="text-[10px] text-muted-foreground">{formatUF(groupedOrder.total_amount_uf)}</span>
                                 </div>
                               </TableCell>
-                              <TableCell className="text-center">
+                              <TableCell
+                                className="text-center cursor-pointer hover:bg-muted/50 transition-colors"
+                                onClick={() => {
+                                  setExpandedInvoiceSections(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(groupedOrder.order_number)) next.delete(groupedOrder.order_number);
+                                    else next.add(groupedOrder.order_number);
+                                    return next;
+                                  });
+                                }}
+                                title="Ver facturas"
+                              >
                                 <div className="flex items-center justify-center gap-1">
                                   <Receipt className="h-3 w-3 text-muted-foreground" />
                                   <span>{groupedOrder.total_invoices_count}</span>
