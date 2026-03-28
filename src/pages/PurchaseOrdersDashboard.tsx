@@ -305,6 +305,8 @@ const PurchaseOrdersDashboard = () => {
   const [editingOCOriginalOrderNumber, setEditingOCOriginalOrderNumber] = useState<string>("");
   const [editingOCFile, setEditingOCFile] = useState<File | null>(null);
   const editOCFileInputRef = useRef<HTMLInputElement>(null);
+  const invoiceFileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingInvoiceId, setUploadingInvoiceId] = useState<string | null>(null);
 
   // Credit notes storage
   const [creditNotes, setCreditNotes] = useState<
