@@ -1890,7 +1890,7 @@ const PurchaseOrdersDashboard = () => {
         </div>
       </header>
 
-      <main className="max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <main className="max-w-[1690px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* Year Filter */}
         <div className="flex items-center gap-4">
           <span className="text-sm font-medium">Año:</span>
@@ -2457,7 +2457,7 @@ const PurchaseOrdersDashboard = () => {
                               )}
                               {/* Local column - first */}
                               <TableCell
-                                className="max-w-[160px] cursor-pointer hover:bg-muted/50 transition-colors"
+                                className="min-w-[200px] cursor-pointer hover:bg-muted/50 transition-colors"
                                 onClick={() => {
                                   setExpandedInvoiceSections(prev => {
                                     const next = new Set(prev);
