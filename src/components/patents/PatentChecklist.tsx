@@ -1309,6 +1309,24 @@ export function PatentChecklist({
                 ? "Seleccione las carpetas de destino para todos los documentos de esta sección. Aplica a todos los ítems de la sección."
                 : "Seleccione carpetas adicionales solo para este documento. No afecta a la sección ni a los demás ítems."}
             </p>
+            {/* Show inherited section folders for item-level context */}
+            {fileDestContext?.type === 'item' && fileDestContext.sectionId && sectionFolders[fileDestContext.sectionId] && (() => {
+              const { parseDestinations } = require("@/components/budget/FolderDestinationPicker");
+              const inherited = parseDestinations(sectionFolders[fileDestContext.sectionId!]);
+              return inherited.length > 0 ? (
+                <div className="rounded-md border border-border bg-muted/30 p-3 space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Carpetas heredadas de la sección:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {inherited.map((entry: any, idx: number) => (
+                      <Badge key={idx} variant="secondary" className="text-xs">
+                        <FolderOpen className="h-3 w-3 mr-1" />
+                        {entry.name}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              ) : null;
+            })()}
             <FolderDestinationPicker
               icon={<FileText className="h-4 w-4 text-orange-500" />}
               label={fileDestContext?.type === 'section' ? "Carpetas de la sección" : "Carpetas adicionales del ítem"}
