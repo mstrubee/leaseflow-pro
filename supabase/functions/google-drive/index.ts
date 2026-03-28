@@ -1853,7 +1853,8 @@ serve(async (req) => {
           }
         }
 
-        result = { success: true, uploaded: uploaded.length, errors: errors.length, uploadedFiles: uploaded, errorDetails: errors };
+        const hasMore = (patentDocs || []).length === batchSize;
+        result = { success: true, uploaded: uploaded.length, errors: errors.length, uploadedFiles: uploaded, errorDetails: errors, hasMore, nextOffset: offset + batchSize, processed: (patentDocs || []).length };
         break;
       }
 
