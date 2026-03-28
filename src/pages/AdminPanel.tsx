@@ -703,7 +703,7 @@ const AdminPanel = () => {
 
       if (error) throw error;
 
-      toast({ title: "Carpeta renombrada" });
+      toast({ title: "Carpeta renombrada", description: "El cambio se aplicó en todos los contratos." });
       loadData();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
@@ -719,9 +719,17 @@ const AdminPanel = () => {
   };
 
   const handleDeleteTemplate = async (templateId: string, templateName: string) => {
-    if (!confirm(`¿Eliminar la carpeta "${templateName}" del template? Esto no eliminará las carpetas existentes en los contratos.`)) return;
+    if (!confirm(`¿Eliminar la carpeta "${templateName}"? Se eliminará de TODOS los contratos. Los archivos contenidos se moverán a la carpeta "Eliminados" de cada contrato.`)) return;
 
     try {
+      // First delete child templates (cascade)
+      const childIds = getDescendantIds(templateId);
+      if (childIds.length > 0) {
+        for (const childId of childIds) {
+          await supabase.from("folder_templates").delete().eq("id", childId);
+        }
+      }
+
       const { error } = await supabase
         .from("folder_templates")
         .delete()
@@ -729,7 +737,7 @@ const AdminPanel = () => {
 
       if (error) throw error;
 
-      toast({ title: "Carpeta eliminada del template" });
+      toast({ title: "Carpeta eliminada", description: "Se eliminó de todos los contratos. Los archivos se movieron a 'Eliminados'." });
       loadData();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
@@ -786,7 +794,7 @@ const AdminPanel = () => {
         .eq("id", moveFolderId);
 
       if (error) throw error;
-      toast({ title: "Carpeta movida correctamente" });
+      toast({ title: "Carpeta movida", description: "El cambio se aplicó en todos los contratos." });
       setShowMoveDialog(false);
       loadData();
     } catch (error: any) {
