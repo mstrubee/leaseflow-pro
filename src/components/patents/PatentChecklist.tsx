@@ -14,7 +14,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download, CheckSquare, Square, X, ChevronDown, FolderOpen, FolderCog } from "lucide-react";
 import { DialogFooter } from "@/components/ui/dialog";
-import { FolderDestinationPicker } from "@/components/budget/FolderDestinationPicker";
+import { FolderDestinationPicker, parseDestinations } from "@/components/budget/FolderDestinationPicker";
 
 import { Checkbox } from "@/components/ui/checkbox";
 import { exportPatentsToExcel } from "./exportPatentsExcel";
@@ -1311,7 +1311,7 @@ export function PatentChecklist({
             </p>
             {/* Show inherited section folders for item-level context */}
             {fileDestContext?.type === 'item' && fileDestContext.sectionId && sectionFolders[fileDestContext.sectionId] && (() => {
-              const { parseDestinations } = require("@/components/budget/FolderDestinationPicker");
+              const inherited = parseDestinations(sectionFolders[fileDestContext.sectionId!]);
               const inherited = parseDestinations(sectionFolders[fileDestContext.sectionId!]);
               return inherited.length > 0 ? (
                 <div className="rounded-md border border-border bg-muted/30 p-3 space-y-1">
