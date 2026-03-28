@@ -247,15 +247,27 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
       defaultOpen={!defaultCollapsed}
       onToggle={handleToggle}
       headerActions={
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={loadStats}
-          disabled={refreshing}
-        >
-          <RefreshCw className={cn("h-4 w-4 mr-2", refreshing && "animate-spin")} />
-          Actualizar
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCleanupSynced}
+            disabled={cleaning}
+            title="Eliminar archivos locales ya sincronizados con Google Drive"
+          >
+            <Trash2 className={cn("h-4 w-4 mr-2", cleaning && "animate-pulse")} />
+            {cleaning ? "Limpiando..." : "Limpiar sincronizados"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={loadStats}
+            disabled={refreshing}
+          >
+            <RefreshCw className={cn("h-4 w-4 mr-2", refreshing && "animate-spin")} />
+            Actualizar
+          </Button>
+        </div>
       }
     >
       {loading ? (
