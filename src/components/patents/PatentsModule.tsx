@@ -53,6 +53,11 @@ export function PatentsModule() {
   const [sharedRepoOpen, setSharedRepoOpen] = useState(false);
   const [cardFilter, setCardFilter] = useState<string | null>(null);
   
+  const { settings: fileDestSettings, updateSetting: updateFileDestSetting } = useFileDestinationSettings();
+  const [showFileDestDialog, setShowFileDestDialog] = useState(false);
+  const [tempPatentFolder, setTempPatentFolder] = useState("");
+  const [savingFileDest, setSavingFileDest] = useState(false);
+
   const stats = getCriticalStats();
   const selectedContract = contracts.find(c => c.id === selectedContractId);
 
