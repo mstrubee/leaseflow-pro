@@ -66,6 +66,7 @@ const FolderTemplateItem = ({
   onAddSubfolder,
   onDelete,
   onRename,
+  onMove,
 }: {
   template: FolderTemplate;
   level: number;
@@ -73,6 +74,7 @@ const FolderTemplateItem = ({
   onAddSubfolder: (parentId: string) => void;
   onDelete: (id: string, name: string) => void;
   onRename: (id: string, newName: string) => void;
+  onMove: (id: string, name: string) => void;
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(template.name);
