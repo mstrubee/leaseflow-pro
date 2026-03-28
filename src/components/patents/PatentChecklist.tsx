@@ -824,7 +824,7 @@ export function PatentChecklist({
                     title="Configurar carpetas de destino"
                     className="h-8 w-8 p-0"
                   >
-                    <FolderCog className="h-4 w-4 text-muted-foreground" />
+                    <FolderCog className={`h-4 w-4 ${sectionFolders[section.id] ? 'text-primary' : 'text-muted-foreground'}`} />
                   </Button>
                 )}
                 <Button 
