@@ -1817,6 +1817,20 @@ const PurchaseOrdersDashboard = () => {
                 <Building2 className="h-4 w-4 mr-1" />
                 Proveedores
               </Button>
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setTempOCFolder(fileDestSettings.oc_folder);
+                    setTempInvoiceFolder(fileDestSettings.invoice_folder);
+                    setShowFileDestDialog(true);
+                  }}
+                >
+                  <Settings className="h-4 w-4 mr-1 text-muted-foreground" />
+                  Carpetas
+                </Button>
+              )}
             </div>
           </div>
         </div>
