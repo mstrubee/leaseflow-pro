@@ -10,20 +10,51 @@ import type { FolderDestinationEntry } from "@/components/budget/FolderDestinati
 async function getOrCreateRepoFolder(
   contractId: string,
   folderName: string,
-  folderType: string = "oc"
+  folderType: string = "oocc"
 ): Promise<{ id: string; driveFolderId: string | null } | null> {
   try {
-    const { data: existingFolder } = await supabase
+    const normalizedName = folderName.trim().toLowerCase();
+    const normalizedType = folderType.trim().toLowerCase();
+
+    const { data: existingFolders } = await supabase
       .from("repository_folders")
-      .select("id, drive_folder_id")
+      .select("id, name, folder_type, drive_folder_id")
       .eq("contract_id", contractId)
       .or(`folder_type.eq.${folderType},name.ilike.${folderName}`)
-      .is("parent_id", null)
-      .limit(1)
-      .single();
+      .limit(50);
+
+    const exactNameMatches = (existingFolders || []).filter(
+      (f) => (f.name || "").trim().toLowerCase() === normalizedName
+    );
+    const exactTypeMatches = (existingFolders || []).filter(
+      (f) => (f.folder_type || "").trim().toLowerCase() === normalizedType
+    );
+
+    const existingFolder = [
+      ...exactNameMatches,
+      ...exactTypeMatches,
+      ...(existingFolders || []),
+    ].find((f) => !!f.drive_folder_id) || [
+      ...exactNameMatches,
+      ...exactTypeMatches,
+      ...(existingFolders || []),
+    ][0];
 
     if (existingFolder) {
       return { id: existingFolder.id, driveFolderId: existingFolder.drive_folder_id };
+    }
+
+    let parentId: string | null = null;
+    if (normalizedType === "oocc" || normalizedType === "facturas") {
+      const { data: legacyParent } = await supabase
+        .from("repository_folders")
+        .select("id")
+        .eq("contract_id", contractId)
+        .or("folder_type.eq.oc_y_facturas,name.ilike.OC y FACTURAS")
+        .is("parent_id", null)
+        .limit(1)
+        .maybeSingle();
+      parentId = legacyParent?.id ?? null;
     }
 
     const { data: newFolder, error: createError } = await supabase
@@ -32,7 +63,8 @@ async function getOrCreateRepoFolder(
         contract_id: contractId,
         name: folderName,
         folder_type: folderType,
-        parent_id: null,
+        is_base_folder: !parentId,
+        parent_id: parentId,
         drive_folder_id: null,
       })
       .select("id, drive_folder_id")
@@ -101,7 +133,7 @@ async function resolveDestinationFolder(
  */
 export async function getOrCreateOCFolder(contractId: string): Promise<{ id: string; driveFolderId: string | null } | null> {
   const folderName = await getConfiguredFolderName("oc_folder");
-  return getOrCreateRepoFolder(contractId, folderName, "oc");
+  return getOrCreateRepoFolder(contractId, folderName, "oocc");
 }
 
 /**
