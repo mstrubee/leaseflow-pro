@@ -92,7 +92,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, formatCLP } from "@/lib/utils";
 import { backupOCFileToRepository, uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
 import { FolderDestinationPicker } from "@/components/budget/FolderDestinationPicker";
-import { Building2 } from "lucide-react";
+import { Building2, Store } from "lucide-react";
 import { useFileDestinationSettings } from "@/hooks/useFileDestinationSettings";
 
 interface Invoice {
@@ -2409,7 +2409,8 @@ const PurchaseOrdersDashboard = () => {
                       <TableRow>
                         {isAdmin && <TableHead className="w-[40px]"></TableHead>}
                         <TableHead>Nº OC</TableHead>
-                         <TableHead>Titulo</TableHead>
+                        <TableHead>Local</TableHead>
+                        <TableHead>Titulo</TableHead>
                         <TableHead>Proveedor</TableHead>
                         <TableHead>Tipo</TableHead>
                         <TableHead>Categoría</TableHead>
@@ -2464,6 +2465,18 @@ const PurchaseOrdersDashboard = () => {
                                       {groupedOrder.contracts.length} Locales
                                     </Badge>
                                   )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="max-w-[140px]">
+                                <div className="flex items-center gap-1.5 truncate">
+                                  <Store className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                  <span className="truncate">
+                                    {groupedOrder.contracts.length === 1
+                                      ? groupedOrder.contracts[0].contract_name
+                                      : groupedOrder.contracts.length > 1
+                                      ? `${groupedOrder.contracts.length} Locales`
+                                      : "-"}
+                                  </span>
                                 </div>
                               </TableCell>
                               <TableCell className="max-w-[150px] truncate">
