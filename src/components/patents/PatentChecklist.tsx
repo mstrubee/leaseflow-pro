@@ -1093,8 +1093,20 @@ export function PatentChecklist({
                                       >
                                         <Upload className="h-3 w-3" />
                                       </Button>
-                                    </>
-                                  );
+                                      {isAdmin && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-8 w-8 p-0"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openFolderDestDialog('item', item.id, item.name, section.id);
+                                          }}
+                                          title="Configurar carpetas adicionales para este documento"
+                                        >
+                                          <FolderCog className={`h-3 w-3 ${itemFolders[item.id] ? 'text-primary' : 'text-muted-foreground'}`} />
+                                        </Button>
+                                      )}
                                 })() : (
                                   <>
                                     {/* Regular (non-shared) item: existing logic */}
