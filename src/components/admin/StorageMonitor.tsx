@@ -115,6 +115,8 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanResult, setCleanResult] = useState<{ cleaned: number; errors: number } | null>(null);
 
   const listAllFiles = useCallback(async (bucket: string, path: string): Promise<any[]> => {
     const { data, error } = await supabase.storage.from(bucket).list(path, { limit: 1000 });
