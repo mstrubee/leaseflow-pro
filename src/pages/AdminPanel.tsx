@@ -139,6 +139,14 @@ const FolderTemplateItem = ({
           <Button
             variant="ghost"
             size="sm"
+            onClick={() => onMove(template.id, template.name)}
+            title="Mover a otra carpeta"
+          >
+            <MoveRight className={`${isRoot ? 'h-4 w-4' : 'h-3 w-3'} text-muted-foreground`} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => onDelete(template.id, template.name)}
           >
             <Trash2 className={`${isRoot ? 'h-4 w-4' : 'h-3 w-3'} text-destructive`} />
@@ -154,6 +162,7 @@ const FolderTemplateItem = ({
           onAddSubfolder={onAddSubfolder}
           onDelete={onDelete}
           onRename={onRename}
+          onMove={onMove}
         />
       ))}
     </div>
