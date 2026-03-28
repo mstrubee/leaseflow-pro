@@ -2467,7 +2467,21 @@ const PurchaseOrdersDashboard = () => {
                                   )}
                                 </div>
                               </TableCell>
-                              <TableCell className="max-w-[140px]">
+                              <TableCell
+                                className="max-w-[140px] cursor-pointer hover:bg-muted/50 transition-colors"
+                                onClick={() => {
+                                  setExpandedInvoiceSections(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(groupedOrder.order_number)) {
+                                      next.delete(groupedOrder.order_number);
+                                    } else {
+                                      next.add(groupedOrder.order_number);
+                                    }
+                                    return next;
+                                  });
+                                }}
+                                title="Ver facturas"
+                              >
                                 <div className="flex items-center gap-1.5 truncate">
                                   <Store className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                                   <span className="truncate">
@@ -2477,6 +2491,7 @@ const PurchaseOrdersDashboard = () => {
                                       ? `${groupedOrder.contracts.length} Locales`
                                       : "-"}
                                   </span>
+                                  {isInvoicesExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />}
                                 </div>
                               </TableCell>
                               <TableCell className="max-w-[150px] truncate">
