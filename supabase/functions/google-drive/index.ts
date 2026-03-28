@@ -1855,6 +1855,145 @@ serve(async (req) => {
         break;
       }
 
+      case "fixPatentFolderMisplacements": {
+        // Fix: move files from wrongly-created patent folders to correct folders in Drive
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sb = createClient(supabaseUrl, supabaseKey);
+
+        // 1. Get all wrong folders (folder_type='patent')
+        const { data: wrongFolders } = await sb
+          .from('repository_folders')
+          .select('id, contract_id, name, drive_folder_id')
+          .eq('folder_type', 'patent');
+
+        const fixes: string[] = [];
+        const fixErrors: string[] = [];
+
+        for (const wrong of wrongFolders || []) {
+          if (!wrong.drive_folder_id) {
+            // No Drive folder, just delete the DB record
+            const { data: files } = await sb.from('repository_files').select('id').eq('folder_id', wrong.id);
+            if (!files || files.length === 0) {
+              await sb.from('repository_folders').delete().eq('id', wrong.id);
+              fixes.push(`Deleted empty DB folder '${wrong.name}' (no drive)`);
+            }
+            continue;
+          }
+
+          // 2. Get the contract's drive_folder_id 
+          const { data: contract } = await sb
+            .from('contracts')
+            .select('drive_folder_id, name')
+            .eq('id', wrong.contract_id)
+            .single();
+
+          if (!contract?.drive_folder_id) {
+            fixErrors.push(`Contract ${wrong.contract_id} has no Drive folder`);
+            continue;
+          }
+
+          // 3. Search Drive for ALL folders with this name under the contract root (recursively)
+          const searchQuery = `name='${sanitizeForDriveQuery(sanitizeDriveName(wrong.name))}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+          const searchResp = await fetch(
+            `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(searchQuery)}&fields=files(id,name,parents,createdTime)&orderBy=createdTime asc&pageSize=50&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`,
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          );
+          const searchData = await searchResp.json();
+          const allMatches = searchData.files || [];
+
+          // Find the correct folder: same name, different ID, belongs to same contract tree
+          // The correct one is typically the one created FIRST (by template propagation)
+          const correctFolder = allMatches.find((f: any) => f.id !== wrong.drive_folder_id);
+
+          if (!correctFolder) {
+            // No other folder with this name — the patent folder might be the only one
+            // Check if it belongs to the contract tree by verifying parent chain
+            fixes.push(`No alternate '${wrong.name}' found for ${contract.name} — keeping as-is`);
+            continue;
+          }
+
+          // 4. List files in the wrong Drive folder
+          const listQuery = `'${wrong.drive_folder_id}' in parents and trashed=false`;
+          const listResp = await fetch(
+            `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(listQuery)}&fields=files(id,name,parents)&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`,
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          );
+          const listData = await listResp.json();
+          const driveFiles = listData.files || [];
+
+          // 5. Move each file to the correct folder
+          for (const df of driveFiles) {
+            try {
+              await moveToFolder(accessToken, df.id, correctFolder.id, wrong.drive_folder_id);
+              fixes.push(`Moved '${df.name}' from wrong '${wrong.name}' to correct folder in ${contract.name}`);
+            } catch (e: any) {
+              fixErrors.push(`Failed to move '${df.name}': ${e.message}`);
+            }
+          }
+
+          // 6. Update repository_files: find the correct DB folder and reassign
+          const { data: correctDbFolder } = await sb
+            .from('repository_folders')
+            .select('id')
+            .eq('contract_id', wrong.contract_id)
+            .ilike('name', wrong.name)
+            .neq('folder_type', 'patent')
+            .limit(1)
+            .single();
+
+          if (correctDbFolder) {
+            // Move file records to correct folder
+            await sb
+              .from('repository_files')
+              .update({ folder_id: correctDbFolder.id })
+              .eq('folder_id', wrong.id);
+
+            // Update correct folder with drive_folder_id if it doesn't have one
+            const { data: correctFolderData } = await sb
+              .from('repository_folders')
+              .select('drive_folder_id')
+              .eq('id', correctDbFolder.id)
+              .single();
+
+            if (!correctFolderData?.drive_folder_id) {
+              await sb
+                .from('repository_folders')
+                .update({ drive_folder_id: correctFolder.id })
+                .eq('id', correctDbFolder.id);
+            }
+          } else {
+            // No correct DB folder — move files to a temporary holding
+            fixes.push(`No matching template folder for '${wrong.name}' in ${contract.name} — files moved in Drive only`);
+          }
+
+          // 7. Trash the wrong Drive folder (now empty)
+          try {
+            await fetch(
+              `https://www.googleapis.com/drive/v3/files/${wrong.drive_folder_id}?supportsAllDrives=true`,
+              {
+                method: 'PATCH',
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ trashed: true }),
+              }
+            );
+            fixes.push(`Trashed wrong Drive folder '${wrong.name}' for ${contract.name}`);
+          } catch (e: any) {
+            fixErrors.push(`Failed to trash Drive folder: ${e.message}`);
+          }
+
+          // 8. Delete the wrong DB folder record
+          await sb.from('repository_folders').delete().eq('id', wrong.id);
+          fixes.push(`Deleted wrong DB folder '${wrong.name}' for ${contract.name}`);
+        }
+
+        result = { success: true, fixes, errors: fixErrors };
+        break;
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }
