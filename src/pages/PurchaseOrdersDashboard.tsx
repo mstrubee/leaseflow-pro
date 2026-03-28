@@ -348,7 +348,7 @@ const PurchaseOrdersDashboard = () => {
   const [contractCompanyMap, setContractCompanyMap] = useState<Map<string, string>>(new Map());
 
   // Sorting state for the OC table
-  const [sortField, setSortField] = useState<OCSortField>("date");
+  const [sortField, setSortField] = useState<OCSortField>("order_number");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
   const handleSort = (field: OCSortField) => {
