@@ -224,7 +224,7 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
       <CollapsibleCard
         title="Monitoreo de Almacenamiento"
         description="Uso de base de datos y archivos en Lovable Cloud"
-        icon={<Database className="h-5 w-5" />}
+        icon={<Database className="h-5 w-5 text-cyan-600" />}
         defaultOpen={!defaultCollapsed}
       >
         <div className="space-y-4">
@@ -240,7 +240,7 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
       <CollapsibleCard
         title="Monitoreo de Almacenamiento"
         description="Uso de base de datos y archivos en Lovable Cloud"
-        icon={<Database className="h-5 w-5" />}
+        icon={<Database className="h-5 w-5 text-cyan-600" />}
         defaultOpen={!defaultCollapsed}
       >
         <p className="text-muted-foreground">Error al cargar estadísticas</p>
@@ -258,7 +258,7 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
     <CollapsibleCard
       title="Monitoreo de Almacenamiento"
       description="Uso de base de datos y archivos en Lovable Cloud"
-      icon={<Database className="h-5 w-5" />}
+      icon={<Database className="h-5 w-5 text-cyan-600" />}
       defaultOpen={!defaultCollapsed}
       headerActions={
         <Button

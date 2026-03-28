@@ -582,7 +582,7 @@ export const OrgChartManager = ({ defaultCollapsed = false }: OrgChartManagerPro
       <CollapsibleCard
         title="Organigrama"
         description="Gestionar gerencias y jefaturas"
-        icon={<Users className="h-5 w-5" />}
+        icon={<Users className="h-5 w-5 text-teal-600" />}
         defaultOpen={!defaultCollapsed}
         headerActions={
           <div className="flex gap-2 items-center" onClick={e => e.stopPropagation()}>

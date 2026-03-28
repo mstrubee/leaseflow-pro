@@ -284,7 +284,7 @@ export const CompanyManager = ({ defaultCollapsed = false }: CompanyManagerProps
     <CollapsibleCard
       title="Empresas"
       description="Administrar empresas para asignar a contratos"
-      icon={<Building2 className="h-5 w-5" />}
+      icon={<Building2 className="h-5 w-5 text-blue-600" />}
       defaultOpen={!defaultCollapsed}
       headerActions={
         <Button onClick={(e) => { e.stopPropagation(); setCreateDialogOpen(true); }} size="sm">

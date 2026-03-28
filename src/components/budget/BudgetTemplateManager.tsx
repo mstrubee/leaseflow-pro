@@ -395,7 +395,7 @@ export const BudgetTemplateManager = ({ defaultCollapsed = false }: BudgetTempla
     <CollapsibleCard
       title="Formatos de Presupuesto Tipo"
       description="Define plantillas de presupuesto que podrán aplicarse al crear contratos"
-      icon={<FileText className="h-5 w-5" />}
+      icon={<FileText className="h-5 w-5 text-blue-500" />}
       defaultOpen={!defaultCollapsed}
       headerActions={
         <Button onClick={() => {

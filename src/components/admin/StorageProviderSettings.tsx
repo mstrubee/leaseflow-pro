@@ -269,7 +269,7 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
       <CollapsibleCard
         title="Proveedor de Almacenamiento"
         description="Selecciona el servicio de almacenamiento en la nube para los archivos de contratos"
-        icon={<Cloud className="h-5 w-5" />}
+        icon={<Cloud className="h-5 w-5 text-sky-500" />}
         defaultOpen={!defaultCollapsed}
       >
         <div className="flex items-center justify-center py-8">
@@ -284,7 +284,7 @@ export function StorageProviderSettings({ defaultCollapsed = false }: StoragePro
       <CollapsibleCard
         title="Proveedor de Almacenamiento"
         description="Selecciona el servicio de almacenamiento en la nube para los archivos de contratos"
-        icon={<Cloud className="h-5 w-5" />}
+        icon={<Cloud className="h-5 w-5 text-sky-500" />}
         defaultOpen={!defaultCollapsed}
       >
         <div className="space-y-6">
