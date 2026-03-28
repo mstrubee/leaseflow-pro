@@ -321,7 +321,7 @@ export const CloudStorageSettings = ({ defaultCollapsed = false }: CloudStorageS
       <CollapsibleCard
         title="Almacenamiento en la Nube"
         description="Configura conexiones a servicios de almacenamiento en la nube"
-        icon={<Cloud className="h-5 w-5" />}
+        icon={<Cloud className="h-5 w-5 text-sky-500" />}
         defaultOpen={!defaultCollapsed}
         headerActions={
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
