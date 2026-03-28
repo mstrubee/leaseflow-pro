@@ -955,7 +955,7 @@ const ContractDetail = () => {
                       <CollapsibleSection
                         id={sectionKey}
                         title="Dirección"
-                        icon={<MapPin className="h-5 w-5" />}
+                        icon={<MapPin className="h-5 w-5 text-red-500" />}
                         isCollapsed={isCollapsed(sectionKey)}
                         onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
                         isDraggable={canReorder}
@@ -990,7 +990,7 @@ const ContractDetail = () => {
                       <CollapsibleSection
                         id={sectionKey}
                         title="Contacto"
-                        icon={<User className="h-5 w-5" />}
+                        icon={<User className="h-5 w-5 text-blue-500" />}
                         isCollapsed={isCollapsed(sectionKey)}
                         onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
                         isDraggable={canReorder}
@@ -1053,7 +1053,7 @@ const ContractDetail = () => {
                       <CollapsibleSection
                         id={sectionKey}
                         title="Condiciones Comerciales"
-                        icon={<DollarSign className="h-5 w-5" />}
+                        icon={<DollarSign className="h-5 w-5 text-emerald-600" />}
                         isCollapsed={isCollapsed(sectionKey)}
                         onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
                         isDraggable={canReorder}
@@ -1202,7 +1202,7 @@ const ContractDetail = () => {
                       <CollapsibleSection
                         id={sectionKey}
                         title="Superficies y Datos"
-                        icon={<LayoutGrid className="h-5 w-5" />}
+                        icon={<LayoutGrid className="h-5 w-5 text-violet-500" />}
                         isCollapsed={isCollapsed(sectionKey)}
                         onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
                         isDraggable={canReorder}
@@ -1229,7 +1229,7 @@ const ContractDetail = () => {
                       <CollapsibleSection
                         id={sectionKey}
                         title="Contrato de Arriendo"
-                        icon={<FileText className="h-5 w-5" />}
+                        icon={<FileText className="h-5 w-5 text-amber-600" />}
                         isCollapsed={isCollapsed(sectionKey)}
                         onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
                         isDraggable={canReorder}
@@ -1344,7 +1344,7 @@ const ContractDetail = () => {
                       <CollapsibleSection
                         id={sectionKey}
                         title="Repositorio de Documentos"
-                        icon={<FolderOpen className="h-5 w-5" />}
+                        icon={<FolderOpen className="h-5 w-5 text-yellow-600" />}
                         isCollapsed={isCollapsed(sectionKey)}
                         onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
                         isDraggable={canReorder}
@@ -1373,7 +1373,7 @@ const ContractDetail = () => {
                       <CollapsibleSection
                         id={sectionKey}
                         title="Control Presupuestario"
-                        icon={<DollarSign className="h-5 w-5" />}
+                        icon={<DollarSign className="h-5 w-5 text-emerald-600" />}
                         isCollapsed={isCollapsed(sectionKey)}
                         onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
                         isDraggable={canReorder}
@@ -1397,7 +1397,7 @@ const ContractDetail = () => {
                       <CollapsibleSection
                         id={sectionKey}
                         title="Línea de Tiempo / Gantt"
-                        icon={<Calendar className="h-5 w-5" />}
+                        icon={<Calendar className="h-5 w-5 text-purple-500" />}
                         isCollapsed={isCollapsed(sectionKey)}
                         onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
                         isDraggable={canReorder}
@@ -1421,7 +1421,7 @@ const ContractDetail = () => {
                       <CollapsibleSection
                         id={sectionKey}
                         title="Alertas y Recordatorios"
-                        icon={<Bell className="h-5 w-5" />}
+                        icon={<Bell className="h-5 w-5 text-orange-500" />}
                         isCollapsed={isCollapsed(sectionKey)}
                         onCollapsedChange={(collapsed) => setCollapsed(sectionKey, collapsed)}
                         isDraggable={canReorder}
