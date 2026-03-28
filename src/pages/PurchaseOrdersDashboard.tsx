@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ContractSearchSelect } from "@/components/contracts/ContractSearchSelect";
-import { getCompanyNames } from "@/components/contracts/CompanyLogo";
+import { getCompanyNames, CompanyLogo } from "@/components/contracts/CompanyLogo";
 import {
   Collapsible,
   CollapsibleContent,
@@ -2408,8 +2408,8 @@ const PurchaseOrdersDashboard = () => {
                     <TableHeader>
                       <TableRow>
                         {isAdmin && <TableHead className="w-[40px]"></TableHead>}
-                        <TableHead>Nº OC</TableHead>
                         <TableHead>Local</TableHead>
+                        <TableHead>Nº OC</TableHead>
                         <TableHead>Titulo</TableHead>
                         <TableHead>Proveedor</TableHead>
                         <TableHead>Tipo</TableHead>
@@ -2455,20 +2455,9 @@ const PurchaseOrdersDashboard = () => {
                                   />
                                 </TableCell>
                               )}
-                              <TableCell className="font-medium">
-                                <div className="flex items-center gap-2">
-                                  <FileText className="h-4 w-4 text-muted-foreground" />
-                                  {groupedOrder.order_number}
-                                  {groupedOrder.is_multi_contract && (
-                                    <Badge variant="outline" className="text-[10px] gap-1">
-                                      <Layers className="h-3 w-3" />
-                                      {groupedOrder.contracts.length} Locales
-                                    </Badge>
-                                  )}
-                                </div>
-                              </TableCell>
+                              {/* Local column - first */}
                               <TableCell
-                                className="max-w-[140px] cursor-pointer hover:bg-muted/50 transition-colors"
+                                className="max-w-[160px] cursor-pointer hover:bg-muted/50 transition-colors"
                                 onClick={() => {
                                   setExpandedInvoiceSections(prev => {
                                     const next = new Set(prev);
@@ -2483,8 +2472,15 @@ const PurchaseOrdersDashboard = () => {
                                 title="Ver facturas"
                               >
                                 <div className="flex items-center gap-1.5 truncate">
-                                  <Store className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                  <span className="truncate">
+                                  <CompanyLogo
+                                    companyNames={
+                                      groupedOrder.contracts.length === 1
+                                        ? [contractCompanyMap.get(groupedOrder.contracts[0].contract_id) || ""].filter(Boolean)
+                                        : groupedOrder.contracts.map(c => contractCompanyMap.get(c.contract_id) || "").filter(Boolean)
+                                    }
+                                    size="sm"
+                                  />
+                                  <span className="truncate text-sm">
                                     {groupedOrder.contracts.length === 1
                                       ? groupedOrder.contracts[0].contract_name
                                       : groupedOrder.contracts.length > 1
@@ -2492,6 +2488,19 @@ const PurchaseOrdersDashboard = () => {
                                       : "-"}
                                   </span>
                                   {isInvoicesExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />}
+                                </div>
+                              </TableCell>
+                              {/* Nº OC column */}
+                              <TableCell className="font-medium">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="h-4 w-4 text-muted-foreground" />
+                                  {groupedOrder.order_number}
+                                  {groupedOrder.is_multi_contract && (
+                                    <Badge variant="outline" className="text-[10px] gap-1">
+                                      <Layers className="h-3 w-3" />
+                                      {groupedOrder.contracts.length} Locales
+                                    </Badge>
+                                  )}
                                 </div>
                               </TableCell>
                               <TableCell className="max-w-[150px] truncate">
