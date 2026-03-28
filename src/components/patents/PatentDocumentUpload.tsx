@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
 import { getSignedUrl, isStorageUrl } from "@/lib/storageUtils";
+import { backupPatentFileToDestinations } from "@/lib/patentBackup";
 
 interface PatentDocumentUploadProps {
   open: boolean;
@@ -126,6 +127,12 @@ export function PatentDocumentUpload({
       }
 
       if (uploadedUrls.length > 0) {
+        // Backup each uploaded file to configured patent destination folders
+        for (const url of uploadedUrls) {
+          const name = url.split('/').pop() || 'patent_file';
+          await backupPatentFileToDestinations(contractId, url, name);
+        }
+
         // If there's a currentUrl, append to it; otherwise use the new URLs
         const existingUrls = currentUrl ? currentUrl.split('|||').filter(Boolean) : [];
         const allUrls = [...existingUrls, ...uploadedUrls].join('|||');

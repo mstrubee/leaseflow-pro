@@ -232,6 +232,7 @@ const PurchaseOrdersDashboard = () => {
   const [showFileDestDialog, setShowFileDestDialog] = useState(false);
   const [tempOCFolder, setTempOCFolder] = useState("");
   const [tempInvoiceFolder, setTempInvoiceFolder] = useState("");
+  const [tempPatentFolder, setTempPatentFolder] = useState("");
   const [savingFileDest, setSavingFileDest] = useState(false);
 
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
@@ -1973,6 +1974,7 @@ const PurchaseOrdersDashboard = () => {
                   onClick={() => {
                     setTempOCFolder(fileDestSettings.oc_folder);
                     setTempInvoiceFolder(fileDestSettings.invoice_folder);
+                    setTempPatentFolder(fileDestSettings.patent_folder);
                     setShowFileDestDialog(true);
                   }}
                 >
@@ -4247,6 +4249,13 @@ const PurchaseOrdersDashboard = () => {
                 value={tempInvoiceFolder}
                 onChange={setTempInvoiceFolder}
               />
+              <FolderDestinationPicker
+                icon={<FileText className="h-4 w-4 text-orange-500" />}
+                label="Archivos de Patentes"
+                description="Carpetas donde se guardarán los documentos de patentes"
+                value={tempPatentFolder}
+                onChange={setTempPatentFolder}
+              />
             </div>
           </div>
           <DialogFooter>
@@ -4261,6 +4270,7 @@ const PurchaseOrdersDashboard = () => {
                 try {
                   await updateFileDestSetting("oc_folder", tempOCFolder.trim());
                   await updateFileDestSetting("invoice_folder", tempInvoiceFolder.trim());
+                  await updateFileDestSetting("patent_folder", tempPatentFolder.trim());
                   toast.success("Configuración de carpetas actualizada");
                   setShowFileDestDialog(false);
                 } catch (err: any) {
