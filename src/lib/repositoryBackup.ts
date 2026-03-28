@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizeFileName } from "./fileValidation";
 import { uploadFileToStorage } from "./storageUtils";
-import { getConfiguredFolderName } from "@/hooks/useFileDestinationSettings";
+import { getConfiguredFolderName, getConfiguredFolderNames } from "@/hooks/useFileDestinationSettings";
 
 /**
  * Get or create the configured destination folder for a contract's repository.
