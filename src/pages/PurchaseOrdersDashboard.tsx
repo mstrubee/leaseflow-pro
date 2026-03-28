@@ -219,6 +219,8 @@ const COLORS = [
   "#FF8042",
 ];
 
+type OCSortField = "local" | "order_number" | "description" | "supplier" | "type" | "category" | "amount" | "invoices" | "status" | "date";
+
 const PurchaseOrdersDashboard = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading, isAdmin } = useAuth();
@@ -347,10 +349,9 @@ const PurchaseOrdersDashboard = () => {
 
   // Sorting state for the OC table
   const [sortField, setSortField] = useState<OCSortField>("date");
-  const [sortField, setSortField] = useState<SortField>("date");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
-  const handleSort = (field: SortField) => {
+  const handleSort = (field: OCSortField) => {
     if (sortField === field) {
       setSortDirection(prev => prev === "asc" ? "desc" : "asc");
     } else {
