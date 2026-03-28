@@ -12,6 +12,7 @@ interface CollapsibleCardProps {
   headerActions?: ReactNode;
   icon?: ReactNode;
   className?: string;
+  onToggle?: (isOpen: boolean) => void;
 }
 
 export function CollapsibleCard({
@@ -22,14 +23,21 @@ export function CollapsibleCard({
   headerActions,
   icon,
   className,
+  onToggle,
 }: CollapsibleCardProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  const toggle = () => {
+    const next = !isOpen;
+    setIsOpen(next);
+    onToggle?.(next);
+  };
 
   return (
     <Card className={cn("overflow-hidden", className)}>
       <CardHeader 
         className="cursor-pointer select-none hover:bg-muted/50 transition-colors"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={toggle}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
