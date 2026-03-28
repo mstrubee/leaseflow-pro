@@ -1,20 +1,24 @@
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizeFileName } from "./fileValidation";
 import { uploadFileToStorage } from "./storageUtils";
+import { getConfiguredFolderName } from "@/hooks/useFileDestinationSettings";
 
 /**
- * Get or create the standard "OC" folder for a contract's repository.
+ * Get or create the configured destination folder for a contract's repository.
+ * Uses the global file_destination_settings table to determine the folder name.
  * Returns the folder info including ID and drive_folder_id.
  * NOTE: Drive folder creation is disabled due to service account quota limits.
  */
 export async function getOrCreateOCFolder(contractId: string): Promise<{ id: string; driveFolderId: string | null } | null> {
   try {
-    // First, try to find an existing OC folder for this contract
+    const folderName = await getConfiguredFolderName("oc_folder");
+
+    // First, try to find an existing folder matching the configured name
     const { data: existingFolder, error: findError } = await supabase
       .from("repository_folders")
       .select("id, drive_folder_id")
       .eq("contract_id", contractId)
-      .or("folder_type.eq.oc,name.ilike.OC")
+      .or(`folder_type.eq.oc,name.ilike.${folderName}`)
       .is("parent_id", null)
       .limit(1)
       .single();
@@ -24,15 +28,14 @@ export async function getOrCreateOCFolder(contractId: string): Promise<{ id: str
     }
 
     // NOTE: Drive folder creation is disabled.
-    // Service accounts don't have storage quota; uploads would fail with 403.
     // Files are stored in DB only (repository_files table).
 
-    // Create the OC folder in the database only
+    // Create the folder in the database only
     const { data: newFolder, error: createError } = await supabase
       .from("repository_folders")
       .insert({
         contract_id: contractId,
-        name: "OC",
+        name: folderName,
         folder_type: "oc",
         parent_id: null,
         drive_folder_id: null,
