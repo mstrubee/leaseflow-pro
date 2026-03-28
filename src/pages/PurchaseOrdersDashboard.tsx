@@ -91,6 +91,7 @@ import { ConvertOCRequestDialog } from "@/components/budget/ConvertOCRequestDial
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, formatCLP } from "@/lib/utils";
 import { backupOCFileToRepository, uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
+import { FolderDestinationPicker } from "@/components/budget/FolderDestinationPicker";
 import { Building2 } from "lucide-react";
 import { useFileDestinationSettings } from "@/hooks/useFileDestinationSettings";
 
@@ -3955,35 +3956,21 @@ const PurchaseOrdersDashboard = () => {
               Configure en qué carpeta del repositorio de cada contrato se almacenarán automáticamente los archivos. 
               Esto no impide que los archivos también se guarden en otra ubicación.
             </p>
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label className="flex items-center gap-2">
-                  <ShoppingCart className="h-4 w-4 text-indigo-500" />
-                  Archivos de OC
-                </Label>
-                <Input
-                  value={tempOCFolder}
-                  onChange={(e) => setTempOCFolder(e.target.value)}
-                  placeholder="Ej: OC"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Carpeta donde se guardarán los PDFs de las Órdenes de Compra
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="flex items-center gap-2">
-                  <Receipt className="h-4 w-4 text-emerald-500" />
-                  Archivos de Facturas y Notas de Crédito
-                </Label>
-                <Input
-                  value={tempInvoiceFolder}
-                  onChange={(e) => setTempInvoiceFolder(e.target.value)}
-                  placeholder="Ej: Facturas"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Carpeta donde se guardarán los archivos de facturas y notas de crédito
-                </p>
-              </div>
+            <div className="space-y-4">
+              <FolderDestinationPicker
+                icon={<ShoppingCart className="h-4 w-4 text-indigo-500" />}
+                label="Archivos de OC"
+                description="Carpeta donde se guardarán los PDFs de las Órdenes de Compra"
+                value={tempOCFolder}
+                onChange={setTempOCFolder}
+              />
+              <FolderDestinationPicker
+                icon={<Receipt className="h-4 w-4 text-emerald-500" />}
+                label="Archivos de Facturas y Notas de Crédito"
+                description="Carpeta donde se guardarán los archivos de facturas y notas de crédito"
+                value={tempInvoiceFolder}
+                onChange={setTempInvoiceFolder}
+              />
             </div>
           </div>
           <DialogFooter>
