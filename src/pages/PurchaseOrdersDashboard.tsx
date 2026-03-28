@@ -2957,6 +2957,45 @@ const PurchaseOrdersDashboard = () => {
                                                   </TableCell>
                                                   <TableCell className="py-1.5">
                                                     <div className="flex items-center gap-1">
+                                                      {/* Upload / View PDF */}
+                                                      {invoice.attachment_url ? (
+                                                        <Button
+                                                          size="sm"
+                                                          variant="ghost"
+                                                          onClick={() => void openFile(invoice.attachment_url!)}
+                                                          className="h-6 px-1.5"
+                                                          title="Ver PDF de factura"
+                                                        >
+                                                          <FileText className="h-3 w-3 text-emerald-600" />
+                                                        </Button>
+                                                      ) : (
+                                                        <Button
+                                                          size="sm"
+                                                          variant="ghost"
+                                                          onClick={() => {
+                                                            const input = document.createElement("input");
+                                                            input.type = "file";
+                                                            input.accept = ".pdf";
+                                                            input.onchange = (e) => {
+                                                              const file = (e.target as HTMLInputElement).files?.[0];
+                                                              if (file) {
+                                                                const order = groupedOrder.orders[0];
+                                                                handleInvoiceFileUpload(invoice.id, file, order.contract_id);
+                                                              }
+                                                            };
+                                                            input.click();
+                                                          }}
+                                                          className="h-6 px-1.5"
+                                                          title="Subir PDF de factura"
+                                                          disabled={uploadingInvoiceId === invoice.id}
+                                                        >
+                                                          {uploadingInvoiceId === invoice.id ? (
+                                                            <div className="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                                                          ) : (
+                                                            <Upload className="h-3 w-3 text-blue-500" />
+                                                          )}
+                                                        </Button>
+                                                      )}
                                                       <Button
                                                         size="sm"
                                                         variant="ghost"
