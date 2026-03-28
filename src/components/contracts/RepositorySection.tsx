@@ -421,7 +421,7 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
     setDriveWarning(null);
     
     try {
-      // Get all base folders
+      // Get all base folders (root level)
       const { data: baseFolders, error } = await supabase
         .from("repository_folders")
         .select("*")
@@ -454,12 +454,50 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
           .update({ drive_folder_id: data.projectFolderId })
           .eq("id", contractId);
 
-        // Update folders with their drive IDs
+        // Update base folders with their drive IDs
+        const baseFolderDriveMap: Record<string, string> = {};
         for (const subfolder of data.subfolders || []) {
           await supabase
             .from("repository_folders")
             .update({ drive_folder_id: subfolder.driveFolderId })
             .eq("id", subfolder.localId);
+          baseFolderDriveMap[subfolder.localId] = subfolder.driveFolderId;
+        }
+
+        // Now sync child folders (e.g. OOCC, Facturas under OC y FACTURAS)
+        const { data: childFolders } = await supabase
+          .from("repository_folders")
+          .select("id, name, parent_id, drive_folder_id")
+          .eq("contract_id", contractId)
+          .not("parent_id", "is", null);
+
+        if (childFolders && childFolders.length > 0) {
+          for (const child of childFolders) {
+            if (child.drive_folder_id) continue; // already synced
+            const parentDriveId = baseFolderDriveMap[child.parent_id!];
+            if (!parentDriveId) continue; // parent not synced yet
+
+            try {
+              const { data: childDriveData, error: childDriveError } = await supabase.functions.invoke('google-drive', {
+                body: {
+                  action: 'ensureSubfolderExists',
+                  parentDriveFolderId: parentDriveId,
+                  folderName: child.name,
+                }
+              });
+
+              if (!childDriveError && childDriveData?.id) {
+                await supabase
+                  .from("repository_folders")
+                  .update({ drive_folder_id: childDriveData.id })
+                  .eq("id", child.id);
+                // Track for potential grandchildren
+                baseFolderDriveMap[child.id] = childDriveData.id;
+              }
+            } catch (e) {
+              console.warn(`Failed to sync child folder ${child.name}:`, e);
+            }
+          }
         }
 
         setDriveLinked(true);
