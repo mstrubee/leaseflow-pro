@@ -1107,6 +1107,23 @@ const PurchaseOrdersDashboard = () => {
     };
   }, [ocRequests, yearFilter, isAdmin]);
 
+  // OC PDF Viewer dialog state
+  const [showOCViewerDialog, setShowOCViewerDialog] = useState(false);
+  const [viewerOCData, setViewerOCData] = useState<{
+    order_number: string;
+    description: string | null;
+    supplier_name: string | null;
+    order_date: string;
+    budget_classification: string | null;
+    opex_category_name: string | null;
+    budget_line_name: string | null;
+    total_amount_uf: number;
+    total_amount_clp: number;
+    contracts: { contract_id: string; contract_name: string; amount_uf: number }[];
+    attachment_url: string | null;
+    pdfUrl: string | null;
+  } | null>(null);
+  const [loadingViewer, setLoadingViewer] = useState(false);
 
   // Toggle request selection
   const toggleRequestSelection = (requestId: string) => {
