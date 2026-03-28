@@ -4,21 +4,20 @@ import { uploadFileToStorage } from "./storageUtils";
 import { getConfiguredFolderName, getConfiguredFolderNames } from "@/hooks/useFileDestinationSettings";
 
 /**
- * Get or create the configured destination folder for a contract's repository.
- * Uses the global file_destination_settings table to determine the folder name.
- * Returns the folder info including ID and drive_folder_id.
- * NOTE: Drive folder creation is disabled due to service account quota limits.
+ * Get or create a single destination folder for a contract's repository.
+ * Used internally; callers should prefer getOrCreateOCFolders for multi-folder support.
  */
-export async function getOrCreateOCFolder(contractId: string): Promise<{ id: string; driveFolderId: string | null } | null> {
+async function getOrCreateSingleFolder(
+  contractId: string,
+  folderName: string,
+  folderType: string = "oc"
+): Promise<{ id: string; driveFolderId: string | null } | null> {
   try {
-    const folderName = await getConfiguredFolderName("oc_folder");
-
-    // First, try to find an existing folder matching the configured name
-    const { data: existingFolder, error: findError } = await supabase
+    const { data: existingFolder } = await supabase
       .from("repository_folders")
       .select("id, drive_folder_id")
       .eq("contract_id", contractId)
-      .or(`folder_type.eq.oc,name.ilike.${folderName}`)
+      .or(`folder_type.eq.${folderType},name.ilike.${folderName}`)
       .is("parent_id", null)
       .limit(1)
       .single();
@@ -27,16 +26,12 @@ export async function getOrCreateOCFolder(contractId: string): Promise<{ id: str
       return { id: existingFolder.id, driveFolderId: existingFolder.drive_folder_id };
     }
 
-    // NOTE: Drive folder creation is disabled.
-    // Files are stored in DB only (repository_files table).
-
-    // Create the folder in the database only
     const { data: newFolder, error: createError } = await supabase
       .from("repository_folders")
       .insert({
         contract_id: contractId,
         name: folderName,
-        folder_type: "oc",
+        folder_type: folderType,
         parent_id: null,
         drive_folder_id: null,
       })
@@ -44,15 +39,42 @@ export async function getOrCreateOCFolder(contractId: string): Promise<{ id: str
       .single();
 
     if (createError) {
-      console.error("Error creating OC folder:", createError);
+      console.error(`Error creating folder '${folderName}':`, createError);
       return null;
     }
 
     return newFolder ? { id: newFolder.id, driveFolderId: newFolder.drive_folder_id } : null;
   } catch (error) {
-    console.error("Error in getOrCreateOCFolder:", error);
+    console.error(`Error in getOrCreateSingleFolder('${folderName}'):`, error);
     return null;
   }
+}
+
+/**
+ * Get or create the configured destination folder(s) for OC files.
+ * Returns the primary (first) folder. For all folders, use getOrCreateOCFolders.
+ */
+export async function getOrCreateOCFolder(contractId: string): Promise<{ id: string; driveFolderId: string | null } | null> {
+  const folderName = await getConfiguredFolderName("oc_folder");
+  return getOrCreateSingleFolder(contractId, folderName, "oc");
+}
+
+/**
+ * Get or create ALL configured destination folders for OC files.
+ * Supports multiple folders (e.g., "OC, Facturas").
+ */
+export async function getOrCreateOCFolders(contractId: string): Promise<{ id: string; driveFolderId: string | null; name: string }[]> {
+  const folderNames = await getConfiguredFolderNames("oc_folder");
+  const results: { id: string; driveFolderId: string | null; name: string }[] = [];
+
+  for (const name of folderNames) {
+    const folder = await getOrCreateSingleFolder(contractId, name, "oc");
+    if (folder) {
+      results.push({ ...folder, name });
+    }
+  }
+
+  return results;
 }
 
 /**
