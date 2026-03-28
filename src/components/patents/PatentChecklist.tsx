@@ -1083,6 +1083,21 @@ export function PatentChecklist({
                                         <Upload className="h-3 w-3" />
                                       </Button>
                                     )}
+                                    {isAdmin && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setTempPatentFolder(fileDestSettings.patent_folder);
+                                          setShowFileDestDialog(true);
+                                        }}
+                                        title="Configurar carpetas de destino"
+                                      >
+                                        <FolderCog className="h-3 w-3 text-muted-foreground" />
+                                      </Button>
+                                    )}
                                   </>
                                 )}
                               </div>
@@ -1192,6 +1207,56 @@ export function PatentChecklist({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {/* File Destination Dialog */}
+      <Dialog open={showFileDestDialog} onOpenChange={setShowFileDestDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FolderCog className="h-5 w-5 text-primary" />
+              Carpetas de Destino - Patentes
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Configure en qué carpeta del repositorio de cada contrato se almacenarán automáticamente los documentos de patentes al subirlos.
+            </p>
+            <FolderDestinationPicker
+              icon={<FileText className="h-4 w-4 text-orange-500" />}
+              label="Archivos de Patentes"
+              description="Carpetas donde se guardarán los documentos de patentes"
+              value={tempPatentFolder}
+              onChange={setTempPatentFolder}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowFileDestDialog(false)} disabled={savingFileDest}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={savingFileDest || !tempPatentFolder.trim()}
+              onClick={async () => {
+                setSavingFileDest(true);
+                try {
+                  await updateFileDestSetting("patent_folder", tempPatentFolder.trim());
+                  toast.success("Configuración de carpetas de patentes actualizada");
+                  setShowFileDestDialog(false);
+                } catch (err: any) {
+                  toast.error("Error al guardar: " + (err?.message || "Error desconocido"));
+                } finally {
+                  setSavingFileDest(false);
+                }
+              }}
+            >
+              {savingFileDest ? "Guardando..." : (
+                <>
+                  <Save className="h-4 w-4 mr-1" />
+                  Guardar
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
