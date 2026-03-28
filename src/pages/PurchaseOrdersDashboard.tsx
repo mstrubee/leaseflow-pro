@@ -2453,16 +2453,16 @@ const PurchaseOrdersDashboard = () => {
                       <TableRow>
                         {isAdmin && <TableHead className="w-[40px]"></TableHead>}
                         {([
-                          { field: "local" as SortField, label: "Local", className: "" },
-                          { field: "order_number" as SortField, label: "Nº OC", className: "" },
-                          { field: "description" as SortField, label: "Titulo", className: "" },
-                          { field: "supplier" as SortField, label: "Proveedor", className: "" },
-                          { field: "type" as SortField, label: "Tipo", className: "" },
-                          { field: "category" as SortField, label: "Categoría", className: "" },
-                          { field: "amount" as SortField, label: "Monto Total", className: "text-right" },
-                          { field: "invoices" as SortField, label: "Facturas", className: "text-center" },
-                          { field: "status" as SortField, label: "Estado", className: "" },
-                          { field: "date" as SortField, label: "Fecha", className: "" },
+                          { field: "local" as OCSortField, label: "Local", className: "" },
+                          { field: "order_number" as OCSortField, label: "Nº OC", className: "" },
+                          { field: "description" as OCSortField, label: "Titulo", className: "" },
+                          { field: "supplier" as OCSortField, label: "Proveedor", className: "" },
+                          { field: "type" as OCSortField, label: "Tipo", className: "" },
+                          { field: "category" as OCSortField, label: "Categoría", className: "" },
+                          { field: "amount" as OCSortField, label: "Monto Total", className: "text-right" },
+                          { field: "invoices" as OCSortField, label: "Facturas", className: "text-center" },
+                          { field: "status" as OCSortField, label: "Estado", className: "" },
+                          { field: "date" as OCSortField, label: "Fecha", className: "" },
                         ]).map(col => (
                           <TableHead key={col.field} className={col.className}>
                             <button
