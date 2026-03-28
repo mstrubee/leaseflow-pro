@@ -4279,9 +4279,80 @@ const PurchaseOrdersDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* OC PDF Viewer Dialog */}
+      <Dialog open={showOCViewerDialog} onOpenChange={(open) => { if (!open) { setShowOCViewerDialog(false); setViewerOCData(null); } }}>
+        <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0">
+          <DialogHeader className="px-6 pt-6 pb-3 border-b shrink-0">
+            <DialogTitle className="flex items-center gap-3">
+              <FileText className="h-5 w-5 text-primary" />
+              <span>OC {viewerOCData?.order_number}</span>
+              {viewerOCData?.budget_classification && (
+                <Badge variant={viewerOCData.budget_classification === "CAPEX" ? "default" : "secondary"}>
+                  {viewerOCData.budget_classification}
+                </Badge>
+              )}
+            </DialogTitle>
+            {viewerOCData && (
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground pt-1">
+                {viewerOCData.supplier_name && (
+                  <span>Proveedor: <span className="text-foreground font-medium">{viewerOCData.supplier_name}</span></span>
+                )}
+                {viewerOCData.order_date && (
+                  <span>Fecha: <span className="text-foreground font-medium">{format(parseISO(viewerOCData.order_date), "dd/MM/yyyy", { locale: es })}</span></span>
+                )}
+                <span>Monto: <span className="text-foreground font-medium font-mono">{formatCLP(viewerOCData.total_amount_clp)} ({formatUF(viewerOCData.total_amount_uf)})</span></span>
+                {viewerOCData.contracts.length === 1 && (
+                  <span className="flex items-center gap-1.5">
+                    Local:
+                    <CompanyLogo
+                      companyNames={[contractCompanyMap.get(viewerOCData.contracts[0].contract_id) || ""].filter(Boolean)}
+                      size="sm"
+                    />
+                    <span className="text-foreground font-medium">{viewerOCData.contracts[0].contract_name}</span>
+                  </span>
+                )}
+              </div>
+            )}
+          </DialogHeader>
+          <div className="flex-1 min-h-0 p-4">
+            {loadingViewer ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+              </div>
+            ) : viewerOCData?.pdfUrl ? (
+              <iframe
+                src={viewerOCData.pdfUrl}
+                className="w-full h-full rounded-lg border"
+                title={`PDF OC ${viewerOCData.order_number}`}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
+                <FileText className="h-16 w-16 opacity-20" />
+                <p className="text-lg">Esta OC no tiene un PDF adjunto</p>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowOCViewerDialog(false);
+                    if (viewerOCData) {
+                      const go = groupedOrdersByNumber.find(g => g.order_number === viewerOCData.order_number);
+                      if (go) handleOpenEditOCDialog(go);
+                    }
+                  }}
+                >
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Editar OC para adjuntar PDF
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <SuppliersReturnButton />
     </div>
   );
+};
 };
 
 export default PurchaseOrdersDashboard;
