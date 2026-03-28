@@ -103,6 +103,7 @@ interface Invoice {
   amount_clp?: number | null;
   uf_value_at_entry?: number | null;
   reception_status: string;
+  attachment_url?: string | null;
 }
 
 interface ContractAllocation {
