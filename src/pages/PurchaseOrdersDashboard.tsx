@@ -1767,6 +1767,56 @@ const PurchaseOrdersDashboard = () => {
     0
   );
 
+  // Handle invoice PDF upload
+  const handleInvoiceFileUpload = async (invoiceId: string, file: File, contractId: string) => {
+    setUploadingInvoiceId(invoiceId);
+    try {
+      const { uploadFileToStorage } = await import("@/lib/storageUtils");
+      const { sanitizeFileName } = await import("@/lib/fileValidation");
+      const { getConfiguredFolderName } = await import("@/hooks/useFileDestinationSettings");
+
+      const sanitized = sanitizeFileName(file.name);
+      const datePrefix = new Date().toISOString().split("T")[0].replace(/-/g, "");
+      const storagePath = `invoice-files/${datePrefix}/${contractId}/${Date.now()}_${sanitized}`;
+
+      const { path, error: uploadError } = await uploadFileToStorage(storagePath, file);
+      if (uploadError) throw uploadError;
+
+      // Update invoice with attachment URL
+      const { error: dbError } = await supabase
+        .from("invoices")
+        .update({ attachment_url: path })
+        .eq("id", invoiceId);
+      if (dbError) throw dbError;
+
+      // Also backup to configured invoice folder in repository
+      const folderName = await getConfiguredFolderName("invoice_folder");
+      const { data: folder } = await supabase
+        .from("repository_folders")
+        .select("id")
+        .eq("contract_id", contractId)
+        .or(`name.ilike.${folderName},folder_type.ilike.%factura%`)
+        .limit(1)
+        .single();
+
+      if (folder) {
+        await supabase.from("repository_files").insert({
+          folder_id: folder.id,
+          name: sanitized,
+          url: path,
+          file_type: file.name.split(".").pop() || null,
+        });
+      }
+
+      toast.success("PDF de factura subido correctamente");
+      loadData();
+    } catch (err: any) {
+      toast.error("Error al subir archivo: " + (err?.message || "Error desconocido"));
+    } finally {
+      setUploadingInvoiceId(null);
+    }
+  };
+
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
