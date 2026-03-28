@@ -1311,7 +1311,7 @@ export function PatentChecklist({
             </p>
             {/* Show inherited section folders for item-level context */}
             {fileDestContext?.type === 'item' && fileDestContext.sectionId && sectionFolders[fileDestContext.sectionId] && (() => {
-              const inherited = parseDestinations(sectionFolders[fileDestContext.sectionId!]);
+              const inheritedEntries = parseDestinations(sectionFolders[fileDestContext.sectionId!]);
               const inherited = parseDestinations(sectionFolders[fileDestContext.sectionId!]);
               return inherited.length > 0 ? (
                 <div className="rounded-md border border-border bg-muted/30 p-3 space-y-1">
