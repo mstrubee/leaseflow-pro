@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Folder, ChevronRight, ChevronDown, Check, FolderOpen, Link } from "lucide-react";
+import { Folder, ChevronRight, ChevronDown, Check, FolderOpen, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 
 interface FolderTemplate {
   id: string;
@@ -25,8 +25,21 @@ interface FolderDestinationPickerProps {
   icon: React.ReactNode;
   label: string;
   description: string;
-  value: string;
+  value: string; // comma-separated folder names
   onChange: (value: string) => void;
+}
+
+/** Parse comma-separated string into trimmed non-empty array */
+function parseMulti(value: string): string[] {
+  return value
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** Join array back to comma-separated string */
+function joinMulti(arr: string[]): string {
+  return arr.join(", ");
 }
 
 export function FolderDestinationPicker({ icon, label, description, value, onChange }: FolderDestinationPickerProps) {
@@ -36,9 +49,10 @@ export function FolderDestinationPicker({ icon, label, description, value, onCha
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [activeSection, setActiveSection] = useState<"templates" | "general">("templates");
 
+  const selectedFolders = parseMulti(value);
+
   useEffect(() => {
     if (showBrowser && templates.length === 0) {
-      // Load both sources in parallel
       Promise.all([
         supabase
           .from("folder_templates")
@@ -70,9 +84,20 @@ export function FolderDestinationPicker({ icon, label, description, value, onCha
     });
   };
 
-  const selectFolder = (name: string) => {
-    onChange(name);
-    setShowBrowser(false);
+  const toggleFolder = (name: string) => {
+    const current = [...selectedFolders];
+    const idx = current.indexOf(name);
+    if (idx >= 0) {
+      current.splice(idx, 1);
+    } else {
+      current.push(name);
+    }
+    onChange(joinMulti(current));
+  };
+
+  const removeFolder = (name: string) => {
+    const current = selectedFolders.filter((f) => f !== name);
+    onChange(joinMulti(current));
   };
 
   const renderItem = (
@@ -83,7 +108,7 @@ export function FolderDestinationPicker({ icon, label, description, value, onCha
     const children = getChildren(item.id);
     const hasChildren = children.length > 0;
     const isExpanded = expandedFolders.has(item.id);
-    const isSelected = value === item.name;
+    const isSelected = selectedFolders.includes(item.name);
 
     return (
       <div key={item.id}>
@@ -93,7 +118,7 @@ export function FolderDestinationPicker({ icon, label, description, value, onCha
             isSelected && "bg-primary/10 text-primary font-medium"
           )}
           style={{ paddingLeft: `${depth * 16 + 8}px` }}
-          onClick={() => selectFolder(item.name)}
+          onClick={() => toggleFolder(item.name)}
         >
           {hasChildren ? (
             <button
@@ -127,30 +152,41 @@ export function FolderDestinationPicker({ icon, label, description, value, onCha
         {icon}
         {label}
       </Label>
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <Link className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder="URL o nombre de la carpeta"
-            className="pl-8"
-          />
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="whitespace-nowrap"
-          onClick={() => setShowBrowser(!showBrowser)}
-        >
-          <Folder className="h-4 w-4 mr-1 text-amber-500" />
-          Explorar
-        </Button>
+
+      {/* Selected folders as chips */}
+      <div className="flex flex-wrap gap-1.5 min-h-[32px] p-1.5 border rounded-md bg-background">
+        {selectedFolders.length === 0 ? (
+          <span className="text-sm text-muted-foreground px-1 py-0.5">Sin carpetas seleccionadas</span>
+        ) : (
+          selectedFolders.map((folder) => (
+            <Badge key={folder} variant="secondary" className="gap-1 pr-1">
+              <Folder className="h-3 w-3 text-amber-500" />
+              {folder}
+              <button
+                type="button"
+                onClick={() => removeFolder(folder)}
+                className="ml-0.5 rounded-full hover:bg-muted p-0.5"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))
+        )}
       </div>
+
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="whitespace-nowrap"
+        onClick={() => setShowBrowser(!showBrowser)}
+      >
+        <Folder className="h-4 w-4 mr-1 text-amber-500" />
+        {showBrowser ? "Cerrar" : "Explorar Carpetas"}
+      </Button>
+
       {showBrowser && (
         <div className="border rounded-md bg-card overflow-hidden">
-          {/* Section tabs */}
           <div className="flex border-b bg-muted/30">
             <button
               className={cn(

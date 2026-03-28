@@ -60,13 +60,27 @@ export function useFileDestinationSettings() {
 /**
  * Fetch the configured folder name for a given setting key.
  * Standalone function for use in utility modules (non-hook context).
+ * Returns the first configured folder name (primary destination).
  */
 export async function getConfiguredFolderName(key: "oc_folder" | "invoice_folder"): Promise<string> {
+  const names = await getConfiguredFolderNames(key);
+  return names[0];
+}
+
+/**
+ * Fetch all configured folder names for a given setting key.
+ * Returns an array of folder names (supports multi-folder destinations).
+ */
+export async function getConfiguredFolderNames(key: "oc_folder" | "invoice_folder"): Promise<string[]> {
   const { data } = await supabase
     .from("file_destination_settings")
     .select("folder_name")
     .eq("setting_key", key)
     .single();
 
-  return data?.folder_name || DEFAULTS[key];
+  const raw = data?.folder_name || DEFAULTS[key];
+  return raw
+    .split(",")
+    .map((s: string) => s.trim())
+    .filter(Boolean);
 }
