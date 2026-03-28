@@ -714,15 +714,6 @@ async function ensureDriveFolderForRepositoryFolder(
 
   if (!folder) return null;
 
-  if (folder.drive_folder_id) {
-    const meta = await getFolderById(accessToken, folder.drive_folder_id).catch(() => null);
-    if (meta && !meta.trashed && meta.mimeType === 'application/vnd.google-apps.folder') {
-      return folder.drive_folder_id;
-    }
-
-    await sb.from('repository_folders').update({ drive_folder_id: null }).eq('id', folder.id);
-  }
-
   let parentDriveFolderId: string | null = null;
 
   if (folder.parent_id) {
@@ -743,6 +734,26 @@ async function ensureDriveFolderForRepositoryFolder(
   }
 
   if (!parentDriveFolderId) return null;
+
+  if (folder.drive_folder_id) {
+    const meta = await getFolderById(accessToken, folder.drive_folder_id).catch(() => null);
+    if (meta && !meta.trashed && meta.mimeType === 'application/vnd.google-apps.folder') {
+      const currentParentId = meta.parents?.[0] || null;
+      if (currentParentId === parentDriveFolderId) {
+        return folder.drive_folder_id;
+      }
+
+      try {
+        await moveToFolder(accessToken, meta.id, parentDriveFolderId, currentParentId || undefined);
+        await sb.from('repository_folders').update({ drive_folder_id: meta.id }).eq('id', folder.id);
+        return meta.id;
+      } catch {
+        // Fall through to resolve/create canonical folder under correct parent
+      }
+    }
+
+    await sb.from('repository_folders').update({ drive_folder_id: null }).eq('id', folder.id);
+  }
 
   let driveFolder = await getFolderByName(accessToken, folder.name, parentDriveFolderId);
   if (!driveFolder) {
