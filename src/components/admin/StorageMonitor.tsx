@@ -342,6 +342,7 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
           </p>
         </div>
       </div>
+      )}
     </CollapsibleCard>
   );
 }
