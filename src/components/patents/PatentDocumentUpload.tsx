@@ -127,10 +127,12 @@ export function PatentDocumentUpload({
       }
 
       if (uploadedUrls.length > 0) {
-        // Backup each uploaded file to configured patent destination folders
-        for (const url of uploadedUrls) {
+        // Backup each uploaded file to configured patent destination folders (including Drive upload)
+        for (let j = 0; j < uploadedUrls.length; j++) {
+          const url = uploadedUrls[j];
           const name = url.split('/').pop() || 'patent_file';
-          await backupPatentFileToDestinations(contractId, url, name);
+          // Pass the original File object so it can be uploaded to Google Drive
+          await backupPatentFileToDestinations(contractId, url, name, files[j]);
         }
 
         // If there's a currentUrl, append to it; otherwise use the new URLs
