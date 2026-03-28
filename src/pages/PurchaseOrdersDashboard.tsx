@@ -225,7 +225,7 @@ const PurchaseOrdersDashboard = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading, isAdmin } = useAuth();
   const { ufValue } = useEconomicIndicators();
-  const { openFile } = useSecureFileAccess();
+  const { openFile, getSecureUrl } = useSecureFileAccess();
   const { settings: fileDestSettings, updateSetting: updateFileDestSetting } = useFileDestinationSettings();
 
   // File destination settings dialog
@@ -1107,8 +1107,59 @@ const PurchaseOrdersDashboard = () => {
     };
   }, [ocRequests, yearFilter, isAdmin]);
 
+  // OC PDF Viewer dialog state
+  const [showOCViewerDialog, setShowOCViewerDialog] = useState(false);
+  const [viewerOCData, setViewerOCData] = useState<{
+    order_number: string;
+    description: string | null;
+    supplier_name: string | null;
+    order_date: string;
+    budget_classification: string | null;
+    opex_category_name: string | null;
+    budget_line_name: string | null;
+    total_amount_uf: number;
+    total_amount_clp: number;
+    contracts: { contract_id: string; contract_name: string; amount_uf: number }[];
+    attachment_url: string | null;
+    pdfUrl: string | null;
+  } | null>(null);
+  const [loadingViewer, setLoadingViewer] = useState(false);
 
-  // Toggle request selection
+  const handleOpenOCViewer = async (groupedOrder: GroupedOrder) => {
+    setLoadingViewer(true);
+    setShowOCViewerDialog(true);
+
+    // Fetch attachment_url from DB
+    const orderIds = groupedOrder.orders.map(o => o.id);
+    const { data: fullOrders } = await supabase
+      .from("purchase_orders")
+      .select("id, attachment_url")
+      .in("id", orderIds);
+
+    const attachmentUrl = fullOrders?.[0]?.attachment_url || null;
+    let pdfUrl: string | null = null;
+
+    if (attachmentUrl) {
+      pdfUrl = await getSecureUrl(attachmentUrl);
+    }
+
+    setViewerOCData({
+      order_number: groupedOrder.order_number,
+      description: groupedOrder.description,
+      supplier_name: groupedOrder.supplier_name,
+      order_date: groupedOrder.order_date,
+      budget_classification: groupedOrder.budget_classification,
+      opex_category_name: groupedOrder.opex_category_name,
+      budget_line_name: groupedOrder.budget_line_name,
+      total_amount_uf: groupedOrder.total_amount_uf,
+      total_amount_clp: groupedOrder.total_amount_clp || Math.round(groupedOrder.total_amount_uf * ufValue),
+      contracts: groupedOrder.contracts,
+      attachment_url: attachmentUrl,
+      pdfUrl,
+    });
+    setLoadingViewer(false);
+  };
+
   const toggleRequestSelection = (requestId: string) => {
     setSelectedRequests(prev => {
       const next = new Set(prev);
@@ -2553,8 +2604,8 @@ const PurchaseOrdersDashboard = () => {
                               {/* Nº OC column */}
                               <TableCell
                                 className="font-medium cursor-pointer hover:bg-muted/50 transition-colors"
-                                onClick={() => handleOpenEditOCDialog(groupedOrder)}
-                                title="Ver detalle OC"
+                                onClick={() => handleOpenOCViewer(groupedOrder)}
+                                title="Ver PDF de OC"
                               >
                                 <div className="flex items-center gap-2">
                                   <FileText className="h-4 w-4 text-muted-foreground" />
@@ -4228,6 +4279,76 @@ const PurchaseOrdersDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* OC PDF Viewer Dialog */}
+      <Dialog open={showOCViewerDialog} onOpenChange={(open) => { if (!open) { setShowOCViewerDialog(false); setViewerOCData(null); } }}>
+        <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0">
+          <DialogHeader className="px-6 pt-6 pb-3 border-b shrink-0">
+            <DialogTitle className="flex items-center gap-3">
+              <FileText className="h-5 w-5 text-primary" />
+              <span>OC {viewerOCData?.order_number}</span>
+              {viewerOCData?.budget_classification && (
+                <Badge variant={viewerOCData.budget_classification === "CAPEX" ? "default" : "secondary"}>
+                  {viewerOCData.budget_classification}
+                </Badge>
+              )}
+            </DialogTitle>
+            {viewerOCData && (
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground pt-1">
+                {viewerOCData.supplier_name && (
+                  <span>Proveedor: <span className="text-foreground font-medium">{viewerOCData.supplier_name}</span></span>
+                )}
+                {viewerOCData.order_date && (
+                  <span>Fecha: <span className="text-foreground font-medium">{format(parseISO(viewerOCData.order_date), "dd/MM/yyyy", { locale: es })}</span></span>
+                )}
+                <span>Monto: <span className="text-foreground font-medium font-mono">{formatCLP(viewerOCData.total_amount_clp)} ({formatUF(viewerOCData.total_amount_uf)})</span></span>
+                {viewerOCData.contracts.length === 1 && (
+                  <span className="flex items-center gap-1.5">
+                    Local:
+                    <CompanyLogo
+                      companyNames={[contractCompanyMap.get(viewerOCData.contracts[0].contract_id) || ""].filter(Boolean)}
+                      size="sm"
+                    />
+                    <span className="text-foreground font-medium">{viewerOCData.contracts[0].contract_name}</span>
+                  </span>
+                )}
+              </div>
+            )}
+          </DialogHeader>
+          <div className="flex-1 min-h-0 p-4">
+            {loadingViewer ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+              </div>
+            ) : viewerOCData?.pdfUrl ? (
+              <iframe
+                src={viewerOCData.pdfUrl}
+                className="w-full h-full rounded-lg border"
+                title={`PDF OC ${viewerOCData.order_number}`}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
+                <FileText className="h-16 w-16 opacity-20" />
+                <p className="text-lg">Esta OC no tiene un PDF adjunto</p>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowOCViewerDialog(false);
+                    if (viewerOCData) {
+                      const go = groupedOrdersByNumber.find(g => g.order_number === viewerOCData.order_number);
+                      if (go) handleOpenEditOCDialog(go);
+                    }
+                  }}
+                >
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Editar OC para adjuntar PDF
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <SuppliersReturnButton />
     </div>
   );
