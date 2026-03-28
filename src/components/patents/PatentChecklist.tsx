@@ -1176,7 +1176,7 @@ export function PatentChecklist({
                                         className="h-8 w-8 p-0"
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          openFolderDestDialog('item', item.id, item.name);
+                                          openFolderDestDialog('item', item.id, item.name, section.id);
                                         }}
                                         title="Configurar carpetas adicionales para este documento"
                                       >
