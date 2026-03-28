@@ -274,12 +274,17 @@ export function PatentChecklist({
     });
   };
 
-  // Bulk status change
+  // Bulk status change (includes mirror items)
   const handleBulkStatusChange = async (status: PatentDocStatus) => {
     if (!user || selectedItems.size === 0) return;
     
     try {
-      const promises = Array.from(selectedItems).map(itemId => 
+      // Collect all mirror IDs for selected items
+      const allIds = new Set<string>();
+      Array.from(selectedItems).forEach(itemId => {
+        getAllMirrorIds(itemId).forEach(id => allIds.add(id));
+      });
+      const promises = Array.from(allIds).map(itemId => 
         onUpdateDocumentStatus(contract.id, itemId, status, user.id)
       );
       await Promise.all(promises);
@@ -315,6 +320,24 @@ export function PatentChecklist({
     });
     return grouped;
   }, [sections, items]);
+
+  // Mirror lookup: items with the same name across sections are mirrors of each other
+  const mirrorLookup = useMemo(() => {
+    const nameToIds: Record<string, string[]> = {};
+    items.forEach(item => {
+      const key = item.name.trim().toLowerCase();
+      if (!nameToIds[key]) nameToIds[key] = [];
+      nameToIds[key].push(item.id);
+    });
+    const lookup: Record<string, string[]> = {};
+    items.forEach(item => {
+      const key = item.name.trim().toLowerCase();
+      lookup[item.id] = nameToIds[key] || [item.id];
+    });
+    return lookup;
+  }, [items]);
+
+  const getAllMirrorIds = (itemId: string): string[] => mirrorLookup[itemId] || [itemId];
 
   // Build fixed emitter lookup (item_id -> emitter_id)
   const fixedEmitterLookup = useMemo(() => {
@@ -436,10 +459,12 @@ export function PatentChecklist({
   const handleStatusChange = async (itemId: string, status: PatentDocStatus) => {
     if (!user) return;
     try {
-      await onUpdateDocumentStatus(contract.id, itemId, status, user.id);
+      // Update all mirror items (same name across sections)
+      const mirrorIds = getAllMirrorIds(itemId);
+      await Promise.all(mirrorIds.map(id => onUpdateDocumentStatus(contract.id, id, status, user.id)));
       toast.success("Estado actualizado");
 
-      // Auto-register KPI entry when status changes to "ok"
+      // Auto-register KPI entry when status changes to "ok" (only once, not per mirror)
       if (status === 'ok') {
         try {
           const { supabase: sb } = await import("@/integrations/supabase/client");
@@ -494,51 +519,57 @@ export function PatentChecklist({
   }, [contract.id, onUpdateDocument]);
 
   const handleDocumentFieldChange = (itemId: string, field: keyof PatentDocument, value: any, immediatelySave = false) => {
-    const currentEdits = docEdits[itemId] || {};
-    const doc = getDocument(itemId);
-    
-    let updates: Partial<PatentDocument> = { ...currentEdits, [field]: value };
-
-    // Auto-calculate dates when changing date-related fields
-    if (field === 'start_date' || field === 'end_date' || field === 'deadline_days') {
-      const newStart = field === 'start_date' ? value : (currentEdits.start_date || doc?.start_date);
-      const newEnd = field === 'end_date' ? value : (currentEdits.end_date || doc?.end_date);
-      const newDays = field === 'deadline_days' ? value : (currentEdits.deadline_days || doc?.deadline_days);
-      
-      const calculated = calculateDates(newStart, newEnd, newDays, field as 'start_date' | 'end_date' | 'deadline_days');
-      updates = { ...updates, ...calculated };
-    }
-
-    setDocEdits(prev => ({ ...prev, [itemId]: updates }));
-
-    // Clear existing timeout for this item
-    if (saveTimeoutsRef.current[itemId]) {
-      clearTimeout(saveTimeoutsRef.current[itemId]);
-      delete saveTimeoutsRef.current[itemId];
-    }
-
-    // For text fields (notes, responsible), don't auto-save — wait for Enter/blur
+    const mirrorIds = getAllMirrorIds(itemId);
     const textFields: (keyof PatentDocument)[] = ['notes', 'responsible'];
-    if (textFields.includes(field) && !immediatelySave) {
-      return;
-    }
+    const isTextField = textFields.includes(field) && !immediatelySave;
 
-    // For non-text fields, auto-save with short debounce
-    saveTimeoutsRef.current[itemId] = setTimeout(() => {
-      autoSaveDocument(itemId, updates);
-      delete saveTimeoutsRef.current[itemId];
-    }, 400);
+    // Apply changes to all mirror items
+    mirrorIds.forEach(mirrorId => {
+      const currentEdits = docEdits[mirrorId] || {};
+      const doc = getDocument(mirrorId);
+      
+      let updates: Partial<PatentDocument> = { ...currentEdits, [field]: value };
+
+      // Auto-calculate dates when changing date-related fields
+      if (field === 'start_date' || field === 'end_date' || field === 'deadline_days') {
+        const newStart = field === 'start_date' ? value : (currentEdits.start_date || doc?.start_date);
+        const newEnd = field === 'end_date' ? value : (currentEdits.end_date || doc?.end_date);
+        const newDays = field === 'deadline_days' ? value : (currentEdits.deadline_days || doc?.deadline_days);
+        
+        const calculated = calculateDates(newStart, newEnd, newDays, field as 'start_date' | 'end_date' | 'deadline_days');
+        updates = { ...updates, ...calculated };
+      }
+
+      setDocEdits(prev => ({ ...prev, [mirrorId]: updates }));
+
+      // Clear existing timeout for this mirror
+      if (saveTimeoutsRef.current[mirrorId]) {
+        clearTimeout(saveTimeoutsRef.current[mirrorId]);
+        delete saveTimeoutsRef.current[mirrorId];
+      }
+
+      // For text fields, don't auto-save — wait for Enter/blur
+      if (!isTextField) {
+        saveTimeoutsRef.current[mirrorId] = setTimeout(() => {
+          autoSaveDocument(mirrorId, updates);
+          delete saveTimeoutsRef.current[mirrorId];
+        }, 400);
+      }
+    });
   };
 
   const commitTextField = (itemId: string) => {
-    const edits = docEdits[itemId];
-    if (edits && Object.keys(edits).length > 0) {
-      if (saveTimeoutsRef.current[itemId]) {
-        clearTimeout(saveTimeoutsRef.current[itemId]);
-        delete saveTimeoutsRef.current[itemId];
+    const mirrorIds = getAllMirrorIds(itemId);
+    mirrorIds.forEach(mirrorId => {
+      const edits = docEdits[mirrorId];
+      if (edits && Object.keys(edits).length > 0) {
+        if (saveTimeoutsRef.current[mirrorId]) {
+          clearTimeout(saveTimeoutsRef.current[mirrorId]);
+          delete saveTimeoutsRef.current[mirrorId];
+        }
+        autoSaveDocument(mirrorId, edits);
       }
-      autoSaveDocument(itemId, edits);
-    }
+    });
   };
 
   // Cleanup timeouts on unmount
@@ -562,7 +593,17 @@ export function PatentChecklist({
     const edits = docEdits[itemId];
     const doc = getDocument(itemId);
     if (edits && field in edits) return edits[field];
-    return doc?.[field];
+    if (doc?.[field] !== undefined && doc?.[field] !== null) return doc[field];
+    // Fallback: check mirror items for existing data
+    const mirrorIds = getAllMirrorIds(itemId);
+    for (const mirrorId of mirrorIds) {
+      if (mirrorId === itemId) continue;
+      const mirrorEdits = docEdits[mirrorId];
+      if (mirrorEdits && field in mirrorEdits) return mirrorEdits[field];
+      const mirrorDoc = getDocument(mirrorId);
+      if (mirrorDoc?.[field] !== undefined && mirrorDoc?.[field] !== null) return mirrorDoc[field];
+    }
+    return undefined;
   };
 
   return (
@@ -1210,10 +1251,16 @@ export function PatentChecklist({
                                     variant="ghost"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      const d = getDocument(item.id);
-                                      if (d?.id) {
+                                      // For mirror items, find first doc ID from any mirror
+                                      const mirrorIds = getAllMirrorIds(item.id);
+                                      let docId: string | null = null;
+                                      for (const mid of mirrorIds) {
+                                        const md = getDocument(mid);
+                                        if (md?.id) { docId = md.id; break; }
+                                      }
+                                      if (docId) {
                                         setAlertDialog({
-                                          docId: d.id,
+                                          docId,
                                           itemName: item.name,
                                           startDate: getDocValue(item.id, 'start_date'),
                                           endDate: getDocValue(item.id, 'end_date'),
@@ -1253,8 +1300,9 @@ export function PatentChecklist({
           itemName={uploadDialog.itemName}
           currentUrl={getDocValue(uploadDialog.itemId, 'document_url') as string}
           onSave={async (url) => {
-            // Save document URL immediately (no debounce for file uploads)
-            await onUpdateDocument(contract.id, uploadDialog.itemId, { document_url: url });
+            // Save document URL to all mirror items (same name across sections)
+            const mirrorIds = getAllMirrorIds(uploadDialog.itemId);
+            await Promise.all(mirrorIds.map(id => onUpdateDocument(contract.id, id, { document_url: url })));
           }}
         />
       )}
