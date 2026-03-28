@@ -128,7 +128,7 @@ export function FolderDestinationPicker({ icon, label, description, value, onCha
           <div className="px-3 py-1.5 border-b bg-muted/30">
             <p className="text-xs text-muted-foreground font-medium">Plantillas de carpetas del repositorio</p>
           </div>
-          <ScrollArea className="max-h-[200px]">
+          <ScrollArea className="h-[200px] overflow-auto">
             <div className="p-1">
               {rootFolders.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-4">Cargando...</p>
