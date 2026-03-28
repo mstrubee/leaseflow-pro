@@ -2551,7 +2551,21 @@ const PurchaseOrdersDashboard = () => {
                                 </div>
                               </TableCell>
                               {/* Nº OC column */}
-                              <TableCell className="font-medium">
+                              <TableCell
+                                className="font-medium cursor-pointer hover:bg-muted/50 transition-colors"
+                                onClick={() => {
+                                  setExpandedInvoiceSections(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(groupedOrder.order_number)) {
+                                      next.delete(groupedOrder.order_number);
+                                    } else {
+                                      next.add(groupedOrder.order_number);
+                                    }
+                                    return next;
+                                  });
+                                }}
+                                title="Ver facturas"
+                              >
                                 <div className="flex items-center gap-2">
                                   <FileText className="h-4 w-4 text-muted-foreground" />
                                   {groupedOrder.order_number}
