@@ -1125,7 +1125,41 @@ const PurchaseOrdersDashboard = () => {
   } | null>(null);
   const [loadingViewer, setLoadingViewer] = useState(false);
 
-  // Toggle request selection
+  const handleOpenOCViewer = async (groupedOrder: GroupedOrder) => {
+    setLoadingViewer(true);
+    setShowOCViewerDialog(true);
+
+    // Fetch attachment_url from DB
+    const orderIds = groupedOrder.orders.map(o => o.id);
+    const { data: fullOrders } = await supabase
+      .from("purchase_orders")
+      .select("id, attachment_url")
+      .in("id", orderIds);
+
+    const attachmentUrl = fullOrders?.[0]?.attachment_url || null;
+    let pdfUrl: string | null = null;
+
+    if (attachmentUrl) {
+      pdfUrl = await getSecureUrl(attachmentUrl);
+    }
+
+    setViewerOCData({
+      order_number: groupedOrder.order_number,
+      description: groupedOrder.description,
+      supplier_name: groupedOrder.supplier_name,
+      order_date: groupedOrder.order_date,
+      budget_classification: groupedOrder.budget_classification,
+      opex_category_name: groupedOrder.opex_category_name,
+      budget_line_name: groupedOrder.budget_line_name,
+      total_amount_uf: groupedOrder.total_amount_uf,
+      total_amount_clp: groupedOrder.total_amount_clp || Math.round(groupedOrder.total_amount_uf * ufValue),
+      contracts: groupedOrder.contracts,
+      attachment_url: attachmentUrl,
+      pdfUrl,
+    });
+    setLoadingViewer(false);
+  };
+
   const toggleRequestSelection = (requestId: string) => {
     setSelectedRequests(prev => {
       const next = new Set(prev);
