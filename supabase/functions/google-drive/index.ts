@@ -1759,7 +1759,7 @@ serve(async (req) => {
               // Find the repo folder for this contract (search all levels, not just root)
               const { data: folderList } = await sb
                 .from('repository_folders')
-                .select('id, drive_folder_id')
+                .select('id, drive_folder_id, parent_id')
                 .eq('contract_id', doc.contract_id)
                 .ilike('name', dest.name);
 
@@ -1771,36 +1771,61 @@ serve(async (req) => {
                 continue;
               }
 
-              if (!folder) {
-                errors.push(`Could not create folder ${dest.name} for contract ${doc.contract_id}`);
-                continue;
-              }
-
-              // If folder has no drive_folder_id, try to create it in Drive
+              // If folder has no drive_folder_id, resolve its parent hierarchy to create in the right place
               if (!folder.drive_folder_id) {
-                // Get the contract's drive_folder_id
-                const { data: contract } = await sb
-                  .from('contracts')
-                  .select('drive_folder_id')
-                  .eq('id', doc.contract_id)
-                  .single();
+                // Walk up the parent chain to find the nearest ancestor with a drive_folder_id
+                let parentDriveFolderId: string | null = null;
+                let currentParentId = folder.parent_id;
 
-                if (contract?.drive_folder_id) {
-                  try {
-                    // Create subfolder in Drive under the contract's folder
-                    const driveSubfolder = await createDriveFolder(accessToken, dest.name, contract.drive_folder_id);
-                    // Update the repo folder with drive_folder_id
-                    await sb
-                      .from('repository_folders')
-                      .update({ drive_folder_id: driveSubfolder.id })
-                      .eq('id', folder.id);
-                    folder.drive_folder_id = driveSubfolder.id;
-                  } catch (folderErr: any) {
-                    errors.push(`Could not create Drive folder ${dest.name} for contract ${doc.contract_id}: ${folderErr.message}`);
-                    continue;
+                while (currentParentId) {
+                  const { data: parentFolder } = await sb
+                    .from('repository_folders')
+                    .select('id, drive_folder_id, parent_id, name')
+                    .eq('id', currentParentId)
+                    .single();
+
+                  if (!parentFolder) break;
+
+                  if (parentFolder.drive_folder_id) {
+                    parentDriveFolderId = parentFolder.drive_folder_id;
+                    break;
                   }
-                } else {
+
+                  // Parent also has no drive_folder_id — keep walking up
+                  currentParentId = parentFolder.parent_id;
+                }
+
+                // If no parent has a drive_folder_id, fall back to contract root
+                if (!parentDriveFolderId) {
+                  const { data: contract } = await sb
+                    .from('contracts')
+                    .select('drive_folder_id')
+                    .eq('id', doc.contract_id)
+                    .single();
+                  parentDriveFolderId = contract?.drive_folder_id || null;
+                }
+
+                if (!parentDriveFolderId) {
                   errors.push(`Contract ${doc.contract_id} has no Drive folder`);
+                  continue;
+                }
+
+                try {
+                  // First check if the folder already exists in Drive under the correct parent
+                  const existingDriveFolder = await getFolderByName(accessToken, dest.name, parentDriveFolderId);
+                  if (existingDriveFolder) {
+                    folder.drive_folder_id = existingDriveFolder.id;
+                  } else {
+                    const driveSubfolder = await createDriveFolder(accessToken, dest.name, parentDriveFolderId);
+                    folder.drive_folder_id = driveSubfolder.id;
+                  }
+                  // Update the repo folder with drive_folder_id
+                  await sb
+                    .from('repository_folders')
+                    .update({ drive_folder_id: folder.drive_folder_id })
+                    .eq('id', folder.id);
+                } catch (folderErr: any) {
+                  errors.push(`Could not create Drive folder ${dest.name} for contract ${doc.contract_id}: ${folderErr.message}`);
                   continue;
                 }
               }
