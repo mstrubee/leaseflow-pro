@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation, Eye, EyeOff, Upload, Copy, Settings2, FileText, Building2, ListChecks, Columns3, Wrench, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Shield, Loader2, FolderPlus, Folder, ChevronRight, Cloud, Pencil, Navigation, Eye, EyeOff, Upload, Copy, Settings2, FileText, Building2, ListChecks, Columns3, Wrench, AlertTriangle, MoveRight } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { UnifiedCloudStorage } from "@/components/admin/UnifiedCloudStorage";
 import { BudgetTemplateManager } from "@/components/budget/BudgetTemplateManager";
@@ -66,6 +66,7 @@ const FolderTemplateItem = ({
   onAddSubfolder,
   onDelete,
   onRename,
+  onMove,
 }: {
   template: FolderTemplate;
   level: number;
@@ -73,6 +74,7 @@ const FolderTemplateItem = ({
   onAddSubfolder: (parentId: string) => void;
   onDelete: (id: string, name: string) => void;
   onRename: (id: string, newName: string) => void;
+  onMove: (id: string, name: string) => void;
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(template.name);
@@ -137,6 +139,14 @@ const FolderTemplateItem = ({
           <Button
             variant="ghost"
             size="sm"
+            onClick={() => onMove(template.id, template.name)}
+            title="Mover a otra carpeta"
+          >
+            <MoveRight className={`${isRoot ? 'h-4 w-4' : 'h-3 w-3'} text-muted-foreground`} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => onDelete(template.id, template.name)}
           >
             <Trash2 className={`${isRoot ? 'h-4 w-4' : 'h-3 w-3'} text-destructive`} />
@@ -152,6 +162,7 @@ const FolderTemplateItem = ({
           onAddSubfolder={onAddSubfolder}
           onDelete={onDelete}
           onRename={onRename}
+          onMove={onMove}
         />
       ))}
     </div>
@@ -725,6 +736,64 @@ const AdminPanel = () => {
     }
   };
 
+  // Move folder state
+  const [moveFolderId, setMoveFolderId] = useState<string | null>(null);
+  const [moveFolderName, setMoveFolderName] = useState("");
+  const [moveTargetId, setMoveTargetId] = useState<string | null>(null);
+  const [showMoveDialog, setShowMoveDialog] = useState(false);
+
+  const handleMoveTemplate = (id: string, name: string) => {
+    setMoveFolderId(id);
+    setMoveFolderName(name);
+    setMoveTargetId(null);
+    setShowMoveDialog(true);
+  };
+
+  // Get all folders that are valid move targets (exclude the folder itself and its descendants)
+  const getDescendantIds = (parentId: string): string[] => {
+    const children = folderTemplates.filter(t => t.parent_id === parentId);
+    const ids: string[] = [];
+    for (const child of children) {
+      ids.push(child.id);
+      ids.push(...getDescendantIds(child.id));
+    }
+    return ids;
+  };
+
+  const getMoveTargets = (): (FolderTemplate & { depth: number })[] => {
+    if (!moveFolderId) return [];
+    const excludeIds = new Set([moveFolderId, ...getDescendantIds(moveFolderId)]);
+    
+    const buildList = (parentId: string | null, depth: number): (FolderTemplate & { depth: number })[] => {
+      const items = folderTemplates.filter(t => t.parent_id === parentId && !excludeIds.has(t.id));
+      const result: (FolderTemplate & { depth: number })[] = [];
+      for (const item of items) {
+        result.push({ ...item, depth });
+        result.push(...buildList(item.id, depth + 1));
+      }
+      return result;
+    };
+    
+    return buildList(null, 0);
+  };
+
+  const confirmMove = async () => {
+    if (!moveFolderId) return;
+    try {
+      const { error } = await supabase
+        .from("folder_templates")
+        .update({ parent_id: moveTargetId })
+        .eq("id", moveFolderId);
+
+      if (error) throw error;
+      toast({ title: "Carpeta movida correctamente" });
+      setShowMoveDialog(false);
+      loadData();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
   if (authLoading || !roleLoaded || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -1194,6 +1263,7 @@ const AdminPanel = () => {
                     }}
                     onDelete={handleDeleteTemplate}
                     onRename={handleRenameTemplate}
+                    onMove={handleMoveTemplate}
                   />
                 ))}
                 {getRootTemplates().length === 0 && (
@@ -1466,6 +1536,48 @@ const AdminPanel = () => {
               <Button onClick={handleUpdateUser} disabled={updatingUser}>
                 {updatingUser && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Guardar Cambios
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Move Folder Dialog */}
+        <Dialog open={showMoveDialog} onOpenChange={setShowMoveDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <MoveRight className="h-5 w-5" />
+                Mover carpeta: {moveFolderName}
+              </DialogTitle>
+              <DialogDescription>
+                Seleccione la carpeta destino o elija la raíz para convertirla en carpeta principal.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-1 max-h-[300px] overflow-y-auto border rounded-md p-2">
+              <button
+                className={`w-full flex items-center gap-2 p-2 rounded-md text-sm hover:bg-accent/50 transition-colors ${moveTargetId === null ? 'bg-primary/10 text-primary font-medium' : ''}`}
+                onClick={() => setMoveTargetId(null)}
+              >
+                <Folder className="h-4 w-4 text-amber-500" />
+                <span>Raíz (nivel principal)</span>
+              </button>
+              {getMoveTargets().map((target) => (
+                <button
+                  key={target.id}
+                  className={`w-full flex items-center gap-2 p-2 rounded-md text-sm hover:bg-accent/50 transition-colors ${moveTargetId === target.id ? 'bg-primary/10 text-primary font-medium' : ''}`}
+                  style={{ paddingLeft: `${target.depth * 16 + 8}px` }}
+                  onClick={() => setMoveTargetId(target.id)}
+                >
+                  <Folder className="h-4 w-4 text-amber-500" />
+                  <span>{target.name}</span>
+                </button>
+              ))}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowMoveDialog(false)}>Cancelar</Button>
+              <Button onClick={confirmMove}>
+                <MoveRight className="h-4 w-4 mr-1" />
+                Mover
               </Button>
             </DialogFooter>
           </DialogContent>
