@@ -225,7 +225,7 @@ const PurchaseOrdersDashboard = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading, isAdmin } = useAuth();
   const { ufValue } = useEconomicIndicators();
-  const { openFile } = useSecureFileAccess();
+  const { openFile, getSecureUrl } = useSecureFileAccess();
   const { settings: fileDestSettings, updateSetting: updateFileDestSetting } = useFileDestinationSettings();
 
   // File destination settings dialog
