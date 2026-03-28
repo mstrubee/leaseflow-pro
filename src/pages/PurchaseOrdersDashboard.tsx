@@ -103,6 +103,7 @@ interface Invoice {
   amount_clp?: number | null;
   uf_value_at_entry?: number | null;
   reception_status: string;
+  attachment_url?: string | null;
 }
 
 interface ContractAllocation {
@@ -304,6 +305,8 @@ const PurchaseOrdersDashboard = () => {
   const [editingOCOriginalOrderNumber, setEditingOCOriginalOrderNumber] = useState<string>("");
   const [editingOCFile, setEditingOCFile] = useState<File | null>(null);
   const editOCFileInputRef = useRef<HTMLInputElement>(null);
+  const invoiceFileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingInvoiceId, setUploadingInvoiceId] = useState<string | null>(null);
 
   // Credit notes storage
   const [creditNotes, setCreditNotes] = useState<
@@ -449,7 +452,7 @@ const PurchaseOrdersDashboard = () => {
           contracts!inner(name),
           budget_lines(name),
           opex_categories(name),
-          invoices(id, invoice_number, invoice_date, amount_uf, reception_status, deleted_at)
+          invoices(id, invoice_number, invoice_date, amount_uf, reception_status, deleted_at, attachment_url)
         `)
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
@@ -1764,6 +1767,56 @@ const PurchaseOrdersDashboard = () => {
     0
   );
 
+  // Handle invoice PDF upload
+  const handleInvoiceFileUpload = async (invoiceId: string, file: File, contractId: string) => {
+    setUploadingInvoiceId(invoiceId);
+    try {
+      const { uploadFileToStorage } = await import("@/lib/storageUtils");
+      const { sanitizeFileName } = await import("@/lib/fileValidation");
+      const { getConfiguredFolderName } = await import("@/hooks/useFileDestinationSettings");
+
+      const sanitized = sanitizeFileName(file.name);
+      const datePrefix = new Date().toISOString().split("T")[0].replace(/-/g, "");
+      const storagePath = `invoice-files/${datePrefix}/${contractId}/${Date.now()}_${sanitized}`;
+
+      const { path, error: uploadError } = await uploadFileToStorage(storagePath, file);
+      if (uploadError) throw uploadError;
+
+      // Update invoice with attachment URL
+      const { error: dbError } = await supabase
+        .from("invoices")
+        .update({ attachment_url: path })
+        .eq("id", invoiceId);
+      if (dbError) throw dbError;
+
+      // Also backup to configured invoice folder in repository
+      const folderName = await getConfiguredFolderName("invoice_folder");
+      const { data: folder } = await supabase
+        .from("repository_folders")
+        .select("id")
+        .eq("contract_id", contractId)
+        .or(`name.ilike.${folderName},folder_type.ilike.%factura%`)
+        .limit(1)
+        .single();
+
+      if (folder) {
+        await supabase.from("repository_files").insert({
+          folder_id: folder.id,
+          name: sanitized,
+          url: path,
+          file_type: file.name.split(".").pop() || null,
+        });
+      }
+
+      toast.success("PDF de factura subido correctamente");
+      loadData();
+    } catch (err: any) {
+      toast.error("Error al subir archivo: " + (err?.message || "Error desconocido"));
+    } finally {
+      setUploadingInvoiceId(null);
+    }
+  };
+
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -2904,6 +2957,45 @@ const PurchaseOrdersDashboard = () => {
                                                   </TableCell>
                                                   <TableCell className="py-1.5">
                                                     <div className="flex items-center gap-1">
+                                                      {/* Upload / View PDF */}
+                                                      {invoice.attachment_url ? (
+                                                        <Button
+                                                          size="sm"
+                                                          variant="ghost"
+                                                          onClick={() => void openFile(invoice.attachment_url!)}
+                                                          className="h-6 px-1.5"
+                                                          title="Ver PDF de factura"
+                                                        >
+                                                          <FileText className="h-3 w-3 text-emerald-600" />
+                                                        </Button>
+                                                      ) : (
+                                                        <Button
+                                                          size="sm"
+                                                          variant="ghost"
+                                                          onClick={() => {
+                                                            const input = document.createElement("input");
+                                                            input.type = "file";
+                                                            input.accept = ".pdf";
+                                                            input.onchange = (e) => {
+                                                              const file = (e.target as HTMLInputElement).files?.[0];
+                                                              if (file) {
+                                                                const order = groupedOrder.orders[0];
+                                                                handleInvoiceFileUpload(invoice.id, file, order.contract_id);
+                                                              }
+                                                            };
+                                                            input.click();
+                                                          }}
+                                                          className="h-6 px-1.5"
+                                                          title="Subir PDF de factura"
+                                                          disabled={uploadingInvoiceId === invoice.id}
+                                                        >
+                                                          {uploadingInvoiceId === invoice.id ? (
+                                                            <div className="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                                                          ) : (
+                                                            <Upload className="h-3 w-3 text-blue-500" />
+                                                          )}
+                                                        </Button>
+                                                      )}
                                                       <Button
                                                         size="sm"
                                                         variant="ghost"
