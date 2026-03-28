@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
 import { getSignedUrl, isStorageUrl } from "@/lib/storageUtils";
+import { backupPatentFileToDestinations } from "@/lib/patentBackup";
 
 interface PatentDocumentUploadProps {
   open: boolean;
