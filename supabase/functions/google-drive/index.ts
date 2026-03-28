@@ -1936,9 +1936,21 @@ serve(async (req) => {
               `https://www.googleapis.com/drive/v3/files/${folder.drive_folder_id}?fields=id,name,parents,trashed&supportsAllDrives=true`,
               { headers: { Authorization: `Bearer ${accessToken}` } }
             );
+
+            if (!metaResp.ok) {
+              // Folder no longer exists in Drive — clear stale drive_folder_id
+              await sb.from('repository_folders').update({ drive_folder_id: null }).eq('id', folder.id);
+              fixes.push(`Cleared stale drive_folder_id for '${folder.name}' in ${contract.name} (Drive returned ${metaResp.status})`);
+              continue;
+            }
+
             const meta = await metaResp.json();
 
-            if (meta.trashed) continue;
+            if (meta.trashed) {
+              await sb.from('repository_folders').update({ drive_folder_id: null }).eq('id', folder.id);
+              fixes.push(`Cleared trashed drive_folder_id for '${folder.name}' in ${contract.name}`);
+              continue;
+            }
             if (!meta.parents || !meta.parents.includes(contract.drive_folder_id)) continue;
 
             // This folder IS directly under contract root but SHOULD be under its parent
