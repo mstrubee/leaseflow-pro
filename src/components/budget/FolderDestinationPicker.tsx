@@ -25,21 +25,45 @@ interface FolderDestinationPickerProps {
   icon: React.ReactNode;
   label: string;
   description: string;
-  value: string; // comma-separated folder names
+  value: string; // pipe-separated entries: "repo::FolderName|general::FolderName"
   onChange: (value: string) => void;
 }
 
-/** Parse comma-separated string into trimmed non-empty array */
-function parseMulti(value: string): string[] {
-  return value
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+export interface FolderDestinationEntry {
+  source: "repo" | "general";
+  name: string;
 }
 
-/** Join array back to comma-separated string */
-function joinMulti(arr: string[]): string {
-  return arr.join(", ");
+const SEPARATOR = "|";
+const SOURCE_SEPARATOR = "::";
+
+/** Parse stored value into structured entries */
+export function parseDestinations(value: string): FolderDestinationEntry[] {
+  if (!value.trim()) return [];
+  return value
+    .split(SEPARATOR)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const idx = entry.indexOf(SOURCE_SEPARATOR);
+      if (idx >= 0) {
+        const source = entry.substring(0, idx) as "repo" | "general";
+        const name = entry.substring(idx + SOURCE_SEPARATOR.length);
+        return { source, name };
+      }
+      // Legacy: no prefix → treat as repo
+      return { source: "repo" as const, name: entry };
+    });
+}
+
+/** Serialize entries back to stored string */
+function serializeDestinations(entries: FolderDestinationEntry[]): string {
+  return entries.map((e) => `${e.source}${SOURCE_SEPARATOR}${e.name}`).join(SEPARATOR);
+}
+
+/** Build a unique key for comparison */
+function entryKey(source: "repo" | "general", name: string): string {
+  return `${source}${SOURCE_SEPARATOR}${name}`;
 }
 
 export function FolderDestinationPicker({ icon, label, description, value, onChange }: FolderDestinationPickerProps) {
@@ -49,7 +73,8 @@ export function FolderDestinationPicker({ icon, label, description, value, onCha
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [activeSection, setActiveSection] = useState<"templates" | "general">("templates");
 
-  const selectedFolders = parseMulti(value);
+  const selectedEntries = parseDestinations(value);
+  const selectedKeys = new Set(selectedEntries.map((e) => entryKey(e.source, e.name)));
 
   useEffect(() => {
     if (showBrowser && templates.length === 0) {
@@ -84,21 +109,28 @@ export function FolderDestinationPicker({ icon, label, description, value, onCha
     });
   };
 
+  const currentSource: "repo" | "general" = activeSection === "templates" ? "repo" : "general";
+
   const toggleFolder = (name: string) => {
-    const current = [...selectedFolders];
-    const idx = current.indexOf(name);
+    const key = entryKey(currentSource, name);
+    const current = [...selectedEntries];
+    const idx = current.findIndex((e) => entryKey(e.source, e.name) === key);
     if (idx >= 0) {
       current.splice(idx, 1);
     } else {
-      current.push(name);
+      current.push({ source: currentSource, name });
     }
-    onChange(joinMulti(current));
+    onChange(serializeDestinations(current));
   };
 
-  const removeFolder = (name: string) => {
-    const current = selectedFolders.filter((f) => f !== name);
-    onChange(joinMulti(current));
+  const removeEntry = (entry: FolderDestinationEntry) => {
+    const key = entryKey(entry.source, entry.name);
+    const current = selectedEntries.filter((e) => entryKey(e.source, e.name) !== key);
+    onChange(serializeDestinations(current));
   };
+
+  const sourceLabel = (source: "repo" | "general") =>
+    source === "repo" ? "Repositorio" : "General";
 
   const renderItem = (
     item: { id: string; name: string },
@@ -108,7 +140,7 @@ export function FolderDestinationPicker({ icon, label, description, value, onCha
     const children = getChildren(item.id);
     const hasChildren = children.length > 0;
     const isExpanded = expandedFolders.has(item.id);
-    const isSelected = selectedFolders.includes(item.name);
+    const isSelected = selectedKeys.has(entryKey(currentSource, item.name));
 
     return (
       <div key={item.id}>
@@ -155,16 +187,21 @@ export function FolderDestinationPicker({ icon, label, description, value, onCha
 
       {/* Selected folders as chips */}
       <div className="flex flex-wrap gap-1.5 min-h-[32px] p-1.5 border rounded-md bg-background">
-        {selectedFolders.length === 0 ? (
+        {selectedEntries.length === 0 ? (
           <span className="text-sm text-muted-foreground px-1 py-0.5">Sin carpetas seleccionadas</span>
         ) : (
-          selectedFolders.map((folder) => (
-            <Badge key={folder} variant="secondary" className="gap-1 pr-1">
-              <Folder className="h-3 w-3 text-amber-500" />
-              {folder}
+          selectedEntries.map((entry) => (
+            <Badge
+              key={entryKey(entry.source, entry.name)}
+              variant="secondary"
+              className="gap-1 pr-1"
+            >
+              <Folder className={cn("h-3 w-3", entry.source === "repo" ? "text-blue-500" : "text-emerald-500")} />
+              <span className="text-[10px] opacity-60 mr-0.5">[{sourceLabel(entry.source)}]</span>
+              {entry.name}
               <button
                 type="button"
-                onClick={() => removeFolder(folder)}
+                onClick={() => removeEntry(entry)}
                 className="ml-0.5 rounded-full hover:bg-muted p-0.5"
               >
                 <X className="h-3 w-3" />
