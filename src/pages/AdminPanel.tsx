@@ -736,6 +736,64 @@ const AdminPanel = () => {
     }
   };
 
+  // Move folder state
+  const [moveFolderId, setMoveFolderId] = useState<string | null>(null);
+  const [moveFolderName, setMoveFolderName] = useState("");
+  const [moveTargetId, setMoveTargetId] = useState<string | null>(null);
+  const [showMoveDialog, setShowMoveDialog] = useState(false);
+
+  const handleMoveTemplate = (id: string, name: string) => {
+    setMoveFolderId(id);
+    setMoveFolderName(name);
+    setMoveTargetId(null);
+    setShowMoveDialog(true);
+  };
+
+  // Get all folders that are valid move targets (exclude the folder itself and its descendants)
+  const getDescendantIds = (parentId: string): string[] => {
+    const children = folderTemplates.filter(t => t.parent_id === parentId);
+    const ids: string[] = [];
+    for (const child of children) {
+      ids.push(child.id);
+      ids.push(...getDescendantIds(child.id));
+    }
+    return ids;
+  };
+
+  const getMoveTargets = (): (FolderTemplate & { depth: number })[] => {
+    if (!moveFolderId) return [];
+    const excludeIds = new Set([moveFolderId, ...getDescendantIds(moveFolderId)]);
+    
+    const buildList = (parentId: string | null, depth: number): (FolderTemplate & { depth: number })[] => {
+      const items = folderTemplates.filter(t => t.parent_id === parentId && !excludeIds.has(t.id));
+      const result: (FolderTemplate & { depth: number })[] = [];
+      for (const item of items) {
+        result.push({ ...item, depth });
+        result.push(...buildList(item.id, depth + 1));
+      }
+      return result;
+    };
+    
+    return buildList(null, 0);
+  };
+
+  const confirmMove = async () => {
+    if (!moveFolderId) return;
+    try {
+      const { error } = await supabase
+        .from("folder_templates")
+        .update({ parent_id: moveTargetId })
+        .eq("id", moveFolderId);
+
+      if (error) throw error;
+      toast({ title: "Carpeta movida correctamente" });
+      setShowMoveDialog(false);
+      loadData();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    }
+  };
+
   if (authLoading || !roleLoaded || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
