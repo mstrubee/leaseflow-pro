@@ -1935,8 +1935,6 @@ serve(async (req) => {
       }
 
       case "fixPatentFolderMisplacements": {
-        // Fix: find Drive folders that were created directly under contract root
-        // but should be nested under a parent (e.g. "Dirección de Obras" under "Municipales")
         const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
         const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
         const sb = createClient(supabaseUrl, supabaseKey);
@@ -1944,7 +1942,7 @@ serve(async (req) => {
         const fixes: string[] = [];
         const fixErrors: string[] = [];
 
-        // Get destination folder names from patent settings
+        // Get all patent destination folder names
         const { data: destSettings } = await sb
           .from('file_destination_settings')
           .select('folder_name')
@@ -1952,11 +1950,9 @@ serve(async (req) => {
 
         const destFolderNames = new Set<string>();
         for (const s of destSettings || []) {
-          s.folder_name.split('|').filter(Boolean).forEach((part: string) => {
-            const match = part.match(/^(?:repo|general)::(.+)$/);
-            if (match) destFolderNames.add(match[1]);
-            else destFolderNames.add(part);
-          });
+          for (const entry of parseDestinationEntries(s.folder_name)) {
+            destFolderNames.add(entry.name);
+          }
         }
 
         if (destFolderNames.size === 0) {
@@ -1964,8 +1960,7 @@ serve(async (req) => {
           break;
         }
 
-        // Find repo folders with drive_folder_id that have a parent_id (nested)
-        // These are the ones that might have been created at the wrong Drive level
+        // Find nested repo folders (have parent_id) with a drive_folder_id
         const { data: nestedFolders } = await sb
           .from('repository_folders')
           .select('id, name, contract_id, parent_id, drive_folder_id')
@@ -1975,7 +1970,6 @@ serve(async (req) => {
         for (const folder of nestedFolders || []) {
           if (!destFolderNames.has(folder.name)) continue;
 
-          // Get the contract's drive_folder_id
           const { data: contract } = await sb
             .from('contracts')
             .select('drive_folder_id, name')
@@ -1984,102 +1978,61 @@ serve(async (req) => {
 
           if (!contract?.drive_folder_id) continue;
 
-          // Check if this Drive folder is directly under the contract root (WRONG)
           try {
-            const metaResp = await fetch(
-              `https://www.googleapis.com/drive/v3/files/${folder.drive_folder_id}?fields=id,name,parents,trashed&supportsAllDrives=true`,
-              { headers: { Authorization: `Bearer ${accessToken}` } }
+            // Use the recursive resolver — it validates parents, detects wrong location, and fixes
+            const correctId = await ensureDriveFolderForRepositoryFolder(
+              sb,
+              accessToken,
+              folder.contract_id,
+              folder.id,
             );
 
-            if (!metaResp.ok) {
-              // Folder no longer exists in Drive — clear stale drive_folder_id
-              await sb.from('repository_folders').update({ drive_folder_id: null }).eq('id', folder.id);
-              fixes.push(`Cleared stale drive_folder_id for '${folder.name}' in ${contract.name} (Drive returned ${metaResp.status})`);
+            if (!correctId) {
+              fixErrors.push(`Could not resolve Drive folder for '${folder.name}' in ${contract.name}`);
               continue;
             }
 
-            const meta = await metaResp.json();
-
-            if (meta.trashed) {
-              await sb.from('repository_folders').update({ drive_folder_id: null }).eq('id', folder.id);
-              fixes.push(`Cleared trashed drive_folder_id for '${folder.name}' in ${contract.name}`);
-              continue;
-            }
-            if (!meta.parents || !meta.parents.includes(contract.drive_folder_id)) continue;
-
-            // This folder IS directly under contract root but SHOULD be under its parent
-            // Find the parent folder's drive_folder_id
-            const { data: parentFolder } = await sb
-              .from('repository_folders')
-              .select('id, name, drive_folder_id')
-              .eq('id', folder.parent_id)
-              .single();
-
-            if (!parentFolder) continue;
-
-            let parentDriveFolderId = parentFolder.drive_folder_id;
-
-            // If parent has no drive folder, try to find/create it
-            if (!parentDriveFolderId) {
-              const existingParent = await getFolderByName(accessToken, parentFolder.name, contract.drive_folder_id);
-              if (existingParent) {
-                parentDriveFolderId = existingParent.id;
-                await sb.from('repository_folders').update({ drive_folder_id: existingParent.id }).eq('id', parentFolder.id);
-              } else {
-                fixErrors.push(`Parent folder '${parentFolder.name}' not found in Drive for ${contract.name}`);
-                continue;
-              }
-            }
-
-            // Check if correct folder already exists under the parent in Drive
-            const correctExisting = await getFolderByName(accessToken, folder.name, parentDriveFolderId);
-
-            if (correctExisting) {
-              // Move files from wrong folder to correct folder
+            if (correctId !== folder.drive_folder_id) {
+              // The old drive_folder_id pointed to the wrong place; move files from old → new
               const listQuery = `'${folder.drive_folder_id}' in parents and trashed=false`;
               const listResp = await fetch(
-                `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(listQuery)}&fields=files(id,name)&pageSize=200&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`,
-                { headers: { Authorization: `Bearer ${accessToken}` } }
+                `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(listQuery)}&fields=files(id,name)&pageSize=500&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`,
+                { headers: { Authorization: `Bearer ${accessToken}` } },
               );
-              const listData = await listResp.json();
 
-              for (const df of listData.files || []) {
-                try {
-                  await moveToFolder(accessToken, df.id, correctExisting.id, folder.drive_folder_id);
-                  fixes.push(`Moved '${df.name}' to correct '${folder.name}' in ${contract.name}`);
-                } catch (e: any) {
-                  fixErrors.push(`Failed to move '${df.name}': ${e.message}`);
+              if (listResp.ok) {
+                const listData = await listResp.json();
+                for (const df of listData.files || []) {
+                  try {
+                    await moveToFolder(accessToken, df.id, correctId, folder.drive_folder_id);
+                    fixes.push(`Moved '${df.name}' from wrong '${folder.name}' to correct location in ${contract.name}`);
+                  } catch (e: any) {
+                    fixErrors.push(`Failed to move '${df.name}': ${e.message}`);
+                  }
                 }
               }
 
-              // Trash the wrong Drive folder
-              await fetch(
-                `https://www.googleapis.com/drive/v3/files/${folder.drive_folder_id}?supportsAllDrives=true`,
-                {
-                  method: 'PATCH',
-                  headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ trashed: true }),
-                }
-              );
-              fixes.push(`Trashed wrong Drive folder '${folder.name}' for ${contract.name}`);
-
-              // Update DB to point to correct Drive folder
-              await sb
-                .from('repository_folders')
-                .update({ drive_folder_id: correctExisting.id })
-                .eq('id', folder.id);
-              fixes.push(`Updated DB folder '${folder.name}' to correct Drive ID for ${contract.name}`);
-            } else {
-              // No correct folder exists — just move the misplaced one to the right parent
+              // Trash old wrong folder
               try {
-                await moveToFolder(accessToken, folder.drive_folder_id, parentDriveFolderId, contract.drive_folder_id);
-                fixes.push(`Moved folder '${folder.name}' under '${parentFolder.name}' in ${contract.name}`);
+                await fetch(
+                  `https://www.googleapis.com/drive/v3/files/${folder.drive_folder_id}?supportsAllDrives=true`,
+                  {
+                    method: 'PATCH',
+                    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ trashed: true }),
+                  },
+                );
+                fixes.push(`Trashed wrong Drive folder '${folder.name}' for ${contract.name}`);
               } catch (e: any) {
-                fixErrors.push(`Failed to move folder '${folder.name}': ${e.message}`);
+                fixErrors.push(`Failed to trash old folder '${folder.name}': ${e.message}`);
               }
+
+              fixes.push(`Fixed '${folder.name}' → correct parent in ${contract.name}`);
+            } else {
+              // Already correct
             }
           } catch (e: any) {
-            fixErrors.push(`Error checking folder ${folder.name} (${folder.drive_folder_id}): ${e.message}`);
+            fixErrors.push(`Error fixing '${folder.name}' (${folder.drive_folder_id}) in ${contract?.name || folder.contract_id}: ${e.message}`);
           }
         }
 
