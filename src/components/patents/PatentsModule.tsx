@@ -3,9 +3,16 @@ import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, AlertTriangle, Settings, CheckCircle, FolderOpen } from "lucide-react";
+import { FileText, AlertTriangle, Settings, CheckCircle, FolderOpen, Save } from "lucide-react";
 import { usePatents } from "@/hooks/usePatents";
 import { useAuth } from "@/hooks/useAuth";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 import { PatentsList } from "./PatentsList";
 import { PatentChecklist } from "./PatentChecklist";
@@ -14,6 +21,8 @@ import { PatentAdminPanel } from "./PatentAdminPanel";
 import { PatentSharedRepository } from "./PatentSharedRepository";
 import { PatentDocStatus } from "./types";
 import { toast } from "sonner";
+import { FolderDestinationPicker } from "@/components/budget/FolderDestinationPicker";
+import { useFileDestinationSettings } from "@/hooks/useFileDestinationSettings";
 
 export function PatentsModule() {
   const [searchParams, setSearchParams] = useSearchParams();
