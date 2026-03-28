@@ -33,23 +33,9 @@ async function resolveFolder(
 
   if (existing) return { id: existing.id, source: "repo", name: entry.name, driveFolderId: existing.drive_folder_id };
 
-  const { data: created, error } = await supabase
-    .from("repository_folders")
-    .insert({
-      contract_id: contractId,
-      name: entry.name,
-      folder_type: "patent",
-      parent_id: null,
-      drive_folder_id: null,
-    })
-    .select("id")
-    .single();
-
-  if (error) {
-    console.error(`Error creating patent folder '${entry.name}':`, error);
-    return null;
-  }
-  return created ? { id: created.id, source: "repo", name: entry.name, driveFolderId: null } : null;
+  // Do NOT auto-create folders — the folder must already exist in the contract's repository
+  console.warn(`Patent backup: folder '${entry.name}' not found for contract ${contractId}`);
+  return null;
 }
 
 /**
