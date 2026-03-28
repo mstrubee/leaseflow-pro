@@ -111,71 +111,69 @@ interface StorageMonitorProps {
 
 export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps) {
   const [stats, setStats] = useState<StorageStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  const listAllFiles = useCallback(async (bucket: string, path: string): Promise<any[]> => {
+    const { data, error } = await supabase.storage.from(bucket).list(path, { limit: 1000 });
+    if (error || !data) return [];
+
+    const files: any[] = [];
+    const folderPromises: Promise<any[]>[] = [];
+
+    for (const item of data) {
+      if (item.id) {
+        files.push(item);
+      } else {
+        const nestedPath = path ? `${path}/${item.name}` : item.name;
+        folderPromises.push(listAllFiles(bucket, nestedPath));
+      }
+    }
+
+    if (folderPromises.length > 0) {
+      const nested = await Promise.all(folderPromises);
+      nested.forEach(arr => files.push(...arr));
+    }
+
+    return files;
+  }, []);
 
   const loadStats = useCallback(async () => {
     setRefreshing(true);
+    setLoading(!hasLoaded);
     try {
-      // Fetch counts for all tables in parallel
+      // Fetch table counts and file listing in parallel
       const tablePromises = TABLES_TO_MONITOR.map(async (table) => {
         const { count, error } = await supabase
           .from(table.name as any)
           .select('*', { count: 'exact', head: true });
-        
-        if (error) {
-          console.error(`Error counting ${table.name}:`, error);
-          return { name: table.name, label: table.label, count: 0 };
-        }
+        if (error) return { name: table.name, label: table.label, count: 0 };
         return { name: table.name, label: table.label, count: count || 0 };
       });
 
-      const tableCounts = await Promise.all(tablePromises);
+      const fileListPromise = listAllFiles('repository-files', '');
+
+      const [tableCounts, allFiles] = await Promise.all([
+        Promise.all(tablePromises),
+        fileListPromise,
+      ]);
+
       const totalRecords = tableCounts.reduce((sum, t) => sum + t.count, 0);
       const estimatedSizeMB = (totalRecords * ESTIMATED_BYTES_PER_RECORD) / (1024 * 1024);
 
-      // Fetch file storage stats
-      const { data: files, error: filesError } = await supabase.storage
-        .from('repository-files')
-        .list('', { limit: 1000 });
-
-      let fileStats = {
-        totalCount: 0,
-        totalSizeBytes: 0,
-        byType: [] as FileTypeBreakdown[],
-      };
-
-      if (!filesError && files) {
-        // Recursively list all files (including nested folders)
-        const allFiles = await listAllFiles('repository-files', '');
-        
-        const typeMap = new Map<string, FileTypeBreakdown>();
-        
-        allFiles.forEach((file) => {
-          const typeInfo = getFileTypeInfo(file.name);
-          const existing = typeMap.get(typeInfo.type);
-          const size = file.metadata?.size || 0;
-          
-          if (existing) {
-            existing.count++;
-            existing.sizeBytes += size;
-          } else {
-            typeMap.set(typeInfo.type, {
-              type: typeInfo.type,
-              label: typeInfo.label,
-              icon: typeInfo.icon,
-              count: 1,
-              sizeBytes: size,
-            });
-          }
-        });
-
-        fileStats = {
-          totalCount: allFiles.length,
-          totalSizeBytes: allFiles.reduce((sum, f) => sum + (f.metadata?.size || 0), 0),
-          byType: Array.from(typeMap.values()).sort((a, b) => b.sizeBytes - a.sizeBytes),
-        };
-      }
+      const typeMap = new Map<string, FileTypeBreakdown>();
+      allFiles.forEach((file) => {
+        const typeInfo = getFileTypeInfo(file.name);
+        const existing = typeMap.get(typeInfo.type);
+        const size = file.metadata?.size || 0;
+        if (existing) {
+          existing.count++;
+          existing.sizeBytes += size;
+        } else {
+          typeMap.set(typeInfo.type, { ...typeInfo, count: 1, sizeBytes: size });
+        }
+      });
 
       setStats({
         database: {
@@ -183,41 +181,27 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
           totalRecords,
           estimatedSizeMB,
         },
-        files: fileStats,
+        files: {
+          totalCount: allFiles.length,
+          totalSizeBytes: allFiles.reduce((sum, f) => sum + (f.metadata?.size || 0), 0),
+          byType: Array.from(typeMap.values()).sort((a, b) => b.sizeBytes - a.sizeBytes),
+        },
       });
+      setHasLoaded(true);
     } catch (error) {
       console.error('Error loading storage stats:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [hasLoaded, listAllFiles]);
 
-  useEffect(() => {
-    loadStats();
-  }, [loadStats]);
-
-  const listAllFiles = async (bucket: string, path: string): Promise<any[]> => {
-    const { data, error } = await supabase.storage.from(bucket).list(path, { limit: 1000 });
-    
-    if (error || !data) return [];
-    
-    const files: any[] = [];
-    
-    for (const item of data) {
-      if (item.id) {
-        // It's a file
-        files.push(item);
-      } else {
-        // It's a folder, recurse
-        const nestedPath = path ? `${path}/${item.name}` : item.name;
-        const nestedFiles = await listAllFiles(bucket, nestedPath);
-        files.push(...nestedFiles);
-      }
+  // Lazy load: only fetch when card is opened
+  const handleToggle = useCallback((isOpen: boolean) => {
+    if (isOpen && !hasLoaded) {
+      loadStats();
     }
-    
-    return files;
-  };
+  }, [hasLoaded, loadStats]);
 
   if (loading) {
     return (
