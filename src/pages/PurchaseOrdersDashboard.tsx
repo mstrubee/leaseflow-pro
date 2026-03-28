@@ -4353,6 +4353,5 @@ const PurchaseOrdersDashboard = () => {
     </div>
   );
 };
-};
 
 export default PurchaseOrdersDashboard;
