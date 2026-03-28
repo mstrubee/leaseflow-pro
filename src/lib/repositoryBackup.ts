@@ -136,8 +136,8 @@ export async function backupOCFileToRepository(
 }
 
 /**
- * Backup an OC file from an existing URL to the contract's repository.
- * Creates a reference in the DB pointing to the provided URL.
+ * Backup an OC file from an existing URL to ALL configured destination folders.
+ * Creates references in the DB pointing to the provided URL.
  */
 export async function backupOCFromStorageUrl(
   contractId: string,
@@ -146,34 +146,36 @@ export async function backupOCFromStorageUrl(
   originalFileName: string
 ): Promise<{ success: boolean; fileId?: string; error?: string }> {
   try {
-    const folderInfo = await getOrCreateOCFolder(contractId);
-    if (!folderInfo) {
-      return { success: false, error: "No se pudo obtener o crear la carpeta OC" };
+    const folders = await getOrCreateOCFolders(contractId);
+    if (folders.length === 0) {
+      return { success: false, error: "No se pudo obtener o crear las carpetas de destino" };
     }
 
-    // Extract file extension
     const fileExt = originalFileName.split(".").pop() || "pdf";
     const fileName = `OC_${orderNumber}_${originalFileName}`;
 
-    // Create a reference record in repository_files pointing to the URL
-    const { data: inserted, error: dbError } = await supabase
-      .from("repository_files")
-      .insert({
-        folder_id: folderInfo.id,
-        name: fileName,
-        url: storageUrl,
-        file_type: fileExt,
-        drive_file_id: null,
-      })
-      .select("id")
-      .single();
+    let primaryFileId: string | undefined;
+    for (const folder of folders) {
+      const { data: inserted, error: dbError } = await supabase
+        .from("repository_files")
+        .insert({
+          folder_id: folder.id,
+          name: fileName,
+          url: storageUrl,
+          file_type: fileExt,
+          drive_file_id: null,
+        })
+        .select("id")
+        .single();
 
-    if (dbError) {
-      console.error("Error creating file record:", dbError);
-      return { success: false, error: dbError.message };
+      if (dbError) {
+        console.error(`Error creating file record in folder '${folder.name}':`, dbError);
+      } else if (!primaryFileId && inserted) {
+        primaryFileId = inserted.id;
+      }
     }
 
-    return { success: true, fileId: inserted?.id };
+    return { success: true, fileId: primaryFileId };
   } catch (error: any) {
     console.error("Error backing up OC from URL:", error);
     return { success: false, error: error.message };
