@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { parseDestinations, type FolderDestinationEntry } from "@/components/budget/FolderDestinationPicker";
 
 export interface FileDestinationSettings {
   oc_folder: string;
@@ -7,8 +8,8 @@ export interface FileDestinationSettings {
 }
 
 const DEFAULTS: FileDestinationSettings = {
-  oc_folder: "OC",
-  invoice_folder: "Facturas",
+  oc_folder: "repo::OC",
+  invoice_folder: "repo::Facturas",
 };
 
 export function useFileDestinationSettings() {
@@ -59,19 +60,27 @@ export function useFileDestinationSettings() {
 
 /**
  * Fetch the configured folder name for a given setting key.
- * Standalone function for use in utility modules (non-hook context).
  * Returns the first configured folder name (primary destination).
+ * Strips the source prefix for backward compatibility.
  */
 export async function getConfiguredFolderName(key: "oc_folder" | "invoice_folder"): Promise<string> {
-  const names = await getConfiguredFolderNames(key);
-  return names[0];
+  const entries = await getConfiguredDestinations(key);
+  return entries[0]?.name || (key === "oc_folder" ? "OC" : "Facturas");
 }
 
 /**
  * Fetch all configured folder names for a given setting key.
- * Returns an array of folder names (supports multi-folder destinations).
+ * Returns an array of folder names only (no source info).
  */
 export async function getConfiguredFolderNames(key: "oc_folder" | "invoice_folder"): Promise<string[]> {
+  const entries = await getConfiguredDestinations(key);
+  return entries.map((e) => e.name);
+}
+
+/**
+ * Fetch all configured destination entries (with source info) for a given setting key.
+ */
+export async function getConfiguredDestinations(key: "oc_folder" | "invoice_folder"): Promise<FolderDestinationEntry[]> {
   const { data } = await supabase
     .from("file_destination_settings")
     .select("folder_name")
@@ -79,8 +88,12 @@ export async function getConfiguredFolderNames(key: "oc_folder" | "invoice_folde
     .single();
 
   const raw = data?.folder_name || DEFAULTS[key];
-  return raw
-    .split(",")
-    .map((s: string) => s.trim())
-    .filter(Boolean);
+  const entries = parseDestinations(raw);
+
+  // Legacy fallback: if no entries parsed (old plain-text format), treat as repo
+  if (entries.length === 0 && raw.trim()) {
+    return [{ source: "repo", name: raw.trim() }];
+  }
+
+  return entries;
 }
