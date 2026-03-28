@@ -1,0 +1,14 @@
+UPDATE repository_folders SET drive_folder_id = '1mfoOg4K5pkAuZc9vfJ1eM5tT3suSNP3q' WHERE id = '0ecf0e12-bb51-4299-b63f-73dac5c889f0';
+UPDATE repository_folders SET drive_folder_id = '1W39oZC_MNKAexCBiJVhGolQJfRaAc5KJ' WHERE id = '7a5c7634-08ec-4b75-9eba-3bc1d12156a0';
+UPDATE repository_folders SET drive_folder_id = '1wz47S9oseGJR961MgNhLW72uoxv0cxBf' WHERE id = '74c40370-22b7-4092-aa09-00d5d8e0f3ca';
+UPDATE repository_folders SET drive_folder_id = '1_P0o_4ZLozbLIDRuieeN6lzzZfniLkRW' WHERE id = '3e5b812a-3dfc-4f74-880b-ea9e455025f2';
+UPDATE repository_folders SET drive_folder_id = '1k7tYJwdPEim-owDb5EaHa6KDJJnhpI3v' WHERE id = '5d78165b-d9a4-4c3d-8889-42474d3384ee';
+UPDATE repository_folders SET drive_folder_id = '1SUAZ6LIy4JbEB0JkddXEqI1UMuz7HPe9' WHERE id = '71a59aa8-3d7d-4e9a-a93f-1a709ebb6fce';
+UPDATE repository_folders SET drive_folder_id = '1cZxrQ0n4cb82EjaHksyRURmJtIt1aw4h' WHERE id = 'b4f0eb20-c91d-497d-bed1-6c2e68b776d8';
+UPDATE repository_folders SET drive_folder_id = '1E7kCm95_gQmkYvUv_4lnSm3WJ0n2xcxE' WHERE id = 'a7979785-ff5c-41d5-b932-c9887e4a812a';
+UPDATE repository_folders SET drive_folder_id = '1p9rLCA3VUVC2LbMHoHkhoF_lvrsEAD7s' WHERE id = 'd3526cb9-30a0-49ac-a12f-6cb55de086ae';
+UPDATE repository_folders SET drive_folder_id = '1D4p-xANW3I1So8u1DoZ-Y-9chAx1fgCE' WHERE id = 'a48d02bb-7509-4458-b4a4-393003271e03';
+UPDATE repository_folders SET drive_folder_id = '1AWXqFfWPtr5woaUHCGL3RiS35r1WTKyr' WHERE id = 'e3007d3b-29fa-462d-894c-a1282d974e29';
+UPDATE repository_folders SET drive_folder_id = '1sFYpIgAvMHt3ZML54p7myLmTu2cKUtnh' WHERE id = 'ea21b8bb-2692-467a-a56b-88663ebf8407';
+UPDATE repository_folders SET drive_folder_id = '1xE_Ta1vei10VSamdTQhF0l2bgFyB4oIS' WHERE id = 'eceb4d33-6f0d-4c3a-a3be-790af352aa06';
+UPDATE repository_folders SET drive_folder_id = '1tzOB5VTMOWqwsmQUy7G4ucN6LTQO9_9s' WHERE id = '981d7522-a07c-4f5b-a28f-a309eef1b536'
