@@ -98,11 +98,83 @@ export function PatentChecklist({
 }: PatentChecklistProps) {
   const { user, isAdmin } = useAuth();
   
-  // File destination settings
-  const { settings: fileDestSettings, updateSetting: updateFileDestSetting } = useFileDestinationSettings();
-  const [showFileDestDialog, setShowFileDestDialog] = useState(false);
+  // File destination settings - hierarchical: section-level and item-level
+  const [fileDestContext, setFileDestContext] = useState<{ type: 'section' | 'item'; id: string; label: string } | null>(null);
   const [tempPatentFolder, setTempPatentFolder] = useState("");
   const [savingFileDest, setSavingFileDest] = useState(false);
+  const [sectionFolders, setSectionFolders] = useState<Record<string, string>>({});
+  const [itemFolders, setItemFolders] = useState<Record<string, string>>({});
+
+  // Load all patent folder destination settings
+  useEffect(() => {
+    const loadPatentFolderSettings = async () => {
+      const { data } = await supabase
+        .from("file_destination_settings")
+        .select("setting_key, folder_name")
+        .like("setting_key", "patent_%");
+      
+      const secFolders: Record<string, string> = {};
+      const itmFolders: Record<string, string> = {};
+      (data || []).forEach(row => {
+        if (row.setting_key.startsWith("patent_section_")) {
+          const sectionId = row.setting_key.replace("patent_section_", "");
+          secFolders[sectionId] = row.folder_name;
+        } else if (row.setting_key.startsWith("patent_item_")) {
+          const itemId = row.setting_key.replace("patent_item_", "");
+          itmFolders[itemId] = row.folder_name;
+        }
+      });
+      setSectionFolders(secFolders);
+      setItemFolders(itmFolders);
+    };
+    loadPatentFolderSettings();
+  }, []);
+
+  const openFolderDestDialog = (type: 'section' | 'item', id: string, label: string) => {
+    const currentValue = type === 'section' ? (sectionFolders[id] || '') : (itemFolders[id] || '');
+    setTempPatentFolder(currentValue);
+    setFileDestContext({ type, id, label });
+  };
+
+  const saveFolderDest = async () => {
+    if (!fileDestContext) return;
+    setSavingFileDest(true);
+    try {
+      const settingKey = fileDestContext.type === 'section' 
+        ? `patent_section_${fileDestContext.id}` 
+        : `patent_item_${fileDestContext.id}`;
+      
+      const { data: existing } = await supabase
+        .from("file_destination_settings")
+        .select("id")
+        .eq("setting_key", settingKey)
+        .single();
+
+      if (existing) {
+        await supabase
+          .from("file_destination_settings")
+          .update({ folder_name: tempPatentFolder.trim(), updated_at: new Date().toISOString() })
+          .eq("setting_key", settingKey);
+      } else {
+        await supabase
+          .from("file_destination_settings")
+          .insert({ setting_key: settingKey, folder_name: tempPatentFolder.trim() });
+      }
+
+      if (fileDestContext.type === 'section') {
+        setSectionFolders(prev => ({ ...prev, [fileDestContext.id]: tempPatentFolder.trim() }));
+      } else {
+        setItemFolders(prev => ({ ...prev, [fileDestContext.id]: tempPatentFolder.trim() }));
+      }
+      
+      toast.success("Configuración de carpetas actualizada");
+      setFileDestContext(null);
+    } catch (err: any) {
+      toast.error("Error al guardar: " + (err?.message || "Error desconocido"));
+    } finally {
+      setSavingFileDest(false);
+    }
+  };
   
   // Shared items lookup: itemId -> folderId
   const sharedItemLookup = useMemo(() => {
