@@ -390,7 +390,7 @@ export function UnifiedCloudStorage({ defaultCollapsed = false }: UnifiedCloudSt
 
   if (loading) {
     return (
-      <CollapsibleCard title="Almacenamiento en la Nube" description="Configuración del proveedor, credenciales y conexiones" icon={<Cloud className="h-5 w-5" />} defaultOpen={!defaultCollapsed}>
+      <CollapsibleCard title="Almacenamiento en la Nube" description="Configuración del proveedor, credenciales y conexiones" icon={<Cloud className="h-5 w-5 text-sky-500" />} defaultOpen={!defaultCollapsed}>
         <div className="flex items-center justify-center py-8">
           <Skeleton className="h-32 w-full" />
         </div>
@@ -403,7 +403,7 @@ export function UnifiedCloudStorage({ defaultCollapsed = false }: UnifiedCloudSt
       <CollapsibleCard
         title="Almacenamiento en la Nube"
         description="Configuración del proveedor, credenciales, conexiones y sincronización"
-        icon={<Cloud className="h-5 w-5" />}
+        icon={<Cloud className="h-5 w-5 text-sky-500" />}
         defaultOpen={!defaultCollapsed}
       >
         <div className="space-y-6">
