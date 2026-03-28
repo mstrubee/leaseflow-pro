@@ -203,38 +203,8 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
     }
   }, [hasLoaded, loadStats]);
 
-  if (loading) {
-    return (
-      <CollapsibleCard
-        title="Monitoreo de Almacenamiento"
-        description="Uso de base de datos y archivos en Lovable Cloud"
-        icon={<Database className="h-5 w-5 text-cyan-600" />}
-        defaultOpen={!defaultCollapsed}
-      >
-        <div className="space-y-4">
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-24 w-full" />
-        </div>
-      </CollapsibleCard>
-    );
-  }
-
-  if (!stats) {
-    return (
-      <CollapsibleCard
-        title="Monitoreo de Almacenamiento"
-        description="Uso de base de datos y archivos en Lovable Cloud"
-        icon={<Database className="h-5 w-5 text-cyan-600" />}
-        defaultOpen={!defaultCollapsed}
-      >
-        <p className="text-muted-foreground">Error al cargar estadísticas</p>
-      </CollapsibleCard>
-    );
-  }
-
-  const dbPercentage = Math.min((stats.database.estimatedSizeMB / DATABASE_LIMIT_MB) * 100, 100);
-  const filesPercentage = Math.min((stats.files.totalSizeBytes / FILE_STORAGE_LIMIT_BYTES) * 100, 100);
-  
+  const dbPercentage = stats ? Math.min((stats.database.estimatedSizeMB / DATABASE_LIMIT_MB) * 100, 100) : 0;
+  const filesPercentage = stats ? Math.min((stats.files.totalSizeBytes / FILE_STORAGE_LIMIT_BYTES) * 100, 100) : 0;
   const dbStatus = getStatusColor(dbPercentage);
   const filesStatus = getStatusColor(filesPercentage);
 
@@ -244,6 +214,7 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
       description="Uso de base de datos y archivos en Lovable Cloud"
       icon={<Database className="h-5 w-5 text-cyan-600" />}
       defaultOpen={!defaultCollapsed}
+      onToggle={handleToggle}
       headerActions={
         <Button
           variant="outline"
@@ -256,6 +227,14 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
         </Button>
       }
     >
+      {loading ? (
+        <div className="space-y-4">
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      ) : !stats ? (
+        <p className="text-muted-foreground">Error al cargar estadísticas. Presione Actualizar.</p>
+      ) : (
       <div className="space-y-6">
         {/* Database Usage Card */}
         <div className="border rounded-lg p-4 space-y-4">
