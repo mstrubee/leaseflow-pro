@@ -90,7 +90,7 @@ async function resolveDestinationFolder(
     return null;
   }
   // Default: repo
-  const folder = await getOrCreateRepoFolder(contractId, entry.name, "oc");
+  const folder = await getOrCreateRepoFolder(contractId, entry.name, "oocc");
   if (folder) return { ...folder, source: "repo", name: entry.name };
   return null;
 }
