@@ -14,7 +14,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download, CheckSquare, Square, X, ChevronDown, FolderOpen, FolderCog } from "lucide-react";
 import { DialogFooter } from "@/components/ui/dialog";
-import { FolderDestinationPicker } from "@/components/budget/FolderDestinationPicker";
+import { FolderDestinationPicker, parseDestinations } from "@/components/budget/FolderDestinationPicker";
 
 import { Checkbox } from "@/components/ui/checkbox";
 import { exportPatentsToExcel } from "./exportPatentsExcel";
@@ -100,7 +100,7 @@ export function PatentChecklist({
   const { user, isAdmin } = useAuth();
   
   // File destination settings - hierarchical: section-level and item-level
-  const [fileDestContext, setFileDestContext] = useState<{ type: 'section' | 'item'; id: string; label: string } | null>(null);
+  const [fileDestContext, setFileDestContext] = useState<{ type: 'section' | 'item'; id: string; label: string; sectionId?: string } | null>(null);
   const [tempPatentFolder, setTempPatentFolder] = useState("");
   const [savingFileDest, setSavingFileDest] = useState(false);
   const [sectionFolders, setSectionFolders] = useState<Record<string, string>>({});
@@ -131,10 +131,10 @@ export function PatentChecklist({
     loadPatentFolderSettings();
   }, []);
 
-  const openFolderDestDialog = (type: 'section' | 'item', id: string, label: string) => {
+  const openFolderDestDialog = (type: 'section' | 'item', id: string, label: string, sectionId?: string) => {
     const currentValue = type === 'section' ? (sectionFolders[id] || '') : (itemFolders[id] || '');
     setTempPatentFolder(currentValue);
-    setFileDestContext({ type, id, label });
+    setFileDestContext({ type, id, label, sectionId });
   };
 
   const saveFolderDest = async () => {
@@ -1093,6 +1093,20 @@ export function PatentChecklist({
                                       >
                                         <Upload className="h-3 w-3" />
                                       </Button>
+                                      {isAdmin && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-8 w-8 p-0"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openFolderDestDialog('item', item.id, item.name, section.id);
+                                          }}
+                                          title="Configurar carpetas adicionales para este documento"
+                                        >
+                                          <FolderCog className={`h-3 w-3 ${itemFolders[item.id] ? 'text-primary' : 'text-muted-foreground'}`} />
+                                        </Button>
+                                      )}
                                     </>
                                   );
                                 })() : (
@@ -1162,7 +1176,7 @@ export function PatentChecklist({
                                         className="h-8 w-8 p-0"
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          openFolderDestDialog('item', item.id, item.name);
+                                          openFolderDestDialog('item', item.id, item.name, section.id);
                                         }}
                                         title="Configurar carpetas adicionales para este documento"
                                       >
@@ -1295,6 +1309,24 @@ export function PatentChecklist({
                 ? "Seleccione las carpetas de destino para todos los documentos de esta sección. Aplica a todos los ítems de la sección."
                 : "Seleccione carpetas adicionales solo para este documento. No afecta a la sección ni a los demás ítems."}
             </p>
+            {/* Show inherited section folders for item-level context */}
+            {fileDestContext?.type === 'item' && fileDestContext.sectionId && sectionFolders[fileDestContext.sectionId] && (() => {
+              const inheritedEntries = parseDestinations(sectionFolders[fileDestContext.sectionId!]);
+              const inherited = parseDestinations(sectionFolders[fileDestContext.sectionId!]);
+              return inheritedEntries.length > 0 ? (
+                <div className="rounded-md border border-border bg-muted/30 p-3 space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Carpetas heredadas de la sección:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {inheritedEntries.map((entry: any, idx: number) => (
+                      <Badge key={idx} variant="secondary" className="text-xs">
+                        <FolderOpen className="h-3 w-3 mr-1" />
+                        {entry.name}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              ) : null;
+            })()}
             <FolderDestinationPicker
               icon={<FileText className="h-4 w-4 text-orange-500" />}
               label={fileDestContext?.type === 'section' ? "Carpetas de la sección" : "Carpetas adicionales del ítem"}
