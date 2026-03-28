@@ -484,16 +484,73 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
     }
   };
 
+  /**
+   * Resolve the Drive folder ID for a parent repository folder by walking
+   * up the hierarchy. Returns the contract root drive folder if the folder
+   * has no parent.
+   */
+  const resolveParentDriveFolderId = async (folder: RepositoryFolder): Promise<string | null> => {
+    if (!folder.parent_id) return contractDriveFolderId;
+
+    // Check if parent already has a drive_folder_id
+    const { data: parent } = await supabase
+      .from("repository_folders")
+      .select("id, name, parent_id, drive_folder_id")
+      .eq("id", folder.parent_id)
+      .single();
+
+    if (!parent) return contractDriveFolderId;
+    if (parent.drive_folder_id) return parent.drive_folder_id;
+
+    // Parent doesn't have drive_folder_id — resolve its parent first, then create it
+    const grandparentDriveId = parent.parent_id
+      ? await (async () => {
+          const { data: gp } = await supabase
+            .from("repository_folders")
+            .select("id, name, parent_id, drive_folder_id")
+            .eq("id", parent.parent_id)
+            .single();
+          if (gp?.drive_folder_id) return gp.drive_folder_id;
+          return contractDriveFolderId; // fallback to contract root
+        })()
+      : contractDriveFolderId;
+
+    if (!grandparentDriveId) return null;
+
+    // Create/find the parent folder in Drive
+    const { data: parentDriveData, error: parentDriveError } = await supabase.functions.invoke('google-drive', {
+      body: {
+        action: 'ensureSubfolderExists',
+        parentDriveFolderId: grandparentDriveId,
+        folderName: parent.name,
+      }
+    });
+
+    if (!parentDriveError && parentDriveData?.id) {
+      await supabase
+        .from("repository_folders")
+        .update({ drive_folder_id: parentDriveData.id })
+        .eq("id", parent.id);
+      return parentDriveData.id;
+    }
+
+    return contractDriveFolderId;
+  };
+
   const handleForceSyncFolder = async () => {
     if (!currentFolder || !contractDriveFolderId) return;
     
     setSyncing(true);
     try {
+      // Resolve the correct parent Drive folder (not always the contract root)
+      const parentDriveId = await resolveParentDriveFolderId(currentFolder);
+      if (!parentDriveId) throw new Error("No se pudo resolver la carpeta padre en Drive");
+
       const { data, error } = await supabase.functions.invoke('google-drive', {
         body: { 
-          action: 'syncFolder',
-          name: currentFolder.name,
-          parentDriveFolderId: contractDriveFolderId
+          action: 'ensureSubfolderExists',
+          parentDriveFolderId: parentDriveId,
+          folderName: currentFolder.name,
         }
       });
 
