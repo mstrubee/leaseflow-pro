@@ -1540,6 +1540,48 @@ const AdminPanel = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Move Folder Dialog */}
+        <Dialog open={showMoveDialog} onOpenChange={setShowMoveDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <MoveRight className="h-5 w-5" />
+                Mover carpeta: {moveFolderName}
+              </DialogTitle>
+              <DialogDescription>
+                Seleccione la carpeta destino o elija la raíz para convertirla en carpeta principal.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-1 max-h-[300px] overflow-y-auto border rounded-md p-2">
+              <button
+                className={`w-full flex items-center gap-2 p-2 rounded-md text-sm hover:bg-accent/50 transition-colors ${moveTargetId === null ? 'bg-primary/10 text-primary font-medium' : ''}`}
+                onClick={() => setMoveTargetId(null)}
+              >
+                <Folder className="h-4 w-4 text-amber-500" />
+                <span>Raíz (nivel principal)</span>
+              </button>
+              {getMoveTargets().map((target) => (
+                <button
+                  key={target.id}
+                  className={`w-full flex items-center gap-2 p-2 rounded-md text-sm hover:bg-accent/50 transition-colors ${moveTargetId === target.id ? 'bg-primary/10 text-primary font-medium' : ''}`}
+                  style={{ paddingLeft: `${target.depth * 16 + 8}px` }}
+                  onClick={() => setMoveTargetId(target.id)}
+                >
+                  <Folder className="h-4 w-4 text-amber-500" />
+                  <span>{target.name}</span>
+                </button>
+              ))}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowMoveDialog(false)}>Cancelar</Button>
+              <Button onClick={confirmMove}>
+                <MoveRight className="h-4 w-4 mr-1" />
+                Mover
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
