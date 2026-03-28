@@ -2604,8 +2604,8 @@ const PurchaseOrdersDashboard = () => {
                               {/* Nº OC column */}
                               <TableCell
                                 className="font-medium cursor-pointer hover:bg-muted/50 transition-colors"
-                                onClick={() => handleOpenEditOCDialog(groupedOrder)}
-                                title="Ver detalle OC"
+                                onClick={() => handleOpenOCViewer(groupedOrder)}
+                                title="Ver PDF de OC"
                               >
                                 <div className="flex items-center gap-2">
                                   <FileText className="h-4 w-4 text-muted-foreground" />
