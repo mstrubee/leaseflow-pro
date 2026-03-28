@@ -682,6 +682,105 @@ function getStatusFolderName(status: string): string {
   }
 }
 
+function parseDestinationEntries(raw: string): { source: string; name: string }[] {
+  if (!raw) return [];
+  return raw
+    .split('|')
+    .filter(Boolean)
+    .map((part) => {
+      const trimmed = part.trim();
+      const match = trimmed.match(/^(repo|general)::(.+)$/);
+      if (match) return { source: match[1], name: match[2].trim() };
+      return { source: 'repo', name: trimmed };
+    })
+    .filter((entry) => entry.name.length > 0);
+}
+
+async function ensureDriveFolderForRepositoryFolder(
+  sb: any,
+  accessToken: string,
+  contractId: string,
+  folderId: string,
+  visited: Set<string> = new Set(),
+): Promise<string | null> {
+  if (visited.has(folderId)) return null;
+  visited.add(folderId);
+
+  const { data: folder } = await sb
+    .from('repository_folders')
+    .select('id, name, parent_id, drive_folder_id')
+    .eq('id', folderId)
+    .single();
+
+  if (!folder) return null;
+
+  let parentDriveFolderId: string | null = null;
+
+  if (folder.parent_id) {
+    parentDriveFolderId = await ensureDriveFolderForRepositoryFolder(
+      sb,
+      accessToken,
+      contractId,
+      folder.parent_id,
+      visited,
+    );
+  } else {
+    const { data: contract } = await sb
+      .from('contracts')
+      .select('drive_folder_id')
+      .eq('id', contractId)
+      .single();
+    parentDriveFolderId = contract?.drive_folder_id || null;
+  }
+
+  if (!parentDriveFolderId) return null;
+
+  if (folder.drive_folder_id) {
+    const meta = await getFolderById(accessToken, folder.drive_folder_id).catch(() => null);
+    if (meta && !meta.trashed && meta.mimeType === 'application/vnd.google-apps.folder') {
+      const currentParentId = meta.parents?.[0] || null;
+      if (currentParentId === parentDriveFolderId) {
+        return folder.drive_folder_id;
+      }
+    }
+
+    await sb.from('repository_folders').update({ drive_folder_id: null }).eq('id', folder.id);
+  }
+
+  let driveFolder = await getFolderByName(accessToken, folder.name, parentDriveFolderId);
+  if (!driveFolder) {
+    driveFolder = await createDriveFolder(accessToken, folder.name, parentDriveFolderId);
+  }
+
+  await sb
+    .from('repository_folders')
+    .update({ drive_folder_id: driveFolder.id })
+    .eq('id', folder.id);
+
+  return driveFolder.id;
+}
+
+async function listDriveFoldersByNameUnderParent(
+  accessToken: string,
+  folderName: string,
+  parentId: string,
+): Promise<Array<{ id: string; name: string }>> {
+  const sanitizedName = sanitizeForDriveQuery(sanitizeDriveName(folderName));
+  const query = `name='${sanitizedName}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${parentId}' in parents`;
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&pageSize=50&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed listing folders by name: ${response.status} ${errorText}`);
+  }
+
+  const data = await response.json();
+  return data.files || [];
+}
+
 async function ensureStatusFolders(accessToken: string, rootFolderId: string): Promise<Record<string, { id: string; webViewLink: string }>> {
   const statusFolders: Record<string, { id: string; webViewLink: string }> = {};
   const folderNames = ['Contratos Vigentes', 'Contratos En Negociación', 'Contratos Vencidos'];
@@ -1668,7 +1767,6 @@ serve(async (req) => {
         const batchSize = params.batchSize || 10;
         const offset = params.offset || 0;
 
-        // 1. Get patent documents with storage URLs (paginated)
         const { data: patentDocs, error: pdErr } = await sb
           .from('patent_documents')
           .select('id, contract_id, checklist_item_id, document_url')
@@ -1679,51 +1777,35 @@ serve(async (req) => {
 
         if (pdErr) throw pdErr;
 
-        // 2. Get all file_destination_settings for patents
         const { data: destSettings } = await sb
           .from('file_destination_settings')
           .select('setting_key, folder_name')
-          .or('setting_key.like.patent_%');
+          .like('setting_key', 'patent%');
 
         const settingsMap: Record<string, string> = {};
         for (const s of destSettings || []) {
           settingsMap[s.setting_key] = s.folder_name;
         }
 
-        // 3. Get checklist items to know section_id
         const { data: checklistItems } = await sb
           .from('patent_checklist_items')
-          .select('id, section_id, name');
+          .select('id, section_id');
         const itemSectionMap: Record<string, string> = {};
         for (const item of checklistItems || []) {
           itemSectionMap[item.id] = item.section_id;
         }
 
-        // Helper to parse destination entries
-        function parseDestEntries(raw: string): { source: string; name: string }[] {
-          if (!raw) return [];
-          return raw.split('|').filter(Boolean).map(part => {
-            const match = part.match(/^(repo|general)::(.+)$/);
-            if (match) return { source: match[1], name: match[2] };
-            return { source: 'repo', name: part };
-          });
-        }
-
-        // 4. Resolve destinations for each item
         function getDestinations(itemId: string): { source: string; name: string }[] {
-          // Item-level first
           const itemKey = `patent_item_${itemId}`;
-          if (settingsMap[itemKey]) return parseDestEntries(settingsMap[itemKey]);
+          if (settingsMap[itemKey]) return parseDestinationEntries(settingsMap[itemKey]);
 
-          // Section-level
           const sectionId = itemSectionMap[itemId];
           if (sectionId) {
             const sectionKey = `patent_section_${sectionId}`;
-            if (settingsMap[sectionKey]) return parseDestEntries(settingsMap[sectionKey]);
+            if (settingsMap[sectionKey]) return parseDestinationEntries(settingsMap[sectionKey]);
           }
 
-          // Global
-          if (settingsMap['patent_folder']) return parseDestEntries(settingsMap['patent_folder']);
+          if (settingsMap['patent_folder']) return parseDestinationEntries(settingsMap['patent_folder']);
 
           return [{ source: 'repo', name: 'Doc. Patentes' }];
         }
@@ -1733,7 +1815,7 @@ serve(async (req) => {
 
         for (const doc of patentDocs || []) {
           const allUrls = doc.document_url.split('|||').filter(Boolean);
-          const destinations = getDestinations(doc.checklist_item_id);
+          const destinations = getDestinations(doc.checklist_item_id).filter((d) => d.source === 'repo');
 
           for (const storageUrl of allUrls) {
             if (!storageUrl.startsWith('storage://repository-files/')) continue;
@@ -1741,7 +1823,6 @@ serve(async (req) => {
             const storagePath = storageUrl.replace('storage://repository-files/', '');
             const fileName = storagePath.split('/').pop() || 'patent_file';
 
-            // Download from Supabase Storage
             const { data: fileData, error: dlErr } = await sb.storage
               .from('repository-files')
               .download(storagePath);
@@ -1754,98 +1835,52 @@ serve(async (req) => {
             const fileBytes = new Uint8Array(await fileData.arrayBuffer());
 
             for (const dest of destinations) {
-              if (dest.source !== 'repo') continue; // Only repo folders have Drive sync
-
-              // Find the repo folder for this contract (search all levels, not just root)
               const { data: folderList } = await sb
                 .from('repository_folders')
-                .select('id, drive_folder_id, parent_id')
+                .select('id, name, drive_folder_id')
                 .eq('contract_id', doc.contract_id)
                 .ilike('name', dest.name);
 
-              // Prefer folder with drive_folder_id
-              let folder = folderList?.find(f => f.drive_folder_id) || folderList?.[0] || null;
+              const exact = (folderList || []).filter(
+                (f: any) => (f.name || '').trim().toLowerCase() === dest.name.trim().toLowerCase(),
+              );
+              const chosen = exact.find((f: any) => !!f.drive_folder_id) || exact[0] || folderList?.[0] || null;
 
-              if (!folder) {
-                errors.push(`Folder ${dest.name} not found for contract ${doc.contract_id} — skipping (do not auto-create)`);
+              if (!chosen) {
+                errors.push(`Folder ${dest.name} not found for contract ${doc.contract_id}`);
                 continue;
               }
 
-              // If folder has no drive_folder_id, resolve its parent hierarchy to create in the right place
-              if (!folder.drive_folder_id) {
-                // Walk up the parent chain to find the nearest ancestor with a drive_folder_id
-                let parentDriveFolderId: string | null = null;
-                let currentParentId = folder.parent_id;
-
-                while (currentParentId) {
-                  const { data: parentFolder } = await sb
-                    .from('repository_folders')
-                    .select('id, drive_folder_id, parent_id, name')
-                    .eq('id', currentParentId)
-                    .single();
-
-                  if (!parentFolder) break;
-
-                  if (parentFolder.drive_folder_id) {
-                    parentDriveFolderId = parentFolder.drive_folder_id;
-                    break;
-                  }
-
-                  // Parent also has no drive_folder_id — keep walking up
-                  currentParentId = parentFolder.parent_id;
-                }
-
-                // If no parent has a drive_folder_id, fall back to contract root
-                if (!parentDriveFolderId) {
-                  const { data: contract } = await sb
-                    .from('contracts')
-                    .select('drive_folder_id')
-                    .eq('id', doc.contract_id)
-                    .single();
-                  parentDriveFolderId = contract?.drive_folder_id || null;
-                }
-
-                if (!parentDriveFolderId) {
-                  errors.push(`Contract ${doc.contract_id} has no Drive folder`);
-                  continue;
-                }
-
-                try {
-                  // First check if the folder already exists in Drive under the correct parent
-                  const existingDriveFolder = await getFolderByName(accessToken, dest.name, parentDriveFolderId);
-                  if (existingDriveFolder) {
-                    folder.drive_folder_id = existingDriveFolder.id;
-                  } else {
-                    const driveSubfolder = await createDriveFolder(accessToken, dest.name, parentDriveFolderId);
-                    folder.drive_folder_id = driveSubfolder.id;
-                  }
-                  // Update the repo folder with drive_folder_id
-                  await sb
-                    .from('repository_folders')
-                    .update({ drive_folder_id: folder.drive_folder_id })
-                    .eq('id', folder.id);
-                } catch (folderErr: any) {
-                  errors.push(`Could not create Drive folder ${dest.name} for contract ${doc.contract_id}: ${folderErr.message}`);
-                  continue;
-                }
+              let targetDriveFolderId: string | null = null;
+              try {
+                targetDriveFolderId = await ensureDriveFolderForRepositoryFolder(
+                  sb,
+                  accessToken,
+                  doc.contract_id,
+                  chosen.id,
+                );
+              } catch (folderErr: any) {
+                errors.push(`Folder resolution failed for ${dest.name} (${doc.contract_id}): ${folderErr.message}`);
+                continue;
               }
 
-              // Check if already uploaded (by name in that folder)
-              const { data: existingFile } = await sb
-                .from('repository_files')
-                .select('id')
-                .eq('folder_id', folder.id)
-                .eq('name', fileName)
-                .limit(1)
-                .single();
+              if (!targetDriveFolderId) {
+                errors.push(`No Drive folder available for ${dest.name} (${doc.contract_id})`);
+                continue;
+              }
 
-              if (existingFile) {
-                // Already exists, skip
+              const { data: existingRows } = await sb
+                .from('repository_files')
+                .select('id, drive_file_id, folder_id, name')
+                .eq('folder_id', chosen.id)
+                .eq('name', fileName)
+                .limit(5);
+
+              if ((existingRows || []).some((r: any) => !!r.drive_file_id)) {
                 continue;
               }
 
               try {
-                // Upload to Drive
                 const mimeType = fileName.endsWith('.pdf') ? 'application/pdf'
                   : fileName.endsWith('.jpeg') || fileName.endsWith('.jpg') ? 'image/jpeg'
                   : fileName.endsWith('.png') ? 'image/png'
@@ -1853,19 +1888,29 @@ serve(async (req) => {
                   : fileName.endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                   : 'application/octet-stream';
 
-                const driveFile = await uploadFileToDrive(accessToken, fileName, fileBytes, mimeType, folder.drive_folder_id);
-
-                // Create repository_files record
+                const driveFile = await uploadFileToDrive(accessToken, fileName, fileBytes, mimeType, targetDriveFolderId);
                 const fileUrl = driveFile.webViewLink || driveFile.webContentLink || `https://drive.google.com/file/d/${driveFile.id}/view`;
                 const ext = fileName.includes('.') ? fileName.split('.').pop() : null;
 
-                await sb.from('repository_files').insert({
-                  folder_id: folder.id,
-                  name: fileName,
-                  url: fileUrl,
-                  file_type: ext,
-                  drive_file_id: driveFile.id,
-                });
+                if ((existingRows || []).length > 0) {
+                  await sb
+                    .from('repository_files')
+                    .update({
+                      folder_id: chosen.id,
+                      url: fileUrl,
+                      file_type: ext,
+                      drive_file_id: driveFile.id,
+                    })
+                    .eq('id', existingRows![0].id);
+                } else {
+                  await sb.from('repository_files').insert({
+                    folder_id: chosen.id,
+                    name: fileName,
+                    url: fileUrl,
+                    file_type: ext,
+                    drive_file_id: driveFile.id,
+                  });
+                }
 
                 uploaded.push(`${fileName} → ${dest.name}`);
               } catch (uploadErr: any) {
@@ -1876,7 +1921,16 @@ serve(async (req) => {
         }
 
         const hasMore = (patentDocs || []).length === batchSize;
-        result = { success: true, uploaded: uploaded.length, errors: errors.length, uploadedFiles: uploaded, errorDetails: errors, hasMore, nextOffset: offset + batchSize, processed: (patentDocs || []).length };
+        result = {
+          success: true,
+          uploaded: uploaded.length,
+          errors: errors.length,
+          uploadedFiles: uploaded,
+          errorDetails: errors,
+          hasMore,
+          nextOffset: offset + batchSize,
+          processed: (patentDocs || []).length,
+        };
         break;
       }
 
