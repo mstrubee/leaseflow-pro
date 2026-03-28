@@ -1390,13 +1390,10 @@ serve(async (req) => {
 
       case "syncGeneralFolders": {
         // Ensure "Información General" root folder exists in Drive
-        // Check for legacy name first and rename if found
         let generalRoot = await getFolderByName(accessToken, "Información General", rootFolderId);
         if (!generalRoot) {
-          // Check for old name "Carpeta General" and rename it
           const legacyRoot = await getFolderByName(accessToken, "Carpeta General", rootFolderId);
           if (legacyRoot) {
-            // Rename legacy folder
             await fetch(`https://www.googleapis.com/drive/v3/files/${legacyRoot.id}?supportsAllDrives=true`, {
               method: "PATCH",
               headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
@@ -1419,67 +1416,180 @@ serve(async (req) => {
           .select('*')
           .order('display_order', { ascending: true });
 
-        const syncedFolders: any[] = [];
-        const claimedDriveIds = new Set(
-          (generalFolders || [])
-            .map((f: any) => f.drive_folder_id)
-            .filter((id: string | null) => !!id)
-        );
+        type GeneralFolderRow = {
+          id: string;
+          name: string;
+          parent_id: string | null;
+          contract_id: string | null;
+          drive_folder_id: string | null;
+          display_order: number | null;
+          created_at?: string;
+        };
 
-        // Helper: find ALL folders matching a name in a parent
-        const findAllFoldersByName = async (name: string, parentId: string): Promise<{ id: string; webViewLink: string; createdTime?: string }[]> => {
+        const folders = (generalFolders || []) as GeneralFolderRow[];
+        const syncedFolders: any[] = [];
+        const claimedDriveIds = new Set<string>();
+
+        const childrenByParent = new Map<string | null, GeneralFolderRow[]>();
+        for (const folder of folders) {
+          const arr = childrenByParent.get(folder.parent_id) || [];
+          arr.push(folder);
+          childrenByParent.set(folder.parent_id, arr);
+        }
+
+        for (const [, siblings] of childrenByParent) {
+          siblings.sort((a, b) => {
+            const ao = a.display_order ?? 0;
+            const bo = b.display_order ?? 0;
+            if (ao !== bo) return ao - bo;
+            const ac = a.created_at || "";
+            const bc = b.created_at || "";
+            if (ac !== bc) return ac.localeCompare(bc);
+            return a.id.localeCompare(b.id);
+          });
+        }
+
+        // Deterministic unique names per sibling group: A, A (2), A (3)
+        const effectiveNameByFolderId = new Map<string, string>();
+        for (const [, siblings] of childrenByParent) {
+          const counters = new Map<string, number>();
+          for (const sibling of siblings) {
+            const baseName = (sibling.name || "Sin nombre").trim() || "Sin nombre";
+            const count = (counters.get(baseName) || 0) + 1;
+            counters.set(baseName, count);
+            effectiveNameByFolderId.set(
+              sibling.id,
+              count === 1 ? baseName : `${baseName} (${count})`,
+            );
+          }
+        }
+
+        const findAllFoldersByName = async (
+          name: string,
+          parentId: string,
+        ): Promise<{ id: string; name: string; webViewLink: string; createdTime?: string }[]> => {
           const sanitizedName = sanitizeForDriveQuery(sanitizeDriveName(name));
           const q = `name='${sanitizedName}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${parentId}' in parents`;
           const res = await fetch(
-            `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,webViewLink,createdTime)&orderBy=createdTime asc&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`,
-            { headers: { Authorization: `Bearer ${accessToken}` } }
+            `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,webViewLink,createdTime)&orderBy=createdTime asc&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`,
+            { headers: { Authorization: `Bearer ${accessToken}` } },
           );
-          if (!res.ok) return [];
+          if (!res.ok) {
+            const txt = await res.text().catch(() => "");
+            console.warn(`findAllFoldersByName failed for '${name}' under ${parentId}:`, res.status, txt);
+            return [];
+          }
           const data = await res.json();
           return data.files || [];
         };
 
-        // Recursive sync function
-        const syncFolder = async (folder: any, parentDriveId: string) => {
+        const renameDriveFolder = async (folderId: string, name: string) => {
+          const response = await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}?supportsAllDrives=true`, {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ name: sanitizeDriveName(name) }),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => "");
+            throw new Error(`Failed to rename folder ${folderId}: ${response.status} ${errorText}`);
+          }
+        };
+
+        const trashDriveFolder = async (folderId: string) => {
+          const response = await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}?supportsAllDrives=true`, {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ trashed: true }),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => "");
+            console.warn(`Failed to trash duplicate folder ${folderId}: ${response.status} ${errorText}`);
+          }
+        };
+
+        const syncFolder = async (folder: GeneralFolderRow, parentDriveId: string) => {
+          const desiredName = effectiveNameByFolderId.get(folder.id) || folder.name;
+          const desiredSanitizedName = sanitizeDriveName(desiredName);
           let driveFolder: { id: string; webViewLink: string } | null = null;
 
           if (folder.drive_folder_id) {
             try {
-              const checkRes = await fetch(
-                `https://www.googleapis.com/drive/v3/files/${folder.drive_folder_id}?fields=id,webViewLink,trashed&supportsAllDrives=true`,
-                { headers: { Authorization: `Bearer ${accessToken}` } }
-              );
-              if (checkRes.ok) {
-                const checkData = await checkRes.json();
-                if (!checkData.trashed) {
-                  driveFolder = { id: checkData.id, webViewLink: checkData.webViewLink };
-                } else {
-                  claimedDriveIds.delete(folder.drive_folder_id);
-                }
-              }
-            } catch (_) {}
-          }
+              const meta = await getFolderById(accessToken, folder.drive_folder_id);
+              const isValidFolder = !!meta && meta.mimeType === "application/vnd.google-apps.folder" && !meta.trashed;
 
-          if (!driveFolder) {
-            // Pick a match not already claimed by another local folder
-            const matches = await findAllFoldersByName(folder.name, parentDriveId);
-            const unclaimed = matches.find((m) => !claimedDriveIds.has(m.id));
-            if (unclaimed) {
-              driveFolder = unclaimed;
+              if (isValidFolder && meta && !claimedDriveIds.has(meta.id)) {
+                const currentParent = meta.parents?.[0];
+                if (currentParent && currentParent !== parentDriveId) {
+                  await moveToFolder(accessToken, meta.id, parentDriveId, currentParent);
+                }
+
+                if (sanitizeDriveName(meta.name || "") !== desiredSanitizedName) {
+                  await renameDriveFolder(meta.id, desiredName);
+                }
+
+                driveFolder = { id: meta.id, webViewLink: meta.webViewLink || "" };
+              }
+            } catch (err) {
+              console.warn(`Invalid stored drive_folder_id for ${folder.id}:`, err);
             }
           }
 
           if (!driveFolder) {
-            driveFolder = await createDriveFolder(accessToken, folder.name, parentDriveId);
+            const exactMatches = await findAllFoldersByName(desiredName, parentDriveId);
+            const chosenExact = exactMatches.find((m) => !claimedDriveIds.has(m.id));
+
+            if (chosenExact) {
+              driveFolder = { id: chosenExact.id, webViewLink: chosenExact.webViewLink };
+
+              const exactDuplicates = exactMatches.filter((m) => m.id !== chosenExact.id && !claimedDriveIds.has(m.id));
+              for (const duplicate of exactDuplicates) {
+                await trashDriveFolder(duplicate.id);
+              }
+            }
           }
 
-          // Update drive_folder_id in DB
+          if (!driveFolder && desiredName !== folder.name) {
+            const baseMatches = await findAllFoldersByName(folder.name, parentDriveId);
+            const chosenBase = baseMatches.find((m) => !claimedDriveIds.has(m.id));
+
+            if (chosenBase) {
+              await renameDriveFolder(chosenBase.id, desiredName);
+              driveFolder = { id: chosenBase.id, webViewLink: chosenBase.webViewLink };
+
+              const postRenameMatches = await findAllFoldersByName(desiredName, parentDriveId);
+              const duplicates = postRenameMatches.filter((m) => m.id !== chosenBase.id && !claimedDriveIds.has(m.id));
+              for (const duplicate of duplicates) {
+                await trashDriveFolder(duplicate.id);
+              }
+            }
+          }
+
+          if (!driveFolder) {
+            driveFolder = await createDriveFolder(accessToken, desiredName, parentDriveId);
+          }
+
           if (driveFolder.id !== folder.drive_folder_id) {
-            await sb.from('general_folders').update({ drive_folder_id: driveFolder.id }).eq('id', folder.id);
+            await sb
+              .from('general_folders')
+              .update({ drive_folder_id: driveFolder.id })
+              .eq('id', folder.id);
           }
-          claimedDriveIds.add(driveFolder.id);
 
-          syncedFolders.push({ id: folder.id, name: folder.name, driveFolderId: driveFolder.id });
+          claimedDriveIds.add(driveFolder.id);
+          syncedFolders.push({
+            id: folder.id,
+            name: folder.name,
+            driveName: desiredName,
+            driveFolderId: driveFolder.id,
+          });
 
           // ── Upload local files to Drive ──
           const { data: localFiles } = await sb
@@ -1488,13 +1598,15 @@ serve(async (req) => {
             .eq('folder_id', folder.id);
 
           for (const file of (localFiles || [])) {
-            if (file.drive_file_id) continue; // already synced
+            if (file.drive_file_id) continue;
 
-            // Upload file from Supabase Storage to Drive
             if (file.url?.startsWith('storage://')) {
               const storagePath = file.url.replace('storage://repository-files/', '');
               const { data: fileData, error: dlErr } = await sb.storage.from('repository-files').download(storagePath);
-              if (dlErr || !fileData) { console.error("Download failed:", file.name, dlErr); continue; }
+              if (dlErr || !fileData) {
+                console.error("Download failed:", file.name, dlErr);
+                continue;
+              }
 
               const mimeType = file.file_type === 'pdf' ? 'application/pdf' : 'application/octet-stream';
               const boundary = '-------314159265358979323846';
@@ -1517,8 +1629,16 @@ serve(async (req) => {
 
               const uploadRes = await fetch(
                 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,webViewLink',
-                { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': `multipart/related; boundary=${boundary}` }, body }
+                {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    'Content-Type': `multipart/related; boundary=${boundary}`,
+                  },
+                  body,
+                },
               );
+
               if (uploadRes.ok) {
                 const uploaded = await uploadRes.json();
                 await sb.from('general_folder_files').update({ drive_file_id: uploaded.id }).eq('id', file.id);
@@ -1532,12 +1652,17 @@ serve(async (req) => {
           // ── Index files from Drive → DB ──
           const listRes = await fetch(
             `https://www.googleapis.com/drive/v3/files?q='${driveFolder.id}'+in+parents+and+trashed=false+and+mimeType!='application/vnd.google-apps.folder'&fields=files(id,name,mimeType,webViewLink)&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true`,
-            { headers: { Authorization: `Bearer ${accessToken}` } }
+            { headers: { Authorization: `Bearer ${accessToken}` } },
           );
+
           if (listRes.ok) {
             const listData = await listRes.json();
             const driveFiles = listData.files || [];
-            const existingDriveIds = new Set((localFiles || []).filter((f: any) => f.drive_file_id).map((f: any) => f.drive_file_id));
+            const existingDriveIds = new Set(
+              (localFiles || [])
+                .filter((f: any) => f.drive_file_id)
+                .map((f: any) => f.drive_file_id),
+            );
 
             for (const df of driveFiles) {
               if (!existingDriveIds.has(df.id)) {
@@ -1554,15 +1679,13 @@ serve(async (req) => {
             }
           }
 
-          // Sync children
-          const children = (generalFolders || []).filter((f: any) => f.parent_id === folder.id);
+          const children = childrenByParent.get(folder.id) || [];
           for (const child of children) {
             await syncFolder(child, driveFolder.id);
           }
         };
 
-        // Sync root folders
-        const roots = (generalFolders || []).filter((f: any) => f.parent_id === null);
+        const roots = childrenByParent.get(null) || [];
         for (const root of roots) {
           await syncFolder(root, generalRoot.id);
         }
