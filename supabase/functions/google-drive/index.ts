@@ -1437,32 +1437,7 @@ serve(async (req) => {
           childrenByParent.set(folder.parent_id, arr);
         }
 
-        for (const [, siblings] of childrenByParent) {
-          siblings.sort((a, b) => {
-            const ao = a.display_order ?? 0;
-            const bo = b.display_order ?? 0;
-            if (ao !== bo) return ao - bo;
-            const ac = a.created_at || "";
-            const bc = b.created_at || "";
-            if (ac !== bc) return ac.localeCompare(bc);
-            return a.id.localeCompare(b.id);
-          });
-        }
-
-        // Deterministic unique names per sibling group: A, A (2), A (3)
-        const effectiveNameByFolderId = new Map<string, string>();
-        for (const [, siblings] of childrenByParent) {
-          const counters = new Map<string, number>();
-          for (const sibling of siblings) {
-            const baseName = (sibling.name || "Sin nombre").trim() || "Sin nombre";
-            const count = (counters.get(baseName) || 0) + 1;
-            counters.set(baseName, count);
-            effectiveNameByFolderId.set(
-              sibling.id,
-              count === 1 ? baseName : `${baseName} (${count})`,
-            );
-          }
-        }
+        // No deterministic renaming – DB names are already unique
 
         const findAllFoldersByName = async (
           name: string,
@@ -1516,7 +1491,7 @@ serve(async (req) => {
         };
 
         const syncFolder = async (folder: GeneralFolderRow, parentDriveId: string) => {
-          const desiredName = effectiveNameByFolderId.get(folder.id) || folder.name;
+          const desiredName = (folder.name || "Sin nombre").trim() || "Sin nombre";
           const desiredSanitizedName = sanitizeDriveName(desiredName);
           let driveFolder: { id: string; webViewLink: string } | null = null;
 
@@ -1556,22 +1531,6 @@ serve(async (req) => {
             }
           }
 
-          if (!driveFolder && desiredName !== folder.name) {
-            const baseMatches = await findAllFoldersByName(folder.name, parentDriveId);
-            const chosenBase = baseMatches.find((m) => !claimedDriveIds.has(m.id));
-
-            if (chosenBase) {
-              await renameDriveFolder(chosenBase.id, desiredName);
-              driveFolder = { id: chosenBase.id, webViewLink: chosenBase.webViewLink };
-
-              const postRenameMatches = await findAllFoldersByName(desiredName, parentDriveId);
-              const duplicates = postRenameMatches.filter((m) => m.id !== chosenBase.id && !claimedDriveIds.has(m.id));
-              for (const duplicate of duplicates) {
-                await trashDriveFolder(duplicate.id);
-              }
-            }
-          }
-
           if (!driveFolder) {
             driveFolder = await createDriveFolder(accessToken, desiredName, parentDriveId);
           }
@@ -1587,7 +1546,7 @@ serve(async (req) => {
           syncedFolders.push({
             id: folder.id,
             name: folder.name,
-            driveName: desiredName,
+            driveName: desiredName, 
             driveFolderId: driveFolder.id,
           });
 
