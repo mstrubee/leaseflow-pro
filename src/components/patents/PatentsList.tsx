@@ -285,7 +285,7 @@ export function PatentsList({
                   ? `${address.street || ''}${address.number ? ' ' + address.number : ''}`.trim() || 'Sin dirección'
                   : 'Sin dirección';
                 const companyNames = getCompanyNames(contract);
-                return <TableRow key={contract.id}>
+                return <TableRow key={contract.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelectContract(contract.id)}>
                       <TableCell className="text-muted-foreground">
                         {companyNames.length > 0 ? (
                           <div className="flex items-center gap-2">
