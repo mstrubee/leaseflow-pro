@@ -1653,6 +1653,160 @@ serve(async (req) => {
         break;
       }
 
+      case "bulkUploadPatentFiles": {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sb = createClient(supabaseUrl, supabaseKey);
+
+        // 1. Get all patent documents with storage URLs
+        const { data: patentDocs, error: pdErr } = await sb
+          .from('patent_documents')
+          .select('id, contract_id, checklist_item_id, document_url')
+          .not('document_url', 'is', null)
+          .neq('document_url', '');
+
+        if (pdErr) throw pdErr;
+
+        // 2. Get all file_destination_settings for patents
+        const { data: destSettings } = await sb
+          .from('file_destination_settings')
+          .select('setting_key, folder_name')
+          .or('setting_key.like.patent_%');
+
+        const settingsMap: Record<string, string> = {};
+        for (const s of destSettings || []) {
+          settingsMap[s.setting_key] = s.folder_name;
+        }
+
+        // 3. Get checklist items to know section_id
+        const { data: checklistItems } = await sb
+          .from('patent_checklist_items')
+          .select('id, section_id, name');
+        const itemSectionMap: Record<string, string> = {};
+        for (const item of checklistItems || []) {
+          itemSectionMap[item.id] = item.section_id;
+        }
+
+        // Helper to parse destination entries
+        function parseDestEntries(raw: string): { source: string; name: string }[] {
+          if (!raw) return [];
+          return raw.split('|').filter(Boolean).map(part => {
+            const match = part.match(/^(repo|general)::(.+)$/);
+            if (match) return { source: match[1], name: match[2] };
+            return { source: 'repo', name: part };
+          });
+        }
+
+        // 4. Resolve destinations for each item
+        function getDestinations(itemId: string): { source: string; name: string }[] {
+          // Item-level first
+          const itemKey = `patent_item_${itemId}`;
+          if (settingsMap[itemKey]) return parseDestEntries(settingsMap[itemKey]);
+
+          // Section-level
+          const sectionId = itemSectionMap[itemId];
+          if (sectionId) {
+            const sectionKey = `patent_section_${sectionId}`;
+            if (settingsMap[sectionKey]) return parseDestEntries(settingsMap[sectionKey]);
+          }
+
+          // Global
+          if (settingsMap['patent_folder']) return parseDestEntries(settingsMap['patent_folder']);
+
+          return [{ source: 'repo', name: 'Doc. Patentes' }];
+        }
+
+        const uploaded: string[] = [];
+        const errors: string[] = [];
+
+        for (const doc of patentDocs || []) {
+          const allUrls = doc.document_url.split('|||').filter(Boolean);
+          const destinations = getDestinations(doc.checklist_item_id);
+
+          for (const storageUrl of allUrls) {
+            if (!storageUrl.startsWith('storage://repository-files/')) continue;
+
+            const storagePath = storageUrl.replace('storage://repository-files/', '');
+            const fileName = storagePath.split('/').pop() || 'patent_file';
+
+            // Download from Supabase Storage
+            const { data: fileData, error: dlErr } = await sb.storage
+              .from('repository-files')
+              .download(storagePath);
+
+            if (dlErr || !fileData) {
+              errors.push(`Download failed: ${fileName} - ${dlErr?.message}`);
+              continue;
+            }
+
+            const fileBytes = new Uint8Array(await fileData.arrayBuffer());
+
+            for (const dest of destinations) {
+              if (dest.source !== 'repo') continue; // Only repo folders have Drive sync
+
+              // Find the repo folder for this contract
+              const { data: folder } = await sb
+                .from('repository_folders')
+                .select('id, drive_folder_id')
+                .eq('contract_id', doc.contract_id)
+                .ilike('name', dest.name)
+                .limit(1)
+                .single();
+
+              if (!folder?.drive_folder_id) {
+                errors.push(`No Drive folder for ${dest.name} in contract ${doc.contract_id}`);
+                continue;
+              }
+
+              // Check if already uploaded (by name in that folder)
+              const { data: existingFile } = await sb
+                .from('repository_files')
+                .select('id')
+                .eq('folder_id', folder.id)
+                .eq('name', fileName)
+                .limit(1)
+                .single();
+
+              if (existingFile) {
+                // Already exists, skip
+                continue;
+              }
+
+              try {
+                // Upload to Drive
+                const mimeType = fileName.endsWith('.pdf') ? 'application/pdf'
+                  : fileName.endsWith('.jpeg') || fileName.endsWith('.jpg') ? 'image/jpeg'
+                  : fileName.endsWith('.png') ? 'image/png'
+                  : fileName.endsWith('.doc') ? 'application/msword'
+                  : fileName.endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                  : 'application/octet-stream';
+
+                const driveFile = await uploadFileToDrive(accessToken, fileName, fileBytes, mimeType, folder.drive_folder_id);
+
+                // Create repository_files record
+                const fileUrl = driveFile.webViewLink || driveFile.webContentLink || `https://drive.google.com/file/d/${driveFile.id}/view`;
+                const ext = fileName.includes('.') ? fileName.split('.').pop() : null;
+
+                await sb.from('repository_files').insert({
+                  folder_id: folder.id,
+                  name: fileName,
+                  url: fileUrl,
+                  file_type: ext,
+                  drive_file_id: driveFile.id,
+                });
+
+                uploaded.push(`${fileName} → ${dest.name}`);
+              } catch (uploadErr: any) {
+                errors.push(`Upload failed: ${fileName} → ${dest.name}: ${uploadErr.message}`);
+              }
+            }
+          }
+        }
+
+        result = { success: true, uploaded: uploaded.length, errors: errors.length, uploadedFiles: uploaded, errorDetails: errors };
+        break;
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }
