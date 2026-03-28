@@ -2075,6 +2075,88 @@ serve(async (req) => {
         break;
       }
 
+      case "fixOrphanDriveFiles": {
+        // Fix files with drive_file_id in folders without drive_folder_id
+        // Move them from wherever they are in Drive to the correct hierarchical location
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sb = createClient(supabaseUrl, supabaseKey);
+
+        const fixes: string[] = [];
+        const fixErrors: string[] = [];
+
+        // Find all repository_files with drive_file_id in folders without drive_folder_id
+        const { data: orphanFiles } = await sb
+          .from('repository_files')
+          .select('id, name, drive_file_id, folder_id')
+          .not('drive_file_id', 'is', null);
+
+        for (const file of orphanFiles || []) {
+          const { data: folder } = await sb
+            .from('repository_folders')
+            .select('id, name, contract_id, drive_folder_id, parent_id')
+            .eq('id', file.folder_id)
+            .single();
+
+          if (!folder || !folder.contract_id) continue;
+
+          // Resolve correct Drive folder using the hierarchical function
+          let correctDriveFolderId: string | null = null;
+          try {
+            correctDriveFolderId = await ensureDriveFolderForRepositoryFolder(
+              sb,
+              accessToken,
+              folder.contract_id,
+              folder.id,
+            );
+          } catch (e: any) {
+            fixErrors.push(`Could not resolve folder for '${folder.name}': ${e.message}`);
+            continue;
+          }
+
+          if (!correctDriveFolderId) continue;
+
+          // Check where this file currently lives in Drive
+          try {
+            const metaResp = await fetch(
+              `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?fields=id,name,parents,trashed&supportsAllDrives=true`,
+              { headers: { Authorization: `Bearer ${accessToken}` } },
+            );
+
+            if (!metaResp.ok) {
+              // File doesn't exist anymore — clear drive_file_id
+              await sb.from('repository_files').update({ drive_file_id: null }).eq('id', file.id);
+              fixes.push(`Cleared stale drive_file_id for '${file.name}'`);
+              continue;
+            }
+
+            const meta = await metaResp.json();
+            if (meta.trashed) {
+              await sb.from('repository_files').update({ drive_file_id: null }).eq('id', file.id);
+              fixes.push(`Cleared trashed drive_file_id for '${file.name}'`);
+              continue;
+            }
+
+            const currentParent = meta.parents?.[0] || null;
+            if (currentParent === correctDriveFolderId) {
+              // Already in correct location
+              continue;
+            }
+
+            // Move to correct folder
+            await moveToFolder(accessToken, file.drive_file_id, correctDriveFolderId, currentParent || undefined);
+
+            const { data: contractData } = await sb.from('contracts').select('name').eq('id', folder.contract_id).single();
+            fixes.push(`Moved '${file.name}' to correct '${folder.name}' in ${contractData?.name || folder.contract_id}`);
+          } catch (e: any) {
+            fixErrors.push(`Error moving '${file.name}': ${e.message}`);
+          }
+        }
+
+        result = { success: true, fixes, errors: fixErrors };
+        break;
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }
