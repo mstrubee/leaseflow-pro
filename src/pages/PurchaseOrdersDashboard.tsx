@@ -74,6 +74,9 @@ import {
   CreditCard,
   AlertTriangle,
   Upload,
+  Settings,
+  FolderOpen,
+  Save,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
@@ -89,6 +92,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, formatCLP } from "@/lib/utils";
 import { backupOCFileToRepository, uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
 import { Building2 } from "lucide-react";
+import { useFileDestinationSettings } from "@/hooks/useFileDestinationSettings";
 
 interface Invoice {
   id: string;
