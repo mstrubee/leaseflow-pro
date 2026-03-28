@@ -739,20 +739,36 @@ export function PatentChecklist({
                   )}
                 </Button>
               </CollapsibleTrigger>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleSectionSelection(section.id);
-                }}
-                className="gap-1"
-              >
-                {allSectionSelected ? (
-                  <><CheckSquare className="h-4 w-4" /> Deseleccionar</>
-                ) : (
-                  <><Square className="h-4 w-4" /> Seleccionar todos</>
+              <div className="flex items-center gap-1">
+                {isAdmin && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setTempPatentFolder(fileDestSettings.patent_folder);
+                      setShowFileDestDialog(true);
+                    }}
+                    title="Configurar carpetas de destino"
+                    className="h-8 w-8 p-0"
+                  >
+                    <FolderCog className="h-4 w-4 text-muted-foreground" />
+                  </Button>
                 )}
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleSectionSelection(section.id);
+                  }}
+                  className="gap-1"
+                >
+                  {allSectionSelected ? (
+                    <><CheckSquare className="h-4 w-4" /> Deseleccionar</>
+                  ) : (
+                    <><Square className="h-4 w-4" /> Seleccionar todos</>
+                  )}
               </Button>
             </CardHeader>
             <CollapsibleContent>
