@@ -1,13 +1,13 @@
 import { supabase } from "@/integrations/supabase/client";
 import { sanitizeFileName } from "./fileValidation";
 import { uploadFileToStorage } from "./storageUtils";
-import { getConfiguredFolderName, getConfiguredFolderNames } from "@/hooks/useFileDestinationSettings";
+import { getConfiguredFolderName, getConfiguredDestinations } from "@/hooks/useFileDestinationSettings";
+import type { FolderDestinationEntry } from "@/components/budget/FolderDestinationPicker";
 
 /**
- * Get or create a single destination folder for a contract's repository.
- * Used internally; callers should prefer getOrCreateOCFolders for multi-folder support.
+ * Get or create a single destination folder in a contract's repository.
  */
-async function getOrCreateSingleFolder(
+async function getOrCreateRepoFolder(
   contractId: string,
   folderName: string,
   folderType: string = "oc"
@@ -45,32 +45,77 @@ async function getOrCreateSingleFolder(
 
     return newFolder ? { id: newFolder.id, driveFolderId: newFolder.drive_folder_id } : null;
   } catch (error) {
-    console.error(`Error in getOrCreateSingleFolder('${folderName}'):`, error);
+    console.error(`Error in getOrCreateRepoFolder('${folderName}'):`, error);
     return null;
   }
 }
 
 /**
+ * Find a general folder by name.
+ * General folders are shared across contracts; we find the folder ID from general_folders table.
+ */
+async function findGeneralFolder(
+  folderName: string
+): Promise<{ id: string; driveFolderId: string | null } | null> {
+  try {
+    const { data } = await supabase
+      .from("general_folders")
+      .select("id")
+      .ilike("name", folderName)
+      .limit(1)
+      .single();
+
+    if (data) {
+      return { id: data.id, driveFolderId: null };
+    }
+    return null;
+  } catch (error) {
+    console.error(`Error finding general folder '${folderName}':`, error);
+    return null;
+  }
+}
+
+/**
+ * Resolve a single destination entry to a folder ID.
+ * For "repo" source → find/create in contract's repository_folders.
+ * For "general" source → find in general_folders.
+ */
+async function resolveDestinationFolder(
+  contractId: string,
+  entry: FolderDestinationEntry
+): Promise<{ id: string; driveFolderId: string | null; source: string; name: string } | null> {
+  if (entry.source === "general") {
+    const folder = await findGeneralFolder(entry.name);
+    if (folder) return { ...folder, source: "general", name: entry.name };
+    return null;
+  }
+  // Default: repo
+  const folder = await getOrCreateRepoFolder(contractId, entry.name, "oc");
+  if (folder) return { ...folder, source: "repo", name: entry.name };
+  return null;
+}
+
+/**
  * Get or create the configured destination folder(s) for OC files.
- * Returns the primary (first) folder. For all folders, use getOrCreateOCFolders.
+ * Returns the primary (first) folder.
  */
 export async function getOrCreateOCFolder(contractId: string): Promise<{ id: string; driveFolderId: string | null } | null> {
   const folderName = await getConfiguredFolderName("oc_folder");
-  return getOrCreateSingleFolder(contractId, folderName, "oc");
+  return getOrCreateRepoFolder(contractId, folderName, "oc");
 }
 
 /**
  * Get or create ALL configured destination folders for OC files.
- * Supports multiple folders (e.g., "OC, Facturas").
+ * Supports multiple folders from both repo templates and general folders.
  */
-export async function getOrCreateOCFolders(contractId: string): Promise<{ id: string; driveFolderId: string | null; name: string }[]> {
-  const folderNames = await getConfiguredFolderNames("oc_folder");
-  const results: { id: string; driveFolderId: string | null; name: string }[] = [];
+export async function getOrCreateOCFolders(contractId: string): Promise<{ id: string; driveFolderId: string | null; name: string; source: string }[]> {
+  const destinations = await getConfiguredDestinations("oc_folder");
+  const results: { id: string; driveFolderId: string | null; name: string; source: string }[] = [];
 
-  for (const name of folderNames) {
-    const folder = await getOrCreateSingleFolder(contractId, name, "oc");
+  for (const entry of destinations) {
+    const folder = await resolveDestinationFolder(contractId, entry);
     if (folder) {
-      results.push({ ...folder, name });
+      results.push(folder);
     }
   }
 
