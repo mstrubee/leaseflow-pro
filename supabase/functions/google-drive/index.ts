@@ -613,6 +613,26 @@ async function uploadFileToDrive(
   return await response.json();
 }
 
+/**
+ * Delete a file from Supabase Storage after it has been successfully synced to Drive.
+ * Silently ignores errors (file may already be deleted or not exist).
+ */
+async function cleanupStorageFile(sb: any, storageUrl: string): Promise<void> {
+  try {
+    if (!storageUrl || !storageUrl.startsWith('storage://repository-files/')) return;
+    const storagePath = storageUrl.replace('storage://repository-files/', '');
+    const { error } = await sb.storage.from('repository-files').remove([storagePath]);
+    if (error) {
+      console.warn(`Storage cleanup warning for ${storagePath}:`, error.message);
+    } else {
+      console.log(`Cleaned up storage file: ${storagePath}`);
+    }
+  } catch (e) {
+    // Non-critical - don't fail the sync
+    console.warn('Storage cleanup error:', e);
+  }
+}
+
 async function listFilesInFolder(accessToken: string, folderId: string): Promise<any[]> {
   const query = `'${folderId}' in parents and trashed=false`;
   const allFiles: any[] = [];
