@@ -2451,16 +2451,32 @@ const PurchaseOrdersDashboard = () => {
                     <TableHeader>
                       <TableRow>
                         {isAdmin && <TableHead className="w-[40px]"></TableHead>}
-                        <TableHead>Local</TableHead>
-                        <TableHead>Nº OC</TableHead>
-                        <TableHead>Titulo</TableHead>
-                        <TableHead>Proveedor</TableHead>
-                        <TableHead>Tipo</TableHead>
-                        <TableHead>Categoría</TableHead>
-                        <TableHead className="text-right">Monto Total</TableHead>
-                        <TableHead className="text-center">Facturas</TableHead>
-                        <TableHead>Estado</TableHead>
-                        <TableHead>Fecha</TableHead>
+                        {([
+                          { field: "local" as SortField, label: "Local", className: "" },
+                          { field: "order_number" as SortField, label: "Nº OC", className: "" },
+                          { field: "description" as SortField, label: "Titulo", className: "" },
+                          { field: "supplier" as SortField, label: "Proveedor", className: "" },
+                          { field: "type" as SortField, label: "Tipo", className: "" },
+                          { field: "category" as SortField, label: "Categoría", className: "" },
+                          { field: "amount" as SortField, label: "Monto Total", className: "text-right" },
+                          { field: "invoices" as SortField, label: "Facturas", className: "text-center" },
+                          { field: "status" as SortField, label: "Estado", className: "" },
+                          { field: "date" as SortField, label: "Fecha", className: "" },
+                        ]).map(col => (
+                          <TableHead key={col.field} className={col.className}>
+                            <button
+                              className="flex items-center gap-1 hover:text-foreground transition-colors w-full"
+                              onClick={() => handleSort(col.field)}
+                            >
+                              {col.label}
+                              {sortField === col.field ? (
+                                sortDirection === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                              ) : (
+                                <ArrowUpDown className="h-3 w-3 opacity-30" />
+                              )}
+                            </button>
+                          </TableHead>
+                        ))}
                         <TableHead>Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
