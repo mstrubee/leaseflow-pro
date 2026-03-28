@@ -769,7 +769,8 @@ export function PatentChecklist({
                   ) : (
                     <><Square className="h-4 w-4" /> Seleccionar todos</>
                   )}
-              </Button>
+                </Button>
+              </div>
             </CardHeader>
             <CollapsibleContent>
               <CardContent className="p-0">
