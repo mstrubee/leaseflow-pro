@@ -15,7 +15,8 @@ import {
   File,
   AlertTriangle,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Trash2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
