@@ -369,7 +369,7 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
       <CollapsibleCard
         title="Plantillas de Línea de Tiempo (Gantt)"
         description="Crea y gestiona plantillas reutilizables para líneas de tiempo de proyectos"
-        icon={<CalendarDays className="h-5 w-5" />}
+        icon={<CalendarDays className="h-5 w-5 text-violet-500" />}
         defaultOpen={!defaultCollapsed}
         headerActions={
           <Button onClick={() => { setEditingTemplate(null); setTemplateForm({ name: "", description: "" }); setTemplateDialogOpen(true); }} size="sm">

@@ -765,7 +765,7 @@ const AdminPanel = () => {
         <CollapsibleCard
           title="Usuarios"
           description="Lista de todos los usuarios registrados"
-          icon={<Shield className="h-5 w-5" />}
+          icon={<Shield className="h-5 w-5 text-indigo-600" />}
           headerActions={
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
@@ -1124,7 +1124,7 @@ const AdminPanel = () => {
         <CollapsibleCard
           title="Carpetas del Repositorio"
           description="Gestiona las carpetas generales y las carpetas comunes de contratos"
-          icon={<Folder className="h-5 w-5" />}
+          icon={<Folder className="h-5 w-5 text-yellow-600" />}
         >
           <div className="space-y-6">
             {/* Carpetas Generales */}

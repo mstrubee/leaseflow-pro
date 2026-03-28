@@ -160,7 +160,7 @@ export const OCRequestTemplateManager = ({ defaultCollapsed = false }: OCRequest
   return (
     <CollapsibleCard
       title="Plantilla de Solicitud de OC"
-      icon={<FileSpreadsheet className="h-5 w-5" />}
+      icon={<FileSpreadsheet className="h-5 w-5 text-green-600" />}
       defaultOpen={!defaultCollapsed}
     >
         {/* Upload new template */}
