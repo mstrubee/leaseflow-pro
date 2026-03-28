@@ -11,7 +11,10 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download, CheckSquare, Square, X, ChevronDown, FolderOpen } from "lucide-react";
+import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download, CheckSquare, Square, X, ChevronDown, FolderOpen, FolderCog } from "lucide-react";
+import { DialogFooter } from "@/components/ui/dialog";
+import { FolderDestinationPicker } from "@/components/budget/FolderDestinationPicker";
+import { useFileDestinationSettings } from "@/hooks/useFileDestinationSettings";
 import { Checkbox } from "@/components/ui/checkbox";
 import { exportPatentsToExcel } from "./exportPatentsExcel";
 import { exportPatentsWithFiles } from "./exportPatentsZip";
@@ -93,7 +96,13 @@ export function PatentChecklist({
   onUpdateDocument,
   onUpdateDocumentStatus,
 }: PatentChecklistProps) {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
+  
+  // File destination settings
+  const { settings: fileDestSettings, updateSetting: updateFileDestSetting } = useFileDestinationSettings();
+  const [showFileDestDialog, setShowFileDestDialog] = useState(false);
+  const [tempPatentFolder, setTempPatentFolder] = useState("");
+  const [savingFileDest, setSavingFileDest] = useState(false);
   
   // Shared items lookup: itemId -> folderId
   const sharedItemLookup = useMemo(() => {
@@ -730,21 +739,38 @@ export function PatentChecklist({
                   )}
                 </Button>
               </CollapsibleTrigger>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleSectionSelection(section.id);
-                }}
-                className="gap-1"
-              >
-                {allSectionSelected ? (
-                  <><CheckSquare className="h-4 w-4" /> Deseleccionar</>
-                ) : (
-                  <><Square className="h-4 w-4" /> Seleccionar todos</>
+              <div className="flex items-center gap-1">
+                {isAdmin && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setTempPatentFolder(fileDestSettings.patent_folder);
+                      setShowFileDestDialog(true);
+                    }}
+                    title="Configurar carpetas de destino"
+                    className="h-8 w-8 p-0"
+                  >
+                    <FolderCog className="h-4 w-4 text-muted-foreground" />
+                  </Button>
                 )}
-              </Button>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleSectionSelection(section.id);
+                  }}
+                  className="gap-1"
+                >
+                  {allSectionSelected ? (
+                    <><CheckSquare className="h-4 w-4" /> Deseleccionar</>
+                  ) : (
+                    <><Square className="h-4 w-4" /> Seleccionar todos</>
+                  )}
+                </Button>
+              </div>
             </CardHeader>
             <CollapsibleContent>
               <CardContent className="p-0">
@@ -1057,6 +1083,21 @@ export function PatentChecklist({
                                         <Upload className="h-3 w-3" />
                                       </Button>
                                     )}
+                                    {isAdmin && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setTempPatentFolder(fileDestSettings.patent_folder);
+                                          setShowFileDestDialog(true);
+                                        }}
+                                        title="Configurar carpetas de destino"
+                                      >
+                                        <FolderCog className="h-3 w-3 text-muted-foreground" />
+                                      </Button>
+                                    )}
                                   </>
                                 )}
                               </div>
@@ -1166,6 +1207,56 @@ export function PatentChecklist({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {/* File Destination Dialog */}
+      <Dialog open={showFileDestDialog} onOpenChange={setShowFileDestDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FolderCog className="h-5 w-5 text-primary" />
+              Carpetas de Destino - Patentes
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Configure en qué carpeta del repositorio de cada contrato se almacenarán automáticamente los documentos de patentes al subirlos.
+            </p>
+            <FolderDestinationPicker
+              icon={<FileText className="h-4 w-4 text-orange-500" />}
+              label="Archivos de Patentes"
+              description="Carpetas donde se guardarán los documentos de patentes"
+              value={tempPatentFolder}
+              onChange={setTempPatentFolder}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowFileDestDialog(false)} disabled={savingFileDest}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={savingFileDest || !tempPatentFolder.trim()}
+              onClick={async () => {
+                setSavingFileDest(true);
+                try {
+                  await updateFileDestSetting("patent_folder", tempPatentFolder.trim());
+                  toast.success("Configuración de carpetas de patentes actualizada");
+                  setShowFileDestDialog(false);
+                } catch (err: any) {
+                  toast.error("Error al guardar: " + (err?.message || "Error desconocido"));
+                } finally {
+                  setSavingFileDest(false);
+                }
+              }}
+            >
+              {savingFileDest ? "Guardando..." : (
+                <>
+                  <Save className="h-4 w-4 mr-1" />
+                  Guardar
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
