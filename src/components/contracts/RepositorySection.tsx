@@ -1235,26 +1235,40 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
 
         {/* Folders */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-          {folders.map((folder) => (
+          {folders.map((folder) => {
+            const isEliminados = folder.folder_type === '_eliminados';
+            return (
             <div
               key={folder.id}
-              className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors group"
+              className={cn(
+                "flex items-center gap-3 p-3 rounded-lg border transition-colors group",
+                isEliminados 
+                  ? "border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-950/30" 
+                  : "border-border bg-card hover:bg-muted/50"
+              )}
             >
               <button
                 onClick={() => navigateToFolder(folder)}
                 className="flex items-center gap-3 flex-1 min-w-0 text-left"
               >
                 <div className="relative flex-shrink-0">
-                  <Folder className="h-5 w-5 text-primary" />
-                  {folder.drive_folder_id && (
+                  {isEliminados ? (
+                    <Trash2 className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                  ) : (
+                    <Folder className="h-5 w-5 text-primary" />
+                  )}
+                  {folder.drive_folder_id && !isEliminados && (
                     <Cloud className="h-3 w-3 text-blue-500 absolute -top-1 -right-1" />
                   )}
                 </div>
-                <span className="font-medium text-sm truncate">{folder.name}</span>
+                <span className={cn("font-medium text-sm truncate", isEliminados && "text-amber-700 dark:text-amber-300")}>
+                  {folder.name}
+                  {isEliminados && " (reasignar archivos)"}
+                </span>
               </button>
               <div className="flex items-center gap-1 flex-shrink-0">
-                {/* Delete button - only for non-base folders */}
-                {!folder.is_base_folder && (
+                {/* Delete button - only for non-base folders and non-eliminados */}
+                {!folder.is_base_folder && !isEliminados && (
                   <Button
                     variant="ghost"
                     size="icon"
@@ -1270,7 +1284,9 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </div>
             </div>
-          ))}
+            );
+          })}
+
         </div>
 
         {/* Files from Google Drive (only show those NOT already tracked in DB) */}
