@@ -742,14 +742,6 @@ async function ensureDriveFolderForRepositoryFolder(
       if (currentParentId === parentDriveFolderId) {
         return folder.drive_folder_id;
       }
-
-      try {
-        await moveToFolder(accessToken, meta.id, parentDriveFolderId, currentParentId || undefined);
-        await sb.from('repository_folders').update({ drive_folder_id: meta.id }).eq('id', folder.id);
-        return meta.id;
-      } catch {
-        // Fall through to resolve/create canonical folder under correct parent
-      }
     }
 
     await sb.from('repository_folders').update({ drive_folder_id: null }).eq('id', folder.id);
