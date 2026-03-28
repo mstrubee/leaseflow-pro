@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +15,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download, CheckSquare, Square, X, ChevronDown, FolderOpen, FolderCog } from "lucide-react";
 import { DialogFooter } from "@/components/ui/dialog";
 import { FolderDestinationPicker } from "@/components/budget/FolderDestinationPicker";
-import { useFileDestinationSettings } from "@/hooks/useFileDestinationSettings";
+
 import { Checkbox } from "@/components/ui/checkbox";
 import { exportPatentsToExcel } from "./exportPatentsExcel";
 import { exportPatentsWithFiles } from "./exportPatentsZip";
@@ -98,11 +99,83 @@ export function PatentChecklist({
 }: PatentChecklistProps) {
   const { user, isAdmin } = useAuth();
   
-  // File destination settings
-  const { settings: fileDestSettings, updateSetting: updateFileDestSetting } = useFileDestinationSettings();
-  const [showFileDestDialog, setShowFileDestDialog] = useState(false);
+  // File destination settings - hierarchical: section-level and item-level
+  const [fileDestContext, setFileDestContext] = useState<{ type: 'section' | 'item'; id: string; label: string } | null>(null);
   const [tempPatentFolder, setTempPatentFolder] = useState("");
   const [savingFileDest, setSavingFileDest] = useState(false);
+  const [sectionFolders, setSectionFolders] = useState<Record<string, string>>({});
+  const [itemFolders, setItemFolders] = useState<Record<string, string>>({});
+
+  // Load all patent folder destination settings
+  useEffect(() => {
+    const loadPatentFolderSettings = async () => {
+      const { data } = await supabase
+        .from("file_destination_settings")
+        .select("setting_key, folder_name")
+        .like("setting_key", "patent_%");
+      
+      const secFolders: Record<string, string> = {};
+      const itmFolders: Record<string, string> = {};
+      (data || []).forEach(row => {
+        if (row.setting_key.startsWith("patent_section_")) {
+          const sectionId = row.setting_key.replace("patent_section_", "");
+          secFolders[sectionId] = row.folder_name;
+        } else if (row.setting_key.startsWith("patent_item_")) {
+          const itemId = row.setting_key.replace("patent_item_", "");
+          itmFolders[itemId] = row.folder_name;
+        }
+      });
+      setSectionFolders(secFolders);
+      setItemFolders(itmFolders);
+    };
+    loadPatentFolderSettings();
+  }, []);
+
+  const openFolderDestDialog = (type: 'section' | 'item', id: string, label: string) => {
+    const currentValue = type === 'section' ? (sectionFolders[id] || '') : (itemFolders[id] || '');
+    setTempPatentFolder(currentValue);
+    setFileDestContext({ type, id, label });
+  };
+
+  const saveFolderDest = async () => {
+    if (!fileDestContext) return;
+    setSavingFileDest(true);
+    try {
+      const settingKey = fileDestContext.type === 'section' 
+        ? `patent_section_${fileDestContext.id}` 
+        : `patent_item_${fileDestContext.id}`;
+      
+      const { data: existing } = await supabase
+        .from("file_destination_settings")
+        .select("id")
+        .eq("setting_key", settingKey)
+        .single();
+
+      if (existing) {
+        await supabase
+          .from("file_destination_settings")
+          .update({ folder_name: tempPatentFolder.trim(), updated_at: new Date().toISOString() })
+          .eq("setting_key", settingKey);
+      } else {
+        await supabase
+          .from("file_destination_settings")
+          .insert({ setting_key: settingKey, folder_name: tempPatentFolder.trim() });
+      }
+
+      if (fileDestContext.type === 'section') {
+        setSectionFolders(prev => ({ ...prev, [fileDestContext.id]: tempPatentFolder.trim() }));
+      } else {
+        setItemFolders(prev => ({ ...prev, [fileDestContext.id]: tempPatentFolder.trim() }));
+      }
+      
+      toast.success("Configuración de carpetas actualizada");
+      setFileDestContext(null);
+    } catch (err: any) {
+      toast.error("Error al guardar: " + (err?.message || "Error desconocido"));
+    } finally {
+      setSavingFileDest(false);
+    }
+  };
   
   // Shared items lookup: itemId -> folderId
   const sharedItemLookup = useMemo(() => {
@@ -746,13 +819,12 @@ export function PatentChecklist({
                     size="sm"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setTempPatentFolder(fileDestSettings.patent_folder);
-                      setShowFileDestDialog(true);
+                      openFolderDestDialog('section', section.id, section.name);
                     }}
                     title="Configurar carpetas de destino"
                     className="h-8 w-8 p-0"
                   >
-                    <FolderCog className="h-4 w-4 text-muted-foreground" />
+                    <FolderCog className={`h-4 w-4 ${sectionFolders[section.id] ? 'text-primary' : 'text-muted-foreground'}`} />
                   </Button>
                 )}
                 <Button 
@@ -1090,12 +1162,11 @@ export function PatentChecklist({
                                         className="h-8 w-8 p-0"
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          setTempPatentFolder(fileDestSettings.patent_folder);
-                                          setShowFileDestDialog(true);
+                                          openFolderDestDialog('item', item.id, item.name);
                                         }}
-                                        title="Configurar carpetas de destino"
+                                        title="Configurar carpetas adicionales para este documento"
                                       >
-                                        <FolderCog className="h-3 w-3 text-muted-foreground" />
+                                        <FolderCog className={`h-3 w-3 ${itemFolders[item.id] ? 'text-primary' : 'text-muted-foreground'}`} />
                                       </Button>
                                     )}
                                   </>
@@ -1208,44 +1279,39 @@ export function PatentChecklist({
         </AlertDialogContent>
       </AlertDialog>
       {/* File Destination Dialog */}
-      <Dialog open={showFileDestDialog} onOpenChange={setShowFileDestDialog}>
+      <Dialog open={!!fileDestContext} onOpenChange={(open) => { if (!open) setFileDestContext(null); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FolderCog className="h-5 w-5 text-primary" />
-              Carpetas de Destino - Patentes
+              {fileDestContext?.type === 'section' 
+                ? `Carpetas de Destino - ${fileDestContext?.label}`
+                : `Carpeta Adicional - ${fileDestContext?.label}`}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">
-              Configure en qué carpeta del repositorio de cada contrato se almacenarán automáticamente los documentos de patentes al subirlos.
+              {fileDestContext?.type === 'section' 
+                ? "Seleccione las carpetas de destino para todos los documentos de esta sección. Aplica a todos los ítems de la sección."
+                : "Seleccione carpetas adicionales solo para este documento. No afecta a la sección ni a los demás ítems."}
             </p>
             <FolderDestinationPicker
               icon={<FileText className="h-4 w-4 text-orange-500" />}
-              label="Archivos de Patentes"
-              description="Carpetas donde se guardarán los documentos de patentes"
+              label={fileDestContext?.type === 'section' ? "Carpetas de la sección" : "Carpetas adicionales del ítem"}
+              description={fileDestContext?.type === 'section' 
+                ? "Todos los documentos de esta sección se guardarán aquí"
+                : "Carpetas adicionales solo para este documento"}
               value={tempPatentFolder}
               onChange={setTempPatentFolder}
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowFileDestDialog(false)} disabled={savingFileDest}>
+            <Button variant="outline" onClick={() => setFileDestContext(null)} disabled={savingFileDest}>
               Cancelar
             </Button>
             <Button
-              disabled={savingFileDest || !tempPatentFolder.trim()}
-              onClick={async () => {
-                setSavingFileDest(true);
-                try {
-                  await updateFileDestSetting("patent_folder", tempPatentFolder.trim());
-                  toast.success("Configuración de carpetas de patentes actualizada");
-                  setShowFileDestDialog(false);
-                } catch (err: any) {
-                  toast.error("Error al guardar: " + (err?.message || "Error desconocido"));
-                } finally {
-                  setSavingFileDest(false);
-                }
-              }}
+              disabled={savingFileDest}
+              onClick={saveFolderDest}
             >
               {savingFileDest ? "Guardando..." : (
                 <>
