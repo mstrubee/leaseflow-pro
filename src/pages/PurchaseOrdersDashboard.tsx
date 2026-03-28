@@ -74,6 +74,9 @@ import {
   CreditCard,
   AlertTriangle,
   Upload,
+  Settings,
+  FolderOpen,
+  Save,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useEconomicIndicators } from "@/hooks/useEconomicIndicators";
@@ -89,6 +92,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, formatCLP } from "@/lib/utils";
 import { backupOCFileToRepository, uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
 import { Building2 } from "lucide-react";
+import { useFileDestinationSettings } from "@/hooks/useFileDestinationSettings";
 
 interface Invoice {
   id: string;
@@ -215,6 +219,13 @@ const PurchaseOrdersDashboard = () => {
   const { user, loading: authLoading, isAdmin } = useAuth();
   const { ufValue } = useEconomicIndicators();
   const { openFile } = useSecureFileAccess();
+  const { settings: fileDestSettings, updateSetting: updateFileDestSetting } = useFileDestinationSettings();
+
+  // File destination settings dialog
+  const [showFileDestDialog, setShowFileDestDialog] = useState(false);
+  const [tempOCFolder, setTempOCFolder] = useState("");
+  const [tempInvoiceFolder, setTempInvoiceFolder] = useState("");
+  const [savingFileDest, setSavingFileDest] = useState(false);
 
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   
@@ -1806,6 +1817,20 @@ const PurchaseOrdersDashboard = () => {
                 <Building2 className="h-4 w-4 mr-1" />
                 Proveedores
               </Button>
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setTempOCFolder(fileDestSettings.oc_folder);
+                    setTempInvoiceFolder(fileDestSettings.invoice_folder);
+                    setShowFileDestDialog(true);
+                  }}
+                >
+                  <Settings className="h-4 w-4 mr-1 text-muted-foreground" />
+                  Carpetas
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -3912,6 +3937,81 @@ const PurchaseOrdersDashboard = () => {
             </Button>
             <Button onClick={handleUpdateOC} disabled={updatingOC || !editingOCData.order_number}>
               {updatingOC ? "Guardando..." : "Actualizar OC"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* File Destination Settings Dialog */}
+      <Dialog open={showFileDestDialog} onOpenChange={setShowFileDestDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FolderOpen className="h-5 w-5 text-blue-500" />
+              Carpetas de Destino
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Configure en qué carpeta del repositorio de cada contrato se almacenarán automáticamente los archivos. 
+              Esto no impide que los archivos también se guarden en otra ubicación.
+            </p>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-2">
+                  <ShoppingCart className="h-4 w-4 text-indigo-500" />
+                  Archivos de OC
+                </Label>
+                <Input
+                  value={tempOCFolder}
+                  onChange={(e) => setTempOCFolder(e.target.value)}
+                  placeholder="Ej: OC"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Carpeta donde se guardarán los PDFs de las Órdenes de Compra
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-2">
+                  <Receipt className="h-4 w-4 text-emerald-500" />
+                  Archivos de Facturas y Notas de Crédito
+                </Label>
+                <Input
+                  value={tempInvoiceFolder}
+                  onChange={(e) => setTempInvoiceFolder(e.target.value)}
+                  placeholder="Ej: Facturas"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Carpeta donde se guardarán los archivos de facturas y notas de crédito
+                </p>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowFileDestDialog(false)} disabled={savingFileDest}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={savingFileDest || !tempOCFolder.trim() || !tempInvoiceFolder.trim()}
+              onClick={async () => {
+                setSavingFileDest(true);
+                try {
+                  await updateFileDestSetting("oc_folder", tempOCFolder.trim());
+                  await updateFileDestSetting("invoice_folder", tempInvoiceFolder.trim());
+                  toast.success("Configuración de carpetas actualizada");
+                  setShowFileDestDialog(false);
+                } catch (err: any) {
+                  toast.error("Error al guardar: " + (err?.message || "Error desconocido"));
+                } finally {
+                  setSavingFileDest(false);
+                }
+              }}
+            >
+              {savingFileDest ? "Guardando..." : (
+                <>
+                  <Save className="h-4 w-4 mr-1" />
+                  Guardar
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

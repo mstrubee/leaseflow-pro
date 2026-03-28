@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { getConfiguredFolderName } from "@/hooks/useFileDestinationSettings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -277,11 +278,14 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
   const findFacturasFolder = async (): Promise<RepositoryFolder | null> => {
     if (!contractId) return null;
     
+    const configuredName = await getConfiguredFolderName("invoice_folder");
+    
+    // Try configured name first, then fallback to legacy "factura" match
     const { data } = await supabase
       .from("repository_folders")
       .select("*")
       .eq("contract_id", contractId)
-      .or("folder_type.ilike.%factura%,name.ilike.%factura%")
+      .or(`folder_type.ilike.%factura%,name.ilike.%${configuredName}%,name.ilike.%factura%`)
       .limit(1);
     
     return data?.[0] || null;
@@ -513,11 +517,12 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
       let targetFolder = await findFacturasFolder();
       
       if (!targetFolder) {
+        const configuredName = await getConfiguredFolderName("invoice_folder");
         const { data: newFolder, error: folderError } = await supabase
           .from("repository_folders")
           .insert({
             contract_id: contractId,
-            name: "Facturas",
+            name: configuredName,
             is_base_folder: false,
             folder_type: "facturas",
           })
@@ -781,9 +786,10 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     try {
       let targetFolder = await findFacturasFolder();
       if (!targetFolder) {
+        const configuredName = await getConfiguredFolderName("invoice_folder");
         const { data: newFolder, error: folderError } = await supabase
           .from("repository_folders")
-          .insert({ contract_id: contractId, name: "Facturas", is_base_folder: false, folder_type: "facturas" })
+          .insert({ contract_id: contractId, name: configuredName, is_base_folder: false, folder_type: "facturas" })
           .select()
           .single();
         if (folderError) throw folderError;
