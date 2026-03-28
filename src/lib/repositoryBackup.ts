@@ -78,9 +78,8 @@ export async function getOrCreateOCFolders(contractId: string): Promise<{ id: st
 }
 
 /**
- * Backup an OC file to the contract's repository OC folder.
- * NOTE: Drive uploads are disabled due to service account quota limits.
- * Files are registered in the DB only (no cloud upload).
+ * Backup an OC file to ALL configured destination folders in the contract's repository.
+ * Uploads the file once to Storage, then creates a reference in each destination folder.
  */
 export async function backupOCFileToRepository(
   contractId: string,
@@ -88,17 +87,16 @@ export async function backupOCFileToRepository(
   orderNumber: string
 ): Promise<{ success: boolean; fileId?: string; error?: string }> {
   try {
-    const folderInfo = await getOrCreateOCFolder(contractId);
-    if (!folderInfo) {
-      return { success: false, error: "No se pudo obtener o crear la carpeta OC" };
+    const folders = await getOrCreateOCFolders(contractId);
+    if (folders.length === 0) {
+      return { success: false, error: "No se pudo obtener o crear las carpetas de destino" };
     }
 
-    // Generate unique file name with order number prefix
     const fileExt = file.name.split(".").pop();
     const sanitizedName = sanitizeFileName(file.name);
     const fileName = `OC_${orderNumber}_${sanitizedName}`;
 
-    // Drive uploads disabled → store the file in Storage and reference it from repository_files
+    // Upload once to Storage
     const datePrefix = new Date().toISOString().split("T")[0].replace(/-/g, "");
     const unique = Date.now();
     const storagePath = `oc-files/${datePrefix}/${contractId}/OC_${orderNumber}_${unique}_${sanitizedName}`;
@@ -108,25 +106,29 @@ export async function backupOCFileToRepository(
       return { success: false, error: uploadError.message };
     }
 
-    // Create record in repository_files referencing Storage URL
-    const { data: fileRecord, error: dbError } = await supabase
-      .from("repository_files")
-      .insert({
-        folder_id: folderInfo.id,
-        name: fileName,
-        url: storedUrl,
-        file_type: fileExt || null,
-        drive_file_id: null,
-      })
-      .select("id")
-      .single();
+    // Create a reference in each destination folder
+    let primaryFileId: string | undefined;
+    for (const folder of folders) {
+      const { data: fileRecord, error: dbError } = await supabase
+        .from("repository_files")
+        .insert({
+          folder_id: folder.id,
+          name: fileName,
+          url: storedUrl,
+          file_type: fileExt || null,
+          drive_file_id: null,
+        })
+        .select("id")
+        .single();
 
-    if (dbError) {
-      console.error("Error creating file record:", dbError);
-      return { success: false, error: dbError.message };
+      if (dbError) {
+        console.error(`Error creating file record in folder '${folder.name}':`, dbError);
+      } else if (!primaryFileId && fileRecord) {
+        primaryFileId = fileRecord.id;
+      }
     }
 
-    return { success: true, fileId: fileRecord?.id };
+    return { success: true, fileId: primaryFileId };
   } catch (error: any) {
     console.error("Error backing up OC file:", error);
     return { success: false, error: error.message };
