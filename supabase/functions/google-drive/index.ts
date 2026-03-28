@@ -1756,29 +1756,19 @@ serve(async (req) => {
             for (const dest of destinations) {
               if (dest.source !== 'repo') continue; // Only repo folders have Drive sync
 
-              // Find or create the repo folder for this contract
-              let { data: folder } = await sb
+              // Find the repo folder for this contract (search all levels, not just root)
+              const { data: folderList } = await sb
                 .from('repository_folders')
                 .select('id, drive_folder_id')
                 .eq('contract_id', doc.contract_id)
-                .ilike('name', dest.name)
-                .limit(1)
-                .single();
+                .ilike('name', dest.name);
 
-              // If folder doesn't exist, create it
+              // Prefer folder with drive_folder_id
+              let folder = folderList?.find(f => f.drive_folder_id) || folderList?.[0] || null;
+
               if (!folder) {
-                const { data: created } = await sb
-                  .from('repository_folders')
-                  .insert({
-                    contract_id: doc.contract_id,
-                    name: dest.name,
-                    folder_type: 'patent',
-                    parent_id: null,
-                    drive_folder_id: null,
-                  })
-                  .select('id, drive_folder_id')
-                  .single();
-                folder = created;
+                errors.push(`Folder ${dest.name} not found for contract ${doc.contract_id} — skipping (do not auto-create)`);
+                continue;
               }
 
               if (!folder) {
