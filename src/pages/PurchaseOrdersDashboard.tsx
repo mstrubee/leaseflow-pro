@@ -92,7 +92,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, formatCLP } from "@/lib/utils";
 import { backupOCFileToRepository, uploadFileToMultipleContracts } from "@/lib/repositoryBackup";
 import { FolderDestinationPicker } from "@/components/budget/FolderDestinationPicker";
-import { Building2 } from "lucide-react";
+import { Building2, Store } from "lucide-react";
 import { useFileDestinationSettings } from "@/hooks/useFileDestinationSettings";
 
 interface Invoice {
