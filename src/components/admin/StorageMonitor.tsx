@@ -270,6 +270,18 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
         </div>
       }
     >
+      {cleanResult && (
+        <div className={cn(
+          "rounded-md p-3 text-sm mb-4",
+          cleanResult.cleaned > 0 ? "bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200" : "bg-muted"
+        )}>
+          {cleanResult.cleaned > 0 
+            ? `✅ Se eliminaron ${cleanResult.cleaned} archivos del almacenamiento local (ya sincronizados con Drive).`
+            : "No se encontraron archivos para limpiar."
+          }
+          {cleanResult.errors > 0 && ` ⚠️ ${cleanResult.errors} errores.`}
+        </div>
+      )}
       {loading ? (
         <div className="space-y-4">
           <Skeleton className="h-24 w-full" />
