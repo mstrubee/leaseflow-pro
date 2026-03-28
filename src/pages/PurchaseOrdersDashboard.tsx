@@ -4037,7 +4037,14 @@ const PurchaseOrdersDashboard = () => {
                   <Layers className="h-4 w-4" />
                   Contratos asignados ({editingOCContracts.length})
                   {editingOCContracts.length === 1 && (
-                    <span className="text-muted-foreground font-normal">— {editingOCContracts[0].contract_name}</span>
+                    <span className="text-muted-foreground font-normal flex items-center gap-1.5">
+                      —
+                      <CompanyLogo
+                        companyNames={[contractCompanyMap.get(editingOCContracts[0].contract_id) || ""].filter(Boolean)}
+                        size="sm"
+                      />
+                      {editingOCContracts[0].contract_name}
+                    </span>
                   )}
                   {editingOCContracts.length > 1 && (
                     <Badge variant="outline" className="text-xs">Multi-contrato</Badge>
