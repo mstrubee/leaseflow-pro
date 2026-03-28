@@ -2457,7 +2457,7 @@ const PurchaseOrdersDashboard = () => {
                               )}
                               {/* Local column - first */}
                               <TableCell
-                                className="max-w-[160px] cursor-pointer hover:bg-muted/50 transition-colors"
+                                className="min-w-[200px] cursor-pointer hover:bg-muted/50 transition-colors"
                                 onClick={() => {
                                   setExpandedInvoiceSections(prev => {
                                     const next = new Set(prev);
