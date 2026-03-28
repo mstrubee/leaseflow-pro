@@ -1658,12 +1658,17 @@ serve(async (req) => {
         const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
         const sb = createClient(supabaseUrl, supabaseKey);
 
-        // 1. Get all patent documents with storage URLs
+        const batchSize = params.batchSize || 10;
+        const offset = params.offset || 0;
+
+        // 1. Get patent documents with storage URLs (paginated)
         const { data: patentDocs, error: pdErr } = await sb
           .from('patent_documents')
           .select('id, contract_id, checklist_item_id, document_url')
           .not('document_url', 'is', null)
-          .neq('document_url', '');
+          .neq('document_url', '')
+          .order('id')
+          .range(offset, offset + batchSize - 1);
 
         if (pdErr) throw pdErr;
 
