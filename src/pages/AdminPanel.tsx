@@ -1049,31 +1049,76 @@ const AdminPanel = () => {
             </Table>
         </CollapsibleCard>
 
-        {/* Companies */}
-        <CompanyManager defaultCollapsed />
-
-        {/* Organigrama */}
-        <OrgChartManager defaultCollapsed />
-
-        {/* Logo Management */}
+        {/* ── Grupo: Empresas ── */}
         <CollapsibleCard
-          title="Logos de la Aplicación"
-          description="Administra los logos que se muestran en la aplicación"
+          title="Empresas"
+          description="Administración de empresas, organigrama y logos"
+          icon={<Building2 className="h-5 w-5 text-blue-600" />}
         >
-          <LogoManager />
+          <div className="space-y-4">
+            <CompanyManager defaultCollapsed />
+            <OrgChartManager defaultCollapsed />
+            <CollapsibleCard
+              title="Logos de la Aplicación"
+              description="Administra los logos que se muestran en la aplicación"
+              icon={<FileText className="h-5 w-5 text-purple-500" />}
+            >
+              <LogoManager />
+            </CollapsibleCard>
+          </div>
+        </CollapsibleCard>
+
+        {/* ── Grupo: Plantillas Tipo ── */}
+        <CollapsibleCard
+          title="Plantillas Tipo"
+          description="Formatos de presupuesto, líneas de tiempo y solicitudes de OC"
+          icon={<Columns3 className="h-5 w-5 text-emerald-600" />}
+        >
+          <div className="space-y-4">
+            <BudgetTemplateManager defaultCollapsed />
+            <GanttTemplateManager defaultCollapsed />
+            <OCRequestTemplateManager defaultCollapsed />
+          </div>
+        </CollapsibleCard>
+
+        {/* ── Grupo: Estados y Categorías ── */}
+        <CollapsibleCard
+          title="Estados y Categorías"
+          description="Estados de Comité GP, subestados y criticidad de mantenciones"
+          icon={<ListChecks className="h-5 w-5 text-amber-600" />}
+        >
+          <div className="space-y-4">
+            <CollapsibleCard
+              title="Estados Comité GP"
+              description="Administra las opciones de estado para la columna Comité GP en contratos en negociación"
+              icon={<Columns3 className="h-5 w-5 text-sky-500" />}
+              defaultOpen={false}
+            >
+              <ComiteGPStatusManager />
+            </CollapsibleCard>
+
+            <CollapsibleCard
+              title="Sub Estados de Mantenciones"
+              description="Define los sub-estados del flujo de trabajo de mantenciones y su orden de avance"
+              icon={<Wrench className="h-5 w-5 text-slate-500" />}
+              defaultOpen={false}
+            >
+              <MaintenanceSubStatusManager />
+            </CollapsibleCard>
+
+            <CollapsibleCard
+              title="Criticidad de Mantenciones"
+              description="Define las categorías de criticidad para los formularios de mantención"
+              icon={<AlertTriangle className="h-5 w-5 text-orange-500" />}
+              defaultOpen={false}
+            >
+              <MaintenanceCriticalityManager />
+            </CollapsibleCard>
+          </div>
         </CollapsibleCard>
 
         {/* Unified Cloud Storage */}
         <UnifiedCloudStorage defaultCollapsed />
-
-        {/* Budget Templates */}
-        <BudgetTemplateManager defaultCollapsed />
-
-        {/* Gantt Templates */}
-        <GanttTemplateManager defaultCollapsed />
-
-        {/* OC Request Templates */}
-        <OCRequestTemplateManager defaultCollapsed />
 
         {/* Folder Templates */}
         <CollapsibleCard
@@ -1159,34 +1204,6 @@ const AdminPanel = () => {
               </div>
             </div>
           </div>
-        </CollapsibleCard>
-
-        {/* Comité GP Statuses */}
-        <CollapsibleCard
-          title="Estados Comité GP"
-          description="Administra las opciones de estado para la columna Comité GP en contratos en negociación"
-          defaultOpen={false}
-        >
-          <ComiteGPStatusManager />
-        </CollapsibleCard>
-
-        {/* Sub Estados de Mantenciones */}
-        <CollapsibleCard
-          title="Sub Estados de Mantenciones"
-          description="Define los sub-estados del flujo de trabajo de mantenciones y su orden de avance"
-          defaultOpen={false}
-        >
-          <MaintenanceSubStatusManager />
-        </CollapsibleCard>
-
-        {/* Criticidad de Mantenciones */}
-        <CollapsibleCard
-          title="Criticidad de Mantenciones"
-          description="Define las categorías de criticidad para los formularios de mantención"
-          defaultOpen={false}
-          icon={<Shield className="h-5 w-5 text-orange-500" />}
-        >
-          <MaintenanceCriticalityManager />
         </CollapsibleCard>
 
         {/* Storage Monitor - Admin only */}
