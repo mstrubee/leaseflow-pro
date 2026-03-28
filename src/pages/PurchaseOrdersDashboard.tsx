@@ -219,6 +219,13 @@ const PurchaseOrdersDashboard = () => {
   const { user, loading: authLoading, isAdmin } = useAuth();
   const { ufValue } = useEconomicIndicators();
   const { openFile } = useSecureFileAccess();
+  const { settings: fileDestSettings, updateSetting: updateFileDestSetting } = useFileDestinationSettings();
+
+  // File destination settings dialog
+  const [showFileDestDialog, setShowFileDestDialog] = useState(false);
+  const [tempOCFolder, setTempOCFolder] = useState("");
+  const [tempInvoiceFolder, setTempInvoiceFolder] = useState("");
+  const [savingFileDest, setSavingFileDest] = useState(false);
 
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   
