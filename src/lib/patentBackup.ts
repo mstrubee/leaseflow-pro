@@ -4,8 +4,8 @@ import type { FolderDestinationEntry } from "@/components/budget/FolderDestinati
 
 /**
  * Resolve a destination folder for patent files.
- * For "repo" → find/create in contract's repository_folders (includes drive_folder_id).
- * For "general" → find in general_folders (includes drive_folder_id).
+ * For "repo" → find in contract's repository_folders.
+ * For "general" → find in general_folders.
  */
 async function resolveFolder(
   contractId: string,
@@ -21,30 +21,72 @@ async function resolveFolder(
     return data ? { id: data.id, source: "general", name: entry.name, driveFolderId: data.drive_folder_id } : null;
   }
 
-  // Repo: find existing folder anywhere in the contract's hierarchy (not just root)
+  // Repo: find existing folder anywhere in the contract's hierarchy
   const { data: existingList } = await supabase
     .from("repository_folders")
-    .select("id, drive_folder_id, parent_id")
+    .select("id, name, drive_folder_id, parent_id")
     .eq("contract_id", contractId)
     .ilike("name", entry.name);
 
-  // Prefer the folder that already has a drive_folder_id, otherwise pick first match
-  const existing = existingList?.find(f => f.drive_folder_id) || existingList?.[0] || null;
+  // Exact-match preferred (ilike can match loosely)
+  const exact = (existingList || []).filter(
+    (f) => (f.name || "").trim().toLowerCase() === entry.name.trim().toLowerCase()
+  );
+  const existing = exact.find((f) => f.drive_folder_id) || exact[0] || existingList?.[0] || null;
 
   if (existing) return { id: existing.id, source: "repo", name: entry.name, driveFolderId: existing.drive_folder_id };
 
-  // Do NOT auto-create folders — the folder must already exist in the contract's repository
   console.warn(`Patent backup: folder '${entry.name}' not found for contract ${contractId}`);
   return null;
 }
 
 /**
- * Upload a file to Google Drive and return the drive file info.
+ * Upload a file to Google Drive via the edge function,
+ * resolving the correct hierarchical Drive folder.
  */
-async function uploadFileToDrive(
+async function uploadFileToDriveHierarchical(
   file: File,
   fileName: string,
-  driveFolderId: string
+  folderId: string,
+  contractId: string,
+): Promise<{ driveFileId: string; driveUrl: string } | null> {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const base64Content = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+
+    const { data, error } = await supabase.functions.invoke('google-drive', {
+      body: {
+        action: 'uploadFileToRepoFolder',
+        fileName,
+        fileContent: base64Content,
+        mimeType: file.type || 'application/octet-stream',
+        repoFolderId: folderId,
+        contractId,
+      }
+    });
+
+    if (error || !data) {
+      console.error("Error uploading to Google Drive:", error);
+      return null;
+    }
+
+    return {
+      driveFileId: data.id || data.driveFileId,
+      driveUrl: data.webViewLink || data.driveUrl || `https://drive.google.com/file/d/${data.id}/view`,
+    };
+  } catch (err) {
+    console.error("Error uploading to Google Drive:", err);
+    return null;
+  }
+}
+
+/**
+ * Legacy direct upload (used when folder already has a known drive_folder_id).
+ */
+async function uploadFileToDriveDirect(
+  file: File,
+  fileName: string,
+  driveFolderId: string,
 ): Promise<{ driveFileId: string; driveUrl: string } | null> {
   try {
     const arrayBuffer = await file.arrayBuffer();
@@ -101,9 +143,17 @@ export async function backupPatentFileToDestinations(
       let driveFileId: string | null = null;
       let fileUrl = storageUrl;
 
-      // If the folder has a Drive folder, upload the file to Drive
-      if (folder.driveFolderId && file) {
-        const driveResult = await uploadFileToDrive(file, fileName, folder.driveFolderId);
+      // If file provided, try uploading to Drive
+      if (file && folder.source === "repo") {
+        // Use hierarchical resolution via edge function
+        const driveResult = await uploadFileToDriveHierarchical(file, fileName, folder.id, contractId);
+        if (driveResult) {
+          driveFileId = driveResult.driveFileId;
+          fileUrl = driveResult.driveUrl;
+        }
+      } else if (file && folder.driveFolderId) {
+        // General folder with known drive ID — direct upload
+        const driveResult = await uploadFileToDriveDirect(file, fileName, folder.driveFolderId);
         if (driveResult) {
           driveFileId = driveResult.driveFileId;
           fileUrl = driveResult.driveUrl;
