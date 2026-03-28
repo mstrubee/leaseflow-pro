@@ -47,7 +47,7 @@ export function CollapsibleCard({
               className="h-6 w-6 p-0"
               onClick={(e) => {
                 e.stopPropagation();
-                setIsOpen(!isOpen);
+                toggle();
               }}
             >
               {isOpen ? (
