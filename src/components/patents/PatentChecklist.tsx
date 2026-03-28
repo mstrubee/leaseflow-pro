@@ -96,7 +96,13 @@ export function PatentChecklist({
   onUpdateDocument,
   onUpdateDocumentStatus,
 }: PatentChecklistProps) {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
+  
+  // File destination settings
+  const { settings: fileDestSettings, updateSetting: updateFileDestSetting } = useFileDestinationSettings();
+  const [showFileDestDialog, setShowFileDestDialog] = useState(false);
+  const [tempPatentFolder, setTempPatentFolder] = useState("");
+  const [savingFileDest, setSavingFileDest] = useState(false);
   
   // Shared items lookup: itemId -> folderId
   const sharedItemLookup = useMemo(() => {
