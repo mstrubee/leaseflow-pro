@@ -342,7 +342,20 @@ const PurchaseOrdersDashboard = () => {
   // Contract to company mapping
   const [contractCompanyMap, setContractCompanyMap] = useState<Map<string, string>>(new Map());
 
-  // Collapse state per contract
+  // Sorting state for the OC table
+  type SortField = "local" | "order_number" | "description" | "supplier" | "type" | "category" | "amount" | "invoices" | "status" | "date";
+  const [sortField, setSortField] = useState<SortField>("date");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
   const [expandedContracts, setExpandedContracts] = useState<Set<string>>(new Set());
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
 
