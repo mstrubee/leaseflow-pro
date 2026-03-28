@@ -123,7 +123,55 @@ export async function getOrCreateOCFolders(contractId: string): Promise<{ id: st
 }
 
 /**
- * Backup an OC file to ALL configured destination folders in the contract's repository.
+ * Insert a file reference into the correct table based on source type.
+ */
+async function insertFileReference(
+  folder: { id: string; source: string; name: string },
+  fileName: string,
+  url: string,
+  fileExt: string | null
+): Promise<{ id: string } | null> {
+  if (folder.source === "general") {
+    const { data, error } = await supabase
+      .from("general_folder_files")
+      .insert({
+        folder_id: folder.id,
+        name: fileName,
+        url,
+        file_type: fileExt,
+        drive_file_id: null,
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      console.error(`Error creating file in general folder '${folder.name}':`, error);
+      return null;
+    }
+    return data;
+  }
+
+  const { data, error } = await supabase
+    .from("repository_files")
+    .insert({
+      folder_id: folder.id,
+      name: fileName,
+      url,
+      file_type: fileExt,
+      drive_file_id: null,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    console.error(`Error creating file in repo folder '${folder.name}':`, error);
+    return null;
+  }
+  return data;
+}
+
+/**
+ * Backup an OC file to ALL configured destination folders.
  * Uploads the file once to Storage, then creates a reference in each destination folder.
  */
 export async function backupOCFileToRepository(
@@ -137,11 +185,10 @@ export async function backupOCFileToRepository(
       return { success: false, error: "No se pudo obtener o crear las carpetas de destino" };
     }
 
-    const fileExt = file.name.split(".").pop();
+    const fileExt = file.name.split(".").pop() || null;
     const sanitizedName = sanitizeFileName(file.name);
     const fileName = `OC_${orderNumber}_${sanitizedName}`;
 
-    // Upload once to Storage
     const datePrefix = new Date().toISOString().split("T")[0].replace(/-/g, "");
     const unique = Date.now();
     const storagePath = `oc-files/${datePrefix}/${contractId}/OC_${orderNumber}_${unique}_${sanitizedName}`;
@@ -151,25 +198,11 @@ export async function backupOCFileToRepository(
       return { success: false, error: uploadError.message };
     }
 
-    // Create a reference in each destination folder
     let primaryFileId: string | undefined;
     for (const folder of folders) {
-      const { data: fileRecord, error: dbError } = await supabase
-        .from("repository_files")
-        .insert({
-          folder_id: folder.id,
-          name: fileName,
-          url: storedUrl,
-          file_type: fileExt || null,
-          drive_file_id: null,
-        })
-        .select("id")
-        .single();
-
-      if (dbError) {
-        console.error(`Error creating file record in folder '${folder.name}':`, dbError);
-      } else if (!primaryFileId && fileRecord) {
-        primaryFileId = fileRecord.id;
+      const record = await insertFileReference(folder, fileName, storedUrl, fileExt);
+      if (!primaryFileId && record) {
+        primaryFileId = record.id;
       }
     }
 
@@ -182,7 +215,6 @@ export async function backupOCFileToRepository(
 
 /**
  * Backup an OC file from an existing URL to ALL configured destination folders.
- * Creates references in the DB pointing to the provided URL.
  */
 export async function backupOCFromStorageUrl(
   contractId: string,
@@ -201,22 +233,9 @@ export async function backupOCFromStorageUrl(
 
     let primaryFileId: string | undefined;
     for (const folder of folders) {
-      const { data: inserted, error: dbError } = await supabase
-        .from("repository_files")
-        .insert({
-          folder_id: folder.id,
-          name: fileName,
-          url: storageUrl,
-          file_type: fileExt,
-          drive_file_id: null,
-        })
-        .select("id")
-        .single();
-
-      if (dbError) {
-        console.error(`Error creating file record in folder '${folder.name}':`, dbError);
-      } else if (!primaryFileId && inserted) {
-        primaryFileId = inserted.id;
+      const record = await insertFileReference(folder, fileName, storageUrl, fileExt);
+      if (!primaryFileId && record) {
+        primaryFileId = record.id;
       }
     }
 
