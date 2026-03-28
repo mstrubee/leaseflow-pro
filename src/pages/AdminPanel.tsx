@@ -1263,6 +1263,7 @@ const AdminPanel = () => {
                     }}
                     onDelete={handleDeleteTemplate}
                     onRename={handleRenameTemplate}
+                    onMove={handleMoveTemplate}
                   />
                 ))}
                 {getRootTemplates().length === 0 && (
