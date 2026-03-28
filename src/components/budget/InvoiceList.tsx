@@ -517,11 +517,12 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
       let targetFolder = await findFacturasFolder();
       
       if (!targetFolder) {
+        const configuredName = await getConfiguredFolderName("invoice_folder");
         const { data: newFolder, error: folderError } = await supabase
           .from("repository_folders")
           .insert({
             contract_id: contractId,
-            name: "Facturas",
+            name: configuredName,
             is_base_folder: false,
             folder_type: "facturas",
           })
@@ -785,9 +786,10 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     try {
       let targetFolder = await findFacturasFolder();
       if (!targetFolder) {
+        const configuredName = await getConfiguredFolderName("invoice_folder");
         const { data: newFolder, error: folderError } = await supabase
           .from("repository_folders")
-          .insert({ contract_id: contractId, name: "Facturas", is_base_folder: false, folder_type: "facturas" })
+          .insert({ contract_id: contractId, name: configuredName, is_base_folder: false, folder_type: "facturas" })
           .select()
           .single();
         if (folderError) throw folderError;
