@@ -1107,6 +1107,8 @@ export function PatentChecklist({
                                           <FolderCog className={`h-3 w-3 ${itemFolders[item.id] ? 'text-primary' : 'text-muted-foreground'}`} />
                                         </Button>
                                       )}
+                                    </>
+                                  );
                                 })() : (
                                   <>
                                     {/* Regular (non-shared) item: existing logic */}
