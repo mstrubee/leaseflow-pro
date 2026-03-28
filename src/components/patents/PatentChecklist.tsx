@@ -1251,10 +1251,16 @@ export function PatentChecklist({
                                     variant="ghost"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      const d = getDocument(item.id);
-                                      if (d?.id) {
+                                      // For mirror items, find first doc ID from any mirror
+                                      const mirrorIds = getAllMirrorIds(item.id);
+                                      let docId: string | null = null;
+                                      for (const mid of mirrorIds) {
+                                        const md = getDocument(mid);
+                                        if (md?.id) { docId = md.id; break; }
+                                      }
+                                      if (docId) {
                                         setAlertDialog({
-                                          docId: d.id,
+                                          docId,
                                           itemName: item.name,
                                           startDate: getDocValue(item.id, 'start_date'),
                                           endDate: getDocValue(item.id, 'end_date'),
@@ -1294,8 +1300,9 @@ export function PatentChecklist({
           itemName={uploadDialog.itemName}
           currentUrl={getDocValue(uploadDialog.itemId, 'document_url') as string}
           onSave={async (url) => {
-            // Save document URL immediately (no debounce for file uploads)
-            await onUpdateDocument(contract.id, uploadDialog.itemId, { document_url: url });
+            // Save document URL to all mirror items (same name across sections)
+            const mirrorIds = getAllMirrorIds(uploadDialog.itemId);
+            await Promise.all(mirrorIds.map(id => onUpdateDocument(contract.id, id, { document_url: url })));
           }}
         />
       )}
