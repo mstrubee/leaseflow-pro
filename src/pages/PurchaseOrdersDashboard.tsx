@@ -1867,44 +1867,23 @@ const PurchaseOrdersDashboard = () => {
   const handleInvoiceFileUpload = async (invoiceId: string, file: File, contractId: string) => {
     setUploadingInvoiceId(invoiceId);
     try {
-      const { uploadFileToStorage } = await import("@/lib/storageUtils");
+      const { backupInvoiceFileToRepository } = await import("@/lib/repositoryBackup");
       const { sanitizeFileName } = await import("@/lib/fileValidation");
-      const { getConfiguredFolderName } = await import("@/hooks/useFileDestinationSettings");
 
       const sanitized = sanitizeFileName(file.name);
-      const datePrefix = new Date().toISOString().split("T")[0].replace(/-/g, "");
-      const storagePath = `invoice-files/${datePrefix}/${contractId}/${Date.now()}_${sanitized}`;
+      const result = await backupInvoiceFileToRepository(contractId, file, sanitized);
 
-      const { path, error: uploadError } = await uploadFileToStorage(storagePath, file);
-      if (uploadError) throw uploadError;
+      if (!result.success) throw new Error(result.error || "Error al subir archivo");
 
-      // Update invoice with attachment URL
+      // Update invoice with the Drive URL (or storage URL as fallback)
+      const finalUrl = result.driveUrl || "";
       const { error: dbError } = await supabase
         .from("invoices")
-        .update({ attachment_url: path })
+        .update({ attachment_url: finalUrl })
         .eq("id", invoiceId);
       if (dbError) throw dbError;
 
-      // Also backup to configured invoice folder in repository
-      const folderName = await getConfiguredFolderName("invoice_folder");
-      const { data: folder } = await supabase
-        .from("repository_folders")
-        .select("id")
-        .eq("contract_id", contractId)
-        .or(`name.ilike.${folderName},folder_type.ilike.%factura%`)
-        .limit(1)
-        .single();
-
-      if (folder) {
-        await supabase.from("repository_files").insert({
-          folder_id: folder.id,
-          name: sanitized,
-          url: path,
-          file_type: file.name.split(".").pop() || null,
-        });
-      }
-
-      toast.success("PDF de factura subido correctamente");
+      toast.success("PDF de factura subido a Drive correctamente");
       loadData();
     } catch (err: any) {
       toast.error("Error al subir archivo: " + (err?.message || "Error desconocido"));
