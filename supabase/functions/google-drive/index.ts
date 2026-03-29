@@ -859,11 +859,11 @@ async function listDriveFoldersByNameUnderParent(
   accessToken: string,
   folderName: string,
   parentId: string,
-): Promise<Array<{ id: string; name: string }>> {
+): Promise<Array<{ id: string; name: string; webViewLink?: string; createdTime?: string }>> {
   const sanitizedName = sanitizeForDriveQuery(sanitizeDriveName(folderName));
   const query = `name='${sanitizedName}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${parentId}' in parents`;
   const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&pageSize=50&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`,
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink,createdTime)&orderBy=createdTime asc&pageSize=50&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
 
@@ -874,6 +874,54 @@ async function listDriveFoldersByNameUnderParent(
 
   const data = await response.json();
   return data.files || [];
+}
+
+async function getClaimedDriveFolderIdsByOtherContracts(
+  sb: any,
+  driveFolderIds: string[],
+  contractId: string,
+): Promise<Set<string>> {
+  const sanitizedIds = Array.from(new Set((driveFolderIds || []).filter(Boolean)));
+  if (sanitizedIds.length === 0) return new Set();
+
+  const { data, error } = await sb
+    .from('contracts')
+    .select('drive_folder_id')
+    .in('drive_folder_id', sanitizedIds)
+    .neq('id', contractId)
+    .is('deleted_at', null);
+
+  if (error) {
+    console.warn('Could not verify claimed Drive folders by other contracts:', error.message);
+    return new Set();
+  }
+
+  return new Set((data || []).map((row: any) => row.drive_folder_id).filter(Boolean));
+}
+
+async function pickUnclaimedDriveFolderByName(
+  sb: any,
+  accessToken: string,
+  contractId: string,
+  folderName: string,
+  parentId: string,
+): Promise<{ id: string; webViewLink: string } | null> {
+  const candidates = await listDriveFoldersByNameUnderParent(accessToken, folderName, parentId);
+  if (!candidates.length) return null;
+
+  const claimed = await getClaimedDriveFolderIdsByOtherContracts(
+    sb,
+    candidates.map((c) => c.id),
+    contractId,
+  );
+
+  const candidate = candidates.find((c) => !claimed.has(c.id));
+  if (!candidate) return null;
+
+  return {
+    id: candidate.id,
+    webViewLink: candidate.webViewLink || `https://drive.google.com/drive/folders/${candidate.id}`,
+  };
 }
 
 async function ensureStatusFolders(accessToken: string, rootFolderId: string): Promise<Record<string, { id: string; webViewLink: string }>> {
