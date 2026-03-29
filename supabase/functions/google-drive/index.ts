@@ -1495,6 +1495,26 @@ serve(async (req) => {
         const statusFolderName = getStatusFolderName(status || 'en_negociacion');
         const statusFolder = statusFolders[statusFolderName];
 
+        const incomingSubfolders = Array.isArray(subfolders) ? subfolders : [];
+        const dedupedSubfolders = Array.from(
+          new Map(
+            incomingSubfolders
+              .filter((s: any) => s?.id && typeof s.name === 'string' && s.name.trim().length > 0)
+              .map((s: any) => [normalizeDriveNameKey(s.name), { id: s.id, name: s.name.trim() }]),
+          ).values(),
+        );
+
+        const hasLegacyParent = dedupedSubfolders.some(
+          (s) => normalizeDriveNameKey(s.name) === normalizeDriveNameKey('OC y FACTURAS'),
+        );
+
+        const normalizedSubfolders = hasLegacyParent
+          ? dedupedSubfolders.filter((s) => {
+              const key = normalizeDriveNameKey(s.name);
+              return key !== normalizeDriveNameKey('OOCC') && key !== normalizeDriveNameKey('Facturas');
+            })
+          : dedupedSubfolders;
+
         // Prefer explicit binding from DB, but reject shared/cross-contract bindings
         const { data: boundContract } = await sb
           .from('contracts')
@@ -1589,7 +1609,7 @@ serve(async (req) => {
           // Ensure subfolders exist (don't duplicate)
           const existingChildren = await listChildFolders(accessToken, existingFolder.id);
           const createdSubfolders: any[] = [];
-          for (const subfolder of subfolders || []) {
+          for (const subfolder of normalizedSubfolders) {
             const key = normalizeDriveNameKey(subfolder.name);
             let child = existingChildren[key];
             if (!child) {
@@ -1614,7 +1634,7 @@ serve(async (req) => {
           const projectFolder = await createDriveFolder(accessToken, contractName, statusFolder.id);
 
           const createdSubfolders: any[] = [];
-          for (const subfolder of subfolders || []) {
+          for (const subfolder of normalizedSubfolders) {
             const subFolderResult = await createDriveFolder(accessToken, subfolder.name, projectFolder.id);
             createdSubfolders.push({
               localId: subfolder.id,
