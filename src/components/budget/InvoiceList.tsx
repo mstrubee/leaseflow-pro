@@ -519,7 +519,7 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
       if (!result.success) throw new Error(result.error || "Error al subir archivo");
 
       toast({ title: "Archivo subido", description: `Archivo guardado en carpeta Facturas y Drive` });
-      setUploadedFile({ id: result.fileId || "", name: file.name, url: result.driveUrl || "" });
+      setUploadedFile({ id: result.fileId || "", name: file.name, url: result.driveUrl || "", file_type: file.name.split(".").pop() || null, folder_id: "" });
       setAskSendEmail(true);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
