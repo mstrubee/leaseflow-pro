@@ -2326,6 +2326,129 @@ serve(async (req) => {
         break;
       }
 
+      case "syncPendingFiles": {
+        // Upload repository_files with storage:// URLs and no drive_file_id to Drive
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sb = createClient(supabaseUrl, supabaseKey);
+
+        const targetContractId = params.contractId || null;
+        const batchSize = params.batchSize || 20;
+
+        // Find pending files (no drive_file_id, storage:// URL)
+        let query = sb
+          .from('repository_files')
+          .select('id, name, url, folder_id, file_type')
+          .is('drive_file_id', null)
+          .like('url', 'storage://repository-files/%')
+          .limit(batchSize);
+
+        if (targetContractId) {
+          // Get folder IDs for this contract
+          const { data: contractFolders } = await sb
+            .from('repository_folders')
+            .select('id')
+            .eq('contract_id', targetContractId);
+          
+          if (contractFolders && contractFolders.length > 0) {
+            const folderIds = contractFolders.map((f: any) => f.id);
+            query = query.in('folder_id', folderIds);
+          }
+        }
+
+        const { data: pendingFiles, error: pfErr } = await query;
+        if (pfErr) throw pfErr;
+
+        const uploaded: string[] = [];
+        const syncErrors: string[] = [];
+
+        for (const file of pendingFiles || []) {
+          try {
+            const storagePath = file.url.replace('storage://repository-files/', '');
+            
+            // Download from Storage
+            const { data: fileData, error: dlErr } = await sb.storage
+              .from('repository-files')
+              .download(storagePath);
+
+            if (dlErr || !fileData) {
+              syncErrors.push(`Download failed: ${file.name} - ${dlErr?.message || 'No data'}`);
+              continue;
+            }
+
+            // Get the folder info to find contract_id
+            const { data: folder } = await sb
+              .from('repository_folders')
+              .select('id, name, contract_id, drive_folder_id')
+              .eq('id', file.folder_id)
+              .single();
+
+            if (!folder || !folder.contract_id) {
+              syncErrors.push(`No folder/contract for file: ${file.name}`);
+              continue;
+            }
+
+            // Resolve the Drive folder
+            let driveFolderId: string | null = folder.drive_folder_id;
+            if (!driveFolderId) {
+              try {
+                driveFolderId = await ensureDriveFolderForRepositoryFolder(
+                  sb, accessToken, folder.contract_id, folder.id
+                );
+              } catch (e: any) {
+                syncErrors.push(`Folder resolution failed for ${file.name}: ${e.message}`);
+                continue;
+              }
+            }
+
+            if (!driveFolderId) {
+              syncErrors.push(`No Drive folder for ${file.name} in ${folder.name}`);
+              continue;
+            }
+
+            const fileBytes = new Uint8Array(await fileData.arrayBuffer());
+            const mimeType = file.name.endsWith('.pdf') ? 'application/pdf'
+              : file.name.endsWith('.jpeg') || file.name.endsWith('.jpg') ? 'image/jpeg'
+              : file.name.endsWith('.png') ? 'image/png'
+              : file.name.endsWith('.doc') ? 'application/msword'
+              : file.name.endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+              : file.name.endsWith('.xlsx') ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+              : 'application/octet-stream';
+
+            const driveFile = await uploadFileToDrive(accessToken, file.name, fileBytes, mimeType, driveFolderId);
+            const fileUrl = driveFile.webViewLink || driveFile.webContentLink || `https://drive.google.com/file/d/${driveFile.id}/view`;
+
+            // Update record with Drive info
+            await sb
+              .from('repository_files')
+              .update({
+                url: fileUrl,
+                drive_file_id: driveFile.id,
+              })
+              .eq('id', file.id);
+
+            // Clean up Storage copy
+            await cleanupStorageFile(sb, file.url);
+
+            uploaded.push(`${file.name} → ${folder.name}`);
+          } catch (e: any) {
+            syncErrors.push(`Error syncing ${file.name}: ${e.message}`);
+          }
+        }
+
+        const hasMore = (pendingFiles || []).length >= batchSize;
+
+        result = {
+          success: true,
+          uploaded: uploaded.length,
+          errors: syncErrors.length,
+          uploadedFiles: uploaded,
+          errorDetails: syncErrors,
+          hasMore,
+        };
+        break;
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }
