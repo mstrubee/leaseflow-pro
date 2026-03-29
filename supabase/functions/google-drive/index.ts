@@ -2808,7 +2808,7 @@ serve(async (req) => {
         }
 
         const accessTokenClean = await getAccessToken();
-        const sbClean = createClient(supabaseUrl, supabaseKey);
+        const sbClean = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
         const { data: contractsClean } = await sbClean
           .from("contracts")
