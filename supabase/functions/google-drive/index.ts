@@ -1254,12 +1254,24 @@ serve(async (req) => {
             }
 
             if (!contractFolder) {
-              let existingFolder = await getFolderByName(accessToken, contract.name, statusFolder.id);
+              let existingFolder = await pickUnclaimedDriveFolderByName(
+                supabase,
+                accessToken,
+                contract.id,
+                contract.name,
+                statusFolder.id,
+              );
 
               if (existingFolder) {
                 contractFolder = existingFolder;
               } else {
-                existingFolder = await getFolderByName(accessToken, contract.name, rootFolderId);
+                existingFolder = await pickUnclaimedDriveFolderByName(
+                  supabase,
+                  accessToken,
+                  contract.id,
+                  contract.name,
+                  rootFolderId,
+                );
 
                 if (existingFolder) {
                   await moveToFolder(accessToken, existingFolder.id, statusFolder.id, rootFolderId);
@@ -1268,7 +1280,13 @@ serve(async (req) => {
                 } else {
                   for (const [folderName, folder] of Object.entries(statusFolders)) {
                     if (folderName !== statusFolderName) {
-                      existingFolder = await getFolderByName(accessToken, contract.name, folder.id);
+                      existingFolder = await pickUnclaimedDriveFolderByName(
+                        supabase,
+                        accessToken,
+                        contract.id,
+                        contract.name,
+                        folder.id,
+                      );
                       if (existingFolder) {
                         await moveToFolder(accessToken, existingFolder.id, statusFolder.id, folder.id);
                         contractFolder = existingFolder;
@@ -1361,7 +1379,13 @@ serve(async (req) => {
 
         if (!contractFolder) {
           for (const [folderName, folder] of Object.entries(statusFolders)) {
-            const existingFolder = await getFolderByName(accessToken, contract.name, folder.id);
+            const existingFolder = await pickUnclaimedDriveFolderByName(
+              supabase,
+              accessToken,
+              contract.id,
+              contract.name,
+              folder.id,
+            );
             if (existingFolder) {
               if (folderName !== statusFolderName) {
                 await moveToFolder(accessToken, existingFolder.id, statusFolder.id, folder.id);
@@ -1373,7 +1397,13 @@ serve(async (req) => {
           }
 
           if (!contractFolder) {
-            const rootFolder = await getFolderByName(accessToken, contract.name, rootFolderId);
+            const rootFolder = await pickUnclaimedDriveFolderByName(
+              supabase,
+              accessToken,
+              contract.id,
+              contract.name,
+              rootFolderId,
+            );
             if (rootFolder) {
               await moveToFolder(accessToken, rootFolder.id, statusFolder.id, rootFolderId);
               contractFolder = rootFolder;
@@ -1417,6 +1447,10 @@ serve(async (req) => {
       case "ensureProjectStructure": {
         const { contractId, contractName, subfolders, status } = params;
 
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sb = createClient(supabaseUrl, supabaseKey);
+
         const statusFolders = await ensureStatusFolders(accessToken, rootFolderId);
         const statusFolderName = getStatusFolderName(status || 'en_negociacion');
         const statusFolder = statusFolders[statusFolderName];
@@ -1426,7 +1460,13 @@ serve(async (req) => {
         let existingInFolder: string | null = null;
 
         for (const [folderName, folder] of Object.entries(statusFolders)) {
-          const found = await getFolderByName(accessToken, contractName, folder.id);
+          const found = await pickUnclaimedDriveFolderByName(
+            sb,
+            accessToken,
+            contractId,
+            contractName,
+            folder.id,
+          );
           if (found) {
             existingFolder = found;
             existingInFolder = folderName;
@@ -1436,7 +1476,13 @@ serve(async (req) => {
 
         // Also check root level
         if (!existingFolder) {
-          existingFolder = await getFolderByName(accessToken, contractName, rootFolderId);
+          existingFolder = await pickUnclaimedDriveFolderByName(
+            sb,
+            accessToken,
+            contractId,
+            contractName,
+            rootFolderId,
+          );
           if (existingFolder) existingInFolder = 'root';
         }
 
@@ -1457,7 +1503,7 @@ serve(async (req) => {
           const existingChildren = await listChildFolders(accessToken, existingFolder.id);
           const createdSubfolders: any[] = [];
           for (const subfolder of subfolders || []) {
-            const key = sanitizeDriveName(subfolder.name);
+            const key = normalizeDriveNameKey(subfolder.name);
             let child = existingChildren[key];
             if (!child) {
               child = await createDriveFolder(accessToken, subfolder.name, existingFolder.id);
