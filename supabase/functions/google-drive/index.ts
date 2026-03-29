@@ -859,11 +859,11 @@ async function listDriveFoldersByNameUnderParent(
   accessToken: string,
   folderName: string,
   parentId: string,
-): Promise<Array<{ id: string; name: string }>> {
+): Promise<Array<{ id: string; name: string; webViewLink?: string; createdTime?: string }>> {
   const sanitizedName = sanitizeForDriveQuery(sanitizeDriveName(folderName));
   const query = `name='${sanitizedName}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${parentId}' in parents`;
   const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&pageSize=50&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`,
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink,createdTime)&orderBy=createdTime asc&pageSize=50&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
 
@@ -874,6 +874,54 @@ async function listDriveFoldersByNameUnderParent(
 
   const data = await response.json();
   return data.files || [];
+}
+
+async function getClaimedDriveFolderIdsByOtherContracts(
+  sb: any,
+  driveFolderIds: string[],
+  contractId: string,
+): Promise<Set<string>> {
+  const sanitizedIds = Array.from(new Set((driveFolderIds || []).filter(Boolean)));
+  if (sanitizedIds.length === 0) return new Set();
+
+  const { data, error } = await sb
+    .from('contracts')
+    .select('drive_folder_id')
+    .in('drive_folder_id', sanitizedIds)
+    .neq('id', contractId)
+    .is('deleted_at', null);
+
+  if (error) {
+    console.warn('Could not verify claimed Drive folders by other contracts:', error.message);
+    return new Set();
+  }
+
+  return new Set((data || []).map((row: any) => row.drive_folder_id).filter(Boolean));
+}
+
+async function pickUnclaimedDriveFolderByName(
+  sb: any,
+  accessToken: string,
+  contractId: string,
+  folderName: string,
+  parentId: string,
+): Promise<{ id: string; webViewLink: string } | null> {
+  const candidates = await listDriveFoldersByNameUnderParent(accessToken, folderName, parentId);
+  if (!candidates.length) return null;
+
+  const claimed = await getClaimedDriveFolderIdsByOtherContracts(
+    sb,
+    candidates.map((c) => c.id),
+    contractId,
+  );
+
+  const candidate = candidates.find((c) => !claimed.has(c.id));
+  if (!candidate) return null;
+
+  return {
+    id: candidate.id,
+    webViewLink: candidate.webViewLink || `https://drive.google.com/drive/folders/${candidate.id}`,
+  };
 }
 
 async function ensureStatusFolders(accessToken: string, rootFolderId: string): Promise<Record<string, { id: string; webViewLink: string }>> {
@@ -1192,9 +1240,29 @@ serve(async (req) => {
             }
 
             let contractFolder: { id: string; webViewLink: string } | null = null;
+            let contractDriveFolderId = contract.drive_folder_id;
 
-            if (contract.drive_folder_id) {
-              const meta = await getFolderById(accessToken, contract.drive_folder_id);
+            if (contractDriveFolderId) {
+              const claimedByOtherContracts = await getClaimedDriveFolderIdsByOtherContracts(
+                supabase,
+                [contractDriveFolderId],
+                contract.id,
+              );
+
+              if (claimedByOtherContracts.has(contractDriveFolderId)) {
+                console.warn(
+                  `Drive folder ${contractDriveFolderId} is shared by multiple contracts. Resetting binding for ${contract.id}`,
+                );
+                await supabase
+                  .from('contracts')
+                  .update({ drive_folder_id: null })
+                  .eq('id', contract.id);
+                contractDriveFolderId = null;
+              }
+            }
+
+            if (contractDriveFolderId) {
+              const meta = await getFolderById(accessToken, contractDriveFolderId);
               if (meta && meta.mimeType === "application/vnd.google-apps.folder" && !meta.trashed) {
                 const currentParent = meta.parents?.[0];
                 if (currentParent && currentParent !== statusFolder.id) {
@@ -1206,12 +1274,24 @@ serve(async (req) => {
             }
 
             if (!contractFolder) {
-              let existingFolder = await getFolderByName(accessToken, contract.name, statusFolder.id);
+              let existingFolder = await pickUnclaimedDriveFolderByName(
+                supabase,
+                accessToken,
+                contract.id,
+                contract.name,
+                statusFolder.id,
+              );
 
               if (existingFolder) {
                 contractFolder = existingFolder;
               } else {
-                existingFolder = await getFolderByName(accessToken, contract.name, rootFolderId);
+                existingFolder = await pickUnclaimedDriveFolderByName(
+                  supabase,
+                  accessToken,
+                  contract.id,
+                  contract.name,
+                  rootFolderId,
+                );
 
                 if (existingFolder) {
                   await moveToFolder(accessToken, existingFolder.id, statusFolder.id, rootFolderId);
@@ -1220,7 +1300,13 @@ serve(async (req) => {
                 } else {
                   for (const [folderName, folder] of Object.entries(statusFolders)) {
                     if (folderName !== statusFolderName) {
-                      existingFolder = await getFolderByName(accessToken, contract.name, folder.id);
+                      existingFolder = await pickUnclaimedDriveFolderByName(
+                        supabase,
+                        accessToken,
+                        contract.id,
+                        contract.name,
+                        folder.id,
+                      );
                       if (existingFolder) {
                         await moveToFolder(accessToken, existingFolder.id, statusFolder.id, folder.id);
                         contractFolder = existingFolder;
@@ -1298,9 +1384,29 @@ serve(async (req) => {
         const statusFolder = statusFolders[statusFolderName];
 
         let contractFolder: { id: string; webViewLink: string } | null = null;
+        let contractDriveFolderId = contract.drive_folder_id;
 
-        if (contract.drive_folder_id) {
-          const meta = await getFolderById(accessToken, contract.drive_folder_id);
+        if (contractDriveFolderId) {
+          const claimedByOtherContracts = await getClaimedDriveFolderIdsByOtherContracts(
+            supabase,
+            [contractDriveFolderId],
+            contract.id,
+          );
+
+          if (claimedByOtherContracts.has(contractDriveFolderId)) {
+            console.warn(
+              `Drive folder ${contractDriveFolderId} is shared by multiple contracts. Resetting binding for ${contract.id}`,
+            );
+            await supabase
+              .from('contracts')
+              .update({ drive_folder_id: null })
+              .eq('id', contract.id);
+            contractDriveFolderId = null;
+          }
+        }
+
+        if (contractDriveFolderId) {
+          const meta = await getFolderById(accessToken, contractDriveFolderId);
           if (meta && meta.mimeType === "application/vnd.google-apps.folder" && !meta.trashed) {
             const currentParent = meta.parents?.[0];
             if (currentParent && currentParent !== statusFolder.id) {
@@ -1313,7 +1419,13 @@ serve(async (req) => {
 
         if (!contractFolder) {
           for (const [folderName, folder] of Object.entries(statusFolders)) {
-            const existingFolder = await getFolderByName(accessToken, contract.name, folder.id);
+            const existingFolder = await pickUnclaimedDriveFolderByName(
+              supabase,
+              accessToken,
+              contract.id,
+              contract.name,
+              folder.id,
+            );
             if (existingFolder) {
               if (folderName !== statusFolderName) {
                 await moveToFolder(accessToken, existingFolder.id, statusFolder.id, folder.id);
@@ -1325,7 +1437,13 @@ serve(async (req) => {
           }
 
           if (!contractFolder) {
-            const rootFolder = await getFolderByName(accessToken, contract.name, rootFolderId);
+            const rootFolder = await pickUnclaimedDriveFolderByName(
+              supabase,
+              accessToken,
+              contract.id,
+              contract.name,
+              rootFolderId,
+            );
             if (rootFolder) {
               await moveToFolder(accessToken, rootFolder.id, statusFolder.id, rootFolderId);
               contractFolder = rootFolder;
@@ -1369,26 +1487,109 @@ serve(async (req) => {
       case "ensureProjectStructure": {
         const { contractId, contractName, subfolders, status } = params;
 
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sb = createClient(supabaseUrl, supabaseKey);
+
         const statusFolders = await ensureStatusFolders(accessToken, rootFolderId);
         const statusFolderName = getStatusFolderName(status || 'en_negociacion');
         const statusFolder = statusFolders[statusFolderName];
 
-        // Check across ALL status folders to prevent duplicates
+        const incomingSubfolders = Array.isArray(subfolders) ? subfolders : [];
+        const dedupedSubfolders = Array.from(
+          new Map(
+            incomingSubfolders
+              .filter((s: any) => s?.id && typeof s.name === 'string' && s.name.trim().length > 0)
+              .map((s: any) => [normalizeDriveNameKey(s.name), { id: s.id, name: s.name.trim() }]),
+          ).values(),
+        );
+
+        const hasLegacyParent = dedupedSubfolders.some(
+          (s) => normalizeDriveNameKey(s.name) === normalizeDriveNameKey('OC y FACTURAS'),
+        );
+
+        const normalizedSubfolders = hasLegacyParent
+          ? dedupedSubfolders.filter((s) => {
+              const key = normalizeDriveNameKey(s.name);
+              return key !== normalizeDriveNameKey('OOCC') && key !== normalizeDriveNameKey('Facturas');
+            })
+          : dedupedSubfolders;
+
+        // Prefer explicit binding from DB, but reject shared/cross-contract bindings
+        const { data: boundContract } = await sb
+          .from('contracts')
+          .select('drive_folder_id')
+          .eq('id', contractId)
+          .single();
+
+        let boundDriveFolderId: string | null = boundContract?.drive_folder_id || null;
+        if (boundDriveFolderId) {
+          const claimedByOtherContracts = await getClaimedDriveFolderIdsByOtherContracts(
+            sb,
+            [boundDriveFolderId],
+            contractId,
+          );
+
+          if (claimedByOtherContracts.has(boundDriveFolderId)) {
+            console.warn(
+              `ensureProjectStructure: shared binding ${boundDriveFolderId} for contract ${contractId}, resetting`,
+            );
+            await sb
+              .from('contracts')
+              .update({ drive_folder_id: null })
+              .eq('id', contractId);
+            boundDriveFolderId = null;
+          }
+        }
+
         let existingFolder: { id: string; webViewLink: string } | null = null;
         let existingInFolder: string | null = null;
 
-        for (const [folderName, folder] of Object.entries(statusFolders)) {
-          const found = await getFolderByName(accessToken, contractName, folder.id);
-          if (found) {
-            existingFolder = found;
-            existingInFolder = folderName;
-            break;
+        if (boundDriveFolderId) {
+          const boundMeta = await getFolderById(accessToken, boundDriveFolderId);
+          if (boundMeta && boundMeta.mimeType === "application/vnd.google-apps.folder" && !boundMeta.trashed) {
+            existingFolder = {
+              id: boundMeta.id,
+              webViewLink: boundMeta.webViewLink || `https://drive.google.com/drive/folders/${boundMeta.id}`,
+            };
+
+            const currentParent = boundMeta.parents?.[0] || null;
+            if (currentParent === rootFolderId) {
+              existingInFolder = 'root';
+            } else {
+              const statusEntry = Object.entries(statusFolders).find(([, folder]) => folder.id === currentParent);
+              existingInFolder = statusEntry?.[0] || null;
+            }
+          }
+        }
+
+        // Check across ALL status folders to prevent duplicates
+        if (!existingFolder) {
+          for (const [folderName, folder] of Object.entries(statusFolders)) {
+            const found = await pickUnclaimedDriveFolderByName(
+              sb,
+              accessToken,
+              contractId,
+              contractName,
+              folder.id,
+            );
+            if (found) {
+              existingFolder = found;
+              existingInFolder = folderName;
+              break;
+            }
           }
         }
 
         // Also check root level
         if (!existingFolder) {
-          existingFolder = await getFolderByName(accessToken, contractName, rootFolderId);
+          existingFolder = await pickUnclaimedDriveFolderByName(
+            sb,
+            accessToken,
+            contractId,
+            contractName,
+            rootFolderId,
+          );
           if (existingFolder) existingInFolder = 'root';
         }
 
@@ -1408,8 +1609,8 @@ serve(async (req) => {
           // Ensure subfolders exist (don't duplicate)
           const existingChildren = await listChildFolders(accessToken, existingFolder.id);
           const createdSubfolders: any[] = [];
-          for (const subfolder of subfolders || []) {
-            const key = sanitizeDriveName(subfolder.name);
+          for (const subfolder of normalizedSubfolders) {
+            const key = normalizeDriveNameKey(subfolder.name);
             let child = existingChildren[key];
             if (!child) {
               child = await createDriveFolder(accessToken, subfolder.name, existingFolder.id);
@@ -1433,7 +1634,7 @@ serve(async (req) => {
           const projectFolder = await createDriveFolder(accessToken, contractName, statusFolder.id);
 
           const createdSubfolders: any[] = [];
-          for (const subfolder of subfolders || []) {
+          for (const subfolder of normalizedSubfolders) {
             const subFolderResult = await createDriveFolder(accessToken, subfolder.name, projectFolder.id);
             createdSubfolders.push({
               localId: subfolder.id,
