@@ -1,0 +1,1 @@
+DELETE FROM repository_files WHERE (url = '' OR url IS NULL) AND drive_file_id IS NULL;
