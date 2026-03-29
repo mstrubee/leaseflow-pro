@@ -1733,6 +1733,64 @@ serve(async (req) => {
         break;
       }
 
+      case "uploadPatentFile": {
+        // Upload a patent file to the contract's "Rentas y Patentes" folder in Drive
+        const { contractId, itemId, fileName, fileContent, mimeType } = params;
+        if (!contractId || !fileName || !fileContent) {
+          throw new Error("contractId, fileName, and fileContent are required");
+        }
+
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sb = createClient(supabaseUrl, supabaseKey);
+
+        // Find the "Rentas y Patentes" folder for this contract
+        const { data: patentFolder } = await sb
+          .from('repository_folders')
+          .select('id, drive_folder_id')
+          .eq('folder_type', 'rentas_y_patentes')
+          .eq('contract_id', contractId)
+          .limit(1)
+          .single();
+
+        if (!patentFolder) {
+          throw new Error(`No "Rentas y Patentes" folder found for contract ${contractId}`);
+        }
+
+        // Ensure the Drive folder exists
+        let targetDriveFolderId = patentFolder.drive_folder_id;
+        if (!targetDriveFolderId) {
+          targetDriveFolderId = await ensureDriveFolderForRepositoryFolder(
+            sb, accessToken, contractId, patentFolder.id
+          );
+        }
+
+        if (!targetDriveFolderId) {
+          throw new Error(`Could not resolve Drive folder for patent folder of contract ${contractId}`);
+        }
+
+        const binaryContentPatent = Uint8Array.from(atob(fileContent), c => c.charCodeAt(0));
+        const driveFilePatent = await uploadFileToDrive(accessToken, fileName, binaryContentPatent, mimeType || 'application/octet-stream', targetDriveFolderId);
+
+        // Also register in repository_files for tracking
+        const fileUrl = driveFilePatent.webViewLink || `https://drive.google.com/file/d/${driveFilePatent.id}/view`;
+        const ext = fileName.includes('.') ? fileName.split('.').pop() : null;
+        await sb.from('repository_files').insert({
+          folder_id: patentFolder.id,
+          name: fileName,
+          url: fileUrl,
+          file_type: ext,
+          drive_file_id: driveFilePatent.id,
+        });
+
+        result = {
+          id: driveFilePatent.id,
+          driveFileId: driveFilePatent.id,
+          webViewLink: fileUrl,
+        };
+        break;
+      }
+
       case "listFiles": {
         const { driveFolderId } = params;
         const files = await listFilesInFolder(accessToken, driveFolderId);
