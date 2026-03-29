@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { getConfiguredFolderName } from "@/hooks/useFileDestinationSettings";
+import { backupInvoiceFileToRepository } from "@/lib/repositoryBackup";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
