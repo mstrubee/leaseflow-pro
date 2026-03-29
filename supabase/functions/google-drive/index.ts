@@ -2862,13 +2862,14 @@ serve(async (req) => {
       // ── Verify Drive files exist and clean stale references ──────────────
       case "verifyDriveFiles": {
         const accessTokenVerify = await getAccessToken();
+        const sbVerify = createClient(supabaseUrl, supabaseKey);
 
-        const { data: driveFiles } = await sb
+        const { data: driveFiles } = await sbVerify
           .from("repository_files")
           .select("id, name, drive_file_id, url, folder_id")
           .not("drive_file_id", "is", null);
 
-        const { data: generalFiles } = await sb
+        const { data: generalFiles } = await sbVerify
           .from("general_folder_files")
           .select("id, name, drive_file_id, url, folder_id")
           .not("drive_file_id", "is", null);
@@ -2888,7 +2889,7 @@ serve(async (req) => {
               );
 
               if (checkRes.status === 404) {
-                await sb
+                await sbVerify
                   .from(tableName)
                   .update({ drive_file_id: null, url: `stale-drive://${file.drive_file_id}` })
                   .eq("id", file.id);
@@ -2896,7 +2897,7 @@ serve(async (req) => {
               } else if (checkRes.ok) {
                 const fileData = await checkRes.json();
                 if (fileData.trashed) {
-                  await sb
+                  await sbVerify
                     .from(tableName)
                     .update({ drive_file_id: null, url: `stale-drive://${file.drive_file_id}` })
                     .eq("id", file.id);
@@ -2928,12 +2929,14 @@ serve(async (req) => {
 
       // ── Remove stale-drive:// file records from DB ─────────────────────
       case "removeStaleFileRecords": {
-        const { data: staleRepoFiles } = await sb
+        const sbStale = createClient(supabaseUrl, supabaseKey);
+
+        const { data: staleRepoFiles } = await sbStale
           .from("repository_files")
           .select("id, name")
           .like("url", "stale-drive://%");
 
-        const { data: staleGeneralFiles } = await sb
+        const { data: staleGeneralFiles } = await sbStale
           .from("general_folder_files")
           .select("id, name")
           .like("url", "stale-drive://%");
@@ -2942,11 +2945,11 @@ serve(async (req) => {
         const removedGeneral: string[] = [];
 
         for (const f of (staleRepoFiles || [])) {
-          await sb.from("repository_files").delete().eq("id", f.id);
+          await sbStale.from("repository_files").delete().eq("id", f.id);
           removedRepo.push(f.name);
         }
         for (const f of (staleGeneralFiles || [])) {
-          await sb.from("general_folder_files").delete().eq("id", f.id);
+          await sbStale.from("general_folder_files").delete().eq("id", f.id);
           removedGeneral.push(f.name);
         }
 
