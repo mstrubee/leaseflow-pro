@@ -2812,34 +2812,38 @@ serve(async (req) => {
         const deletedFolders: string[] = [];
         const cleanErrors: string[] = [];
 
-        // Search globally in Drive for folders with these names
+        // Search globally in Drive for folders with these names (paginated)
         for (const targetName of folderNames) {
           try {
-            const searchQ = `name='${targetName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-            const searchRes = await fetch(
-              `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(searchQ)}&fields=files(id,name,parents)&pageSize=100`,
-              { headers: { Authorization: `Bearer ${accessTokenClean}` } }
-            );
-            const searchData = await searchRes.json();
+            const sanitizedTarget = targetName.replace(/'/g, "\\'");
+            const searchQ = `name='${sanitizedTarget}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+            let pageToken: string | undefined = undefined;
+            do {
+              const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(searchQ)}&fields=nextPageToken,files(id,name,parents)&pageSize=200&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives` + (pageToken ? `&pageToken=${pageToken}` : '');
+              const searchRes = await fetch(url, { headers: { Authorization: `Bearer ${accessTokenClean}` } });
+              const searchData = await searchRes.json();
 
-            for (const folder of (searchData.files || [])) {
-              const trashRes = await fetch(
-                `https://www.googleapis.com/drive/v3/files/${folder.id}`,
-                {
-                  method: "PATCH",
-                  headers: {
-                    Authorization: `Bearer ${accessTokenClean}`,
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({ trashed: true }),
+              for (const folder of (searchData.files || [])) {
+                const trashRes = await fetch(
+                  `https://www.googleapis.com/drive/v3/files/${folder.id}?supportsAllDrives=true`,
+                  {
+                    method: "PATCH",
+                    headers: {
+                      Authorization: `Bearer ${accessTokenClean}`,
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ trashed: true }),
+                  }
+                );
+                if (trashRes.ok) {
+                  deletedFolders.push(`${folder.name} (${folder.id}) parent=${(folder.parents||[])[0]||'?'}`);
+                } else {
+                  const errText = await trashRes.text().catch(() => '');
+                  cleanErrors.push(`Failed to trash ${folder.name} (${folder.id}): ${trashRes.status} ${errText}`);
                 }
-              );
-              if (trashRes.ok) {
-                deletedFolders.push(`${folder.name} (${folder.id}) parent=${(folder.parents||[])[0]||'?'}`);
-              } else {
-                cleanErrors.push(`Failed to trash ${folder.name} (${folder.id})`);
               }
-            }
+              pageToken = searchData.nextPageToken;
+            } while (pageToken);
           } catch (e: any) {
             cleanErrors.push(`Search error for '${targetName}': ${e.message}`);
           }
