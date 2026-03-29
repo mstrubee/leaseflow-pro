@@ -502,10 +502,28 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
 
         setDriveLinked(true);
         setContractDriveFolderId(data.projectFolderId);
+
+        // After creating all folders, sync any pending files to Drive
+        try {
+          let hasMore = true;
+          let totalUploaded = 0;
+          while (hasMore) {
+            const { data: syncData } = await supabase.functions.invoke('google-drive', {
+              body: { action: 'syncPendingFiles', contractId, batchSize: 20 }
+            });
+            totalUploaded += syncData?.uploaded || 0;
+            hasMore = syncData?.hasMore === true;
+          }
+          if (totalUploaded > 0) {
+            console.log(`Synced ${totalUploaded} pending files to Drive for contract ${contractId}`);
+          }
+        } catch (syncErr) {
+          console.warn("File sync warning:", syncErr);
+        }
         
         toast({
           title: "Sincronizado con Google Drive",
-          description: `Carpetas creadas en: ${data.statusFolder || 'Google Drive'}`,
+          description: `Carpetas y archivos sincronizados en: ${data.statusFolder || 'Google Drive'}`,
         });
 
         // Reload folders to get updated drive IDs
