@@ -156,6 +156,75 @@ export async function getOrCreateOCFolders(contractId: string): Promise<{ id: st
 }
 
 /**
+ * Get or create ALL configured destination folders for invoice/credit note files.
+ */
+export async function getOrCreateInvoiceFolders(contractId: string): Promise<{ id: string; driveFolderId: string | null; name: string; source: string }[]> {
+  const destinations = await getConfiguredDestinations("invoice_folder");
+  const results: { id: string; driveFolderId: string | null; name: string; source: string }[] = [];
+
+  for (const entry of destinations) {
+    const folder = await resolveDestinationFolder(contractId, entry);
+    if (!folder) {
+      if (entry.source !== "general") {
+        const created = await getOrCreateRepoFolder(contractId, entry.name, "facturas");
+        if (created) {
+          results.push({ ...created, name: entry.name, source: "repo" });
+        }
+      }
+    } else {
+      results.push(folder);
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Backup an invoice/credit note file to ALL configured destination folders.
+ * Uploads to Google Drive and creates DB references.
+ */
+export async function backupInvoiceFileToRepository(
+  contractId: string,
+  file: File,
+  fileName: string
+): Promise<{ success: boolean; fileId?: string; driveUrl?: string; error?: string }> {
+  try {
+    const folders = await getOrCreateInvoiceFolders(contractId);
+    if (folders.length === 0) {
+      return { success: false, error: "No se pudo obtener o crear las carpetas de destino para facturas" };
+    }
+
+    const fileExt = file.name.split(".").pop() || null;
+    const sanitizedName = sanitizeFileName(fileName);
+    const datePrefix = new Date().toISOString().split("T")[0].replace(/-/g, "");
+    const unique = Date.now();
+    const storagePath = `invoice-files/${datePrefix}/${contractId}/${unique}_${sanitizedName}`;
+
+    const { path: storedUrl, error: uploadError } = await uploadFileToStorage(storagePath, file);
+    if (uploadError) {
+      return { success: false, error: uploadError.message };
+    }
+
+    let primaryFileId: string | undefined;
+    let primaryDriveUrl: string | undefined;
+    for (const folder of folders) {
+      const record = await insertFileReference(folder, fileName, storedUrl, fileExt, file, contractId);
+      if (!primaryFileId && record) {
+        primaryFileId = record.id;
+        const table = folder.source === "general" ? "general_folder_files" : "repository_files";
+        const { data: fileRecord } = await supabase.from(table).select("url").eq("id", record.id).single();
+        if (fileRecord?.url) primaryDriveUrl = fileRecord.url;
+      }
+    }
+
+    return { success: true, fileId: primaryFileId, driveUrl: primaryDriveUrl };
+  } catch (error: any) {
+    console.error("Error backing up invoice file:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
  * Insert a file reference into the correct table based on source type.
  */
 async function insertFileReference(
