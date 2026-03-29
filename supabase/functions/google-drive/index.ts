@@ -533,9 +533,16 @@ async function listChildFolders(
       folders[key] = { id: f.id, webViewLink: f.webViewLink, createdTime };
       continue;
     }
-    duplicates.push({ key, keptId: existing.id, dupId: f.id });
-    if (createdTime && existing.createdTime && createdTime < existing.createdTime) {
+
+    const shouldKeepCurrent =
+      !!createdTime &&
+      (!!existing.createdTime ? createdTime < existing.createdTime : true);
+
+    if (shouldKeepCurrent) {
+      duplicates.push({ key, keptId: f.id, dupId: existing.id });
       folders[key] = { id: f.id, webViewLink: f.webViewLink, createdTime };
+    } else {
+      duplicates.push({ key, keptId: existing.id, dupId: f.id });
     }
   }
 
