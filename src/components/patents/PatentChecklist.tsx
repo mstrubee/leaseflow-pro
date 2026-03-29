@@ -60,6 +60,7 @@ import {
 import { PatentPriorityBadge } from "./PatentPriorityBadge";
 import { PatentStatusBadge } from "./PatentStatusBadge";
 import { PatentDocumentUpload } from "./PatentDocumentUpload";
+import { PatentFileListPopover } from "./PatentFileListPopover";
 import { PatentAlertDialog } from "./PatentAlertDialog";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -1156,19 +1157,22 @@ export function PatentChecklist({
                                     {getDocValue(item.id, 'document_url') && (() => {
                                       const urls = (getDocValue(item.id, 'document_url') as string).split('|||').filter(Boolean);
                                       return urls.length > 1 ? (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-8 text-primary hover:text-primary/80"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setUploadDialog({ itemId: item.id, itemName: item.name });
+                                        <PatentFileListPopover
+                                          urls={urls}
+                                          contractId={contract.id}
+                                          itemId={item.id}
+                                          onRemoveFile={(index) => {
+                                            const newUrls = [...urls];
+                                            newUrls.splice(index, 1);
+                                            const joined = newUrls.join('|||');
+                                            onUpdateDocument(contract.id, item.id, { document_url: joined || null } as any);
+                                            if (newUrls.length === 0) {
+                                              toast.success("Documento eliminado");
+                                            } else {
+                                              toast.success("Archivo eliminado");
+                                            }
                                           }}
-                                          title={`${urls.length} archivos - click para ver`}
-                                        >
-                                          <FileText className="h-3 w-3" />
-                                          <span className="ml-1 text-xs">{urls.length}</span>
-                                        </Button>
+                                        />
                                       ) : (
                                         <Button
                                           variant="ghost"
