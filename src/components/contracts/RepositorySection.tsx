@@ -619,13 +619,22 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
         .eq("id", currentFolder.id);
 
       setCurrentFolder({ ...currentFolder, drive_folder_id: data.id });
+
+      // Sync pending files in this folder to Drive
+      try {
+        await supabase.functions.invoke('google-drive', {
+          body: { action: 'syncPendingFiles', contractId, batchSize: 50 }
+        });
+      } catch (syncErr) {
+        console.warn("File sync warning:", syncErr);
+      }
       
       // Reload drive files
       await loadDriveFiles(data.id);
 
       toast({
         title: "Carpeta sincronizada",
-        description: "La carpeta ha sido sincronizada con Google Drive",
+        description: "La carpeta y sus archivos han sido sincronizados con Google Drive",
       });
     } catch (error: any) {
       toast({
