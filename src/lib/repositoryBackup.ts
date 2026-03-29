@@ -36,7 +36,28 @@ async function findLegacyOCFacturasParentId(
     .limit(1)
     .maybeSingle();
 
-  return legacyParent?.id ?? null;
+  if (legacyParent?.id) return legacyParent.id;
+
+  // If no "OC y FACTURAS" parent exists, create it from the template
+  const { data: newParent, error: createParentError } = await supabase
+    .from("repository_folders")
+    .insert({
+      contract_id: contractId,
+      name: LEGACY_OC_FACTURAS_NAME,
+      folder_type: "oc_y_facturas",
+      is_base_folder: true,
+      parent_id: null,
+      drive_folder_id: null,
+    })
+    .select("id")
+    .single();
+
+  if (createParentError) {
+    console.error(`Error creating OC y FACTURAS parent for contract '${contractId}':`, createParentError);
+    return null;
+  }
+
+  return newParent?.id ?? null;
 }
 
 /**
