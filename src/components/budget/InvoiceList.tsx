@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { getConfiguredFolderName } from "@/hooks/useFileDestinationSettings";
+import { backupInvoiceFileToRepository } from "@/lib/repositoryBackup";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -514,52 +515,11 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
 
     setUploading(true);
     try {
-      let targetFolder = await findFacturasFolder();
-      
-      if (!targetFolder) {
-        const configuredName = await getConfiguredFolderName("invoice_folder");
-        const { data: newFolder, error: folderError } = await supabase
-          .from("repository_folders")
-          .insert({
-            contract_id: contractId,
-            name: configuredName,
-            is_base_folder: false,
-            folder_type: "facturas",
-          })
-          .select()
-          .single();
-        
-        if (folderError) throw folderError;
-        targetFolder = newFolder;
-      }
+      const result = await backupInvoiceFileToRepository(contractId, file, file.name);
+      if (!result.success) throw new Error(result.error || "Error al subir archivo");
 
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${Date.now()}-${file.name}`;
-      const filePath = `${contractId}/${targetFolder.id}/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("repository-files")
-        .upload(filePath, file);
-
-      if (uploadError) throw uploadError;
-
-      const storagePath = `storage://repository-files/${filePath}`;
-
-      const { data: newFile, error: dbError } = await supabase
-        .from("repository_files")
-        .insert({
-          folder_id: targetFolder.id,
-          name: file.name,
-          url: storagePath,
-          file_type: fileExt || null,
-        })
-        .select()
-        .single();
-
-      if (dbError) throw dbError;
-
-      toast({ title: "Archivo subido", description: `Archivo guardado en carpeta Facturas` });
-      setUploadedFile(newFile);
+      toast({ title: "Archivo subido", description: `Archivo guardado en carpeta Facturas y Drive` });
+      setUploadedFile({ id: result.fileId || "", name: file.name, url: result.driveUrl || "", file_type: file.name.split(".").pop() || null, folder_id: "" });
       setAskSendEmail(true);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
@@ -784,41 +744,18 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
     }
     setUploadingAttachment(true);
     try {
-      let targetFolder = await findFacturasFolder();
-      if (!targetFolder) {
-        const configuredName = await getConfiguredFolderName("invoice_folder");
-        const { data: newFolder, error: folderError } = await supabase
-          .from("repository_folders")
-          .insert({ contract_id: contractId, name: configuredName, is_base_folder: false, folder_type: "facturas" })
-          .select()
-          .single();
-        if (folderError) throw folderError;
-        targetFolder = newFolder;
-      }
-      const fileExt = file.name.split(".").pop();
-      const sanitizedName = sanitizeFileName(file.name);
-      const fileName = `${Date.now()}-${sanitizedName}`;
-      const filePath = `${contractId}/${targetFolder.id}/${fileName}`;
+      const result = await backupInvoiceFileToRepository(contractId, file, file.name);
+      if (!result.success) throw new Error(result.error || "Error al subir archivo");
 
-      const { error: uploadError } = await supabase.storage.from("repository-files").upload(filePath, file);
-      if (uploadError) throw uploadError;
-
-      const storagePath = `storage://repository-files/${filePath}`;
-      const { data: newFile, error: dbError } = await supabase
-        .from("repository_files")
-        .insert({ folder_id: targetFolder.id, name: file.name, url: storagePath, file_type: fileExt || null })
-        .select()
-        .single();
-      if (dbError) throw dbError;
-
+      const finalUrl = result.driveUrl || "";
       if (target === "newInvoice") {
-        setNewInvoice(prev => ({ ...prev, attachment_url: storagePath, attachment_name: file.name }));
+        setNewInvoice(prev => ({ ...prev, attachment_url: finalUrl, attachment_name: file.name }));
       } else if (target === "editInvoice") {
-        setEditInvoice(prev => ({ ...prev, attachment_url: storagePath, attachment_name: file.name }));
+        setEditInvoice(prev => ({ ...prev, attachment_url: finalUrl, attachment_name: file.name }));
       } else if (target === "creditNote") {
-        setNewCreditNote(prev => ({ ...prev, attachment_url: storagePath, attachment_name: file.name }));
+        setNewCreditNote(prev => ({ ...prev, attachment_url: finalUrl, attachment_name: file.name }));
       }
-      toast({ title: "Archivo subido", description: `${file.name} guardado en carpeta Facturas` });
+      toast({ title: "Archivo subido", description: `${file.name} guardado en carpeta Facturas y Drive` });
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {

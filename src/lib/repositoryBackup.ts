@@ -3,6 +3,7 @@ import { sanitizeFileName } from "./fileValidation";
 import { uploadFileToStorage } from "./storageUtils";
 import { getConfiguredFolderName, getConfiguredDestinations } from "@/hooks/useFileDestinationSettings";
 import type { FolderDestinationEntry } from "@/components/budget/FolderDestinationPicker";
+import { uploadFileToDriveForFolder } from "./driveUploadHelpers";
 
 /**
  * Get or create a single destination folder in a contract's repository.
@@ -92,13 +93,13 @@ async function findGeneralFolder(
   try {
     const { data } = await supabase
       .from("general_folders")
-      .select("id")
+      .select("id, drive_folder_id")
       .ilike("name", folderName)
       .limit(1)
       .single();
 
     if (data) {
-      return { id: data.id, driveFolderId: null };
+      return { id: data.id, driveFolderId: data.drive_folder_id || null };
     }
     return null;
   } catch (error) {
@@ -155,48 +156,112 @@ export async function getOrCreateOCFolders(contractId: string): Promise<{ id: st
 }
 
 /**
+ * Get or create ALL configured destination folders for invoice/credit note files.
+ */
+export async function getOrCreateInvoiceFolders(contractId: string): Promise<{ id: string; driveFolderId: string | null; name: string; source: string }[]> {
+  const destinations = await getConfiguredDestinations("invoice_folder");
+  const results: { id: string; driveFolderId: string | null; name: string; source: string }[] = [];
+
+  for (const entry of destinations) {
+    const folder = await resolveDestinationFolder(contractId, entry);
+    if (!folder) {
+      if (entry.source !== "general") {
+        const created = await getOrCreateRepoFolder(contractId, entry.name, "facturas");
+        if (created) {
+          results.push({ ...created, name: entry.name, source: "repo" });
+        }
+      }
+    } else {
+      results.push(folder);
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Backup an invoice/credit note file to ALL configured destination folders.
+ * Uploads to Google Drive and creates DB references.
+ */
+export async function backupInvoiceFileToRepository(
+  contractId: string,
+  file: File,
+  fileName: string
+): Promise<{ success: boolean; fileId?: string; driveUrl?: string; error?: string }> {
+  try {
+    const folders = await getOrCreateInvoiceFolders(contractId);
+    if (folders.length === 0) {
+      return { success: false, error: "No se pudo obtener o crear las carpetas de destino para facturas" };
+    }
+
+    const fileExt = file.name.split(".").pop() || null;
+    const sanitizedName = sanitizeFileName(fileName);
+    const datePrefix = new Date().toISOString().split("T")[0].replace(/-/g, "");
+    const unique = Date.now();
+    const storagePath = `invoice-files/${datePrefix}/${contractId}/${unique}_${sanitizedName}`;
+
+    const { path: storedUrl, error: uploadError } = await uploadFileToStorage(storagePath, file);
+    if (uploadError) {
+      return { success: false, error: uploadError.message };
+    }
+
+    let primaryFileId: string | undefined;
+    let primaryDriveUrl: string | undefined;
+    for (const folder of folders) {
+      const record = await insertFileReference(folder, fileName, storedUrl, fileExt, file, contractId);
+      if (!primaryFileId && record) {
+        primaryFileId = record.id;
+        const table = folder.source === "general" ? "general_folder_files" : "repository_files";
+        const { data: fileRecord } = await supabase.from(table).select("url").eq("id", record.id).single();
+        if (fileRecord?.url) primaryDriveUrl = fileRecord.url;
+      }
+    }
+
+    return { success: true, fileId: primaryFileId, driveUrl: primaryDriveUrl };
+  } catch (error: any) {
+    console.error("Error backing up invoice file:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
  * Insert a file reference into the correct table based on source type.
  */
 async function insertFileReference(
-  folder: { id: string; source: string; name: string },
+  folder: { id: string; source: string; name: string; driveFolderId: string | null },
   fileName: string,
   url: string,
-  fileExt: string | null
+  fileExt: string | null,
+  file?: File,
+  contractId?: string
 ): Promise<{ id: string } | null> {
-  if (folder.source === "general") {
-    const { data, error } = await supabase
-      .from("general_folder_files")
-      .insert({
-        folder_id: folder.id,
-        name: fileName,
-        url,
-        file_type: fileExt,
-        drive_file_id: null,
-      })
-      .select("id")
-      .single();
+  let driveFileId: string | null = null;
+  let fileUrl = url;
 
-    if (error) {
-      console.error(`Error creating file in general folder '${folder.name}':`, error);
-      return null;
+  // Try uploading to Google Drive if we have the original file
+  if (file && contractId) {
+    const driveResult = await uploadFileToDriveForFolder(file, fileName, folder, contractId);
+    if (driveResult) {
+      driveFileId = driveResult.driveFileId;
+      fileUrl = driveResult.driveUrl;
     }
-    return data;
   }
 
+  const table = folder.source === "general" ? "general_folder_files" : "repository_files";
   const { data, error } = await supabase
-    .from("repository_files")
+    .from(table)
     .insert({
       folder_id: folder.id,
       name: fileName,
-      url,
+      url: fileUrl,
       file_type: fileExt,
-      drive_file_id: null,
+      drive_file_id: driveFileId,
     })
     .select("id")
     .single();
 
   if (error) {
-    console.error(`Error creating file in repo folder '${folder.name}':`, error);
+    console.error(`Error creating file in ${folder.source} folder '${folder.name}':`, error);
     return null;
   }
   return data;
@@ -204,7 +269,7 @@ async function insertFileReference(
 
 /**
  * Backup an OC file to ALL configured destination folders.
- * Uploads the file once to Storage, then creates a reference in each destination folder.
+ * Uploads the file to Google Drive and creates a reference in each destination folder.
  */
 export async function backupOCFileToRepository(
   contractId: string,
@@ -221,6 +286,7 @@ export async function backupOCFileToRepository(
     const sanitizedName = sanitizeFileName(file.name);
     const fileName = `OC_${orderNumber}_${sanitizedName}`;
 
+    // Use storage as fallback URL (Drive URL will replace it if upload succeeds)
     const datePrefix = new Date().toISOString().split("T")[0].replace(/-/g, "");
     const unique = Date.now();
     const storagePath = `oc-files/${datePrefix}/${contractId}/OC_${orderNumber}_${unique}_${sanitizedName}`;
@@ -232,7 +298,7 @@ export async function backupOCFileToRepository(
 
     let primaryFileId: string | undefined;
     for (const folder of folders) {
-      const record = await insertFileReference(folder, fileName, storedUrl, fileExt);
+      const record = await insertFileReference(folder, fileName, storedUrl, fileExt, file, contractId);
       if (!primaryFileId && record) {
         primaryFileId = record.id;
       }
@@ -252,7 +318,8 @@ export async function backupOCFromStorageUrl(
   contractId: string,
   storageUrl: string,
   orderNumber: string,
-  originalFileName: string
+  originalFileName: string,
+  file?: File
 ): Promise<{ success: boolean; fileId?: string; error?: string }> {
   try {
     const folders = await getOrCreateOCFolders(contractId);
@@ -265,7 +332,7 @@ export async function backupOCFromStorageUrl(
 
     let primaryFileId: string | undefined;
     for (const folder of folders) {
-      const record = await insertFileReference(folder, fileName, storageUrl, fileExt);
+      const record = await insertFileReference(folder, fileName, storageUrl, fileExt, file, contractId);
       if (!primaryFileId && record) {
         primaryFileId = record.id;
       }
@@ -286,7 +353,8 @@ export async function backupOCToMultipleContracts(
   contractIds: string[],
   storageUrl: string,
   orderNumber: string,
-  originalFileName: string
+  originalFileName: string,
+  file?: File
 ): Promise<{ successful: string[]; failed: string[] }> {
   const successful: string[] = [];
   const failed: string[] = [];
@@ -296,7 +364,8 @@ export async function backupOCToMultipleContracts(
       contractId,
       storageUrl,
       orderNumber,
-      originalFileName
+      originalFileName,
+      file
     );
 
     if (result.success) {
@@ -311,7 +380,7 @@ export async function backupOCToMultipleContracts(
 
 /**
  * Register a file in multiple contracts' OC folders.
- * NOTE: Drive uploads are disabled. Files are registered in the DB only.
+ * Uploads to Google Drive and creates DB references.
  */
 export async function uploadFileToMultipleContracts(
   file: File,
@@ -325,7 +394,7 @@ export async function uploadFileToMultipleContracts(
   const successful: { contractId: string; url: string; fileId: string }[] = [];
   const failed: { contractId: string; error: string }[] = [];
 
-  // Upload once to Storage, then create a reference in each contract's OC folder
+  // Upload once to Storage as fallback, then upload to Drive per contract
   let storedUrl: string;
   try {
     const datePrefix = new Date().toISOString().split("T")[0].replace(/-/g, "");
@@ -346,9 +415,8 @@ export async function uploadFileToMultipleContracts(
   const originalFileName = sanitizeFileName(file.name);
 
   for (const contractId of contractIds) {
-    const result = await backupOCFromStorageUrl(contractId, storedUrl, orderNumber, originalFileName);
+    const result = await backupOCFromStorageUrl(contractId, storedUrl, orderNumber, originalFileName, file);
     if (result.success) {
-      // fileId is optional here; if needed, change backupOCFromStorageUrl to select('id')
       successful.push({ contractId, url: storedUrl, fileId: result.fileId || "" });
     } else {
       failed.push({ contractId, error: result.error || "Error desconocido" });
