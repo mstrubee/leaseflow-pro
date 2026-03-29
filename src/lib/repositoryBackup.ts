@@ -200,7 +200,7 @@ async function insertFileReference(
 
 /**
  * Backup an OC file to ALL configured destination folders.
- * Uploads the file once to Storage, then creates a reference in each destination folder.
+ * Uploads the file to Google Drive and creates a reference in each destination folder.
  */
 export async function backupOCFileToRepository(
   contractId: string,
@@ -217,6 +217,7 @@ export async function backupOCFileToRepository(
     const sanitizedName = sanitizeFileName(file.name);
     const fileName = `OC_${orderNumber}_${sanitizedName}`;
 
+    // Use storage as fallback URL (Drive URL will replace it if upload succeeds)
     const datePrefix = new Date().toISOString().split("T")[0].replace(/-/g, "");
     const unique = Date.now();
     const storagePath = `oc-files/${datePrefix}/${contractId}/OC_${orderNumber}_${unique}_${sanitizedName}`;
@@ -228,7 +229,7 @@ export async function backupOCFileToRepository(
 
     let primaryFileId: string | undefined;
     for (const folder of folders) {
-      const record = await insertFileReference(folder, fileName, storedUrl, fileExt);
+      const record = await insertFileReference(folder, fileName, storedUrl, fileExt, file, contractId);
       if (!primaryFileId && record) {
         primaryFileId = record.id;
       }
@@ -248,7 +249,8 @@ export async function backupOCFromStorageUrl(
   contractId: string,
   storageUrl: string,
   orderNumber: string,
-  originalFileName: string
+  originalFileName: string,
+  file?: File
 ): Promise<{ success: boolean; fileId?: string; error?: string }> {
   try {
     const folders = await getOrCreateOCFolders(contractId);
@@ -261,7 +263,7 @@ export async function backupOCFromStorageUrl(
 
     let primaryFileId: string | undefined;
     for (const folder of folders) {
-      const record = await insertFileReference(folder, fileName, storageUrl, fileExt);
+      const record = await insertFileReference(folder, fileName, storageUrl, fileExt, file, contractId);
       if (!primaryFileId && record) {
         primaryFileId = record.id;
       }
