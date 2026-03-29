@@ -108,34 +108,61 @@ export function PatentDocumentUpload({
         }
 
         const sanitizedName = sanitizeFileName(file.name);
-        const folderPath = selectedFolder || `${contractId}/${itemId}`;
-        const fileName = `${folderPath}/${Date.now()}_${i}_${sanitizedName}`;
 
-        const { data, error } = await supabase.storage
-          .from('repository-files')
-          .upload(fileName, file, { upsert: true });
+        // Try uploading directly to Google Drive first
+        let driveUrl: string | null = null;
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const base64Content = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
 
-        if (error) {
-          console.error(`Error uploading ${file.name}:`, error);
-          toast.error(`Error al subir ${file.name}`);
-          continue;
+          const { data: driveData, error: driveError } = await supabase.functions.invoke('google-drive', {
+            body: {
+              action: 'uploadPatentFile',
+              contractId,
+              itemId,
+              fileName: sanitizedName,
+              fileContent: base64Content,
+              mimeType: file.type || 'application/octet-stream',
+            }
+          });
+
+          if (!driveError && driveData?.id) {
+            driveUrl = driveData.webViewLink || `https://drive.google.com/file/d/${driveData.id}/view`;
+          }
+        } catch (driveErr) {
+          console.warn("Drive upload failed, falling back to storage:", driveErr);
         }
 
-        // Store the storage path reference instead of public URL for security
-        const storagePath = `storage://repository-files/${fileName}`;
-        uploadedUrls.push(storagePath);
+        if (driveUrl) {
+          uploadedUrls.push(driveUrl);
+        } else {
+          // Fallback: upload to Supabase Storage
+          const folderPath = selectedFolder || `${contractId}/${itemId}`;
+          const fileName = `${folderPath}/${Date.now()}_${i}_${sanitizedName}`;
+
+          const { data, error } = await supabase.storage
+            .from('repository-files')
+            .upload(fileName, file, { upsert: true });
+
+          if (error) {
+            console.error(`Error uploading ${file.name}:`, error);
+            toast.error(`Error al subir ${file.name}`);
+            continue;
+          }
+
+          const storagePath = `storage://repository-files/${fileName}`;
+          uploadedUrls.push(storagePath);
+        }
       }
 
       if (uploadedUrls.length > 0) {
-        // Backup each uploaded file to configured patent destination folders (including Drive upload)
+        // Backup each uploaded file to configured patent destination folders
         for (let j = 0; j < uploadedUrls.length; j++) {
           const url = uploadedUrls[j];
           const name = url.split('/').pop() || 'patent_file';
-          // Pass the original File object so it can be uploaded to Google Drive
           await backupPatentFileToDestinations(contractId, url, name, files[j]);
         }
 
-        // If there's a currentUrl, append to it; otherwise use the new URLs
         const existingUrls = currentUrl ? currentUrl.split('|||').filter(Boolean) : [];
         const allUrls = [...existingUrls, ...uploadedUrls].join('|||');
         
