@@ -280,6 +280,21 @@ export const DocumentVersions = ({
       }
 
       await onAddDocument(finalUrl, fileName);
+
+      toast({
+        title: "Archivo subido",
+        description: `El archivo ha sido subido exitosamente`,
+      });
+
+      setSelectedFile(null);
+      setSuggestedFileName("");
+      setFileDialogOpen(false);
+
+      // If user wants to import data, open the import modal
+      if (shouldImportData) {
+        setUploadedDocumentUrl(finalUrl);
+        setImportModalOpen(true);
+      }
     } catch (error: any) {
       toast({
         variant: "destructive",
