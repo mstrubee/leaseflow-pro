@@ -2808,50 +2808,40 @@ serve(async (req) => {
         }
 
         const accessTokenClean = await getAccessToken();
-        const sbClean = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-
-        const { data: contractsClean } = await sbClean
-          .from("contracts")
-          .select("id, name, drive_folder_id")
-          .not("drive_folder_id", "is", null)
-          .is("deleted_at", null);
 
         const deletedFolders: string[] = [];
         const cleanErrors: string[] = [];
 
-        for (const contract of (contractsClean || [])) {
-          if (!contract.drive_folder_id) continue;
+        // Search globally in Drive for folders with these names
+        for (const targetName of folderNames) {
+          try {
+            const searchQ = `name='${targetName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+            const searchRes = await fetch(
+              `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(searchQ)}&fields=files(id,name,parents)&pageSize=100`,
+              { headers: { Authorization: `Bearer ${accessTokenClean}` } }
+            );
+            const searchData = await searchRes.json();
 
-          for (const targetName of folderNames) {
-            try {
-              const searchQ = `name='${targetName}' and '${contract.drive_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-              const searchRes = await fetch(
-                `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(searchQ)}&fields=files(id,name)`,
-                { headers: { Authorization: `Bearer ${accessTokenClean}` } }
-              );
-              const searchData = await searchRes.json();
-
-              for (const folder of (searchData.files || [])) {
-                const trashRes = await fetch(
-                  `https://www.googleapis.com/drive/v3/files/${folder.id}`,
-                  {
-                    method: "PATCH",
-                    headers: {
-                      Authorization: `Bearer ${accessTokenClean}`,
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({ trashed: true }),
-                  }
-                );
-                if (trashRes.ok) {
-                  deletedFolders.push(`${contract.name}: ${folder.name} (${folder.id})`);
-                } else {
-                  cleanErrors.push(`${contract.name}: failed to trash ${folder.id}`);
+            for (const folder of (searchData.files || [])) {
+              const trashRes = await fetch(
+                `https://www.googleapis.com/drive/v3/files/${folder.id}`,
+                {
+                  method: "PATCH",
+                  headers: {
+                    Authorization: `Bearer ${accessTokenClean}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ trashed: true }),
                 }
+              );
+              if (trashRes.ok) {
+                deletedFolders.push(`${folder.name} (${folder.id}) parent=${(folder.parents||[])[0]||'?'}`);
+              } else {
+                cleanErrors.push(`Failed to trash ${folder.name} (${folder.id})`);
               }
-            } catch (e: any) {
-              cleanErrors.push(`${contract.name}: ${e.message}`);
             }
+          } catch (e: any) {
+            cleanErrors.push(`Search error for '${targetName}': ${e.message}`);
           }
         }
 
