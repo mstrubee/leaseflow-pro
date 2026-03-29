@@ -242,34 +242,44 @@ export const DocumentVersions = ({
     try {
       const ext = selectedFile.name.split('.').pop() || '';
       const sanitizedName = sanitizeFileName(suggestedFileName.trim());
+      const fileName = `${sanitizedName}.${ext}`;
       const filePath = `contracts/${contractId}/${sanitizedName}.${ext}`;
 
+      // Upload to Supabase Storage as fallback
       const { error: uploadError } = await supabase.storage
         .from("repository-files")
         .upload(filePath, selectedFile, { upsert: true });
 
       if (uploadError) throw uploadError;
 
-      // Store the storage path reference instead of public URL for security
-      // The path will be converted to a signed URL when accessed
       const storagePath = `storage://repository-files/${filePath}`;
+      let finalUrl = storagePath;
 
-      await onAddDocument(storagePath, `${suggestedFileName.trim()}.${ext}`);
+      // Try to find a "Contrato" or "Borradores" folder and upload to Drive
+      const { data: contractFolder } = await supabase
+        .from("repository_folders")
+        .select("id")
+        .eq("contract_id", contractId)
+        .or("name.ilike.Contrato,name.ilike.Borradores,folder_type.ilike.contrato%")
+        .limit(1)
+        .maybeSingle();
 
-      toast({
-        title: "Archivo subido",
-        description: `El archivo ha sido subido exitosamente`,
-      });
-
-      setSelectedFile(null);
-      setSuggestedFileName("");
-      setFileDialogOpen(false);
-
-      // If user wants to import data, open the import modal
-      if (shouldImportData) {
-        setUploadedDocumentUrl(storagePath);
-        setImportModalOpen(true);
+      if (contractFolder) {
+        const driveResult = await uploadFileToDriveHierarchical(selectedFile, fileName, contractFolder.id, contractId);
+        if (driveResult) {
+          finalUrl = driveResult.driveUrl;
+          // Also create a repository_files reference
+          await supabase.from("repository_files").insert({
+            folder_id: contractFolder.id,
+            name: fileName,
+            url: driveResult.driveUrl,
+            file_type: ext,
+            drive_file_id: driveResult.driveFileId,
+          });
+        }
       }
+
+      await onAddDocument(finalUrl, fileName);
     } catch (error: any) {
       toast({
         variant: "destructive",
