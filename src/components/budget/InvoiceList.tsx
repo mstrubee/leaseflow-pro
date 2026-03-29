@@ -515,52 +515,11 @@ export const InvoiceList = ({ purchaseOrder, onUpdate }: InvoiceListProps) => {
 
     setUploading(true);
     try {
-      let targetFolder = await findFacturasFolder();
-      
-      if (!targetFolder) {
-        const configuredName = await getConfiguredFolderName("invoice_folder");
-        const { data: newFolder, error: folderError } = await supabase
-          .from("repository_folders")
-          .insert({
-            contract_id: contractId,
-            name: configuredName,
-            is_base_folder: false,
-            folder_type: "facturas",
-          })
-          .select()
-          .single();
-        
-        if (folderError) throw folderError;
-        targetFolder = newFolder;
-      }
+      const result = await backupInvoiceFileToRepository(contractId, file, file.name);
+      if (!result.success) throw new Error(result.error || "Error al subir archivo");
 
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${Date.now()}-${file.name}`;
-      const filePath = `${contractId}/${targetFolder.id}/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("repository-files")
-        .upload(filePath, file);
-
-      if (uploadError) throw uploadError;
-
-      const storagePath = `storage://repository-files/${filePath}`;
-
-      const { data: newFile, error: dbError } = await supabase
-        .from("repository_files")
-        .insert({
-          folder_id: targetFolder.id,
-          name: file.name,
-          url: storagePath,
-          file_type: fileExt || null,
-        })
-        .select()
-        .single();
-
-      if (dbError) throw dbError;
-
-      toast({ title: "Archivo subido", description: `Archivo guardado en carpeta Facturas` });
-      setUploadedFile(newFile);
+      toast({ title: "Archivo subido", description: `Archivo guardado en carpeta Facturas y Drive` });
+      setUploadedFile({ id: result.fileId || "", name: file.name, url: result.driveUrl || "" });
       setAskSendEmail(true);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
