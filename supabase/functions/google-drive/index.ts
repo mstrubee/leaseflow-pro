@@ -2800,6 +2800,158 @@ serve(async (req) => {
         break;
       }
 
+      // ── Clean up orphan Drive folders (e.g. "Información Patentes") ──────
+      case "cleanupOrphanDriveFolders": {
+        const { folderNames } = params as { folderNames?: string[] };
+        if (!folderNames || !Array.isArray(folderNames) || folderNames.length === 0) {
+          throw new Error("folderNames array is required");
+        }
+
+        const accessTokenClean = await getAccessToken();
+
+        const deletedFolders: string[] = [];
+        const cleanErrors: string[] = [];
+
+        // Search globally in Drive for folders with these names
+        for (const targetName of folderNames) {
+          try {
+            const searchQ = `name='${targetName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+            const searchRes = await fetch(
+              `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(searchQ)}&fields=files(id,name,parents)&pageSize=100`,
+              { headers: { Authorization: `Bearer ${accessTokenClean}` } }
+            );
+            const searchData = await searchRes.json();
+
+            for (const folder of (searchData.files || [])) {
+              const trashRes = await fetch(
+                `https://www.googleapis.com/drive/v3/files/${folder.id}`,
+                {
+                  method: "PATCH",
+                  headers: {
+                    Authorization: `Bearer ${accessTokenClean}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ trashed: true }),
+                }
+              );
+              if (trashRes.ok) {
+                deletedFolders.push(`${folder.name} (${folder.id}) parent=${(folder.parents||[])[0]||'?'}`);
+              } else {
+                cleanErrors.push(`Failed to trash ${folder.name} (${folder.id})`);
+              }
+            }
+          } catch (e: any) {
+            cleanErrors.push(`Search error for '${targetName}': ${e.message}`);
+          }
+        }
+
+        result = { success: true, deleted: deletedFolders, errors: cleanErrors };
+        break;
+      }
+
+      // ── Verify Drive files exist and clean stale references ──────────────
+      case "verifyDriveFiles": {
+        const accessTokenVerify = await getAccessToken();
+        const sbVerify = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+
+        const { data: driveFiles } = await sbVerify
+          .from("repository_files")
+          .select("id, name, drive_file_id, url, folder_id")
+          .not("drive_file_id", "is", null);
+
+        const { data: generalFiles } = await sbVerify
+          .from("general_folder_files")
+          .select("id, name, drive_file_id, url, folder_id")
+          .not("drive_file_id", "is", null);
+
+        const staleRepo: string[] = [];
+        const staleGeneral: string[] = [];
+        let verifiedRepo = 0;
+        let verifiedGeneral = 0;
+
+        const verifyBatch = async (files: any[], tableName: string, staleList: string[]) => {
+          let count = 0;
+          for (const file of (files || [])) {
+            try {
+              const checkRes = await fetch(
+                `https://www.googleapis.com/drive/v3/files/${file.drive_file_id}?fields=id,trashed`,
+                { headers: { Authorization: `Bearer ${accessTokenVerify}` } }
+              );
+
+              if (checkRes.status === 404) {
+                await sbVerify
+                  .from(tableName)
+                  .update({ drive_file_id: null, url: `stale-drive://${file.drive_file_id}` })
+                  .eq("id", file.id);
+                staleList.push(`${file.name} (${file.drive_file_id})`);
+              } else if (checkRes.ok) {
+                const fileData = await checkRes.json();
+                if (fileData.trashed) {
+                  await sbVerify
+                    .from(tableName)
+                    .update({ drive_file_id: null, url: `stale-drive://${file.drive_file_id}` })
+                    .eq("id", file.id);
+                  staleList.push(`${file.name} (trashed, ${file.drive_file_id})`);
+                } else {
+                  count++;
+                }
+              }
+            } catch (_e: any) {
+              // Skip on error
+            }
+          }
+          return count;
+        };
+
+        verifiedRepo = await verifyBatch(driveFiles, "repository_files", staleRepo);
+        verifiedGeneral = await verifyBatch(generalFiles, "general_folder_files", staleGeneral);
+
+        result = {
+          success: true,
+          verifiedRepo,
+          verifiedGeneral,
+          staleRepo,
+          staleGeneral,
+          totalStale: staleRepo.length + staleGeneral.length,
+        };
+        break;
+      }
+
+      // ── Remove stale-drive:// file records from DB ─────────────────────
+      case "removeStaleFileRecords": {
+        const sbStale = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+
+        const { data: staleRepoFiles } = await sbStale
+          .from("repository_files")
+          .select("id, name")
+          .like("url", "stale-drive://%");
+
+        const { data: staleGeneralFiles } = await sbStale
+          .from("general_folder_files")
+          .select("id, name")
+          .like("url", "stale-drive://%");
+
+        const removedRepo: string[] = [];
+        const removedGeneral: string[] = [];
+
+        for (const f of (staleRepoFiles || [])) {
+          await sbStale.from("repository_files").delete().eq("id", f.id);
+          removedRepo.push(f.name);
+        }
+        for (const f of (staleGeneralFiles || [])) {
+          await sbStale.from("general_folder_files").delete().eq("id", f.id);
+          removedGeneral.push(f.name);
+        }
+
+        result = {
+          success: true,
+          removedRepo,
+          removedGeneral,
+          totalRemoved: removedRepo.length + removedGeneral.length,
+        };
+        break;
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }
