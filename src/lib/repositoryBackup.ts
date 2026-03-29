@@ -159,45 +159,40 @@ export async function getOrCreateOCFolders(contractId: string): Promise<{ id: st
  * Insert a file reference into the correct table based on source type.
  */
 async function insertFileReference(
-  folder: { id: string; source: string; name: string },
+  folder: { id: string; source: string; name: string; driveFolderId: string | null },
   fileName: string,
   url: string,
-  fileExt: string | null
+  fileExt: string | null,
+  file?: File,
+  contractId?: string
 ): Promise<{ id: string } | null> {
-  if (folder.source === "general") {
-    const { data, error } = await supabase
-      .from("general_folder_files")
-      .insert({
-        folder_id: folder.id,
-        name: fileName,
-        url,
-        file_type: fileExt,
-        drive_file_id: null,
-      })
-      .select("id")
-      .single();
+  let driveFileId: string | null = null;
+  let fileUrl = url;
 
-    if (error) {
-      console.error(`Error creating file in general folder '${folder.name}':`, error);
-      return null;
+  // Try uploading to Google Drive if we have the original file
+  if (file && contractId) {
+    const driveResult = await uploadFileToDriveForFolder(file, fileName, folder, contractId);
+    if (driveResult) {
+      driveFileId = driveResult.driveFileId;
+      fileUrl = driveResult.driveUrl;
     }
-    return data;
   }
 
+  const table = folder.source === "general" ? "general_folder_files" : "repository_files";
   const { data, error } = await supabase
-    .from("repository_files")
+    .from(table)
     .insert({
       folder_id: folder.id,
       name: fileName,
-      url,
+      url: fileUrl,
       file_type: fileExt,
-      drive_file_id: null,
+      drive_file_id: driveFileId,
     })
     .select("id")
     .single();
 
   if (error) {
-    console.error(`Error creating file in repo folder '${folder.name}':`, error);
+    console.error(`Error creating file in ${folder.source} folder '${folder.name}':`, error);
     return null;
   }
   return data;
