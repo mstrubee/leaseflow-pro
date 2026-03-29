@@ -3,6 +3,7 @@ import { sanitizeFileName } from "./fileValidation";
 import { uploadFileToStorage } from "./storageUtils";
 import { getConfiguredFolderName, getConfiguredDestinations } from "@/hooks/useFileDestinationSettings";
 import type { FolderDestinationEntry } from "@/components/budget/FolderDestinationPicker";
+import { uploadFileToDriveForFolder } from "./driveUploadHelpers";
 
 /**
  * Get or create a single destination folder in a contract's repository.
