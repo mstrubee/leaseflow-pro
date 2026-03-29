@@ -268,11 +268,61 @@ function sanitizeForDriveQuery(name: string): string {
   return name.replace(/\\/g, '\\\\').replace(/'/g, "\\'").substring(0, 255);
 }
 
+function normalizeDriveNameKey(name: string): string {
+  return sanitizeDriveName(name).trim().toLowerCase();
+}
+
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function extractRepositoryStoragePath(rawUrl: string | null | undefined): string | null {
+  if (!rawUrl) return null;
+
+  const normalized = rawUrl.trim().replace(/^storage:\/\/storage:\/\//i, 'storage://');
+
+  if (normalized.startsWith('storage://')) {
+    if (!normalized.startsWith('storage://repository-files/')) return null;
+    return safeDecodeURIComponent(normalized.replace('storage://repository-files/', ''));
+  }
+
+  const publicMatch = normalized.match(/\/storage\/v1\/object\/(?:public|authenticated|sign)\/repository-files\/([^?]+)/i);
+  if (publicMatch?.[1]) {
+    return safeDecodeURIComponent(publicMatch[1]);
+  }
+
+  return null;
+}
+
+async function trashDriveItem(accessToken: string, itemId: string): Promise<void> {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${itemId}?supportsAllDrives=true`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ trashed: true }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    console.warn(`Failed to trash duplicate folder ${itemId}: ${response.status} ${errorText}`);
+  }
+}
+
 async function getFolderByName(accessToken: string, name: string, parentId?: string): Promise<{ id: string; webViewLink: string } | null> {
+  if (parentId) {
+    const siblings = await listChildFolders(accessToken, parentId);
+    return siblings[normalizeDriveNameKey(name)] || null;
+  }
+
   const normalizedName = sanitizeDriveName(name);
   const sanitizedName = sanitizeForDriveQuery(normalizedName);
-  let query = `name='${sanitizedName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-  if (parentId) query += ` and '${parentId}' in parents`;
+  const query = `name='${sanitizedName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
 
   const response = await fetch(
     `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink,createdTime)&orderBy=createdTime asc&pageSize=10&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`,
@@ -281,7 +331,7 @@ async function getFolderByName(accessToken: string, name: string, parentId?: str
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error("Folder search failed:", response.status);
+    console.error("Folder search failed:", response.status, errorText);
     throw new Error(`Failed to search folder: ${response.status}`);
   }
 
@@ -469,7 +519,7 @@ async function listChildFolders(
 
   for (const f of allFiles || []) {
     if (!f?.name || !f?.id) continue;
-    const key = sanitizeDriveName(f.name);
+    const key = normalizeDriveNameKey(f.name);
     const createdTime: string | undefined = f.createdTime;
     const existing = folders[key];
     if (!existing) {
@@ -484,6 +534,9 @@ async function listChildFolders(
 
   if (duplicates.length > 0) {
     console.warn(`Found ${duplicates.length} duplicate folder(s) under parent ${parentId}`, duplicates.slice(0, 25));
+    for (const duplicate of duplicates) {
+      await trashDriveItem(accessToken, duplicate.dupId);
+    }
   }
 
   return folders;
@@ -531,7 +584,7 @@ async function ensureTemplateFolders(
     }
 
     for (const child of children) {
-      const driveKey = sanitizeDriveName(child.name);
+      const driveKey = normalizeDriveNameKey(child.name);
       let folder = existing[driveKey];
       if (!folder) {
         folder = await createDriveFolder(accessToken, child.name, parentDriveId);
@@ -619,8 +672,8 @@ async function uploadFileToDrive(
  */
 async function cleanupStorageFile(sb: any, storageUrl: string): Promise<void> {
   try {
-    if (!storageUrl || !storageUrl.startsWith('storage://repository-files/')) return;
-    const storagePath = storageUrl.replace('storage://repository-files/', '');
+    const storagePath = extractRepositoryStoragePath(storageUrl);
+    if (!storagePath) return;
     const { error } = await sb.storage.from('repository-files').remove([storagePath]);
     if (error) {
       console.warn(`Storage cleanup warning for ${storagePath}:`, error.message);
@@ -2334,14 +2387,16 @@ serve(async (req) => {
 
         const targetContractId = params.contractId || null;
         const batchSize = params.batchSize || 20;
+        const fetchLimit = Math.max(batchSize * 5, 100);
 
-        // Find pending files (no drive_file_id, storage:// URL)
+        // Find pending files (no drive_file_id, any URL format we can map back to repository-files)
         let query = sb
           .from('repository_files')
           .select('id, name, url, folder_id, file_type')
           .is('drive_file_id', null)
-          .like('url', 'storage://repository-files/%')
-          .limit(batchSize);
+          .not('url', 'is', null)
+          .order('uploaded_at', { ascending: false })
+          .limit(fetchLimit);
 
         if (targetContractId) {
           // Get folder IDs for this contract
@@ -2356,15 +2411,23 @@ serve(async (req) => {
           }
         }
 
-        const { data: pendingFiles, error: pfErr } = await query;
+        const { data: pendingFilesRaw, error: pfErr } = await query;
         if (pfErr) throw pfErr;
+
+        const pendingFiles = (pendingFilesRaw || [])
+          .filter((f: any) => !!extractRepositoryStoragePath(f.url))
+          .slice(0, batchSize);
 
         const uploaded: string[] = [];
         const syncErrors: string[] = [];
 
         for (const file of pendingFiles || []) {
           try {
-            const storagePath = file.url.replace('storage://repository-files/', '');
+            const storagePath = extractRepositoryStoragePath(file.url);
+            if (!storagePath) {
+              syncErrors.push(`Unsupported storage URL format: ${file.name}`);
+              continue;
+            }
             
             // Download from Storage
             const { data: fileData, error: dlErr } = await sb.storage
@@ -2436,7 +2499,7 @@ serve(async (req) => {
           }
         }
 
-        const hasMore = (pendingFiles || []).length >= batchSize;
+        const hasMore = (pendingFilesRaw || []).length >= fetchLimit || (pendingFilesRaw || []).length > pendingFiles.length;
 
         result = {
           success: true,
