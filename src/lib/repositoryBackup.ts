@@ -5,6 +5,40 @@ import { getConfiguredFolderName, getConfiguredDestinations } from "@/hooks/useF
 import type { FolderDestinationEntry } from "@/components/budget/FolderDestinationPicker";
 import { uploadFileToDriveForFolder } from "./driveUploadHelpers";
 
+const LEGACY_OC_FACTURAS_NAME = "OC y FACTURAS";
+
+function normalizeFolderToken(value: string | null | undefined): string {
+  return (value || "").trim().toLowerCase();
+}
+
+function getCanonicalRepoFolderName(folderName: string, folderType: string): string {
+  const normalizedType = normalizeFolderToken(folderType);
+  if (normalizedType === "oocc") return "OOCC";
+  if (normalizedType === "facturas") return "Facturas";
+  if (normalizedType === "oc_y_facturas") return LEGACY_OC_FACTURAS_NAME;
+  return folderName.trim();
+}
+
+async function findLegacyOCFacturasParentId(
+  contractId: string,
+  folderType: string,
+): Promise<string | null> {
+  const normalizedType = normalizeFolderToken(folderType);
+  if (normalizedType !== "oocc" && normalizedType !== "facturas") return null;
+
+  const { data: legacyParent } = await supabase
+    .from("repository_folders")
+    .select("id")
+    .eq("contract_id", contractId)
+    .or("folder_type.eq.oc_y_facturas,name.ilike.OC y FACTURAS")
+    .is("parent_id", null)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  return legacyParent?.id ?? null;
+}
+
 /**
  * Get or create a single destination folder in a contract's repository.
  */
@@ -14,58 +48,85 @@ async function getOrCreateRepoFolder(
   folderType: string = "oocc"
 ): Promise<{ id: string; driveFolderId: string | null } | null> {
   try {
-    const normalizedName = folderName.trim().toLowerCase();
-    const normalizedType = folderType.trim().toLowerCase();
+    const normalizedType = normalizeFolderToken(folderType);
+    const canonicalName = getCanonicalRepoFolderName(folderName, normalizedType);
+    const normalizedCanonicalName = normalizeFolderToken(canonicalName);
+    const normalizedInputName = normalizeFolderToken(folderName);
+    const expectedParentId = await findLegacyOCFacturasParentId(contractId, normalizedType);
 
-    const { data: existingFolders } = await supabase
+    const { data: existingFolders, error: existingError } = await supabase
       .from("repository_folders")
-      .select("id, name, folder_type, drive_folder_id")
+      .select("id, name, folder_type, parent_id, drive_folder_id, created_at")
       .eq("contract_id", contractId)
-      .or(`folder_type.eq.${folderType},name.ilike.${folderName}`)
-      .limit(50);
+      .order("created_at", { ascending: true })
+      .limit(500);
 
-    const exactNameMatches = (existingFolders || []).filter(
-      (f) => (f.name || "").trim().toLowerCase() === normalizedName
-    );
-    const exactTypeMatches = (existingFolders || []).filter(
-      (f) => (f.folder_type || "").trim().toLowerCase() === normalizedType
-    );
-
-    const existingFolder = [
-      ...exactNameMatches,
-      ...exactTypeMatches,
-      ...(existingFolders || []),
-    ].find((f) => !!f.drive_folder_id) || [
-      ...exactNameMatches,
-      ...exactTypeMatches,
-      ...(existingFolders || []),
-    ][0];
-
-    if (existingFolder) {
-      return { id: existingFolder.id, driveFolderId: existingFolder.drive_folder_id };
+    if (existingError) {
+      console.error(`Error loading repository folders for contract '${contractId}':`, existingError);
+      return null;
     }
 
-    let parentId: string | null = null;
-    if (normalizedType === "oocc" || normalizedType === "facturas") {
-      const { data: legacyParent } = await supabase
-        .from("repository_folders")
-        .select("id")
-        .eq("contract_id", contractId)
-        .or("folder_type.eq.oc_y_facturas,name.ilike.OC y FACTURAS")
-        .is("parent_id", null)
-        .limit(1)
-        .maybeSingle();
-      parentId = legacyParent?.id ?? null;
+    const relevantFolders = (existingFolders || []).filter((f) => {
+      const typeNorm = normalizeFolderToken(f.folder_type);
+      const nameNorm = normalizeFolderToken(f.name);
+      return (
+        typeNorm === normalizedType ||
+        nameNorm === normalizedCanonicalName ||
+        nameNorm === normalizedInputName
+      );
+    });
+
+    const scoreCandidate = (f: (typeof relevantFolders)[number]): number => {
+      const typeNorm = normalizeFolderToken(f.folder_type);
+      const nameNorm = normalizeFolderToken(f.name);
+      let score = 0;
+
+      if (expectedParentId && f.parent_id === expectedParentId) score += 100;
+      if (!expectedParentId && !f.parent_id) score += 20;
+      if (typeNorm === normalizedType) score += 40;
+      if (nameNorm === normalizedCanonicalName) score += 30;
+      if (nameNorm === normalizedInputName) score += 15;
+      if (f.drive_folder_id) score += 10;
+      if (expectedParentId && !f.parent_id) score -= 50;
+
+      return score;
+    };
+
+    const existingFolder = relevantFolders
+      .sort((a, b) => scoreCandidate(b) - scoreCandidate(a))[0];
+
+    if (existingFolder) {
+      const needsParentFix = !!expectedParentId && existingFolder.parent_id !== expectedParentId;
+      const needsNameFix = normalizeFolderToken(existingFolder.name) !== normalizedCanonicalName;
+      const needsTypeFix = normalizeFolderToken(existingFolder.folder_type) !== normalizedType;
+
+      if (needsParentFix || needsNameFix || needsTypeFix) {
+        const { error: normalizeError } = await supabase
+          .from("repository_folders")
+          .update({
+            parent_id: needsParentFix ? expectedParentId : existingFolder.parent_id,
+            is_base_folder: needsParentFix ? false : !existingFolder.parent_id,
+            name: needsNameFix ? canonicalName : existingFolder.name,
+            folder_type: needsTypeFix ? normalizedType : existingFolder.folder_type,
+          })
+          .eq("id", existingFolder.id);
+
+        if (normalizeError) {
+          console.error(`Error normalizing folder '${existingFolder.id}':`, normalizeError);
+        }
+      }
+
+      return { id: existingFolder.id, driveFolderId: existingFolder.drive_folder_id };
     }
 
     const { data: newFolder, error: createError } = await supabase
       .from("repository_folders")
       .insert({
         contract_id: contractId,
-        name: folderName,
-        folder_type: folderType,
-        is_base_folder: !parentId,
-        parent_id: parentId,
+        name: canonicalName,
+        folder_type: normalizedType,
+        is_base_folder: !expectedParentId,
+        parent_id: expectedParentId,
         drive_folder_id: null,
       })
       .select("id, drive_folder_id")
@@ -115,7 +176,8 @@ async function findGeneralFolder(
  */
 async function resolveDestinationFolder(
   contractId: string,
-  entry: FolderDestinationEntry
+  entry: FolderDestinationEntry,
+  repoFolderType: "oocc" | "facturas" = "oocc"
 ): Promise<{ id: string; driveFolderId: string | null; source: string; name: string } | null> {
   if (entry.source === "general") {
     const folder = await findGeneralFolder(entry.name);
@@ -123,7 +185,7 @@ async function resolveDestinationFolder(
     return null;
   }
   // Default: repo
-  const folder = await getOrCreateRepoFolder(contractId, entry.name, "oocc");
+  const folder = await getOrCreateRepoFolder(contractId, entry.name, repoFolderType);
   if (folder) return { ...folder, source: "repo", name: entry.name };
   return null;
 }
@@ -146,7 +208,7 @@ export async function getOrCreateOCFolders(contractId: string): Promise<{ id: st
   const results: { id: string; driveFolderId: string | null; name: string; source: string }[] = [];
 
   for (const entry of destinations) {
-    const folder = await resolveDestinationFolder(contractId, entry);
+    const folder = await resolveDestinationFolder(contractId, entry, "oocc");
     if (folder) {
       results.push(folder);
     }
@@ -163,7 +225,7 @@ export async function getOrCreateInvoiceFolders(contractId: string): Promise<{ i
   const results: { id: string; driveFolderId: string | null; name: string; source: string }[] = [];
 
   for (const entry of destinations) {
-    const folder = await resolveDestinationFolder(contractId, entry);
+    const folder = await resolveDestinationFolder(contractId, entry, "facturas");
     if (!folder) {
       if (entry.source !== "general") {
         const created = await getOrCreateRepoFolder(contractId, entry.name, "facturas");
