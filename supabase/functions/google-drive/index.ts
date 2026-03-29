@@ -2802,15 +2802,15 @@ serve(async (req) => {
 
       // ── Clean up orphan Drive folders (e.g. "Información Patentes") ──────
       case "cleanupOrphanDriveFolders": {
-        const { folderNames } = body;
+        const { folderNames } = params as { folderNames?: string[] };
         if (!folderNames || !Array.isArray(folderNames) || folderNames.length === 0) {
           throw new Error("folderNames array is required");
         }
 
         const accessTokenClean = await getAccessToken();
+        const sbClean = createClient(supabaseUrl, supabaseKey);
 
-        // Get all contract drive_folder_ids
-        const { data: contractsClean } = await sb
+        const { data: contractsClean } = await sbClean
           .from("contracts")
           .select("id, name, drive_folder_id")
           .not("drive_folder_id", "is", null)
