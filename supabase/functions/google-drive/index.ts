@@ -2862,7 +2862,7 @@ serve(async (req) => {
       // ── Verify Drive files exist and clean stale references ──────────────
       case "verifyDriveFiles": {
         const accessTokenVerify = await getAccessToken();
-        const sbVerify = createClient(supabaseUrl, supabaseKey);
+        const sbVerify = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
         const { data: driveFiles } = await sbVerify
           .from("repository_files")
@@ -2929,7 +2929,7 @@ serve(async (req) => {
 
       // ── Remove stale-drive:// file records from DB ─────────────────────
       case "removeStaleFileRecords": {
-        const sbStale = createClient(supabaseUrl, supabaseKey);
+        const sbStale = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
         const { data: staleRepoFiles } = await sbStale
           .from("repository_files")
