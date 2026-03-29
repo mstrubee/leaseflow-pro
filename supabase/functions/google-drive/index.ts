@@ -298,6 +298,13 @@ function extractRepositoryStoragePath(rawUrl: string | null | undefined): string
   return null;
 }
 
+function extractContractIdFromRepositoryPath(storagePath: string | null | undefined): string | null {
+  if (!storagePath) return null;
+  const normalized = storagePath.trim();
+  const match = normalized.match(/^contracts\/([0-9a-fA-F-]{36})\//);
+  return match?.[1]?.toLowerCase() || null;
+}
+
 async function trashDriveItem(accessToken: string, itemId: string): Promise<void> {
   const response = await fetch(`https://www.googleapis.com/drive/v3/files/${itemId}?supportsAllDrives=true`, {
     method: "PATCH",
@@ -781,11 +788,19 @@ async function ensureDriveFolderForRepositoryFolder(
 
   const { data: folder } = await sb
     .from('repository_folders')
-    .select('id, name, parent_id, drive_folder_id')
+    .select('id, name, parent_id, drive_folder_id, contract_id')
     .eq('id', folderId)
     .single();
 
   if (!folder) return null;
+
+  const normalizedRequestedContractId = (contractId || '').toLowerCase();
+  const normalizedFolderContractId = (folder.contract_id || '').toLowerCase();
+  if (!normalizedFolderContractId || normalizedFolderContractId !== normalizedRequestedContractId) {
+    throw new Error(
+      `Repository folder ${folderId} does not belong to contract ${contractId}`,
+    );
+  }
 
   let parentDriveFolderId: string | null = null;
 
@@ -801,7 +816,7 @@ async function ensureDriveFolderForRepositoryFolder(
     const { data: contract } = await sb
       .from('contracts')
       .select('drive_folder_id')
-      .eq('id', contractId)
+        .eq('id', normalizedRequestedContractId)
       .single();
     parentDriveFolderId = contract?.drive_folder_id || null;
   }
@@ -1475,6 +1490,16 @@ serve(async (req) => {
         const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
         const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
         const sb = createClient(supabaseUrl, supabaseKey);
+
+        const { data: repoFolder } = await sb
+          .from('repository_folders')
+          .select('id, contract_id')
+          .eq('id', repoFolderId)
+          .single();
+
+        if (!repoFolder || repoFolder.contract_id !== contractId) {
+          throw new Error(`repoFolderId ${repoFolderId} is not owned by contract ${contractId}`);
+        }
 
         const targetDriveFolderId = await ensureDriveFolderForRepositoryFolder(
           sb,
@@ -2441,6 +2466,17 @@ serve(async (req) => {
               continue;
             }
 
+            const storageContractId = extractContractIdFromRepositoryPath(storagePath);
+            if (
+              storageContractId &&
+              storageContractId !== (folder.contract_id || '').toLowerCase()
+            ) {
+              syncErrors.push(
+                `Contract mismatch for ${file.name}: storage contract ${storageContractId} != folder contract ${folder.contract_id}`,
+              );
+              continue;
+            }
+
             let resolvedStoragePath = storagePath;
 
             // Download from Storage
@@ -2481,6 +2517,17 @@ serve(async (req) => {
 
             if (dlErr || !fileData) {
               syncErrors.push(`Download failed: ${file.name} - ${dlErr?.message || 'No data'}`);
+              continue;
+            }
+
+            const resolvedStorageContractId = extractContractIdFromRepositoryPath(resolvedStoragePath);
+            if (
+              resolvedStorageContractId &&
+              resolvedStorageContractId !== (folder.contract_id || '').toLowerCase()
+            ) {
+              syncErrors.push(
+                `Resolved path mismatch for ${file.name}: storage contract ${resolvedStorageContractId} != folder contract ${folder.contract_id}`,
+              );
               continue;
             }
 
