@@ -2423,22 +2423,6 @@ serve(async (req) => {
 
         for (const file of pendingFiles || []) {
           try {
-            const storagePath = extractRepositoryStoragePath(file.url);
-            if (!storagePath) {
-              syncErrors.push(`Unsupported storage URL format: ${file.name}`);
-              continue;
-            }
-            
-            // Download from Storage
-            const { data: fileData, error: dlErr } = await sb.storage
-              .from('repository-files')
-              .download(storagePath);
-
-            if (dlErr || !fileData) {
-              syncErrors.push(`Download failed: ${file.name} - ${dlErr?.message || 'No data'}`);
-              continue;
-            }
-
             // Get the folder info to find contract_id
             const { data: folder } = await sb
               .from('repository_folders')
@@ -2448,6 +2432,55 @@ serve(async (req) => {
 
             if (!folder || !folder.contract_id) {
               syncErrors.push(`No folder/contract for file: ${file.name}`);
+              continue;
+            }
+
+            const storagePath = extractRepositoryStoragePath(file.url);
+            if (!storagePath) {
+              syncErrors.push(`Unsupported storage URL format: ${file.name}`);
+              continue;
+            }
+
+            let resolvedStoragePath = storagePath;
+
+            // Download from Storage
+            let { data: fileData, error: dlErr } = await sb.storage
+              .from('repository-files')
+              .download(resolvedStoragePath);
+
+            if ((dlErr || !fileData) && folder.contract_id && resolvedStoragePath.startsWith(`contracts/${folder.contract_id}/`)) {
+              const contractDir = `contracts/${folder.contract_id}`;
+              const targetFileName = safeDecodeURIComponent(resolvedStoragePath.split('/').pop() || file.name);
+
+              const { data: contractFiles, error: listErr } = await sb.storage
+                .from('repository-files')
+                .list(contractDir, { limit: 1000 });
+
+              if (!listErr && contractFiles && contractFiles.length > 0) {
+                const fallbackFile = contractFiles.find((entry: any) => {
+                  const entryName = entry?.name || '';
+                  const decodedEntryName = safeDecodeURIComponent(entryName);
+                  return (
+                    entryName === targetFileName ||
+                    decodedEntryName === targetFileName ||
+                    entryName.endsWith(targetFileName) ||
+                    decodedEntryName.endsWith(targetFileName)
+                  );
+                });
+
+                if (fallbackFile?.name) {
+                  resolvedStoragePath = `${contractDir}/${fallbackFile.name}`;
+                  const retry = await sb.storage
+                    .from('repository-files')
+                    .download(resolvedStoragePath);
+                  fileData = retry.data;
+                  dlErr = retry.error;
+                }
+              }
+            }
+
+            if (dlErr || !fileData) {
+              syncErrors.push(`Download failed: ${file.name} - ${dlErr?.message || 'No data'}`);
               continue;
             }
 
@@ -2491,7 +2524,7 @@ serve(async (req) => {
               .eq('id', file.id);
 
             // Clean up Storage copy
-            await cleanupStorageFile(sb, file.url);
+            await cleanupStorageFile(sb, `storage://repository-files/${resolvedStoragePath}`);
 
             uploaded.push(`${file.name} → ${folder.name}`);
           } catch (e: any) {
