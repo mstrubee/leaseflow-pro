@@ -284,7 +284,8 @@ export async function backupOCToMultipleContracts(
   contractIds: string[],
   storageUrl: string,
   orderNumber: string,
-  originalFileName: string
+  originalFileName: string,
+  file?: File
 ): Promise<{ successful: string[]; failed: string[] }> {
   const successful: string[] = [];
   const failed: string[] = [];
@@ -294,7 +295,8 @@ export async function backupOCToMultipleContracts(
       contractId,
       storageUrl,
       orderNumber,
-      originalFileName
+      originalFileName,
+      file
     );
 
     if (result.success) {
@@ -309,7 +311,7 @@ export async function backupOCToMultipleContracts(
 
 /**
  * Register a file in multiple contracts' OC folders.
- * NOTE: Drive uploads are disabled. Files are registered in the DB only.
+ * Uploads to Google Drive and creates DB references.
  */
 export async function uploadFileToMultipleContracts(
   file: File,
@@ -323,7 +325,7 @@ export async function uploadFileToMultipleContracts(
   const successful: { contractId: string; url: string; fileId: string }[] = [];
   const failed: { contractId: string; error: string }[] = [];
 
-  // Upload once to Storage, then create a reference in each contract's OC folder
+  // Upload once to Storage as fallback, then upload to Drive per contract
   let storedUrl: string;
   try {
     const datePrefix = new Date().toISOString().split("T")[0].replace(/-/g, "");
@@ -344,9 +346,8 @@ export async function uploadFileToMultipleContracts(
   const originalFileName = sanitizeFileName(file.name);
 
   for (const contractId of contractIds) {
-    const result = await backupOCFromStorageUrl(contractId, storedUrl, orderNumber, originalFileName);
+    const result = await backupOCFromStorageUrl(contractId, storedUrl, orderNumber, originalFileName, file);
     if (result.success) {
-      // fileId is optional here; if needed, change backupOCFromStorageUrl to select('id')
       successful.push({ contractId, url: storedUrl, fileId: result.fileId || "" });
     } else {
       failed.push({ contractId, error: result.error || "Error desconocido" });
