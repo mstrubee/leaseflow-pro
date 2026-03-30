@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
 import { getSignedUrl, isStorageUrl } from "@/lib/storageUtils";
 import { backupPatentFileToDestinations } from "@/lib/patentBackup";
+import { fileToBase64 } from "@/lib/fileBase64";
 
 interface PatentDocumentUploadProps {
   open: boolean;
@@ -95,7 +96,7 @@ export function PatentDocumentUpload({
 
     setUploading(true);
     try {
-      const uploadedUrls: string[] = [];
+      const uploadedFiles: { url: string; name: string; file: File }[] = [];
       
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -109,11 +110,8 @@ export function PatentDocumentUpload({
 
         const sanitizedName = sanitizeFileName(file.name);
 
-        // Try uploading directly to Google Drive first
-        let driveUrl: string | null = null;
         try {
-          const arrayBuffer = await file.arrayBuffer();
-          const base64Content = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+          const base64Content = await fileToBase64(file);
 
           const { data: driveData, error: driveError } = await supabase.functions.invoke('google-drive', {
             body: {
@@ -126,48 +124,31 @@ export function PatentDocumentUpload({
             }
           });
 
-          if (!driveError && driveData?.id) {
-            driveUrl = driveData.webViewLink || `https://drive.google.com/file/d/${driveData.id}/view`;
-          }
-        } catch (driveErr) {
-          console.warn("Drive upload failed, falling back to storage:", driveErr);
-        }
-
-        if (driveUrl) {
-          uploadedUrls.push(driveUrl);
-        } else {
-          // Fallback: upload to Supabase Storage
-          const folderPath = selectedFolder || `${contractId}/${itemId}`;
-          const fileName = `${folderPath}/${Date.now()}_${i}_${sanitizedName}`;
-
-          const { data, error } = await supabase.storage
-            .from('repository-files')
-            .upload(fileName, file, { upsert: true });
-
-          if (error) {
-            console.error(`Error uploading ${file.name}:`, error);
-            toast.error(`Error al subir ${file.name}`);
+          if (driveError || !driveData?.id) {
+            console.error(`Error uploading ${file.name} to Google Drive:`, driveError || driveData);
+            toast.error(`No se pudo subir ${file.name} a Google Drive`);
             continue;
           }
 
-          const storagePath = `storage://repository-files/${fileName}`;
-          uploadedUrls.push(storagePath);
+          const driveUrl = driveData.webViewLink || `https://drive.google.com/file/d/${driveData.id}/view`;
+          uploadedFiles.push({ url: driveUrl, name: sanitizedName, file });
+        } catch (driveErr) {
+          console.error(`Drive upload failed for ${file.name}:`, driveErr);
+          toast.error(`No se pudo subir ${file.name} a Google Drive`);
         }
       }
 
-      if (uploadedUrls.length > 0) {
+      if (uploadedFiles.length > 0) {
         // Backup each uploaded file to configured patent destination folders
-        for (let j = 0; j < uploadedUrls.length; j++) {
-          const url = uploadedUrls[j];
-          const name = url.split('/').pop() || 'patent_file';
-          await backupPatentFileToDestinations(contractId, url, name, files[j]);
+        for (const uploaded of uploadedFiles) {
+          await backupPatentFileToDestinations(contractId, uploaded.url, uploaded.name, uploaded.file);
         }
 
         const existingUrls = currentUrl ? currentUrl.split('|||').filter(Boolean) : [];
-        const allUrls = [...existingUrls, ...uploadedUrls].join('|||');
+        const allUrls = [...existingUrls, ...uploadedFiles.map((f) => f.url)].join('|||');
         
         onSave(allUrls, selectedFolder || undefined);
-        toast.success(`${uploadedUrls.length} archivo(s) subido(s) correctamente`);
+        toast.success(`${uploadedFiles.length} archivo(s) subido(s) correctamente en Google Drive`);
         onOpenChange(false);
       }
     } catch (error) {
