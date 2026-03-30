@@ -301,8 +301,12 @@ function extractRepositoryStoragePath(rawUrl: string | null | undefined): string
 function extractContractIdFromRepositoryPath(storagePath: string | null | undefined): string | null {
   if (!storagePath) return null;
   const normalized = storagePath.trim();
-  const match = normalized.match(/^contracts\/([0-9a-fA-F-]{36})\//);
-  return match?.[1]?.toLowerCase() || null;
+  const contractPrefixMatch = normalized.match(/^contracts\/([0-9a-fA-F-]{36})\//);
+  if (contractPrefixMatch?.[1]) return contractPrefixMatch[1].toLowerCase();
+
+  // Legacy paths may start directly with the contract UUID: <contractId>/<itemId>/<file>
+  const legacyMatch = normalized.match(/^([0-9a-fA-F-]{36})\//);
+  return legacyMatch?.[1]?.toLowerCase() || null;
 }
 
 async function trashDriveItem(accessToken: string, itemId: string): Promise<void> {
