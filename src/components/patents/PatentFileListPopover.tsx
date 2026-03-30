@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { FileText, ExternalLink, Trash2, CloudOff, Cloud, Loader2 } from "lucide-react";
+import { FileText, ExternalLink, Trash2, CloudOff, Cloud, Loader2, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { getSignedUrl, isStorageUrl } from "@/lib/storageUtils";
 import { toast } from "sonner";
@@ -17,8 +17,12 @@ interface PatentFileListPopoverProps {
 interface FileInfo {
   url: string;
   name: string;
-  driveStatus: 'checking' | 'ok' | 'missing' | 'not_applicable';
+  driveStatus: 'checking' | 'ok' | 'missing' | 'not_applicable' | 'retrying';
   driveUrl?: string;
+}
+
+function cleanFileName(name: string): string {
+  return name.replace(/^\d{10,}_\d+_/, '');
 }
 
 export function PatentFileListPopover({ urls, contractId, itemId, onRemoveFile }: PatentFileListPopoverProps) {
@@ -26,30 +30,28 @@ export function PatentFileListPopover({ urls, contractId, itemId, onRemoveFile }
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [deleteIndex, setDeleteIndex] = useState<number | null>(null);
 
-  // Check Drive status for each file when popover opens
   useEffect(() => {
     if (!open) return;
 
     const initialFiles: FileInfo[] = urls.map(url => ({
       url,
       name: cleanFileName(url.split('/').pop() || 'archivo'),
-      driveStatus: isStorageUrl(url) ? 'checking' : (url.includes('drive.google.com') ? 'ok' : 'not_applicable'),
+      driveStatus: url.includes('drive.google.com') ? 'ok' : (isStorageUrl(url) ? 'checking' : 'not_applicable'),
       driveUrl: url.includes('drive.google.com') ? url : undefined,
     }));
     setFiles(initialFiles);
 
-    // For storage files, check if they have a Drive backup
     initialFiles.forEach(async (file, index) => {
       if (file.driveStatus !== 'checking') return;
 
       try {
-        // Look for this file in repository_files by matching the storage path
         const fileName = file.url.split('/').pop() || '';
+        const cleanName = cleanFileName(fileName);
         const { data } = await supabase
           .from("repository_files")
-          .select("drive_file_id, url")
-          .or(`url.eq.${file.url},name.ilike.%${fileName}%`)
-          .limit(5);
+          .select("drive_file_id, url, name")
+          .or(`name.eq.${cleanName},name.ilike.%${cleanName}%`)
+          .limit(10);
 
         const match = (data || []).find(r => r.drive_file_id);
 
@@ -78,9 +80,58 @@ export function PatentFileListPopover({ urls, contractId, itemId, onRemoveFile }
     });
   }, [open, urls, contractId, itemId]);
 
+  const handleRetryUpload = async (index: number) => {
+    const file = files[index];
+    if (!file || file.driveStatus !== 'missing') return;
+
+    setFiles(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], driveStatus: 'retrying' };
+      return updated;
+    });
+
+    try {
+      const { data, error } = await supabase.functions.invoke('google-drive', {
+        body: {
+          action: 'uploadPatentFileFromStorage',
+          contractId,
+          itemId,
+          fileName: file.name,
+          storageUrl: file.url,
+          mimeType: 'application/octet-stream',
+        }
+      });
+
+      if (error || !data?.id) {
+        toast.error(`No se pudo reintentar: ${data?.error || error?.message || 'Error'}`);
+        setFiles(prev => {
+          const updated = [...prev];
+          updated[index] = { ...updated[index], driveStatus: 'missing' };
+          return updated;
+        });
+        return;
+      }
+
+      const driveUrl = data.webViewLink || `https://drive.google.com/file/d/${data.id}/view`;
+      setFiles(prev => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], driveStatus: 'ok', driveUrl };
+        return updated;
+      });
+      toast.success(`${file.name} subido a Drive correctamente`);
+    } catch (err) {
+      console.error("Retry upload error:", err);
+      toast.error("Error al reintentar subida");
+      setFiles(prev => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], driveStatus: 'missing' };
+        return updated;
+      });
+    }
+  };
+
   const handleView = async (file: FileInfo) => {
     try {
-      // Prefer Drive URL if available
       if (file.driveUrl) {
         window.open(file.driveUrl, '_blank');
         return;
@@ -136,23 +187,31 @@ export function PatentFileListPopover({ urls, contractId, itemId, onRemoveFile }
           <div className="max-h-60 overflow-y-auto divide-y divide-border">
             {files.map((file, index) => (
               <div key={index} className="px-3 py-2 flex items-center gap-2 hover:bg-muted/50 transition-colors">
-                {/* Drive status icon */}
                 <div className="flex-shrink-0" title={
                   file.driveStatus === 'ok' ? 'En Google Drive' :
                   file.driveStatus === 'missing' ? 'No está en Google Drive' :
-                  file.driveStatus === 'checking' ? 'Verificando...' : 'Enlace externo'
+                  file.driveStatus === 'checking' || file.driveStatus === 'retrying' ? 'Verificando...' : 'Enlace externo'
                 }>
-                  {file.driveStatus === 'checking' && <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />}
+                  {(file.driveStatus === 'checking' || file.driveStatus === 'retrying') && <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />}
                   {file.driveStatus === 'ok' && <Cloud className="h-3.5 w-3.5 text-green-600" />}
                   {file.driveStatus === 'missing' && <CloudOff className="h-3.5 w-3.5 text-destructive" />}
                   {file.driveStatus === 'not_applicable' && <FileText className="h-3.5 w-3.5 text-muted-foreground" />}
                 </div>
 
-                {/* File name */}
                 <span className="text-xs truncate flex-1 min-w-0">{file.name}</span>
 
-                {/* Actions */}
                 <div className="flex gap-0.5 flex-shrink-0">
+                  {file.driveStatus === 'missing' && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6"
+                      onClick={() => handleRetryUpload(index)}
+                      title="Reintentar subida a Drive"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                    </Button>
+                  )}
                   <Button
                     size="icon"
                     variant="ghost"
@@ -178,7 +237,6 @@ export function PatentFileListPopover({ urls, contractId, itemId, onRemoveFile }
         </PopoverContent>
       </Popover>
 
-      {/* Delete confirmation */}
       <AlertDialog open={deleteIndex !== null} onOpenChange={(o) => { if (!o) setDeleteIndex(null); }}>
         <AlertDialogContent onClick={(e) => e.stopPropagation()}>
           <AlertDialogHeader>
@@ -199,9 +257,4 @@ export function PatentFileListPopover({ urls, contractId, itemId, onRemoveFile }
       </AlertDialog>
     </>
   );
-}
-
-function cleanFileName(name: string): string {
-  // Remove timestamp prefixes like "1773747487785_0_"
-  return name.replace(/^\d{10,}_\d+_/, '');
 }

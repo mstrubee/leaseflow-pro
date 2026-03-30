@@ -1796,10 +1796,12 @@ serve(async (req) => {
       }
 
       case "uploadPatentFileFromStorage": {
-        // Upload a patent file to Drive from a temporary storage:// URL (avoids large base64 payloads from the browser)
+        // Upload a patent file to Drive from a temporary storage:// URL
         const { contractId, itemId, fileName, storageUrl, mimeType } = params;
         if (!contractId || !fileName || !storageUrl) {
-          throw new Error("contractId, fileName, and storageUrl are required");
+          return new Response(JSON.stringify({ error: "contractId, fileName, and storageUrl are required" }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
         }
 
         const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -1808,12 +1810,21 @@ serve(async (req) => {
 
         const storagePath = extractRepositoryStoragePath(storageUrl);
         if (!storagePath) {
-          throw new Error("Invalid storageUrl format for repository-files");
+          console.error("uploadPatentFileFromStorage: invalid storageUrl format", { storageUrl });
+          return new Response(JSON.stringify({ error: "Invalid storageUrl format" }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
         }
 
+        // Validate contract isolation — accept both contracts/<id>/... and <id>/... legacy
         const storageContractId = extractContractIdFromRepositoryPath(storagePath);
         if (!storageContractId || storageContractId !== String(contractId).toLowerCase()) {
-          throw new Error("storageUrl contract mismatch");
+          console.error("uploadPatentFileFromStorage: contract mismatch", {
+            storageContractId, contractId, storagePath,
+          });
+          return new Response(JSON.stringify({ error: `storageUrl contract mismatch (path=${storageContractId}, expected=${String(contractId).toLowerCase()})` }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
         }
 
         // Find the "Rentas y Patentes" folder for this contract
@@ -1826,38 +1837,62 @@ serve(async (req) => {
           .single();
 
         if (!patentFolder) {
-          throw new Error(`No "Rentas y Patentes" folder found for contract ${contractId}`);
+          console.error("uploadPatentFileFromStorage: no patent folder for contract", contractId);
+          return new Response(JSON.stringify({ error: `No patent folder found for this contract` }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
         }
 
         let targetDriveFolderId = patentFolder.drive_folder_id;
         if (!targetDriveFolderId) {
           targetDriveFolderId = await ensureDriveFolderForRepositoryFolder(
-            sb,
-            accessToken,
-            contractId,
-            patentFolder.id,
+            sb, accessToken, contractId, patentFolder.id,
           );
         }
 
         if (!targetDriveFolderId) {
-          throw new Error(`Could not resolve Drive folder for patent folder of contract ${contractId}`);
+          return new Response(JSON.stringify({ error: `Could not resolve Drive folder for patent folder` }), {
+            status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
         }
 
-        const { data: fileData, error: downloadError } = await sb.storage
+        // Download from storage — try exact path first, then fallback to listing
+        let fileData: Blob | null = null;
+        const { data: dlData, error: dlError } = await sb.storage
           .from('repository-files')
           .download(storagePath);
 
-        if (downloadError || !fileData) {
-          throw new Error(`Failed to download temp storage file: ${downloadError?.message || 'unknown error'}`);
+        if (dlError || !dlData) {
+          console.warn("uploadPatentFileFromStorage: exact download failed, trying list fallback", {
+            storagePath, error: dlError?.message,
+          });
+          // Fallback: list files in the parent directory and find by name suffix
+          const pathParts = storagePath.split('/');
+          const targetFileName = pathParts.pop() || '';
+          const parentPath = pathParts.join('/');
+          if (parentPath && targetFileName) {
+            const { data: listed } = await sb.storage.from('repository-files').list(parentPath, { limit: 50 });
+            const match = (listed || []).find((f: any) => f.name === targetFileName || f.name.endsWith(targetFileName));
+            if (match) {
+              const altPath = `${parentPath}/${match.name}`;
+              const { data: altData } = await sb.storage.from('repository-files').download(altPath);
+              if (altData) fileData = altData;
+            }
+          }
+          if (!fileData) {
+            console.error("uploadPatentFileFromStorage: file not found in storage", { storagePath });
+            return new Response(JSON.stringify({ error: `File not found in temporary storage` }), {
+              status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+            });
+          }
+        } else {
+          fileData = dlData;
         }
 
         const binaryContentPatent = new Uint8Array(await fileData.arrayBuffer());
         const driveFilePatent = await uploadFileToDrive(
-          accessToken,
-          fileName,
-          binaryContentPatent,
-          mimeType || 'application/octet-stream',
-          targetDriveFolderId,
+          accessToken, fileName, binaryContentPatent,
+          mimeType || 'application/octet-stream', targetDriveFolderId,
         );
 
         const fileUrl = driveFilePatent.webViewLink || `https://drive.google.com/file/d/${driveFilePatent.id}/view`;
@@ -1871,6 +1906,7 @@ serve(async (req) => {
         });
 
         await cleanupStorageFile(sb, storageUrl);
+        console.log("uploadPatentFileFromStorage: success", { driveFileId: driveFilePatent.id, contractId });
 
         result = {
           id: driveFilePatent.id,
