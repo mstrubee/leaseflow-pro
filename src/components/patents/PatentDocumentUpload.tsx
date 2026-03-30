@@ -77,7 +77,6 @@ export function PatentDocumentUpload({
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        // Small delay between downloads to avoid browser blocking
         if (selectedIds.size > 1) await new Promise(r => setTimeout(r, 500));
       }
       toast.success(`${selectedIds.size} archivo(s) descargado(s)`);
@@ -94,16 +93,17 @@ export function PatentDocumentUpload({
     if (!files || files.length === 0) return;
 
     setUploading(true);
+    const uploadedFiles: { url: string; name: string; file: File }[] = [];
+    const failedFiles: string[] = [];
+
     try {
-      const uploadedFiles: { url: string; name: string; file: File }[] = [];
-      
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         
-        // Validate file before upload
         const validation = validateFile(file);
         if (!validation.isValid) {
           toast.error(`${file.name}: ${validation.error}`);
+          failedFiles.push(file.name);
           continue;
         }
 
@@ -119,7 +119,8 @@ export function PatentDocumentUpload({
 
           if (storageError) {
             console.error(`Error uploading ${file.name} to temporary storage:`, storageError);
-            toast.error(`No se pudo preparar ${file.name} para Google Drive`);
+            toast.error(`No se pudo preparar ${file.name}`);
+            failedFiles.push(file.name);
             continue;
           }
 
@@ -135,32 +136,45 @@ export function PatentDocumentUpload({
           });
 
           if (driveError || !driveData?.id) {
-            console.error(`Error uploading ${file.name} to Google Drive:`, driveError || driveData);
-            await supabase.storage.from('repository-files').remove([uploadPath]);
-            toast.error(`No se pudo subir ${file.name} a Google Drive`);
+            const errMsg = driveData?.error || driveError?.message || 'Error desconocido';
+            console.error(`Error uploading ${file.name} to Drive:`, errMsg);
+            // Cleanup temp file
+            await supabase.storage.from('repository-files').remove([uploadPath]).catch(() => {});
+            toast.error(`${file.name}: ${errMsg}`);
+            failedFiles.push(file.name);
             continue;
           }
 
           const driveUrl = driveData.webViewLink || `https://drive.google.com/file/d/${driveData.id}/view`;
           uploadedFiles.push({ url: driveUrl, name: sanitizedName, file });
-        } catch (driveErr) {
+        } catch (driveErr: any) {
           console.error(`Drive upload failed for ${file.name}:`, driveErr);
-          toast.error(`No se pudo subir ${file.name} a Google Drive`);
+          toast.error(`${file.name}: ${driveErr?.message || 'Error de conexión'}`);
+          failedFiles.push(file.name);
         }
       }
 
       if (uploadedFiles.length > 0) {
-        // Backup each uploaded file to configured patent destination folders
+        // Backup to configured destinations (non-blocking — don't fail the main upload)
         for (const uploaded of uploadedFiles) {
-          await backupPatentFileToDestinations(contractId, uploaded.url, uploaded.name, uploaded.file);
+          backupPatentFileToDestinations(contractId, uploaded.url, uploaded.name, uploaded.file)
+            .catch(err => console.warn("Patent backup failed (non-blocking):", err));
         }
 
         const existingUrls = currentUrl ? currentUrl.split('|||').filter(Boolean) : [];
         const allUrls = [...existingUrls, ...uploadedFiles.map((f) => f.url)].join('|||');
         
         onSave(allUrls, selectedFolder || undefined);
-        toast.success(`${uploadedFiles.length} archivo(s) subido(s) correctamente en Google Drive`);
+
+        if (failedFiles.length > 0) {
+          toast.success(`${uploadedFiles.length} subido(s), ${failedFiles.length} fallido(s)`);
+        } else {
+          toast.success(`${uploadedFiles.length} archivo(s) subido(s) a Google Drive`);
+        }
         onOpenChange(false);
+      } else if (failedFiles.length > 0) {
+        // All failed — don't close dialog
+        toast.error(`No se pudo subir ningún archivo (${failedFiles.length} fallido(s))`);
       }
     } catch (error) {
       console.error("Error uploading files:", error);

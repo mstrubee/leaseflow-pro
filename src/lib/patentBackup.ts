@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getConfiguredDestinations } from "@/hooks/useFileDestinationSettings";
+import { fileToBase64 } from "@/lib/fileBase64";
 import type { FolderDestinationEntry } from "@/components/budget/FolderDestinationPicker";
 
 /**
@@ -43,6 +44,7 @@ async function resolveFolder(
 /**
  * Upload a file to Google Drive via the edge function,
  * resolving the correct hierarchical Drive folder.
+ * Uses FileReader-based base64 conversion to handle large files safely.
  */
 async function uploadFileToDriveHierarchical(
   file: File,
@@ -51,8 +53,7 @@ async function uploadFileToDriveHierarchical(
   contractId: string,
 ): Promise<{ driveFileId: string; driveUrl: string } | null> {
   try {
-    const arrayBuffer = await file.arrayBuffer();
-    const base64Content = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    const base64Content = await fileToBase64(file);
 
     const { data, error } = await supabase.functions.invoke('google-drive', {
       body: {
@@ -82,6 +83,7 @@ async function uploadFileToDriveHierarchical(
 
 /**
  * Legacy direct upload (used when folder already has a known drive_folder_id).
+ * Uses FileReader-based base64 conversion to handle large files safely.
  */
 async function uploadFileToDriveDirect(
   file: File,
@@ -89,8 +91,7 @@ async function uploadFileToDriveDirect(
   driveFolderId: string,
 ): Promise<{ driveFileId: string; driveUrl: string } | null> {
   try {
-    const arrayBuffer = await file.arrayBuffer();
-    const base64Content = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    const base64Content = await fileToBase64(file);
 
     const { data, error } = await supabase.functions.invoke('google-drive', {
       body: {
