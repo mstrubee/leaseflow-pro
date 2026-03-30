@@ -301,8 +301,12 @@ function extractRepositoryStoragePath(rawUrl: string | null | undefined): string
 function extractContractIdFromRepositoryPath(storagePath: string | null | undefined): string | null {
   if (!storagePath) return null;
   const normalized = storagePath.trim();
-  const match = normalized.match(/^contracts\/([0-9a-fA-F-]{36})\//);
-  return match?.[1]?.toLowerCase() || null;
+  const contractPrefixMatch = normalized.match(/^contracts\/([0-9a-fA-F-]{36})\//);
+  if (contractPrefixMatch?.[1]) return contractPrefixMatch[1].toLowerCase();
+
+  // Legacy paths may start directly with the contract UUID: <contractId>/<itemId>/<file>
+  const legacyMatch = normalized.match(/^([0-9a-fA-F-]{36})\//);
+  return legacyMatch?.[1]?.toLowerCase() || null;
 }
 
 async function trashDriveItem(accessToken: string, itemId: string): Promise<void> {
@@ -1787,6 +1791,92 @@ serve(async (req) => {
           id: driveFilePatent.id,
           driveFileId: driveFilePatent.id,
           webViewLink: fileUrl,
+        };
+        break;
+      }
+
+      case "uploadPatentFileFromStorage": {
+        // Upload a patent file to Drive from a temporary storage:// URL (avoids large base64 payloads from the browser)
+        const { contractId, itemId, fileName, storageUrl, mimeType } = params;
+        if (!contractId || !fileName || !storageUrl) {
+          throw new Error("contractId, fileName, and storageUrl are required");
+        }
+
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sb = createClient(supabaseUrl, supabaseKey);
+
+        const storagePath = extractRepositoryStoragePath(storageUrl);
+        if (!storagePath) {
+          throw new Error("Invalid storageUrl format for repository-files");
+        }
+
+        const storageContractId = extractContractIdFromRepositoryPath(storagePath);
+        if (!storageContractId || storageContractId !== String(contractId).toLowerCase()) {
+          throw new Error("storageUrl contract mismatch");
+        }
+
+        // Find the "Rentas y Patentes" folder for this contract
+        const { data: patentFolder } = await sb
+          .from('repository_folders')
+          .select('id, drive_folder_id')
+          .eq('folder_type', 'rentas_y_patentes')
+          .eq('contract_id', contractId)
+          .limit(1)
+          .single();
+
+        if (!patentFolder) {
+          throw new Error(`No "Rentas y Patentes" folder found for contract ${contractId}`);
+        }
+
+        let targetDriveFolderId = patentFolder.drive_folder_id;
+        if (!targetDriveFolderId) {
+          targetDriveFolderId = await ensureDriveFolderForRepositoryFolder(
+            sb,
+            accessToken,
+            contractId,
+            patentFolder.id,
+          );
+        }
+
+        if (!targetDriveFolderId) {
+          throw new Error(`Could not resolve Drive folder for patent folder of contract ${contractId}`);
+        }
+
+        const { data: fileData, error: downloadError } = await sb.storage
+          .from('repository-files')
+          .download(storagePath);
+
+        if (downloadError || !fileData) {
+          throw new Error(`Failed to download temp storage file: ${downloadError?.message || 'unknown error'}`);
+        }
+
+        const binaryContentPatent = new Uint8Array(await fileData.arrayBuffer());
+        const driveFilePatent = await uploadFileToDrive(
+          accessToken,
+          fileName,
+          binaryContentPatent,
+          mimeType || 'application/octet-stream',
+          targetDriveFolderId,
+        );
+
+        const fileUrl = driveFilePatent.webViewLink || `https://drive.google.com/file/d/${driveFilePatent.id}/view`;
+        const ext = fileName.includes('.') ? fileName.split('.').pop() : null;
+        await sb.from('repository_files').insert({
+          folder_id: patentFolder.id,
+          name: fileName,
+          url: fileUrl,
+          file_type: ext,
+          drive_file_id: driveFilePatent.id,
+        });
+
+        await cleanupStorageFile(sb, storageUrl);
+
+        result = {
+          id: driveFilePatent.id,
+          driveFileId: driveFilePatent.id,
+          webViewLink: fileUrl,
+          itemId,
         };
         break;
       }

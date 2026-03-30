@@ -11,7 +11,6 @@ import { toast } from "sonner";
 import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
 import { getSignedUrl, isStorageUrl } from "@/lib/storageUtils";
 import { backupPatentFileToDestinations } from "@/lib/patentBackup";
-import { fileToBase64 } from "@/lib/fileBase64";
 
 interface PatentDocumentUploadProps {
   open: boolean;
@@ -111,21 +110,33 @@ export function PatentDocumentUpload({
         const sanitizedName = sanitizeFileName(file.name);
 
         try {
-          const base64Content = await fileToBase64(file);
+          const uploadPath = `contracts/${contractId}/patents/${itemId}/${Date.now()}_${i}_${sanitizedName}`;
+          const storageUrl = `storage://repository-files/${uploadPath}`;
+
+          const { error: storageError } = await supabase.storage
+            .from('repository-files')
+            .upload(uploadPath, file, { upsert: true });
+
+          if (storageError) {
+            console.error(`Error uploading ${file.name} to temporary storage:`, storageError);
+            toast.error(`No se pudo preparar ${file.name} para Google Drive`);
+            continue;
+          }
 
           const { data: driveData, error: driveError } = await supabase.functions.invoke('google-drive', {
             body: {
-              action: 'uploadPatentFile',
+              action: 'uploadPatentFileFromStorage',
               contractId,
               itemId,
               fileName: sanitizedName,
-              fileContent: base64Content,
+              storageUrl,
               mimeType: file.type || 'application/octet-stream',
             }
           });
 
           if (driveError || !driveData?.id) {
             console.error(`Error uploading ${file.name} to Google Drive:`, driveError || driveData);
+            await supabase.storage.from('repository-files').remove([uploadPath]);
             toast.error(`No se pudo subir ${file.name} a Google Drive`);
             continue;
           }
