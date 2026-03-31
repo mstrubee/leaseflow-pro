@@ -1,62 +1,40 @@
 
 Objetivo
-- Dejar estable la subida de archivos en Patentes para que siempre termine en Drive, sin spinner infinito/falla silenciosa, y con errores claros por archivo.
+- Corregir el error al crear contratos: `There is no unique or exclusion constraint matching the ON CONFLICT specification`.
 
-Diagnóstico (con evidencia ya revisada)
-- El backend de Drive muestra errores intermitentes de `storageUrl contract mismatch` y `Failed to download temp storage file` en `uploadPatentFileFromStorage`.
-- En `patent_documents.document_url` aún existen muchas rutas legacy `storage://repository-files/<contractId>/<itemId>/...` (sin prefijo `contracts/`), lo que mezcla formatos históricos.
-- El flujo secundario de respaldo (`src/lib/patentBackup.ts`) usa conversión base64 con `String.fromCharCode(...Uint8Array)` (riesgo real de fallo con archivos medianos/grandes), pudiendo hacer que el upload principal “parezca fallar” aunque Drive haya respondido OK.
+Diagnóstico
+- El fallo no viene del formulario de `src/pages/NewContract.tsx`, sino de un trigger de base de datos que corre al insertar en `contracts`.
+- La función `public.create_general_folder_for_contract()` hace:
+  `INSERT INTO general_folders (...) ... ON CONFLICT (contract_id) DO NOTHING;`
+- Pero en migraciones solo existe un índice único parcial:
+  `CREATE UNIQUE INDEX unique_general_folder_contract ON general_folders (contract_id) WHERE contract_id IS NOT NULL;`
+- Ese índice parcial no calza con `ON CONFLICT (contract_id)`, por eso Postgres lanza ese error al crear el contrato.
 
-Plan de implementación (fix aplicado de punta a punta)
-1) Endurecer `uploadPatentFileFromStorage` en `supabase/functions/google-drive/index.ts`
-- Mantener validación de aislamiento por contrato, pero hacerla tolerante a formatos legacy:
-  - aceptar y validar tanto `contracts/<contractId>/...` como `<contractId>/...`.
-- Agregar fallback de descarga si el path exacto no aparece:
-  - estrategia equivalente a `syncPendingFiles` (reintento por carpeta del contrato + nombre final).
-- Mejorar errores retornados (400 validación / 500 fallo interno) con mensaje accionable.
-- Registrar logs más útiles: `contractId`, `storagePath`, `resolvedStoragePath` (sin exponer secretos).
+Plan de fix
+1. Ajustar la base de datos para que `ON CONFLICT (contract_id)` sea válido
+- Crear una migración que reemplace el índice parcial por una restricción/índice único no parcial sobre `general_folders.contract_id`.
+- Mantener `contract_id` nullable para no romper carpetas globales; múltiples `NULL` seguirán siendo válidos.
 
-2) Corregir flujo frontend en `src/components/patents/PatentDocumentUpload.tsx`
-- Mantener upload temporal a `repository-files` + llamada `uploadPatentFileFromStorage`.
-- Mejorar manejo por archivo:
-  - si falla uno, continuar con los demás, pero mostrar resumen exacto (subidos/fallidos).
-  - propagar texto de error del backend al toast.
-- No cerrar diálogo si todos fallan.
-- Limpiar `input.value` y estado de carga siempre (ya existe, se mantiene).
+2. Asegurar consistencia del trigger
+- Revisar y volver a definir `public.create_general_folder_for_contract()` para que use la forma correcta y estable del insert.
+- Mantener la lógica actual de nombre de carpeta y deduplicación por calle/sufijo.
 
-3) Evitar que el backup rompa la subida principal
-- En `src/lib/patentBackup.ts`, reemplazar conversión base64 riesgosa por helper robusto (`fileToBase64` con `FileReader`).
-- Ejecutar backup como no bloqueante del upload principal:
-  - si falla backup, mostrar warning, pero no marcar como “falló la subida a Drive” si el archivo principal ya quedó en Drive.
+3. Verificar impacto en creación de contratos
+- Confirmar que el flujo de `src/pages/NewContract.tsx` no requiere cambios, porque el insert a `contracts` ya es correcto.
+- El problema es backend-only.
 
-4) Reconciliación automática de pendientes legacy (post-fix)
-- Tras upload exitoso en Patentes, disparar sincronización acotada para pendientes del mismo contrato usando acción existente `syncPendingFiles` (best-effort, sin bloquear UI).
-- Objetivo: reducir casos “aparece en sistema pero no en Drive” para registros antiguos.
+4. Validación
+- Probar creación de un contrato nuevo.
+- Confirmar que:
+  - el contrato se inserta,
+  - se crea su carpeta en `general_folders`,
+  - no aparece el error de `ON CONFLICT`,
+  - no se duplican carpetas para el mismo contrato.
 
-5) UX de verificación en lista flotante
-- En `src/components/patents/PatentFileListPopover.tsx`:
-  - mantener estado Drive (ok/missing/checking), pero hacer búsqueda más estricta por URL exacta + `drive_file_id`.
-  - agregar acción “Reintentar subir a Drive” para archivos `missing` (usa backend, luego refresca estado).
+Archivos a tocar
+- `supabase/migrations/...` (nueva migración)
+- opcionalmente redefinición dentro de la misma migración de `public.create_general_folder_for_contract()`
 
-Validación (obligatoria)
-- Pruebas E2E en `/patents`:
-  1. Subir 1 PDF pequeño.
-  2. Subir lote mixto (2–5 archivos).
-  3. Subir archivo grande (sin exceder límite).
-  4. Confirmar apertura desde popover y estado Drive=OK.
-  5. Confirmar eliminación con verificación.
-- Verificar logs de función `google-drive` sin errores de mismatch/download en esos casos.
-- Verificar en BD que `patent_documents.document_url` quede con URL de Drive para nuevos uploads y que `repository_files.drive_file_id` se complete.
-
-Alcance de datos/seguridad
-- No requiere migraciones de tablas.
-- Se respetan políticas actuales y aislamiento por contrato en backend.
-- No se relaja seguridad; solo se robustecen parseo/ruteo y manejo de errores.
-
-Detalles técnicos
-- Archivos a tocar:
-  - `supabase/functions/google-drive/index.ts`
-  - `src/components/patents/PatentDocumentUpload.tsx`
-  - `src/lib/patentBackup.ts`
-  - `src/components/patents/PatentFileListPopover.tsx`
-- Sin cambios en `src/integrations/supabase/client.ts` ni `types.ts`.
+Detalle técnico
+- Causa raíz exacta: `ON CONFLICT (contract_id)` requiere una restricción única o exclusion constraint compatible; el proyecto hoy tiene solo un índice único parcial, que no coincide con esa especificación.
+- La solución más segura es alinear la estructura de `general_folders.contract_id` con el upsert real usado por el trigger.
