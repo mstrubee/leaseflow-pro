@@ -2222,7 +2222,7 @@ export type Database = {
           {
             foreignKeyName: "general_folders_contract_id_fkey"
             columns: ["contract_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "contracts"
             referencedColumns: ["id"]
           },
