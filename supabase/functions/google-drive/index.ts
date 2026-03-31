@@ -1827,8 +1827,8 @@ serve(async (req) => {
           });
         }
 
-        // Find the "Rentas y Patentes" folder for this contract
-        const { data: patentFolder } = await sb
+        // Find the "Rentas y Patentes" folder for this contract — auto-create if missing
+        let { data: patentFolder } = await sb
           .from('repository_folders')
           .select('id, drive_folder_id')
           .eq('folder_type', 'rentas_y_patentes')
@@ -1837,10 +1837,35 @@ serve(async (req) => {
           .single();
 
         if (!patentFolder) {
-          console.error("uploadPatentFileFromStorage: no patent folder for contract", contractId);
-          return new Response(JSON.stringify({ error: `No patent folder found for this contract` }), {
-            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-          });
+          console.warn("uploadPatentFileFromStorage: no patent folder for contract, auto-creating", contractId);
+          // Find a parent base folder for this contract to attach the new folder
+          const { data: parentFolder } = await sb
+            .from('repository_folders')
+            .select('id')
+            .eq('contract_id', contractId)
+            .is('parent_id', null)
+            .limit(1)
+            .single();
+
+          const { data: created, error: createErr } = await sb
+            .from('repository_folders')
+            .insert({
+              contract_id: contractId,
+              name: 'Rentas y Patentes',
+              folder_type: 'rentas_y_patentes',
+              is_base_folder: !parentFolder,
+              parent_id: parentFolder?.id || null,
+            })
+            .select('id, drive_folder_id')
+            .single();
+
+          if (createErr || !created) {
+            console.error("uploadPatentFileFromStorage: failed to auto-create patent folder", createErr);
+            return new Response(JSON.stringify({ error: `No patent folder found and auto-creation failed` }), {
+              status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+            });
+          }
+          patentFolder = created;
         }
 
         let targetDriveFolderId = patentFolder.drive_folder_id;
