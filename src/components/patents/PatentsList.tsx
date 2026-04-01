@@ -176,6 +176,55 @@ export function PatentsList({
       setSortOrder("asc");
     }
   };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredAndSorted.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredAndSorted.map(c => c.id)));
+    }
+  };
+
+  const handleExportSelected = async () => {
+    if (selectedIds.size === 0) return;
+    setExporting(true);
+    try {
+      const selected = contracts.filter(c => selectedIds.has(c.id));
+      for (const contract of selected) {
+        await exportPatentsToExcel(contract, sections, items, emitters, itemEmitters);
+      }
+      toast.success(`${selected.length} informe(s) descargado(s)`);
+    } catch (err) {
+      toast.error("Error al exportar informes");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportSelectedZip = async () => {
+    if (selectedIds.size === 0) return;
+    setExporting(true);
+    try {
+      const selected = contracts.filter(c => selectedIds.has(c.id));
+      for (const contract of selected) {
+        await exportPatentsWithFiles(contract, sections, items, emitters, itemEmitters);
+      }
+      toast.success(`${selected.length} ZIP(s) descargado(s)`);
+    } catch (err) {
+      toast.error("Error al exportar ZIP");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const getCardFilterLabel = (filter: string | null | undefined): string => {
     const labels: Record<string, string> = {
       'all': 'Todos los Locales',
@@ -190,13 +239,28 @@ export function PatentsList({
   };
   return <Card>
         <CardHeader className="flex flex-row items-center justify-between py-3">
-          <CardTitle className="text-lg">Locales</CardTitle>
-          {cardFilter && <Badge variant="secondary" className="gap-1 text-xs">
-              Filtro: {getCardFilterLabel(cardFilter)}
-              <button onClick={onClearFilter} className="ml-1 hover:text-destructive">
-                <X className="h-3 w-3" />
-              </button>
-            </Badge>}
+          <div className="flex items-center gap-3">
+            <CardTitle className="text-lg">Locales</CardTitle>
+            {cardFilter && <Badge variant="secondary" className="gap-1 text-xs">
+                Filtro: {getCardFilterLabel(cardFilter)}
+                <button onClick={onClearFilter} className="ml-1 hover:text-destructive">
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>}
+          </div>
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">{selectedIds.size} seleccionado(s)</span>
+              <Button variant="outline" size="sm" className="gap-1" onClick={handleExportSelected} disabled={exporting}>
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                CSV
+              </Button>
+              <Button variant="outline" size="sm" className="gap-1" onClick={handleExportSelectedZip} disabled={exporting}>
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                ZIP
+              </Button>
+            </div>
+          )}
         </CardHeader>
         <CardContent className="space-y-1">
             {/* Filters */}
