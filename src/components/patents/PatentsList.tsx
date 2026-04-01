@@ -6,10 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, ArrowUpDown, Eye, X } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Search, ArrowUpDown, Eye, X, Download, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { ContractWithPatent, PatentPriority, PRIORITY_CONFIG } from "./types";
+import { ContractWithPatent, PatentPriority, PatentChecklistSection, PatentChecklistItem, PatentEmitter, PatentItemEmitter, PRIORITY_CONFIG } from "./types";
 import { PatentPriorityBadge } from "./PatentPriorityBadge";
+import { exportPatentsToExcel } from "./exportPatentsExcel";
+import { exportPatentsWithFiles } from "./exportPatentsZip";
+import { toast } from "sonner";
 
 interface ContractCompany {
   companies?: {
@@ -21,6 +25,10 @@ interface PatentsListProps {
   onSelectContract: (contractId: string) => void;
   cardFilter?: string | null;
   onClearFilter?: () => void;
+  sections: PatentChecklistSection[];
+  items: PatentChecklistItem[];
+  emitters: PatentEmitter[];
+  itemEmitters: PatentItemEmitter[];
 }
 type SortField = "priority" | "name" | "criticality";
 type SortOrder = "asc" | "desc";
