@@ -6,10 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, ArrowUpDown, Eye, X } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Search, ArrowUpDown, Eye, X, Download, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { ContractWithPatent, PatentPriority, PRIORITY_CONFIG } from "./types";
+import { ContractWithPatent, PatentPriority, PatentChecklistSection, PatentChecklistItem, PatentEmitter, PatentItemEmitter, PRIORITY_CONFIG } from "./types";
 import { PatentPriorityBadge } from "./PatentPriorityBadge";
+import { exportPatentsToExcel } from "./exportPatentsExcel";
+import { exportPatentsWithFiles } from "./exportPatentsZip";
+import { toast } from "sonner";
 
 interface ContractCompany {
   companies?: {
@@ -21,6 +25,10 @@ interface PatentsListProps {
   onSelectContract: (contractId: string) => void;
   cardFilter?: string | null;
   onClearFilter?: () => void;
+  sections: PatentChecklistSection[];
+  items: PatentChecklistItem[];
+  emitters: PatentEmitter[];
+  itemEmitters: PatentItemEmitter[];
 }
 type SortField = "priority" | "name" | "criticality";
 type SortOrder = "asc" | "desc";
@@ -40,7 +48,11 @@ export function PatentsList({
   contracts,
   onSelectContract,
   cardFilter,
-  onClearFilter
+  onClearFilter,
+  sections,
+  items,
+  emitters,
+  itemEmitters,
 }: PatentsListProps) {
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState<SortField>("priority");
@@ -49,6 +61,8 @@ export function PatentsList({
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [communeFilter, setCommuneFilter] = useState<string>("all");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [exporting, setExporting] = useState(false);
 
   // Extract unique companies and communes for filters
   const { uniqueCompanies, uniqueCommunes } = useMemo(() => {
@@ -162,6 +176,55 @@ export function PatentsList({
       setSortOrder("asc");
     }
   };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredAndSorted.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredAndSorted.map(c => c.id)));
+    }
+  };
+
+  const handleExportSelected = async () => {
+    if (selectedIds.size === 0) return;
+    setExporting(true);
+    try {
+      const selected = contracts.filter(c => selectedIds.has(c.id));
+      for (const contract of selected) {
+        await exportPatentsToExcel(contract, sections, items, emitters, itemEmitters);
+      }
+      toast.success(`${selected.length} informe(s) descargado(s)`);
+    } catch (err) {
+      toast.error("Error al exportar informes");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportSelectedZip = async () => {
+    if (selectedIds.size === 0) return;
+    setExporting(true);
+    try {
+      const selected = contracts.filter(c => selectedIds.has(c.id));
+      for (const contract of selected) {
+        await exportPatentsWithFiles(contract, sections, items, emitters, itemEmitters);
+      }
+      toast.success(`${selected.length} ZIP(s) descargado(s)`);
+    } catch (err) {
+      toast.error("Error al exportar ZIP");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const getCardFilterLabel = (filter: string | null | undefined): string => {
     const labels: Record<string, string> = {
       'all': 'Todos los Locales',
@@ -176,13 +239,28 @@ export function PatentsList({
   };
   return <Card>
         <CardHeader className="flex flex-row items-center justify-between py-3">
-          <CardTitle className="text-lg">Locales</CardTitle>
-          {cardFilter && <Badge variant="secondary" className="gap-1 text-xs">
-              Filtro: {getCardFilterLabel(cardFilter)}
-              <button onClick={onClearFilter} className="ml-1 hover:text-destructive">
-                <X className="h-3 w-3" />
-              </button>
-            </Badge>}
+          <div className="flex items-center gap-3">
+            <CardTitle className="text-lg">Locales</CardTitle>
+            {cardFilter && <Badge variant="secondary" className="gap-1 text-xs">
+                Filtro: {getCardFilterLabel(cardFilter)}
+                <button onClick={onClearFilter} className="ml-1 hover:text-destructive">
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>}
+          </div>
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">{selectedIds.size} seleccionado(s)</span>
+              <Button variant="outline" size="sm" className="gap-1" onClick={handleExportSelected} disabled={exporting}>
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                CSV
+              </Button>
+              <Button variant="outline" size="sm" className="gap-1" onClick={handleExportSelectedZip} disabled={exporting}>
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                ZIP
+              </Button>
+            </div>
+          )}
         </CardHeader>
         <CardContent className="space-y-1">
             {/* Filters */}
@@ -260,6 +338,12 @@ export function PatentsList({
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={filteredAndSorted.length > 0 && selectedIds.size === filteredAndSorted.length}
+                      onCheckedChange={toggleSelectAll}
+                    />
+                  </TableHead>
                   <TableHead>Empresa</TableHead>
                   <TableHead>Local</TableHead>
                   <TableHead>Dirección</TableHead>
@@ -285,8 +369,14 @@ export function PatentsList({
                   ? `${address.street || ''}${address.number ? ' ' + address.number : ''}`.trim() || 'Sin dirección'
                   : 'Sin dirección';
                 const companyNames = getCompanyNames(contract);
-                return <TableRow key={contract.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelectContract(contract.id)}>
-                      <TableCell className="text-muted-foreground">
+                return <TableRow key={contract.id} className="cursor-pointer hover:bg-muted/50">
+                      <TableCell onClick={e => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedIds.has(contract.id)}
+                          onCheckedChange={() => toggleSelect(contract.id)}
+                        />
+                      </TableCell>
+                      <TableCell className="text-muted-foreground" onClick={() => onSelectContract(contract.id)}>
                         {companyNames.length > 0 ? (
                           <div className="flex items-center gap-2">
                             <CompanyLogo companyNames={companyNames} size="sm" />
@@ -300,7 +390,7 @@ export function PatentsList({
                           'Sin empresa'
                         )}
                       </TableCell>
-                      <TableCell className="font-medium">
+                      <TableCell className="font-medium" onClick={() => onSelectContract(contract.id)}>
                         <div>{contract.name}</div>
                         {(contract.cebe || contract.codigo) && (
                           <div className="text-xs text-muted-foreground mt-0.5">
@@ -308,16 +398,16 @@ export function PatentsList({
                           </div>
                         )}
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{fullAddress}</TableCell>
-                      <TableCell className="text-muted-foreground">{commune}</TableCell>
-                      <TableCell className="text-muted-foreground">{region}</TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="text-muted-foreground text-sm" onClick={() => onSelectContract(contract.id)}>{fullAddress}</TableCell>
+                      <TableCell className="text-muted-foreground" onClick={() => onSelectContract(contract.id)}>{commune}</TableCell>
+                      <TableCell className="text-muted-foreground" onClick={() => onSelectContract(contract.id)}>{region}</TableCell>
+                      <TableCell className="text-center" onClick={() => onSelectContract(contract.id)}>
                         <PatentPriorityBadge priority={priority} />
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="text-center" onClick={() => onSelectContract(contract.id)}>
                         {pendingCount > 0 ? <span className="text-yellow-600 font-medium">{pendingCount}</span> : <span className="text-green-600">0</span>}
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="text-center" onClick={() => onSelectContract(contract.id)}>
                         {overdueCount > 0 ? <span className="text-red-600 font-medium">{overdueCount}</span> : <span className="text-green-600">0</span>}
                       </TableCell>
                       <TableCell className="text-right">
@@ -329,7 +419,7 @@ export function PatentsList({
                     </TableRow>;
               })}
                 {filteredAndSorted.length === 0 && <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                       No hay locales que coincidan con los filtros
                     </TableCell>
                   </TableRow>}
