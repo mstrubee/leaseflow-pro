@@ -26,10 +26,6 @@ interface PatentsListProps {
   onSelectContract: (contractId: string) => void;
   cardFilter?: string | null;
   onClearFilter?: () => void;
-  sections: PatentChecklistSection[];
-  items: PatentChecklistItem[];
-  emitters: PatentEmitter[];
-  itemEmitters: PatentItemEmitter[];
 }
 type SortField = "priority" | "name" | "criticality";
 type SortOrder = "asc" | "desc";
@@ -50,10 +46,6 @@ export function PatentsList({
   onSelectContract,
   cardFilter,
   onClearFilter,
-  sections,
-  items,
-  emitters,
-  itemEmitters,
 }: PatentsListProps) {
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState<SortField>("priority");
