@@ -643,8 +643,8 @@ const ReportsDashboard = () => {
       empresa: { header: 'Empresa', getValue: (c) => c.contract_companies?.map(cc => cc.companies?.name).filter(Boolean).join(', ') || 'Sin Empresa', width: 35 },
       direccion: { header: 'Direccion', getValue: (c) => { const a = c.contract_addresses?.[0]; return a ? ((a.street || '') + ' ' + (a.number || '') + ', ' + (a.commune || '')).trim() : 'Sin direccion'; }, width: 40 },
       prioridad: { header: 'Prioridad', getValue: (c) => c.contract_patents?.priority ? PRIORITY_CONFIG[c.contract_patents.priority]?.label || 'Sin Asignar' : 'Sin Asignar', width: 25 },
-      comentarios: { header: 'Comentarios', getValue: (c) => c.contract_patents?.comments || '-', width: 'auto' as const },
-      proximas_acciones: { header: 'Proximas Acciones', getValue: (c) => c.contract_patents?.next_actions || '-', width: 'auto' as const },
+      comentarios: { header: 'Comentarios', getValue: (c) => c.contract_patents?.comments || '-', width: 65 },
+      proximas_acciones: { header: 'Proximas Acciones', getValue: (c) => c.contract_patents?.next_actions || '-', width: 65 },
     };
 
     const activeColumns = selectedPdfColumns.filter(key => columnMapping[key]);
