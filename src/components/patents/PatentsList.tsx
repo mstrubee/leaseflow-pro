@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Search, ArrowUpDown, Eye, X, Download, Loader2, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { ContractWithPatent, PatentPriority, PatentChecklistSection, PatentChecklistItem, PatentEmitter, PatentItemEmitter, PRIORITY_CONFIG } from "./types";
+import { ContractWithPatent, PatentPriority, PRIORITY_CONFIG } from "./types";
 import { PatentPriorityBadge } from "./PatentPriorityBadge";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
