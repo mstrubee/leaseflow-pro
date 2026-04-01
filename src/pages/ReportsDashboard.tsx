@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ArrowLeft, FileText, Building2, CheckCircle2, AlertTriangle, Clock, XCircle, FileCheck, ExternalLink, ChevronDown, ChevronUp, ChevronRight, X, Download, Filter, MessageSquare, ArrowUpDown, Settings2, Check } from "lucide-react";
+import { ArrowLeft, FileText, Building2, CheckCircle2, AlertTriangle, Clock, XCircle, FileCheck, ExternalLink, ChevronDown, ChevronUp, ChevronRight, X, Download, Filter, MessageSquare, ArrowUpDown, Settings2, Check, Files } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import { MaintenanceReports } from "@/components/maintenance/MaintenanceReports";
 import { SupplierReports } from "@/components/suppliers/SupplierReports";
@@ -618,7 +619,61 @@ const ReportsDashboard = () => {
     toast.success(`PDF generado con ${pdfContracts.length} de ${sinPatenteContracts.length} locales`);
   };
 
-  // Export PDF function for general report
+  // Export individual PDF per contract row
+  const exportSinPatenteIndividualPDF = async (contract: ContractPatentData) => {
+    const doc = new jsPDF({ orientation: 'landscape' });
+    const today = new Date().toLocaleDateString('es-CL');
+
+    try {
+      const logoImg = new Image();
+      logoImg.src = logosHeader;
+      await new Promise((resolve, reject) => { logoImg.onload = resolve; logoImg.onerror = reject; });
+      doc.addImage(logoImg, 'PNG', 14, 10, 50, 20);
+    } catch {}
+
+    doc.setFontSize(18);
+    doc.text('Ficha: Local Sin Patente', 70, 20);
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text('Generado: ' + today, 70, 28);
+    doc.setTextColor(0);
+
+    const columnMapping: Record<string, { header: string; getValue: (c: ContractPatentData) => string; width: number | 'auto' }> = {
+      local: { header: 'Local', getValue: (c) => c.name, width: 35 },
+      empresa: { header: 'Empresa', getValue: (c) => c.contract_companies?.map(cc => cc.companies?.name).filter(Boolean).join(', ') || 'Sin Empresa', width: 35 },
+      direccion: { header: 'Direccion', getValue: (c) => { const a = c.contract_addresses?.[0]; return a ? ((a.street || '') + ' ' + (a.number || '') + ', ' + (a.commune || '')).trim() : 'Sin direccion'; }, width: 40 },
+      prioridad: { header: 'Prioridad', getValue: (c) => c.contract_patents?.priority ? PRIORITY_CONFIG[c.contract_patents.priority]?.label || 'Sin Asignar' : 'Sin Asignar', width: 25 },
+      comentarios: { header: 'Comentarios', getValue: (c) => c.contract_patents?.comments || '-', width: 'auto' as const },
+      proximas_acciones: { header: 'Proximas Acciones', getValue: (c) => c.contract_patents?.next_actions || '-', width: 'auto' as const },
+    };
+
+    const activeColumns = selectedPdfColumns.filter(key => columnMapping[key]);
+    const headers = activeColumns.map(key => columnMapping[key].header);
+    const row = activeColumns.map(key => columnMapping[key].getValue(contract));
+
+    const columnStyles: Record<number, { cellWidth: number | 'auto' }> = {};
+    activeColumns.forEach((key, index) => {
+      columnStyles[index] = { cellWidth: columnMapping[key].width };
+    });
+
+    autoTable(doc, {
+      startY: 40,
+      head: [headers],
+      body: [row],
+      theme: 'grid',
+      headStyles: { fillColor: [220, 38, 38] },
+      margin: { left: 14, right: 14 },
+      columnStyles,
+      styles: { fontSize: 9, cellPadding: 4, overflow: 'linebreak' },
+      bodyStyles: { valign: 'top' },
+    });
+
+    const safeName = contract.name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s-]/g, '').trim().replace(/\s+/g, '-');
+    doc.save(`sin-patente-${safeName}-${today.replace(/\//g, '-')}.pdf`);
+    toast.success(`PDF individual generado para ${contract.name}`);
+  };
+
+
   const exportToPDF = async () => {
     const doc = new jsPDF({ orientation: 'landscape' });
     const today = new Date().toLocaleDateString('es-CL');
@@ -1319,19 +1374,36 @@ const ReportsDashboard = () => {
                               excludedContractIds={excludedPdfContractIds}
                               onExclusionChange={setExcludedPdfContractIds}
                             />
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
-                              className="rounded-none"
-                              disabled={selectedPdfColumns.length === 0 || sinPatenteContracts.length - excludedPdfContractIds.length === 0}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                exportSinPatentePDF();
-                              }}
-                            >
-                              <Download className="h-3 w-3 mr-1" />
-                              PDF
-                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  className="rounded-none"
+                                  disabled={selectedPdfColumns.length === 0 || sinPatenteContracts.length - excludedPdfContractIds.length === 0}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <Download className="h-3 w-3 mr-1" />
+                                  PDF
+                                  <ChevronDown className="h-3 w-3 ml-1" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => exportSinPatentePDF()}>
+                                  <Files className="h-4 w-4 mr-2" />
+                                  PDF Consolidado
+                                </DropdownMenuItem>
+                                <DropdownMenuItem 
+                                  onClick={() => {
+                                    const pdfContracts = sinPatenteContracts.filter(c => !excludedPdfContractIds.includes(c.id));
+                                    pdfContracts.forEach(c => exportSinPatenteIndividualPDF(c));
+                                  }}
+                                >
+                                  <FileText className="h-4 w-4 mr-2" />
+                                  PDF Individual (por fila)
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                           <Select value={sinPatenteStatusFilter} onValueChange={setSinPatenteStatusFilter}>
                             <SelectTrigger className="w-[180px] h-8">
@@ -1460,14 +1532,24 @@ const ReportsDashboard = () => {
                                         )}
                                       </TableCell>
                                       <TableCell className="text-right">
-                                        <Button 
-                                          variant="outline" 
-                                          size="sm"
-                                          onClick={() => handleNavigateToPatent(contract.id)}
-                                        >
-                                          <ExternalLink className="h-3 w-3 mr-1" />
-                                          Ver
-                                        </Button>
+                                        <div className="flex items-center justify-end gap-1">
+                                          <Button 
+                                            variant="ghost" 
+                                            size="sm"
+                                            title="Descargar PDF individual"
+                                            onClick={() => exportSinPatenteIndividualPDF(contract)}
+                                          >
+                                            <Download className="h-3 w-3" />
+                                          </Button>
+                                          <Button 
+                                            variant="outline" 
+                                            size="sm"
+                                            onClick={() => handleNavigateToPatent(contract.id)}
+                                          >
+                                            <ExternalLink className="h-3 w-3 mr-1" />
+                                            Ver
+                                          </Button>
+                                        </div>
                                       </TableCell>
                                     </TableRow>
                                   );
