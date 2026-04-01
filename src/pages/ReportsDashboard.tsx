@@ -1532,14 +1532,24 @@ const ReportsDashboard = () => {
                                         )}
                                       </TableCell>
                                       <TableCell className="text-right">
-                                        <Button 
-                                          variant="outline" 
-                                          size="sm"
-                                          onClick={() => handleNavigateToPatent(contract.id)}
-                                        >
-                                          <ExternalLink className="h-3 w-3 mr-1" />
-                                          Ver
-                                        </Button>
+                                        <div className="flex items-center justify-end gap-1">
+                                          <Button 
+                                            variant="ghost" 
+                                            size="sm"
+                                            title="Descargar PDF individual"
+                                            onClick={() => exportSinPatenteIndividualPDF(contract)}
+                                          >
+                                            <Download className="h-3 w-3" />
+                                          </Button>
+                                          <Button 
+                                            variant="outline" 
+                                            size="sm"
+                                            onClick={() => handleNavigateToPatent(contract.id)}
+                                          >
+                                            <ExternalLink className="h-3 w-3 mr-1" />
+                                            Ver
+                                          </Button>
+                                        </div>
                                       </TableCell>
                                     </TableRow>
                                   );
