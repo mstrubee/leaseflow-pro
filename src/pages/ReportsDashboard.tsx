@@ -1374,19 +1374,36 @@ const ReportsDashboard = () => {
                               excludedContractIds={excludedPdfContractIds}
                               onExclusionChange={setExcludedPdfContractIds}
                             />
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
-                              className="rounded-none"
-                              disabled={selectedPdfColumns.length === 0 || sinPatenteContracts.length - excludedPdfContractIds.length === 0}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                exportSinPatentePDF();
-                              }}
-                            >
-                              <Download className="h-3 w-3 mr-1" />
-                              PDF
-                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  className="rounded-none"
+                                  disabled={selectedPdfColumns.length === 0 || sinPatenteContracts.length - excludedPdfContractIds.length === 0}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <Download className="h-3 w-3 mr-1" />
+                                  PDF
+                                  <ChevronDown className="h-3 w-3 ml-1" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => exportSinPatentePDF()}>
+                                  <Files className="h-4 w-4 mr-2" />
+                                  PDF Consolidado
+                                </DropdownMenuItem>
+                                <DropdownMenuItem 
+                                  onClick={() => {
+                                    const pdfContracts = sinPatenteContracts.filter(c => !excludedPdfContractIds.includes(c.id));
+                                    pdfContracts.forEach(c => exportSinPatenteIndividualPDF(c));
+                                  }}
+                                >
+                                  <FileText className="h-4 w-4 mr-2" />
+                                  PDF Individual (por fila)
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                           <Select value={sinPatenteStatusFilter} onValueChange={setSinPatenteStatusFilter}>
                             <SelectTrigger className="w-[180px] h-8">
