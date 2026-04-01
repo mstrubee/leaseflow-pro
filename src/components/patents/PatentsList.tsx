@@ -48,7 +48,11 @@ export function PatentsList({
   contracts,
   onSelectContract,
   cardFilter,
-  onClearFilter
+  onClearFilter,
+  sections,
+  items,
+  emitters,
+  itemEmitters,
 }: PatentsListProps) {
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState<SortField>("priority");
@@ -57,6 +61,8 @@ export function PatentsList({
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [communeFilter, setCommuneFilter] = useState<string>("all");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [exporting, setExporting] = useState(false);
 
   // Extract unique companies and communes for filters
   const { uniqueCompanies, uniqueCommunes } = useMemo(() => {
