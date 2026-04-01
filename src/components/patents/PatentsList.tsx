@@ -7,13 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Search, ArrowUpDown, Eye, X, Download, Loader2 } from "lucide-react";
+import { Search, ArrowUpDown, Eye, X, Download, Loader2, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { ContractWithPatent, PatentPriority, PatentChecklistSection, PatentChecklistItem, PatentEmitter, PatentItemEmitter, PRIORITY_CONFIG } from "./types";
+import { ContractWithPatent, PatentPriority, PRIORITY_CONFIG } from "./types";
 import { PatentPriorityBadge } from "./PatentPriorityBadge";
-import { exportPatentsToExcel } from "./exportPatentsExcel";
-import { exportPatentsWithFiles } from "./exportPatentsZip";
 import { toast } from "sonner";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import logosHeader from "@/assets/logos-header.png";
 
 interface ContractCompany {
   companies?: {
@@ -25,10 +26,6 @@ interface PatentsListProps {
   onSelectContract: (contractId: string) => void;
   cardFilter?: string | null;
   onClearFilter?: () => void;
-  sections: PatentChecklistSection[];
-  items: PatentChecklistItem[];
-  emitters: PatentEmitter[];
-  itemEmitters: PatentItemEmitter[];
 }
 type SortField = "priority" | "name" | "criticality";
 type SortOrder = "asc" | "desc";
@@ -49,10 +46,6 @@ export function PatentsList({
   onSelectContract,
   cardFilter,
   onClearFilter,
-  sections,
-  items,
-  emitters,
-  itemEmitters,
 }: PatentsListProps) {
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState<SortField>("priority");
@@ -193,33 +186,121 @@ export function PatentsList({
     }
   };
 
-  const handleExportSelected = async () => {
-    if (selectedIds.size === 0) return;
-    setExporting(true);
+  const generateContractPDF = async (contract: ContractWithPatent) => {
+    const doc = new jsPDF({ orientation: 'landscape' });
+    const today = new Date().toLocaleDateString('es-CL');
+
     try {
-      const selected = contracts.filter(c => selectedIds.has(c.id));
-      for (const contract of selected) {
-        await exportPatentsToExcel(contract, sections, items, emitters, itemEmitters);
-      }
-      toast.success(`${selected.length} informe(s) descargado(s)`);
-    } catch (err) {
-      toast.error("Error al exportar informes");
-    } finally {
-      setExporting(false);
-    }
+      const logoImg = new Image();
+      logoImg.src = logosHeader;
+      await new Promise((resolve, reject) => { logoImg.onload = resolve; logoImg.onerror = reject; });
+      doc.addImage(logoImg, 'PNG', 14, 10, 50, 20);
+    } catch {}
+
+    doc.setFontSize(18);
+    doc.text('Ficha de Patente', 70, 20);
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text('Generado: ' + today, 70, 28);
+    doc.setTextColor(0);
+
+    const companyNames = getCompanyNames(contract);
+    const addr = contract.contract_addresses?.[0];
+    const address = addr ? `${addr.street || ''} ${addr.number || ''}, ${addr.commune || ''}`.trim() : 'Sin dirección';
+    const priority = contract.contract_patents?.priority || 'priority_3';
+
+    const headers = ['Local', 'Empresa', 'Dirección', 'Prioridad', 'Comentarios', 'Próximas Acciones'];
+    const row = [
+      contract.name,
+      companyNames.join(', ') || 'Sin Empresa',
+      address,
+      PRIORITY_CONFIG[priority]?.label || 'Sin Asignar',
+      contract.contract_patents?.comments || '-',
+      contract.contract_patents?.next_actions || '-',
+    ];
+
+    autoTable(doc, {
+      startY: 40,
+      head: [headers],
+      body: [row],
+      theme: 'grid',
+      headStyles: { fillColor: [220, 38, 38] },
+      margin: { left: 14, right: 14 },
+      columnStyles: {
+        4: { cellWidth: 65 },
+        5: { cellWidth: 65 },
+      },
+      styles: { fontSize: 7, cellPadding: 3, overflow: 'linebreak' },
+      bodyStyles: { valign: 'top' },
+    });
+
+    return doc;
   };
 
-  const handleExportSelectedZip = async () => {
+  const handleExportSelectedPDF = async () => {
     if (selectedIds.size === 0) return;
     setExporting(true);
     try {
-      const selected = contracts.filter(c => selectedIds.has(c.id));
-      for (const contract of selected) {
-        await exportPatentsWithFiles(contract, sections, items, emitters, itemEmitters);
+      const selected = filteredAndSorted.filter(c => selectedIds.has(c.id));
+      if (selected.length === 1) {
+        const doc = await generateContractPDF(selected[0]);
+        const safeName = selected[0].name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s-]/g, '').trim().replace(/\s+/g, '-');
+        doc.save(`patente-${safeName}.pdf`);
+      } else {
+        // Consolidated PDF with all selected
+        const doc = new jsPDF({ orientation: 'landscape' });
+        const today = new Date().toLocaleDateString('es-CL');
+
+        try {
+          const logoImg = new Image();
+          logoImg.src = logosHeader;
+          await new Promise((resolve, reject) => { logoImg.onload = resolve; logoImg.onerror = reject; });
+          doc.addImage(logoImg, 'PNG', 14, 10, 50, 20);
+        } catch {}
+
+        doc.setFontSize(18);
+        doc.text('Informe de Patentes', 70, 20);
+        doc.setFontSize(10);
+        doc.setTextColor(100);
+        doc.text(`Generado: ${today} — ${selected.length} locales`, 70, 28);
+        doc.setTextColor(0);
+
+        const headers = ['Local', 'Empresa', 'Dirección', 'Prioridad', 'Comentarios', 'Próximas Acciones'];
+        const rows = selected.map(c => {
+          const names = getCompanyNames(c);
+          const addr = c.contract_addresses?.[0];
+          const address = addr ? `${addr.street || ''} ${addr.number || ''}, ${addr.commune || ''}`.trim() : 'Sin dirección';
+          const pri = c.contract_patents?.priority || 'priority_3';
+          return [
+            c.name,
+            names.join(', ') || 'Sin Empresa',
+            address,
+            PRIORITY_CONFIG[pri]?.label || 'Sin Asignar',
+            c.contract_patents?.comments || '-',
+            c.contract_patents?.next_actions || '-',
+          ];
+        });
+
+        autoTable(doc, {
+          startY: 40,
+          head: [headers],
+          body: rows,
+          theme: 'grid',
+          headStyles: { fillColor: [220, 38, 38] },
+          margin: { left: 14, right: 14 },
+          columnStyles: {
+            4: { cellWidth: 65 },
+            5: { cellWidth: 65 },
+          },
+          styles: { fontSize: 6.4, cellPadding: 3, overflow: 'linebreak' },
+          bodyStyles: { valign: 'top' },
+        });
+
+        doc.save(`informe-patentes-${today.replace(/\//g, '-')}.pdf`);
       }
-      toast.success(`${selected.length} ZIP(s) descargado(s)`);
+      toast.success(`PDF generado con ${selected.length} local(es)`);
     } catch (err) {
-      toast.error("Error al exportar ZIP");
+      toast.error("Error al generar PDF");
     } finally {
       setExporting(false);
     }
@@ -251,13 +332,9 @@ export function PatentsList({
           {selectedIds.size > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">{selectedIds.size} seleccionado(s)</span>
-              <Button variant="outline" size="sm" className="gap-1" onClick={handleExportSelected} disabled={exporting}>
-                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                CSV
-              </Button>
-              <Button variant="outline" size="sm" className="gap-1" onClick={handleExportSelectedZip} disabled={exporting}>
-                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                ZIP
+              <Button variant="outline" size="sm" className="gap-1" onClick={handleExportSelectedPDF} disabled={exporting}>
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                Descargar PDF
               </Button>
             </div>
           )}

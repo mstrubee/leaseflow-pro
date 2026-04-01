@@ -244,7 +244,7 @@ export function PatentsModule() {
               </TabsList>
 
               <TabsContent value="list" className="mt-4">
-                <PatentsList contracts={contracts} onSelectContract={setSelectedContractId} cardFilter={cardFilter} onClearFilter={() => setCardFilter(null)} sections={sections} items={items} emitters={emitters} itemEmitters={itemEmitters} />
+                <PatentsList contracts={contracts} onSelectContract={setSelectedContractId} cardFilter={cardFilter} onClearFilter={() => setCardFilter(null)} />
               </TabsContent>
 
               <TabsContent value="alerts" className="mt-4">
