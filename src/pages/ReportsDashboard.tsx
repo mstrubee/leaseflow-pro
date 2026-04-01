@@ -643,8 +643,8 @@ const ReportsDashboard = () => {
       empresa: { header: 'Empresa', getValue: (c) => c.contract_companies?.map(cc => cc.companies?.name).filter(Boolean).join(', ') || 'Sin Empresa', width: 35 },
       direccion: { header: 'Direccion', getValue: (c) => { const a = c.contract_addresses?.[0]; return a ? ((a.street || '') + ' ' + (a.number || '') + ', ' + (a.commune || '')).trim() : 'Sin direccion'; }, width: 40 },
       prioridad: { header: 'Prioridad', getValue: (c) => c.contract_patents?.priority ? PRIORITY_CONFIG[c.contract_patents.priority]?.label || 'Sin Asignar' : 'Sin Asignar', width: 25 },
-      comentarios: { header: 'Comentarios', getValue: (c) => c.contract_patents?.comments || '-', width: 'auto' as const },
-      proximas_acciones: { header: 'Proximas Acciones', getValue: (c) => c.contract_patents?.next_actions || '-', width: 'auto' as const },
+      comentarios: { header: 'Comentarios', getValue: (c) => c.contract_patents?.comments || '-', width: 65 },
+      proximas_acciones: { header: 'Proximas Acciones', getValue: (c) => c.contract_patents?.next_actions || '-', width: 65 },
     };
 
     const activeColumns = selectedPdfColumns.filter(key => columnMapping[key]);
@@ -664,7 +664,7 @@ const ReportsDashboard = () => {
       headStyles: { fillColor: [220, 38, 38] },
       margin: { left: 14, right: 14 },
       columnStyles,
-      styles: { fontSize: 9, cellPadding: 4, overflow: 'linebreak' },
+      styles: { fontSize: 7, cellPadding: 3, overflow: 'linebreak' },
       bodyStyles: { valign: 'top' },
     });
 
@@ -812,11 +812,11 @@ const ReportsDashboard = () => {
           1: { cellWidth: 35 },
           2: { cellWidth: 40 },
           3: { cellWidth: 25 },
-          4: { cellWidth: 'auto' },
-          5: { cellWidth: 'auto' },
+          4: { cellWidth: 65 },
+          5: { cellWidth: 65 },
         },
         styles: { 
-          fontSize: 8,
+          fontSize: 6.4,
           cellPadding: 3,
           overflow: 'linebreak',
         },
