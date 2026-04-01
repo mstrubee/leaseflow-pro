@@ -7,13 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Search, ArrowUpDown, Eye, X, Download, Loader2 } from "lucide-react";
+import { Search, ArrowUpDown, Eye, X, Download, Loader2, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ContractWithPatent, PatentPriority, PatentChecklistSection, PatentChecklistItem, PatentEmitter, PatentItemEmitter, PRIORITY_CONFIG } from "./types";
 import { PatentPriorityBadge } from "./PatentPriorityBadge";
-import { exportPatentsToExcel } from "./exportPatentsExcel";
-import { exportPatentsWithFiles } from "./exportPatentsZip";
 import { toast } from "sonner";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import logosHeader from "@/assets/logos-header.png";
 
 interface ContractCompany {
   companies?: {
