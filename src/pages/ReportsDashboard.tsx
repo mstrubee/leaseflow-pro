@@ -664,7 +664,7 @@ const ReportsDashboard = () => {
       headStyles: { fillColor: [220, 38, 38] },
       margin: { left: 14, right: 14 },
       columnStyles,
-      styles: { fontSize: 9, cellPadding: 4, overflow: 'linebreak' },
+      styles: { fontSize: 7, cellPadding: 3, overflow: 'linebreak' },
       bodyStyles: { valign: 'top' },
     });
 
