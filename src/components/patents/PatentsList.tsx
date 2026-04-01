@@ -338,6 +338,12 @@ export function PatentsList({
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={filteredAndSorted.length > 0 && selectedIds.size === filteredAndSorted.length}
+                      onCheckedChange={toggleSelectAll}
+                    />
+                  </TableHead>
                   <TableHead>Empresa</TableHead>
                   <TableHead>Local</TableHead>
                   <TableHead>Dirección</TableHead>
@@ -363,8 +369,14 @@ export function PatentsList({
                   ? `${address.street || ''}${address.number ? ' ' + address.number : ''}`.trim() || 'Sin dirección'
                   : 'Sin dirección';
                 const companyNames = getCompanyNames(contract);
-                return <TableRow key={contract.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelectContract(contract.id)}>
-                      <TableCell className="text-muted-foreground">
+                return <TableRow key={contract.id} className="cursor-pointer hover:bg-muted/50">
+                      <TableCell onClick={e => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedIds.has(contract.id)}
+                          onCheckedChange={() => toggleSelect(contract.id)}
+                        />
+                      </TableCell>
+                      <TableCell className="text-muted-foreground" onClick={() => onSelectContract(contract.id)}>
                         {companyNames.length > 0 ? (
                           <div className="flex items-center gap-2">
                             <CompanyLogo companyNames={companyNames} size="sm" />
@@ -378,7 +390,7 @@ export function PatentsList({
                           'Sin empresa'
                         )}
                       </TableCell>
-                      <TableCell className="font-medium">
+                      <TableCell className="font-medium" onClick={() => onSelectContract(contract.id)}>
                         <div>{contract.name}</div>
                         {(contract.cebe || contract.codigo) && (
                           <div className="text-xs text-muted-foreground mt-0.5">
@@ -386,16 +398,16 @@ export function PatentsList({
                           </div>
                         )}
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{fullAddress}</TableCell>
-                      <TableCell className="text-muted-foreground">{commune}</TableCell>
-                      <TableCell className="text-muted-foreground">{region}</TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="text-muted-foreground text-sm" onClick={() => onSelectContract(contract.id)}>{fullAddress}</TableCell>
+                      <TableCell className="text-muted-foreground" onClick={() => onSelectContract(contract.id)}>{commune}</TableCell>
+                      <TableCell className="text-muted-foreground" onClick={() => onSelectContract(contract.id)}>{region}</TableCell>
+                      <TableCell className="text-center" onClick={() => onSelectContract(contract.id)}>
                         <PatentPriorityBadge priority={priority} />
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="text-center" onClick={() => onSelectContract(contract.id)}>
                         {pendingCount > 0 ? <span className="text-yellow-600 font-medium">{pendingCount}</span> : <span className="text-green-600">0</span>}
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="text-center" onClick={() => onSelectContract(contract.id)}>
                         {overdueCount > 0 ? <span className="text-red-600 font-medium">{overdueCount}</span> : <span className="text-green-600">0</span>}
                       </TableCell>
                       <TableCell className="text-right">
@@ -407,7 +419,7 @@ export function PatentsList({
                     </TableRow>;
               })}
                 {filteredAndSorted.length === 0 && <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                       No hay locales que coincidan con los filtros
                     </TableCell>
                   </TableRow>}
