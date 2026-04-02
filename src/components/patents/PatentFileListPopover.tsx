@@ -182,8 +182,20 @@ export function PatentFileListPopover({ urls, contractId, itemId, onRemoveFile, 
           align="start"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="px-3 py-2 border-b border-border">
+          <div className="px-3 py-2 border-b border-border flex items-center justify-between">
             <p className="text-sm font-medium">Archivos ({files.length})</p>
+            {folderUrl && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 text-xs text-primary hover:text-primary/80 gap-1"
+                onClick={() => window.open(folderUrl, '_blank')}
+                title="Ver carpeta en Drive"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Ver carpeta
+              </Button>
+            )}
           </div>
           <div className="max-h-60 overflow-y-auto divide-y divide-border">
             {files.map((file, index) => (
