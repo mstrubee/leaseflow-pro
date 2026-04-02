@@ -605,7 +605,7 @@ const ReportsDashboard = () => {
         margin: { left: 14, right: 14 },
         columnStyles,
         styles: { 
-          fontSize: 8,
+          fontSize: 6.4,
           cellPadding: 3,
           overflow: 'linebreak',
         },
