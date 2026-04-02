@@ -574,12 +574,12 @@ const ReportsDashboard = () => {
         comentarios: {
           header: 'Comentarios',
           getValue: (c) => c.contract_patents?.comments || '-',
-          width: 'auto' as const,
+          width: 65,
         },
         proximas_acciones: {
           header: 'Proximas Acciones',
           getValue: (c) => c.contract_patents?.next_actions || '-',
-          width: 'auto' as const,
+          width: 65,
         },
       };
       
@@ -605,7 +605,7 @@ const ReportsDashboard = () => {
         margin: { left: 14, right: 14 },
         columnStyles,
         styles: { 
-          fontSize: 8,
+          fontSize: 6.4,
           cellPadding: 3,
           overflow: 'linebreak',
         },
