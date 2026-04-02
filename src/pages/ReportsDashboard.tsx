@@ -574,12 +574,12 @@ const ReportsDashboard = () => {
         comentarios: {
           header: 'Comentarios',
           getValue: (c) => c.contract_patents?.comments || '-',
-          width: 'auto' as const,
+          width: 65,
         },
         proximas_acciones: {
           header: 'Proximas Acciones',
           getValue: (c) => c.contract_patents?.next_actions || '-',
-          width: 'auto' as const,
+          width: 65,
         },
       };
       
