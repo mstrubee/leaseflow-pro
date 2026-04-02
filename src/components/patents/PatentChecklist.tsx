@@ -1063,42 +1063,23 @@ export function PatentChecklist({
                                   const sharedFiles = sharedFilesCache[folderId] || [];
                                   return (
                                     <>
-                                      {sharedFiles.length > 0 ? (
-                                        sharedFiles.length > 1 ? (
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-8 text-primary hover:text-primary/80"
-                                            onClick={async (e) => {
-                                              e.stopPropagation();
-                                              // Open first file, show count
-                                              const { getSignedUrl } = await import('@/lib/storageUtils');
-                                              const signedUrl = await getSignedUrl(sharedFiles[0].url);
-                                              if (signedUrl) window.open(signedUrl, '_blank');
-                                            }}
-                                            title={`${sharedFiles.length} archivos compartidos`}
-                                          >
-                                            <FolderOpen className="h-3 w-3" />
-                                            <span className="ml-1 text-xs">{sharedFiles.length}</span>
-                                          </Button>
-                                        ) : (
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-8 text-primary hover:text-primary/80"
-                                            onClick={async (e) => {
-                                              e.stopPropagation();
-                                              const { getSignedUrl } = await import('@/lib/storageUtils');
-                                              const signedUrl = await getSignedUrl(sharedFiles[0].url);
-                                              if (signedUrl) window.open(signedUrl, '_blank');
-                                              else toast.error("No se pudo acceder al archivo");
-                                            }}
-                                            title={`Archivo compartido: ${sharedFiles[0].name}`}
-                                          >
-                                            <FolderOpen className="h-3 w-3" />
-                                          </Button>
-                                        )
-                                      ) : null}
+                                      {sharedFiles.length > 0 && (
+                                        <PatentFileListPopover
+                                          urls={sharedFiles.map(f => f.url)}
+                                          contractId={contract.id}
+                                          itemId={item.id}
+                                          onRemoveFile={async (index) => {
+                                            const file = sharedFiles[index];
+                                            if (!file) return;
+                                            await supabase.from('repository_files').delete().eq('id', file.id);
+                                            setSharedFilesCache(prev => ({
+                                              ...prev,
+                                              [folderId]: prev[folderId].filter((_, i) => i !== index)
+                                            }));
+                                            toast.success("Archivo eliminado");
+                                          }}
+                                        />
+                                      )}
                                       <Button
                                         variant="ghost"
                                         size="sm"
@@ -1156,7 +1137,7 @@ export function PatentChecklist({
                                     {/* Regular (non-shared) item: existing logic */}
                                     {getDocValue(item.id, 'document_url') && (() => {
                                       const urls = (getDocValue(item.id, 'document_url') as string).split('|||').filter(Boolean);
-                                      return urls.length > 1 ? (
+                                      return (
                                         <PatentFileListPopover
                                           urls={urls}
                                           contractId={contract.id}
@@ -1173,30 +1154,6 @@ export function PatentChecklist({
                                             }
                                           }}
                                         />
-                                      ) : (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-8 text-primary hover:text-primary/80"
-                                          onClick={async (e) => {
-                                            e.stopPropagation();
-                                            const url = urls[0];
-                                            if (url.startsWith('storage://') || url.includes('/repository-files/')) {
-                                              const { getSignedUrl } = await import('@/lib/storageUtils');
-                                              const signedUrl = await getSignedUrl(url);
-                                              if (signedUrl) {
-                                                window.open(signedUrl, '_blank');
-                                              } else {
-                                                toast.error("No se pudo acceder al archivo");
-                                              }
-                                            } else {
-                                              window.open(url, '_blank');
-                                            }
-                                          }}
-                                          title="Ver archivo"
-                                        >
-                                          <FileText className="h-3 w-3" />
-                                        </Button>
                                       );
                                     })()}
                                     {(status === "ok" || !getDocValue(item.id, 'document_url')) && (
