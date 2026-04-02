@@ -1137,7 +1137,7 @@ export function PatentChecklist({
                                     {/* Regular (non-shared) item: existing logic */}
                                     {getDocValue(item.id, 'document_url') && (() => {
                                       const urls = (getDocValue(item.id, 'document_url') as string).split('|||').filter(Boolean);
-                                      return urls.length > 1 ? (
+                                      return (
                                         <PatentFileListPopover
                                           urls={urls}
                                           contractId={contract.id}
@@ -1154,30 +1154,6 @@ export function PatentChecklist({
                                             }
                                           }}
                                         />
-                                      ) : (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-8 text-primary hover:text-primary/80"
-                                          onClick={async (e) => {
-                                            e.stopPropagation();
-                                            const url = urls[0];
-                                            if (url.startsWith('storage://') || url.includes('/repository-files/')) {
-                                              const { getSignedUrl } = await import('@/lib/storageUtils');
-                                              const signedUrl = await getSignedUrl(url);
-                                              if (signedUrl) {
-                                                window.open(signedUrl, '_blank');
-                                              } else {
-                                                toast.error("No se pudo acceder al archivo");
-                                              }
-                                            } else {
-                                              window.open(url, '_blank');
-                                            }
-                                          }}
-                                          title="Ver archivo"
-                                        >
-                                          <FileText className="h-3 w-3" />
-                                        </Button>
                                       );
                                     })()}
                                     {(status === "ok" || !getDocValue(item.id, 'document_url')) && (
