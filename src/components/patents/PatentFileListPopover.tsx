@@ -12,6 +12,7 @@ interface PatentFileListPopoverProps {
   contractId: string;
   itemId: string;
   onRemoveFile: (index: number) => void;
+  folderUrl?: string;
 }
 
 interface FileInfo {
