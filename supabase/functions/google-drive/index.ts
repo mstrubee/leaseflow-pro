@@ -919,13 +919,36 @@ async function pickUnclaimedDriveFolderByName(
     contractId,
   );
 
-  const candidate = candidates.find((c) => !claimed.has(c.id));
-  if (!candidate) return null;
+  // Bug 2 fix: validate each unclaimed candidate's actual parent in Drive
+  for (const candidate of candidates) {
+    if (claimed.has(candidate.id)) continue;
 
-  return {
-    id: candidate.id,
-    webViewLink: candidate.webViewLink || `https://drive.google.com/drive/folders/${candidate.id}`,
-  };
+    // Verify the candidate's parent matches the expected parentId
+    try {
+      const metaResp = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${candidate.id}?fields=parents&supportsAllDrives=true`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      if (metaResp.ok) {
+        const meta = await metaResp.json();
+        const actualParents: string[] = meta.parents || [];
+        if (actualParents.length > 0 && actualParents[0] !== parentId) {
+          console.warn(`pickUnclaimed: candidate ${candidate.id} parent ${actualParents[0]} != expected ${parentId}, skipping`);
+          continue;
+        }
+      }
+    } catch (e: any) {
+      console.warn(`pickUnclaimed: could not verify parent for ${candidate.id}: ${e.message}`);
+      continue;
+    }
+
+    return {
+      id: candidate.id,
+      webViewLink: candidate.webViewLink || `https://drive.google.com/drive/folders/${candidate.id}`,
+    };
+  }
+
+  return null;
 }
 
 async function ensureStatusFolders(accessToken: string, rootFolderId: string): Promise<Record<string, { id: string; webViewLink: string }>> {
