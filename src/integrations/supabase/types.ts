@@ -4756,6 +4756,8 @@ export type Database = {
           name: string
           status: string | null
           storage_provider: string | null
+          sync_status: string | null
+          synced_at: string | null
           uploaded_at: string
           url: string
         }
@@ -4767,6 +4769,8 @@ export type Database = {
           name: string
           status?: string | null
           storage_provider?: string | null
+          sync_status?: string | null
+          synced_at?: string | null
           uploaded_at?: string
           url: string
         }
@@ -4778,6 +4782,8 @@ export type Database = {
           name?: string
           status?: string | null
           storage_provider?: string | null
+          sync_status?: string | null
+          synced_at?: string | null
           uploaded_at?: string
           url?: string
         }
