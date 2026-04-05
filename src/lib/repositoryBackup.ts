@@ -176,12 +176,11 @@ async function findGeneralFolder(
     const { data } = await supabase
       .from("general_folders")
       .select("id, drive_folder_id")
-      .ilike("name", folderName)
-      .limit(1)
-      .single();
+      .ilike("name", folderName.trim())
+      .limit(1);
 
-    if (data) {
-      return { id: data.id, driveFolderId: data.drive_folder_id || null };
+    if (data?.[0]) {
+      return { id: data[0].id, driveFolderId: data[0].drive_folder_id || null };
     }
     return null;
   } catch (error) {
