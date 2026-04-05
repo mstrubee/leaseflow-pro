@@ -1,40 +1,52 @@
 
-Objetivo
-- Corregir el error al crear contratos: `There is no unique or exclusion constraint matching the ON CONFLICT specification`.
 
-Diagnóstico
-- El fallo no viene del formulario de `src/pages/NewContract.tsx`, sino de un trigger de base de datos que corre al insertar en `contracts`.
-- La función `public.create_general_folder_for_contract()` hace:
-  `INSERT INTO general_folders (...) ... ON CONFLICT (contract_id) DO NOTHING;`
-- Pero en migraciones solo existe un índice único parcial:
-  `CREATE UNIQUE INDEX unique_general_folder_contract ON general_folders (contract_id) WHERE contract_id IS NOT NULL;`
-- Ese índice parcial no calza con `ON CONFLICT (contract_id)`, por eso Postgres lanza ese error al crear el contrato.
+## Plan: Corrección de 3 bugs críticos en sincronización Google Drive
 
-Plan de fix
-1. Ajustar la base de datos para que `ON CONFLICT (contract_id)` sea válido
-- Crear una migración que reemplace el índice parcial por una restricción/índice único no parcial sobre `general_folders.contract_id`.
-- Mantener `contract_id` nullable para no romper carpetas globales; múltiples `NULL` seguirán siendo válidos.
+### Resumen
+Corregir tres bugs en `supabase/functions/google-drive/index.ts`: duplicados por condición de carrera, carpetas en ubicación incorrecta, y lentitud por procesamiento secuencial.
 
-2. Asegurar consistencia del trigger
-- Revisar y volver a definir `public.create_general_folder_for_contract()` para que use la forma correcta y estable del insert.
-- Mantener la lógica actual de nombre de carpeta y deduplicación por calle/sufijo.
+---
 
-3. Verificar impacto en creación de contratos
-- Confirmar que el flujo de `src/pages/NewContract.tsx` no requiere cambios, porque el insert a `contracts` ya es correcto.
-- El problema es backend-only.
+### Bug 1 — Duplicados por condición de carrera
 
-4. Validación
-- Probar creación de un contrato nuevo.
-- Confirmar que:
-  - el contrato se inserta,
-  - se crea su carpeta en `general_folders`,
-  - no aparece el error de `ON CONFLICT`,
-  - no se duplican carpetas para el mismo contrato.
+**Migración de base de datos:**
+- Agregar columnas `sync_status text` y `synced_at timestamptz` a `repository_files`.
 
-Archivos a tocar
-- `supabase/migrations/...` (nueva migración)
-- opcionalmente redefinición dentro de la misma migración de `public.create_general_folder_for_contract()`
+**Cambios en `syncPendingFiles` (líneas ~2835-2997):**
+- En el query inicial (línea 2835), agregar filtro `.is('sync_status', null)` para excluir archivos ya tomados.
+- Antes de descargar cada archivo (línea 2866), hacer un `UPDATE` optimista:
+  ```sql
+  UPDATE repository_files SET sync_status = 'syncing', synced_at = now()
+  WHERE id = file.id AND drive_file_id IS NULL AND sync_status IS NULL
+  ```
+  Si `count === 0`, saltar el archivo.
+- En el `catch` (línea 2994), revertir `sync_status` a `null`.
+- En el update exitoso (línea 2982), setear `sync_status = 'synced'`.
 
-Detalle técnico
-- Causa raíz exacta: `ON CONFLICT (contract_id)` requiere una restricción única o exclusion constraint compatible; el proyecto hoy tiene solo un índice único parcial, que no coincide con esa especificación.
-- La solución más segura es alinear la estructura de `general_folders.contract_id` con el upsert real usado por el trigger.
+---
+
+### Bug 2 — Carpetas en ubicación incorrecta
+
+**Cambios en `pickUnclaimedDriveFolderByName` (líneas 906-929):**
+- Después de encontrar un candidato no reclamado (línea 922), verificar que su padre en Drive coincide con `parentId`:
+  - Hacer un `GET` a la API de Drive para obtener los `parents` del candidato.
+  - Si `parents[0] !== parentId`, descartarlo y seguir con el siguiente candidato.
+- Cambiar `candidates.find()` por un loop que itere sobre los candidatos, consultando parents solo para los no reclamados, y devolviendo el primero que pase ambas validaciones.
+
+---
+
+### Bug 3 — Procesamiento en lotes paralelos
+
+**Cambios en `syncPendingFiles` (líneas 2866-2997):**
+- Reemplazar el `for...of` secuencial por un sistema de lotes con `Promise.allSettled()`.
+- Tamaño de lote configurable via `params.concurrency` (default 5).
+- Extraer el cuerpo del loop actual a una función `async processSingleFile(file)`.
+- Iterar en chunks de `concurrency` archivos, ejecutando cada chunk con `Promise.allSettled()`.
+- Recolectar resultados de `fulfilled`/`rejected` para poblar `uploaded` y `syncErrors`.
+
+---
+
+### Archivos modificados
+1. **Migración SQL** — agregar `sync_status` y `synced_at` a `repository_files`
+2. **`supabase/functions/google-drive/index.ts`** — los tres cambios descritos
+
