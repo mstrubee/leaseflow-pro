@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Upload, File, X, CheckCircle2, AlertCircle, Loader2, FolderUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
+import { validateFile } from "@/lib/fileValidation";
 import { cn } from "@/lib/utils";
 
 interface FileUploadItem {
