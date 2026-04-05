@@ -128,7 +128,7 @@ export function MultiFileUploadDialog({
       
       newFiles.push({
         file,
-        name: sanitizeFileName(nameWithoutExt),
+        name: nameWithoutExt,
         status: "pending",
         progress: 0,
         relativePath: relativePath || undefined,
