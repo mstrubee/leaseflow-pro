@@ -129,7 +129,7 @@ export function PatentDocumentUpload({
               action: 'uploadPatentFileFromStorage',
               contractId,
               itemId,
-              fileName: sanitizedName,
+              fileName: file.name,
               storageUrl,
               mimeType: file.type || 'application/octet-stream',
             }
@@ -146,7 +146,7 @@ export function PatentDocumentUpload({
           }
 
           const driveUrl = driveData.webViewLink || `https://drive.google.com/file/d/${driveData.id}/view`;
-          uploadedFiles.push({ url: driveUrl, name: sanitizedName, file });
+          uploadedFiles.push({ url: driveUrl, name: file.name, file });
         } catch (driveErr: any) {
           console.error(`Drive upload failed for ${file.name}:`, driveErr);
           toast.error(`${file.name}: ${driveErr?.message || 'Error de conexión'}`);

@@ -173,7 +173,7 @@ export function MultiFileUploadDialog({
 
   const handleUpdateFileName = (index: number, newName: string) => {
     setFiles(prev => prev.map((f, i) => 
-      i === index ? { ...f, name: sanitizeFileName(newName) } : f
+      i === index ? { ...f, name: newName } : f
     ));
   };
 
