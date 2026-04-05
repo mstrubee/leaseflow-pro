@@ -2855,16 +2855,17 @@ serve(async (req) => {
         const fetchLimit = Math.max(batchSize * 5, 100);
 
         // Find pending files (no drive_file_id, any URL format we can map back to repository-files)
+        // Bug 1 fix: also exclude files already being synced
         let query = sb
           .from('repository_files')
           .select('id, name, url, folder_id, file_type')
           .is('drive_file_id', null)
+          .is('sync_status', null)
           .not('url', 'is', null)
           .order('uploaded_at', { ascending: false })
           .limit(fetchLimit);
 
         if (targetContractId) {
-          // Get folder IDs for this contract
           const { data: contractFolders } = await sb
             .from('repository_folders')
             .select('id')
@@ -2886,9 +2887,22 @@ serve(async (req) => {
         const uploaded: string[] = [];
         const syncErrors: string[] = [];
 
-        for (const file of pendingFiles || []) {
+        // Bug 3 fix: extract single-file processing for parallel batching
+        async function processSingleFile(file: any): Promise<{ ok: boolean; msg: string }> {
+          // Bug 1 fix: optimistic claim — mark as 'syncing' atomically
+          const { data: claimData, error: claimErr } = await sb
+            .from('repository_files')
+            .update({ sync_status: 'syncing', synced_at: new Date().toISOString() })
+            .eq('id', file.id)
+            .is('drive_file_id', null)
+            .is('sync_status', null)
+            .select('id');
+
+          if (claimErr || !claimData || claimData.length === 0) {
+            return { ok: false, msg: `Skipped (already claimed): ${file.name}` };
+          }
+
           try {
-            // Get the folder info to find contract_id
             const { data: folder } = await sb
               .from('repository_folders')
               .select('id, name, contract_id, drive_folder_id')
@@ -2896,14 +2910,12 @@ serve(async (req) => {
               .single();
 
             if (!folder || !folder.contract_id) {
-              syncErrors.push(`No folder/contract for file: ${file.name}`);
-              continue;
+              throw new Error(`No folder/contract for file: ${file.name}`);
             }
 
             const storagePath = extractRepositoryStoragePath(file.url);
             if (!storagePath) {
-              syncErrors.push(`Unsupported storage URL format: ${file.name}`);
-              continue;
+              throw new Error(`Unsupported storage URL format: ${file.name}`);
             }
 
             const storageContractId = extractContractIdFromRepositoryPath(storagePath);
@@ -2911,15 +2923,13 @@ serve(async (req) => {
               storageContractId &&
               storageContractId !== (folder.contract_id || '').toLowerCase()
             ) {
-              syncErrors.push(
+              throw new Error(
                 `Contract mismatch for ${file.name}: storage contract ${storageContractId} != folder contract ${folder.contract_id}`,
               );
-              continue;
             }
 
             let resolvedStoragePath = storagePath;
 
-            // Download from Storage
             let { data: fileData, error: dlErr } = await sb.storage
               .from('repository-files')
               .download(resolvedStoragePath);
@@ -2956,8 +2966,7 @@ serve(async (req) => {
             }
 
             if (dlErr || !fileData) {
-              syncErrors.push(`Download failed: ${file.name} - ${dlErr?.message || 'No data'}`);
-              continue;
+              throw new Error(`Download failed: ${file.name} - ${dlErr?.message || 'No data'}`);
             }
 
             const resolvedStorageContractId = extractContractIdFromRepositoryPath(resolvedStoragePath);
@@ -2965,28 +2974,20 @@ serve(async (req) => {
               resolvedStorageContractId &&
               resolvedStorageContractId !== (folder.contract_id || '').toLowerCase()
             ) {
-              syncErrors.push(
+              throw new Error(
                 `Resolved path mismatch for ${file.name}: storage contract ${resolvedStorageContractId} != folder contract ${folder.contract_id}`,
               );
-              continue;
             }
 
-            // Resolve the Drive folder
             let driveFolderId: string | null = folder.drive_folder_id;
             if (!driveFolderId) {
-              try {
-                driveFolderId = await ensureDriveFolderForRepositoryFolder(
-                  sb, accessToken, folder.contract_id, folder.id
-                );
-              } catch (e: any) {
-                syncErrors.push(`Folder resolution failed for ${file.name}: ${e.message}`);
-                continue;
-              }
+              driveFolderId = await ensureDriveFolderForRepositoryFolder(
+                sb, accessToken, folder.contract_id, folder.id
+              );
             }
 
             if (!driveFolderId) {
-              syncErrors.push(`No Drive folder for ${file.name} in ${folder.name}`);
-              continue;
+              throw new Error(`No Drive folder for ${file.name} in ${folder.name}`);
             }
 
             const fileBytes = new Uint8Array(await fileData.arrayBuffer());
@@ -3001,21 +3002,41 @@ serve(async (req) => {
             const driveFile = await uploadFileToDrive(accessToken, file.name, fileBytes, mimeType, driveFolderId);
             const fileUrl = driveFile.webViewLink || driveFile.webContentLink || `https://drive.google.com/file/d/${driveFile.id}/view`;
 
-            // Update record with Drive info
+            // Update record with Drive info + mark as synced (Bug 1)
             await sb
               .from('repository_files')
               .update({
                 url: fileUrl,
                 drive_file_id: driveFile.id,
+                sync_status: 'synced',
               })
               .eq('id', file.id);
 
-            // Clean up Storage copy
             await cleanupStorageFile(sb, `storage://repository-files/${resolvedStoragePath}`);
 
-            uploaded.push(`${file.name} → ${folder.name}`);
+            return { ok: true, msg: `${file.name} → ${folder.name}` };
           } catch (e: any) {
-            syncErrors.push(`Error syncing ${file.name}: ${e.message}`);
+            // Bug 1 fix: revert sync_status on failure
+            await sb
+              .from('repository_files')
+              .update({ sync_status: null, synced_at: null })
+              .eq('id', file.id);
+            throw e;
+          }
+        }
+
+        // Bug 3 fix: process in parallel batches
+        const concurrency = params.concurrency || 5;
+        for (let i = 0; i < pendingFiles.length; i += concurrency) {
+          const batch = pendingFiles.slice(i, i + concurrency);
+          const results = await Promise.allSettled(batch.map((f: any) => processSingleFile(f)));
+          for (const r of results) {
+            if (r.status === 'fulfilled') {
+              if (r.value.ok) uploaded.push(r.value.msg);
+              else syncErrors.push(r.value.msg);
+            } else {
+              syncErrors.push(r.reason?.message || 'Unknown error');
+            }
           }
         }
 
