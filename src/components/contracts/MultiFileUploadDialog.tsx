@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Upload, File, X, CheckCircle2, AlertCircle, Loader2, FolderUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { validateFile, sanitizeFileName } from "@/lib/fileValidation";
+import { validateFile } from "@/lib/fileValidation";
 import { cn } from "@/lib/utils";
 
 interface FileUploadItem {
@@ -128,7 +128,7 @@ export function MultiFileUploadDialog({
       
       newFiles.push({
         file,
-        name: sanitizeFileName(nameWithoutExt),
+        name: nameWithoutExt,
         status: "pending",
         progress: 0,
         relativePath: relativePath || undefined,
@@ -173,7 +173,7 @@ export function MultiFileUploadDialog({
 
   const handleUpdateFileName = (index: number, newName: string) => {
     setFiles(prev => prev.map((f, i) => 
-      i === index ? { ...f, name: sanitizeFileName(newName) } : f
+      i === index ? { ...f, name: newName } : f
     ));
   };
 

@@ -241,8 +241,9 @@ export const DocumentVersions = ({
     setUploading(true);
     try {
       const ext = selectedFile.name.split('.').pop() || '';
-      const sanitizedName = sanitizeFileName(suggestedFileName.trim());
-      const fileName = `${sanitizedName}.${ext}`;
+      const displayName = suggestedFileName.trim();
+      const sanitizedName = sanitizeFileName(displayName);
+      const fileName = `${displayName}.${ext}`;
       const filePath = `contracts/${contractId}/${sanitizedName}.${ext}`;
 
       // Upload to Supabase Storage as fallback
