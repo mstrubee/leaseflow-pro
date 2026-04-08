@@ -116,6 +116,7 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
   const [refreshing, setRefreshing] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [cleaning, setCleaning] = useState(false);
+  const [syncingPatents, setSyncingPatents] = useState(false);
   const [cleanResult, setCleanResult] = useState<{ cleaned: number; errors: number } | null>(null);
 
   const listAllFiles = useCallback(async (bucket: string, path: string): Promise<any[]> => {
