@@ -3218,7 +3218,7 @@ serve(async (req) => {
         // Find all patent_documents with storage:// in document_url
         const { data: patentDocs, error: pdErr } = await sb
           .from('patent_documents')
-          .select('id, contract_id, item_id, document_url')
+          .select('id, contract_id, checklist_item_id, document_url')
           .like('document_url', '%storage://%');
 
         if (pdErr) throw pdErr;
