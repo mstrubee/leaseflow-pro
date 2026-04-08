@@ -1153,6 +1153,12 @@ export function PatentChecklist({
                                               toast.success("Archivo eliminado");
                                             }
                                           }}
+                                          onUrlUpdated={(index, newUrl) => {
+                                            const newUrls = [...urls];
+                                            newUrls[index] = newUrl;
+                                            const joined = newUrls.join('|||');
+                                            onUpdateDocument(contract.id, item.id, { document_url: joined } as any);
+                                          }}
                                         />
                                       );
                                     })()}
