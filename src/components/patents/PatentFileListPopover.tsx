@@ -27,7 +27,7 @@ function cleanFileName(name: string): string {
   return name.replace(/^\d{10,}_\d+_/, '');
 }
 
-export function PatentFileListPopover({ urls, contractId, itemId, onRemoveFile, folderUrl }: PatentFileListPopoverProps) {
+export function PatentFileListPopover({ urls, contractId, itemId, onRemoveFile, onUrlUpdated, folderUrl }: PatentFileListPopoverProps) {
   const [open, setOpen] = useState(false);
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [deleteIndex, setDeleteIndex] = useState<number | null>(null);
