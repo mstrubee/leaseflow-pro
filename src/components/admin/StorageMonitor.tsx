@@ -381,6 +381,42 @@ export function StorageMonitor({ defaultCollapsed = false }: StorageMonitorProps
           </p>
         </div>
 
+        {/* Sync Patent Files to Drive */}
+        <div className="border rounded-lg p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-medium text-sm">Sincronizar Patentes a Drive</h3>
+              <p className="text-xs text-muted-foreground">Migrar archivos de patentes pendientes (storage://) a Google Drive</p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={syncingPatents}
+              onClick={async () => {
+                setSyncingPatents(true);
+                try {
+                  const { data, error } = await supabase.functions.invoke('google-drive', {
+                    body: { action: 'syncPendingPatentFiles' }
+                  });
+                  if (error) throw error;
+                  const msg = `Sincronización completada: ${data.uploadedFiles || 0} archivos migrados, ${data.errors || 0} errores`;
+                  if (data.errors > 0) {
+                    console.warn("Patent sync errors:", data.errorDetails);
+                  }
+                  alert(msg);
+                } catch (err: any) {
+                  alert(`Error: ${err.message}`);
+                } finally {
+                  setSyncingPatents(false);
+                }
+              }}
+            >
+              {syncingPatents ? <RefreshCw className="h-4 w-4 animate-spin mr-1" /> : <RefreshCw className="h-4 w-4 mr-1" />}
+              Sincronizar
+            </Button>
+          </div>
+        </div>
+
         {/* Info Footer */}
         <div className="bg-muted/30 rounded-lg p-3 text-xs text-muted-foreground">
           <p className="flex items-center gap-1 mb-1">
