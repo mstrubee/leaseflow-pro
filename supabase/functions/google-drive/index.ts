@@ -3209,6 +3209,158 @@ serve(async (req) => {
         break;
       }
 
+      case "syncPendingPatentFiles": {
+        // Batch migrate patent_documents with storage:// URLs to Google Drive
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sb = createClient(supabaseUrl, supabaseKey);
+
+        // Find all patent_documents with storage:// in document_url
+        const { data: patentDocs, error: pdErr } = await sb
+          .from('patent_documents')
+          .select('id, contract_id, item_id, document_url')
+          .like('document_url', '%storage://%');
+
+        if (pdErr) throw pdErr;
+
+        const uploaded: string[] = [];
+        const syncErrors: string[] = [];
+        let updatedCount = 0;
+
+        for (const doc of (patentDocs || [])) {
+          try {
+            const segments = (doc.document_url || '').split('|||').filter(Boolean);
+            const newSegments: string[] = [];
+            let changed = false;
+
+            for (const seg of segments) {
+              if (!seg.startsWith('storage://')) {
+                newSegments.push(seg);
+                continue;
+              }
+
+              // Extract storage path
+              const storagePath = extractRepositoryStoragePath(seg);
+              if (!storagePath) {
+                console.warn("syncPendingPatentFiles: invalid storage URL, keeping as-is", seg);
+                newSegments.push(seg);
+                continue;
+              }
+
+              // Find "Rentas y Patentes" folder for this contract
+              let patentFolder: any = null;
+              const { data: pf } = await sb
+                .from('repository_folders')
+                .select('id, drive_folder_id')
+                .eq('folder_type', 'rentas_y_patentes')
+                .eq('contract_id', doc.contract_id)
+                .limit(1)
+                .single();
+
+              patentFolder = pf;
+
+              if (!patentFolder) {
+                // Auto-create
+                const { data: parentFolder } = await sb
+                  .from('repository_folders')
+                  .select('id')
+                  .eq('contract_id', doc.contract_id)
+                  .is('parent_id', null)
+                  .limit(1)
+                  .single();
+
+                const { data: created, error: createErr } = await sb
+                  .from('repository_folders')
+                  .insert({
+                    contract_id: doc.contract_id,
+                    name: 'Rentas y Patentes',
+                    folder_type: 'rentas_y_patentes',
+                    is_base_folder: !parentFolder,
+                    parent_id: parentFolder?.id || null,
+                  })
+                  .select('id, drive_folder_id')
+                  .single();
+
+                if (createErr || !created) {
+                  syncErrors.push(`No patent folder for contract ${doc.contract_id}`);
+                  newSegments.push(seg);
+                  continue;
+                }
+                patentFolder = created;
+              }
+
+              let targetDriveFolderId = patentFolder.drive_folder_id;
+              if (!targetDriveFolderId) {
+                targetDriveFolderId = await ensureDriveFolderForRepositoryFolder(
+                  sb, accessToken, doc.contract_id, patentFolder.id,
+                );
+              }
+
+              if (!targetDriveFolderId) {
+                syncErrors.push(`No Drive folder for contract ${doc.contract_id}`);
+                newSegments.push(seg);
+                continue;
+              }
+
+              // Download from storage
+              const { data: fileData, error: dlErr } = await sb.storage
+                .from('repository-files')
+                .download(storagePath);
+
+              if (dlErr || !fileData) {
+                console.warn("syncPendingPatentFiles: file not found", { storagePath, error: dlErr?.message });
+                syncErrors.push(`File not found: ${storagePath}`);
+                newSegments.push(seg);
+                continue;
+              }
+
+              const fileName = storagePath.split('/').pop() || 'file';
+              const mimeType = fileName.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream';
+              const binaryContent = new Uint8Array(await fileData.arrayBuffer());
+              const driveFile = await uploadFileToDrive(accessToken, fileName, binaryContent, mimeType, targetDriveFolderId);
+              const driveUrl = driveFile.webViewLink || `https://drive.google.com/file/d/${driveFile.id}/view`;
+
+              // Also create repository_files record
+              const ext = fileName.includes('.') ? fileName.split('.').pop() : null;
+              await sb.from('repository_files').insert({
+                folder_id: patentFolder.id,
+                name: fileName,
+                url: driveUrl,
+                file_type: ext,
+                drive_file_id: driveFile.id,
+              });
+
+              await cleanupStorageFile(sb, seg);
+              newSegments.push(driveUrl);
+              changed = true;
+              uploaded.push(`${fileName} (contract ${doc.contract_id})`);
+            }
+
+            if (changed) {
+              const newDocUrl = newSegments.join('|||');
+              await sb
+                .from('patent_documents')
+                .update({ document_url: newDocUrl })
+                .eq('id', doc.id);
+              updatedCount++;
+            }
+          } catch (e: any) {
+            syncErrors.push(`Doc ${doc.id}: ${e.message}`);
+          }
+        }
+
+        result = {
+          success: true,
+          totalDocs: (patentDocs || []).length,
+          updatedDocs: updatedCount,
+          uploadedFiles: uploaded.length,
+          errors: syncErrors.length,
+          uploadedDetails: uploaded,
+          errorDetails: syncErrors,
+        };
+        break;
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }
