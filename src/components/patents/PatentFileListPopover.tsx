@@ -120,6 +120,8 @@ export function PatentFileListPopover({ urls, contractId, itemId, onRemoveFile, 
         updated[index] = { ...updated[index], driveStatus: 'ok', driveUrl };
         return updated;
       });
+      // Propagate the new Drive URL back to the parent so it persists in the DB
+      onUrlUpdated?.(index, driveUrl);
       toast.success(`${file.name} subido a Drive correctamente`);
     } catch (err) {
       console.error("Retry upload error:", err);
