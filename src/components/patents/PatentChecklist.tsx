@@ -1066,6 +1066,7 @@ export function PatentChecklist({
                                       {sharedFiles.length > 0 && (
                                         <PatentFileListPopover
                                           urls={sharedFiles.map(f => f.url)}
+                                          fileNames={sharedFiles.map(f => f.name)}
                                           contractId={contract.id}
                                           itemId={item.id}
                                           onRemoveFile={async (index) => {
