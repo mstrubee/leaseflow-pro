@@ -410,6 +410,12 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
       return parseISO(currentVersion.notice_value);
     }
 
+    // "Desde mes en específico" — notice can be given from month X onwards, no deadline
+    if (currentVersion.notice_type === "desde_mes" && startDate) {
+      const fromMonth = parseInt(currentVersion.notice_value) || 1;
+      return addMonths(startDate, fromMonth - 1);
+    }
+
     if (currentVersion.notice_type === "rangos" && startDate) {
       const noticeRanges = currentVersion.notice_ranges || [];
       if (noticeRanges.length > 0) {
