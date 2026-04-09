@@ -9,6 +9,7 @@ import { toast } from "sonner";
 
 interface PatentFileListPopoverProps {
   urls: string[];
+  fileNames?: string[];
   contractId: string;
   itemId: string;
   onRemoveFile: (index: number) => void;
@@ -27,7 +28,7 @@ function cleanFileName(name: string): string {
   return name.replace(/^\d{10,}_\d+_/, '');
 }
 
-export function PatentFileListPopover({ urls, contractId, itemId, onRemoveFile, onUrlUpdated, folderUrl }: PatentFileListPopoverProps) {
+export function PatentFileListPopover({ urls, fileNames, contractId, itemId, onRemoveFile, onUrlUpdated, folderUrl }: PatentFileListPopoverProps) {
   const [open, setOpen] = useState(false);
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [deleteIndex, setDeleteIndex] = useState<number | null>(null);
@@ -35,9 +36,9 @@ export function PatentFileListPopover({ urls, contractId, itemId, onRemoveFile, 
   useEffect(() => {
     if (!open) return;
 
-    const initialFiles: FileInfo[] = urls.map(url => ({
+    const initialFiles: FileInfo[] = urls.map((url, idx) => ({
       url,
-      name: cleanFileName(url.split('/').pop() || 'archivo'),
+      name: (fileNames && fileNames[idx]) ? fileNames[idx] : cleanFileName(url.split('/').pop() || 'archivo'),
       driveStatus: url.includes('drive.google.com') ? 'ok' : (isStorageUrl(url) ? 'checking' : 'not_applicable'),
       driveUrl: url.includes('drive.google.com') ? url : undefined,
     }));
