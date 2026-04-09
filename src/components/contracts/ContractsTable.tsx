@@ -1242,7 +1242,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                                   return <span className="text-[10px] text-destructive font-medium">Vencido</span>;
                                 }
                                 return null;
-                              } else if (monthsRemaining < 1) {
+                              } else if (daysRemaining <= 120) {
                                 return <span className="text-[10px] text-amber-600 font-medium">Tope: Faltan {daysRemaining} días</span>;
                               } else {
                                 return <span className="text-[10px] text-muted-foreground">Tope: Faltan {monthsRemaining} meses</span>;
