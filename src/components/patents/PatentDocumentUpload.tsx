@@ -19,7 +19,7 @@ interface PatentDocumentUploadProps {
   itemId: string;
   itemName: string;
   currentUrl?: string;
-  onSave: (url: string, folderId?: string) => void;
+  onSave: (url: string, folderId?: string, fileNames?: string[]) => void;
   folders?: { id: string; name: string }[];
 }
 
@@ -163,8 +163,9 @@ export function PatentDocumentUpload({
 
         const existingUrls = currentUrl ? currentUrl.split('|||').filter(Boolean) : [];
         const allUrls = [...existingUrls, ...uploadedFiles.map((f) => f.url)].join('|||');
+        const newFileNames = uploadedFiles.map((f) => f.name);
         
-        onSave(allUrls, selectedFolder || undefined);
+        onSave(allUrls, selectedFolder || undefined, newFileNames);
 
         if (failedFiles.length > 0) {
           toast.success(`${uploadedFiles.length} subido(s), ${failedFiles.length} fallido(s)`);

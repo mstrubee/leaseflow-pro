@@ -3886,6 +3886,7 @@ export type Database = {
           created_at: string
           custom_data: Json | null
           deadline_days: number | null
+          document_names: string | null
           document_url: string | null
           drive_file_id: string | null
           emitter_id: string | null
@@ -3907,6 +3908,7 @@ export type Database = {
           created_at?: string
           custom_data?: Json | null
           deadline_days?: number | null
+          document_names?: string | null
           document_url?: string | null
           drive_file_id?: string | null
           emitter_id?: string | null
@@ -3928,6 +3930,7 @@ export type Database = {
           created_at?: string
           custom_data?: Json | null
           deadline_days?: number | null
+          document_names?: string | null
           document_url?: string | null
           drive_file_id?: string | null
           emitter_id?: string | null

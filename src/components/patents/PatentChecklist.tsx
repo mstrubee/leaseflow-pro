@@ -1066,6 +1066,7 @@ export function PatentChecklist({
                                       {sharedFiles.length > 0 && (
                                         <PatentFileListPopover
                                           urls={sharedFiles.map(f => f.url)}
+                                          fileNames={sharedFiles.map(f => f.name)}
                                           contractId={contract.id}
                                           itemId={item.id}
                                           onRemoveFile={async (index) => {
@@ -1137,16 +1138,21 @@ export function PatentChecklist({
                                     {/* Regular (non-shared) item: existing logic */}
                                     {getDocValue(item.id, 'document_url') && (() => {
                                       const urls = (getDocValue(item.id, 'document_url') as string).split('|||').filter(Boolean);
+                                      const names = ((getDocValue(item.id, 'document_names') as string) || '').split('|||').filter((_, i) => i < urls.length);
                                       return (
                                         <PatentFileListPopover
                                           urls={urls}
+                                          fileNames={names.length > 0 ? names : undefined}
                                           contractId={contract.id}
                                           itemId={item.id}
                                           onRemoveFile={(index) => {
                                             const newUrls = [...urls];
                                             newUrls.splice(index, 1);
+                                            const newNames = [...names];
+                                            newNames.splice(index, 1);
                                             const joined = newUrls.join('|||');
-                                            onUpdateDocument(contract.id, item.id, { document_url: joined || null } as any);
+                                            const joinedNames = newNames.join('|||');
+                                            onUpdateDocument(contract.id, item.id, { document_url: joined || null, document_names: joinedNames || null } as any);
                                             if (newUrls.length === 0) {
                                               toast.success("Documento eliminado");
                                             } else {
@@ -1266,10 +1272,12 @@ export function PatentChecklist({
           itemId={uploadDialog.itemId}
           itemName={uploadDialog.itemName}
           currentUrl={getDocValue(uploadDialog.itemId, 'document_url') as string}
-          onSave={async (url) => {
-            // Save document URL to all mirror items (same name across sections)
+          onSave={async (url, _folderId, newFileNames) => {
+            // Save document URL and names to all mirror items (same name across sections)
             const mirrorIds = getAllMirrorIds(uploadDialog.itemId);
-            await Promise.all(mirrorIds.map(id => onUpdateDocument(contract.id, id, { document_url: url })));
+            const existingNames = ((getDocValue(uploadDialog.itemId, 'document_names') as string) || '').split('|||').filter(Boolean);
+            const allNames = [...existingNames, ...(newFileNames || [])].join('|||');
+            await Promise.all(mirrorIds.map(id => onUpdateDocument(contract.id, id, { document_url: url, document_names: allNames })));
           }}
         />
       )}

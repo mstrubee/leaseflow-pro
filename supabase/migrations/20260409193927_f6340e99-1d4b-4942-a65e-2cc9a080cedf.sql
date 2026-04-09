@@ -1,0 +1,1 @@
+ALTER TABLE public.patent_documents ADD COLUMN document_names text;

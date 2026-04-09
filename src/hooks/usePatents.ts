@@ -90,7 +90,7 @@ export function usePatents() {
             patent_documents (
               id, contract_id, checklist_item_id, status, status_changed_at,
               emitter_id, responsible, start_date, deadline_days, end_date,
-              document_url, notes, custom_data
+              document_url, document_names, notes, custom_data
             )
           `)
           .eq("status", "firmado")
