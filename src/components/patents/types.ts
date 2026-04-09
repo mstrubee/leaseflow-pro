@@ -72,6 +72,7 @@ export interface PatentDocument {
   deadline_days?: number;
   end_date?: string;
   document_url?: string;
+  document_names?: string;
   drive_file_id?: string;
   storage_provider?: string;
   folder_id?: string;
