@@ -1199,40 +1199,57 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                     </TableCell>
                     <TableCell className="text-center">
                       <div className="flex flex-col items-center">
-                        <span className={`text-sm ${isPastNotice ? "text-destructive font-medium" : ""}`}>
-                          {noticeDeadline ? formatDateShort(noticeDeadline) : "-"}
-                        </span>
-                        {noticeDeadline && (() => {
-                          const now = new Date();
-                          const monthsRemaining = differenceInMonths(noticeDeadline, now);
-                          const daysRemaining = differenceInDays(noticeDeadline, now);
-                          
-                          // Check if we're inside a notice range
-                          if (noticeRangeStatus.isInsideRange && noticeRangeStatus.rangeEndDate) {
-                            const rangeEndDays = differenceInDays(noticeRangeStatus.rangeEndDate, now);
-                            return (
-                              <div className="flex flex-col items-center">
-                                <span className="text-[10px] text-amber-600 font-medium">Posible Salida en Curso</span>
-                                <span className="text-[9px] text-muted-foreground">
-                                  Vence el {formatDateShort(noticeRangeStatus.rangeEndDate)}
-                                  {rangeEndDays > 0 && ` (${rangeEndDays} días)`}
-                                </span>
-                              </div>
-                            );
-                          }
-                          
-                          // Only show "Vencido" if notice deadline passed but contract hasn't ended yet
-                          if (daysRemaining < 0) {
-                            if (endDate && endDate > now) {
-                              return <span className="text-[10px] text-destructive font-medium">Vencido</span>;
-                            }
-                            return null; // Contract already ended, no need to show notice status
-                          } else if (monthsRemaining < 1) {
-                            return <span className="text-[10px] text-amber-600 font-medium">Faltan {daysRemaining} días</span>;
-                          } else {
-                            return <span className="text-[10px] text-muted-foreground">Faltan {monthsRemaining} meses</span>;
-                          }
-                        })()}
+                        {currentVersion?.notice_type === "desde_mes" ? (
+                          <>
+                            <span className="text-sm">
+                              {noticeDeadline ? formatDateShort(noticeDeadline) : "-"}
+                            </span>
+                            {noticeDeadline && (() => {
+                              const now = new Date();
+                              const daysRemaining = differenceInDays(noticeDeadline, now);
+                              if (daysRemaining <= 0) {
+                                return <span className="text-[10px] text-green-600 font-medium">Habilitado</span>;
+                              }
+                              const monthsRemaining = differenceInMonths(noticeDeadline, now);
+                              return <span className="text-[10px] text-muted-foreground">Desde mes {currentVersion.notice_value}</span>;
+                            })()}
+                          </>
+                        ) : (
+                          <>
+                            <span className={`text-sm ${isPastNotice ? "text-destructive font-medium" : ""}`}>
+                              {noticeDeadline ? formatDateShort(noticeDeadline) : "-"}
+                            </span>
+                            {noticeDeadline && (() => {
+                              const now = new Date();
+                              const monthsRemaining = differenceInMonths(noticeDeadline, now);
+                              const daysRemaining = differenceInDays(noticeDeadline, now);
+                              
+                              if (noticeRangeStatus.isInsideRange && noticeRangeStatus.rangeEndDate) {
+                                const rangeEndDays = differenceInDays(noticeRangeStatus.rangeEndDate, now);
+                                return (
+                                  <div className="flex flex-col items-center">
+                                    <span className="text-[10px] text-amber-600 font-medium">Posible Salida en Curso</span>
+                                    <span className="text-[9px] text-muted-foreground">
+                                      Vence el {formatDateShort(noticeRangeStatus.rangeEndDate)}
+                                      {rangeEndDays > 0 && ` (${rangeEndDays} días)`}
+                                    </span>
+                                  </div>
+                                );
+                              }
+                              
+                              if (daysRemaining < 0) {
+                                if (endDate && endDate > now) {
+                                  return <span className="text-[10px] text-destructive font-medium">Vencido</span>;
+                                }
+                                return null;
+                              } else if (monthsRemaining < 1) {
+                                return <span className="text-[10px] text-amber-600 font-medium">Faltan {daysRemaining} días</span>;
+                              } else {
+                                return <span className="text-[10px] text-muted-foreground">Faltan {monthsRemaining} meses</span>;
+                              }
+                            })()}
+                          </>
+                        )}
                         {/* Show termination notice if exists */}
                         {contract.termination_notices && contract.termination_notices.length > 0 && (
                           <div className="mt-1 flex flex-col gap-0.5">
