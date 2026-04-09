@@ -1137,16 +1137,21 @@ export function PatentChecklist({
                                     {/* Regular (non-shared) item: existing logic */}
                                     {getDocValue(item.id, 'document_url') && (() => {
                                       const urls = (getDocValue(item.id, 'document_url') as string).split('|||').filter(Boolean);
+                                      const names = ((getDocValue(item.id, 'document_names') as string) || '').split('|||').filter((_, i) => i < urls.length);
                                       return (
                                         <PatentFileListPopover
                                           urls={urls}
+                                          fileNames={names.length > 0 ? names : undefined}
                                           contractId={contract.id}
                                           itemId={item.id}
                                           onRemoveFile={(index) => {
                                             const newUrls = [...urls];
                                             newUrls.splice(index, 1);
+                                            const newNames = [...names];
+                                            newNames.splice(index, 1);
                                             const joined = newUrls.join('|||');
-                                            onUpdateDocument(contract.id, item.id, { document_url: joined || null } as any);
+                                            const joinedNames = newNames.join('|||');
+                                            onUpdateDocument(contract.id, item.id, { document_url: joined || null, document_names: joinedNames || null } as any);
                                             if (newUrls.length === 0) {
                                               toast.success("Documento eliminado");
                                             } else {
