@@ -1271,10 +1271,12 @@ export function PatentChecklist({
           itemId={uploadDialog.itemId}
           itemName={uploadDialog.itemName}
           currentUrl={getDocValue(uploadDialog.itemId, 'document_url') as string}
-          onSave={async (url) => {
-            // Save document URL to all mirror items (same name across sections)
+          onSave={async (url, _folderId, newFileNames) => {
+            // Save document URL and names to all mirror items (same name across sections)
             const mirrorIds = getAllMirrorIds(uploadDialog.itemId);
-            await Promise.all(mirrorIds.map(id => onUpdateDocument(contract.id, id, { document_url: url })));
+            const existingNames = ((getDocValue(uploadDialog.itemId, 'document_names') as string) || '').split('|||').filter(Boolean);
+            const allNames = [...existingNames, ...(newFileNames || [])].join('|||');
+            await Promise.all(mirrorIds.map(id => onUpdateDocument(contract.id, id, { document_url: url, document_names: allNames })));
           }}
         />
       )}
