@@ -725,7 +725,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
             const originalEndDate = calculateEndDate(contract);
             const noticeDeadline = calculateNoticeDeadline(contract);
             const noticeRangeStatus = getNoticeRangeStatus(contract);
-            const isPastNotice = noticeDeadline && noticeDeadline < new Date() && !noticeRangeStatus.isInsideRange;
+            const isPastNotice = noticeDeadline && noticeDeadline < new Date() && !noticeRangeStatus.isInsideRange && currentVersion?.notice_type !== "desde_mes";
             const isExpiredOperating = contract.status === "vencido" && contract.is_expired_but_operating;
             
             // Si hay un aviso de término anticipado, calcular la fecha de término efectivo
