@@ -362,6 +362,7 @@ const PAGE_SIZE = 100;
 const CACHE_KEY_FORMS = "maintenance_forms_cache";
 const CACHE_KEY_CRITICALITY = "maintenance_criticality_cache";
 const CACHE_KEY_COMPANY_MAP = "maintenance_company_map_cache";
+const CACHE_KEY_ZONAL_MAP = "maintenance_zonal_map_cache";
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 function readCache<T>(key: string): T | null {
@@ -384,6 +385,7 @@ function invalidateCache() {
   sessionStorage.removeItem(CACHE_KEY_FORMS);
   sessionStorage.removeItem(CACHE_KEY_CRITICALITY);
   sessionStorage.removeItem(CACHE_KEY_COMPANY_MAP);
+  sessionStorage.removeItem(CACHE_KEY_ZONAL_MAP);
 }
 
 export function MaintenanceModule() {
