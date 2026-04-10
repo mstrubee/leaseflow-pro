@@ -667,7 +667,7 @@ export function MaintenanceModule() {
   }, [criticalityCategories]);
 
   const filtered = useMemo(() => {
-    const { search, statusFilter, subStatusFilter, typeFilter, criticalityFilter, selectedYears, selectedContracts, dateFilter, observationsFilter } = filters;
+    const { search, statusFilter, subStatusFilter, typeFilter, criticalityFilter, selectedYears, selectedContracts, dateFilter, observationsFilter, zonalFilter } = filters;
     let result = forms.filter(f => {
       if (observationsFilter && !(f.sub_status === "resuelto" && f.resolution_observations?.trim())) return false;
       if (selectedYears.length > 0 && (!f.year || !selectedYears.includes(f.year))) return false;
@@ -695,6 +695,14 @@ export function MaintenanceModule() {
       if (dateFilter) {
         if (f.created_date !== dateFilter) return false;
       }
+      if (zonalFilter !== "all") {
+        const zName = f.contract_id ? zonalMap[f.contract_id] : undefined;
+        if (zonalFilter === "none") {
+          if (zName) return false;
+        } else {
+          if (zName !== zonalFilter) return false;
+        }
+      }
       if (search) {
         const s = search.toLowerCase();
         const matches = [f.form_number, f.contract_name, f.general_description, f.electrical_description, f.civil_description, f.hvac_description, f.fixed_assets_description]
@@ -715,6 +723,9 @@ export function MaintenanceModule() {
         } else if (sortKey === "created_date") {
           valA = a.created_date ? new Date(a.created_date).getTime() : 0;
           valB = b.created_date ? new Date(b.created_date).getTime() : 0;
+        } else if (sortKey === "zonalName") {
+          valA = (a.contract_id ? zonalMap[a.contract_id] || "zzz" : "zzz").toLowerCase();
+          valB = (b.contract_id ? zonalMap[b.contract_id] || "zzz" : "zzz").toLowerCase();
         } else {
           valA = ((a as any)[sortKey] ?? "").toString().toLowerCase();
           valB = ((b as any)[sortKey] ?? "").toString().toLowerCase();
@@ -726,7 +737,7 @@ export function MaintenanceModule() {
     }
 
     return result;
-  }, [forms, filters, companyFilteredContractIds, contractFilterOptions, sortKey, sortOrder, criticalityMap]);
+  }, [forms, filters, companyFilteredContractIds, contractFilterOptions, sortKey, sortOrder, criticalityMap, zonalMap]);
 
   const totalForms = filtered.length;
   const totalPages = Math.max(1, Math.ceil(totalForms / PAGE_SIZE));
