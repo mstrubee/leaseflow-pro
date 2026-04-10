@@ -506,6 +506,29 @@ export function MaintenanceModule() {
     fetchCompanyMap();
   }, []);
 
+  // Fetch zonal manager map
+  useEffect(() => {
+    const cached = readCache<Record<string, string>>(CACHE_KEY_ZONAL_MAP);
+    if (cached) return;
+    const fetchZonalMap = async () => {
+      const { data } = await supabase
+        .from("org_member_contracts")
+        .select("contract_id, org_members!inner(name, position)")
+        .returns<Array<{ contract_id: string; org_members: { name: string; position: string } }>>();
+      if (data) {
+        const map: Record<string, string> = {};
+        data.forEach(row => {
+          if (row.org_members?.position?.toLowerCase().includes("zonal")) {
+            map[row.contract_id] = row.org_members.name;
+          }
+        });
+        setZonalMap(map);
+        writeCache(CACHE_KEY_ZONAL_MAP, map);
+      }
+    };
+    fetchZonalMap();
+  }, []);
+
   const handleDataChanged = useCallback(() => {
     invalidateCache();
     fetchForms(false);
