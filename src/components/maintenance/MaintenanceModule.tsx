@@ -557,6 +557,16 @@ export function MaintenanceModule() {
     return Array.from(companies).sort();
   }, [contractCompanyMap]);
 
+  const availableZonals = useMemo(() => {
+    const zonals = new Set<string>();
+    forms.forEach(f => {
+      if (f.contract_id && zonalMap[f.contract_id]) {
+        zonals.add(zonalMap[f.contract_id]);
+      }
+    });
+    return Array.from(zonals).sort((a, b) => a.localeCompare(b, "es"));
+  }, [forms, zonalMap]);
+
   const companyFilteredContractIds = useMemo(() => {
     if (filters.companyFilter === "all") return null;
     const ids = new Set<string>();
