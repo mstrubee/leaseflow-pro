@@ -339,6 +339,7 @@ interface FilterState {
   contractSearch: string;
   dateFilter: string | null;
   observationsFilter: boolean;
+  zonalFilter: string;
 }
 
 const DEFAULT_FILTERS: FilterState = {
@@ -353,6 +354,7 @@ const DEFAULT_FILTERS: FilterState = {
   contractSearch: "",
   dateFilter: null,
   observationsFilter: false,
+  zonalFilter: "all",
 };
 
 const PAGE_SIZE = 100;
