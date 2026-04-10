@@ -1,54 +1,47 @@
 
 
-# Fix: Patent files not uploading to Google Drive
+# Agregar columna "Gerente Zonal" al módulo de Mantenciones
 
-## Problem
+## Resumen
 
-There are two distinct issues preventing patent files from appearing in Google Drive:
+Mostrar el Gerente Zonal responsable de cada FORM de mantención (basado en el local/contrato asignado en el organigrama), permitir filtrar y ordenar por ese campo, y exportar el resultado filtrado a PDF con el formato estándar.
 
-### Issue 1 — Legacy storage:// URLs never migrated
-58 out of 85 patent documents have `storage://` URLs in `document_url` instead of Drive URLs. These were saved by an older version of the upload flow that stored the Supabase Storage URL directly without transferring to Drive.
+## Cambios
 
-### Issue 2 — Retry does not update the database
-When the retry button in `PatentFileListPopover` successfully uploads a file to Drive, it only updates the **local UI state** — it never updates the `document_url` in `patent_documents` from the `storage://` URL to the new Drive URL. So even after a successful retry, the next time the user opens the popover, the file still shows as "missing".
+### 1. Cargar el mapa contract → Gerente Zonal
 
-Additionally, the popover lacks a callback to propagate the new Drive URL back to the parent component (`PatentChecklist`).
+En `MaintenanceModule.tsx`, al inicializar, consultar `org_member_contracts` + `org_members` (filtrando por `position ILIKE '%zonal%'`) para construir un mapa `Record<string, string>` donde la clave es `contract_id` y el valor es el nombre del gerente zonal. Se cachea en sessionStorage junto con los demás mapas existentes.
 
-## Plan
+### 2. Agregar filtro "Gerente Zonal"
 
-### Step 1 — Add `onUrlUpdated` callback to `PatentFileListPopover`
+Añadir `zonalFilter: string` al `FilterState` (default `"all"`). Crear un `<Select>` en la barra de filtros con las opciones derivadas de los gerentes zonales únicos presentes en los forms. Aplicar el filtro en el `useMemo` de `filtered`.
 
-Add a new prop `onUrlUpdated(index: number, newUrl: string)` to the popover component. After a successful retry upload, call this callback so the parent can update the `document_url` in the database, replacing the `storage://` URL segment with the new Drive URL.
+### 3. Agregar columna en la tabla
 
-### Step 2 — Wire the callback in `PatentChecklist`
+Insertar una columna "Gerente Zonal" (sortable) en la tabla, entre "Contrato" y "Tipo". Mostrar el nombre del zonal o "—" si no tiene asignado. Actualizar el `colSpan` de las filas de carga/vacío.
 
-In `PatentChecklist.tsx`, pass `onUrlUpdated` to `PatentFileListPopover`. The handler should:
-1. Replace the URL at the given index in the `|||`-delimited string
-2. Call `onUpdateDocument(contract.id, item.id, { document_url: newJoinedUrl })`
+### 4. Soporte de ordenamiento
 
-This ensures the DB is updated when a retry succeeds.
+Agregar un caso `zonalName` en la lógica de sort del `useMemo`, usando el mapa contract→zonal para resolver el valor.
 
-### Step 3 — Add batch migration action to the edge function
+### 5. Exportar a PDF filtrado
 
-Add a new action `syncPendingPatentFiles` to the `google-drive` edge function that:
-1. Queries `patent_documents` where `document_url LIKE 'storage://%'`
-2. For each entry, splits by `|||` and processes each `storage://` segment
-3. Downloads from Supabase Storage, uploads to Drive (into the contract's "Rentas y Patentes" folder)
-4. Updates the `document_url` with the new Drive URL
-5. Cleans up the storage file
-6. Skips files that no longer exist in storage (logs a warning)
+Modificar `exportDailyFormsPDF` en `maintenanceExport.ts` para aceptar un parámetro opcional `zonalMap: Map<string, string>` y agregar la columna "Gerente Zonal" al PDF. Agregar un botón "Descargar PDF filtrado" en la UI que invoque esta función con los forms filtrados actuales, incluyendo la columna de zonal.
 
-This action will resolve all 58 legacy records in one batch.
+## Archivos a modificar
 
-### Step 4 — Add "Sync Pending Patent Files" button in admin panel
+- `src/components/maintenance/MaintenanceModule.tsx` — nuevo estado, fetch, filtro, columna, botón PDF
+- `src/components/maintenance/maintenanceExport.ts` — agregar columna "Gerente Zonal" a `exportDailyFormsPDF`
 
-Add a button in the existing storage/sync section of the admin panel that triggers the `syncPendingPatentFiles` action, similar to existing sync buttons.
+## Detalles técnicos
 
-## Technical details
+**Query para el mapa zonal:**
+```sql
+SELECT mc.contract_id, m.name
+FROM org_member_contracts mc
+JOIN org_members m ON m.id = mc.org_member_id
+WHERE m.position ILIKE '%zonal%'
+```
 
-**Files to modify:**
-- `src/components/patents/PatentFileListPopover.tsx` — add `onUrlUpdated` prop and call it after successful retry
-- `src/components/patents/PatentChecklist.tsx` — pass `onUrlUpdated` handler to the popover (both for regular and shared items)
-- `supabase/functions/google-drive/index.ts` — add `syncPendingPatentFiles` action
-- `src/components/admin/StorageMonitor.tsx` (or equivalent admin component) — add sync button
+No se requieren migraciones de base de datos. Los datos ya existen en `org_members` y `org_member_contracts`.
 
