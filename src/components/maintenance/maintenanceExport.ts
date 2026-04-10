@@ -253,19 +253,15 @@ export async function exportDailyFormsPDF(
     return;
   }
 
-  const head = [["N°", "Fecha", "Estado", "Sub Estado", "Local", "Gerente Zonal", "Tipo", "Criticidad", "Descripción General", "Req. Eléctrico", "Req. Obra Civil", "Req. Climatización", "Req. Activos Fijos", "Comentarios"]];
+  const head = [["N°", "Fecha", "Local", "Gerente Zonal", "Criticidad", "Descripción General", "Req. Eléctrico", "Req. Obra Civil", "Req. Climatización", "Req. Activos Fijos", "Comentarios"]];
   const body = forms.map(f => {
-    const subLabel = (subStatusLabels && subStatusLabels[f.sub_status || "solicitado"]) || f.sub_status || "Solicitado";
     const critName = (f.criticality_category_id && criticalityMap?.get(f.criticality_category_id)) || "";
     const zonalName = (f.contract_id && zonalMap?.get(f.contract_id)) || "";
     return [
       f.form_number,
       f.created_date || "",
-      f.status === "solucionado" ? "Solucionado" : "En Proceso",
-      subLabel,
       f.contract_name || "",
       zonalName,
-      detectMaintenanceType(f),
       critName,
       f.general_description || "",
       f.electrical_description || "",
@@ -285,18 +281,15 @@ export async function exportDailyFormsPDF(
     columnStyles: {
       0: { cellWidth: 14 },
       1: { cellWidth: 18 },
-      2: { cellWidth: 18 },
-      3: { cellWidth: 18 },
-      4: { cellWidth: 26 },
-      5: { cellWidth: 26 },
-      6: { cellWidth: 16 },
-      7: { cellWidth: 18 },
+      2: { cellWidth: 26 },
+      3: { cellWidth: 26 },
+      4: { cellWidth: 18 },
+      5: { cellWidth: "auto" },
+      6: { cellWidth: "auto" },
+      7: { cellWidth: "auto" },
       8: { cellWidth: "auto" },
       9: { cellWidth: "auto" },
-      10: { cellWidth: "auto" },
-      11: { cellWidth: "auto" },
-      12: { cellWidth: "auto" },
-      13: { cellWidth: "auto" },
+      10: { cellWidth: 50 },
     },
     didDrawPage: (data) => {
       // Footer
