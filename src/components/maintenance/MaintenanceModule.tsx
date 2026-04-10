@@ -1007,7 +1007,8 @@ export function MaintenanceModule() {
                   const dateForms = forms.filter(f => f.created_date === dateCardValue);
                   const critMap = new Map<string, string>();
                   criticalityCategories.forEach(c => critMap.set(c.id, c.name));
-                  exportDailyFormsPDF(dateForms, dateCardValue, critMap, subStatusLabels);
+                  const zMap = new Map<string, string>(Object.entries(zonalMap));
+                  exportDailyFormsPDF(dateForms, dateCardValue, critMap, subStatusLabels, zMap);
                 }}
               >
                 <FileDown className="h-4 w-4" />
