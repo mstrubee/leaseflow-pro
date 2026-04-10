@@ -1316,6 +1316,19 @@ export function MaintenanceModule() {
             </SelectContent>
           </Select>
         </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Gerente Zonal</Label>
+          <Select value={filters.zonalFilter} onValueChange={v => updateFilter("zonalFilter", v)}>
+            <SelectTrigger className="w-44"><SelectValue placeholder="Gerente Zonal" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="none">Sin asignar</SelectItem>
+              {availableZonals.map(z => (
+                <SelectItem key={z} value={z}>{z}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <Button onClick={() => setUploadOpen(true)} className="gap-2">
           <Upload className="h-4 w-4" /> Cargar Excel
         </Button>
@@ -1339,6 +1352,22 @@ export function MaintenanceModule() {
             </div>
           </PopoverContent>
         </Popover>
+        <Button
+          variant="outline"
+          className="gap-2"
+          disabled={filtered.length === 0}
+          onClick={() => {
+            const critMap = new Map<string, string>();
+            criticalityCategories.forEach(c => critMap.set(c.id, c.name));
+            const zMap = new Map<string, string>(Object.entries(zonalMap));
+            const label = filters.zonalFilter !== "all"
+              ? (filters.zonalFilter === "none" ? "Sin Zonal" : filters.zonalFilter)
+              : "Todos";
+            exportDailyFormsPDF(filtered, `Filtro: ${label}`, critMap, subStatusLabels, zMap);
+          }}
+        >
+          <FileDown className="h-4 w-4" /> Descargar PDF
+        </Button>
         
       </div>
 
@@ -1356,6 +1385,7 @@ export function MaintenanceModule() {
                     <SortableTableHead label="Criticidad" sortKey="criticality_category_id" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-36" />
                     <SortableTableHead label="Fecha" sortKey="created_date" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-[8.4rem]" />
                     <SortableTableHead label="Contrato" sortKey="contract_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="max-w-[10rem]" />
+                    <SortableTableHead label="Gerente Zonal" sortKey="zonalName" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-36" />
                     <TableHead className="w-28">Tipo</TableHead>
                     <TableHead>Descripción</TableHead>
                     <TableHead>Comentarios / Observaciones</TableHead>
@@ -1367,9 +1397,9 @@ export function MaintenanceModule() {
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableRow><TableCell colSpan={13} className="text-center py-8 text-muted-foreground">Cargando...</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={14} className="text-center py-8 text-muted-foreground">Cargando...</TableCell></TableRow>
                   ) : filtered.length === 0 ? (
-                    <TableRow><TableCell colSpan={13} className="text-center py-8 text-muted-foreground">No hay FORMs registrados</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={14} className="text-center py-8 text-muted-foreground">No hay FORMs registrados</TableCell></TableRow>
                   ) : (
                     paginatedForms.map(f => {
                       const cat = criticalityMap.get(f.criticality_category_id || "");
@@ -1414,6 +1444,9 @@ export function MaintenanceModule() {
                               )}
                               <span className="truncate">{f.contract_name || "-"}</span>
                             </div>
+                          </TableCell>
+                          <TableCell className="text-xs truncate max-w-36">
+                            {f.contract_id && zonalMap[f.contract_id] ? zonalMap[f.contract_id] : <span className="text-muted-foreground">—</span>}
                           </TableCell>
                           <TableCell><Badge variant="outline" className="text-xs">{detectMaintenanceType(f)}</Badge></TableCell>
                           <TableCell className="text-xs max-w-48">
