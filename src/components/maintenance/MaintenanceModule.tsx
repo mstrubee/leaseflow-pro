@@ -339,6 +339,7 @@ interface FilterState {
   contractSearch: string;
   dateFilter: string | null;
   observationsFilter: boolean;
+  zonalFilter: string;
 }
 
 const DEFAULT_FILTERS: FilterState = {
@@ -353,6 +354,7 @@ const DEFAULT_FILTERS: FilterState = {
   contractSearch: "",
   dateFilter: null,
   observationsFilter: false,
+  zonalFilter: "all",
 };
 
 const PAGE_SIZE = 100;
@@ -360,6 +362,7 @@ const PAGE_SIZE = 100;
 const CACHE_KEY_FORMS = "maintenance_forms_cache";
 const CACHE_KEY_CRITICALITY = "maintenance_criticality_cache";
 const CACHE_KEY_COMPANY_MAP = "maintenance_company_map_cache";
+const CACHE_KEY_ZONAL_MAP = "maintenance_zonal_map_cache";
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 function readCache<T>(key: string): T | null {
@@ -382,6 +385,7 @@ function invalidateCache() {
   sessionStorage.removeItem(CACHE_KEY_FORMS);
   sessionStorage.removeItem(CACHE_KEY_CRITICALITY);
   sessionStorage.removeItem(CACHE_KEY_COMPANY_MAP);
+  sessionStorage.removeItem(CACHE_KEY_ZONAL_MAP);
 }
 
 export function MaintenanceModule() {
@@ -395,6 +399,7 @@ export function MaintenanceModule() {
   const [sortKey, setSortKey] = useState<string | null>("created_date");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [contractCompanyMap, setContractCompanyMap] = useState<Record<string, string[]>>(() => readCache<Record<string, string[]>>(CACHE_KEY_COMPANY_MAP) || {});
+  const [zonalMap, setZonalMap] = useState<Record<string, string>>(() => readCache<Record<string, string>>(CACHE_KEY_ZONAL_MAP) || {});
   const [criticalityCategories, setCriticalityCategories] = useState<CriticalityCategory[]>(() => readCache<CriticalityCategory[]>(CACHE_KEY_CRITICALITY) || []);
   const [excelDialog, setExcelDialog] = useState(false);
   const [excelIncludeCriticality, setExcelIncludeCriticality] = useState(false);
@@ -501,6 +506,29 @@ export function MaintenanceModule() {
     fetchCompanyMap();
   }, []);
 
+  // Fetch zonal manager map
+  useEffect(() => {
+    const cached = readCache<Record<string, string>>(CACHE_KEY_ZONAL_MAP);
+    if (cached) return;
+    const fetchZonalMap = async () => {
+      const { data } = await supabase
+        .from("org_member_contracts")
+        .select("contract_id, org_members!inner(name, position)")
+        .returns<Array<{ contract_id: string; org_members: { name: string; position: string } }>>();
+      if (data) {
+        const map: Record<string, string> = {};
+        data.forEach(row => {
+          if (row.org_members?.position?.toLowerCase().includes("zonal")) {
+            map[row.contract_id] = row.org_members.name;
+          }
+        });
+        setZonalMap(map);
+        writeCache(CACHE_KEY_ZONAL_MAP, map);
+      }
+    };
+    fetchZonalMap();
+  }, []);
+
   const handleDataChanged = useCallback(() => {
     invalidateCache();
     fetchForms(false);
@@ -528,6 +556,16 @@ export function MaintenanceModule() {
     Object.values(contractCompanyMap).forEach(names => names.forEach(n => companies.add(n)));
     return Array.from(companies).sort();
   }, [contractCompanyMap]);
+
+  const availableZonals = useMemo(() => {
+    const zonals = new Set<string>();
+    forms.forEach(f => {
+      if (f.contract_id && zonalMap[f.contract_id]) {
+        zonals.add(zonalMap[f.contract_id]);
+      }
+    });
+    return Array.from(zonals).sort((a, b) => a.localeCompare(b, "es"));
+  }, [forms, zonalMap]);
 
   const companyFilteredContractIds = useMemo(() => {
     if (filters.companyFilter === "all") return null;
@@ -629,7 +667,7 @@ export function MaintenanceModule() {
   }, [criticalityCategories]);
 
   const filtered = useMemo(() => {
-    const { search, statusFilter, subStatusFilter, typeFilter, criticalityFilter, selectedYears, selectedContracts, dateFilter, observationsFilter } = filters;
+    const { search, statusFilter, subStatusFilter, typeFilter, criticalityFilter, selectedYears, selectedContracts, dateFilter, observationsFilter, zonalFilter } = filters;
     let result = forms.filter(f => {
       if (observationsFilter && !(f.sub_status === "resuelto" && f.resolution_observations?.trim())) return false;
       if (selectedYears.length > 0 && (!f.year || !selectedYears.includes(f.year))) return false;
@@ -657,6 +695,14 @@ export function MaintenanceModule() {
       if (dateFilter) {
         if (f.created_date !== dateFilter) return false;
       }
+      if (zonalFilter !== "all") {
+        const zName = f.contract_id ? zonalMap[f.contract_id] : undefined;
+        if (zonalFilter === "none") {
+          if (zName) return false;
+        } else {
+          if (zName !== zonalFilter) return false;
+        }
+      }
       if (search) {
         const s = search.toLowerCase();
         const matches = [f.form_number, f.contract_name, f.general_description, f.electrical_description, f.civil_description, f.hvac_description, f.fixed_assets_description]
@@ -677,6 +723,9 @@ export function MaintenanceModule() {
         } else if (sortKey === "created_date") {
           valA = a.created_date ? new Date(a.created_date).getTime() : 0;
           valB = b.created_date ? new Date(b.created_date).getTime() : 0;
+        } else if (sortKey === "zonalName") {
+          valA = (a.contract_id ? zonalMap[a.contract_id] || "zzz" : "zzz").toLowerCase();
+          valB = (b.contract_id ? zonalMap[b.contract_id] || "zzz" : "zzz").toLowerCase();
         } else {
           valA = ((a as any)[sortKey] ?? "").toString().toLowerCase();
           valB = ((b as any)[sortKey] ?? "").toString().toLowerCase();
@@ -688,7 +737,7 @@ export function MaintenanceModule() {
     }
 
     return result;
-  }, [forms, filters, companyFilteredContractIds, contractFilterOptions, sortKey, sortOrder, criticalityMap]);
+  }, [forms, filters, companyFilteredContractIds, contractFilterOptions, sortKey, sortOrder, criticalityMap, zonalMap]);
 
   const totalForms = filtered.length;
   const totalPages = Math.max(1, Math.ceil(totalForms / PAGE_SIZE));
@@ -958,7 +1007,8 @@ export function MaintenanceModule() {
                   const dateForms = forms.filter(f => f.created_date === dateCardValue);
                   const critMap = new Map<string, string>();
                   criticalityCategories.forEach(c => critMap.set(c.id, c.name));
-                  exportDailyFormsPDF(dateForms, dateCardValue, critMap, subStatusLabels);
+                  const zMap = new Map<string, string>(Object.entries(zonalMap));
+                  exportDailyFormsPDF(dateForms, dateCardValue, critMap, subStatusLabels, zMap);
                 }}
               >
                 <FileDown className="h-4 w-4" />
@@ -1267,6 +1317,19 @@ export function MaintenanceModule() {
             </SelectContent>
           </Select>
         </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Gerente Zonal</Label>
+          <Select value={filters.zonalFilter} onValueChange={v => updateFilter("zonalFilter", v)}>
+            <SelectTrigger className="w-44"><SelectValue placeholder="Gerente Zonal" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="none">Sin asignar</SelectItem>
+              {availableZonals.map(z => (
+                <SelectItem key={z} value={z}>{z}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <Button onClick={() => setUploadOpen(true)} className="gap-2">
           <Upload className="h-4 w-4" /> Cargar Excel
         </Button>
@@ -1290,6 +1353,22 @@ export function MaintenanceModule() {
             </div>
           </PopoverContent>
         </Popover>
+        <Button
+          variant="outline"
+          className="gap-2"
+          disabled={filtered.length === 0}
+          onClick={() => {
+            const critMap = new Map<string, string>();
+            criticalityCategories.forEach(c => critMap.set(c.id, c.name));
+            const zMap = new Map<string, string>(Object.entries(zonalMap));
+            const label = filters.zonalFilter !== "all"
+              ? (filters.zonalFilter === "none" ? "Sin Zonal" : filters.zonalFilter)
+              : "Todos";
+            exportDailyFormsPDF(filtered, `Filtro: ${label}`, critMap, subStatusLabels, zMap);
+          }}
+        >
+          <FileDown className="h-4 w-4" /> Descargar PDF
+        </Button>
         
       </div>
 
@@ -1307,6 +1386,7 @@ export function MaintenanceModule() {
                     <SortableTableHead label="Criticidad" sortKey="criticality_category_id" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-36" />
                     <SortableTableHead label="Fecha" sortKey="created_date" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-[8.4rem]" />
                     <SortableTableHead label="Contrato" sortKey="contract_name" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="max-w-[10rem]" />
+                    <SortableTableHead label="Gerente Zonal" sortKey="zonalName" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="w-36" />
                     <TableHead className="w-28">Tipo</TableHead>
                     <TableHead>Descripción</TableHead>
                     <TableHead>Comentarios / Observaciones</TableHead>
@@ -1318,9 +1398,9 @@ export function MaintenanceModule() {
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableRow><TableCell colSpan={13} className="text-center py-8 text-muted-foreground">Cargando...</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={14} className="text-center py-8 text-muted-foreground">Cargando...</TableCell></TableRow>
                   ) : filtered.length === 0 ? (
-                    <TableRow><TableCell colSpan={13} className="text-center py-8 text-muted-foreground">No hay FORMs registrados</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={14} className="text-center py-8 text-muted-foreground">No hay FORMs registrados</TableCell></TableRow>
                   ) : (
                     paginatedForms.map(f => {
                       const cat = criticalityMap.get(f.criticality_category_id || "");
@@ -1365,6 +1445,9 @@ export function MaintenanceModule() {
                               )}
                               <span className="truncate">{f.contract_name || "-"}</span>
                             </div>
+                          </TableCell>
+                          <TableCell className="text-xs truncate max-w-36">
+                            {f.contract_id && zonalMap[f.contract_id] ? zonalMap[f.contract_id] : <span className="text-muted-foreground">—</span>}
                           </TableCell>
                           <TableCell><Badge variant="outline" className="text-xs">{detectMaintenanceType(f)}</Badge></TableCell>
                           <TableCell className="text-xs max-w-48">
