@@ -1,47 +1,37 @@
 
 
-# Agregar columna "Gerente Zonal" al módulo de Mantenciones
+# Reparar URLs rotas en patent_documents
 
-## Resumen
+## Diagnóstico
 
-Mostrar el Gerente Zonal responsable de cada FORM de mantención (basado en el local/contrato asignado en el organigrama), permitir filtrar y ordenar por ese campo, y exportar el resultado filtrado a PDF con el formato estándar.
+Los 4 registros en `patent_documents` tienen `document_url` con prefijo `storage://...` (URLs temporales ya limpiadas). Sin embargo, **los archivos NO se perdieron**: todos existen en Google Drive a través de `repository_files`, con `drive_file_id` válido.
 
-## Cambios
+Lo que falta es actualizar los registros de patentes para que apunten a las URLs de Drive correctas.
 
-### 1. Cargar el mapa contract → Gerente Zonal
+## Plan de reparación
 
-En `MaintenanceModule.tsx`, al inicializar, consultar `org_member_contracts` + `org_members` (filtrando por `position ILIKE '%zonal%'`) para construir un mapa `Record<string, string>` donde la clave es `contract_id` y el valor es el nombre del gerente zonal. Se cachea en sessionStorage junto con los demás mapas existentes.
+### 1. Migración SQL para corregir las 4 filas
 
-### 2. Agregar filtro "Gerente Zonal"
+Actualizar `document_url` en `patent_documents` reemplazando cada URL `storage://...` por la URL de Drive correspondiente encontrada en `repository_files`, usando coincidencia por nombre de archivo.
 
-Añadir `zonalFilter: string` al `FilterState` (default `"all"`). Crear un `<Select>` en la barra de filtros con las opciones derivadas de los gerentes zonales únicos presentes en los forms. Aplicar el filtro en el `useMemo` de `filtered`.
+**Registros a reparar:**
 
-### 3. Agregar columna en la tabla
+| ID patent_document | Archivo(s) storage:// | URL Drive desde repository_files |
+|---|---|---|
+| `30987e96...` (Talca AG) | `...Certificado_de_uso_de_suelo_provisorio.pdf` | `https://drive.google.com/file/d/1v0XFUC.../view` |
+| `e779b591...` (EGAKAT) | 3 archivos storage:// | 3 URLs Drive correspondientes |
+| `8349652a...` (Parral) | 1 archivo storage:// + 11 URLs Drive OK | Reemplazar solo la 1 URL storage:// |
+| `1bbc02e6...` (Parral) | 1 archivo storage:// + 1 URL Drive OK | Reemplazar solo la 1 URL storage:// |
 
-Insertar una columna "Gerente Zonal" (sortable) en la tabla, entre "Contrato" y "Tipo". Mostrar el nombre del zonal o "—" si no tiene asignado. Actualizar el `colSpan` de las filas de carga/vacío.
+### 2. Prevención futura
 
-### 4. Soporte de ordenamiento
+Modificar el flujo de subida de archivos de patentes para que **nunca guarde URLs `storage://`**. En su lugar, debe esperar la confirmación de subida a Drive y guardar directamente la URL de Drive. Si Drive falla, debe reintentar o notificar al usuario en vez de guardar una URL temporal.
 
-Agregar un caso `zonalName` en la lógica de sort del `useMemo`, usando el mapa contract→zonal para resolver el valor.
-
-### 5. Exportar a PDF filtrado
-
-Modificar `exportDailyFormsPDF` en `maintenanceExport.ts` para aceptar un parámetro opcional `zonalMap: Map<string, string>` y agregar la columna "Gerente Zonal" al PDF. Agregar un botón "Descargar PDF filtrado" en la UI que invoque esta función con los forms filtrados actuales, incluyendo la columna de zonal.
+**Archivos a modificar:**
+- `src/components/patents/PatentDocumentUpload.tsx` — cambiar el flujo para esperar la URL de Drive antes de persistir en `patent_documents`
+- Edge function `google-drive` (si aplica) — asegurar respuesta síncrona
 
 ## Archivos a modificar
-
-- `src/components/maintenance/MaintenanceModule.tsx` — nuevo estado, fetch, filtro, columna, botón PDF
-- `src/components/maintenance/maintenanceExport.ts` — agregar columna "Gerente Zonal" a `exportDailyFormsPDF`
-
-## Detalles técnicos
-
-**Query para el mapa zonal:**
-```sql
-SELECT mc.contract_id, m.name
-FROM org_member_contracts mc
-JOIN org_members m ON m.id = mc.org_member_id
-WHERE m.position ILIKE '%zonal%'
-```
-
-No se requieren migraciones de base de datos. Los datos ya existen en `org_members` y `org_member_contracts`.
+- **Migración SQL** — actualizar las 4 filas con URLs correctas
+- `src/components/patents/PatentDocumentUpload.tsx` — prevención futura
 
