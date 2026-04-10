@@ -399,6 +399,7 @@ export function MaintenanceModule() {
   const [sortKey, setSortKey] = useState<string | null>("created_date");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [contractCompanyMap, setContractCompanyMap] = useState<Record<string, string[]>>(() => readCache<Record<string, string[]>>(CACHE_KEY_COMPANY_MAP) || {});
+  const [zonalMap, setZonalMap] = useState<Record<string, string>>(() => readCache<Record<string, string>>(CACHE_KEY_ZONAL_MAP) || {});
   const [criticalityCategories, setCriticalityCategories] = useState<CriticalityCategory[]>(() => readCache<CriticalityCategory[]>(CACHE_KEY_CRITICALITY) || []);
   const [excelDialog, setExcelDialog] = useState(false);
   const [excelIncludeCriticality, setExcelIncludeCriticality] = useState(false);
