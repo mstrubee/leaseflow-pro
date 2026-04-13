@@ -1715,7 +1715,48 @@ serve(async (req) => {
         break;
       }
 
-      case "uploadFileToRepoFolder": {
+      case "uploadFileFromStorage": {
+        // Upload a file to a known Drive folder from a temporary storage:// URL
+        const { fileName: directFileName, storageUrl: directStorageUrl, mimeType: directMimeType, driveFolderId: directDriveFolderId } = params;
+        if (!directFileName || !directStorageUrl || !directDriveFolderId) {
+          return new Response(JSON.stringify({ error: "fileName, storageUrl, and driveFolderId are required" }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        const sbDirect = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+        const directStoragePath = extractRepositoryStoragePath(directStorageUrl);
+        if (!directStoragePath) {
+          return new Response(JSON.stringify({ error: "Invalid storageUrl format" }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        const { data: directDlData, error: directDlError } = await sbDirect.storage
+          .from('repository-files')
+          .download(directStoragePath);
+
+        if (directDlError || !directDlData) {
+          console.error("uploadFileFromStorage: file not found", { directStoragePath });
+          return new Response(JSON.stringify({ error: "File not found in temporary storage" }), {
+            status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        const directBinary = new Uint8Array(await directDlData.arrayBuffer());
+        const directDriveFile = await uploadFileToDrive(
+          accessToken, directFileName, directBinary,
+          directMimeType || 'application/octet-stream', directDriveFolderId,
+        );
+
+        await cleanupStorageFile(sbDirect, directStorageUrl);
+        console.log("uploadFileFromStorage: success", { driveFileId: directDriveFile.id });
+
+        result = directDriveFile;
+        break;
+      }
+
+
         // Upload a file to the correct hierarchical Drive folder for a repo folder
         const { fileName, fileContent, mimeType, repoFolderId, contractId } = params;
         if (!repoFolderId || !contractId || !fileName || !fileContent) {
