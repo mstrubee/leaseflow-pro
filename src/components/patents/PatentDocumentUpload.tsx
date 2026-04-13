@@ -31,6 +31,7 @@ export function PatentDocumentUpload({
   itemId,
   itemName,
   currentUrl,
+  currentNames,
   onSave,
   folders = [],
 }: PatentDocumentUploadProps) {
