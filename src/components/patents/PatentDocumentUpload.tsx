@@ -44,6 +44,15 @@ export function PatentDocumentUpload({
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [downloading, setDownloading] = useState(false);
 
+  const names = currentNames ? currentNames.split('|||').filter(Boolean) : [];
+
+  const getDisplayName = (index: number, url: string) => {
+    if (names[index]) return names[index];
+    // Fallback: try to extract from URL
+    const segment = url.split('/').pop() || 'archivo';
+    return segment.length > 30 ? segment : segment;
+  };
+
   const urls = currentUrl ? currentUrl.split('|||').filter(Boolean) : [];
 
   const toggleSelection = (index: number) => {
