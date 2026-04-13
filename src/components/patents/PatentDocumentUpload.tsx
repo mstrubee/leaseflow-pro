@@ -277,7 +277,7 @@ export function PatentDocumentUpload({
                       />
                     )}
                     <File className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <span className="text-sm truncate">{url.split('/').pop()}</span>
+                    <span className="text-sm truncate">{getDisplayName(index, url)}</span>
                   </div>
                   {!selectionMode && (
                     <div className="flex gap-1 flex-shrink-0">
