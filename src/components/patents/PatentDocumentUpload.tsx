@@ -19,6 +19,7 @@ interface PatentDocumentUploadProps {
   itemId: string;
   itemName: string;
   currentUrl?: string;
+  currentNames?: string;
   onSave: (url: string, folderId?: string, fileNames?: string[]) => void;
   folders?: { id: string; name: string }[];
 }
@@ -30,6 +31,7 @@ export function PatentDocumentUpload({
   itemId,
   itemName,
   currentUrl,
+  currentNames,
   onSave,
   folders = [],
 }: PatentDocumentUploadProps) {
@@ -41,6 +43,15 @@ export function PatentDocumentUpload({
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [downloading, setDownloading] = useState(false);
+
+  const names = currentNames ? currentNames.split('|||').filter(Boolean) : [];
+
+  const getDisplayName = (index: number, url: string) => {
+    if (names[index]) return names[index];
+    // Fallback: try to extract from URL
+    const segment = url.split('/').pop() || 'archivo';
+    return segment.length > 30 ? segment : segment;
+  };
 
   const urls = currentUrl ? currentUrl.split('|||').filter(Boolean) : [];
 
@@ -266,7 +277,7 @@ export function PatentDocumentUpload({
                       />
                     )}
                     <File className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <span className="text-sm truncate">{url.split('/').pop()}</span>
+                    <span className="text-sm truncate">{getDisplayName(index, url)}</span>
                   </div>
                   {!selectionMode && (
                     <div className="flex gap-1 flex-shrink-0">
