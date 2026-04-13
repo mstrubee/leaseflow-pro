@@ -1818,6 +1818,85 @@ serve(async (req) => {
         break;
       }
 
+      case "uploadRepoFileFromStorage": {
+        // Upload a repo file to Drive from a temporary storage:// URL (avoids base64 memory limit)
+        const { contractId: repoContractId, repoFolderId: repoFolderIdStorage, fileName: repoFileName, storageUrl: repoStorageUrl, mimeType: repoMimeType } = params;
+        if (!repoContractId || !repoFolderIdStorage || !repoFileName || !repoStorageUrl) {
+          return new Response(JSON.stringify({ error: "contractId, repoFolderId, fileName, and storageUrl are required" }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        const sbRepo = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+
+        const repoStoragePath = extractRepositoryStoragePath(repoStorageUrl);
+        if (!repoStoragePath) {
+          return new Response(JSON.stringify({ error: "Invalid storageUrl format" }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        const repoStorageContractId = extractContractIdFromRepositoryPath(repoStoragePath);
+        if (!repoStorageContractId || repoStorageContractId !== String(repoContractId).toLowerCase()) {
+          return new Response(JSON.stringify({ error: `storageUrl contract mismatch` }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        // Validate folder ownership
+        const { data: repoFolderCheck } = await sbRepo
+          .from('repository_folders')
+          .select('id, contract_id')
+          .eq('id', repoFolderIdStorage)
+          .single();
+
+        if (!repoFolderCheck || repoFolderCheck.contract_id !== repoContractId) {
+          return new Response(JSON.stringify({ error: `repoFolderId not owned by contract` }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        const targetRepoFolderId = await ensureDriveFolderForRepositoryFolder(
+          sbRepo, accessToken, repoContractId, repoFolderIdStorage,
+        );
+
+        if (!targetRepoFolderId) {
+          return new Response(JSON.stringify({ error: `Could not resolve Drive folder for repo folder` }), {
+            status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        // Download from temp storage
+        const { data: repoDlData, error: repoDlError } = await sbRepo.storage
+          .from('repository-files')
+          .download(repoStoragePath);
+
+        if (repoDlError || !repoDlData) {
+          console.error("uploadRepoFileFromStorage: file not found", { repoStoragePath });
+          return new Response(JSON.stringify({ error: "File not found in temporary storage" }), {
+            status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        const repoBinaryContent = new Uint8Array(await repoDlData.arrayBuffer());
+        const repoDriveFile = await uploadFileToDrive(
+          accessToken, repoFileName, repoBinaryContent,
+          repoMimeType || 'application/octet-stream', targetRepoFolderId,
+        );
+
+        await cleanupStorageFile(sbRepo, repoStorageUrl);
+        console.log("uploadRepoFileFromStorage: success", { driveFileId: repoDriveFile.id, repoContractId });
+
+        result = {
+          id: repoDriveFile.id,
+          driveFileId: repoDriveFile.id,
+          webViewLink: repoDriveFile.webViewLink,
+          driveUrl: repoDriveFile.webViewLink || `https://drive.google.com/file/d/${repoDriveFile.id}/view`,
+          driveFolderId: targetRepoFolderId,
+        };
+        break;
+      }
+
       case "uploadPatentFileFromStorage": {
         // Upload a patent file to Drive from a temporary storage:// URL
         const { contractId, itemId, fileName, storageUrl, mimeType } = params;
