@@ -1272,6 +1272,7 @@ export function PatentChecklist({
           itemId={uploadDialog.itemId}
           itemName={uploadDialog.itemName}
           currentUrl={getDocValue(uploadDialog.itemId, 'document_url') as string}
+          currentNames={getDocValue(uploadDialog.itemId, 'document_names') as string}
           onSave={async (url, _folderId, newFileNames) => {
             // Save document URL and names to all mirror items (same name across sections)
             const mirrorIds = getAllMirrorIds(uploadDialog.itemId);

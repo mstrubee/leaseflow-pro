@@ -19,6 +19,7 @@ interface PatentDocumentUploadProps {
   itemId: string;
   itemName: string;
   currentUrl?: string;
+  currentNames?: string;
   onSave: (url: string, folderId?: string, fileNames?: string[]) => void;
   folders?: { id: string; name: string }[];
 }
