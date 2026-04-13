@@ -1757,49 +1757,7 @@ serve(async (req) => {
       }
 
 
-        // Upload a file to the correct hierarchical Drive folder for a repo folder
-        const { fileName, fileContent, mimeType, repoFolderId, contractId } = params;
-        if (!repoFolderId || !contractId || !fileName || !fileContent) {
-          throw new Error("repoFolderId, contractId, fileName, and fileContent are required");
-        }
 
-        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-        const sb = createClient(supabaseUrl, supabaseKey);
-
-        const { data: repoFolder } = await sb
-          .from('repository_folders')
-          .select('id, contract_id')
-          .eq('id', repoFolderId)
-          .single();
-
-        if (!repoFolder || repoFolder.contract_id !== contractId) {
-          throw new Error(`repoFolderId ${repoFolderId} is not owned by contract ${contractId}`);
-        }
-
-        const targetDriveFolderId = await ensureDriveFolderForRepositoryFolder(
-          sb,
-          accessToken,
-          contractId,
-          repoFolderId,
-        );
-
-        if (!targetDriveFolderId) {
-          throw new Error(`Could not resolve Drive folder for repo folder ${repoFolderId}`);
-        }
-
-        const binaryContent2 = Uint8Array.from(atob(fileContent), c => c.charCodeAt(0));
-        const driveFile = await uploadFileToDrive(accessToken, fileName, binaryContent2, mimeType || 'application/octet-stream', targetDriveFolderId);
-
-        result = {
-          id: driveFile.id,
-          driveFileId: driveFile.id,
-          webViewLink: driveFile.webViewLink,
-          driveUrl: driveFile.webViewLink || `https://drive.google.com/file/d/${driveFile.id}/view`,
-          driveFolderId: targetDriveFolderId,
-        };
-        break;
-      }
 
       case "uploadPatentFile": {
         // Upload a patent file to the contract's "Rentas y Patentes" folder in Drive
