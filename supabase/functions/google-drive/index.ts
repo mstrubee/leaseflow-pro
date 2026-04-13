@@ -1715,50 +1715,49 @@ serve(async (req) => {
         break;
       }
 
-      case "uploadFileToRepoFolder": {
-        // Upload a file to the correct hierarchical Drive folder for a repo folder
-        const { fileName, fileContent, mimeType, repoFolderId, contractId } = params;
-        if (!repoFolderId || !contractId || !fileName || !fileContent) {
-          throw new Error("repoFolderId, contractId, fileName, and fileContent are required");
+      case "uploadFileFromStorage": {
+        // Upload a file to a known Drive folder from a temporary storage:// URL
+        const { fileName: directFileName, storageUrl: directStorageUrl, mimeType: directMimeType, driveFolderId: directDriveFolderId } = params;
+        if (!directFileName || !directStorageUrl || !directDriveFolderId) {
+          return new Response(JSON.stringify({ error: "fileName, storageUrl, and driveFolderId are required" }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
         }
 
-        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-        const sb = createClient(supabaseUrl, supabaseKey);
-
-        const { data: repoFolder } = await sb
-          .from('repository_folders')
-          .select('id, contract_id')
-          .eq('id', repoFolderId)
-          .single();
-
-        if (!repoFolder || repoFolder.contract_id !== contractId) {
-          throw new Error(`repoFolderId ${repoFolderId} is not owned by contract ${contractId}`);
+        const sbDirect = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+        const directStoragePath = extractRepositoryStoragePath(directStorageUrl);
+        if (!directStoragePath) {
+          return new Response(JSON.stringify({ error: "Invalid storageUrl format" }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
         }
 
-        const targetDriveFolderId = await ensureDriveFolderForRepositoryFolder(
-          sb,
-          accessToken,
-          contractId,
-          repoFolderId,
+        const { data: directDlData, error: directDlError } = await sbDirect.storage
+          .from('repository-files')
+          .download(directStoragePath);
+
+        if (directDlError || !directDlData) {
+          console.error("uploadFileFromStorage: file not found", { directStoragePath });
+          return new Response(JSON.stringify({ error: "File not found in temporary storage" }), {
+            status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        const directBinary = new Uint8Array(await directDlData.arrayBuffer());
+        const directDriveFile = await uploadFileToDrive(
+          accessToken, directFileName, directBinary,
+          directMimeType || 'application/octet-stream', directDriveFolderId,
         );
 
-        if (!targetDriveFolderId) {
-          throw new Error(`Could not resolve Drive folder for repo folder ${repoFolderId}`);
-        }
+        await cleanupStorageFile(sbDirect, directStorageUrl);
+        console.log("uploadFileFromStorage: success", { driveFileId: directDriveFile.id });
 
-        const binaryContent2 = Uint8Array.from(atob(fileContent), c => c.charCodeAt(0));
-        const driveFile = await uploadFileToDrive(accessToken, fileName, binaryContent2, mimeType || 'application/octet-stream', targetDriveFolderId);
-
-        result = {
-          id: driveFile.id,
-          driveFileId: driveFile.id,
-          webViewLink: driveFile.webViewLink,
-          driveUrl: driveFile.webViewLink || `https://drive.google.com/file/d/${driveFile.id}/view`,
-          driveFolderId: targetDriveFolderId,
-        };
+        result = directDriveFile;
         break;
       }
+
+
+
 
       case "uploadPatentFile": {
         // Upload a patent file to the contract's "Rentas y Patentes" folder in Drive
@@ -1814,6 +1813,85 @@ serve(async (req) => {
           id: driveFilePatent.id,
           driveFileId: driveFilePatent.id,
           webViewLink: fileUrl,
+        };
+        break;
+      }
+
+      case "uploadRepoFileFromStorage": {
+        // Upload a repo file to Drive from a temporary storage:// URL (avoids base64 memory limit)
+        const { contractId: repoContractId, repoFolderId: repoFolderIdStorage, fileName: repoFileName, storageUrl: repoStorageUrl, mimeType: repoMimeType } = params;
+        if (!repoContractId || !repoFolderIdStorage || !repoFileName || !repoStorageUrl) {
+          return new Response(JSON.stringify({ error: "contractId, repoFolderId, fileName, and storageUrl are required" }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        const sbRepo = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+
+        const repoStoragePath = extractRepositoryStoragePath(repoStorageUrl);
+        if (!repoStoragePath) {
+          return new Response(JSON.stringify({ error: "Invalid storageUrl format" }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        const repoStorageContractId = extractContractIdFromRepositoryPath(repoStoragePath);
+        if (!repoStorageContractId || repoStorageContractId !== String(repoContractId).toLowerCase()) {
+          return new Response(JSON.stringify({ error: `storageUrl contract mismatch` }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        // Validate folder ownership
+        const { data: repoFolderCheck } = await sbRepo
+          .from('repository_folders')
+          .select('id, contract_id')
+          .eq('id', repoFolderIdStorage)
+          .single();
+
+        if (!repoFolderCheck || repoFolderCheck.contract_id !== repoContractId) {
+          return new Response(JSON.stringify({ error: `repoFolderId not owned by contract` }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        const targetRepoFolderId = await ensureDriveFolderForRepositoryFolder(
+          sbRepo, accessToken, repoContractId, repoFolderIdStorage,
+        );
+
+        if (!targetRepoFolderId) {
+          return new Response(JSON.stringify({ error: `Could not resolve Drive folder for repo folder` }), {
+            status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        // Download from temp storage
+        const { data: repoDlData, error: repoDlError } = await sbRepo.storage
+          .from('repository-files')
+          .download(repoStoragePath);
+
+        if (repoDlError || !repoDlData) {
+          console.error("uploadRepoFileFromStorage: file not found", { repoStoragePath });
+          return new Response(JSON.stringify({ error: "File not found in temporary storage" }), {
+            status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        const repoBinaryContent = new Uint8Array(await repoDlData.arrayBuffer());
+        const repoDriveFile = await uploadFileToDrive(
+          accessToken, repoFileName, repoBinaryContent,
+          repoMimeType || 'application/octet-stream', targetRepoFolderId,
+        );
+
+        await cleanupStorageFile(sbRepo, repoStorageUrl);
+        console.log("uploadRepoFileFromStorage: success", { driveFileId: repoDriveFile.id, repoContractId });
+
+        result = {
+          id: repoDriveFile.id,
+          driveFileId: repoDriveFile.id,
+          webViewLink: repoDriveFile.webViewLink,
+          driveUrl: repoDriveFile.webViewLink || `https://drive.google.com/file/d/${repoDriveFile.id}/view`,
+          driveFolderId: targetRepoFolderId,
         };
         break;
       }
