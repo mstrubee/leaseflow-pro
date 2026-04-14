@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
-import { FileText, CheckCircle, Clock, AlertTriangle } from "lucide-react";
+import { FileText, CheckCircle, Clock, AlertTriangle, XCircle } from "lucide-react";
 
 interface ContractStats {
   totalContracts: number;
   totalVigentes: number;
   totalNegociacion: number;
+  totalRechazados: number;
   totalVencidos: number;
   totalAtencionEspecial: number;
   totalTerminationNotices: number;
