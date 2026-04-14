@@ -800,7 +800,7 @@ const BudgetLineItemInner = ({
                 </Badge>
               </TooltipTrigger>
               <TooltipContent>
-                {line.status === "no_autorizado" ? "Este ítem se arrastrará al año siguiente hasta que sea autorizado o eliminado" : "Click para cambiar estado"}
+                {!isAdmin ? "Solo administradores pueden cambiar el estado" : line.status === "no_autorizado" ? "Este ítem se arrastrará al año siguiente hasta que sea autorizado o eliminado" : "Click para cambiar estado"}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
