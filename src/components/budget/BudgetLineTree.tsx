@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useAuth } from "@/hooks/useAuth";
 import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -194,6 +195,7 @@ const BudgetLineItemInner = ({
   onToggleExpand,
   superficieEdificada = 0
 }: BudgetLineItemProps) => {
+  const { isAdmin } = useAuth();
   // Use centralized expansion state if provided, otherwise fall back to local state
   const [localExpanded, setLocalExpanded] = useState(true);
   const isExpanded = collapsedIds ? !collapsedIds.has(line.id) : localExpanded;
@@ -464,7 +466,7 @@ const BudgetLineItemInner = ({
   };
 
   const toggleStatus = () => {
-    if (readOnly) return;
+    if (readOnly || !isAdmin) return;
     onUpdateLine(line.id, {
       status: line.status === "autorizado" ? "no_autorizado" : "autorizado"
     });
@@ -793,7 +795,7 @@ const BudgetLineItemInner = ({
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Badge variant={line.status === "autorizado" ? "default" : "secondary"} className={cn("cursor-pointer text-[10px] px-2.5 py-0 whitespace-nowrap", line.status === "autorizado" && "bg-green-500 hover:bg-green-600", line.status === "no_autorizado" && "bg-yellow-500 hover:bg-yellow-600 text-white")} onClick={toggleStatus}>
+                <Badge variant={line.status === "autorizado" ? "default" : "secondary"} className={cn("text-[10px] px-2.5 py-0 whitespace-nowrap", isAdmin && "cursor-pointer", line.status === "autorizado" && "bg-green-500 hover:bg-green-600", line.status === "no_autorizado" && "bg-yellow-500 hover:bg-yellow-600 text-white")} onClick={toggleStatus}>
                   {line.status === "autorizado" ? "Autorizado" : "No Autorizado"}
                 </Badge>
               </TooltipTrigger>
