@@ -131,11 +131,25 @@ export function ContractStatsCards() {
         className="border-yellow-500/20 bg-yellow-500/5 cursor-pointer hover:shadow-lg transition-shadow"
         onClick={() => handleCardClick("en_negociacion")}
       >
-        <CardContent className="flex items-center justify-between py-3 px-4">
-          <div>
+        <CardContent className="flex items-center justify-between py-3 px-4 relative">
+          <div className="flex-1">
             <p className="text-xs text-muted-foreground font-medium text-yellow-600">En Negociación</p>
             <div className="text-2xl font-bold text-yellow-600">{stats.totalNegociacion}</div>
             <p className="text-[10px] text-muted-foreground">Pendientes de firma</p>
+            {stats.totalRechazados > 0 && (
+              <div
+                className="mt-1 cursor-pointer hover:bg-red-100/50 rounded transition-colors inline-flex items-center gap-1"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate("/contracts?status=en_negociacion&rechazados=true");
+                }}
+              >
+                <XCircle className="h-3 w-3 text-red-500" />
+                <span className="text-[10px] font-medium text-red-600">
+                  Rechazados: {stats.totalRechazados}
+                </span>
+              </div>
+            )}
           </div>
           <Clock className="h-5 w-5 text-yellow-600" />
         </CardContent>
