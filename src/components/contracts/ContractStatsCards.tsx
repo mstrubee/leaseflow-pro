@@ -38,6 +38,7 @@ export function ContractStatsCards() {
           totalContracts: dashData.totals.total_contracts,
           totalVigentes: dashData.totals.total_vigentes,
           totalNegociacion: dashData.totals.total_negociacion,
+          totalRechazados: dashData.totals.total_rechazados || 0,
           totalVencidos: dashData.totals.total_vencidos,
           totalAtencionEspecial: dashData.totals.total_atencion_especial,
           totalTerminationNotices: alertsData.length,
