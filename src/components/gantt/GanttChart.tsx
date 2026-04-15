@@ -1066,6 +1066,7 @@ export function GanttChart({
                     onChange={(date) => handleNewTaskChange("start_date", date)}
                     placeholder="Inicio"
                     showTaskDates={true}
+                    taskDates={taskDates}
                   />
                 </div>
 
@@ -1097,6 +1098,7 @@ export function GanttChart({
                     onChange={(date) => handleNewTaskChange("end_date", date)}
                     placeholder="Término"
                     showTaskDates={true}
+                    taskDates={taskDates}
                   />
                 </div>
 
