@@ -143,6 +143,7 @@ export function GanttChart({
   onAddDependency,
   onRemoveDependency,
   onReorderTask,
+  isAdmin = false,
 }: GanttChartProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [newTaskRow, setNewTaskRow] = useState<NewTaskRow | null>(null);
