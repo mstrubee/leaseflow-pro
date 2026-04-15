@@ -179,6 +179,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
               onAddDependency={addDependency}
               onRemoveDependency={removeDependency}
               onReorderTask={reorderTask}
+              isAdmin={isAdmin}
             />
           </TabsContent>
 
