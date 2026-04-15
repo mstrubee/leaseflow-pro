@@ -63,6 +63,10 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
   const [editingTask, setEditingTask] = useState<GanttTemplateTask | null>(null);
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
   const [selectedTaskForDep, setSelectedTaskForDep] = useState<GanttTemplateTask | null>(null);
+  const [mismatchDialog, setMismatchDialog] = useState<{
+    task: GanttTemplateTask;
+    childrenSum: number;
+  } | null>(null);
 
   // Form states
   const [templateForm, setTemplateForm] = useState({ name: "", description: "" });
@@ -145,6 +149,30 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
   };
 
   const taskTree = buildTaskTree(tasks);
+
+  // Calculate sum of direct children durations for a task
+  const getChildrenDurationSum = (task: GanttTemplateTask): number | null => {
+    if (!task.children || task.children.length === 0) return null;
+    return task.children.reduce((sum, child) => sum + (child.default_duration_days || 0), 0);
+  };
+
+  const handleFixMismatch = async () => {
+    if (!mismatchDialog || !selectedTemplate) return;
+    setSaving(true);
+    try {
+      await supabase
+        .from("gantt_template_tasks")
+        .update({ default_duration_days: mismatchDialog.childrenSum })
+        .eq("id", mismatchDialog.task.id);
+      toast({ title: "Duración actualizada" });
+      setMismatchDialog(null);
+      loadTemplateTasks(selectedTemplate.id);
+    } catch {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar" });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // Template CRUD
   const handleSaveTemplate = async () => {
@@ -294,6 +322,9 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
     const hasChildren = task.children && task.children.length > 0;
     const taskDeps = dependencies.filter(d => d.task_id === task.id);
 
+    const childrenSum = getChildrenDurationSum(task);
+    const hasMismatch = childrenSum !== null && childrenSum !== task.default_duration_days;
+
     return (
       <div key={task.id}>
         <Collapsible defaultOpen={level < 2}>
@@ -316,8 +347,18 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="font-medium truncate">{task.name}</span>
-                <Badge variant="outline" className="text-xs">
+                <Badge
+                  variant="outline"
+                  className={`text-xs cursor-pointer ${hasMismatch ? "border-destructive text-destructive bg-destructive/10" : ""}`}
+                  onClick={() => {
+                    if (hasMismatch && childrenSum !== null) {
+                      setMismatchDialog({ task, childrenSum });
+                    }
+                  }}
+                  title={hasMismatch ? `Suma de subtareas: ${childrenSum} días. Clic para corregir.` : undefined}
+                >
                   {task.default_duration_days} días {task.duration_type === "business" ? "háb." : "corr."}
+                  {hasMismatch && ` (≠${childrenSum})`}
                 </Badge>
                 {taskDeps.length > 0 && (
                   <Badge variant="secondary" className="text-xs">
@@ -619,6 +660,28 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteTemplate} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Duration mismatch confirmation */}
+      <AlertDialog open={!!mismatchDialog} onOpenChange={(open) => { if (!open) setMismatchDialog(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discrepancia de duración</AlertDialogTitle>
+            <AlertDialogDescription>
+              La tarea "{mismatchDialog?.task.name}" tiene una duración de{" "}
+              <strong>{mismatchDialog?.task.default_duration_days} días</strong>, pero la suma de sus subtareas es{" "}
+              <strong>{mismatchDialog?.childrenSum} días</strong>.
+              <br /><br />
+              ¿Deseas actualizar la duración de la tarea madre a {mismatchDialog?.childrenSum} días?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Mantener actual</AlertDialogCancel>
+            <AlertDialogAction onClick={handleFixMismatch}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : `Cambiar a ${mismatchDialog?.childrenSum} días`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
