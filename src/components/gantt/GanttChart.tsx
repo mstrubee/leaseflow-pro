@@ -16,6 +16,77 @@ import { Calendar } from "@/components/ui/calendar";
 
 type BarDragMode = "move" | "resize-left" | "resize-right" | "dependency" | null;
 
+const DatePickerCell = ({ 
+  value, 
+  onChange, 
+  placeholder = "Seleccionar",
+  showTaskDates = false,
+  taskDates = [],
+}: { 
+  value: string | null; 
+  onChange: (date: string) => void;
+  placeholder?: string;
+  showTaskDates?: boolean;
+  taskDates?: Array<{ date: string; taskName: string; type: "start" | "end" }>;
+}) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn(
+            "w-full h-8 justify-start text-left font-normal px-2",
+            !value && "text-muted-foreground"
+          )}
+        >
+          <CalendarIcon className="mr-1 h-3 w-3" />
+          {value ? format(parseISO(value), "dd/MM/yy") : placeholder}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0 z-50 bg-popover" align="start">
+        <div className="flex">
+          {showTaskDates && taskDates.length > 0 && (
+            <div className="border-r max-h-[300px] overflow-y-auto w-48">
+              <div className="p-2 border-b bg-muted/50">
+                <span className="text-xs font-medium text-muted-foreground">Fechas de tareas</span>
+              </div>
+              <div className="p-1">
+                {taskDates.map((td, idx) => (
+                  <Button
+                    key={idx}
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start h-auto py-1.5 px-2 text-left"
+                    onClick={() => { onChange(td.date); setOpen(false); }}
+                  >
+                    <div className="flex flex-col">
+                      <span className="text-xs font-medium">
+                        {format(parseISO(td.date), "dd/MM/yyyy")}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground truncate">
+                        {td.type === "end" ? "Fin:" : "Inicio:"} {td.taskName}
+                      </span>
+                    </div>
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+          <Calendar
+            mode="single"
+            selected={value ? parseISO(value) : undefined}
+            onSelect={(date) => { if (date) { onChange(format(date, "yyyy-MM-dd")); setOpen(false); } }}
+            initialFocus
+            className="p-3 pointer-events-auto"
+          />
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+};
+
 interface GanttChartProps {
   tasks: GanttTask[];
   taskTree: GanttTask[];
