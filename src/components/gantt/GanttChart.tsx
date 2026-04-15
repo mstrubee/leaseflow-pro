@@ -898,6 +898,7 @@ export function GanttChart({
                       value={task.start_date}
                       onChange={(date) => handleUpdateTaskField(task.id, "start_date", date)}
                       placeholder="Inicio"
+                      editable={isAdmin}
                     />
                   </div>
 
@@ -923,6 +924,7 @@ export function GanttChart({
                       value={task.end_date}
                       onChange={(date) => handleUpdateTaskField(task.id, "end_date", date)}
                       placeholder="Término"
+                      editable={isAdmin}
                     />
                   </div>
 
