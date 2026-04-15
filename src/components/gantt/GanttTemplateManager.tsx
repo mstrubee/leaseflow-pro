@@ -364,6 +364,11 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
                   <Badge variant="secondary" className="text-xs">
                     <Link className="h-3 w-3 mr-1" />
                     {taskDeps.length} dep.
+                    {taskDeps.some(d => d.lag_days !== 0) && (
+                      <span className="ml-1">
+                        ({taskDeps.map(d => `${d.lag_days > 0 ? "+" : ""}${d.lag_days}d`).join(", ")})
+                      </span>
+                    )}
                   </Badge>
                 )}
               </div>
