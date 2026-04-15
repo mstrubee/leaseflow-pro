@@ -150,6 +150,30 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
 
   const taskTree = buildTaskTree(tasks);
 
+  // Calculate sum of direct children durations for a task
+  const getChildrenDurationSum = (task: GanttTemplateTask): number | null => {
+    if (!task.children || task.children.length === 0) return null;
+    return task.children.reduce((sum, child) => sum + (child.default_duration_days || 0), 0);
+  };
+
+  const handleFixMismatch = async () => {
+    if (!mismatchDialog || !selectedTemplate) return;
+    setSaving(true);
+    try {
+      await supabase
+        .from("gantt_template_tasks")
+        .update({ default_duration_days: mismatchDialog.childrenSum })
+        .eq("id", mismatchDialog.task.id);
+      toast({ title: "Duración actualizada" });
+      setMismatchDialog(null);
+      loadTemplateTasks(selectedTemplate.id);
+    } catch {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Template CRUD
   const handleSaveTemplate = async () => {
     setSaving(true);
