@@ -22,28 +22,37 @@ const DatePickerCell = ({
   placeholder = "Seleccionar",
   showTaskDates = false,
   taskDates = [],
+  editable = true,
 }: { 
   value: string | null; 
   onChange: (date: string) => void;
   placeholder?: string;
   showTaskDates?: boolean;
   taskDates?: Array<{ date: string; taskName: string; type: "start" | "end" }>;
+  editable?: boolean;
 }) => {
   const [open, setOpen] = useState(false);
+
+  // Non-editable: show plain text
+  if (!editable) {
+    return (
+      <span className="text-xs text-muted-foreground px-2 truncate">
+        {value ? format(parseISO(value), "dd/MM/yy") : "—"}
+      </span>
+    );
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={cn(
-            "w-full h-8 justify-start text-left font-normal px-2",
-            !value && "text-muted-foreground"
-          )}
+        <div
+          className="w-full h-full flex items-center justify-center cursor-default"
+          onDoubleClick={(e) => { e.stopPropagation(); setOpen(true); }}
         >
-          <CalendarIcon className="mr-1 h-3 w-3" />
-          {value ? format(parseISO(value), "dd/MM/yy") : placeholder}
-        </Button>
+          <span className={cn("text-xs px-2 truncate", !value && "text-muted-foreground")}>
+            {value ? format(parseISO(value), "dd/MM/yy") : placeholder}
+          </span>
+        </div>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0 z-50 bg-popover" align="start">
         <div className="flex">
@@ -97,6 +106,7 @@ interface GanttChartProps {
   onAddDependency: (taskId: string, dependsOnTaskId: string) => Promise<void>;
   onRemoveDependency: (dependencyId: string) => Promise<void>;
   onReorderTask: (taskId: string, newIndex: number, siblingIds: string[]) => Promise<void>;
+  isAdmin?: boolean;
 }
 
 const DAY_WIDTH = 30;
@@ -133,6 +143,7 @@ export function GanttChart({
   onAddDependency,
   onRemoveDependency,
   onReorderTask,
+  isAdmin = false,
 }: GanttChartProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [newTaskRow, setNewTaskRow] = useState<NewTaskRow | null>(null);
@@ -887,6 +898,7 @@ export function GanttChart({
                       value={task.start_date}
                       onChange={(date) => handleUpdateTaskField(task.id, "start_date", date)}
                       placeholder="Inicio"
+                      editable={isAdmin}
                     />
                   </div>
 
@@ -912,6 +924,7 @@ export function GanttChart({
                       value={task.end_date}
                       onChange={(date) => handleUpdateTaskField(task.id, "end_date", date)}
                       placeholder="Término"
+                      editable={isAdmin}
                     />
                   </div>
 

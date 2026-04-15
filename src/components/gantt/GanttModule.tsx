@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ interface GanttModuleProps {
 }
 
 export function GanttModule({ contractId }: GanttModuleProps) {
+  const { isAdmin } = useAuth();
   const {
     timeline,
     tasks,
@@ -177,6 +179,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
               onAddDependency={addDependency}
               onRemoveDependency={removeDependency}
               onReorderTask={reorderTask}
+              isAdmin={isAdmin}
             />
           </TabsContent>
 
