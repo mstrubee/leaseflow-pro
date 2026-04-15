@@ -664,6 +664,28 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Duration mismatch confirmation */}
+      <AlertDialog open={!!mismatchDialog} onOpenChange={(open) => { if (!open) setMismatchDialog(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discrepancia de duración</AlertDialogTitle>
+            <AlertDialogDescription>
+              La tarea "{mismatchDialog?.task.name}" tiene una duración de{" "}
+              <strong>{mismatchDialog?.task.default_duration_days} días</strong>, pero la suma de sus subtareas es{" "}
+              <strong>{mismatchDialog?.childrenSum} días</strong>.
+              <br /><br />
+              ¿Deseas actualizar la duración de la tarea madre a {mismatchDialog?.childrenSum} días?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Mantener actual</AlertDialogCancel>
+            <AlertDialogAction onClick={handleFixMismatch}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : `Cambiar a ${mismatchDialog?.childrenSum} días`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
