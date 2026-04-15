@@ -364,6 +364,11 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
                   <Badge variant="secondary" className="text-xs">
                     <Link className="h-3 w-3 mr-1" />
                     {taskDeps.length} dep.
+                    {taskDeps.some(d => d.lag_days !== 0) && (
+                      <span className="ml-1">
+                        ({taskDeps.map(d => `${d.lag_days > 0 ? "+" : ""}${d.lag_days}d`).join(", ")})
+                      </span>
+                    )}
                   </Badge>
                 )}
               </div>
@@ -603,8 +608,26 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
                     .map((dep) => {
                       const depTask = tasks.find(t => t.id === dep.depends_on_task_id);
                       return (
-                        <div key={dep.id} className="flex items-center justify-between p-2 bg-muted rounded">
-                          <span>{depTask?.name || "Tarea"}</span>
+                        <div key={dep.id} className="flex items-center gap-2 p-2 bg-muted rounded">
+                          <span className="flex-1 truncate">{depTask?.name || "Tarea"}</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">Desfase:</span>
+                            <Input
+                              type="number"
+                              className="h-7 w-20 text-xs"
+                              value={dep.lag_days}
+                              onChange={async (e) => {
+                                const val = parseInt(e.target.value) || 0;
+                                await supabase
+                                  .from("gantt_template_dependencies")
+                                  .update({ lag_days: val })
+                                  .eq("id", dep.id);
+                                if (selectedTemplate) loadTemplateTasks(selectedTemplate.id);
+                              }}
+                              title="Días de desfase (+ retrasa, − adelanta)"
+                            />
+                            <span className="text-xs text-muted-foreground">días</span>
+                          </div>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -617,6 +640,9 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
                       );
                     })}
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Desfase positivo (+) agrega días después del término. Negativo (−) resta días.
+                </p>
               </div>
             )}
 
