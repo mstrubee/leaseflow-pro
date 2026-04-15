@@ -322,6 +322,9 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
     const hasChildren = task.children && task.children.length > 0;
     const taskDeps = dependencies.filter(d => d.task_id === task.id);
 
+    const childrenSum = getChildrenDurationSum(task);
+    const hasMismatch = childrenSum !== null && childrenSum !== task.default_duration_days;
+
     return (
       <div key={task.id}>
         <Collapsible defaultOpen={level < 2}>
@@ -344,8 +347,18 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="font-medium truncate">{task.name}</span>
-                <Badge variant="outline" className="text-xs">
+                <Badge
+                  variant="outline"
+                  className={`text-xs cursor-pointer ${hasMismatch ? "border-destructive text-destructive bg-destructive/10" : ""}`}
+                  onClick={() => {
+                    if (hasMismatch && childrenSum !== null) {
+                      setMismatchDialog({ task, childrenSum });
+                    }
+                  }}
+                  title={hasMismatch ? `Suma de subtareas: ${childrenSum} días. Clic para corregir.` : undefined}
+                >
                   {task.default_duration_days} días {task.duration_type === "business" ? "háb." : "corr."}
+                  {hasMismatch && ` (≠${childrenSum})`}
                 </Badge>
                 {taskDeps.length > 0 && (
                   <Badge variant="secondary" className="text-xs">
