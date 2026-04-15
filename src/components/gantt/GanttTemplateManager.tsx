@@ -63,6 +63,10 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
   const [editingTask, setEditingTask] = useState<GanttTemplateTask | null>(null);
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
   const [selectedTaskForDep, setSelectedTaskForDep] = useState<GanttTemplateTask | null>(null);
+  const [mismatchDialog, setMismatchDialog] = useState<{
+    task: GanttTemplateTask;
+    childrenSum: number;
+  } | null>(null);
 
   // Form states
   const [templateForm, setTemplateForm] = useState({ name: "", description: "" });
