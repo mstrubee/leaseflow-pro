@@ -1022,6 +1022,7 @@ export function GanttChart({
                   // Keep the vertical guide line close to the arrow tip so it
                   // ALWAYS arrives horizontally to the LEFT of the arrowhead.
                   const HORIZ_LEAD = 14; // length of the horizontal segment before the arrow tip
+                  const SOURCE_LEAD = 12; // ensure the guide always exits horizontally to the right
                   let pathD: string;
                   if (goesForward) {
                     // Forward routing: out from parent → drop just before child → short horizontal into arrow
@@ -1036,7 +1037,7 @@ export function GanttChart({
                     const detourY = goingDown
                       ? arrow.fromY + VERT_GAP
                       : arrow.fromY - VERT_GAP;
-                    const exitX = arrow.fromX + 10;
+                    const exitX = Math.max(arrow.fromX + SOURCE_LEAD, arrow.toX + 5);
                     const dropX = approachX - HORIZ_LEAD;
                     pathD = `M ${arrow.fromX} ${arrow.fromY}
                              L ${exitX} ${arrow.fromY}
