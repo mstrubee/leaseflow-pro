@@ -249,6 +249,10 @@ export function GanttChart({
   const [rowDragSource, setRowDragSource] = useState<string | null>(null);
   const [rowDragOverId, setRowDragOverId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<"above" | "below" | "into" | null>(null);
+
+  // State for "change parent" dialog
+  const [parentDialogTaskId, setParentDialogTaskId] = useState<string | null>(null);
+  const [parentDialogValue, setParentDialogValue] = useState<string>("__root__");
   
   const ganttAreaRef = useRef<HTMLDivElement>(null);
 
