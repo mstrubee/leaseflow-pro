@@ -867,7 +867,7 @@ export function GanttChart({
             {/* SVG overlay for dependency arrows - clickable to delete */}
             {dependencyArrows.length > 0 && (
               <svg
-                className="absolute inset-0 z-10"
+                className="absolute inset-0 z-10 pointer-events-none"
                 style={{
                   width: "100%",
                   height: visibleTasks.length * ROW_HEIGHT,
