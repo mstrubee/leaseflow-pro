@@ -56,8 +56,10 @@ const DatePickerCell = ({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <div
-          className="w-full h-full flex items-center justify-center cursor-default"
-          onDoubleClick={(e) => { e.stopPropagation(); setOpen(true); }}
+          className="w-full h-full flex items-center justify-center cursor-pointer select-none hover:bg-muted/40 rounded"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(true); }}
+          title="Doble clic para editar"
         >
           <span className={cn("text-xs px-2 truncate", !value && "text-muted-foreground")}>
             {value ? format(parseISO(value), "dd/MM/yy") : placeholder}

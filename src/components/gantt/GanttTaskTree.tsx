@@ -10,7 +10,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Badge } from "@/components/ui/badge";
 import { 
   Plus, ChevronDown, ChevronRight, Trash2, Edit, Link, Unlink, 
-  Calendar, FileText, Loader2, ShoppingCart 
+  Calendar, FileText, Loader2, ShoppingCart, CheckCircle2, Eye, EyeOff, FileDown
 } from "lucide-react";
 import { formatGanttDate, calculateEndDate, calculateStartDate } from "@/lib/ganttDateUtils";
 import { cn } from "@/lib/utils";
@@ -29,6 +29,7 @@ interface GanttTaskTreeProps {
   onRemoveDependency: (dependencyId: string) => Promise<void>;
   onLinkPurchaseOrder: (taskId: string, purchaseOrderId: string) => Promise<void>;
   onUnlinkPurchaseOrder: (linkId: string) => Promise<void>;
+  onExportPDF?: (hideCompleted: boolean) => void;
 }
 
 export function GanttTaskTree({
@@ -43,7 +44,15 @@ export function GanttTaskTree({
   onRemoveDependency,
   onLinkPurchaseOrder,
   onUnlinkPurchaseOrder,
+  onExportPDF,
 }: GanttTaskTreeProps) {
+  const [hideCompleted, setHideCompleted] = useState(false);
+
+  const toggleCompleted = async (task: GanttTask) => {
+    const newStatus = task.status === "completed" ? "pending" : "completed";
+    await onUpdateTask(task.id, { status: newStatus as any, progress: newStatus === "completed" ? 100 : 0 });
+  };
+
   const [addTaskDialogOpen, setAddTaskDialogOpen] = useState(false);
   const [editTaskDialogOpen, setEditTaskDialogOpen] = useState(false);
   const [dependencyDialogOpen, setDependencyDialogOpen] = useState(false);
@@ -176,7 +185,9 @@ export function GanttTaskTree({
   };
 
   const renderTask = (task: GanttTask, level: number = 0) => {
+    if (hideCompleted && task.status === "completed") return null;
     const hasChildren = task.children && task.children.length > 0;
+    const isCompleted = task.status === "completed";
 
     return (
       <div key={task.id}>
@@ -184,7 +195,8 @@ export function GanttTaskTree({
           <div
             className={cn(
               "flex items-center gap-2 py-2 px-2 hover:bg-muted/50 rounded transition-colors border-b",
-              level > 0 && "ml-4"
+              level > 0 && "ml-4",
+              isCompleted && "bg-muted/30"
             )}
             style={{ marginLeft: level * 16 }}
           >
@@ -200,7 +212,7 @@ export function GanttTaskTree({
 
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="font-medium truncate">{task.name}</span>
+                <span className={cn("font-medium truncate", isCompleted && "line-through text-muted-foreground")}>{task.name}</span>
                 {getStatusBadge(task.status)}
               </div>
               <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
@@ -228,6 +240,15 @@ export function GanttTaskTree({
             </div>
 
             <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => toggleCompleted(task)}
+                title={isCompleted ? "Marcar como pendiente" : "Marcar como completada"}
+              >
+                <CheckCircle2 className={cn("h-4 w-4", isCompleted ? "text-primary" : "text-muted-foreground")} />
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -290,10 +311,27 @@ export function GanttTaskTree({
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-medium">Tareas</h3>
-        <Button onClick={() => handleAddTaskClick(null)} size="sm">
-          <Plus className="h-4 w-4 mr-2" />
-          Agregar Tarea Madre
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setHideCompleted((v) => !v)}
+            title={hideCompleted ? "Mostrar completadas" : "Ocultar completadas"}
+          >
+            {hideCompleted ? <Eye className="h-4 w-4 mr-2" /> : <EyeOff className="h-4 w-4 mr-2" />}
+            {hideCompleted ? "Mostrar completadas" : "Ocultar completadas"}
+          </Button>
+          {onExportPDF && (
+            <Button variant="outline" size="sm" onClick={() => onExportPDF(hideCompleted)}>
+              <FileDown className="h-4 w-4 mr-2" />
+              Exportar PDF
+            </Button>
+          )}
+          <Button onClick={() => handleAddTaskClick(null)} size="sm">
+            <Plus className="h-4 w-4 mr-2" />
+            Agregar Tarea Madre
+          </Button>
+        </div>
       </div>
 
       <div className="border rounded-lg">
