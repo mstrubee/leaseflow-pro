@@ -923,16 +923,7 @@ export function GanttChart({
                   
                   return (
                     <g key={arrow.id} className="group/arrow">
-                      {/* Invisible wider path for easier clicking */}
-                      <path
-                        d={pathD}
-                        fill="none"
-                        stroke="transparent"
-                        strokeWidth="12"
-                        className="cursor-pointer pointer-events-auto"
-                        onClick={() => onRemoveDependency(arrow.id)}
-                      />
-                      {/* Visible arrow path */}
+                      {/* Visible arrow path - click handled via midpoint circle below */}
                       <path
                         d={pathD}
                         fill="none"
