@@ -582,16 +582,19 @@ export function GanttChart({
   // Sync all ancestors' dates to encompass their children (min start / max end)
   const syncAncestorsDates = async (
     startParentId: string | null,
-    overrides: Map<string, { start_date?: string | null; end_date?: string | null; parent_id?: string | null }> = new Map()
+    overrides: Map<string, { start_date?: string | null; end_date?: string | null; parent_id?: string | null }> = new Map(),
+    excludeIds: Set<string> = new Set()
   ) => {
     let currentParentId = startParentId;
     while (currentParentId) {
       const parent = tasks.find((t) => t.id === currentParentId);
       if (!parent) break;
-      const allTasks = tasks.map((t) => {
-        const ov = overrides.get(t.id);
-        return ov ? { ...t, ...ov } : t;
-      });
+      const allTasks = tasks
+        .filter((t) => !excludeIds.has(t.id))
+        .map((t) => {
+          const ov = overrides.get(t.id);
+          return ov ? { ...t, ...ov } : t;
+        });
       const children = allTasks.filter((t) => t.parent_id === currentParentId);
       const starts = children.map((c) => c.start_date).filter(Boolean) as string[];
       const ends = children.map((c) => c.end_date).filter(Boolean) as string[];
