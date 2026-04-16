@@ -1334,7 +1334,7 @@ export function GanttChart({
                       min={1}
                       value={task.duration_days || 1}
                       onChange={(e) => handleUpdateTaskField(task.id, "duration_days", parseInt(e.target.value) || 1)}
-                      className="h-7 text-xs border-0 bg-transparent focus:bg-background text-center w-10 px-1"
+                      className="h-7 text-xs border-0 bg-transparent focus:bg-background text-center w-14 px-1"
                       onDragStart={(e) => e.stopPropagation()}
                       draggable={false}
                     />
