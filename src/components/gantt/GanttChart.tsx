@@ -845,6 +845,23 @@ export function GanttChart({
 
           {/* Task rows with dependency arrows overlay */}
           <div className="relative">
+            {/* Today vertical highlight - overlays bar area only */}
+            {(() => {
+              const todayStr = format(new Date(), "yyyy-MM-dd");
+              const todayIdx = days.findIndex((d) => format(d, "yyyy-MM-dd") === todayStr);
+              if (todayIdx < 0) return null;
+              const HEADER_OFFSET = TASK_NAME_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + 6;
+              return (
+                <div
+                  className="absolute top-0 pointer-events-none z-[5] bg-primary/10 border-l border-r border-primary/40"
+                  style={{
+                    left: HEADER_OFFSET + todayIdx * DAY_WIDTH,
+                    width: DAY_WIDTH,
+                    height: visibleTasks.length * ROW_HEIGHT + (newTaskRow ? ROW_HEIGHT : 0) + ROW_HEIGHT,
+                  }}
+                />
+              );
+            })()}
             {/* SVG overlay for dependency arrows - clickable to delete */}
             {dependencyArrows.length > 0 && (
               <svg
