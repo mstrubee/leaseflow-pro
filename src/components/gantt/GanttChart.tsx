@@ -1017,8 +1017,8 @@ export function GanttChart({
                   // Routing guarantees:
                   //  1) Always exits the parent bar with a horizontal segment to the RIGHT (SOURCE_LEAD).
                   //  2) Always arrives at the arrow tip with a horizontal segment from the LEFT (HORIZ_LEAD).
-                  const SOURCE_LEAD = 48; // forced horizontal exit to the right of parent
-                  const HORIZ_LEAD = 56;  // forced horizontal lead-in to the arrow tip
+                  const SOURCE_LEAD = 24; // forced horizontal exit to the right of parent (50% of previous)
+                  const HORIZ_LEAD = 28;  // forced horizontal lead-in to the arrow tip (50% of previous)
                   const VERT_GAP = ROW_HEIGHT / 2 - 2;
 
                   const exitX = arrow.fromX + SOURCE_LEAD;
