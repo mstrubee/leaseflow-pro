@@ -881,17 +881,17 @@ export function GanttChart({
                       <TooltipTrigger asChild>
                         <div
                           className={cn(
-                            "flex-shrink-0 text-center text-xs py-1 border-r",
+                            "flex-shrink-0 text-right pr-1 text-xs py-1 border-r",
                             isWeekendDay && "bg-muted/80",
                             isHoliday && "bg-red-100 dark:bg-red-900/20",
                             isToday && "bg-primary/10 font-bold"
                           )}
                           style={{ width: DAY_WIDTH }}
                         >
-                          <div className="font-medium text-[10px]">
+                          <div className="font-medium text-[10px] leading-tight">
                             {format(day, "d")}
                           </div>
-                          <div className="text-muted-foreground text-[8px]">
+                          <div className="text-muted-foreground text-[8px] leading-tight">
                             {format(day, "EEE", { locale: es })}
                           </div>
                         </div>
