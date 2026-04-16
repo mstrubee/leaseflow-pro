@@ -1014,41 +1014,32 @@ export function GanttChart({
                   // The arrow must ALWAYS arrive at the left edge of the dependent task
                   // pointing forward (→). If the child starts before the parent ends,
                   // the path loops vertically and around so the arrow still enters from the left.
-                  const APPROACH = 8; // gap between arrow tip and child bar's left edge
+                  // Routing guarantees:
+                  //  1) Always exits the parent bar with a horizontal segment to the RIGHT (SOURCE_LEAD).
+                  //  2) Always arrives at the arrow tip with a horizontal segment from the LEFT (HORIZ_LEAD).
+                  const SOURCE_LEAD = 48; // forced horizontal exit to the right of parent
+                  const HORIZ_LEAD = 56;  // forced horizontal lead-in to the arrow tip
                   const VERT_GAP = ROW_HEIGHT / 2 - 2;
-                  const approachX = arrow.toX - APPROACH;
-                  const goesForward = approachX > arrow.fromX + 6;
 
-                  // Keep the vertical guide line close to the arrow tip so it
-                  // ALWAYS arrives horizontally to the LEFT of the arrowhead.
-                  const HORIZ_LEAD = 56; // length of the horizontal segment before the arrow tip (was 14, +300%)
-                  const SOURCE_LEAD = 48; // ensure the guide always exits horizontally to the right (was 12, +300%)
+                  const exitX = arrow.fromX + SOURCE_LEAD;
+                  const approachX = arrow.toX - HORIZ_LEAD;
+
                   let pathD: string;
-                  if (goesForward) {
-                    // Forward routing: ALWAYS exit the source with a small horizontal segment to the right,
-                    // then drop vertically, then horizontal into the arrow tip.
-                    // Also ensure the drop happens far enough LEFT of the arrow tip so the
-                    // final horizontal lead-in into the arrowhead is always visible.
-                    const minDropX = arrow.fromX + SOURCE_LEAD;
-                    const maxDropX = arrow.toX - HORIZ_LEAD;
-                    const dropX = Math.min(Math.max(approachX - HORIZ_LEAD, minDropX), maxDropX);
+                  if (approachX >= exitX) {
+                    // Normal forward case: exit right, drop, then approach left → tip
                     pathD = `M ${arrow.fromX} ${arrow.fromY}
-                             L ${dropX} ${arrow.fromY}
-                             L ${dropX} ${arrow.toY}
+                             L ${exitX} ${arrow.fromY}
+                             L ${exitX} ${arrow.toY}
                              L ${arrow.toX} ${arrow.toY}`;
                   } else {
-                    // Child starts before parent ends — loop around so arrow still arrives from left
+                    // Tight/backward case: exit right, detour vertically, come back left to approachX, then approach → tip
                     const goingDown = arrow.toY >= arrow.fromY;
-                    const detourY = goingDown
-                      ? arrow.fromY + VERT_GAP
-                      : arrow.fromY - VERT_GAP;
-                    const exitX = Math.max(arrow.fromX + SOURCE_LEAD, arrow.toX + 5);
-                    const dropX = approachX - HORIZ_LEAD;
+                    const detourY = goingDown ? arrow.fromY + VERT_GAP : arrow.fromY - VERT_GAP;
                     pathD = `M ${arrow.fromX} ${arrow.fromY}
                              L ${exitX} ${arrow.fromY}
                              L ${exitX} ${detourY}
-                             L ${dropX} ${detourY}
-                             L ${dropX} ${arrow.toY}
+                             L ${approachX} ${detourY}
+                             L ${approachX} ${arrow.toY}
                              L ${arrow.toX} ${arrow.toY}`;
                   }
                   
