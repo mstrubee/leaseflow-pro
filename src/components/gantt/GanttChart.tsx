@@ -1023,13 +1023,30 @@ export function GanttChart({
                     <Input
                       value={task.name}
                       onChange={(e) => handleUpdateTaskField(task.id, "name", e.target.value)}
-                      className="h-7 text-xs border-0 bg-transparent focus:bg-background px-1"
+                      className={cn(
+                        "h-7 text-xs border-0 bg-transparent focus:bg-background px-1",
+                        task.status === "completed" && "line-through text-muted-foreground"
+                      )}
                       onDragStart={(e) => e.stopPropagation()}
                       draggable={false}
                     />
                     {task.dependencies && task.dependencies.length > 0 && (
                       <Link className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                     )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 flex-shrink-0"
+                      onClick={() => toggleTaskCompleted(task)}
+                      title={task.status === "completed" ? "Marcar como pendiente" : "Marcar como completada"}
+                    >
+                      <CheckCircle2
+                        className={cn(
+                          "h-3.5 w-3.5",
+                          task.status === "completed" ? "text-primary" : "text-muted-foreground"
+                        )}
+                      />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"
