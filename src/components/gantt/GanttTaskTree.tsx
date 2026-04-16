@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -567,30 +568,24 @@ export function GanttTaskTree({
             {/* Add new dependency */}
             <div className="space-y-2">
               <Label>Agregar dependencia</Label>
-              <Select
+              <SearchableSelect
+                value=""
                 onValueChange={(taskId) => {
-                  if (selectedTask) {
+                  if (selectedTask && taskId) {
                     onAddDependency(selectedTask.id, taskId);
                   }
                 }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar tarea..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {allTasks
-                    .filter(
-                      (t) =>
-                        t.id !== selectedTask?.id &&
-                        !selectedTask?.dependencies?.some((d) => d.depends_on_task_id === t.id)
-                    )
-                    .map((task) => (
-                      <SelectItem key={task.id} value={task.id}>
-                        {task.name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+                placeholder="Seleccionar tarea..."
+                searchPlaceholder="Buscar tarea..."
+                emptyMessage="Sin tareas disponibles."
+                options={allTasks
+                  .filter(
+                    (t) =>
+                      t.id !== selectedTask?.id &&
+                      !selectedTask?.dependencies?.some((d) => d.depends_on_task_id === t.id)
+                  )
+                  .map((task) => ({ value: task.id, label: task.name }))}
+              />
             </div>
           </div>
           <DialogFooter>
