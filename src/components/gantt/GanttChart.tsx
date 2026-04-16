@@ -1196,13 +1196,14 @@ export function GanttChart({
                             <div
                               className={cn(
                                 "absolute top-1.5 rounded h-6 transition-all shadow-sm group/bar",
-                                getTaskStatusColor(task.status, task.end_date),
+                                !effective.color && getTaskStatusColor(task.status, task.end_date),
                                 dragSource === task.id && "opacity-50 ring-2 ring-primary",
                                 barDragTaskId === task.id && "ring-2 ring-primary"
                               )}
                               style={{
                                 left: position.left,
                                 width: Math.max(position.width - 4, 8),
+                                ...(effective.color ? { backgroundColor: effective.color } : {}),
                               }}
                             >
                               {/* Left resize handle */}
