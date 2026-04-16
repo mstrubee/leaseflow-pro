@@ -977,6 +977,50 @@ export function GanttChart({
     await onUpdateTask(taskId, { color } as Partial<GanttTask>, { skipPropagation: true });
   };
 
+  // Open dialog to change parent
+  const openParentDialog = (taskId: string) => {
+    const t = tasks.find((x) => x.id === taskId);
+    setParentDialogTaskId(taskId);
+    setParentDialogValue(t?.parent_id ?? "__root__");
+  };
+
+  // Apply parent change from dialog
+  const handleChangeParent = async () => {
+    if (!parentDialogTaskId) return;
+    const sourceTask = tasks.find((t) => t.id === parentDialogTaskId);
+    if (!sourceTask) return;
+    const newParentId = parentDialogValue === "__root__" ? null : parentDialogValue;
+    if (newParentId === sourceTask.parent_id) {
+      setParentDialogTaskId(null);
+      return;
+    }
+    // Prevent setting a descendant as parent
+    if (newParentId) {
+      const isDescendant = (ancestorId: string, candidateId: string): boolean => {
+        let current = tasks.find((t) => t.id === candidateId);
+        while (current?.parent_id) {
+          if (current.parent_id === ancestorId) return true;
+          current = tasks.find((t) => t.id === current!.parent_id);
+        }
+        return false;
+      };
+      if (newParentId === parentDialogTaskId || isDescendant(parentDialogTaskId, newParentId)) {
+        setParentDialogTaskId(null);
+        return;
+      }
+    }
+    const oldParentId = sourceTask.parent_id;
+    const newParent = newParentId ? tasks.find((t) => t.id === newParentId) : null;
+    const updates: Partial<GanttTask> = { parent_id: newParentId };
+    if (!sourceTask.color && newParent?.color) {
+      updates.color = newParent.color;
+    }
+    await onUpdateTask(parentDialogTaskId, updates, { skipPropagation: true });
+    if (newParentId) await syncAncestorsDates(newParentId);
+    if (oldParentId && oldParentId !== newParentId) await syncAncestorsDates(oldParentId);
+    setParentDialogTaskId(null);
+  };
+
   // Get unique task dates for quick selection
   const taskDates = useMemo(() => {
     const dates: Array<{ date: string; taskName: string; type: "start" | "end" }> = [];
