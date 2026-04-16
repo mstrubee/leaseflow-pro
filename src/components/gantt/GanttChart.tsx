@@ -1455,13 +1455,16 @@ export function GanttChart({
                                 onMouseDown={(e) => handleBarMouseDown(e, task, "resize-right")}
                               />
                               
-                              {/* Progress indicator */}
-                              {task.progress > 0 && (
-                                <div
-                                  className="absolute inset-y-0 left-0 bg-white/30 rounded-l pointer-events-none"
-                                  style={{ width: `${task.progress}%` }}
-                                />
-                              )}
+                              {/* Progress indicator (manual or auto based on today) */}
+                              {(() => {
+                                const effectiveProgress = task.progress ?? computeAutoProgress(task);
+                                return effectiveProgress > 0 ? (
+                                  <div
+                                    className="absolute inset-y-0 left-0 bg-white/30 rounded-l pointer-events-none"
+                                    style={{ width: `${effectiveProgress}%` }}
+                                  />
+                                ) : null;
+                              })()}
                               
                               {/* Completed indicator: green line at bottom */}
                               {task.status === "completed" && (
