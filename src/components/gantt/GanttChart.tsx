@@ -33,6 +33,21 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
+// Auto-progress based on today's date vs task start/end
+function computeAutoProgress(task: GanttTask): number {
+  if (!task.start_date || !task.end_date) return 0;
+  const start = parseISO(task.start_date).getTime();
+  const end = parseISO(task.end_date).getTime();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const now = today.getTime();
+  if (now <= start) return 0;
+  if (now >= end) return 100;
+  const total = end - start;
+  if (total <= 0) return 0;
+  return Math.round(((now - start) / total) * 100);
+}
+
 // Predefined color palette for Gantt task bars
 const TASK_COLORS: Array<{ name: string; value: string }> = [
   { name: "Azul", value: "#3b82f6" },
@@ -1327,9 +1342,16 @@ export function GanttChart({
                       type="number"
                       min={0}
                       max={100}
-                      value={task.progress ?? 0}
+                      value={task.progress ?? ""}
+                      placeholder={`${computeAutoProgress(task)}`}
                       onChange={(e) => {
-                        const raw = parseInt(e.target.value);
+                        const str = e.target.value;
+                        if (str === "") {
+                          // Empty = revert to auto
+                          onUpdateTask(task.id, { progress: null as any }, { skipPropagation: true });
+                          return;
+                        }
+                        const raw = parseInt(str);
                         const value = isNaN(raw) ? 0 : Math.max(0, Math.min(100, raw));
                         const updates: Partial<GanttTask> = { progress: value };
                         if (value === 100) updates.status = "completed";
@@ -1338,6 +1360,7 @@ export function GanttChart({
                       }}
                       disabled={!isAdmin}
                       className="h-7 text-xs w-14 text-center"
+                      title={task.progress == null ? "Automático según fecha actual. Escribe un valor para fijarlo." : "Borra el valor para volver a automático"}
                     />
                     <span className="text-xs text-muted-foreground ml-1">%</span>
                   </div>
@@ -1432,13 +1455,16 @@ export function GanttChart({
                                 onMouseDown={(e) => handleBarMouseDown(e, task, "resize-right")}
                               />
                               
-                              {/* Progress indicator */}
-                              {task.progress > 0 && (
-                                <div
-                                  className="absolute inset-y-0 left-0 bg-white/30 rounded-l pointer-events-none"
-                                  style={{ width: `${task.progress}%` }}
-                                />
-                              )}
+                              {/* Progress indicator (manual or auto based on today) */}
+                              {(() => {
+                                const effectiveProgress = task.progress ?? computeAutoProgress(task);
+                                return effectiveProgress > 0 ? (
+                                  <div
+                                    className="absolute inset-y-0 left-0 bg-white/30 rounded-l pointer-events-none"
+                                    style={{ width: `${effectiveProgress}%` }}
+                                  />
+                                ) : null;
+                              })()}
                               
                               {/* Completed indicator: green line at bottom */}
                               {task.status === "completed" && (
@@ -1460,7 +1486,7 @@ export function GanttChart({
                               <p className="text-xs">
                                 Duración: {task.duration_days} días ({task.duration_type === "business" ? "hábiles" : "corridos"})
                               </p>
-                              <p className="text-xs">Progreso: {task.progress}%</p>
+                              <p className="text-xs">Progreso: {task.progress ?? computeAutoProgress(task)}%{task.progress == null ? " (auto)" : ""}</p>
                               <p className="text-xs text-muted-foreground mt-1">
                                 Arrastra bordes para cambiar fechas • Centro para mover • A otra tarea para dependencia
                               </p>
