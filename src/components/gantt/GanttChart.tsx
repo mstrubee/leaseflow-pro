@@ -991,7 +991,8 @@ export function GanttChart({
                     "flex border-b hover:bg-muted/20 transition-colors group",
                     rowDragSource === task.id && "opacity-50 bg-muted",
                     rowDragOverId === task.id && dropPosition === "above" && "border-t-2 border-t-primary",
-                    rowDragOverId === task.id && dropPosition === "below" && "border-b-2 border-b-primary"
+                    rowDragOverId === task.id && dropPosition === "below" && "border-b-2 border-b-primary",
+                    task.status === "completed" && "bg-muted/30"
                   )}
                   style={{ height: ROW_HEIGHT }}
                 >
