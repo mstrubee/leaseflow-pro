@@ -1359,12 +1359,10 @@ export function GanttChart({
                       type="number"
                       min={0}
                       max={100}
-                      value={task.progress ?? ""}
-                      placeholder={`${computeAutoProgress(task)}`}
+                      value={task.progress && task.progress > 0 ? task.progress : computeAutoProgress(task)}
                       onChange={(e) => {
                         const str = e.target.value;
                         if (str === "") {
-                          // Empty = revert to auto
                           onUpdateTask(task.id, { progress: null as any }, { skipPropagation: true });
                           return;
                         }
@@ -1376,8 +1374,8 @@ export function GanttChart({
                         onUpdateTask(task.id, updates, { skipPropagation: true });
                       }}
                       disabled={!isAdmin}
-                      className="h-7 text-xs w-14 text-center"
-                      title={task.progress == null ? "Automático según fecha actual. Escribe un valor para fijarlo." : "Borra el valor para volver a automático"}
+                      className="h-7 text-xs w-16 text-center px-1"
+                      title="Se calcula automáticamente según la fecha actual. Escribe un valor para fijarlo manualmente."
                     />
                     <span className="text-xs text-muted-foreground ml-1">%</span>
                   </div>
