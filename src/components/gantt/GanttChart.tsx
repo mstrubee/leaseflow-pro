@@ -1342,9 +1342,16 @@ export function GanttChart({
                       type="number"
                       min={0}
                       max={100}
-                      value={task.progress ?? 0}
+                      value={task.progress ?? ""}
+                      placeholder={`${computeAutoProgress(task)}`}
                       onChange={(e) => {
-                        const raw = parseInt(e.target.value);
+                        const str = e.target.value;
+                        if (str === "") {
+                          // Empty = revert to auto
+                          onUpdateTask(task.id, { progress: null as any }, { skipPropagation: true });
+                          return;
+                        }
+                        const raw = parseInt(str);
                         const value = isNaN(raw) ? 0 : Math.max(0, Math.min(100, raw));
                         const updates: Partial<GanttTask> = { progress: value };
                         if (value === 100) updates.status = "completed";
@@ -1353,6 +1360,7 @@ export function GanttChart({
                       }}
                       disabled={!isAdmin}
                       className="h-7 text-xs w-14 text-center"
+                      title={task.progress == null ? "Automático según fecha actual. Escribe un valor para fijarlo." : "Borra el valor para volver a automático"}
                     />
                     <span className="text-xs text-muted-foreground ml-1">%</span>
                   </div>
