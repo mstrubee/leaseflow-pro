@@ -1025,7 +1025,7 @@ export function GanttChart({
                   let pathD: string;
                   if (goesForward) {
                     // Forward routing: out from parent → drop just before child → short horizontal into arrow
-                    const dropX = Math.max(arrow.fromX + 6, approachX - HORIZ_LEAD);
+                    const dropX = approachX - HORIZ_LEAD;
                     pathD = `M ${arrow.fromX} ${arrow.fromY}
                              L ${dropX} ${arrow.fromY}
                              L ${dropX} ${arrow.toY}
