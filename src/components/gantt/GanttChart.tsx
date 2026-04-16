@@ -18,6 +18,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -241,6 +249,10 @@ export function GanttChart({
   const [rowDragSource, setRowDragSource] = useState<string | null>(null);
   const [rowDragOverId, setRowDragOverId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<"above" | "below" | "into" | null>(null);
+
+  // State for "change parent" dialog
+  const [parentDialogTaskId, setParentDialogTaskId] = useState<string | null>(null);
+  const [parentDialogValue, setParentDialogValue] = useState<string>("__root__");
   
   const ganttAreaRef = useRef<HTMLDivElement>(null);
 
@@ -965,6 +977,50 @@ export function GanttChart({
     await onUpdateTask(taskId, { color } as Partial<GanttTask>, { skipPropagation: true });
   };
 
+  // Open dialog to change parent
+  const openParentDialog = (taskId: string) => {
+    const t = tasks.find((x) => x.id === taskId);
+    setParentDialogTaskId(taskId);
+    setParentDialogValue(t?.parent_id ?? "__root__");
+  };
+
+  // Apply parent change from dialog
+  const handleChangeParent = async () => {
+    if (!parentDialogTaskId) return;
+    const sourceTask = tasks.find((t) => t.id === parentDialogTaskId);
+    if (!sourceTask) return;
+    const newParentId = parentDialogValue === "__root__" ? null : parentDialogValue;
+    if (newParentId === sourceTask.parent_id) {
+      setParentDialogTaskId(null);
+      return;
+    }
+    // Prevent setting a descendant as parent
+    if (newParentId) {
+      const isDescendant = (ancestorId: string, candidateId: string): boolean => {
+        let current = tasks.find((t) => t.id === candidateId);
+        while (current?.parent_id) {
+          if (current.parent_id === ancestorId) return true;
+          current = tasks.find((t) => t.id === current!.parent_id);
+        }
+        return false;
+      };
+      if (newParentId === parentDialogTaskId || isDescendant(parentDialogTaskId, newParentId)) {
+        setParentDialogTaskId(null);
+        return;
+      }
+    }
+    const oldParentId = sourceTask.parent_id;
+    const newParent = newParentId ? tasks.find((t) => t.id === newParentId) : null;
+    const updates: Partial<GanttTask> = { parent_id: newParentId };
+    if (!sourceTask.color && newParent?.color) {
+      updates.color = newParent.color;
+    }
+    await onUpdateTask(parentDialogTaskId, updates, { skipPropagation: true });
+    if (newParentId) await syncAncestorsDates(newParentId);
+    if (oldParentId && oldParentId !== newParentId) await syncAncestorsDates(oldParentId);
+    setParentDialogTaskId(null);
+  };
+
   // Get unique task dates for quick selection
   const taskDates = useMemo(() => {
     const dates: Array<{ date: string; taskName: string; type: "start" | "end" }> = [];
@@ -1646,6 +1702,13 @@ export function GanttChart({
                     >
                       Quitar color {task.parent_id ? "(heredar del padre)" : "(predeterminado)"}
                     </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      className="text-xs"
+                      onClick={() => openParentDialog(task.id)}
+                    >
+                      Cambiar tarea padre…
+                    </ContextMenuItem>
                   </ContextMenuContent>
                 </ContextMenu>
               );
@@ -1797,6 +1860,61 @@ export function GanttChart({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Change parent dialog */}
+      <Dialog open={!!parentDialogTaskId} onOpenChange={(o) => { if (!o) setParentDialogTaskId(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cambiar tarea padre</DialogTitle>
+            <DialogDescription>
+              Selecciona la nueva tarea padre. Elige "(Sin padre)" para convertirla en tarea raíz.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            {(() => {
+              const currentTask = tasks.find((t) => t.id === parentDialogTaskId);
+              const isDescendantOf = (ancestorId: string, candidateId: string): boolean => {
+                let current = tasks.find((t) => t.id === candidateId);
+                while (current?.parent_id) {
+                  if (current.parent_id === ancestorId) return true;
+                  current = tasks.find((t) => t.id === current!.parent_id);
+                }
+                return false;
+              };
+              const options = [
+                { value: "__root__", label: "(Sin padre — tarea raíz)" },
+                ...tasks
+                  .filter((t) =>
+                    parentDialogTaskId
+                      ? t.id !== parentDialogTaskId && !isDescendantOf(parentDialogTaskId, t.id)
+                      : true
+                  )
+                  .map((t) => ({ value: t.id, label: t.name })),
+              ];
+              return (
+                <>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Tarea: <strong>{currentTask?.name}</strong>
+                  </p>
+                  <SearchableSelect
+                    value={parentDialogValue}
+                    onValueChange={setParentDialogValue}
+                    options={options}
+                    placeholder="Buscar tarea padre..."
+                    searchPlaceholder="Escribe para buscar..."
+                  />
+                </>
+              );
+            })()}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setParentDialogTaskId(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleChangeParent}>Aplicar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
