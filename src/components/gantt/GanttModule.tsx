@@ -210,6 +210,18 @@ export function GanttModule({ contractId }: GanttModuleProps) {
               onRemoveDependency={removeDependency}
               onLinkPurchaseOrder={linkPurchaseOrder}
               onUnlinkPurchaseOrder={unlinkPurchaseOrder}
+              onExportPDF={async (hideCompleted) => {
+                let contractName = "Contrato";
+                try {
+                  const { data } = await supabase.from("contracts").select("name").eq("id", contractId).maybeSingle();
+                  if (data?.name) contractName = data.name;
+                } catch {}
+                await exportGanttToPDF(taskTree, tasks, holidays, {
+                  contractName,
+                  timelineName: timeline.name,
+                  hideCompleted,
+                });
+              }}
             />
           </TabsContent>
         </Tabs>
