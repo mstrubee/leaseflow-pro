@@ -445,8 +445,16 @@ export function GanttChart({
     return holidays.some((h) => h.date === dateStr);
   };
 
-  const handleAddNewRow = () => {
-    setNewTaskRow(createEmptyNewTask());
+  const handleAddNewRow = (parentId: string | null = null) => {
+    const empty = createEmptyNewTask();
+    setNewTaskRow({ ...empty, parent_id: parentId });
+    if (parentId) {
+      setExpandedTasks((prev) => {
+        const next = new Set(prev);
+        next.add(parentId);
+        return next;
+      });
+    }
   };
 
   const handleNewTaskChange = (field: keyof NewTaskRow, value: any) => {
