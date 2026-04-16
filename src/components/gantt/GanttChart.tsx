@@ -1477,8 +1477,17 @@ export function GanttChart({
                       className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 flex-shrink-0"
                       onClick={async () => {
                         const parentId = task.parent_id;
+                        // Collect this task and all descendants to exclude from sync
+                        const collectIds = (id: string): string[] => {
+                          const direct = tasks.filter((t) => t.parent_id === id).map((t) => t.id);
+                          return [id, ...direct.flatMap(collectIds)];
+                        };
+                        const excludeIds = new Set(collectIds(task.id));
+                        if (parentId) {
+                          // Sync first (using current state minus deleted) then delete
+                          await syncAncestorsDates(parentId, new Map(), excludeIds);
+                        }
                         await onDeleteTask(task.id);
-                        if (parentId) await syncAncestorsDates(parentId);
                       }}
                     >
                       <Trash2 className="h-3 w-3 text-destructive" />
