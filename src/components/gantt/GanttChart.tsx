@@ -1265,7 +1265,37 @@ export function GanttChart({
                       </TooltipProvider>
                     )}
                   </div>
-                </div>
+                    </div>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent className="w-48 bg-popover z-50">
+                    <ContextMenuLabel className="flex items-center gap-2 text-xs">
+                      <Palette className="h-3 w-3" /> Color de la tarea
+                    </ContextMenuLabel>
+                    <ContextMenuSeparator />
+                    <div className="grid grid-cols-5 gap-1 p-2">
+                      {TASK_COLORS.map((c) => (
+                        <button
+                          key={c.value}
+                          type="button"
+                          title={c.name}
+                          onClick={() => handleSetColor(task.id, c.value)}
+                          className={cn(
+                            "h-6 w-6 rounded-md border border-border hover:scale-110 transition-transform",
+                            task.color === c.value && "ring-2 ring-foreground ring-offset-1 ring-offset-popover"
+                          )}
+                          style={{ backgroundColor: c.value }}
+                        />
+                      ))}
+                    </div>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      className="text-xs"
+                      onClick={() => handleSetColor(task.id, null)}
+                    >
+                      Quitar color {task.parent_id ? "(heredar del padre)" : "(predeterminado)"}
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
               );
             })}
 
