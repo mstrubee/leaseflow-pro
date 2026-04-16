@@ -1504,10 +1504,11 @@ export function GanttChart({
                       }
                     }}
                     onDrop={(e) => {
-                      e.stopPropagation();
                       if (dragSource) {
+                        e.stopPropagation();
                         handleBarDrop(task.id);
                       }
+                      // else: let row drop handler (parent) handle it for reparent/reorder
                     }}
                   >
                     {/* Background grid */}
