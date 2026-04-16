@@ -1535,17 +1535,21 @@ export function GanttChart({
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
+                            {(() => {
+                              const effectiveProgress = task.progress && task.progress > 0 ? task.progress : computeAutoProgress(task);
+                              const isComplete = effectiveProgress >= 100;
+                              const progressColor = isComplete ? "hsl(142 71% 45%)" : "hsl(217 91% 60%)";
+                              return (
                             <div
                               className={cn(
                                 "absolute top-1.5 rounded h-6 transition-all shadow-sm group/bar",
-                                !effective.color && getTaskStatusColor(task.status, task.end_date),
                                 dragSource === task.id && "opacity-50 ring-2 ring-primary",
                                 barDragTaskId === task.id && "ring-2 ring-primary"
                               )}
                               style={{
                                 left: position.left,
                                 width: Math.max(position.width - 4, 8),
-                                ...(effective.color ? { backgroundColor: effective.color } : {}),
+                                backgroundColor: progressColor,
                               }}
                             >
                               {/* Left resize handle */}
