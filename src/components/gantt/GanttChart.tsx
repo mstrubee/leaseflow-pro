@@ -1359,12 +1359,10 @@ export function GanttChart({
                       type="number"
                       min={0}
                       max={100}
-                      value={task.progress ?? ""}
-                      placeholder={`${computeAutoProgress(task)}`}
+                      value={task.progress && task.progress > 0 ? task.progress : computeAutoProgress(task)}
                       onChange={(e) => {
                         const str = e.target.value;
                         if (str === "") {
-                          // Empty = revert to auto
                           onUpdateTask(task.id, { progress: null as any }, { skipPropagation: true });
                           return;
                         }
@@ -1376,8 +1374,8 @@ export function GanttChart({
                         onUpdateTask(task.id, updates, { skipPropagation: true });
                       }}
                       disabled={!isAdmin}
-                      className="h-7 text-xs w-14 text-center"
-                      title={task.progress == null ? "Automático según fecha actual. Escribe un valor para fijarlo." : "Borra el valor para volver a automático"}
+                      className="h-7 text-xs w-16 text-center px-1"
+                      title="Se calcula automáticamente según la fecha actual. Escribe un valor para fijarlo manualmente."
                     />
                     <span className="text-xs text-muted-foreground ml-1">%</span>
                   </div>
@@ -1474,7 +1472,7 @@ export function GanttChart({
                               
                               {/* Progress indicator (manual or auto based on today) */}
                               {(() => {
-                                const effectiveProgress = task.progress ?? computeAutoProgress(task);
+                                const effectiveProgress = task.progress && task.progress > 0 ? task.progress : computeAutoProgress(task);
                                 return effectiveProgress > 0 ? (
                                   <div
                                     className="absolute inset-y-0 left-0 bg-white/30 rounded-l pointer-events-none"
@@ -1503,7 +1501,7 @@ export function GanttChart({
                               <p className="text-xs">
                                 Duración: {task.duration_days} días ({task.duration_type === "business" ? "hábiles" : "corridos"})
                               </p>
-                              <p className="text-xs">Progreso: {task.progress ?? computeAutoProgress(task)}%{task.progress == null ? " (auto)" : ""}</p>
+                              <p className="text-xs">Progreso: {task.progress && task.progress > 0 ? `${task.progress}% (manual)` : `${computeAutoProgress(task)}% (auto)`}</p>
                               <p className="text-xs text-muted-foreground mt-1">
                                 Arrastra bordes para cambiar fechas • Centro para mover • A otra tarea para dependencia
                               </p>
