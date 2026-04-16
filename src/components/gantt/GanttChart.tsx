@@ -403,7 +403,9 @@ export function GanttChart({
         // Arrow from parent end to child start
         const fromX = HEADER_OFFSET + parentPosition.left + parentPosition.width - 4;
         const fromY = parentRowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
-        const toX = HEADER_OFFSET + taskPosition.left;
+        // End slightly to the RIGHT of the bar's left edge so the arrowhead
+        // visibly points from the vertical edge towards the bar (not on top of it).
+        const toX = HEADER_OFFSET + taskPosition.left + 6;
         const toY = rowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
 
         arrows.push({
