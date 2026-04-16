@@ -1263,6 +1263,7 @@ export function GanttChart({
                         rowDragSource === task.id && "opacity-50 bg-muted",
                         rowDragOverId === task.id && dropPosition === "above" && "border-t-2 border-t-primary",
                         rowDragOverId === task.id && dropPosition === "below" && "border-b-2 border-b-primary",
+                        rowDragOverId === task.id && dropPosition === "into" && "ring-2 ring-inset ring-primary bg-primary/10",
                         task.status === "completed" && "bg-muted/30"
                       )}
                       style={{ height: ROW_HEIGHT }}
