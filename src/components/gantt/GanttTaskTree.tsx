@@ -244,6 +244,15 @@ export function GanttTaskTree({
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7"
+                onClick={() => toggleCompleted(task)}
+                title={isCompleted ? "Marcar como pendiente" : "Marcar como completada"}
+              >
+                <CheckCircle2 className={cn("h-4 w-4", isCompleted ? "text-primary" : "text-muted-foreground")} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
                 onClick={() => handleAddTaskClick(task.id)}
                 title="Agregar subtarea"
               >
@@ -302,10 +311,27 @@ export function GanttTaskTree({
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-medium">Tareas</h3>
-        <Button onClick={() => handleAddTaskClick(null)} size="sm">
-          <Plus className="h-4 w-4 mr-2" />
-          Agregar Tarea Madre
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setHideCompleted((v) => !v)}
+            title={hideCompleted ? "Mostrar completadas" : "Ocultar completadas"}
+          >
+            {hideCompleted ? <Eye className="h-4 w-4 mr-2" /> : <EyeOff className="h-4 w-4 mr-2" />}
+            {hideCompleted ? "Mostrar completadas" : "Ocultar completadas"}
+          </Button>
+          {onExportPDF && (
+            <Button variant="outline" size="sm" onClick={() => onExportPDF(hideCompleted)}>
+              <FileDown className="h-4 w-4 mr-2" />
+              Exportar PDF
+            </Button>
+          )}
+          <Button onClick={() => handleAddTaskClick(null)} size="sm">
+            <Plus className="h-4 w-4 mr-2" />
+            Agregar Tarea Madre
+          </Button>
+        </div>
       </div>
 
       <div className="border rounded-lg">
