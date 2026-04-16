@@ -1321,6 +1321,27 @@ export function GanttChart({
                     />
                   </div>
 
+                  {/* Progress % */}
+                  <div className="flex-shrink-0 border-r flex items-center justify-center px-1" style={{ width: PROGRESS_COL_WIDTH }}>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={task.progress ?? 0}
+                      onChange={(e) => {
+                        const raw = parseInt(e.target.value);
+                        const value = isNaN(raw) ? 0 : Math.max(0, Math.min(100, raw));
+                        const updates: Partial<GanttTask> = { progress: value };
+                        if (value === 100) updates.status = "completed";
+                        else if (task.status === "completed") updates.status = "in_progress";
+                        onUpdateTask(task.id, updates, { skipPropagation: true });
+                      }}
+                      disabled={!isAdmin}
+                      className="h-7 text-xs w-14 text-center"
+                    />
+                    <span className="text-xs text-muted-foreground ml-1">%</span>
+                  </div>
+
                   {/* Gantt bar area */}
                   <div
                     className={cn(
