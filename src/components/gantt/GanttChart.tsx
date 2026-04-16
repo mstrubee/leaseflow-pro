@@ -979,13 +979,16 @@ export function GanttChart({
                   const approachX = arrow.toX - APPROACH;
                   const goesForward = approachX > arrow.fromX + 6;
 
+                  // Keep the vertical guide line close to the arrow tip so it
+                  // ALWAYS arrives horizontally to the LEFT of the arrowhead.
+                  const HORIZ_LEAD = 14; // length of the horizontal segment before the arrow tip
                   let pathD: string;
                   if (goesForward) {
-                    // Forward routing: out from parent → step → into child from left
-                    const midX = (arrow.fromX + approachX) / 2;
+                    // Forward routing: out from parent → drop just before child → short horizontal into arrow
+                    const dropX = Math.max(arrow.fromX + 6, approachX - HORIZ_LEAD);
                     pathD = `M ${arrow.fromX} ${arrow.fromY}
-                             L ${midX} ${arrow.fromY}
-                             L ${midX} ${arrow.toY}
+                             L ${dropX} ${arrow.fromY}
+                             L ${dropX} ${arrow.toY}
                              L ${arrow.toX} ${arrow.toY}`;
                   } else {
                     // Child starts before parent ends — loop around so arrow still arrives from left
@@ -994,11 +997,12 @@ export function GanttChart({
                       ? arrow.fromY + VERT_GAP
                       : arrow.fromY - VERT_GAP;
                     const exitX = arrow.fromX + 10;
+                    const dropX = approachX - HORIZ_LEAD;
                     pathD = `M ${arrow.fromX} ${arrow.fromY}
                              L ${exitX} ${arrow.fromY}
                              L ${exitX} ${detourY}
-                             L ${approachX} ${detourY}
-                             L ${approachX} ${arrow.toY}
+                             L ${dropX} ${detourY}
+                             L ${dropX} ${arrow.toY}
                              L ${arrow.toX} ${arrow.toY}`;
                   }
                   
