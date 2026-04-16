@@ -185,7 +185,9 @@ export function GanttTaskTree({
   };
 
   const renderTask = (task: GanttTask, level: number = 0) => {
+    if (hideCompleted && task.status === "completed") return null;
     const hasChildren = task.children && task.children.length > 0;
+    const isCompleted = task.status === "completed";
 
     return (
       <div key={task.id}>
@@ -193,7 +195,8 @@ export function GanttTaskTree({
           <div
             className={cn(
               "flex items-center gap-2 py-2 px-2 hover:bg-muted/50 rounded transition-colors border-b",
-              level > 0 && "ml-4"
+              level > 0 && "ml-4",
+              isCompleted && "bg-muted/30"
             )}
             style={{ marginLeft: level * 16 }}
           >
@@ -209,7 +212,7 @@ export function GanttTaskTree({
 
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="font-medium truncate">{task.name}</span>
+                <span className={cn("font-medium truncate", isCompleted && "line-through text-muted-foreground")}>{task.name}</span>
                 {getStatusBadge(task.status)}
               </div>
               <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
