@@ -735,6 +735,28 @@ export function GanttChart({
     await onUpdateTask(task.id, { status: newStatus, progress: newStatus === "completed" ? 100 : 0 });
   };
 
+  // Map id -> task for parent lookups
+  const taskById = useMemo(() => {
+    const m = new Map<string, GanttTask>();
+    tasks.forEach((t) => m.set(t.id, t));
+    return m;
+  }, [tasks]);
+
+  // Resolve effective color: own color, else inherit from nearest ancestor (lightened 50% per generation gap)
+  const getEffectiveColor = useCallback((task: GanttTask): { color: string | null; inherited: boolean } => {
+    if (task.color) return { color: task.color, inherited: false };
+    let current = task.parent_id ? taskById.get(task.parent_id) : null;
+    while (current) {
+      if (current.color) return { color: lightenHex(current.color, 0.5), inherited: true };
+      current = current.parent_id ? taskById.get(current.parent_id) : null;
+    }
+    return { color: null, inherited: false };
+  }, [taskById]);
+
+  const handleSetColor = async (taskId: string, color: string | null) => {
+    await onUpdateTask(taskId, { color } as Partial<GanttTask>, { skipPropagation: true });
+  };
+
   // Get unique task dates for quick selection
   const taskDates = useMemo(() => {
     const dates: Array<{ date: string; taskName: string; type: "start" | "end" }> = [];
