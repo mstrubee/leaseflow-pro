@@ -1025,25 +1025,27 @@ export function GanttChart({
               const hasChildren = task.children && task.children.length > 0;
               const isExpanded = expandedTasks.has(task.id);
               const position = getTaskPosition(task);
+              const effective = getEffectiveColor(task);
               
               return (
-                <div
-                  key={task.id}
-                  draggable
-                  onDragStart={(e) => handleRowDragStart(e, task.id)}
-                  onDragOver={(e) => handleRowDragOver(e, task.id)}
-                  onDragLeave={handleRowDragLeave}
-                  onDrop={handleRowDrop}
-                  onDragEnd={handleRowDragEnd}
-                  className={cn(
-                    "flex border-b hover:bg-muted/20 transition-colors group",
-                    rowDragSource === task.id && "opacity-50 bg-muted",
-                    rowDragOverId === task.id && dropPosition === "above" && "border-t-2 border-t-primary",
-                    rowDragOverId === task.id && dropPosition === "below" && "border-b-2 border-b-primary",
-                    task.status === "completed" && "bg-muted/30"
-                  )}
-                  style={{ height: ROW_HEIGHT }}
-                >
+                <ContextMenu key={task.id}>
+                  <ContextMenuTrigger asChild>
+                    <div
+                      draggable
+                      onDragStart={(e) => handleRowDragStart(e, task.id)}
+                      onDragOver={(e) => handleRowDragOver(e, task.id)}
+                      onDragLeave={handleRowDragLeave}
+                      onDrop={handleRowDrop}
+                      onDragEnd={handleRowDragEnd}
+                      className={cn(
+                        "flex border-b hover:bg-muted/20 transition-colors group",
+                        rowDragSource === task.id && "opacity-50 bg-muted",
+                        rowDragOverId === task.id && dropPosition === "above" && "border-t-2 border-t-primary",
+                        rowDragOverId === task.id && dropPosition === "below" && "border-b-2 border-b-primary",
+                        task.status === "completed" && "bg-muted/30"
+                      )}
+                      style={{ height: ROW_HEIGHT }}
+                    >
                   {/* Drag handle */}
                   <div className="flex-shrink-0 flex items-center justify-center w-6 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity">
                     <GripVertical className="h-4 w-4 text-muted-foreground" />
