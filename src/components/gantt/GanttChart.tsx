@@ -240,7 +240,7 @@ export function GanttChart({
   // Drag state for row reordering
   const [rowDragSource, setRowDragSource] = useState<string | null>(null);
   const [rowDragOverId, setRowDragOverId] = useState<string | null>(null);
-  const [dropPosition, setDropPosition] = useState<"above" | "below" | null>(null);
+  const [dropPosition, setDropPosition] = useState<"above" | "below" | "into" | null>(null);
   
   const ganttAreaRef = useRef<HTMLDivElement>(null);
 
@@ -509,6 +509,10 @@ export function GanttChart({
           duration_type: newTaskRow.duration_type,
         }
       );
+      // If new task is a child, extend ancestors to fit (min/max)
+      if (newTaskRow.parent_id && newTaskRow.start_date && newTaskRow.end_date) {
+        await syncAncestorsDates(newTaskRow.parent_id);
+      }
       setNewTaskRow(createEmptyNewTask());
     } finally {
       setIsSaving(false);
@@ -563,16 +567,51 @@ export function GanttChart({
     setRowDragSource(taskId);
   };
 
+  // Sync all ancestors' dates to encompass their children (min start / max end)
+  const syncAncestorsDates = async (
+    startParentId: string | null,
+    overrides: Map<string, { start_date?: string | null; end_date?: string | null; parent_id?: string | null }> = new Map()
+  ) => {
+    let currentParentId = startParentId;
+    while (currentParentId) {
+      const parent = tasks.find((t) => t.id === currentParentId);
+      if (!parent) break;
+      const allTasks = tasks.map((t) => {
+        const ov = overrides.get(t.id);
+        return ov ? { ...t, ...ov } : t;
+      });
+      const children = allTasks.filter((t) => t.parent_id === currentParentId);
+      const starts = children.map((c) => c.start_date).filter(Boolean) as string[];
+      const ends = children.map((c) => c.end_date).filter(Boolean) as string[];
+      if (starts.length === 0 || ends.length === 0) break;
+      const minStart = starts.sort()[0];
+      const maxEnd = ends.sort()[ends.length - 1];
+      const updates: Partial<GanttTask> = {};
+      if (parent.start_date !== minStart) updates.start_date = minStart;
+      if (parent.end_date !== maxEnd) updates.end_date = maxEnd;
+      if (Object.keys(updates).length > 0) {
+        updates.duration_days = differenceInDays(parseISO(maxEnd), parseISO(minStart)) + 1;
+        await onUpdateTask(parent.id, updates, { skipPropagation: true });
+        overrides.set(parent.id, { start_date: minStart, end_date: maxEnd });
+      }
+      currentParentId = parent.parent_id;
+    }
+  };
+
   const handleRowDragOver = (e: React.DragEvent, taskId: string) => {
     e.preventDefault();
     if (!rowDragSource || rowDragSource === taskId) return;
     
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const y = e.clientY - rect.top;
-    const isAbove = y < rect.height / 2;
+    const ratio = y / rect.height;
+    let pos: "above" | "into" | "below";
+    if (ratio < 0.25) pos = "above";
+    else if (ratio > 0.75) pos = "below";
+    else pos = "into";
     
     setRowDragOverId(taskId);
-    setDropPosition(isAbove ? "above" : "below");
+    setDropPosition(pos);
   };
 
   const handleRowDragLeave = () => {
@@ -587,7 +626,45 @@ export function GanttChart({
       return;
     }
 
-    // Get all visible task IDs in order (flattened)
+    // Prevent dropping into own descendant
+    const isDescendant = (potentialAncestorId: string, candidateId: string): boolean => {
+      let current = tasks.find((t) => t.id === candidateId);
+      while (current?.parent_id) {
+        if (current.parent_id === potentialAncestorId) return true;
+        current = tasks.find((t) => t.id === current!.parent_id);
+      }
+      return false;
+    };
+
+    // REPARENTING: drop "into" => set new parent
+    if (dropPosition === "into") {
+      if (isDescendant(rowDragSource, rowDragOverId)) {
+        handleRowDragEnd();
+        return;
+      }
+      const sourceTask = tasks.find((t) => t.id === rowDragSource);
+      const newParent = tasks.find((t) => t.id === rowDragOverId);
+      if (!sourceTask || !newParent) {
+        handleRowDragEnd();
+        return;
+      }
+      const oldParentId = sourceTask.parent_id;
+      const updates: Partial<GanttTask> = { parent_id: rowDragOverId };
+      // Inherit color from new parent if source had no custom color
+      if (!sourceTask.color && newParent.color) {
+        updates.color = newParent.color;
+      }
+      await onUpdateTask(rowDragSource, updates, { skipPropagation: true });
+      // Sync new ancestors (extend to fit) and old ancestors (shrink if needed)
+      await syncAncestorsDates(rowDragOverId);
+      if (oldParentId && oldParentId !== rowDragOverId) {
+        await syncAncestorsDates(oldParentId);
+      }
+      handleRowDragEnd();
+      return;
+    }
+
+    // REORDER: drop above/below
     const flatTaskIds = visibleTasks.map(vt => vt.task.id);
     const sourceIdx = flatTaskIds.indexOf(rowDragSource);
     const targetIdx = flatTaskIds.indexOf(rowDragOverId);
@@ -597,7 +674,6 @@ export function GanttChart({
       return;
     }
 
-    // Calculate new order
     const newOrder = [...flatTaskIds];
     newOrder.splice(sourceIdx, 1);
     const insertIdx = dropPosition === "above" 
@@ -1191,6 +1267,7 @@ export function GanttChart({
                         rowDragSource === task.id && "opacity-50 bg-muted",
                         rowDragOverId === task.id && dropPosition === "above" && "border-t-2 border-t-primary",
                         rowDragOverId === task.id && dropPosition === "below" && "border-b-2 border-b-primary",
+                        rowDragOverId === task.id && dropPosition === "into" && "ring-2 ring-inset ring-primary bg-primary/10",
                         task.status === "completed" && "bg-muted/30"
                       )}
                       style={{ height: ROW_HEIGHT }}
