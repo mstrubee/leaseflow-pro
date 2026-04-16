@@ -1472,7 +1472,7 @@ export function GanttChart({
                               
                               {/* Progress indicator (manual or auto based on today) */}
                               {(() => {
-                                const effectiveProgress = task.progress ?? computeAutoProgress(task);
+                                const effectiveProgress = task.progress && task.progress > 0 ? task.progress : computeAutoProgress(task);
                                 return effectiveProgress > 0 ? (
                                   <div
                                     className="absolute inset-y-0 left-0 bg-white/30 rounded-l pointer-events-none"
