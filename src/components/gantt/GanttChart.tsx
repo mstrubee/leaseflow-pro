@@ -1267,6 +1267,11 @@ export function GanttChart({
                                 />
                               )}
                               
+                              {/* Completed indicator: green line at bottom */}
+                              {task.status === "completed" && (
+                                <div className="absolute left-0 right-0 -bottom-1 h-1 bg-green-500 rounded-b pointer-events-none" />
+                              )}
+
                               {/* Task name */}
                               <span className="absolute inset-0 flex items-center justify-center text-[10px] text-white font-medium truncate px-3 pointer-events-none">
                                 {position.width > 60 ? task.name : ""}
