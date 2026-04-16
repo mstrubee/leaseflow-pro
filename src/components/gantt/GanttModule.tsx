@@ -182,6 +182,18 @@ export function GanttModule({ contractId }: GanttModuleProps) {
               onRemoveDependency={removeDependency}
               onReorderTask={reorderTask}
               isAdmin={isAdmin}
+              onExportPDF={async (hideCompleted) => {
+                let contractName = "Contrato";
+                try {
+                  const { data } = await supabase.from("contracts").select("name").eq("id", contractId).maybeSingle();
+                  if (data?.name) contractName = data.name;
+                } catch {}
+                await exportGanttToPDF(taskTree, tasks, holidays, {
+                  contractName,
+                  timelineName: timeline.name,
+                  hideCompleted,
+                });
+              }}
             />
           </TabsContent>
 
