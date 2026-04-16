@@ -629,13 +629,57 @@ export function GanttChart({
     }
   }, [barDragMode, handleBarMouseMove, handleBarMouseUp]);
 
+  // Check if any descendant in the tree depends on this task (incoming for someone else)
+  const hasOutgoingDependents = useCallback((taskId: string) => {
+    return tasks.some((t) => t.dependencies?.some((d) => d.depends_on_task_id === taskId));
+  }, [tasks]);
+
+  const hasIncomingDependencies = useCallback((taskId: string) => {
+    const t = tasks.find((x) => x.id === taskId);
+    return !!(t?.dependencies && t.dependencies.length > 0);
+  }, [tasks]);
+
+  const performDateUpdate = async (
+    taskId: string,
+    field: "start_date" | "end_date",
+    value: string,
+    options?: { skipPropagation?: boolean; breakDependencies?: boolean }
+  ) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+
+    const updates: Partial<GanttTask> = { [field]: value };
+    if (field === "start_date" && value && task.duration_days) {
+      const endDate = calculateEndDate(value, task.duration_days, task.duration_type as "calendar" | "business", holidays);
+      updates.end_date = format(endDate, "yyyy-MM-dd");
+    } else if (field === "end_date" && value && task.duration_days) {
+      const startDate = calculateStartDate(value, task.duration_days, task.duration_type as "calendar" | "business", holidays);
+      updates.start_date = format(startDate, "yyyy-MM-dd");
+    }
+    await onUpdateTask(taskId, updates, options);
+  };
+
   const handleUpdateTaskField = async (taskId: string, field: string, value: any) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
 
-    const updates: Partial<GanttTask> = { [field]: value };
+    // Date-field edits with dependencies → ask the user
+    if ((field === "start_date" || field === "end_date") && value) {
+      const outgoing = hasOutgoingDependents(taskId);
+      const incoming = hasIncomingDependencies(taskId);
+      if (outgoing || incoming) {
+        setPendingDateEdit({
+          taskId,
+          field: field as "start_date" | "end_date",
+          newDate: value,
+          hasOutgoing: outgoing,
+          hasIncoming: incoming,
+        });
+        return;
+      }
+    }
 
-    // Auto-calculate dates when updating
+    const updates: Partial<GanttTask> = { [field]: value };
     if (field === "start_date" && value && task.duration_days) {
       const endDate = calculateEndDate(value, task.duration_days, task.duration_type as "calendar" | "business", holidays);
       updates.end_date = format(endDate, "yyyy-MM-dd");
@@ -648,6 +692,11 @@ export function GanttChart({
     }
 
     await onUpdateTask(taskId, updates);
+  };
+
+  const toggleTaskCompleted = async (task: GanttTask) => {
+    const newStatus = task.status === "completed" ? "pending" : "completed";
+    await onUpdateTask(task.id, { status: newStatus, progress: newStatus === "completed" ? 100 : 0 });
   };
 
   // Get unique task dates for quick selection
