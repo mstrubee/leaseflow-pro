@@ -1565,6 +1565,8 @@ export function GanttChart({
                   />
                 </div>
 
+                <div className="flex-shrink-0 border-r" style={{ width: PROGRESS_COL_WIDTH }} />
+
                 <div className="flex items-center px-2 gap-2">
                   <Button
                     size="sm"
