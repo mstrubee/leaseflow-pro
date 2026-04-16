@@ -979,13 +979,16 @@ export function GanttChart({
                   const approachX = arrow.toX - APPROACH;
                   const goesForward = approachX > arrow.fromX + 6;
 
+                  // Keep the vertical guide line close to the arrow tip so it
+                  // ALWAYS arrives horizontally to the LEFT of the arrowhead.
+                  const HORIZ_LEAD = 14; // length of the horizontal segment before the arrow tip
                   let pathD: string;
                   if (goesForward) {
-                    // Forward routing: out from parent → step → into child from left
-                    const midX = (arrow.fromX + approachX) / 2;
+                    // Forward routing: out from parent → drop just before child → short horizontal into arrow
+                    const dropX = Math.max(arrow.fromX + 6, approachX - HORIZ_LEAD);
                     pathD = `M ${arrow.fromX} ${arrow.fromY}
-                             L ${midX} ${arrow.fromY}
-                             L ${midX} ${arrow.toY}
+                             L ${dropX} ${arrow.fromY}
+                             L ${dropX} ${arrow.toY}
                              L ${arrow.toX} ${arrow.toY}`;
                   } else {
                     // Child starts before parent ends — loop around so arrow still arrives from left
@@ -994,11 +997,12 @@ export function GanttChart({
                       ? arrow.fromY + VERT_GAP
                       : arrow.fromY - VERT_GAP;
                     const exitX = arrow.fromX + 10;
+                    const dropX = approachX - HORIZ_LEAD;
                     pathD = `M ${arrow.fromX} ${arrow.fromY}
                              L ${exitX} ${arrow.fromY}
                              L ${exitX} ${detourY}
-                             L ${approachX} ${detourY}
-                             L ${approachX} ${arrow.toY}
+                             L ${dropX} ${detourY}
+                             L ${dropX} ${arrow.toY}
                              L ${arrow.toX} ${arrow.toY}`;
                   }
                   
@@ -1107,7 +1111,38 @@ export function GanttChart({
                       draggable={false}
                     />
                     {task.dependencies && task.dependencies.length > 0 && (
-                      <Link className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className="flex-shrink-0 rounded hover:bg-muted p-0.5"
+                            title="Ver tareas vinculadas"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Link className="h-3 w-3 text-muted-foreground" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 p-2 z-50 bg-popover" align="start">
+                          <p className="text-xs font-medium mb-1.5">Depende de:</p>
+                          <ul className="space-y-1">
+                            {task.dependencies.map((dep) => {
+                              const parent = tasks.find((t) => t.id === dep.depends_on_task_id);
+                              return (
+                                <li key={dep.id} className="flex items-center justify-between gap-2 text-xs">
+                                  <span className="truncate">{parent?.name ?? "Tarea desconocida"}</span>
+                                  <button
+                                    type="button"
+                                    className="text-destructive hover:underline text-[10px] flex-shrink-0"
+                                    onClick={() => onRemoveDependency(dep.id)}
+                                  >
+                                    Quitar
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </PopoverContent>
+                      </Popover>
                     )}
                     <Button
                       variant="ghost"
