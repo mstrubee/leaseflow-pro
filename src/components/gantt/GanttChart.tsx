@@ -875,7 +875,23 @@ export function GanttChart({
       const startDate = calculateStartDate(value, task.duration_days, task.duration_type as "calendar" | "business", holidays);
       updates.start_date = format(startDate, "yyyy-MM-dd");
     }
+
     await onUpdateTask(taskId, updates, options);
+
+    if (task.parent_id) {
+      await syncAncestorsDates(
+        task.parent_id,
+        new Map([
+          [
+            taskId,
+            {
+              start_date: updates.start_date ?? task.start_date,
+              end_date: updates.end_date ?? task.end_date,
+            },
+          ],
+        ])
+      );
+    }
   };
 
   const handleUpdateTaskField = async (taskId: string, field: string, value: any) => {
@@ -908,9 +924,30 @@ export function GanttChart({
     } else if (field === "duration_days" && task.start_date && value > 0) {
       const endDate = calculateEndDate(task.start_date, value, task.duration_type as "calendar" | "business", holidays);
       updates.end_date = format(endDate, "yyyy-MM-dd");
+    } else if (field === "duration_type" && task.start_date && task.duration_days > 0) {
+      const endDate = calculateEndDate(task.start_date, task.duration_days, value as "calendar" | "business", holidays);
+      updates.end_date = format(endDate, "yyyy-MM-dd");
     }
 
     await onUpdateTask(taskId, updates);
+
+    if (
+      task.parent_id &&
+      ["start_date", "end_date", "duration_days", "duration_type"].includes(field)
+    ) {
+      await syncAncestorsDates(
+        task.parent_id,
+        new Map([
+          [
+            taskId,
+            {
+              start_date: updates.start_date ?? task.start_date,
+              end_date: updates.end_date ?? task.end_date,
+            },
+          ],
+        ])
+      );
+    }
   };
 
   const toggleTaskCompleted = async (task: GanttTask) => {
