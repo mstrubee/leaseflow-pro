@@ -240,7 +240,7 @@ export function GanttChart({
   // Drag state for row reordering
   const [rowDragSource, setRowDragSource] = useState<string | null>(null);
   const [rowDragOverId, setRowDragOverId] = useState<string | null>(null);
-  const [dropPosition, setDropPosition] = useState<"above" | "below" | null>(null);
+  const [dropPosition, setDropPosition] = useState<"above" | "below" | "into" | null>(null);
   
   const ganttAreaRef = useRef<HTMLDivElement>(null);
 
