@@ -1817,6 +1817,58 @@ serve(async (req) => {
         break;
       }
 
+      case "uploadFileToRepoFolder": {
+        // Upload a file (base64) to the correct Drive folder for a repository folder
+        const { contractId: ufContractId, repoFolderId: ufRepoFolderId, fileName: ufFileName, fileContent: ufFileContent, mimeType: ufMimeType } = params;
+        if (!ufContractId || !ufRepoFolderId || !ufFileName || !ufFileContent) {
+          return new Response(JSON.stringify({ error: "contractId, repoFolderId, fileName, and fileContent are required" }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        const sbUf = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+
+        // Validate folder ownership
+        const { data: ufFolderCheck } = await sbUf
+          .from('repository_folders')
+          .select('id, contract_id')
+          .eq('id', ufRepoFolderId)
+          .single();
+
+        if (!ufFolderCheck || ufFolderCheck.contract_id !== ufContractId) {
+          return new Response(JSON.stringify({ error: "repoFolderId not owned by contract" }), {
+            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        const ufTargetDriveFolderId = await ensureDriveFolderForRepositoryFolder(
+          sbUf, accessToken, ufContractId, ufRepoFolderId,
+        );
+
+        if (!ufTargetDriveFolderId) {
+          return new Response(JSON.stringify({ error: "Could not resolve Drive folder for repo folder" }), {
+            status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
+
+        const ufBinaryContent = Uint8Array.from(atob(ufFileContent), c => c.charCodeAt(0));
+        const ufDriveFile = await uploadFileToDrive(
+          accessToken, ufFileName, ufBinaryContent,
+          ufMimeType || 'application/octet-stream', ufTargetDriveFolderId,
+        );
+
+        console.log("uploadFileToRepoFolder: success", { driveFileId: ufDriveFile.id, ufContractId });
+
+        result = {
+          id: ufDriveFile.id,
+          driveFileId: ufDriveFile.id,
+          webViewLink: ufDriveFile.webViewLink,
+          driveUrl: ufDriveFile.webViewLink || `https://drive.google.com/file/d/${ufDriveFile.id}/view`,
+          driveFolderId: ufTargetDriveFolderId,
+        };
+        break;
+      }
+
       case "uploadRepoFileFromStorage": {
         // Upload a repo file to Drive from a temporary storage:// URL (avoids base64 memory limit)
         const { contractId: repoContractId, repoFolderId: repoFolderIdStorage, fileName: repoFileName, storageUrl: repoStorageUrl, mimeType: repoMimeType } = params;
