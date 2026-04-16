@@ -110,13 +110,14 @@ interface GanttChartProps {
   tasks: GanttTask[];
   taskTree: GanttTask[];
   holidays: Array<{ date: string; name: string }>;
-  onUpdateTask: (taskId: string, updates: Partial<GanttTask>) => Promise<void>;
+  onUpdateTask: (taskId: string, updates: Partial<GanttTask>, options?: { skipPropagation?: boolean; breakDependencies?: boolean }) => Promise<void>;
   onAddTask: (name: string, parentId?: string | null, options?: Partial<GanttTask>) => Promise<any>;
   onDeleteTask: (taskId: string) => Promise<void>;
   onAddDependency: (taskId: string, dependsOnTaskId: string) => Promise<void>;
   onRemoveDependency: (dependencyId: string) => Promise<void>;
   onReorderTask: (taskId: string, newIndex: number, siblingIds: string[]) => Promise<void>;
   isAdmin?: boolean;
+  onExportPDF?: (hideCompleted: boolean) => void;
 }
 
 const DAY_WIDTH = 30;
@@ -154,10 +155,19 @@ export function GanttChart({
   onRemoveDependency,
   onReorderTask,
   isAdmin = false,
+  onExportPDF,
 }: GanttChartProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [newTaskRow, setNewTaskRow] = useState<NewTaskRow | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [hideCompleted, setHideCompleted] = useState(false);
+  const [pendingDateEdit, setPendingDateEdit] = useState<{
+    taskId: string;
+    field: "start_date" | "end_date";
+    newDate: string;
+    hasOutgoing: boolean;
+    hasIncoming: boolean;
+  } | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   
   // Drag state for creating dependencies (bar drag to another task)
