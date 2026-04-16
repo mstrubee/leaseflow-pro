@@ -173,7 +173,7 @@ interface GanttChartProps {
 
 const DAY_WIDTH = 30;
 const ROW_HEIGHT = 40;
-const TASK_NAME_WIDTH = 200;
+const TASK_NAME_WIDTH = 300;
 const DATE_COL_WIDTH = 110;
 const DURATION_COL_WIDTH = 110;
 const PROGRESS_COL_WIDTH = 80;
