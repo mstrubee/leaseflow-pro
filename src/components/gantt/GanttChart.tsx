@@ -193,6 +193,7 @@ export function GanttChart({
   onExportPDF,
 }: GanttChartProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
+  const didInitExpandRef = useRef(false);
   const [newTaskRow, setNewTaskRow] = useState<NewTaskRow | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [hideCompleted, setHideCompleted] = useState(false);
