@@ -1021,8 +1021,8 @@ export function GanttChart({
 
                   // Keep the vertical guide line close to the arrow tip so it
                   // ALWAYS arrives horizontally to the LEFT of the arrowhead.
-                  const HORIZ_LEAD = 14; // length of the horizontal segment before the arrow tip
-                  const SOURCE_LEAD = 12; // ensure the guide always exits horizontally to the right
+                  const HORIZ_LEAD = 56; // length of the horizontal segment before the arrow tip (was 14, +300%)
+                  const SOURCE_LEAD = 48; // ensure the guide always exits horizontally to the right (was 12, +300%)
                   let pathD: string;
                   if (goesForward) {
                     // Forward routing: ALWAYS exit the source with a small horizontal segment to the right,
