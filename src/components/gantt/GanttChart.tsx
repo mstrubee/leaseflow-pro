@@ -230,6 +230,30 @@ export function GanttChart({
     });
   };
 
+  const allParentTaskIds = useMemo(() => {
+    const ids: string[] = [];
+    const collect = (list: GanttTask[]) => {
+      list.forEach((t) => {
+        if (t.children && t.children.length > 0) {
+          ids.push(t.id);
+          collect(t.children);
+        }
+      });
+    };
+    collect(taskTree);
+    return ids;
+  }, [taskTree]);
+
+  const allExpanded = allParentTaskIds.length > 0 && allParentTaskIds.every((id) => expandedTasks.has(id));
+
+  const toggleExpandAll = () => {
+    if (allExpanded) {
+      setExpandedTasks(new Set());
+    } else {
+      setExpandedTasks(new Set(allParentTaskIds));
+    }
+  };
+
   const visibleTasks = useMemo(() => {
     const result: Array<{ task: GanttTask; level: number }> = [];
     
