@@ -1,0 +1,1 @@
+ALTER TABLE public.gantt_tasks ADD COLUMN IF NOT EXISTS color TEXT;

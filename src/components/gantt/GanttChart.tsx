@@ -6,7 +6,7 @@ import { format, differenceInDays, parseISO, eachDayOfInterval, isWeekend, addDa
 import { es } from "date-fns/locale";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical, CheckCircle2, Eye, EyeOff, FileDown } from "lucide-react";
+import { ChevronDown, ChevronRight, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical, CheckCircle2, Eye, EyeOff, FileDown, Palette } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,12 +17,45 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+
+// Predefined color palette for Gantt task bars
+const TASK_COLORS: Array<{ name: string; value: string }> = [
+  { name: "Azul", value: "#3b82f6" },
+  { name: "Verde", value: "#10b981" },
+  { name: "Naranjo", value: "#f97316" },
+  { name: "Rojo", value: "#ef4444" },
+  { name: "Morado", value: "#8b5cf6" },
+  { name: "Rosa", value: "#ec4899" },
+  { name: "Amarillo", value: "#eab308" },
+  { name: "Cian", value: "#06b6d4" },
+  { name: "Gris", value: "#64748b" },
+];
+
+// Lighten a hex color by mixing with white. amount = 0..1
+function lightenHex(hex: string, amount: number): string {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  const lr = Math.round(r + (255 - r) * amount);
+  const lg = Math.round(g + (255 - g) * amount);
+  const lb = Math.round(b + (255 - b) * amount);
+  return `#${lr.toString(16).padStart(2, "0")}${lg.toString(16).padStart(2, "0")}${lb.toString(16).padStart(2, "0")}`;
+}
 
 type BarDragMode = "move" | "resize-left" | "resize-right" | "dependency" | null;
 
@@ -702,6 +735,28 @@ export function GanttChart({
     await onUpdateTask(task.id, { status: newStatus, progress: newStatus === "completed" ? 100 : 0 });
   };
 
+  // Map id -> task for parent lookups
+  const taskById = useMemo(() => {
+    const m = new Map<string, GanttTask>();
+    tasks.forEach((t) => m.set(t.id, t));
+    return m;
+  }, [tasks]);
+
+  // Resolve effective color: own color, else inherit from nearest ancestor (lightened 50% per generation gap)
+  const getEffectiveColor = useCallback((task: GanttTask): { color: string | null; inherited: boolean } => {
+    if (task.color) return { color: task.color, inherited: false };
+    let current = task.parent_id ? taskById.get(task.parent_id) : null;
+    while (current) {
+      if (current.color) return { color: lightenHex(current.color, 0.5), inherited: true };
+      current = current.parent_id ? taskById.get(current.parent_id) : null;
+    }
+    return { color: null, inherited: false };
+  }, [taskById]);
+
+  const handleSetColor = async (taskId: string, color: string | null) => {
+    await onUpdateTask(taskId, { color } as Partial<GanttTask>, { skipPropagation: true });
+  };
+
   // Get unique task dates for quick selection
   const taskDates = useMemo(() => {
     const dates: Array<{ date: string; taskName: string; type: "start" | "end" }> = [];
@@ -970,25 +1025,27 @@ export function GanttChart({
               const hasChildren = task.children && task.children.length > 0;
               const isExpanded = expandedTasks.has(task.id);
               const position = getTaskPosition(task);
+              const effective = getEffectiveColor(task);
               
               return (
-                <div
-                  key={task.id}
-                  draggable
-                  onDragStart={(e) => handleRowDragStart(e, task.id)}
-                  onDragOver={(e) => handleRowDragOver(e, task.id)}
-                  onDragLeave={handleRowDragLeave}
-                  onDrop={handleRowDrop}
-                  onDragEnd={handleRowDragEnd}
-                  className={cn(
-                    "flex border-b hover:bg-muted/20 transition-colors group",
-                    rowDragSource === task.id && "opacity-50 bg-muted",
-                    rowDragOverId === task.id && dropPosition === "above" && "border-t-2 border-t-primary",
-                    rowDragOverId === task.id && dropPosition === "below" && "border-b-2 border-b-primary",
-                    task.status === "completed" && "bg-muted/30"
-                  )}
-                  style={{ height: ROW_HEIGHT }}
-                >
+                <ContextMenu key={task.id}>
+                  <ContextMenuTrigger asChild>
+                    <div
+                      draggable
+                      onDragStart={(e) => handleRowDragStart(e, task.id)}
+                      onDragOver={(e) => handleRowDragOver(e, task.id)}
+                      onDragLeave={handleRowDragLeave}
+                      onDrop={handleRowDrop}
+                      onDragEnd={handleRowDragEnd}
+                      className={cn(
+                        "flex border-b hover:bg-muted/20 transition-colors group",
+                        rowDragSource === task.id && "opacity-50 bg-muted",
+                        rowDragOverId === task.id && dropPosition === "above" && "border-t-2 border-t-primary",
+                        rowDragOverId === task.id && dropPosition === "below" && "border-b-2 border-b-primary",
+                        task.status === "completed" && "bg-muted/30"
+                      )}
+                      style={{ height: ROW_HEIGHT }}
+                    >
                   {/* Drag handle */}
                   <div className="flex-shrink-0 flex items-center justify-center w-6 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity">
                     <GripVertical className="h-4 w-4 text-muted-foreground" />
@@ -1139,13 +1196,14 @@ export function GanttChart({
                             <div
                               className={cn(
                                 "absolute top-1.5 rounded h-6 transition-all shadow-sm group/bar",
-                                getTaskStatusColor(task.status, task.end_date),
+                                !effective.color && getTaskStatusColor(task.status, task.end_date),
                                 dragSource === task.id && "opacity-50 ring-2 ring-primary",
                                 barDragTaskId === task.id && "ring-2 ring-primary"
                               )}
                               style={{
                                 left: position.left,
                                 width: Math.max(position.width - 4, 8),
+                                ...(effective.color ? { backgroundColor: effective.color } : {}),
                               }}
                             >
                               {/* Left resize handle */}
@@ -1208,7 +1266,37 @@ export function GanttChart({
                       </TooltipProvider>
                     )}
                   </div>
-                </div>
+                    </div>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent className="w-48 bg-popover z-50">
+                    <ContextMenuLabel className="flex items-center gap-2 text-xs">
+                      <Palette className="h-3 w-3" /> Color de la tarea
+                    </ContextMenuLabel>
+                    <ContextMenuSeparator />
+                    <div className="grid grid-cols-5 gap-1 p-2">
+                      {TASK_COLORS.map((c) => (
+                        <button
+                          key={c.value}
+                          type="button"
+                          title={c.name}
+                          onClick={() => handleSetColor(task.id, c.value)}
+                          className={cn(
+                            "h-6 w-6 rounded-md border border-border hover:scale-110 transition-transform",
+                            task.color === c.value && "ring-2 ring-foreground ring-offset-1 ring-offset-popover"
+                          )}
+                          style={{ backgroundColor: c.value }}
+                        />
+                      ))}
+                    </div>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      className="text-xs"
+                      onClick={() => handleSetColor(task.id, null)}
+                    >
+                      Quitar color {task.parent_id ? "(heredar del padre)" : "(predeterminado)"}
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
               );
             })}
 

@@ -19,6 +19,7 @@ export interface GanttTask {
   lag_days: number;
   lag_type: "calendar" | "business";
   notes: string | null;
+  color: string | null;
   display_order: number;
   created_at: string;
   updated_at: string;
