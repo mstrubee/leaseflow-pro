@@ -1111,7 +1111,38 @@ export function GanttChart({
                       draggable={false}
                     />
                     {task.dependencies && task.dependencies.length > 0 && (
-                      <Link className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className="flex-shrink-0 rounded hover:bg-muted p-0.5"
+                            title="Ver tareas vinculadas"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Link className="h-3 w-3 text-muted-foreground" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 p-2 z-50 bg-popover" align="start">
+                          <p className="text-xs font-medium mb-1.5">Depende de:</p>
+                          <ul className="space-y-1">
+                            {task.dependencies.map((dep) => {
+                              const parent = tasks.find((t) => t.id === dep.depends_on_task_id);
+                              return (
+                                <li key={dep.id} className="flex items-center justify-between gap-2 text-xs">
+                                  <span className="truncate">{parent?.name ?? "Tarea desconocida"}</span>
+                                  <button
+                                    type="button"
+                                    className="text-destructive hover:underline text-[10px] flex-shrink-0"
+                                    onClick={() => onRemoveDependency(dep.id)}
+                                  >
+                                    Quitar
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </PopoverContent>
+                      </Popover>
                     )}
                     <Button
                       variant="ghost"
