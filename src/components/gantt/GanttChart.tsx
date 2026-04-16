@@ -509,6 +509,10 @@ export function GanttChart({
           duration_type: newTaskRow.duration_type,
         }
       );
+      // If new task is a child, extend ancestors to fit (min/max)
+      if (newTaskRow.parent_id && newTaskRow.start_date && newTaskRow.end_date) {
+        await syncAncestorsDates(newTaskRow.parent_id);
+      }
       setNewTaskRow(createEmptyNewTask());
     } finally {
       setIsSaving(false);
