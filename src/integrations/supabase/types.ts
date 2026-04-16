@@ -1892,6 +1892,7 @@ export type Database = {
       }
       gantt_tasks: {
         Row: {
+          color: string | null
           created_at: string
           display_order: number | null
           duration_days: number | null
@@ -1912,6 +1913,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          color?: string | null
           created_at?: string
           display_order?: number | null
           duration_days?: number | null
@@ -1932,6 +1934,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          color?: string | null
           created_at?: string
           display_order?: number | null
           duration_days?: number | null
