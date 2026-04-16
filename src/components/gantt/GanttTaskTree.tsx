@@ -10,7 +10,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Badge } from "@/components/ui/badge";
 import { 
   Plus, ChevronDown, ChevronRight, Trash2, Edit, Link, Unlink, 
-  Calendar, FileText, Loader2, ShoppingCart 
+  Calendar, FileText, Loader2, ShoppingCart, CheckCircle2, Eye, EyeOff, FileDown
 } from "lucide-react";
 import { formatGanttDate, calculateEndDate, calculateStartDate } from "@/lib/ganttDateUtils";
 import { cn } from "@/lib/utils";
@@ -29,6 +29,7 @@ interface GanttTaskTreeProps {
   onRemoveDependency: (dependencyId: string) => Promise<void>;
   onLinkPurchaseOrder: (taskId: string, purchaseOrderId: string) => Promise<void>;
   onUnlinkPurchaseOrder: (linkId: string) => Promise<void>;
+  onExportPDF?: (hideCompleted: boolean) => void;
 }
 
 export function GanttTaskTree({
@@ -43,7 +44,15 @@ export function GanttTaskTree({
   onRemoveDependency,
   onLinkPurchaseOrder,
   onUnlinkPurchaseOrder,
+  onExportPDF,
 }: GanttTaskTreeProps) {
+  const [hideCompleted, setHideCompleted] = useState(false);
+
+  const toggleCompleted = async (task: GanttTask) => {
+    const newStatus = task.status === "completed" ? "pending" : "completed";
+    await onUpdateTask(task.id, { status: newStatus as any, progress: newStatus === "completed" ? 100 : 0 });
+  };
+
   const [addTaskDialogOpen, setAddTaskDialogOpen] = useState(false);
   const [editTaskDialogOpen, setEditTaskDialogOpen] = useState(false);
   const [dependencyDialogOpen, setDependencyDialogOpen] = useState(false);
