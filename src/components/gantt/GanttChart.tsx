@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 // Predefined color palette for Gantt task bars
 const TASK_COLORS: Array<{ name: string; value: string }> = [
@@ -1213,17 +1214,38 @@ export function GanttChart({
                             <Link className="h-3 w-3 text-muted-foreground" />
                           </button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-64 p-2 z-50 bg-popover" align="start">
+                        <PopoverContent className="w-72 p-2 z-50 bg-popover" align="start">
                           <p className="text-xs font-medium mb-1.5">Depende de:</p>
-                          <ul className="space-y-1">
+                          <ul className="space-y-2">
                             {task.dependencies.map((dep) => {
-                              const parent = tasks.find((t) => t.id === dep.depends_on_task_id);
+                              const currentDeps = task.dependencies?.map((d) => d.depends_on_task_id) ?? [];
+                              const options = tasks
+                                .filter(
+                                  (t) =>
+                                    t.id !== task.id &&
+                                    (t.id === dep.depends_on_task_id || !currentDeps.includes(t.id))
+                                )
+                                .map((t) => ({ value: t.id, label: t.name }));
                               return (
-                                <li key={dep.id} className="flex items-center justify-between gap-2 text-xs">
-                                  <span className="truncate">{parent?.name ?? "Tarea desconocida"}</span>
+                                <li key={dep.id} className="flex items-center gap-1">
+                                  <div className="flex-1 min-w-0">
+                                    <SearchableSelect
+                                      value={dep.depends_on_task_id}
+                                      onValueChange={async (newParentId) => {
+                                        if (newParentId && newParentId !== dep.depends_on_task_id) {
+                                          await onRemoveDependency(dep.id);
+                                          await onAddDependency(task.id, newParentId);
+                                        }
+                                      }}
+                                      options={options}
+                                      placeholder="Seleccionar tarea..."
+                                      searchPlaceholder="Buscar tarea..."
+                                      triggerClassName="h-7 text-xs"
+                                    />
+                                  </div>
                                   <button
                                     type="button"
-                                    className="text-destructive hover:underline text-[10px] flex-shrink-0"
+                                    className="text-destructive hover:underline text-[10px] flex-shrink-0 px-1"
                                     onClick={() => onRemoveDependency(dep.id)}
                                   >
                                     Quitar
