@@ -1027,8 +1027,11 @@ export function GanttChart({
                   if (goesForward) {
                     // Forward routing: ALWAYS exit the source with a small horizontal segment to the right,
                     // then drop vertically, then horizontal into the arrow tip.
+                    // Also ensure the drop happens far enough LEFT of the arrow tip so the
+                    // final horizontal lead-in into the arrowhead is always visible.
                     const minDropX = arrow.fromX + SOURCE_LEAD;
-                    const dropX = Math.max(approachX - HORIZ_LEAD, minDropX);
+                    const maxDropX = arrow.toX - HORIZ_LEAD;
+                    const dropX = Math.min(Math.max(approachX - HORIZ_LEAD, minDropX), maxDropX);
                     pathD = `M ${arrow.fromX} ${arrow.fromY}
                              L ${dropX} ${arrow.fromY}
                              L ${dropX} ${arrow.toY}
