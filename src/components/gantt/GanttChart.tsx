@@ -193,6 +193,7 @@ export function GanttChart({
   onExportPDF,
 }: GanttChartProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
+  const didInitExpandRef = useRef(false);
   const [newTaskRow, setNewTaskRow] = useState<NewTaskRow | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [hideCompleted, setHideCompleted] = useState(false);
@@ -298,6 +299,16 @@ export function GanttChart({
     collect(taskTree);
     return ids;
   }, [taskTree]);
+
+  // Default view: fully expanded — only initialize once when tasks first arrive,
+  // so subsequent updates (date edits, completion toggles, etc.) preserve the
+  // user's current expanded/collapsed state.
+  useEffect(() => {
+    if (!didInitExpandRef.current && allParentTaskIds.length > 0) {
+      setExpandedTasks(new Set(allParentTaskIds));
+      didInitExpandRef.current = true;
+    }
+  }, [allParentTaskIds]);
 
   const allExpanded = allParentTaskIds.length > 0 && allParentTaskIds.every((id) => expandedTasks.has(id));
 
@@ -870,17 +881,17 @@ export function GanttChart({
                       <TooltipTrigger asChild>
                         <div
                           className={cn(
-                            "flex-shrink-0 text-center text-xs py-1 border-r",
+                            "flex-shrink-0 text-right pr-1 text-xs py-1 border-r",
                             isWeekendDay && "bg-muted/80",
                             isHoliday && "bg-red-100 dark:bg-red-900/20",
                             isToday && "bg-primary/10 font-bold"
                           )}
                           style={{ width: DAY_WIDTH }}
                         >
-                          <div className="font-medium text-[10px]">
+                          <div className="font-medium text-[10px] leading-tight">
                             {format(day, "d")}
                           </div>
-                          <div className="text-muted-foreground text-[8px]">
+                          <div className="text-muted-foreground text-[8px] leading-tight">
                             {format(day, "EEE", { locale: es })}
                           </div>
                         </div>
