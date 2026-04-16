@@ -33,6 +33,21 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
+// Auto-progress based on today's date vs task start/end
+function computeAutoProgress(task: GanttTask): number {
+  if (!task.start_date || !task.end_date) return 0;
+  const start = parseISO(task.start_date).getTime();
+  const end = parseISO(task.end_date).getTime();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const now = today.getTime();
+  if (now <= start) return 0;
+  if (now >= end) return 100;
+  const total = end - start;
+  if (total <= 0) return 0;
+  return Math.round(((now - start) / total) * 100);
+}
+
 // Predefined color palette for Gantt task bars
 const TASK_COLORS: Array<{ name: string; value: string }> = [
   { name: "Azul", value: "#3b82f6" },
