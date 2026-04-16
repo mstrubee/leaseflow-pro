@@ -1535,17 +1535,21 @@ export function GanttChart({
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
+                            {(() => {
+                              const effectiveProgress = task.progress && task.progress > 0 ? task.progress : computeAutoProgress(task);
+                              const isComplete = effectiveProgress >= 100;
+                              const progressColor = isComplete ? "hsl(142 71% 45%)" : "hsl(217 91% 60%)";
+                              return (
                             <div
                               className={cn(
                                 "absolute top-1.5 rounded h-6 transition-all shadow-sm group/bar",
-                                !effective.color && getTaskStatusColor(task.status, task.end_date),
                                 dragSource === task.id && "opacity-50 ring-2 ring-primary",
                                 barDragTaskId === task.id && "ring-2 ring-primary"
                               )}
                               style={{
                                 left: position.left,
                                 width: Math.max(position.width - 4, 8),
-                                ...(effective.color ? { backgroundColor: effective.color } : {}),
+                                backgroundColor: progressColor,
                               }}
                             >
                               {/* Left resize handle */}
@@ -1575,22 +1579,6 @@ export function GanttChart({
                                 onMouseDown={(e) => handleBarMouseDown(e, task, "resize-right")}
                               />
                               
-                              {/* Progress indicator (blue < 100%, green at 100%) */}
-                              {(() => {
-                                const effectiveProgress = task.progress && task.progress > 0 ? task.progress : computeAutoProgress(task);
-                                if (effectiveProgress <= 0) return null;
-                                const isComplete = effectiveProgress >= 100;
-                                return (
-                                  <div
-                                    className={cn(
-                                      "absolute inset-y-0 left-0 rounded-l pointer-events-none",
-                                      isComplete ? "bg-green-500/80" : "bg-blue-500/80"
-                                    )}
-                                    style={{ width: `${effectiveProgress}%` }}
-                                  />
-                                );
-                              })()}
-                              
                               {/* Completed indicator: green line at bottom */}
                               {task.status === "completed" && (
                                 <div className="absolute left-0 right-0 -bottom-1 h-1 bg-green-500 rounded-b pointer-events-none" />
@@ -1601,6 +1589,8 @@ export function GanttChart({
                                 {position.width > 60 ? task.name : ""}
                               </span>
                             </div>
+                              );
+                            })()}
                           </TooltipTrigger>
                           <TooltipContent>
                             <div className="space-y-1">
