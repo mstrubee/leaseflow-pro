@@ -400,12 +400,12 @@ export function GanttChart({
         const parentPosition = getTaskPosition(parentTask);
         if (!parentPosition.visible) return;
 
-        // Shift the whole arrow a few px to the RIGHT so it starts just to the
-        // right of the vertical guide line, and the arrowhead lands ~50% over
-        // the dependent task bar.
-        const fromX = HEADER_OFFSET + parentPosition.left + parentPosition.width + 3;
+        // Shift the whole arrow to the RIGHT so it starts just to the right of
+        // the parent's vertical edge, and the arrowhead lands ~50% over the
+        // dependent task bar.
+        const fromX = HEADER_OFFSET + parentPosition.left + parentPosition.width + 8;
         const fromY = parentRowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
-        const toX = HEADER_OFFSET + taskPosition.left + 10;
+        const toX = HEADER_OFFSET + taskPosition.left + Math.min(Math.max(taskPosition.width / 2, 10), 24);
         const toY = rowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
 
         arrows.push({
@@ -1267,6 +1267,11 @@ export function GanttChart({
                                 />
                               )}
                               
+                              {/* Completed indicator: green line at bottom */}
+                              {task.status === "completed" && (
+                                <div className="absolute left-0 right-0 -bottom-1 h-1 bg-green-500 rounded-b pointer-events-none" />
+                              )}
+
                               {/* Task name */}
                               <span className="absolute inset-0 flex items-center justify-center text-[10px] text-white font-medium truncate px-3 pointer-events-none">
                                 {position.width > 60 ? task.name : ""}
