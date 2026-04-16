@@ -1860,6 +1860,61 @@ export function GanttChart({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Change parent dialog */}
+      <Dialog open={!!parentDialogTaskId} onOpenChange={(o) => { if (!o) setParentDialogTaskId(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cambiar tarea padre</DialogTitle>
+            <DialogDescription>
+              Selecciona la nueva tarea padre. Elige "(Sin padre)" para convertirla en tarea raíz.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            {(() => {
+              const currentTask = tasks.find((t) => t.id === parentDialogTaskId);
+              const isDescendantOf = (ancestorId: string, candidateId: string): boolean => {
+                let current = tasks.find((t) => t.id === candidateId);
+                while (current?.parent_id) {
+                  if (current.parent_id === ancestorId) return true;
+                  current = tasks.find((t) => t.id === current!.parent_id);
+                }
+                return false;
+              };
+              const options = [
+                { value: "__root__", label: "(Sin padre — tarea raíz)" },
+                ...tasks
+                  .filter((t) =>
+                    parentDialogTaskId
+                      ? t.id !== parentDialogTaskId && !isDescendantOf(parentDialogTaskId, t.id)
+                      : true
+                  )
+                  .map((t) => ({ value: t.id, label: t.name })),
+              ];
+              return (
+                <>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Tarea: <strong>{currentTask?.name}</strong>
+                  </p>
+                  <SearchableSelect
+                    value={parentDialogValue}
+                    onValueChange={setParentDialogValue}
+                    options={options}
+                    placeholder="Buscar tarea padre..."
+                    searchPlaceholder="Escribe para buscar..."
+                  />
+                </>
+              );
+            })()}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setParentDialogTaskId(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleChangeParent}>Aplicar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
