@@ -1486,7 +1486,7 @@ export function GanttChart({
                               <p className="text-xs">
                                 Duración: {task.duration_days} días ({task.duration_type === "business" ? "hábiles" : "corridos"})
                               </p>
-                              <p className="text-xs">Progreso: {task.progress}%</p>
+                              <p className="text-xs">Progreso: {task.progress ?? computeAutoProgress(task)}%{task.progress == null ? " (auto)" : ""}</p>
                               <p className="text-xs text-muted-foreground mt-1">
                                 Arrastra bordes para cambiar fechas • Centro para mover • A otra tarea para dependencia
                               </p>
