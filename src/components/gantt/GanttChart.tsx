@@ -1229,21 +1229,24 @@ export function GanttChart({
                       onDragStart={(e) => e.stopPropagation()}
                       draggable={false}
                     />
-                    {task.dependencies && task.dependencies.length > 0 && (
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <button
-                            type="button"
-                            className="flex-shrink-0 rounded hover:bg-muted p-0.5"
-                            title="Ver tareas vinculadas"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Link className="h-3 w-3 text-muted-foreground" />
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-72 p-2 z-50 bg-popover" align="start">
-                          <p className="text-xs font-medium mb-1.5">Depende de:</p>
-                          <ul className="space-y-2">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          className={cn(
+                            "flex-shrink-0 rounded hover:bg-muted p-0.5",
+                            !(task.dependencies && task.dependencies.length > 0) && "opacity-0 group-hover:opacity-100"
+                          )}
+                          title={task.dependencies && task.dependencies.length > 0 ? "Ver/editar dependencias" : "Agregar dependencia"}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Link className="h-3 w-3 text-muted-foreground" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-72 p-2 z-50 bg-popover" align="start">
+                        <p className="text-xs font-medium mb-1.5">Depende de:</p>
+                        {task.dependencies && task.dependencies.length > 0 ? (
+                          <ul className="space-y-2 mb-2">
                             {task.dependencies.map((dep) => {
                               const currentDeps = task.dependencies?.map((d) => d.depends_on_task_id) ?? [];
                               const options = tasks
@@ -1281,9 +1284,34 @@ export function GanttChart({
                               );
                             })}
                           </ul>
-                        </PopoverContent>
-                      </Popover>
-                    )}
+                        ) : (
+                          <p className="text-[11px] text-muted-foreground mb-2">Sin dependencias</p>
+                        )}
+                        <div className="border-t pt-2">
+                          <p className="text-[11px] font-medium mb-1">Agregar dependencia:</p>
+                          {(() => {
+                            const currentDeps = task.dependencies?.map((d) => d.depends_on_task_id) ?? [];
+                            const addOptions = tasks
+                              .filter((t) => t.id !== task.id && !currentDeps.includes(t.id))
+                              .map((t) => ({ value: t.id, label: t.name }));
+                            return (
+                              <SearchableSelect
+                                value=""
+                                onValueChange={async (newParentId) => {
+                                  if (newParentId) {
+                                    await onAddDependency(task.id, newParentId);
+                                  }
+                                }}
+                                options={addOptions}
+                                placeholder="Buscar tarea predecesora..."
+                                searchPlaceholder="Buscar tarea..."
+                                triggerClassName="h-7 text-xs"
+                              />
+                            );
+                          })()}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                     <Button
                       variant="ghost"
                       size="sm"
