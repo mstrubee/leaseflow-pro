@@ -1472,7 +1472,11 @@ export function GanttChart({
                       variant="ghost"
                       size="sm"
                       className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 flex-shrink-0"
-                      onClick={() => onDeleteTask(task.id)}
+                      onClick={async () => {
+                        const parentId = task.parent_id;
+                        await onDeleteTask(task.id);
+                        if (parentId) await syncAncestorsDates(parentId);
+                      }}
                     >
                       <Trash2 className="h-3 w-3 text-destructive" />
                     </Button>
