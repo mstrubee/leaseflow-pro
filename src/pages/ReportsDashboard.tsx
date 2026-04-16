@@ -7,6 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Checkbox } from "@/components/ui/checkbox";
 import { MaintenanceReports } from "@/components/maintenance/MaintenanceReports";
 import { SupplierReports } from "@/components/suppliers/SupplierReports";
+import { GanttReportsSection } from "@/components/gantt/GanttReportsSection";
 import { ContractRowSelector } from "@/components/contracts/ContractRowSelector";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
@@ -1585,6 +1586,9 @@ const ReportsDashboard = () => {
             </CollapsibleContent>
           </Card>
         </Collapsible>
+
+        {/* Gantt Charts General View */}
+        <GanttReportsSection />
 
         {/* Maintenance Reports Section */}
         <Collapsible open={isMaintenanceSectionOpen} onOpenChange={setMaintenanceSectionOpen}>
