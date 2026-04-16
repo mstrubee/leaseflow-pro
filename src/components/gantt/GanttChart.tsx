@@ -1325,6 +1325,44 @@ export function GanttChart({
         </div>
         <ScrollBar orientation="horizontal" />
       </ScrollArea>
+
+      <AlertDialog open={!!pendingDateEdit} onOpenChange={(o) => { if (!o) setPendingDateEdit(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Esta tarea tiene dependencias</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDateEdit?.hasOutgoing && pendingDateEdit?.hasIncoming
+                ? "Otras tareas dependen de esta y esta también depende de otras. ¿Quieres mover solo esta tarea (rompiendo las dependencias) o mover también las tareas dependientes en cascada?"
+                : pendingDateEdit?.hasOutgoing
+                ? "Hay tareas que dependen de esta. ¿Quieres mover solo esta (rompiendo el vínculo con sus dependientes) o mover también las dependientes en cascada?"
+                : "Esta tarea depende de otra. ¿Quieres mover solo esta tarea (rompiendo el vínculo con su predecesora) o mantener la dependencia?"}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!pendingDateEdit) return;
+                const p = pendingDateEdit;
+                setPendingDateEdit(null);
+                await performDateUpdate(p.taskId, p.field, p.newDate, { skipPropagation: true, breakDependencies: true });
+              }}
+            >
+              Solo esta (romper dependencias)
+            </AlertDialogAction>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!pendingDateEdit) return;
+                const p = pendingDateEdit;
+                setPendingDateEdit(null);
+                await performDateUpdate(p.taskId, p.field, p.newDate);
+              }}
+            >
+              Mover en cascada
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
