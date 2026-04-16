@@ -400,12 +400,12 @@ export function GanttChart({
         const parentPosition = getTaskPosition(parentTask);
         if (!parentPosition.visible) return;
 
-        // Arrow from parent end to child start
-        const fromX = HEADER_OFFSET + parentPosition.left + parentPosition.width - 4;
+        // Shift the whole arrow a few px to the RIGHT so it starts just to the
+        // right of the vertical guide line, and the arrowhead lands ~50% over
+        // the dependent task bar.
+        const fromX = HEADER_OFFSET + parentPosition.left + parentPosition.width + 3;
         const fromY = parentRowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
-        // End slightly to the RIGHT of the bar's left edge so the arrowhead
-        // visibly points from the vertical edge towards the bar (not on top of it).
-        const toX = HEADER_OFFSET + taskPosition.left + 6;
+        const toX = HEADER_OFFSET + taskPosition.left + 10;
         const toY = rowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
 
         arrows.push({
