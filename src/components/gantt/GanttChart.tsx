@@ -1627,19 +1627,19 @@ export function GanttChart({
               <div
                 className="flex items-center border-b hover:bg-muted/20 cursor-pointer transition-colors"
                 style={{ height: ROW_HEIGHT }}
-                onClick={handleAddNewRow}
+                onClick={() => handleAddNewRow(null)}
               >
                 <div className="flex-shrink-0 w-6" /> {/* Grip handle space */}
                 <div className="flex items-center gap-2 px-3 text-muted-foreground">
                   <Plus className="h-4 w-4" />
-                  <span className="text-sm">Agregar tarea...</span>
+                  <span className="text-sm">Agregar tarea padre...</span>
                 </div>
               </div>
             )}
 
             {visibleTasks.length === 0 && !newTaskRow && (
               <div className="p-8 text-center text-muted-foreground">
-                Haz clic en "Agregar tarea..." para comenzar
+                Haz clic en "Agregar tarea padre..." para comenzar
               </div>
             )}
           </div>
