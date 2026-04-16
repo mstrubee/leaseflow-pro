@@ -1702,6 +1702,13 @@ export function GanttChart({
                     >
                       Quitar color {task.parent_id ? "(heredar del padre)" : "(predeterminado)"}
                     </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      className="text-xs"
+                      onClick={() => openParentDialog(task.id)}
+                    >
+                      Cambiar tarea padre…
+                    </ContextMenuItem>
                   </ContextMenuContent>
                 </ContextMenu>
               );
