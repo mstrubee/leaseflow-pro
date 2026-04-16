@@ -745,7 +745,47 @@ export function GanttChart({
 
   const toggleTaskCompleted = async (task: GanttTask) => {
     const newStatus = task.status === "completed" ? "pending" : "completed";
-    await onUpdateTask(task.id, { status: newStatus, progress: newStatus === "completed" ? 100 : 0 });
+    const newProgress = newStatus === "completed" ? 100 : 0;
+
+    // Collect all descendants recursively
+    const collectDescendants = (parentId: string): GanttTask[] => {
+      const direct = tasks.filter((t) => t.parent_id === parentId);
+      return direct.flatMap((c) => [c, ...collectDescendants(c.id)]);
+    };
+
+    // 1. Update the task itself
+    await onUpdateTask(task.id, { status: newStatus, progress: newProgress });
+
+    // 2. Cascade DOWN: update all descendants to match
+    const descendants = collectDescendants(task.id);
+    await Promise.all(
+      descendants
+        .filter((d) => d.status !== newStatus)
+        .map((d) => onUpdateTask(d.id, { status: newStatus, progress: newProgress }))
+    );
+
+    // 3. Cascade UP: walk ancestors; if all siblings are completed, mark parent completed.
+    //    If any sibling is not completed, mark parent pending.
+    let currentParentId = task.parent_id;
+    while (currentParentId) {
+      const parent = tasks.find((t) => t.id === currentParentId);
+      if (!parent) break;
+      const siblings = tasks.filter((t) => t.parent_id === currentParentId);
+      // Account for the changes we just applied (task + descendants)
+      const updatedIds = new Set<string>([task.id, ...descendants.map((d) => d.id)]);
+      const allCompleted = siblings.every((s) =>
+        updatedIds.has(s.id) ? newStatus === "completed" : s.status === "completed"
+      );
+      const desiredParentStatus = allCompleted ? "completed" : "pending";
+      const desiredParentProgress = allCompleted ? 100 : 0;
+      if (parent.status !== desiredParentStatus) {
+        await onUpdateTask(parent.id, { status: desiredParentStatus, progress: desiredParentProgress });
+        updatedIds.add(parent.id);
+      } else if (!allCompleted && newStatus === "pending" && parent.status === "completed") {
+        // already handled above
+      }
+      currentParentId = parent.parent_id;
+    }
   };
 
   // Map id -> task for parent lookups
