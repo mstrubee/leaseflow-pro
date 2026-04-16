@@ -445,8 +445,16 @@ export function GanttChart({
     return holidays.some((h) => h.date === dateStr);
   };
 
-  const handleAddNewRow = () => {
-    setNewTaskRow(createEmptyNewTask());
+  const handleAddNewRow = (parentId: string | null = null) => {
+    const empty = createEmptyNewTask();
+    setNewTaskRow({ ...empty, parent_id: parentId });
+    if (parentId) {
+      setExpandedTasks((prev) => {
+        const next = new Set(prev);
+        next.add(parentId);
+        return next;
+      });
+    }
   };
 
   const handleNewTaskChange = (field: keyof NewTaskRow, value: any) => {
@@ -1294,6 +1302,15 @@ export function GanttChart({
                       variant="ghost"
                       size="sm"
                       className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 flex-shrink-0"
+                      onClick={() => handleAddNewRow(task.id)}
+                      title="Agregar tarea hija"
+                    >
+                      <Plus className="h-3 w-3 text-primary" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 flex-shrink-0"
                       onClick={() => onDeleteTask(task.id)}
                     >
                       <Trash2 className="h-3 w-3 text-destructive" />
@@ -1619,19 +1636,19 @@ export function GanttChart({
               <div
                 className="flex items-center border-b hover:bg-muted/20 cursor-pointer transition-colors"
                 style={{ height: ROW_HEIGHT }}
-                onClick={handleAddNewRow}
+                onClick={() => handleAddNewRow(null)}
               >
                 <div className="flex-shrink-0 w-6" /> {/* Grip handle space */}
                 <div className="flex items-center gap-2 px-3 text-muted-foreground">
                   <Plus className="h-4 w-4" />
-                  <span className="text-sm">Agregar tarea...</span>
+                  <span className="text-sm">Agregar tarea padre...</span>
                 </div>
               </div>
             )}
 
             {visibleTasks.length === 0 && !newTaskRow && (
               <div className="p-8 text-center text-muted-foreground">
-                Haz clic en "Agregar tarea..." para comenzar
+                Haz clic en "Agregar tarea padre..." para comenzar
               </div>
             )}
           </div>
