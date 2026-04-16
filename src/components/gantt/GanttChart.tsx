@@ -958,23 +958,36 @@ export function GanttChart({
                   </marker>
                 </defs>
                 {dependencyArrows.map((arrow) => {
-                  // Draw a path from parent end to child start
-                  const controlOffset = Math.min(30, Math.abs(arrow.toX - arrow.fromX) / 3);
-                  
-                  // If tasks are on the same row or close, use curved path
-                  const pathD = arrow.fromY === arrow.toY
-                    ? // Same row - simple curve below
-                      `M ${arrow.fromX} ${arrow.fromY} 
-                       C ${arrow.fromX + controlOffset} ${arrow.fromY + 20}, 
-                         ${arrow.toX - controlOffset} ${arrow.toY + 20}, 
-                         ${arrow.toX} ${arrow.toY}`
-                    : // Different rows - step path with rounded corners
-                      `M ${arrow.fromX} ${arrow.fromY}
-                       L ${arrow.fromX + 10} ${arrow.fromY}
-                       Q ${arrow.fromX + 15} ${arrow.fromY}, ${arrow.fromX + 15} ${arrow.fromY + (arrow.toY > arrow.fromY ? 5 : -5)}
-                       L ${arrow.fromX + 15} ${arrow.toY + (arrow.toY > arrow.fromY ? -5 : 5)}
-                       Q ${arrow.fromX + 15} ${arrow.toY}, ${arrow.fromX + 20} ${arrow.toY}
-                       L ${arrow.toX - 4} ${arrow.toY}`;
+                  // The arrow must ALWAYS arrive at the left edge of the dependent task
+                  // pointing forward (→). If the child starts before the parent ends,
+                  // the path loops vertically and around so the arrow still enters from the left.
+                  const APPROACH = 8; // gap between arrow tip and child bar's left edge
+                  const VERT_GAP = ROW_HEIGHT / 2 - 2;
+                  const approachX = arrow.toX - APPROACH;
+                  const goesForward = approachX > arrow.fromX + 6;
+
+                  let pathD: string;
+                  if (goesForward) {
+                    // Forward routing: out from parent → step → into child from left
+                    const midX = (arrow.fromX + approachX) / 2;
+                    pathD = `M ${arrow.fromX} ${arrow.fromY}
+                             L ${midX} ${arrow.fromY}
+                             L ${midX} ${arrow.toY}
+                             L ${arrow.toX} ${arrow.toY}`;
+                  } else {
+                    // Child starts before parent ends — loop around so arrow still arrives from left
+                    const goingDown = arrow.toY >= arrow.fromY;
+                    const detourY = goingDown
+                      ? arrow.fromY + VERT_GAP
+                      : arrow.fromY - VERT_GAP;
+                    const exitX = arrow.fromX + 10;
+                    pathD = `M ${arrow.fromX} ${arrow.fromY}
+                             L ${exitX} ${arrow.fromY}
+                             L ${exitX} ${detourY}
+                             L ${approachX} ${detourY}
+                             L ${approachX} ${arrow.toY}
+                             L ${arrow.toX} ${arrow.toY}`;
+                  }
                   
                   return (
                     <g key={arrow.id} className="group/arrow">
