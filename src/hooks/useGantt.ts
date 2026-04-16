@@ -352,25 +352,28 @@ export function useGantt(contractId: string) {
     }
   };
 
-  // Helper function to propagate date changes to dependent tasks
-  const propagateDateChanges = async (taskId: string, newEndDate: string, processedTasks: Set<string> = new Set()) => {
-    // Prevent infinite loops
-    if (processedTasks.has(taskId)) return;
+  // Helper function to propagate date changes to dependent tasks.
+  // Returns a map of taskId -> partial updates so caller can patch local state without a full reload.
+  const propagateDateChanges = async (
+    taskId: string,
+    newEndDate: string,
+    processedTasks: Set<string> = new Set(),
+    accumulator: Map<string, Partial<GanttTask>> = new Map()
+  ): Promise<Map<string, Partial<GanttTask>>> => {
+    if (processedTasks.has(taskId)) return accumulator;
     processedTasks.add(taskId);
 
-    // Find all tasks that depend on this task
     const { data: dependencies } = await supabase
       .from("gantt_task_dependencies")
       .select("task_id")
       .eq("depends_on_task_id", taskId);
 
-    if (!dependencies || dependencies.length === 0) return;
+    if (!dependencies || dependencies.length === 0) return accumulator;
 
     const parentEndDate = parseISO(newEndDate);
     const newDependentStart = addDays(parentEndDate, 1);
 
     for (const dep of dependencies) {
-      // Get the dependent task
       const { data: dependentTask } = await supabase
         .from("gantt_tasks")
         .select("*")
@@ -381,20 +384,20 @@ export function useGantt(contractId: string) {
 
       const duration = dependentTask.duration_days || 1;
       const newDependentEnd = addDays(newDependentStart, duration - 1);
-      const newEndDateStr = format(newDependentEnd, "yyyy-MM-dd");
+      const newStartStr = format(newDependentStart, "yyyy-MM-dd");
+      const newEndStr = format(newDependentEnd, "yyyy-MM-dd");
 
-      // Update the dependent task
       await supabase
         .from("gantt_tasks")
-        .update({
-          start_date: format(newDependentStart, "yyyy-MM-dd"),
-          end_date: newEndDateStr,
-        })
+        .update({ start_date: newStartStr, end_date: newEndStr })
         .eq("id", dep.task_id);
 
-      // Recursively propagate to tasks that depend on this one
-      await propagateDateChanges(dep.task_id, newEndDateStr, processedTasks);
+      accumulator.set(dep.task_id, { start_date: newStartStr, end_date: newEndStr });
+
+      await propagateDateChanges(dep.task_id, newEndStr, processedTasks, accumulator);
     }
+
+    return accumulator;
   };
 
   const updateTask = async (
@@ -419,18 +422,36 @@ export function useGantt(contractId: string) {
           .eq("task_id", taskId);
       }
 
+      // Optimistic local update — avoids full reload that would collapse rows / lose UI state
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === taskId
+            ? {
+                ...t,
+                ...updates,
+                ...(options?.breakDependencies ? { dependencies: [] } : {}),
+              }
+            : t
+        )
+      );
+
       // If end_date was updated and propagation not skipped, propagate to dependent tasks
       if (updates.end_date && !options?.skipPropagation) {
-        await propagateDateChanges(taskId, updates.end_date);
+        const propagated = await propagateDateChanges(taskId, updates.end_date);
+        if (propagated.size > 0) {
+          setTasks((prev) =>
+            prev.map((t) => (propagated.has(t.id) ? { ...t, ...propagated.get(t.id)! } : t))
+          );
+        }
       }
-
-      await loadTimeline();
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Error",
         description: "No se pudo actualizar la tarea",
       });
+      // Resync from DB on error
+      await loadTimeline();
     } finally {
       setSaving(false);
     }
