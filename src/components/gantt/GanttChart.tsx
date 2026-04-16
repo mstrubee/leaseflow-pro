@@ -1575,18 +1575,27 @@ export function GanttChart({
                                 onMouseDown={(e) => handleBarMouseDown(e, task, "resize-right")}
                               />
                               
-                              {/* Completed indicator: green line at bottom */}
-                              {task.status === "completed" && (
-                                <div className="absolute left-0 right-0 -bottom-1 h-1 bg-green-500 rounded-b pointer-events-none" />
-                              )}
+                              {/* Progress line at bottom: blue < 100%, green at 100% */}
+                              {(() => {
+                                const effectiveProgress = task.progress && task.progress > 0 ? task.progress : computeAutoProgress(task);
+                                if (effectiveProgress <= 0) return null;
+                                const isComplete = effectiveProgress >= 100;
+                                return (
+                                  <div
+                                    className={cn(
+                                      "absolute left-0 bottom-0 h-1 rounded-b pointer-events-none transition-all",
+                                      isComplete ? "bg-green-500" : "bg-blue-500"
+                                    )}
+                                    style={{ width: `${effectiveProgress}%` }}
+                                  />
+                                );
+                              })()}
 
                               {/* Task name */}
                               <span className="absolute inset-0 flex items-center justify-center text-[10px] text-white font-medium truncate px-3 pointer-events-none">
                                 {position.width > 60 ? task.name : ""}
                               </span>
                             </div>
-                              );
-                            })()}
                           </TooltipTrigger>
                           <TooltipContent>
                             <div className="space-y-1">
