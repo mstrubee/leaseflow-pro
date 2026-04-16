@@ -279,6 +279,7 @@ export function GanttChart({
     
     const addTasks = (tasks: GanttTask[], level: number) => {
       tasks.forEach((task) => {
+        if (hideCompleted && task.status === "completed") return;
         result.push({ task, level });
         if (task.children && task.children.length > 0 && expandedTasks.has(task.id)) {
           addTasks(task.children, level + 1);
@@ -288,7 +289,7 @@ export function GanttChart({
     
     addTasks(taskTree, 0);
     return result;
-  }, [taskTree, expandedTasks]);
+  }, [taskTree, expandedTasks, hideCompleted]);
 
   // Map task IDs to their row index for arrow drawing
   const taskRowIndexMap = useMemo(() => {
