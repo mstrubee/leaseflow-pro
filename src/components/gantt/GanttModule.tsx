@@ -11,6 +11,8 @@ import { GanttChart } from "./GanttChart";
 import { GanttTaskTree } from "./GanttTaskTree";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CalendarDays, List, Plus, Loader2 } from "lucide-react";
+import { exportGanttToPDF } from "./ganttExportPDF";
+import { supabase } from "@/integrations/supabase/client";
 
 interface GanttModuleProps {
   contractId: string;
@@ -180,6 +182,18 @@ export function GanttModule({ contractId }: GanttModuleProps) {
               onRemoveDependency={removeDependency}
               onReorderTask={reorderTask}
               isAdmin={isAdmin}
+              onExportPDF={async (hideCompleted) => {
+                let contractName = "Contrato";
+                try {
+                  const { data } = await supabase.from("contracts").select("name").eq("id", contractId).maybeSingle();
+                  if (data?.name) contractName = data.name;
+                } catch {}
+                await exportGanttToPDF(taskTree, tasks, holidays, {
+                  contractName,
+                  timelineName: timeline.name,
+                  hideCompleted,
+                });
+              }}
             />
           </TabsContent>
 

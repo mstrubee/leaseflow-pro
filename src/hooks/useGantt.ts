@@ -396,7 +396,11 @@ export function useGantt(contractId: string) {
     }
   };
 
-  const updateTask = async (taskId: string, updates: Partial<GanttTask>) => {
+  const updateTask = async (
+    taskId: string,
+    updates: Partial<GanttTask>,
+    options?: { skipPropagation?: boolean; breakDependencies?: boolean }
+  ) => {
     setSaving(true);
     try {
       const { error } = await supabase
@@ -406,8 +410,16 @@ export function useGantt(contractId: string) {
 
       if (error) throw error;
 
-      // If end_date was updated, propagate changes to dependent tasks
-      if (updates.end_date) {
+      // If user chose to break dependencies, remove this task's incoming dependencies
+      if (options?.breakDependencies) {
+        await supabase
+          .from("gantt_task_dependencies")
+          .delete()
+          .eq("task_id", taskId);
+      }
+
+      // If end_date was updated and propagation not skipped, propagate to dependent tasks
+      if (updates.end_date && !options?.skipPropagation) {
         await propagateDateChanges(taskId, updates.end_date);
       }
 

@@ -6,7 +6,17 @@ import { format, differenceInDays, parseISO, eachDayOfInterval, isWeekend, addDa
 import { es } from "date-fns/locale";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical } from "lucide-react";
+import { ChevronDown, ChevronRight, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical, CheckCircle2, Eye, EyeOff, FileDown } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -100,13 +110,14 @@ interface GanttChartProps {
   tasks: GanttTask[];
   taskTree: GanttTask[];
   holidays: Array<{ date: string; name: string }>;
-  onUpdateTask: (taskId: string, updates: Partial<GanttTask>) => Promise<void>;
+  onUpdateTask: (taskId: string, updates: Partial<GanttTask>, options?: { skipPropagation?: boolean; breakDependencies?: boolean }) => Promise<void>;
   onAddTask: (name: string, parentId?: string | null, options?: Partial<GanttTask>) => Promise<any>;
   onDeleteTask: (taskId: string) => Promise<void>;
   onAddDependency: (taskId: string, dependsOnTaskId: string) => Promise<void>;
   onRemoveDependency: (dependencyId: string) => Promise<void>;
   onReorderTask: (taskId: string, newIndex: number, siblingIds: string[]) => Promise<void>;
   isAdmin?: boolean;
+  onExportPDF?: (hideCompleted: boolean) => void;
 }
 
 const DAY_WIDTH = 30;
@@ -144,10 +155,19 @@ export function GanttChart({
   onRemoveDependency,
   onReorderTask,
   isAdmin = false,
+  onExportPDF,
 }: GanttChartProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [newTaskRow, setNewTaskRow] = useState<NewTaskRow | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [hideCompleted, setHideCompleted] = useState(false);
+  const [pendingDateEdit, setPendingDateEdit] = useState<{
+    taskId: string;
+    field: "start_date" | "end_date";
+    newDate: string;
+    hasOutgoing: boolean;
+    hasIncoming: boolean;
+  } | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   
   // Drag state for creating dependencies (bar drag to another task)
@@ -259,6 +279,7 @@ export function GanttChart({
     
     const addTasks = (tasks: GanttTask[], level: number) => {
       tasks.forEach((task) => {
+        if (hideCompleted && task.status === "completed") return;
         result.push({ task, level });
         if (task.children && task.children.length > 0 && expandedTasks.has(task.id)) {
           addTasks(task.children, level + 1);
@@ -268,7 +289,7 @@ export function GanttChart({
     
     addTasks(taskTree, 0);
     return result;
-  }, [taskTree, expandedTasks]);
+  }, [taskTree, expandedTasks, hideCompleted]);
 
   // Map task IDs to their row index for arrow drawing
   const taskRowIndexMap = useMemo(() => {
@@ -609,13 +630,57 @@ export function GanttChart({
     }
   }, [barDragMode, handleBarMouseMove, handleBarMouseUp]);
 
+  // Check if any descendant in the tree depends on this task (incoming for someone else)
+  const hasOutgoingDependents = useCallback((taskId: string) => {
+    return tasks.some((t) => t.dependencies?.some((d) => d.depends_on_task_id === taskId));
+  }, [tasks]);
+
+  const hasIncomingDependencies = useCallback((taskId: string) => {
+    const t = tasks.find((x) => x.id === taskId);
+    return !!(t?.dependencies && t.dependencies.length > 0);
+  }, [tasks]);
+
+  const performDateUpdate = async (
+    taskId: string,
+    field: "start_date" | "end_date",
+    value: string,
+    options?: { skipPropagation?: boolean; breakDependencies?: boolean }
+  ) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+
+    const updates: Partial<GanttTask> = { [field]: value };
+    if (field === "start_date" && value && task.duration_days) {
+      const endDate = calculateEndDate(value, task.duration_days, task.duration_type as "calendar" | "business", holidays);
+      updates.end_date = format(endDate, "yyyy-MM-dd");
+    } else if (field === "end_date" && value && task.duration_days) {
+      const startDate = calculateStartDate(value, task.duration_days, task.duration_type as "calendar" | "business", holidays);
+      updates.start_date = format(startDate, "yyyy-MM-dd");
+    }
+    await onUpdateTask(taskId, updates, options);
+  };
+
   const handleUpdateTaskField = async (taskId: string, field: string, value: any) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
 
-    const updates: Partial<GanttTask> = { [field]: value };
+    // Date-field edits with dependencies → ask the user
+    if ((field === "start_date" || field === "end_date") && value) {
+      const outgoing = hasOutgoingDependents(taskId);
+      const incoming = hasIncomingDependencies(taskId);
+      if (outgoing || incoming) {
+        setPendingDateEdit({
+          taskId,
+          field: field as "start_date" | "end_date",
+          newDate: value,
+          hasOutgoing: outgoing,
+          hasIncoming: incoming,
+        });
+        return;
+      }
+    }
 
-    // Auto-calculate dates when updating
+    const updates: Partial<GanttTask> = { [field]: value };
     if (field === "start_date" && value && task.duration_days) {
       const endDate = calculateEndDate(value, task.duration_days, task.duration_type as "calendar" | "business", holidays);
       updates.end_date = format(endDate, "yyyy-MM-dd");
@@ -628,6 +693,11 @@ export function GanttChart({
     }
 
     await onUpdateTask(taskId, updates);
+  };
+
+  const toggleTaskCompleted = async (task: GanttTask) => {
+    const newStatus = task.status === "completed" ? "pending" : "completed";
+    await onUpdateTask(task.id, { status: newStatus, progress: newStatus === "completed" ? 100 : 0 });
   };
 
   // Get unique task dates for quick selection
@@ -660,23 +730,44 @@ export function GanttChart({
           {/* Month/Year Header */}
           <div className="flex border-b bg-muted/70 sticky top-0 z-30">
             <div className="flex-shrink-0 border-r" style={{ width: 24 + TASK_NAME_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH }}>
-              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground flex items-center justify-between gap-2">
+              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground flex items-center justify-between gap-1 flex-wrap">
                 <span>Cronograma</span>
-                {allParentTaskIds.length > 0 && (
+                <div className="flex items-center gap-1">
+                  {allParentTaskIds.length > 0 && (
+                    <Button
+                      size="sm"
+                      className="h-6 px-2 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+                      onClick={toggleExpandAll}
+                      title={allExpanded ? "Contraer todo" : "Expandir todo"}
+                    >
+                      {allExpanded ? (
+                        <><ChevronDown className="h-3 w-3 mr-1" />Contraer</>
+                      ) : (
+                        <><ChevronRight className="h-3 w-3 mr-1" />Expandir</>
+                      )}
+                    </Button>
+                  )}
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
                     className="h-6 px-2 text-xs"
-                    onClick={toggleExpandAll}
-                    title={allExpanded ? "Contraer todo" : "Expandir todo"}
+                    onClick={() => setHideCompleted((v) => !v)}
+                    title={hideCompleted ? "Mostrar completadas" : "Ocultar completadas"}
                   >
-                    {allExpanded ? (
-                      <><ChevronDown className="h-3 w-3 mr-1" />Contraer todo</>
-                    ) : (
-                      <><ChevronRight className="h-3 w-3 mr-1" />Expandir todo</>
-                    )}
+                    {hideCompleted ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
                   </Button>
-                )}
+                  {onExportPDF && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => onExportPDF(hideCompleted)}
+                      title="Exportar PDF"
+                    >
+                      <FileDown className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
             {/* Month groups */}
@@ -754,6 +845,23 @@ export function GanttChart({
 
           {/* Task rows with dependency arrows overlay */}
           <div className="relative">
+            {/* Today vertical highlight - overlays bar area only */}
+            {(() => {
+              const todayStr = format(new Date(), "yyyy-MM-dd");
+              const todayIdx = days.findIndex((d) => format(d, "yyyy-MM-dd") === todayStr);
+              if (todayIdx < 0) return null;
+              const HEADER_OFFSET = TASK_NAME_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + 6;
+              return (
+                <div
+                  className="absolute top-0 pointer-events-none z-[5] bg-primary/10 border-l border-r border-primary/40"
+                  style={{
+                    left: HEADER_OFFSET + todayIdx * DAY_WIDTH,
+                    width: DAY_WIDTH,
+                    height: visibleTasks.length * ROW_HEIGHT + (newTaskRow ? ROW_HEIGHT : 0) + ROW_HEIGHT,
+                  }}
+                />
+              );
+            })()}
             {/* SVG overlay for dependency arrows - clickable to delete */}
             {dependencyArrows.length > 0 && (
               <svg
@@ -883,7 +991,8 @@ export function GanttChart({
                     "flex border-b hover:bg-muted/20 transition-colors group",
                     rowDragSource === task.id && "opacity-50 bg-muted",
                     rowDragOverId === task.id && dropPosition === "above" && "border-t-2 border-t-primary",
-                    rowDragOverId === task.id && dropPosition === "below" && "border-b-2 border-b-primary"
+                    rowDragOverId === task.id && dropPosition === "below" && "border-b-2 border-b-primary",
+                    task.status === "completed" && "bg-muted/30"
                   )}
                   style={{ height: ROW_HEIGHT }}
                 >
@@ -914,13 +1023,30 @@ export function GanttChart({
                     <Input
                       value={task.name}
                       onChange={(e) => handleUpdateTaskField(task.id, "name", e.target.value)}
-                      className="h-7 text-xs border-0 bg-transparent focus:bg-background px-1"
+                      className={cn(
+                        "h-7 text-xs border-0 bg-transparent focus:bg-background px-1",
+                        task.status === "completed" && "line-through text-muted-foreground"
+                      )}
                       onDragStart={(e) => e.stopPropagation()}
                       draggable={false}
                     />
                     {task.dependencies && task.dependencies.length > 0 && (
                       <Link className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                     )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 flex-shrink-0"
+                      onClick={() => toggleTaskCompleted(task)}
+                      title={task.status === "completed" ? "Marcar como pendiente" : "Marcar como completada"}
+                    >
+                      <CheckCircle2
+                        className={cn(
+                          "h-3.5 w-3.5",
+                          task.status === "completed" ? "text-primary" : "text-muted-foreground"
+                        )}
+                      />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -1199,6 +1325,44 @@ export function GanttChart({
         </div>
         <ScrollBar orientation="horizontal" />
       </ScrollArea>
+
+      <AlertDialog open={!!pendingDateEdit} onOpenChange={(o) => { if (!o) setPendingDateEdit(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Esta tarea tiene dependencias</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDateEdit?.hasOutgoing && pendingDateEdit?.hasIncoming
+                ? "Otras tareas dependen de esta y esta también depende de otras. ¿Quieres mover solo esta tarea (rompiendo las dependencias) o mover también las tareas dependientes en cascada?"
+                : pendingDateEdit?.hasOutgoing
+                ? "Hay tareas que dependen de esta. ¿Quieres mover solo esta (rompiendo el vínculo con sus dependientes) o mover también las dependientes en cascada?"
+                : "Esta tarea depende de otra. ¿Quieres mover solo esta tarea (rompiendo el vínculo con su predecesora) o mantener la dependencia?"}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!pendingDateEdit) return;
+                const p = pendingDateEdit;
+                setPendingDateEdit(null);
+                await performDateUpdate(p.taskId, p.field, p.newDate, { skipPropagation: true, breakDependencies: true });
+              }}
+            >
+              Solo esta (romper dependencias)
+            </AlertDialogAction>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!pendingDateEdit) return;
+                const p = pendingDateEdit;
+                setPendingDateEdit(null);
+                await performDateUpdate(p.taskId, p.field, p.newDate);
+              }}
+            >
+              Mover en cascada
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
