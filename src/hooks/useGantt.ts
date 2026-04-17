@@ -804,6 +804,28 @@ export function useGantt(contractId: string) {
     }
   };
 
+  const deleteTimeline = async () => {
+    if (!timeline) return false;
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from("gantt_timelines")
+        .delete()
+        .eq("id", timeline.id);
+      if (error) throw error;
+      toast({ title: "Carta Gantt eliminada", description: "La línea de tiempo y sus tareas fueron eliminadas." });
+      setTimeline(null);
+      setTasks([]);
+      await loadTimeline();
+      return true;
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo eliminar la Carta Gantt" });
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return {
     timeline,
     tasks,
@@ -813,6 +835,7 @@ export function useGantt(contractId: string) {
     loading,
     saving,
     createTimeline,
+    deleteTimeline,
     addTask,
     updateTask,
     deleteTask,
