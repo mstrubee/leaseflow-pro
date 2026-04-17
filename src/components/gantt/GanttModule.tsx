@@ -13,7 +13,7 @@ import { useGantt } from "@/hooks/useGantt";
 import { GanttChart } from "./GanttChart";
 import { GanttTaskTree } from "./GanttTaskTree";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CalendarDays, List, Plus, Loader2, FileStack, Save, RefreshCw } from "lucide-react";
+import { CalendarDays, List, Plus, Loader2, FileStack, Save, RefreshCw, Trash2 } from "lucide-react";
 import { exportGanttToPDF } from "./ganttExportPDF";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -42,6 +42,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
     reorderTask,
     saveAsNewTemplate,
     updateBaseTemplate,
+    deleteTimeline,
     reload,
   } = useGantt(contractId);
 
@@ -52,6 +53,12 @@ export function GanttModule({ contractId }: GanttModuleProps) {
   const [newTemplateName, setNewTemplateName] = useState("");
   const [newTemplateDesc, setNewTemplateDesc] = useState("");
   const [confirmUpdateOpen, setConfirmUpdateOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
+  const handleDeleteTimeline = async () => {
+    const ok = await deleteTimeline();
+    if (ok) setConfirmDeleteOpen(false);
+  };
 
   const baseTemplate = templates.find((t) => t.id === timeline?.template_id);
 
@@ -187,35 +194,47 @@ export function GanttModule({ contractId }: GanttModuleProps) {
             </CardDescription>
           </div>
           {isAdmin && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2" disabled={saving}>
-                  <FileStack className="h-4 w-4" />
-                  Plantilla
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64 bg-popover z-50">
-                <DropdownMenuItem
-                  onClick={() => {
-                    setNewTemplateName(timeline.name);
-                    setNewTemplateDesc("");
-                    setSaveTemplateOpen(true);
-                  }}
-                >
-                  <Save className="h-4 w-4 mr-2" />
-                  Crear nueva plantilla desde este Gantt
-                </DropdownMenuItem>
-                {baseTemplate && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => setConfirmUpdateOpen(true)}>
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                      Actualizar plantilla "{baseTemplate.name}"
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-2" disabled={saving}>
+                    <FileStack className="h-4 w-4" />
+                    Plantilla
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64 bg-popover z-50">
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setNewTemplateName(timeline.name);
+                      setNewTemplateDesc("");
+                      setSaveTemplateOpen(true);
+                    }}
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    Crear nueva plantilla desde este Gantt
+                  </DropdownMenuItem>
+                  {baseTemplate && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => setConfirmUpdateOpen(true)}>
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Actualizar plantilla "{baseTemplate.name}"
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-destructive hover:text-destructive"
+                disabled={saving}
+                onClick={() => setConfirmDeleteOpen(true)}
+              >
+                <Trash2 className="h-4 w-4" />
+                Eliminar
+              </Button>
+            </div>
           )}
         </div>
       </CardHeader>
@@ -263,6 +282,29 @@ export function GanttModule({ contractId }: GanttModuleProps) {
             <AlertDialogAction onClick={handleUpdateBase} disabled={saving}>
               {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Actualizar plantilla
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirm delete timeline */}
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar Carta Gantt</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción eliminará permanentemente la línea de tiempo <span className="font-medium">"{timeline.name}"</span> junto con todas sus tareas, dependencias y vínculos a órdenes de compra. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteTimeline}
+              disabled={saving}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Eliminar Carta Gantt
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
