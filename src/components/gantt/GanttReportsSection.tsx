@@ -274,6 +274,7 @@ function MiniGantt({ taskTree, holidays }: { taskTree: GanttTask[]; holidays: Ho
 
 export function GanttReportsSection() {
   const { ufValue } = useEconomicIndicators();
+  const { navigateToContractFromReports } = useReportsNavigation();
   const [data, setData] = useState<GanttContractData[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
