@@ -99,6 +99,9 @@ function MiniGantt({ taskTree, holidays }: { taskTree: GanttTask[]; holidays: Ho
   const totalDays = days.length;
 
   const NAME_COL_WIDTH = 220;
+  const DATE_COL_WIDTH = 70;
+  const DUR_COL_WIDTH = 55;
+  const META_WIDTH = NAME_COL_WIDTH + DATE_COL_WIDTH * 2 + DUR_COL_WIDTH;
   const DAY_WIDTH = Math.max(2, Math.min(8, 800 / totalDays));
   const ROW_HEIGHT = 22;
   const HEADER_HEIGHT = 28;
@@ -119,7 +122,7 @@ function MiniGantt({ taskTree, holidays }: { taskTree: GanttTask[]; holidays: Ho
 
   return (
     <div className="border rounded-md overflow-auto bg-background max-h-[400px]">
-      <div style={{ width: NAME_COL_WIDTH + totalDays * DAY_WIDTH, minWidth: "100%" }}>
+      <div style={{ width: META_WIDTH + totalDays * DAY_WIDTH, minWidth: "100%" }}>
         {/* Header */}
         <div
           className="flex sticky top-0 z-10 bg-muted border-b"
@@ -130,6 +133,24 @@ function MiniGantt({ taskTree, holidays }: { taskTree: GanttTask[]; holidays: Ho
             style={{ width: NAME_COL_WIDTH, flexShrink: 0 }}
           >
             Tarea
+          </div>
+          <div
+            className="flex items-center justify-center px-1 text-xs font-semibold border-r bg-muted"
+            style={{ width: DATE_COL_WIDTH, flexShrink: 0 }}
+          >
+            Inicio
+          </div>
+          <div
+            className="flex items-center justify-center px-1 text-xs font-semibold border-r bg-muted"
+            style={{ width: DUR_COL_WIDTH, flexShrink: 0 }}
+          >
+            Plazo
+          </div>
+          <div
+            className="flex items-center justify-center px-1 text-xs font-semibold border-r bg-muted"
+            style={{ width: DATE_COL_WIDTH, flexShrink: 0 }}
+          >
+            Término
           </div>
           <div className="relative flex-1" style={{ height: HEADER_HEIGHT }}>
             {monthMarkers.map((m, i) => (
@@ -149,17 +170,19 @@ function MiniGantt({ taskTree, holidays }: { taskTree: GanttTask[]; holidays: Ho
           const hasDates = task.start_date && task.end_date;
           let barLeft = 0;
           let barWidth = 0;
+          let durDays = 0;
           if (hasDates) {
             const startOffset = differenceInDays(parseISO(task.start_date!), minDate);
-            const dur =
+            durDays =
               differenceInDays(parseISO(task.end_date!), parseISO(task.start_date!)) + 1;
             barLeft = startOffset * DAY_WIDTH;
-            barWidth = Math.max(1, dur * DAY_WIDTH);
+            barWidth = Math.max(1, durDays * DAY_WIDTH);
           }
 
-          let barColor = "hsl(var(--muted-foreground))";
-          if (task.status === "completed") barColor = "hsl(142, 71%, 45%)";
-          else if (task.status === "in_progress") barColor = "hsl(217, 91%, 60%)";
+          const progress = task.progress ?? 0;
+          // Celeste para tareas no completadas al 100%
+          let barColor = "hsl(197, 85%, 65%)";
+          if (progress >= 100) barColor = "hsl(142, 71%, 45%)";
           else if (task.status === "delayed") barColor = "hsl(0, 84%, 60%)";
 
           return (
@@ -180,6 +203,24 @@ function MiniGantt({ taskTree, holidays }: { taskTree: GanttTask[]; holidays: Ho
                 title={task.name}
               >
                 {task.name}
+              </div>
+              <div
+                className="flex items-center justify-center text-[10px] border-r text-muted-foreground"
+                style={{ width: DATE_COL_WIDTH, flexShrink: 0 }}
+              >
+                {hasDates ? format(parseISO(task.start_date!), "dd/MM/yy") : "-"}
+              </div>
+              <div
+                className="flex items-center justify-center text-[10px] border-r text-muted-foreground"
+                style={{ width: DUR_COL_WIDTH, flexShrink: 0 }}
+              >
+                {hasDates ? `${durDays}d` : "-"}
+              </div>
+              <div
+                className="flex items-center justify-center text-[10px] border-r text-muted-foreground"
+                style={{ width: DATE_COL_WIDTH, flexShrink: 0 }}
+              >
+                {hasDates ? format(parseISO(task.end_date!), "dd/MM/yy") : "-"}
               </div>
               <div className="relative flex-1" style={{ height: ROW_HEIGHT }}>
                 {/* Weekend shading */}
