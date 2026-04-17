@@ -800,14 +800,18 @@ export function MaintenanceReports() {
                       <TableRow>
                         <TableHead className="w-28">N° FORM</TableHead>
                         <TableHead className="w-24">Estado</TableHead>
-                        <TableHead className="w-28">Sub-Estado</TableHead>
+                        <TableHead className="w-28">Criticidad</TableHead>
                         <TableHead>Descripción</TableHead>
                         <TableHead className="w-28">Fecha Creación</TableHead>
                         <TableHead className="w-28">Fecha Resolución</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {dialogFilteredForms.map(f => (
+                      {dialogFilteredForms.map(f => {
+                        const crit = (f as any).criticality_category_id
+                          ? criticalityMap.get((f as any).criticality_category_id)
+                          : null;
+                        return (
                         <TableRow key={f.id} className="cursor-pointer hover:bg-accent/50" onClick={() => setSelectedFormDetail(f)}>
                           <TableCell className="text-xs font-medium">{f.form_number}</TableCell>
                           <TableCell>
@@ -815,14 +819,24 @@ export function MaintenanceReports() {
                               {f.status === "proceso" ? "En Proceso" : f.status === "solucionado" ? "Solucionado" : f.status}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-xs">{subStatusLabels[f.sub_status] || f.sub_status?.replace(/_/g, " ") || "-"}</TableCell>
+                          <TableCell className="text-xs">
+                            {crit ? (
+                              <Badge
+                                className="text-[10px]"
+                                style={{ backgroundColor: crit.color || "hsl(var(--muted))", color: "#fff" }}
+                              >
+                                {crit.name}
+                              </Badge>
+                            ) : "-"}
+                          </TableCell>
                           <TableCell className="text-xs max-w-[200px] truncate">
                             {f.general_description || f.electrical_description || f.civil_description || f.hvac_description || f.fixed_assets_description || "-"}
                           </TableCell>
                           <TableCell className="text-xs">{f.created_date ? new Date(f.created_date).toLocaleDateString("es-CL") : "-"}</TableCell>
                           <TableCell className="text-xs">{f.resolution_date ? new Date(f.resolution_date).toLocaleDateString("es-CL") : "-"}</TableCell>
                         </TableRow>
-                      ))}
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
