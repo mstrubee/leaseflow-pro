@@ -284,9 +284,9 @@ const BudgetLineItemInner = ({
   const parentTotal = childrenSubtotal * multiplier;
   const calculatedAmount = isCalcPercentage ? (line.amount_uf || 0) : (isParent ? parentTotal : getLeafAmount());
 
-  // For root parent lines: include percentage surcharges (Gastos Generales, Utilidades) that reference this line
+  // For parent lines: include percentage surcharges (Gastos Generales, Utilidades) that reference this line
   const calculatedAmountWithSurcharges = useMemo(() => {
-    if (level !== 0 || !isParent || !linesMap) return calculatedAmount;
+    if (!isParent || !linesMap) return calculatedAmount;
     let surcharges = 0;
     linesMap.forEach((l) => {
       if (l.calc_type === "percentage" && l.calc_source_line_id === line.id) {
@@ -294,7 +294,7 @@ const BudgetLineItemInner = ({
       }
     });
     return calculatedAmount + surcharges;
-  }, [level, isParent, linesMap, line.id, calculatedAmount]);
+  }, [isParent, linesMap, line.id, calculatedAmount]);
 
   // Calculate amount only if both quantity and price are > 0
   const calculateLineAmount = (qty: number, price: number, currency: string): number => {
