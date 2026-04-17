@@ -4,13 +4,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useGantt } from "@/hooks/useGantt";
 import { GanttChart } from "./GanttChart";
 import { GanttTaskTree } from "./GanttTaskTree";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CalendarDays, List, Plus, Loader2 } from "lucide-react";
+import { CalendarDays, List, Plus, Loader2, FileStack, Save, RefreshCw } from "lucide-react";
 import { exportGanttToPDF } from "./ganttExportPDF";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -37,12 +40,20 @@ export function GanttModule({ contractId }: GanttModuleProps) {
     linkPurchaseOrder,
     unlinkPurchaseOrder,
     reorderTask,
+    saveAsNewTemplate,
+    updateBaseTemplate,
     reload,
   } = useGantt(contractId);
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newTimelineName, setNewTimelineName] = useState("Línea de Tiempo Principal");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [newTemplateDesc, setNewTemplateDesc] = useState("");
+  const [confirmUpdateOpen, setConfirmUpdateOpen] = useState(false);
+
+  const baseTemplate = templates.find((t) => t.id === timeline?.template_id);
 
   const handleCreateTimeline = async () => {
     const result = await createTimeline(
@@ -54,6 +65,21 @@ export function GanttModule({ contractId }: GanttModuleProps) {
       setNewTimelineName("Línea de Tiempo Principal");
       setSelectedTemplateId("");
     }
+  };
+
+  const handleSaveAsNew = async () => {
+    if (!newTemplateName.trim()) return;
+    const r = await saveAsNewTemplate(newTemplateName.trim(), newTemplateDesc.trim() || undefined);
+    if (r) {
+      setSaveTemplateOpen(false);
+      setNewTemplateName("");
+      setNewTemplateDesc("");
+    }
+  };
+
+  const handleUpdateBase = async () => {
+    const ok = await updateBaseTemplate();
+    if (ok) setConfirmUpdateOpen(false);
   };
 
   if (loading) {
