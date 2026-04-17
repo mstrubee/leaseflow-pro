@@ -42,6 +42,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
     reorderTask,
     saveAsNewTemplate,
     updateBaseTemplate,
+    deleteTimeline,
     reload,
   } = useGantt(contractId);
 
