@@ -607,27 +607,47 @@ export function GanttReportsSection() {
 
         const chartTop = 32;
         const chartLeft = 10;
-        const nameColWidth = 60;
-        const availableWidth = pageWidth - chartLeft * 2 - nameColWidth;
-        const dayWidth = Math.max(0.6, availableWidth / totalDays);
-        const rowHeight = 4.5;
+        const nameColWidth = 70;
+        const dateColWidth = 18;
+        const durColWidth = 14;
+        const metaWidth = nameColWidth + dateColWidth * 2 + durColWidth;
+        const availableWidth = pageWidth - chartLeft * 2 - metaWidth;
+        const dayWidth = Math.max(0.5, availableWidth / totalDays);
+        const rowHeight = 4.8;
         const headerHeight = 6;
+        const totalRowWidth = metaWidth + totalDays * dayWidth;
 
         // Header bar
         doc.setFillColor(240, 240, 245);
-        doc.rect(chartLeft, chartTop, nameColWidth + totalDays * dayWidth, headerHeight, "F");
+        doc.rect(chartLeft, chartTop, totalRowWidth, headerHeight, "F");
         doc.setFontSize(7);
         doc.setFont("helvetica", "bold");
+        doc.setTextColor(20);
         doc.text("Tarea", chartLeft + 2, chartTop + 4);
+        doc.text("Inicio", chartLeft + nameColWidth + dateColWidth / 2, chartTop + 4, {
+          align: "center",
+        });
+        doc.text(
+          "Plazo",
+          chartLeft + nameColWidth + dateColWidth + durColWidth / 2,
+          chartTop + 4,
+          { align: "center" }
+        );
+        doc.text(
+          "Término",
+          chartLeft + nameColWidth + dateColWidth + durColWidth + dateColWidth / 2,
+          chartTop + 4,
+          { align: "center" }
+        );
 
-        // Month markers
+        // Month markers (above the bar area)
         doc.setFontSize(6);
         doc.setFont("helvetica", "normal");
         let lastMonth = "";
         days.forEach((d, idx) => {
           const m = format(d, "MMM yy", { locale: es });
           if (m !== lastMonth) {
-            const x = chartLeft + nameColWidth + idx * dayWidth;
+            const x = chartLeft + metaWidth + idx * dayWidth;
             doc.setDrawColor(180);
             doc.line(x, chartTop, x, chartTop + headerHeight);
             doc.text(m, x + 1, chartTop + 4);
@@ -645,13 +665,13 @@ export function GanttReportsSection() {
         rowsToDraw.forEach(({ task, level }, rowIdx) => {
           if (rowIdx % 2 === 1) {
             doc.setFillColor(250, 250, 252);
-            doc.rect(chartLeft, y, nameColWidth + totalDays * dayWidth, rowHeight, "F");
+            doc.rect(chartLeft, y, totalRowWidth, rowHeight, "F");
           }
-          // weekend shading
+          // weekend shading (only over the bar area)
           days.forEach((d, idx) => {
             if (isWeekend(d)) {
               doc.setFillColor(235, 235, 238);
-              doc.rect(chartLeft + nameColWidth + idx * dayWidth, y, dayWidth, rowHeight, "F");
+              doc.rect(chartLeft + metaWidth + idx * dayWidth, y, dayWidth, rowHeight, "F");
             }
           });
 
@@ -665,18 +685,45 @@ export function GanttReportsSection() {
             task.name.length > nameMaxChars
               ? task.name.slice(0, nameMaxChars - 1) + "…"
               : task.name;
-          doc.text(displayName, chartLeft + 2 + indent, y + rowHeight - 1.3);
+          doc.text(displayName, chartLeft + 2 + indent, y + rowHeight - 1.5);
 
-          // Bar
-          if (task.start_date && task.end_date) {
-            const startOffset = differenceInDays(parseISO(task.start_date), minDate);
-            const dur = differenceInDays(parseISO(task.end_date), parseISO(task.start_date)) + 1;
-            const x = chartLeft + nameColWidth + startOffset * dayWidth;
+          // Date / duration columns
+          const hasDates = !!(task.start_date && task.end_date);
+          const dur = hasDates
+            ? differenceInDays(parseISO(task.end_date!), parseISO(task.start_date!)) + 1
+            : 0;
+          doc.setTextColor(90);
+          doc.text(
+            hasDates ? format(parseISO(task.start_date!), "dd/MM/yy") : "-",
+            chartLeft + nameColWidth + dateColWidth / 2,
+            y + rowHeight - 1.5,
+            { align: "center" }
+          );
+          doc.text(
+            hasDates ? `${dur}d` : "-",
+            chartLeft + nameColWidth + dateColWidth + durColWidth / 2,
+            y + rowHeight - 1.5,
+            { align: "center" }
+          );
+          doc.text(
+            hasDates ? format(parseISO(task.end_date!), "dd/MM/yy") : "-",
+            chartLeft + nameColWidth + dateColWidth + durColWidth + dateColWidth / 2,
+            y + rowHeight - 1.5,
+            { align: "center" }
+          );
+          doc.setTextColor(20);
+
+          // Bar — colors aligned with on-screen MiniGantt
+          if (hasDates) {
+            const startOffset = differenceInDays(parseISO(task.start_date!), minDate);
+            const x = chartLeft + metaWidth + startOffset * dayWidth;
             const w = Math.max(0.4, dur * dayWidth);
-            if (task.status === "completed") doc.setFillColor(34, 197, 94);
-            else if (task.status === "in_progress") doc.setFillColor(59, 130, 246);
-            else if (task.status === "delayed") doc.setFillColor(239, 68, 68);
-            else doc.setFillColor(148, 163, 184);
+            const progress = task.progress ?? 0;
+            if (progress >= 100)
+              doc.setFillColor(34, 197, 94); // verde - completada
+            else if (task.status === "delayed")
+              doc.setFillColor(239, 68, 68); // rojo - atrasada
+            else doc.setFillColor(125, 211, 252); // celeste - no completada al 100%
             doc.rect(x, y + 0.8, w, rowHeight - 1.6, "F");
           }
 
@@ -685,7 +732,7 @@ export function GanttReportsSection() {
 
         // Today vertical line
         if (todayIdx >= 0) {
-          const todayX = chartLeft + nameColWidth + todayIdx * dayWidth + dayWidth / 2;
+          const todayX = chartLeft + (nameColWidth + 18 * 2 + 14) + todayIdx * dayWidth + dayWidth / 2;
           doc.setDrawColor(59, 130, 246);
           doc.setLineWidth(0.4);
           doc.line(todayX, chartTop, todayX, y);
