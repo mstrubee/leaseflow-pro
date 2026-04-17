@@ -287,7 +287,7 @@ export function GanttReportsSection() {
         from += PAGE;
       }
 
-      // 3) Load CAPEX budgets for those contracts
+      // 3) Load CAPEX budgets for those contracts - USAR VALOR DIRECTO, NO CALCULAR
       const { data: budgets, error: bErr } = await supabase
         .from("contract_budgets")
         .select("id, contract_id, amount_uf")
@@ -295,55 +295,12 @@ export function GanttReportsSection() {
         .in("contract_id", contractIds);
       if (bErr) throw bErr;
 
-      const budgetIds = (budgets || []).map((b) => b.id);
-      let allLines: any[] = [];
-      if (budgetIds.length > 0) {
-        from = 0;
-        more = true;
-        while (more) {
-          const { data: page, error } = await supabase
-            .from("budget_lines")
-            .select("id, budget_id, amount_uf, parent_id, quantity, unit_price, currency, calc_type")
-            .in("budget_id", budgetIds)
-            .is("deleted_at", null)
-            .range(from, from + PAGE - 1);
-          if (error) throw error;
-          allLines = allLines.concat(page || []);
-          more = (page?.length || 0) === PAGE;
-          from += PAGE;
-        }
-      }
-
-      // Compute CAPEX total per budget (leaf lines, like CapexDashboard)
-      const currentUF = ufValue || 0;
-      const parentIds = new Set(allLines.filter((l) => l.parent_id).map((l) => l.parent_id));
-      const leafLines = allLines.filter((l) => !parentIds.has(l.id));
-
-      const getEffectiveUF = (line: any): number => {
-        if (line.calc_type === "percentage") return line.amount_uf || 0;
-        const qty = line.quantity || 0;
-        const price = line.unit_price || 0;
-        if (qty <= 0 || price <= 0) return 0;
-        const total = qty * price;
-        if (line.currency === "CLP" && currentUF > 0) return total / currentUF;
-        return total;
-      };
-
-      const budgetUFTotals = new Map<string, number>();
-      leafLines.forEach((l) => {
-        budgetUFTotals.set(l.budget_id, (budgetUFTotals.get(l.budget_id) || 0) + getEffectiveUF(l));
-      });
-      // Fallback: budgets with manual amount_uf
-      (budgets || []).forEach((b) => {
-        if (!budgetUFTotals.has(b.id)) {
-          budgetUFTotals.set(b.id, b.amount_uf || 0);
-        }
-      });
-
+      // Usar amount_uf directo de contract_budgets como espejo
       const capexByContract = new Map<string, number>();
       (budgets || []).forEach((b) => {
-        const total = budgetUFTotals.get(b.id) || 0;
-        capexByContract.set(b.contract_id, (capexByContract.get(b.contract_id) || 0) + total);
+        // Tomar el valor directo del presupuesto, no calcular desde líneas
+        const existing = capexByContract.get(b.contract_id) || 0;
+        capexByContract.set(b.contract_id, existing + (b.amount_uf || 0));
       });
 
       // 4) Assemble per-timeline data
