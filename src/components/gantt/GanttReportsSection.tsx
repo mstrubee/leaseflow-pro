@@ -12,7 +12,9 @@ import {
   Loader2,
   Maximize2,
   Minimize2,
+  ExternalLink,
 } from "lucide-react";
+import { useReportsNavigation } from "@/components/reports/ReportsReturnButton";
 import { format, parseISO, eachDayOfInterval, differenceInDays, isWeekend } from "date-fns";
 import { es } from "date-fns/locale";
 import { GanttTask, Holiday } from "@/hooks/useGantt";
