@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { addMonths, format } from "date-fns";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,41 @@ export function GanttModule({ contractId }: GanttModuleProps) {
   const [newTemplateDesc, setNewTemplateDesc] = useState("");
   const [confirmUpdateOpen, setConfirmUpdateOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [rentStartDate, setRentStartDate] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: contract } = await supabase
+          .from("contracts")
+          .select("signed_date")
+          .eq("id", contractId)
+          .maybeSingle();
+        const { data: version } = await supabase
+          .from("contract_versions")
+          .select("effective_date, grace_months")
+          .eq("contract_id", contractId)
+          .eq("is_current", true)
+          .maybeSingle();
+        if (cancelled) return;
+        const baseStr = version?.effective_date || contract?.signed_date;
+        if (!baseStr) {
+          setRentStartDate(null);
+          return;
+        }
+        const base = new Date(baseStr + "T00:00:00");
+        const grace = version?.grace_months ?? 0;
+        const start = addMonths(base, grace);
+        setRentStartDate(format(start, "yyyy-MM-dd"));
+      } catch {
+        if (!cancelled) setRentStartDate(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [contractId]);
 
   const handleDeleteTimeline = async () => {
     const ok = await deleteTimeline();
@@ -334,6 +370,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
               onRemoveDependency={removeDependency}
               onReorderTask={reorderTask}
               isAdmin={isAdmin}
+              rentStartDate={rentStartDate}
               onExportPDF={async (hideCompleted) => {
                 let contractName = "Contrato";
                 try {
