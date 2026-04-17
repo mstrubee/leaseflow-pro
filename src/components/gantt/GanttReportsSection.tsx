@@ -328,25 +328,114 @@ export function GanttReportsSection() {
         from += PAGE;
       }
 
-      // 3) Load CAPEX budgets for those contracts - usar el presupuesto más reciente del contrato
+      // 3) Load latest CAPEX budget per contract and mirror the same value shown in the contract CAPEX card
       const { data: budgets, error: bErr } = await supabase
         .from("contract_budgets")
-        .select("contract_id, year, amount_uf, updated_at")
+        .select("id, contract_id, year, amount_uf, updated_at")
         .eq("budget_type", "capex")
         .order("year", { ascending: false })
         .order("updated_at", { ascending: false })
         .in("contract_id", contractIds);
       if (bErr) throw bErr;
 
-      // Espejar solo el presupuesto CAPEX vigente/más reciente, sin sumar años
-      const capexByContract = new Map<string, number>();
+      const latestBudgetByContract = new Map<
+        string,
+        { id: string; year: number; amount_uf: number | null }
+      >();
       (budgets || []).forEach((b) => {
-        if (!capexByContract.has(b.contract_id)) {
-          capexByContract.set(b.contract_id, b.amount_uf || 0);
+        if (!latestBudgetByContract.has(b.contract_id)) {
+          latestBudgetByContract.set(b.contract_id, {
+            id: b.id,
+            year: b.year,
+            amount_uf: b.amount_uf,
+          });
         }
       });
 
+      const latestBudgetIds = Array.from(latestBudgetByContract.values()).map((b) => b.id);
+
+      let budgetLines: Array<{
+        id: string;
+        budget_id: string;
+        amount_uf: number;
+        status: string;
+        parent_id: string | null;
+        quantity: number | null;
+        unit_price: number | null;
+        template_line_id: string | null;
+        currency: string | null;
+        calc_type: string | null;
+      }> = [];
+
+      if (latestBudgetIds.length > 0) {
+        const { data: lines, error: linesErr } = await supabase
+          .from("budget_lines")
+          .select(
+            "id, budget_id, amount_uf, status, parent_id, quantity, unit_price, template_line_id, currency, calc_type"
+          )
+          .in("budget_id", latestBudgetIds)
+          .is("deleted_at", null);
+
+        if (linesErr) throw linesErr;
+        budgetLines = (lines || []) as typeof budgetLines;
+      }
+
+      const linesWithTemplate = budgetLines.filter((line) => line.template_line_id);
+      const uniqueTemplateIds = [...new Set(linesWithTemplate.map((line) => line.template_line_id!))];
+      const templatePriceById = new Map<string, number>();
+
+      if (uniqueTemplateIds.length > 0) {
+        const { data: templateData, error: templateErr } = await supabase
+          .from("budget_template_lines")
+          .select("id, default_amount_uf")
+          .in("id", uniqueTemplateIds);
+
+        if (templateErr) throw templateErr;
+        (templateData || []).forEach((template) => {
+          templatePriceById.set(template.id, template.default_amount_uf || 0);
+        });
+      }
+
       const currentUF = ufValue || 0;
+      const parentIds = new Set(
+        budgetLines.filter((line) => line.parent_id).map((line) => line.parent_id as string)
+      );
+
+      const getEffectiveAmount = (line: (typeof budgetLines)[number]) => {
+        if (line.calc_type === "percentage") {
+          return line.amount_uf || 0;
+        }
+
+        const qty = line.quantity || 0;
+        const localPrice = line.unit_price || 0;
+        const templatePrice = line.template_line_id
+          ? templatePriceById.get(line.template_line_id) || 0
+          : 0;
+        const price = localPrice > 0 ? localPrice : templatePrice;
+
+        if (qty <= 0 || price <= 0) return 0;
+
+        const total = qty * price;
+        if (line.currency === "CLP" && currentUF > 0) {
+          return total / currentUF;
+        }
+
+        return total;
+      };
+
+      const capexByContract = new Map<string, number>();
+      latestBudgetByContract.forEach((budget, contractId) => {
+        const leafLines = budgetLines.filter(
+          (line) => line.budget_id === budget.id && !parentIds.has(line.id)
+        );
+
+        const authorizedTotal = leafLines
+          .filter((line) => line.status === "autorizado")
+          .reduce((sum, line) => sum + getEffectiveAmount(line), 0);
+
+        const mirroredCapex = (budget.amount_uf || 0) > 0 ? budget.amount_uf || 0 : authorizedTotal;
+        capexByContract.set(contractId, mirroredCapex);
+      });
 
       // 4) Assemble per-timeline data
       const result: GanttContractData[] = validTimelines.flatMap((tl: any) => {
