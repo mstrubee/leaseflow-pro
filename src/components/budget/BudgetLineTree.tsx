@@ -456,17 +456,6 @@ const BudgetLineItemInner = ({
     }
   };
 
-  // Calculate subtotal from a line's children using their stored amount_uf (for cross-line calculations)
-  const calculateStoredSubtotal = (children: BudgetLine[]): number => {
-    return children.reduce((sum, child) => {
-      if (child.children && child.children.length > 0) {
-        const childSub = calculateStoredSubtotal(child.children);
-        const mult = child.quantity || 1;
-        return sum + (childSub * mult);
-      }
-      return sum + (child.amount_uf || 0);
-    }, 0);
-  };
 
   // Save percentage on blur or Enter for calc_type=percentage lines
   const handleSavePercentage = () => {
