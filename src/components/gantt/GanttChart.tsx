@@ -225,6 +225,7 @@ interface GanttChartProps {
   onReorderTask: (taskId: string, newIndex: number, siblingIds: string[]) => Promise<void>;
   isAdmin?: boolean;
   onExportPDF?: (hideCompleted: boolean) => void;
+  rentStartDate?: string | null;
 }
 
 const DAY_WIDTH = 30;
@@ -264,6 +265,7 @@ export function GanttChart({
   onReorderTask,
   isAdmin = false,
   onExportPDF,
+  rentStartDate,
 }: GanttChartProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const didInitExpandRef = useRef(false);
@@ -1272,6 +1274,31 @@ export function GanttChart({
                     height: visibleTasks.length * ROW_HEIGHT + (newTaskRow ? ROW_HEIGHT : 0) + ROW_HEIGHT,
                   }}
                 />
+              );
+            })()}
+            {/* Rent start date vertical marker - dashed red line */}
+            {(() => {
+              if (!rentStartDate) return null;
+              const idx = days.findIndex((d) => format(d, "yyyy-MM-dd") === rentStartDate);
+              if (idx < 0) return null;
+              const HEADER_OFFSET = TASK_NAME_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
+              const totalHeight = visibleTasks.length * ROW_HEIGHT + (newTaskRow ? ROW_HEIGHT : 0) + ROW_HEIGHT;
+              const formatted = format(new Date(rentStartDate + "T00:00:00"), "dd/MM/yyyy");
+              return (
+                <div
+                  className="absolute top-0 pointer-events-none z-[6] group"
+                  style={{
+                    left: HEADER_OFFSET + idx * DAY_WIDTH + DAY_WIDTH / 2 - 1,
+                    width: 2,
+                    height: totalHeight,
+                    borderLeft: "2px dashed hsl(var(--destructive))",
+                  }}
+                  title={`Inicio pago de renta — ${formatted}`}
+                >
+                  <span className="absolute -top-4 left-1 text-[10px] font-semibold text-destructive whitespace-nowrap bg-background/80 px-1 rounded">
+                    Inicio renta
+                  </span>
+                </div>
               );
             })()}
             {/* SVG overlay for dependency arrows - clickable to delete */}
