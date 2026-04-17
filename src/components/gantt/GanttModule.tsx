@@ -194,35 +194,47 @@ export function GanttModule({ contractId }: GanttModuleProps) {
             </CardDescription>
           </div>
           {isAdmin && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2" disabled={saving}>
-                  <FileStack className="h-4 w-4" />
-                  Plantilla
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64 bg-popover z-50">
-                <DropdownMenuItem
-                  onClick={() => {
-                    setNewTemplateName(timeline.name);
-                    setNewTemplateDesc("");
-                    setSaveTemplateOpen(true);
-                  }}
-                >
-                  <Save className="h-4 w-4 mr-2" />
-                  Crear nueva plantilla desde este Gantt
-                </DropdownMenuItem>
-                {baseTemplate && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => setConfirmUpdateOpen(true)}>
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                      Actualizar plantilla "{baseTemplate.name}"
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-2" disabled={saving}>
+                    <FileStack className="h-4 w-4" />
+                    Plantilla
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64 bg-popover z-50">
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setNewTemplateName(timeline.name);
+                      setNewTemplateDesc("");
+                      setSaveTemplateOpen(true);
+                    }}
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    Crear nueva plantilla desde este Gantt
+                  </DropdownMenuItem>
+                  {baseTemplate && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => setConfirmUpdateOpen(true)}>
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Actualizar plantilla "{baseTemplate.name}"
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-destructive hover:text-destructive"
+                disabled={saving}
+                onClick={() => setConfirmDeleteOpen(true)}
+              >
+                <Trash2 className="h-4 w-4" />
+                Eliminar
+              </Button>
+            </div>
           )}
         </div>
       </CardHeader>
