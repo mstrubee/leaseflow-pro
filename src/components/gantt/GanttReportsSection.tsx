@@ -806,20 +806,35 @@ export function GanttReportsSection() {
                               </div>
                             </div>
                           </div>
-                          <div className="text-right text-xs">
-                            <div className="text-muted-foreground">CAPEX Total</div>
-                            <div className="font-semibold text-sm">
-                              {item.capexUF > 0 ? (
-                                <>
-                                  UF {formatUF(item.capexUF)}
-                                  <span className="text-muted-foreground font-normal ml-1">
-                                    / ${formatCLP(item.capexCLP)}
-                                  </span>
-                                </>
-                              ) : (
-                                <span className="text-muted-foreground">Sin CAPEX</span>
-                              )}
+                          <div className="flex items-center gap-3">
+                            <div className="text-right text-xs">
+                              <div className="text-muted-foreground">CAPEX Total</div>
+                              <div className="font-semibold text-sm">
+                                {item.capexUF > 0 ? (
+                                  <>
+                                    UF {formatUF(item.capexUF)}
+                                    <span className="text-muted-foreground font-normal ml-1">
+                                      / ${formatCLP(item.capexCLP)}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className="text-muted-foreground">Sin CAPEX</span>
+                                )}
+                              </div>
                             </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigateToContractFromReports(item.contractId, "gantt");
+                              }}
+                              title="Ir al proyecto"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                              Ir al proyecto
+                            </Button>
                           </div>
                         </div>
                       </CardHeader>
