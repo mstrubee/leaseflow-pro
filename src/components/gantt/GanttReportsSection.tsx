@@ -308,8 +308,10 @@ export function GanttReportsSection() {
       const currentUF = ufValue || 0;
 
       // 4) Assemble per-timeline data
-      const result: GanttContractData[] = validTimelines.map((tl: any) => {
+      const result: GanttContractData[] = validTimelines.flatMap((tl: any) => {
         const tasks = allTasks.filter((t) => t.timeline_id === tl.id) as GanttTask[];
+        // Excluir líneas de tiempo sin tareas (no tienen Gantt cargada)
+        if (tasks.length === 0) return [];
         const taskTree = buildTree(tasks);
         // End date = max end_date of all tasks
         const endDates = tasks.map((t) => t.end_date).filter(Boolean) as string[];
@@ -318,7 +320,7 @@ export function GanttReportsSection() {
             ? endDates.reduce((max, d) => (d > max ? d : max), endDates[0])
             : null;
         const capexUF = capexByContract.get(tl.contract_id) || 0;
-        return {
+        return [{
           contractId: tl.contract_id,
           contractName: tl.contracts.name,
           timelineName: tl.name,
@@ -327,7 +329,7 @@ export function GanttReportsSection() {
           endDate,
           capexUF,
           capexCLP: capexUF * currentUF,
-        };
+        }];
       });
 
       // Sort by contract name
