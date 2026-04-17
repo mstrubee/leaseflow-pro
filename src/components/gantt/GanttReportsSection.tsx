@@ -287,21 +287,25 @@ export function GanttReportsSection() {
         from += PAGE;
       }
 
-      // 3) Load CAPEX budgets for those contracts - USAR VALOR DIRECTO, NO CALCULAR
+      // 3) Load CAPEX budgets for those contracts - usar el presupuesto más reciente del contrato
       const { data: budgets, error: bErr } = await supabase
         .from("contract_budgets")
-        .select("id, contract_id, amount_uf")
+        .select("contract_id, year, amount_uf, updated_at")
         .eq("budget_type", "capex")
+        .order("year", { ascending: false })
+        .order("updated_at", { ascending: false })
         .in("contract_id", contractIds);
       if (bErr) throw bErr;
 
-      // Usar amount_uf directo de contract_budgets como espejo
+      // Espejar solo el presupuesto CAPEX vigente/más reciente, sin sumar años
       const capexByContract = new Map<string, number>();
       (budgets || []).forEach((b) => {
-        // Tomar el valor directo del presupuesto, no calcular desde líneas
-        const existing = capexByContract.get(b.contract_id) || 0;
-        capexByContract.set(b.contract_id, existing + (b.amount_uf || 0));
+        if (!capexByContract.has(b.contract_id)) {
+          capexByContract.set(b.contract_id, b.amount_uf || 0);
+        }
       });
+
+      const currentUF = ufValue || 0;
 
       // 4) Assemble per-timeline data
       const result: GanttContractData[] = validTimelines.map((tl: any) => {
