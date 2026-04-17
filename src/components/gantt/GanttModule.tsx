@@ -4,13 +4,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useGantt } from "@/hooks/useGantt";
 import { GanttChart } from "./GanttChart";
 import { GanttTaskTree } from "./GanttTaskTree";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CalendarDays, List, Plus, Loader2 } from "lucide-react";
+import { CalendarDays, List, Plus, Loader2, FileStack, Save, RefreshCw } from "lucide-react";
 import { exportGanttToPDF } from "./ganttExportPDF";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -37,12 +40,20 @@ export function GanttModule({ contractId }: GanttModuleProps) {
     linkPurchaseOrder,
     unlinkPurchaseOrder,
     reorderTask,
+    saveAsNewTemplate,
+    updateBaseTemplate,
     reload,
   } = useGantt(contractId);
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newTimelineName, setNewTimelineName] = useState("Línea de Tiempo Principal");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [newTemplateDesc, setNewTemplateDesc] = useState("");
+  const [confirmUpdateOpen, setConfirmUpdateOpen] = useState(false);
+
+  const baseTemplate = templates.find((t) => t.id === timeline?.template_id);
 
   const handleCreateTimeline = async () => {
     const result = await createTimeline(
@@ -54,6 +65,21 @@ export function GanttModule({ contractId }: GanttModuleProps) {
       setNewTimelineName("Línea de Tiempo Principal");
       setSelectedTemplateId("");
     }
+  };
+
+  const handleSaveAsNew = async () => {
+    if (!newTemplateName.trim()) return;
+    const r = await saveAsNewTemplate(newTemplateName.trim(), newTemplateDesc.trim() || undefined);
+    if (r) {
+      setSaveTemplateOpen(false);
+      setNewTemplateName("");
+      setNewTemplateDesc("");
+    }
+  };
+
+  const handleUpdateBase = async () => {
+    const ok = await updateBaseTemplate();
+    if (ok) setConfirmUpdateOpen(false);
   };
 
   if (loading) {
@@ -149,14 +175,98 @@ export function GanttModule({ contractId }: GanttModuleProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <CalendarDays className="h-5 w-5" />
-          {timeline.name}
-        </CardTitle>
-        <CardDescription>
-          Línea de tiempo del proyecto con {tasks.length} tareas
-        </CardDescription>
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <CardTitle className="flex items-center gap-2">
+              <CalendarDays className="h-5 w-5" />
+              {timeline.name}
+            </CardTitle>
+            <CardDescription>
+              Línea de tiempo del proyecto con {tasks.length} tareas
+              {baseTemplate && <> · Plantilla base: <span className="font-medium">{baseTemplate.name}</span></>}
+            </CardDescription>
+          </div>
+          {isAdmin && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-2" disabled={saving}>
+                  <FileStack className="h-4 w-4" />
+                  Plantilla
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64 bg-popover z-50">
+                <DropdownMenuItem
+                  onClick={() => {
+                    setNewTemplateName(timeline.name);
+                    setNewTemplateDesc("");
+                    setSaveTemplateOpen(true);
+                  }}
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  Crear nueva plantilla desde este Gantt
+                </DropdownMenuItem>
+                {baseTemplate && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setConfirmUpdateOpen(true)}>
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Actualizar plantilla "{baseTemplate.name}"
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </CardHeader>
+
+      {/* Save as new template dialog */}
+      <Dialog open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Crear plantilla desde este cronograma</DialogTitle>
+            <DialogDescription>
+              Se generará una nueva plantilla en Administración con la estructura actual de tareas, duraciones y dependencias.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="tpl-name">Nombre de la plantilla</Label>
+              <Input id="tpl-name" value={newTemplateName} onChange={(e) => setNewTemplateName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tpl-desc">Descripción (opcional)</Label>
+              <Textarea id="tpl-desc" value={newTemplateDesc} onChange={(e) => setNewTemplateDesc(e.target.value)} rows={3} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveTemplateOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSaveAsNew} disabled={saving || !newTemplateName.trim()}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Crear plantilla
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm update base template */}
+      <AlertDialog open={confirmUpdateOpen} onOpenChange={setConfirmUpdateOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Actualizar plantilla base</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se reemplazará el contenido de la plantilla <span className="font-medium">"{baseTemplate?.name}"</span> con la estructura actual de este cronograma. Esta acción no afecta a otros contratos que ya hayan creado su Gantt desde esta plantilla, pero sí cambiará la base para futuros usos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleUpdateBase} disabled={saving}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Actualizar plantilla
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <CardContent>
         <Tabs defaultValue="chart" className="w-full">
           <TabsList className="mb-4">

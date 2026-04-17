@@ -674,6 +674,110 @@ export function useGantt(contractId: string) {
     }
   };
 
+  // Snapshot the current timeline tasks into template tasks (rows in gantt_template_tasks + dependencies)
+  const writeTasksToTemplate = async (templateId: string) => {
+    // Delete existing template tasks (cascade deletes deps)
+    await supabase.from("gantt_template_tasks").delete().eq("template_id", templateId);
+
+    if (tasks.length === 0) return;
+
+    // Build mapping current task id -> new template task id
+    const idMap = new Map<string, string>();
+
+    // First pass: insert tasks without parent_id
+    const rows = tasks.map((t) => ({
+      template_id: templateId,
+      parent_id: null as string | null,
+      name: t.name,
+      default_duration_days: t.duration_days || 1,
+      duration_type: t.duration_type,
+      display_order: t.display_order,
+    }));
+
+    const { data: inserted, error } = await supabase
+      .from("gantt_template_tasks")
+      .insert(rows)
+      .select();
+
+    if (error || !inserted) throw error || new Error("No se pudieron insertar las tareas de plantilla");
+
+    // Map by display_order + name (stable enough since we inserted in same order)
+    tasks.forEach((t, idx) => {
+      idMap.set(t.id, inserted[idx].id);
+    });
+
+    // Second pass: update parent_id
+    for (const t of tasks) {
+      if (t.parent_id) {
+        const newId = idMap.get(t.id);
+        const newParentId = idMap.get(t.parent_id);
+        if (newId && newParentId) {
+          await supabase
+            .from("gantt_template_tasks")
+            .update({ parent_id: newParentId })
+            .eq("id", newId);
+        }
+      }
+    }
+
+    // Third pass: dependencies
+    const deps: { task_id: string; depends_on_task_id: string }[] = [];
+    tasks.forEach((t) => {
+      (t.dependencies || []).forEach((d) => {
+        const a = idMap.get(d.task_id);
+        const b = idMap.get(d.depends_on_task_id);
+        if (a && b) deps.push({ task_id: a, depends_on_task_id: b });
+      });
+    });
+    if (deps.length > 0) {
+      await supabase.from("gantt_template_dependencies").insert(
+        deps.map((d) => ({ ...d, lag_days: 0, lag_type: "calendar" }))
+      );
+    }
+  };
+
+  const saveAsNewTemplate = async (name: string, description?: string) => {
+    setSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: tpl, error } = await supabase
+        .from("gantt_templates")
+        .insert({ name, description: description || null, created_by: user?.id, is_active: true })
+        .select()
+        .single();
+      if (error || !tpl) throw error;
+      await writeTasksToTemplate(tpl.id);
+      toast({ title: "Plantilla creada", description: `Se creó la plantilla "${name}" con el cronograma actual` });
+      await loadTemplates();
+      return tpl;
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo crear la plantilla" });
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateBaseTemplate = async () => {
+    if (!timeline?.template_id) {
+      toast({ variant: "destructive", title: "Sin plantilla base", description: "Este cronograma no fue creado a partir de una plantilla" });
+      return false;
+    }
+    setSaving(true);
+    try {
+      await writeTasksToTemplate(timeline.template_id);
+      await supabase.from("gantt_templates").update({ updated_at: new Date().toISOString() }).eq("id", timeline.template_id);
+      toast({ title: "Plantilla actualizada", description: "La plantilla base se actualizó con esta versión" });
+      await loadTemplates();
+      return true;
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar la plantilla base" });
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return {
     timeline,
     tasks,
@@ -691,6 +795,8 @@ export function useGantt(contractId: string) {
     linkPurchaseOrder,
     unlinkPurchaseOrder,
     reorderTask,
+    saveAsNewTemplate,
+    updateBaseTemplate,
     reload: loadTimeline,
   };
 }
