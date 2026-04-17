@@ -282,7 +282,27 @@ const BudgetLineItemInner = ({
   const childrenSubtotal = isParent ? calculateChildrenSubtotal(line.children!) : 0;
   const multiplier = line.quantity || 1;
   const parentTotal = childrenSubtotal * multiplier;
-  const calculatedAmount = isCalcPercentage ? (line.amount_uf || 0) : (isParent ? parentTotal : getLeafAmount());
+
+  // For percentage lines (Gastos Generales, Utilidades): compute live from source line's children sum,
+  // so the displayed amount stays in sync with edits to children — NOT based on source's totalized display.
+  const livePercentageAmount = useMemo(() => {
+    if (!isCalcPercentage) return 0;
+    const pct = line.calc_percentage || 0;
+    if (!line.calc_source_line_id || pct <= 0) return line.amount_uf || 0;
+    const sourceLine = linesMap.get(line.calc_source_line_id);
+    if (!sourceLine) return line.amount_uf || 0;
+    let sourceBase = 0;
+    if (sourceLine.children && sourceLine.children.length > 0) {
+      const sub = calculateStoredSubtotal(sourceLine.children);
+      const srcMult = sourceLine.quantity || 1;
+      sourceBase = sub * srcMult;
+    } else {
+      sourceBase = sourceLine.amount_uf || 0;
+    }
+    return (sourceBase * pct) / 100;
+  }, [isCalcPercentage, line.calc_source_line_id, line.calc_percentage, line.amount_uf, linesMap]);
+
+  const calculatedAmount = isCalcPercentage ? livePercentageAmount : (isParent ? parentTotal : getLeafAmount());
 
   // For parent lines: include percentage surcharges (Gastos Generales, Utilidades) that reference this line
   // Compute live from current calculatedAmount and the surcharge's calc_percentage so edits reflect immediately
