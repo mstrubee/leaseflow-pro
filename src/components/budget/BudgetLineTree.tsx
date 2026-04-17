@@ -995,9 +995,9 @@ const BudgetLineItem = React.memo(BudgetLineItemInner, (prev, next) => {
   const prevCollapsed = prev.collapsedIds?.has(prev.line.id) ?? false;
   const nextCollapsed = next.collapsedIds?.has(next.line.id) ?? false;
   if (prevCollapsed !== nextCollapsed) return false;
-  // For percentage lines, also check if linesMap changed (need recalc)
-  if (prev.line.calc_type === "percentage" && prev.linesMap !== next.linesMap) return false;
-  // Skip comparing linesMap for non-percentage lines
+  // For percentage lines and parent lines (which sum sibling surcharges), recalc when linesMap changes
+  const isParentLine = !!(prev.line.children && prev.line.children.length > 0);
+  if ((prev.line.calc_type === "percentage" || isParentLine) && prev.linesMap !== next.linesMap) return false;
   if (prev.parentCategoryId !== next.parentCategoryId) return false;
   if (prev.templatePricesMap !== next.templatePricesMap) return false;
   // Callbacks are stable (useCallback in parent), skip comparing
