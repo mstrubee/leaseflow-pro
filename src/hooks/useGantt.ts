@@ -676,35 +676,61 @@ export function useGantt(contractId: string) {
 
   // Snapshot the current timeline tasks into template tasks (rows in gantt_template_tasks + dependencies)
   const writeTasksToTemplate = async (templateId: string) => {
-    // Delete existing template tasks (cascade deletes deps)
-    await supabase.from("gantt_template_tasks").delete().eq("template_id", templateId);
+    // Explicitly delete dependencies first (defensive: in case CASCADE is bypassed by RLS chain)
+    // Find all template task ids first, then delete deps referencing them, then delete tasks.
+    const { data: existingTaskIds, error: listErr } = await supabase
+      .from("gantt_template_tasks")
+      .select("id")
+      .eq("template_id", templateId);
+    if (listErr) throw listErr;
+
+    if (existingTaskIds && existingTaskIds.length > 0) {
+      const ids = existingTaskIds.map((r: any) => r.id);
+      const { error: depDelErr } = await supabase
+        .from("gantt_template_dependencies")
+        .delete()
+        .in("task_id", ids);
+      if (depDelErr) throw depDelErr;
+
+      const { error: taskDelErr } = await supabase
+        .from("gantt_template_tasks")
+        .delete()
+        .in("id", ids);
+      if (taskDelErr) throw taskDelErr;
+
+      // Verify the delete actually removed everything (RLS could silently no-op)
+      const { count: remaining, error: countErr } = await supabase
+        .from("gantt_template_tasks")
+        .select("id", { count: "exact", head: true })
+        .eq("template_id", templateId);
+      if (countErr) throw countErr;
+      if ((remaining ?? 0) > 0) {
+        throw new Error("No se pudieron eliminar las tareas anteriores de la plantilla (permisos insuficientes)");
+      }
+    }
 
     if (tasks.length === 0) return;
 
     // Build mapping current task id -> new template task id
     const idMap = new Map<string, string>();
 
-    // First pass: insert tasks without parent_id
-    const rows = tasks.map((t) => ({
-      template_id: templateId,
-      parent_id: null as string | null,
-      name: t.name,
-      default_duration_days: t.duration_days || 1,
-      duration_type: t.duration_type,
-      display_order: t.display_order,
-    }));
-
-    const { data: inserted, error } = await supabase
-      .from("gantt_template_tasks")
-      .insert(rows)
-      .select();
-
-    if (error || !inserted) throw error || new Error("No se pudieron insertar las tareas de plantilla");
-
-    // Map by display_order + name (stable enough since we inserted in same order)
-    tasks.forEach((t, idx) => {
-      idMap.set(t.id, inserted[idx].id);
-    });
+    // Insert tasks one by one to guarantee a reliable id mapping (avoids relying on insert(...).select() order)
+    for (const t of tasks) {
+      const { data: insertedRow, error: insErr } = await supabase
+        .from("gantt_template_tasks")
+        .insert({
+          template_id: templateId,
+          parent_id: null,
+          name: t.name,
+          default_duration_days: t.duration_days || 1,
+          duration_type: t.duration_type,
+          display_order: t.display_order,
+        })
+        .select()
+        .single();
+      if (insErr || !insertedRow) throw insErr || new Error("No se pudo insertar tarea de plantilla");
+      idMap.set(t.id, insertedRow.id);
+    }
 
     // Second pass: update parent_id
     for (const t of tasks) {
