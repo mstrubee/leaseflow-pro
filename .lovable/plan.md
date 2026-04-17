@@ -1,39 +1,33 @@
 
 
-## Marcar inicio de pago de renta en la Carta Gantt
+## Fix: 0% en Gastos Generales / Utilidades no actualiza la línea madre
 
-Agregar una línea vertical roja segmentada en el diagrama Gantt que indique el día exacto en que comienza el pago de la renta del contrato, considerando los meses de gracia.
+### Causa raíz
+En `src/components/budget/BudgetLineTree.tsx` (líneas 321-335), el cálculo de recargos para la línea madre tiene una lógica de fallback incorrecta:
 
-### Cálculo de la fecha
-La fecha base del arriendo se obtiene de la versión vigente del contrato:
-- Base: `effective_date` (si existe) o `signed_date`.
-- Mes de inicio de pago = `grace_months + 1` (consistente con `calculateCurrentRentUF` en `src/lib/contractRent.ts`).
-- Fecha de inicio de pago de renta = `base + grace_months` meses (usando `addMonths` de date-fns para coincidir con el inicio del primer mes pagado).
-- Si no hay `signed_date` ni `effective_date`, no se dibuja la línea.
+```ts
+const pct = l.calc_percentage || 0;
+if (pct > 0) {
+  surcharges += (calculatedAmount * pct) / 100;   // calcula en vivo
+} else {
+  surcharges += l.amount_uf || 0;                 // ← BUG: usa valor viejo guardado
+}
+```
+
+Cuando el usuario pone **0%**, `pct === 0`, entonces se cae al `else` y suma el `amount_uf` antiguo guardado en BD. Por eso la línea madre no cambia: sigue sumando el monto histórico de Gastos Generales como si nada.
+
+El mismo patrón problemático existe en `livePercentageAmount` (línea 303): `if (!line.calc_source_line_id || pct <= 0) return line.amount_uf || 0;` — con 0% retorna el valor guardado en lugar de 0.
 
 ### Cambios
 
-1. **`src/components/gantt/GanttModule.tsx`**
-   - Cargar (una vez al montar) los campos necesarios desde `contracts` y la versión de contrato actual: `signed_date`, `effective_date`, `grace_months`.
-   - Pasar a `<GanttChart />` un nuevo prop opcional `rentStartDate: string | null` (formato `yyyy-MM-dd`).
+**`src/components/budget/BudgetLineTree.tsx`**
 
-2. **`src/components/gantt/GanttChart.tsx`**
-   - Añadir `rentStartDate?: string | null` a `GanttChartProps`.
-   - Junto al overlay del "today highlight" (línea ~1260), agregar un overlay similar:
-     - Buscar el índice del día en `days` que coincide con `rentStartDate`.
-     - Si está dentro del rango visible, renderizar un `<div>` posicionado absolutamente con:
-       - `border-left: 2px dashed #ef4444` (rojo)
-       - altura completa de filas de tareas
-       - z-index sobre las barras pero sin bloquear interacción (`pointer-events-none`)
-     - Tooltip al hacer hover con texto "Inicio pago de renta — DD/MM/YYYY".
-   - Agregar una pequeña etiqueta "Inicio renta" cerca del tope de la línea para identificarla visualmente.
+1. **`calculatedAmountWithSurcharges`** (línea 321-335): tratar líneas porcentuales como "siempre live". Si la línea recargo tiene `calc_source_line_id` definido, calcular `(calculatedAmount * pct) / 100` (incluyendo cuando `pct === 0`, que dará 0). Sólo usar `l.amount_uf` como fallback cuando no exista `calc_source_line_id` (recargo de monto fijo legacy).
 
-### Notas técnicas
-- Si la fecha cae fuera del rango visible del Gantt (`days`), simplemente no se renderiza (no se cambia el rango automático).
-- No se modifica la base de datos ni los hooks `useGantt`.
-- El cálculo respeta que mes de gracia 0 = pago empieza el día base; mes de gracia N = pago empieza N meses después de la fecha base.
+2. **`livePercentageAmount`** (línea 300-315): cambiar la guarda `pct <= 0` para que sólo retorne `amount_uf` cuando NO haya `calc_source_line_id`. Si hay source y `pct === 0`, devolver 0 (no el stored).
 
-### Archivos a modificar
-- `src/components/gantt/GanttModule.tsx`
-- `src/components/gantt/GanttChart.tsx`
+### Resultado
+- Poner 0% en Gastos Generales → recargo = 0 → línea madre "Obras Civiles" muestra exactamente la suma de hijas.
+- Cambiar a 5%, 10%, etc. → recalcula en vivo como ya funciona.
+- Líneas porcentuales legacy sin source siguen mostrando su monto guardado.
 
