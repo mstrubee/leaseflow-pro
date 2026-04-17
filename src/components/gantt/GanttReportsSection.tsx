@@ -745,14 +745,28 @@ export function GanttReportsSection() {
             </CollapsibleTrigger>
             {isSectionOpen && !loading && data.length > 0 && (
               <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                <Button variant="outline" size="sm" onClick={expandAll}>
-                  <Maximize2 className="h-3 w-3 mr-1" />
-                  Expandir todos
-                </Button>
-                <Button variant="outline" size="sm" onClick={collapseAll}>
-                  <Minimize2 className="h-3 w-3 mr-1" />
-                  Colapsar todos
-                </Button>
+                {(() => {
+                  const allOpen = openCards.size === data.length && data.length > 0;
+                  return (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={allOpen ? collapseAll : expandAll}
+                    >
+                      {allOpen ? (
+                        <>
+                          <Minimize2 className="h-3 w-3 mr-1" />
+                          Colapsar todos
+                        </>
+                      ) : (
+                        <>
+                          <Maximize2 className="h-3 w-3 mr-1" />
+                          Expandir todos
+                        </>
+                      )}
+                    </Button>
+                  );
+                })()}
                 <Button variant="default" size="sm" onClick={exportPDF} disabled={exporting}>
                   {exporting ? (
                     <Loader2 className="h-3 w-3 mr-1 animate-spin" />
