@@ -278,6 +278,18 @@ const BudgetLineItemInner = ({
     return qty * price;
   };
 
+  // Calculate subtotal from a line's children using their stored amount_uf (for cross-line calculations)
+  const calculateStoredSubtotal = (children: BudgetLine[]): number => {
+    return children.reduce((sum, child) => {
+      if (child.children && child.children.length > 0) {
+        const childSub = calculateStoredSubtotal(child.children);
+        const mult = child.quantity || 1;
+        return sum + (childSub * mult);
+      }
+      return sum + (child.amount_uf || 0);
+    }, 0);
+  };
+
   // For parents: subtotal * multiplier
   const childrenSubtotal = isParent ? calculateChildrenSubtotal(line.children!) : 0;
   const multiplier = line.quantity || 1;
