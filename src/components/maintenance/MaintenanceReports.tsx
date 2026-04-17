@@ -53,13 +53,26 @@ export function MaintenanceReports() {
   const [dialogStatusFilter, setDialogStatusFilter] = useState<string[]>([]);
   const [dialogSubStatusFilter, setDialogSubStatusFilter] = useState<string[]>([]);
   const [contractCompanyMap, setContractCompanyMap] = useState<Map<string, string>>(new Map());
+  const [criticalityMap, setCriticalityMap] = useState<Map<string, { name: string; color: string | null }>>(new Map());
   const { logos } = useAppLogos();
   const barChartRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchForms();
     fetchContractCompanies();
+    fetchCriticalityCategories();
   }, []);
+
+  const fetchCriticalityCategories = async () => {
+    const { data } = await (supabase as any)
+      .from("maintenance_criticality_categories")
+      .select("id, name, color");
+    if (data) {
+      const map = new Map<string, { name: string; color: string | null }>();
+      data.forEach((c: any) => map.set(c.id, { name: c.name, color: c.color }));
+      setCriticalityMap(map);
+    }
+  };
 
   const fetchContractCompanies = async () => {
     const { data } = await supabase
