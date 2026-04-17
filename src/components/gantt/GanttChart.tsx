@@ -41,6 +41,54 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
+// Local input that only commits the value on Enter or blur, allowing free typing/erasing.
+function DurationInput({
+  value,
+  onCommit,
+}: {
+  value: number;
+  onCommit: (n: number) => void;
+}) {
+  const [local, setLocal] = useState<string>(String(value ?? 1));
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    if (!focused) setLocal(String(value ?? 1));
+  }, [value, focused]);
+  const commit = () => {
+    const n = parseInt(local);
+    if (isNaN(n) || n < 1) {
+      onCommit(1);
+      setLocal("1");
+    } else {
+      onCommit(n);
+      setLocal(String(n));
+    }
+  };
+  return (
+    <Input
+      type="number"
+      min={1}
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => {
+        setFocused(false);
+        commit();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          (e.currentTarget as HTMLInputElement).blur();
+        }
+      }}
+      className="h-7 text-xs border-0 bg-transparent focus:bg-background text-center w-14 px-1"
+      onDragStart={(e) => e.stopPropagation()}
+      draggable={false}
+    />
+  );
+}
+
+
 // Auto-progress based on today's date vs task start/end
 function computeAutoProgress(task: GanttTask): number {
   if (!task.start_date || !task.end_date) return 0;
