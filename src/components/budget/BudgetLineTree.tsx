@@ -300,7 +300,7 @@ const BudgetLineItemInner = ({
   const livePercentageAmount = useMemo(() => {
     if (!isCalcPercentage) return 0;
     const pct = line.calc_percentage || 0;
-    if (!line.calc_source_line_id || pct <= 0) return line.amount_uf || 0;
+    if (!line.calc_source_line_id) return line.amount_uf || 0;
     const sourceLine = linesMap.get(line.calc_source_line_id);
     if (!sourceLine) return line.amount_uf || 0;
     let sourceBase = 0;
@@ -317,18 +317,14 @@ const BudgetLineItemInner = ({
   const calculatedAmount = isCalcPercentage ? livePercentageAmount : (isParent ? parentTotal : getLeafAmount());
 
   // For parent lines: include percentage surcharges (Gastos Generales, Utilidades) that reference this line
-  // Compute live from current calculatedAmount and the surcharge's calc_percentage so edits reflect immediately
+  // Always compute live when surcharge has a source — including pct === 0 → contributes 0
   const calculatedAmountWithSurcharges = useMemo(() => {
     if (!isParent || !linesMap) return calculatedAmount;
     let surcharges = 0;
     linesMap.forEach((l) => {
       if (l.calc_type === "percentage" && l.calc_source_line_id === line.id) {
         const pct = l.calc_percentage || 0;
-        if (pct > 0) {
-          surcharges += (calculatedAmount * pct) / 100;
-        } else {
-          surcharges += l.amount_uf || 0;
-        }
+        surcharges += (calculatedAmount * pct) / 100;
       }
     });
     return calculatedAmount + surcharges;
