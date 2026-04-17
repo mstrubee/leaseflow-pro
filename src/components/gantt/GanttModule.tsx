@@ -53,6 +53,12 @@ export function GanttModule({ contractId }: GanttModuleProps) {
   const [newTemplateName, setNewTemplateName] = useState("");
   const [newTemplateDesc, setNewTemplateDesc] = useState("");
   const [confirmUpdateOpen, setConfirmUpdateOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
+  const handleDeleteTimeline = async () => {
+    const ok = await deleteTimeline();
+    if (ok) setConfirmDeleteOpen(false);
+  };
 
   const baseTemplate = templates.find((t) => t.id === timeline?.template_id);
 
