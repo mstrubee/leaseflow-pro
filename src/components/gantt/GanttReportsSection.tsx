@@ -729,7 +729,7 @@ export function GanttReportsSection() {
 
         // Today vertical line
         if (todayIdx >= 0) {
-          const todayX = chartLeft + nameColWidth + todayIdx * dayWidth + dayWidth / 2;
+          const todayX = chartLeft + (nameColWidth + 18 * 2 + 14) + todayIdx * dayWidth + dayWidth / 2;
           doc.setDrawColor(59, 130, 246);
           doc.setLineWidth(0.4);
           doc.line(todayX, chartTop, todayX, y);
