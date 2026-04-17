@@ -1591,26 +1591,9 @@ export function GanttChart({
 
                   {/* Duration */}
                   <div className="flex-shrink-0 border-r flex items-center px-1" style={{ width: DURATION_COL_WIDTH }}>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={task.duration_days ?? ""}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        if (raw === "") {
-                          handleUpdateTaskField(task.id, "duration_days", "" as any);
-                          return;
-                        }
-                        const n = parseInt(raw);
-                        if (!isNaN(n)) handleUpdateTaskField(task.id, "duration_days", n);
-                      }}
-                      onBlur={(e) => {
-                        const n = parseInt(e.target.value);
-                        handleUpdateTaskField(task.id, "duration_days", isNaN(n) || n < 1 ? 1 : n);
-                      }}
-                      className="h-7 text-xs border-0 bg-transparent focus:bg-background text-center w-14 px-1"
-                      onDragStart={(e) => e.stopPropagation()}
-                      draggable={false}
+                    <DurationInput
+                      value={task.duration_days || 1}
+                      onCommit={(n) => handleUpdateTaskField(task.id, "duration_days", n)}
                     />
                     <span className="text-[10px] text-muted-foreground">
                       {task.duration_type === "business" ? "háb" : "días"}
