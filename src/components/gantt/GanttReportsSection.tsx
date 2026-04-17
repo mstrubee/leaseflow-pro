@@ -99,6 +99,9 @@ function MiniGantt({ taskTree, holidays }: { taskTree: GanttTask[]; holidays: Ho
   const totalDays = days.length;
 
   const NAME_COL_WIDTH = 220;
+  const DATE_COL_WIDTH = 70;
+  const DUR_COL_WIDTH = 55;
+  const META_WIDTH = NAME_COL_WIDTH + DATE_COL_WIDTH * 2 + DUR_COL_WIDTH;
   const DAY_WIDTH = Math.max(2, Math.min(8, 800 / totalDays));
   const ROW_HEIGHT = 22;
   const HEADER_HEIGHT = 28;
