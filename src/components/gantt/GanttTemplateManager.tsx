@@ -32,6 +32,7 @@ interface GanttTemplateTask {
   duration_type: "calendar" | "business";
   display_order: number;
   default_responsible_member_id: string | null;
+  default_origin: "nuevo" | "traslado" | null;
   children?: GanttTemplateTask[];
 }
 
