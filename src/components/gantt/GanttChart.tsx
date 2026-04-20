@@ -1674,6 +1674,35 @@ export function GanttChart({
                     </Button>
                   </div>
 
+                  {/* Responsable */}
+                  <div
+                    className="flex-shrink-0 border-r flex items-center px-1"
+                    style={{ width: RESPONSIBLE_COL_WIDTH }}
+                  >
+                    {isAdmin ? (
+                      <SearchableSelect
+                        value={task.responsible_member_id ?? ""}
+                        onValueChange={(v) =>
+                          handleUpdateTaskField(task.id, "responsible_member_id", v || null)
+                        }
+                        options={[
+                          { value: "", label: "Sin asignar" },
+                          ...orgMembers.map((m) => ({
+                            value: m.id,
+                            label: m.position ? `${m.name} — ${m.position}` : m.name,
+                          })),
+                        ]}
+                        placeholder="Sin asignar"
+                        searchPlaceholder="Buscar persona..."
+                        triggerClassName="h-7 text-xs"
+                      />
+                    ) : (
+                      <span className="text-xs text-muted-foreground truncate px-1">
+                        {orgMembers.find((m) => m.id === task.responsible_member_id)?.name ?? "Sin asignar"}
+                      </span>
+                    )}
+                  </div>
+
                   {/* Start date */}
                   <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
                     <DatePickerCell
