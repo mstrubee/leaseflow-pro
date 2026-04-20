@@ -1044,6 +1044,15 @@ const Contracts = () => {
                   <Download className="h-4 w-4" />
                   Descargar PDF
                 </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleDownloadExcel}
+                  className="gap-2"
+                  size="sm"
+                >
+                  <Download className="h-4 w-4" />
+                  Descargar Excel
+                </Button>
               </div>
               {isAdmin && (
                 <ColumnWidthsManager
