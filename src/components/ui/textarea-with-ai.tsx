@@ -51,9 +51,19 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
   ) => {
     const internalRef = React.useRef<HTMLTextAreaElement>(null);
     const textareaRef = (ref as React.RefObject<HTMLTextAreaElement>) || internalRef;
+    const highlightRef = React.useRef<HTMLDivElement>(null);
 
     const [showPreview, setShowPreview] = React.useState(false);
     const hasBold = value?.includes("**") || false;
+
+    // Sync scroll between textarea and the highlight overlay
+    const handleScroll = React.useCallback(() => {
+      const ta = textareaRef.current;
+      const hl = highlightRef.current;
+      if (!ta || !hl) return;
+      hl.scrollTop = ta.scrollTop;
+      hl.scrollLeft = ta.scrollLeft;
+    }, [textareaRef]);
 
     const charCount = value?.length || 0;
     const isOverLimit = maxLength ? charCount > maxLength : false;
@@ -157,6 +167,33 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
             title="Clic para volver a editar"
           >
             {renderBoldMarkdown(value || "")}
+          </div>
+        ) : hasBold ? (
+          // Live-bold mode: textarea with transparent text + highlight overlay rendering markdown bold
+          <div className="relative w-full">
+            <div
+              ref={highlightRef}
+              aria-hidden="true"
+              className={cn(
+                "pointer-events-none absolute inset-0 overflow-hidden rounded-md border border-transparent px-3 py-2 text-sm whitespace-pre-wrap break-words text-foreground",
+                className
+              )}
+            >
+              {renderBoldMarkdown((value || "") + "\n")}
+            </div>
+            <Textarea
+              ref={textareaRef}
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              onScroll={handleScroll}
+              maxLength={maxLength}
+              className={cn(
+                "relative bg-transparent text-transparent caret-foreground selection:bg-primary/30 selection:text-transparent",
+                isOverLimit && "border-destructive",
+                className
+              )}
+              {...props}
+            />
           </div>
         ) : (
           <Textarea
