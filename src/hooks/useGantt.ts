@@ -21,11 +21,18 @@ export interface GanttTask {
   notes: string | null;
   color: string | null;
   display_order: number;
+  responsible_member_id: string | null;
   created_at: string;
   updated_at: string;
   children?: GanttTask[];
   dependencies?: GanttTaskDependency[];
   purchase_orders?: GanttTaskPurchaseOrder[];
+}
+
+export interface OrgMember {
+  id: string;
+  name: string;
+  position: string | null;
 }
 
 export interface GanttTaskDependency {
@@ -92,8 +99,18 @@ export function useGantt(contractId: string) {
   const [tasks, setTasks] = useState<GanttTask[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [templates, setTemplates] = useState<GanttTemplate[]>([]);
+  const [orgMembers, setOrgMembers] = useState<OrgMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  const loadOrgMembers = useCallback(async () => {
+    const { data } = await supabase
+      .from("org_members")
+      .select("id, name, position")
+      .order("display_order", { ascending: true })
+      .order("name", { ascending: true });
+    if (data) setOrgMembers(data as OrgMember[]);
+  }, []);
 
   const loadHolidays = useCallback(async () => {
     const { data } = await supabase
@@ -180,7 +197,8 @@ export function useGantt(contractId: string) {
     loadTimeline();
     loadHolidays();
     loadTemplates();
-  }, [loadTimeline, loadHolidays, loadTemplates]);
+    loadOrgMembers();
+  }, [loadTimeline, loadHolidays, loadTemplates, loadOrgMembers]);
 
   const createTimeline = async (name: string, templateId?: string) => {
     setSaving(true);
@@ -234,6 +252,8 @@ export function useGantt(contractId: string) {
 
     if (!templateTasks || templateTasks.length === 0) return;
 
+    type TemplateTaskRow = typeof templateTasks[number] & { default_responsible_member_id?: string | null };
+
     // Load template dependencies
     const { data: templateDeps } = await supabase
       .from("gantt_template_dependencies")
@@ -243,7 +263,7 @@ export function useGantt(contractId: string) {
     const taskIdMap = new Map<string, string>();
 
     // First pass: create all tasks without parent_id
-    const tasksToInsert = templateTasks.map(tt => ({
+    const tasksToInsert = (templateTasks as TemplateTaskRow[]).map(tt => ({
       timeline_id: timelineId,
       template_task_id: tt.id,
       name: tt.name,
@@ -251,6 +271,7 @@ export function useGantt(contractId: string) {
       duration_type: tt.duration_type,
       display_order: tt.display_order,
       parent_id: null as string | null,
+      responsible_member_id: tt.default_responsible_member_id ?? null,
     }));
 
     const { data: insertedTasks, error } = await supabase
@@ -832,6 +853,7 @@ export function useGantt(contractId: string) {
     taskTree,
     holidays,
     templates,
+    orgMembers,
     loading,
     saving,
     createTimeline,
