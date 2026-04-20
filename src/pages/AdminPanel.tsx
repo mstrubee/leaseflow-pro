@@ -24,6 +24,7 @@ import { OCRequestTemplateManager } from "@/components/admin/OCRequestTemplateMa
 import { LogoManager } from "@/components/admin/LogoManager";
 import { CollapsibleCard } from "@/components/admin/CollapsibleCard";
 import { ComiteGPStatusManager } from "@/components/admin/ComiteGPStatusManager";
+import { BudgetProgressStatusManager } from "@/components/admin/BudgetProgressStatusManager";
 import { OrgChartManager } from "@/components/admin/OrgChartManager";
 import { MaintenanceCriticalityManager } from "@/components/admin/MaintenanceCriticalityManager";
 import { MaintenanceSubStatusManager } from "@/components/admin/MaintenanceSubStatusManager";
@@ -1190,6 +1191,15 @@ const AdminPanel = () => {
               defaultOpen={false}
             >
               <MaintenanceCriticalityManager />
+            </CollapsibleCard>
+
+            <CollapsibleCard
+              title="Estados de Avance de Presupuesto"
+              description="Estados para las líneas de presupuesto (seleccionables o asignados automáticamente)"
+              icon={<ListChecks className="h-5 w-5 text-emerald-500" />}
+              defaultOpen={false}
+            >
+              <BudgetProgressStatusManager />
             </CollapsibleCard>
           </div>
         </CollapsibleCard>

@@ -936,7 +936,17 @@ const BudgetLineItemInner = ({
               Traslado
             </Badge>
           )}
-          
+
+          {/* Progress status badge - selectable for leaf lines */}
+          {!isParent && !isInternalTransfer && (
+            <ProgressStatusBadge
+              lineId={line.id}
+              currentStatusId={line.progress_status_id}
+              readOnly={readOnly}
+              isParent={isParent}
+            />
+          )}
+
           {/* OC Request, OC and Invoice buttons - only for authorized leaf lines (not for internal transfers) */}
           {!isParent && line.status === "autorizado" && !readOnly && !isInternalTransfer && (
             <div className="flex items-center gap-1 ml-2">
