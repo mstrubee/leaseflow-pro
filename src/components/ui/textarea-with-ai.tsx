@@ -175,9 +175,17 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
               ref={highlightRef}
               aria-hidden="true"
               className={cn(
-                "pointer-events-none absolute inset-0 overflow-hidden rounded-md border border-transparent px-3 py-2 text-sm whitespace-pre-wrap break-words text-foreground",
+                "pointer-events-none absolute inset-0 overflow-hidden rounded-md border border-transparent px-3 py-2 text-sm whitespace-pre-wrap text-foreground",
                 className
               )}
+              style={{
+                fontFamily: "inherit",
+                lineHeight: "1.5",
+                letterSpacing: "normal",
+                wordBreak: "break-word",
+                overflowWrap: "break-word",
+                tabSize: 4,
+              }}
             >
               {renderBoldMarkdown((value || "") + "\n")}
             </div>
@@ -192,6 +200,14 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
                 isOverLimit && "border-destructive",
                 className
               )}
+              style={{
+                fontFamily: "inherit",
+                lineHeight: "1.5",
+                letterSpacing: "normal",
+                wordBreak: "break-word",
+                overflowWrap: "break-word",
+                tabSize: 4,
+              }}
               {...props}
             />
           </div>
