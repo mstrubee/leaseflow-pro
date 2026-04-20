@@ -1583,6 +1583,28 @@ export function GanttChart({
                     >
                       <Plus className="h-3 w-3 text-primary" />
                     </Button>
+                    {task.parent_id && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 flex-shrink-0"
+                        title="Subir un nivel jerárquico"
+                        onClick={async () => {
+                          const parent = tasks.find((t) => t.id === task.parent_id);
+                          const newParentId = parent?.parent_id ?? null;
+                          const oldParentId = task.parent_id;
+                          await onUpdateTask(task.id, { parent_id: newParentId }, { skipPropagation: true });
+                          if (oldParentId) {
+                            await syncAncestorsDates(oldParentId);
+                          }
+                          if (newParentId) {
+                            await syncAncestorsDates(newParentId);
+                          }
+                        }}
+                      >
+                        <CornerLeftUp className="h-3 w-3 text-primary" />
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"
