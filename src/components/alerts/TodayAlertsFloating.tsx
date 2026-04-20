@@ -66,6 +66,7 @@ export function TodayAlertsFloating() {
   const [isDismissed, setIsDismissed] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("today");
   const [completingAlertId, setCompletingAlertId] = useState<string | null>(null);
+  const [expandedAlertIds, setExpandedAlertIds] = useState<Set<string>>(new Set());
 
   // Dependent alert state
   const [showFollowUpDialog, setShowFollowUpDialog] = useState(false);
@@ -447,9 +448,20 @@ export function TodayAlertsFloating() {
                         className="p-2 rounded-md bg-muted/50 hover:bg-muted transition-colors"
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
+                          <div
+                            className="flex-1 min-w-0 cursor-pointer"
+                            onDoubleClick={() => {
+                              setExpandedAlertIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(alert.id)) next.delete(alert.id);
+                                else next.add(alert.id);
+                                return next;
+                              });
+                            }}
+                            title="Doble clic para ver/ocultar texto completo"
+                          >
                             <div className="flex items-center gap-2">
-                              <p className="text-sm font-medium truncate">{alert.title}</p>
+                              <p className={`text-sm font-medium ${expandedAlertIds.has(alert.id) ? "break-words" : "truncate"}`}>{alert.title}</p>
                               {(viewMode === "week" || viewMode === "overdue") && (
                                 <Badge variant={viewMode === "overdue" ? "destructive" : "secondary"} className="text-[10px] h-4 shrink-0">
                                   {formatAlertDate(alert.due_date)}
@@ -457,7 +469,7 @@ export function TodayAlertsFloating() {
                               )}
                             </div>
                             {alert.contracts?.name && (
-                              <p className="text-xs text-muted-foreground truncate">
+                              <p className={`text-xs text-muted-foreground ${expandedAlertIds.has(alert.id) ? "break-words" : "truncate"}`}>
                                 {alert.contracts.name}
                               </p>
                             )}
