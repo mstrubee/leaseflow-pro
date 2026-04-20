@@ -30,6 +30,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
     taskTree,
     holidays,
     templates,
+    orgMembers,
     loading,
     saving,
     createTimeline,
@@ -363,6 +364,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
               tasks={tasks}
               taskTree={taskTree}
               holidays={holidays}
+              orgMembers={orgMembers}
               onUpdateTask={updateTask}
               onAddTask={addTask}
               onDeleteTask={deleteTask}

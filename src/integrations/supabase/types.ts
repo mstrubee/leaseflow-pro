@@ -1949,6 +1949,7 @@ export type Database = {
           notes: string | null
           parent_id: string | null
           progress: number | null
+          responsible_member_id: string | null
           start_date: string | null
           status: string
           template_task_id: string | null
@@ -1970,6 +1971,7 @@ export type Database = {
           notes?: string | null
           parent_id?: string | null
           progress?: number | null
+          responsible_member_id?: string | null
           start_date?: string | null
           status?: string
           template_task_id?: string | null
@@ -1991,6 +1993,7 @@ export type Database = {
           notes?: string | null
           parent_id?: string | null
           progress?: number | null
+          responsible_member_id?: string | null
           start_date?: string | null
           status?: string
           template_task_id?: string | null
@@ -2003,6 +2006,13 @@ export type Database = {
             columns: ["parent_id"]
             isOneToOne: false
             referencedRelation: "gantt_tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gantt_tasks_responsible_member_id_fkey"
+            columns: ["responsible_member_id"]
+            isOneToOne: false
+            referencedRelation: "org_members"
             referencedColumns: ["id"]
           },
           {
@@ -2067,6 +2077,7 @@ export type Database = {
         Row: {
           created_at: string
           default_duration_days: number | null
+          default_responsible_member_id: string | null
           display_order: number | null
           duration_type: string
           id: string
@@ -2077,6 +2088,7 @@ export type Database = {
         Insert: {
           created_at?: string
           default_duration_days?: number | null
+          default_responsible_member_id?: string | null
           display_order?: number | null
           duration_type?: string
           id?: string
@@ -2087,6 +2099,7 @@ export type Database = {
         Update: {
           created_at?: string
           default_duration_days?: number | null
+          default_responsible_member_id?: string | null
           display_order?: number | null
           duration_type?: string
           id?: string
@@ -2095,6 +2108,13 @@ export type Database = {
           template_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "gantt_template_tasks_default_responsible_member_id_fkey"
+            columns: ["default_responsible_member_id"]
+            isOneToOne: false
+            referencedRelation: "org_members"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "gantt_template_tasks_parent_id_fkey"
             columns: ["parent_id"]

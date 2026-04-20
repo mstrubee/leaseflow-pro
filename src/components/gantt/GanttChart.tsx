@@ -1,5 +1,5 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
-import { GanttTask } from "@/hooks/useGantt";
+import { GanttTask, OrgMember } from "@/hooks/useGantt";
 import { Holiday, calculateEndDate, calculateStartDate } from "@/lib/ganttDateUtils";
 import { getGanttDateRange, getTaskStatusColor, formatGanttDate } from "@/lib/ganttDateUtils";
 import { format, differenceInDays, parseISO, eachDayOfInterval, isWeekend, addDays } from "date-fns";
@@ -261,6 +261,7 @@ interface GanttChartProps {
   tasks: GanttTask[];
   taskTree: GanttTask[];
   holidays: Array<{ date: string; name: string }>;
+  orgMembers?: OrgMember[];
   onUpdateTask: (taskId: string, updates: Partial<GanttTask>, options?: { skipPropagation?: boolean; breakDependencies?: boolean }) => Promise<void>;
   onAddTask: (name: string, parentId?: string | null, options?: Partial<GanttTask>) => Promise<any>;
   onDeleteTask: (taskId: string) => Promise<void>;
@@ -274,8 +275,9 @@ interface GanttChartProps {
 
 const DAY_WIDTH = 30;
 const ROW_HEIGHT = 40;
-const TASK_NAME_WIDTH = 300;
-const DATE_COL_WIDTH = 110;
+const TASK_NAME_WIDTH = 450;
+const RESPONSIBLE_COL_WIDTH = 180;
+const DATE_COL_WIDTH = 140;
 const DURATION_COL_WIDTH = 110;
 const PROGRESS_COL_WIDTH = 80;
 
@@ -301,6 +303,7 @@ export function GanttChart({
   tasks,
   taskTree,
   holidays,
+  orgMembers = [],
   onUpdateTask,
   onAddTask,
   onDeleteTask,
@@ -505,7 +508,7 @@ export function GanttChart({
       childTaskId: string;
     }> = [];
 
-    const HEADER_OFFSET = TASK_NAME_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6; // +6 for grip handle
+    const HEADER_OFFSET = TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6; // +6 for grip handle
 
     visibleTasks.forEach(({ task }, rowIdx) => {
       if (!task.dependencies || task.dependencies.length === 0) return;
@@ -1184,7 +1187,7 @@ export function GanttChart({
         <div className="min-w-fit">
           {/* Month/Year Header */}
           <div className="flex border-b bg-muted/70 sticky top-0 z-30">
-            <div className="flex-shrink-0 border-r" style={{ width: 24 + TASK_NAME_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH }}>
+            <div className="flex-shrink-0 border-r" style={{ width: 24 + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH }}>
               <div className="px-2 py-1 text-xs font-semibold text-muted-foreground flex items-center justify-between gap-1 flex-wrap">
                 <span>Cronograma</span>
                 <div className="flex items-center gap-1">
@@ -1244,6 +1247,9 @@ export function GanttChart({
             <div className="flex-shrink-0 w-6" /> {/* Grip handle space */}
             <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs" style={{ width: TASK_NAME_WIDTH - 6 }}>
               Tarea
+            </div>
+            <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: RESPONSIBLE_COL_WIDTH }}>
+              Responsable
             </div>
             <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: DATE_COL_WIDTH }}>
               Inicio
@@ -1308,7 +1314,7 @@ export function GanttChart({
               const todayStr = format(new Date(), "yyyy-MM-dd");
               const todayIdx = days.findIndex((d) => format(d, "yyyy-MM-dd") === todayStr);
               if (todayIdx < 0) return null;
-              const HEADER_OFFSET = TASK_NAME_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
+              const HEADER_OFFSET = TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
               return (
                 <div
                   className="absolute top-0 pointer-events-none z-[5] bg-primary/10 border-l border-r border-primary/40"
@@ -1325,7 +1331,7 @@ export function GanttChart({
               if (!rentStartDate) return null;
               const idx = days.findIndex((d) => format(d, "yyyy-MM-dd") === rentStartDate);
               if (idx < 0) return null;
-              const HEADER_OFFSET = TASK_NAME_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
+              const HEADER_OFFSET = TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
               const totalHeight = visibleTasks.length * ROW_HEIGHT + (newTaskRow ? ROW_HEIGHT : 0) + ROW_HEIGHT;
               const formatted = format(new Date(rentStartDate + "T00:00:00"), "dd/MM/yyyy");
               return (
@@ -1668,6 +1674,35 @@ export function GanttChart({
                     </Button>
                   </div>
 
+                  {/* Responsable */}
+                  <div
+                    className="flex-shrink-0 border-r flex items-center px-1"
+                    style={{ width: RESPONSIBLE_COL_WIDTH }}
+                  >
+                    {isAdmin ? (
+                      <SearchableSelect
+                        value={task.responsible_member_id ?? ""}
+                        onValueChange={(v) =>
+                          handleUpdateTaskField(task.id, "responsible_member_id", v || null)
+                        }
+                        options={[
+                          { value: "", label: "Sin asignar" },
+                          ...orgMembers.map((m) => ({
+                            value: m.id,
+                            label: m.position ? `${m.name} — ${m.position}` : m.name,
+                          })),
+                        ]}
+                        placeholder="Sin asignar"
+                        searchPlaceholder="Buscar persona..."
+                        triggerClassName="h-7 text-xs"
+                      />
+                    ) : (
+                      <span className="text-xs text-muted-foreground truncate px-1">
+                        {orgMembers.find((m) => m.id === task.responsible_member_id)?.name ?? "Sin asignar"}
+                      </span>
+                    )}
+                  </div>
+
                   {/* Start date */}
                   <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
                     <DatePickerCell
@@ -1917,6 +1952,9 @@ export function GanttChart({
                     className="h-7 text-xs"
                   />
                 </div>
+
+                {/* Responsable placeholder */}
+                <div className="flex-shrink-0 border-r" style={{ width: RESPONSIBLE_COL_WIDTH }} />
 
                 <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
                   <DatePickerCell
