@@ -172,6 +172,7 @@ interface BudgetLineItemProps {
   collapsedIds?: Set<string>;
   onToggleExpand?: (id: string) => void;
   superficieEdificada?: number;
+  internalTransferSupplierIds?: Set<string>;
 }
 
 const countDescendants = (line: BudgetLine): number => {
@@ -197,8 +198,10 @@ const BudgetLineItemInner = ({
   templatePricesMap: externalTemplatePricesMap = {},
   collapsedIds,
   onToggleExpand,
-  superficieEdificada = 0
+  superficieEdificada = 0,
+  internalTransferSupplierIds,
 }: BudgetLineItemProps) => {
+  const isInternalTransfer = !!(line.supplier_id && internalTransferSupplierIds?.has(line.supplier_id));
   const { isAdmin } = useAuth();
   // Use centralized expansion state if provided, otherwise fall back to local state
   const [localExpanded, setLocalExpanded] = useState(true);
