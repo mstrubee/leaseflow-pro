@@ -22,6 +22,7 @@ export interface GanttTask {
   color: string | null;
   display_order: number;
   responsible_member_id: string | null;
+  origin: "nuevo" | "traslado" | null;
   created_at: string;
   updated_at: string;
   children?: GanttTask[];
