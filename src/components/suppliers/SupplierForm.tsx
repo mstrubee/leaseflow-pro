@@ -238,7 +238,7 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Internal transfer toggle */}
-      <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-3 space-y-2">
+      <div className="rounded-md border border-border bg-muted/40 p-3 space-y-2">
         <div className="flex items-center space-x-2">
           <Checkbox
             id="is_internal_transfer"
