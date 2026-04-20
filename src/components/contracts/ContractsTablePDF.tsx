@@ -85,7 +85,8 @@ export const getAvailableColumns = (isFirmadoView: boolean, isNegociacionView: b
   if (isFirmadoView) {
     baseColumns.push(
       { key: "termino", label: "Término" },
-      { key: "aviso", label: "Aviso" }
+      { key: "aviso", label: "Aviso" },
+      { key: "estado_patente", label: "Estado" }
     );
   }
 
