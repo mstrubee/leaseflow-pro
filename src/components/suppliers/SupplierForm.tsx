@@ -237,12 +237,31 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Internal transfer toggle */}
+      <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-3 space-y-2">
+        <div className="flex items-center space-x-2">
+          <Checkbox
+            id="is_internal_transfer"
+            checked={formData.is_internal_transfer}
+            onCheckedChange={checked => setFormData(prev => ({ ...prev, is_internal_transfer: !!checked }))}
+          />
+          <Label htmlFor="is_internal_transfer" className="font-medium">
+            Traslado interno (Activo Fijo / Mercancía)
+          </Label>
+        </div>
+        <p className="text-xs text-muted-foreground pl-6">
+          Marca esta opción si el "proveedor" es la propia empresa (ej: Grupo Planet) y representa un traslado interno
+          de activo fijo o mercancía. Solo se requiere el nombre. No genera OC, facturas ni se considera en el cálculo
+          del presupuesto.
+        </p>
+      </div>
+
       {/* Company Data */}
       <div className="space-y-4">
         <h4 className="font-medium text-sm border-b pb-2">Datos de la Empresa</h4>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Nombre de la empresa *</Label>
+            <Label htmlFor="name">Nombre {formData.is_internal_transfer ? "" : "de la empresa *"}</Label>
             <Input
               id="name"
               value={formData.name}
