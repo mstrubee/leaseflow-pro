@@ -119,7 +119,7 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
     (async () => {
       const { data } = await supabase
         .from("org_members")
-        .select("id, name, role")
+        .select("id, name, position")
         .order("display_order", { ascending: true });
       setOrgMembers((data as OrgMember[]) || []);
     })();
