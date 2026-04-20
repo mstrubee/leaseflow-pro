@@ -46,7 +46,7 @@ interface GanttTemplateDependency {
 interface OrgMember {
   id: string;
   name: string;
-  role: string | null;
+  position: string | null;
 }
 
 interface GanttTemplateManagerProps {
