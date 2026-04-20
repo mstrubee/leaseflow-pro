@@ -66,6 +66,7 @@ export function TodayAlertsFloating() {
   const [isDismissed, setIsDismissed] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("today");
   const [completingAlertId, setCompletingAlertId] = useState<string | null>(null);
+  const [expandedAlertIds, setExpandedAlertIds] = useState<Set<string>>(new Set());
 
   // Dependent alert state
   const [showFollowUpDialog, setShowFollowUpDialog] = useState(false);
