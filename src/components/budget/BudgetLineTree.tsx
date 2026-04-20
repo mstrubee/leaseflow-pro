@@ -64,6 +64,9 @@ interface BudgetLineTreeProps {
   onToggleExpand?: (id: string) => void;
   linesMap?: Map<string, BudgetLine>;
   superficieEdificada?: number;
+  /** Set of supplier IDs that represent internal transfers — these lines are
+   *  shown as informational only and excluded from totals. */
+  internalTransferSupplierIds?: Set<string>;
 }
 export const BudgetLineTree = ({
   lines,
@@ -83,7 +86,8 @@ export const BudgetLineTree = ({
   collapsedIds,
   onToggleExpand,
   linesMap: externalLinesMap,
-  superficieEdificada = 0
+  superficieEdificada = 0,
+  internalTransferSupplierIds,
 }: BudgetLineTreeProps) => {
   // Build linesMap only at root level (level === 0), pass down to children
   const rootLinesMap = useMemo(() => {
