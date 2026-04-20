@@ -432,12 +432,11 @@ export function GanttReportsSection() {
           (line) => line.budget_id === budget.id && !parentIds.has(line.id)
         );
 
-        const authorizedTotal = leafLines
-          .filter((line) => line.status === "autorizado")
-          .reduce((sum, line) => sum + getEffectiveAmount(line), 0);
-
-        const mirroredCapex = (budget.amount_uf || 0) > 0 ? budget.amount_uf || 0 : authorizedTotal;
-        capexByContract.set(contractId, mirroredCapex);
+        const linesTotal = leafLines.reduce((sum, line) => sum + getEffectiveAmount(line), 0);
+        const fallback = budget.amount_uf || 0;
+        // Mirror contract CAPEX card: use lines total if any lines exist, else fall back to manual amount
+        const finalCapex = linesTotal > 0 ? linesTotal : fallback;
+        capexByContract.set(contractId, finalCapex);
       });
 
       // 4) Assemble per-timeline data
