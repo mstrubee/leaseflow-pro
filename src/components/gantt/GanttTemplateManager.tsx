@@ -12,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Edit, ChevronDown, ChevronRight, Loader2, GripVertical, CalendarDays, Link } from "lucide-react";
+import { Plus, Trash2, Edit, ChevronDown, ChevronRight, Loader2, GripVertical, CalendarDays, Link, User } from "lucide-react";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 interface GanttTemplate {
   id: string;
@@ -30,6 +31,7 @@ interface GanttTemplateTask {
   default_duration_days: number;
   duration_type: "calendar" | "business";
   display_order: number;
+  default_responsible_member_id: string | null;
   children?: GanttTemplateTask[];
 }
 
@@ -39,6 +41,12 @@ interface GanttTemplateDependency {
   depends_on_task_id: string;
   lag_days: number;
   lag_type: string;
+}
+
+interface OrgMember {
+  id: string;
+  name: string;
+  position: string | null;
 }
 
 interface GanttTemplateManagerProps {
@@ -53,6 +61,7 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
   const [dependencies, setDependencies] = useState<GanttTemplateDependency[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [orgMembers, setOrgMembers] = useState<OrgMember[]>([]);
 
   // Dialog states
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
@@ -74,6 +83,7 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
     name: "",
     default_duration_days: 1,
     duration_type: "calendar" as "calendar" | "business",
+    default_responsible_member_id: null as string | null,
   });
 
   const loadTemplates = useCallback(async () => {
@@ -106,6 +116,13 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
 
   useEffect(() => {
     loadTemplates();
+    (async () => {
+      const { data } = await supabase
+        .from("org_members")
+        .select("id, name, position")
+        .order("display_order", { ascending: true });
+      setOrgMembers((data as OrgMember[]) || []);
+    })();
   }, [loadTemplates]);
 
   useEffect(() => {
@@ -242,6 +259,7 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
             name: taskForm.name,
             default_duration_days: taskForm.default_duration_days,
             duration_type: taskForm.duration_type,
+            default_responsible_member_id: taskForm.default_responsible_member_id,
           })
           .eq("id", editingTask.id);
       } else {
@@ -254,13 +272,14 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
           name: taskForm.name,
           default_duration_days: taskForm.default_duration_days,
           duration_type: taskForm.duration_type,
+          default_responsible_member_id: taskForm.default_responsible_member_id,
           display_order: maxOrder + 1,
         });
       }
       setTaskDialogOpen(false);
       setEditingTask(null);
       setSelectedParentId(null);
-      setTaskForm({ name: "", default_duration_days: 1, duration_type: "calendar" });
+      setTaskForm({ name: "", default_duration_days: 1, duration_type: "calendar", default_responsible_member_id: null });
       loadTemplateTasks(selectedTemplate.id);
     } catch (error) {
       toast({ variant: "destructive", title: "Error", description: "No se pudo guardar la tarea" });
@@ -299,7 +318,7 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
   const openAddTask = (parentId: string | null = null) => {
     setEditingTask(null);
     setSelectedParentId(parentId);
-    setTaskForm({ name: "", default_duration_days: 1, duration_type: "calendar" });
+    setTaskForm({ name: "", default_duration_days: 1, duration_type: "calendar", default_responsible_member_id: null });
     setTaskDialogOpen(true);
   };
 
@@ -309,6 +328,7 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
       name: task.name,
       default_duration_days: task.default_duration_days,
       duration_type: task.duration_type,
+      default_responsible_member_id: task.default_responsible_member_id ?? null,
     });
     setTaskDialogOpen(true);
   };
@@ -369,6 +389,12 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
                         ({taskDeps.map(d => `${d.lag_days > 0 ? "+" : ""}${d.lag_days}d`).join(", ")})
                       </span>
                     )}
+                  </Badge>
+                )}
+                {task.default_responsible_member_id && (
+                  <Badge variant="secondary" className="text-xs">
+                    <User className="h-3 w-3 mr-1" />
+                    {orgMembers.find(m => m.id === task.default_responsible_member_id)?.name ?? "Resp."}
                   </Badge>
                 )}
               </div>
@@ -576,6 +602,26 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Responsable por defecto</Label>
+              <SearchableSelect
+                value={taskForm.default_responsible_member_id ?? ""}
+                onValueChange={(v) => setTaskForm({ ...taskForm, default_responsible_member_id: v || null })}
+                options={[
+                  { value: "", label: "Sin asignar" },
+                  ...orgMembers.map(m => ({
+                    value: m.id,
+                    label: m.position ? `${m.name} — ${m.position}` : m.name,
+                  })),
+                ]}
+                placeholder="Sin asignar"
+                searchPlaceholder="Buscar miembro..."
+                emptyMessage="No hay miembros en el organigrama."
+              />
+              <p className="text-xs text-muted-foreground">
+                Se asigna automáticamente al crear el Gantt desde esta plantilla. Puede modificarse en cada proyecto.
+              </p>
             </div>
           </div>
           <DialogFooter>
