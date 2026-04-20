@@ -509,7 +509,7 @@ export function GanttChart({
       childTaskId: string;
     }> = [];
 
-    const HEADER_OFFSET = TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6; // +6 for grip handle
+    const HEADER_OFFSET = TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6; // +6 for grip handle
 
     visibleTasks.forEach(({ task }, rowIdx) => {
       if (!task.dependencies || task.dependencies.length === 0) return;
