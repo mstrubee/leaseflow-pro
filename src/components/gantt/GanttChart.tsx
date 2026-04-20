@@ -1188,7 +1188,7 @@ export function GanttChart({
         <div className="min-w-fit">
           {/* Month/Year Header */}
           <div className="flex border-b bg-muted/70 sticky top-0 z-30">
-            <div className="flex-shrink-0 border-r" style={{ width: 24 + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH }}>
+            <div className="flex-shrink-0 border-r" style={{ width: 24 + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH }}>
               <div className="px-2 py-1 text-xs font-semibold text-muted-foreground flex items-center justify-between gap-1 flex-wrap">
                 <span>Cronograma</span>
                 <div className="flex items-center gap-1">
