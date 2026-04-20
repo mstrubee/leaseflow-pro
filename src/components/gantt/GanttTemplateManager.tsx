@@ -31,6 +31,7 @@ interface GanttTemplateTask {
   default_duration_days: number;
   duration_type: "calendar" | "business";
   display_order: number;
+  default_responsible_member_id: string | null;
   children?: GanttTemplateTask[];
 }
 
@@ -40,6 +41,12 @@ interface GanttTemplateDependency {
   depends_on_task_id: string;
   lag_days: number;
   lag_type: string;
+}
+
+interface OrgMember {
+  id: string;
+  name: string;
+  role: string | null;
 }
 
 interface GanttTemplateManagerProps {
