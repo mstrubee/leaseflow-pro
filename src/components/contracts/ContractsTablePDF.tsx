@@ -59,6 +59,7 @@ interface Contract {
   clasificacion?: string | null;
   origen?: string | null;
   metros_lineales_frente?: number | null;
+  patente_status?: string | null;
   contract_companies?: Array<{ companies: { name: string } | null }>;
   contract_addresses: Array<{ region: string; commune: string; street?: string; number?: string }>;
   contract_versions: ContractVersion[];
