@@ -59,6 +59,7 @@ interface Contract {
   clasificacion?: string | null;
   origen?: string | null;
   metros_lineales_frente?: number | null;
+  patente_status?: string | null;
   contract_companies?: Array<{ companies: { name: string } | null }>;
   contract_addresses: Array<{ region: string; commune: string; street?: string; number?: string }>;
   contract_versions: ContractVersion[];
@@ -84,7 +85,8 @@ export const getAvailableColumns = (isFirmadoView: boolean, isNegociacionView: b
   if (isFirmadoView) {
     baseColumns.push(
       { key: "termino", label: "Término" },
-      { key: "aviso", label: "Aviso" }
+      { key: "aviso", label: "Aviso" },
+      { key: "estado_patente", label: "Estado" }
     );
   }
 
@@ -285,6 +287,11 @@ export const generateContractsListPDF = async (
         case "aviso":
           rowData.push(noticeDeadline ? format(noticeDeadline, "dd/MM/yy", { locale: es }) : '-');
           break;
+        case "estado_patente": {
+          const ps = contract.patente_status;
+          rowData.push(ps === "definitiva" || ps === "provisoria" ? "Patente OK" : "Sin Patente");
+          break;
+        }
         case "categoria":
           rowData.push(subcategoryLabels[contract.negotiation_subcategory || ''] || '-');
           break;
@@ -401,7 +408,7 @@ export const generateContractsListPDF = async (
     columnStyles[idx] = { 
       cellWidth: colWidth,
       halign: ['costo_arriendo', 'venta_estimada'].includes(col.key) ? 'right' : 
-              ['duracion', 'termino', 'aviso', 'categoria', 'clasificacion'].includes(col.key) ? 'center' : 'left'
+              ['duracion', 'termino', 'aviso', 'categoria', 'clasificacion', 'estado_patente'].includes(col.key) ? 'center' : 'left'
     };
   });
 

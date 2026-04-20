@@ -48,6 +48,7 @@ interface Contract {
   clasificacion?: string | null;
   origen?: string | null;
   metros_lineales_frente?: number | null;
+  patente_status?: string | null;
   contract_companies?: Array<{ companies: { name: string } | null }>;
   contract_addresses: Array<{ region: string; commune: string; street?: string; number?: string }>;
   contract_versions: ContractVersion[];
@@ -167,6 +168,10 @@ export const generateContractsListExcel = (
           return endDate ? format(endDate, "dd/MM/yyyy") : "";
         case "aviso":
           return noticeDeadline ? format(noticeDeadline, "dd/MM/yyyy") : "";
+        case "estado_patente": {
+          const ps = contract.patente_status;
+          return ps === "definitiva" || ps === "provisoria" ? "Patente OK" : "Sin Patente";
+        }
         case "categoria":
           return subcategoryLabels[contract.negotiation_subcategory || ""] || "";
         case "clasificacion":
@@ -209,6 +214,7 @@ export const generateContractsListExcel = (
       duracion: 12,
       termino: 12,
       aviso: 12,
+      estado_patente: 14,
       categoria: 18,
       clasificacion: 14,
       origen: 16,
