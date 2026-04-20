@@ -408,7 +408,7 @@ export const generateContractsListPDF = async (
     columnStyles[idx] = { 
       cellWidth: colWidth,
       halign: ['costo_arriendo', 'venta_estimada'].includes(col.key) ? 'right' : 
-              ['duracion', 'termino', 'aviso', 'categoria', 'clasificacion'].includes(col.key) ? 'center' : 'left'
+              ['duracion', 'termino', 'aviso', 'categoria', 'clasificacion', 'estado_patente'].includes(col.key) ? 'center' : 'left'
     };
   });
 
