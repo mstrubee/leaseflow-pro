@@ -26,18 +26,40 @@ export const SyncedTextareas = ({
     syncing.current = false;
   }, []);
 
+  // Auto-fit initial height to content (so all text is visible by default)
+  // while preserving manual resize and scroll behavior.
   useEffect(() => {
     const ta1 = ref1.current;
     const ta2 = ref2.current;
     if (!ta1 || !ta2) return;
 
-    const observer1 = new ResizeObserver(() => syncHeight(ta1, ta2));
-    const observer2 = new ResizeObserver(() => syncHeight(ta2, ta1));
+    // Reset and measure natural content height for both
+    ta1.style.height = "auto";
+    ta2.style.height = "auto";
+    const target = Math.max(ta1.scrollHeight, ta2.scrollHeight);
+    ta1.style.height = `${target}px`;
+    ta2.style.height = `${target}px`;
+  }, [comments, nextActions]);
+
+  useEffect(() => {
+    const ta1 = ref1.current;
+    const ta2 = ref2.current;
+    if (!ta1 || !ta2) return;
+
+    let raf = 0;
+    const schedule = (cb: () => void) => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(cb);
+    };
+
+    const observer1 = new ResizeObserver(() => schedule(() => syncHeight(ta1, ta2)));
+    const observer2 = new ResizeObserver(() => schedule(() => syncHeight(ta2, ta1)));
 
     observer1.observe(ta1);
     observer2.observe(ta2);
 
     return () => {
+      cancelAnimationFrame(raf);
       observer1.disconnect();
       observer2.disconnect();
     };
