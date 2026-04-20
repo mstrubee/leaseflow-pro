@@ -33,6 +33,7 @@ export interface Supplier {
   bank_account_number: string | null;
   contact_name: string | null;
   is_generic: boolean;
+  is_internal_transfer: boolean;
   category_id: string | null;
   created_at: string;
   updated_at: string;
@@ -71,4 +72,5 @@ export interface SupplierFormData {
   opex_category_ids: string[];
   influence_zones: { region: string; commune: string | null }[];
   is_generic: boolean;
+  is_internal_transfer: boolean;
 }
