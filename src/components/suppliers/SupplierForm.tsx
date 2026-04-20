@@ -108,6 +108,10 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
       toast.error("El nombre es requerido");
       return false;
     }
+    // Internal transfer suppliers only need a name
+    if (formData.is_internal_transfer) {
+      return true;
+    }
     if (!formData.category_id) {
       toast.error("Debe seleccionar un rubro");
       return false;
@@ -161,6 +165,7 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
         phone: formData.phone.trim() || null,
         category_id: formData.category_id || null,
         is_generic: formData.is_generic,
+        is_internal_transfer: formData.is_internal_transfer,
       };
 
       let supplierId: string;
