@@ -391,12 +391,35 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
                     )}
                   </Badge>
                 )}
-                {task.default_responsible_member_id && (
-                  <Badge variant="secondary" className="text-xs">
-                    <User className="h-3 w-3 mr-1" />
-                    {orgMembers.find(m => m.id === task.default_responsible_member_id)?.name ?? "Resp."}
-                  </Badge>
-                )}
+                <div className="flex items-center gap-1 ml-auto" onClick={(e) => e.stopPropagation()}>
+                  <User className="h-3 w-3 text-muted-foreground" />
+                  <div className="w-56">
+                    <SearchableSelect
+                      value={task.default_responsible_member_id ?? "__none__"}
+                      onValueChange={async (v) => {
+                        const newVal = v === "__none__" ? null : v;
+                        // Optimistic update
+                        setTasks((prev) => prev.map(t => t.id === task.id ? { ...t, default_responsible_member_id: newVal } : t));
+                        const { error } = await supabase
+                          .from("gantt_template_tasks")
+                          .update({ default_responsible_member_id: newVal })
+                          .eq("id", task.id);
+                        if (error) {
+                          toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar el responsable" });
+                          if (selectedTemplate) loadTemplateTasks(selectedTemplate.id);
+                        }
+                      }}
+                      options={[
+                        { value: "__none__", label: "Sin asignar" },
+                        ...orgMembers.map(m => ({
+                          value: m.id,
+                          label: m.position ? `${m.name} — ${m.position}` : m.name,
+                        })),
+                      ]}
+                      placeholder="Sin asignar"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 
