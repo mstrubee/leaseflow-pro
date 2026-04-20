@@ -214,6 +214,7 @@ export const generateContractsListExcel = (
       duracion: 12,
       termino: 12,
       aviso: 12,
+      estado_patente: 14,
       categoria: 18,
       clasificacion: 14,
       origen: 16,
