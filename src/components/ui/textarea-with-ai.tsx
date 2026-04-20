@@ -51,9 +51,19 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
   ) => {
     const internalRef = React.useRef<HTMLTextAreaElement>(null);
     const textareaRef = (ref as React.RefObject<HTMLTextAreaElement>) || internalRef;
+    const highlightRef = React.useRef<HTMLDivElement>(null);
 
     const [showPreview, setShowPreview] = React.useState(false);
     const hasBold = value?.includes("**") || false;
+
+    // Sync scroll between textarea and the highlight overlay
+    const handleScroll = React.useCallback(() => {
+      const ta = textareaRef.current;
+      const hl = highlightRef.current;
+      if (!ta || !hl) return;
+      hl.scrollTop = ta.scrollTop;
+      hl.scrollLeft = ta.scrollLeft;
+    }, [textareaRef]);
 
     const charCount = value?.length || 0;
     const isOverLimit = maxLength ? charCount > maxLength : false;
