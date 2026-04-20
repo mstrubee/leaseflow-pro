@@ -1707,7 +1707,37 @@ export function GanttChart({
                     )}
                   </div>
 
-                  {/* Start date */}
+                  {/* Origen */}
+                  <div
+                    className="flex-shrink-0 border-r flex items-center px-1"
+                    style={{ width: ORIGIN_COL_WIDTH }}
+                  >
+                    {isAdmin ? (
+                      <SearchableSelect
+                        value={(task as any).origin ?? ""}
+                        onValueChange={(v) =>
+                          handleUpdateTaskField(task.id, "origin" as any, v || null)
+                        }
+                        options={[
+                          { value: "", label: "—" },
+                          { value: "nuevo", label: "Nuevo" },
+                          { value: "traslado", label: "Traslado" },
+                        ]}
+                        placeholder="—"
+                        searchPlaceholder="Buscar..."
+                        triggerClassName="h-7 text-xs"
+                      />
+                    ) : (
+                      <span className="text-xs text-muted-foreground truncate px-1">
+                        {(task as any).origin === "nuevo"
+                          ? "Nuevo"
+                          : (task as any).origin === "traslado"
+                            ? "Traslado"
+                            : "—"}
+                      </span>
+                    )}
+                  </div>
+
                   <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
                     <DatePickerCell
                       value={task.start_date}
