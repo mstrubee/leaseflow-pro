@@ -359,7 +359,11 @@ export function useGantt(contractId: string) {
 
       if (error) throw error;
 
-      await loadTimeline();
+      // Optimistic local insert — avoids full reload that collapses rows / loses scroll
+      setTasks((prev) => [
+        ...prev,
+        { ...(data as any), dependencies: [], purchase_orders: [] } as GanttTask,
+      ]);
       return data;
     } catch (error: any) {
       toast({
@@ -367,6 +371,8 @@ export function useGantt(contractId: string) {
         title: "Error",
         description: "No se pudo agregar la tarea",
       });
+      // Resync from DB on error
+      await loadTimeline();
       return null;
     } finally {
       setSaving(false);
