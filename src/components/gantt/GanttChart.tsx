@@ -88,6 +88,50 @@ function DurationInput({
   );
 }
 
+function TaskNameInput({
+  taskId,
+  value,
+  completed,
+  onCommit,
+}: {
+  taskId: string;
+  value: string;
+  completed: boolean;
+  onCommit: (newValue: string) => void;
+}) {
+  const [local, setLocal] = useState(value);
+  const focusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!focusedRef.current) setLocal(value);
+  }, [value, taskId]);
+
+  return (
+    <Input
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onFocus={() => { focusedRef.current = true; }}
+      onBlur={() => {
+        focusedRef.current = false;
+        if (local !== value) onCommit(local);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") {
+          setLocal(value);
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+      className={cn(
+        "h-7 text-xs border-0 bg-transparent focus:bg-background px-1",
+        completed && "line-through text-muted-foreground"
+      )}
+      onDragStart={(e) => e.stopPropagation()}
+      draggable={false}
+    />
+  );
+}
+
 
 // Auto-progress based on today's date vs task start/end
 function computeAutoProgress(task: GanttTask): number {
