@@ -390,6 +390,11 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
                       </span>
                     )}
                   </Badge>
+                {task.default_responsible_member_id && (
+                  <Badge variant="secondary" className="text-xs">
+                    <User className="h-3 w-3 mr-1" />
+                    {orgMembers.find(m => m.id === task.default_responsible_member_id)?.name ?? "Resp."}
+                  </Badge>
                 )}
               </div>
             </div>
