@@ -318,7 +318,7 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
   const openAddTask = (parentId: string | null = null) => {
     setEditingTask(null);
     setSelectedParentId(parentId);
-    setTaskForm({ name: "", default_duration_days: 1, duration_type: "calendar" });
+    setTaskForm({ name: "", default_duration_days: 1, duration_type: "calendar", default_responsible_member_id: null });
     setTaskDialogOpen(true);
   };
 
@@ -328,6 +328,7 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
       name: task.name,
       default_duration_days: task.default_duration_days,
       duration_type: task.duration_type,
+      default_responsible_member_id: task.default_responsible_member_id ?? null,
     });
     setTaskDialogOpen(true);
   };
