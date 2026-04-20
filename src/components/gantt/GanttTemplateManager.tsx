@@ -420,6 +420,29 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
                       placeholder="Sin asignar"
                     />
                   </div>
+                  <div className="w-32">
+                    <SearchableSelect
+                      value={task.default_origin ?? "__none__"}
+                      onValueChange={async (v) => {
+                        const newVal = (v === "__none__" ? null : v) as "nuevo" | "traslado" | null;
+                        setTasks((prev) => prev.map(t => t.id === task.id ? { ...t, default_origin: newVal } : t));
+                        const { error } = await supabase
+                          .from("gantt_template_tasks")
+                          .update({ default_origin: newVal })
+                          .eq("id", task.id);
+                        if (error) {
+                          toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar el origen" });
+                          if (selectedTemplate) loadTemplateTasks(selectedTemplate.id);
+                        }
+                      }}
+                      options={[
+                        { value: "__none__", label: "—" },
+                        { value: "nuevo", label: "Nuevo" },
+                        { value: "traslado", label: "Traslado" },
+                      ]}
+                      placeholder="Origen"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
