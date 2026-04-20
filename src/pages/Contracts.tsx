@@ -28,6 +28,7 @@ import { ContractsTable, ContractSortField } from "@/components/contracts/Contra
 import { ColumnSelector } from "@/components/contracts/ColumnSelector";
 import { ContractRowSelector } from "@/components/contracts/ContractRowSelector";
 import { generateContractsListPDF, getAvailableColumns } from "@/components/contracts/ContractsTablePDF";
+import { generateContractsListExcel } from "@/components/contracts/ContractsTableExcel";
 import { ColumnWidthsManager } from "@/components/contracts/ColumnWidthsManager";
 import { SortOrder } from "@/components/contracts/SortableTableHead";
 import { ContractStatsCards } from "@/components/contracts/ContractStatsCards";
@@ -837,6 +838,31 @@ const Contracts = () => {
     toast.success(`PDF generado con ${contractsForPdf.length} de ${filteredContracts.length} contratos`);
   };
 
+  const handleDownloadExcel = () => {
+    const isFirmado = statusFilter === "firmado";
+    const isNego = statusFilter === "en_negociacion";
+    const title = isNego
+      ? "Contratos en Negociación"
+      : isFirmado
+        ? "Contratos Vigentes"
+        : "Lista de Contratos";
+
+    const contractsForExcel = filteredContracts.filter(
+      (c) => !excludedPdfContractIds.includes(c.id)
+    );
+
+    generateContractsListExcel(
+      contractsForExcel as any,
+      selectedPdfColumns,
+      title,
+      isFirmado,
+      isNego,
+      ufValue
+    );
+
+    toast.success(`Excel generado con ${contractsForExcel.length} de ${filteredContracts.length} contratos`);
+  };
+
   // Get unique communes for ubicacion filter
   const uniqueCommunes = [...new Set(contracts.flatMap(c => c.contract_addresses?.map(a => a.commune) || []))].filter(Boolean).sort();
 
@@ -1017,6 +1043,15 @@ const Contracts = () => {
                 >
                   <Download className="h-4 w-4" />
                   Descargar PDF
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleDownloadExcel}
+                  className="gap-2"
+                  size="sm"
+                >
+                  <Download className="h-4 w-4" />
+                  Descargar Excel
                 </Button>
               </div>
               {isAdmin && (
