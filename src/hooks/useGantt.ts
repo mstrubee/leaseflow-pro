@@ -22,6 +22,7 @@ export interface GanttTask {
   color: string | null;
   display_order: number;
   responsible_member_id: string | null;
+  origin: "nuevo" | "traslado" | null;
   created_at: string;
   updated_at: string;
   children?: GanttTask[];
@@ -252,7 +253,10 @@ export function useGantt(contractId: string) {
 
     if (!templateTasks || templateTasks.length === 0) return;
 
-    type TemplateTaskRow = typeof templateTasks[number] & { default_responsible_member_id?: string | null };
+    type TemplateTaskRow = typeof templateTasks[number] & {
+      default_responsible_member_id?: string | null;
+      default_origin?: string | null;
+    };
 
     // Load template dependencies
     const { data: templateDeps } = await supabase
@@ -272,6 +276,7 @@ export function useGantt(contractId: string) {
       display_order: tt.display_order,
       parent_id: null as string | null,
       responsible_member_id: tt.default_responsible_member_id ?? null,
+      origin: (tt.default_origin ?? null) as "nuevo" | "traslado" | null,
     }));
 
     const { data: insertedTasks, error } = await supabase
