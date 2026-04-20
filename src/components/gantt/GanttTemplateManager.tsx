@@ -603,6 +603,26 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
                 </Select>
               </div>
             </div>
+            <div className="space-y-2">
+              <Label>Responsable por defecto</Label>
+              <SearchableSelect
+                value={taskForm.default_responsible_member_id ?? ""}
+                onValueChange={(v) => setTaskForm({ ...taskForm, default_responsible_member_id: v || null })}
+                options={[
+                  { value: "", label: "Sin asignar" },
+                  ...orgMembers.map(m => ({
+                    value: m.id,
+                    label: m.position ? `${m.name} — ${m.position}` : m.name,
+                  })),
+                ]}
+                placeholder="Sin asignar"
+                searchPlaceholder="Buscar miembro..."
+                emptyMessage="No hay miembros en el organigrama."
+              />
+              <p className="text-xs text-muted-foreground">
+                Se asigna automáticamente al crear el Gantt desde esta plantilla. Puede modificarse en cada proyecto.
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setTaskDialogOpen(false)}>Cancelar</Button>
