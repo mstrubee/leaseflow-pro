@@ -61,6 +61,7 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
   const [dependencies, setDependencies] = useState<GanttTemplateDependency[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [orgMembers, setOrgMembers] = useState<OrgMember[]>([]);
 
   // Dialog states
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
@@ -82,6 +83,7 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
     name: "",
     default_duration_days: 1,
     duration_type: "calendar" as "calendar" | "business",
+    default_responsible_member_id: null as string | null,
   });
 
   const loadTemplates = useCallback(async () => {
