@@ -169,26 +169,10 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
             {renderBoldMarkdown(value || "")}
           </div>
         ) : hasBold ? (
-          // Live-bold mode: textarea with transparent text + highlight overlay rendering markdown bold
+          // Live-bold mode: textarea with transparent text + highlight overlay rendering markdown bold.
+          // CRITICAL: overlay and textarea MUST share identical text metrics (font, size, line-height,
+          // padding, border, letter-spacing, wrap rules) so the caret aligns with the rendered glyphs.
           <div className="relative w-full">
-            <div
-              ref={highlightRef}
-              aria-hidden="true"
-              className={cn(
-                "pointer-events-none absolute inset-0 overflow-hidden rounded-md border border-transparent px-3 py-2 text-sm whitespace-pre-wrap text-foreground",
-                className
-              )}
-              style={{
-                fontFamily: "inherit",
-                lineHeight: "1.5",
-                letterSpacing: "normal",
-                wordBreak: "break-word",
-                overflowWrap: "break-word",
-                tabSize: 4,
-              }}
-            >
-              {renderBoldMarkdown((value || "") + "\n")}
-            </div>
             <Textarea
               ref={textareaRef}
               value={value}
@@ -201,15 +185,36 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
                 className
               )}
               style={{
-                fontFamily: "inherit",
                 lineHeight: "1.5",
                 letterSpacing: "normal",
                 wordBreak: "break-word",
                 overflowWrap: "break-word",
                 tabSize: 4,
+                ...(props.style || {}),
               }}
               {...props}
             />
+            <div
+              ref={highlightRef}
+              aria-hidden="true"
+              className={cn(
+                "pointer-events-none absolute inset-0 overflow-hidden rounded-md border border-transparent px-3 py-2 text-sm whitespace-pre-wrap text-foreground",
+                className
+              )}
+              style={{
+                fontFamily: "inherit",
+                fontSize: "inherit",
+                fontWeight: "inherit",
+                lineHeight: "1.5",
+                letterSpacing: "normal",
+                wordBreak: "break-word",
+                overflowWrap: "break-word",
+                tabSize: 4,
+                ...(props.style || {}),
+              }}
+            >
+              {renderBoldMarkdown((value || "") + "\n")}
+            </div>
           </div>
         ) : (
           <Textarea
