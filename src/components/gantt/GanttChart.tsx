@@ -1136,7 +1136,7 @@ export function GanttChart({
 
   return (
     <div className="border rounded-lg overflow-hidden bg-background">
-      <ScrollArea className="w-full max-h-[75vh]">
+      <ScrollArea className="w-full h-[75vh]">
         <div className="min-w-fit">
           {/* Month/Year Header */}
           <div className="flex border-b bg-muted/70 sticky top-0 z-30">
