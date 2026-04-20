@@ -287,6 +287,11 @@ export const generateContractsListPDF = async (
         case "aviso":
           rowData.push(noticeDeadline ? format(noticeDeadline, "dd/MM/yy", { locale: es }) : '-');
           break;
+        case "estado_patente": {
+          const ps = contract.patente_status;
+          rowData.push(ps === "definitiva" || ps === "provisoria" ? "Patente OK" : "Sin Patente");
+          break;
+        }
         case "categoria":
           rowData.push(subcategoryLabels[contract.negotiation_subcategory || ''] || '-');
           break;
