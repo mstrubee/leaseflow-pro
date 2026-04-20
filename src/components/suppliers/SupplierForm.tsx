@@ -38,6 +38,7 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
     opex_category_ids: [],
     influence_zones: [],
     is_generic: false,
+    is_internal_transfer: false,
   });
   const [newEmail, setNewEmail] = useState("");
 
@@ -84,6 +85,7 @@ export const SupplierForm = ({ supplier, onSave, onCancel, defaultCategoryId }: 
       opex_category_ids: opexCategories?.map(c => c.opex_category_id) || [],
       influence_zones: zones?.map(z => ({ region: z.region, commune: z.commune })) || [],
       is_generic: supplier.is_generic || false,
+      is_internal_transfer: (supplier as any).is_internal_transfer || false,
     });
   };
 
