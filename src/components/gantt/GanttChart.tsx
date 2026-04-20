@@ -1953,6 +1953,9 @@ export function GanttChart({
                   />
                 </div>
 
+                {/* Responsable placeholder */}
+                <div className="flex-shrink-0 border-r" style={{ width: RESPONSIBLE_COL_WIDTH }} />
+
                 <div className="flex-shrink-0 border-r flex items-center justify-center" style={{ width: DATE_COL_WIDTH }}>
                   <DatePickerCell
                     value={newTaskRow.start_date || null}
