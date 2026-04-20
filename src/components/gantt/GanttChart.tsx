@@ -6,7 +6,7 @@ import { format, differenceInDays, parseISO, eachDayOfInterval, isWeekend, addDa
 import { es } from "date-fns/locale";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical, CheckCircle2, Eye, EyeOff, FileDown, Palette } from "lucide-react";
+import { ChevronDown, ChevronRight, Link, Plus, Calendar as CalendarIcon, Trash2, GripVertical, CheckCircle2, Eye, EyeOff, FileDown, Palette, CornerLeftUp } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1583,6 +1583,28 @@ export function GanttChart({
                     >
                       <Plus className="h-3 w-3 text-primary" />
                     </Button>
+                    {task.parent_id && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 flex-shrink-0"
+                        title="Subir un nivel jerárquico"
+                        onClick={async () => {
+                          const parent = tasks.find((t) => t.id === task.parent_id);
+                          const newParentId = parent?.parent_id ?? null;
+                          const oldParentId = task.parent_id;
+                          await onUpdateTask(task.id, { parent_id: newParentId }, { skipPropagation: true });
+                          if (oldParentId) {
+                            await syncAncestorsDates(oldParentId);
+                          }
+                          if (newParentId) {
+                            await syncAncestorsDates(newParentId);
+                          }
+                        }}
+                      >
+                        <CornerLeftUp className="h-3 w-3 text-primary" />
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"
