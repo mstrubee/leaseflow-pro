@@ -5,10 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { useBudgetContext } from "./BudgetContext";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SupplierSelect } from "@/components/suppliers/SupplierSelect";
+import { useBudgetProgressStatuses, getProgressColorClass } from "@/hooks/useBudgetProgressStatuses";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,8 +44,56 @@ export interface BudgetLine {
   calc_type?: string | null;
   calc_source_line_id?: string | null;
   calc_percentage?: number | null;
+  progress_status_id?: string | null;
   children?: BudgetLine[];
 }
+
+const ProgressStatusBadge = ({ lineId, currentStatusId, readOnly, isParent }: { lineId: string; currentStatusId?: string | null; readOnly?: boolean; isParent?: boolean }) => {
+  const { statuses, reload } = useBudgetProgressStatuses();
+  const [open, setOpen] = useState(false);
+  const [localId, setLocalId] = useState<string | null>(currentStatusId ?? null);
+  useEffect(() => { setLocalId(currentStatusId ?? null); }, [currentStatusId]);
+
+  if (isParent) return null;
+  const current = statuses.find(s => s.id === localId);
+  const selectable = statuses.filter(s => s.is_selectable);
+
+  const handleChange = async (newId: string | null) => {
+    setLocalId(newId);
+    setOpen(false);
+    const { error } = await (supabase as any)
+      .from("budget_lines")
+      .update({ progress_status_id: newId })
+      .eq("id", lineId);
+    if (error) { toast.error("Error al cambiar estado"); setLocalId(currentStatusId ?? null); }
+    else toast.success("Estado actualizado");
+  };
+
+  const badge = (
+    <Badge className={cn("text-[10px] px-2 py-0 whitespace-nowrap", getProgressColorClass(current?.color), !readOnly && "cursor-pointer")}>
+      {current?.name || "Sin estado"}
+    </Badge>
+  );
+
+  if (readOnly) return badge;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild><button type="button" onClick={e => e.stopPropagation()}>{badge}</button></PopoverTrigger>
+      <PopoverContent className="w-56 p-2" align="end">
+        <div className="space-y-1">
+          <button type="button" onClick={() => handleChange(null)} className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-accent text-muted-foreground">Sin estado</button>
+          {selectable.map(s => (
+            <button key={s.id} type="button" onClick={() => handleChange(s.id)} className="w-full text-left px-2 py-1.5 rounded hover:bg-accent">
+              <Badge className={cn("text-[10px] px-2 py-0", getProgressColorClass(s.color))}>{s.name}</Badge>
+            </button>
+          ))}
+          {selectable.length === 0 && <div className="text-xs text-muted-foreground px-2 py-1">No hay estados seleccionables</div>}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+};
 
 const EMPTY_LINES_MAP = new Map<string, BudgetLine>();
 
@@ -884,7 +936,17 @@ const BudgetLineItemInner = ({
               Traslado
             </Badge>
           )}
-          
+
+          {/* Progress status badge - selectable for leaf lines */}
+          {!isParent && !isInternalTransfer && (
+            <ProgressStatusBadge
+              lineId={line.id}
+              currentStatusId={line.progress_status_id}
+              readOnly={readOnly}
+              isParent={isParent}
+            />
+          )}
+
           {/* OC Request, OC and Invoice buttons - only for authorized leaf lines (not for internal transfers) */}
           {!isParent && line.status === "autorizado" && !readOnly && !isInternalTransfer && (
             <div className="flex items-center gap-1 ml-2">
