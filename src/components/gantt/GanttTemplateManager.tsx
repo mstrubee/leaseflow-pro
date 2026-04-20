@@ -259,6 +259,7 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
             name: taskForm.name,
             default_duration_days: taskForm.default_duration_days,
             duration_type: taskForm.duration_type,
+            default_responsible_member_id: taskForm.default_responsible_member_id,
           })
           .eq("id", editingTask.id);
       } else {
@@ -271,13 +272,14 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
           name: taskForm.name,
           default_duration_days: taskForm.default_duration_days,
           duration_type: taskForm.duration_type,
+          default_responsible_member_id: taskForm.default_responsible_member_id,
           display_order: maxOrder + 1,
         });
       }
       setTaskDialogOpen(false);
       setEditingTask(null);
       setSelectedParentId(null);
-      setTaskForm({ name: "", default_duration_days: 1, duration_type: "calendar" });
+      setTaskForm({ name: "", default_duration_days: 1, duration_type: "calendar", default_responsible_member_id: null });
       loadTemplateTasks(selectedTemplate.id);
     } catch (error) {
       toast({ variant: "destructive", title: "Error", description: "No se pudo guardar la tarea" });
