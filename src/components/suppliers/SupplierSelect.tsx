@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus } from "lucide-react";
+import { Plus, ArrowRightLeft } from "lucide-react";
 import { SupplierForm } from "./SupplierForm";
 import { Supplier } from "./types";
 
@@ -13,6 +13,17 @@ interface SupplierSelectProps {
   categoryId?: string | null;
   disabled?: boolean;
   supplierName?: string | null;
+  /** When true, internal-transfer suppliers (e.g. Grupo Planet) are hidden.
+   *  Use in OC / OC-Request / Invoice flows where transfers don't apply. */
+  excludeInternalTransfer?: boolean;
+}
+
+interface SupplierOption {
+  id: string;
+  name: string;
+  is_generic: boolean;
+  category_id: string | null;
+  is_internal_transfer: boolean;
 }
 
 export const SupplierSelect = ({ 
@@ -21,9 +32,10 @@ export const SupplierSelect = ({
   templateLineId,
   categoryId,
   disabled = false,
-  supplierName: externalSupplierName
+  supplierName: externalSupplierName,
+  excludeInternalTransfer = false,
 }: SupplierSelectProps) => {
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
 
@@ -37,10 +49,21 @@ export const SupplierSelect = ({
       // Always load ALL suppliers to ensure complete selection capability
       const { data: allSuppliers } = await supabase
         .from("suppliers")
-        .select("id, name, is_generic, category_id")
+        .select("id, name, is_generic, category_id, is_internal_transfer")
         .order("name");
-      
-      setSuppliers((allSuppliers || []) as Supplier[]);
+
+      let list = (allSuppliers || []) as SupplierOption[];
+      if (excludeInternalTransfer) {
+        list = list.filter(s => !s.is_internal_transfer);
+      }
+      // Sort: internal transfer suppliers first, then alphabetical
+      list.sort((a, b) => {
+        if (a.is_internal_transfer && !b.is_internal_transfer) return -1;
+        if (!a.is_internal_transfer && b.is_internal_transfer) return 1;
+        return a.name.localeCompare(b.name);
+      });
+
+      setSuppliers(list);
     } catch (error) {
       console.error("Error loading suppliers:", error);
     } finally {
@@ -88,18 +111,22 @@ export const SupplierSelect = ({
               Nuevo Proveedor
             </span>
           </SelectItem>
-          {suppliers.length > 0 && (
-            <>
-              {suppliers.map(supplier => (
-                <SelectItem key={supplier.id} value={supplier.id}>
-                  {supplier.name}
-                  {supplier.is_generic && (
-                    <span className="text-muted-foreground text-xs ml-1">(genérico)</span>
-                  )}
-                </SelectItem>
-              ))}
-            </>
-          )}
+          {suppliers.map(supplier => (
+            <SelectItem key={supplier.id} value={supplier.id}>
+              <span className="flex items-center gap-1">
+                {supplier.is_internal_transfer && (
+                  <ArrowRightLeft className="h-3 w-3 text-primary" />
+                )}
+                {supplier.name}
+                {supplier.is_internal_transfer && (
+                  <span className="text-primary text-xs ml-1">(traslado)</span>
+                )}
+                {!supplier.is_internal_transfer && supplier.is_generic && (
+                  <span className="text-muted-foreground text-xs ml-1">(genérico)</span>
+                )}
+              </span>
+            </SelectItem>
+          ))}
         </SelectContent>
       </Select>
 
