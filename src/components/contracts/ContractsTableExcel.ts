@@ -168,6 +168,10 @@ export const generateContractsListExcel = (
           return endDate ? format(endDate, "dd/MM/yyyy") : "";
         case "aviso":
           return noticeDeadline ? format(noticeDeadline, "dd/MM/yyyy") : "";
+        case "estado_patente": {
+          const ps = contract.patente_status;
+          return ps === "definitiva" || ps === "provisoria" ? "Patente OK" : "Sin Patente";
+        }
         case "categoria":
           return subcategoryLabels[contract.negotiation_subcategory || ""] || "";
         case "clasificacion":
