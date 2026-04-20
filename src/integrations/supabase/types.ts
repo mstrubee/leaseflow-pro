@@ -357,6 +357,39 @@ export type Database = {
           },
         ]
       }
+      budget_line_progress_statuses: {
+        Row: {
+          color: string
+          created_at: string
+          display_order: number
+          id: string
+          is_active: boolean
+          is_selectable: boolean
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          is_selectable?: boolean
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          is_selectable?: boolean
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       budget_lines: {
         Row: {
           amount_uf: number
@@ -374,6 +407,7 @@ export type Database = {
           id: string
           name: string
           parent_id: string | null
+          progress_status_id: string | null
           quantity: number | null
           status: string
           supplier_id: string | null
@@ -399,6 +433,7 @@ export type Database = {
           id?: string
           name: string
           parent_id?: string | null
+          progress_status_id?: string | null
           quantity?: number | null
           status?: string
           supplier_id?: string | null
@@ -424,6 +459,7 @@ export type Database = {
           id?: string
           name?: string
           parent_id?: string | null
+          progress_status_id?: string | null
           quantity?: number | null
           status?: string
           supplier_id?: string | null
@@ -460,6 +496,13 @@ export type Database = {
             columns: ["parent_id"]
             isOneToOne: false
             referencedRelation: "budget_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_lines_progress_status_id_fkey"
+            columns: ["progress_status_id"]
+            isOneToOne: false
+            referencedRelation: "budget_line_progress_statuses"
             referencedColumns: ["id"]
           },
           {
