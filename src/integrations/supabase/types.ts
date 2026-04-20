@@ -5110,6 +5110,7 @@ export type Database = {
           email: string | null
           id: string
           is_generic: boolean | null
+          is_internal_transfer: boolean
           name: string
           phone: string | null
           rut: string | null
@@ -5129,6 +5130,7 @@ export type Database = {
           email?: string | null
           id?: string
           is_generic?: boolean | null
+          is_internal_transfer?: boolean
           name: string
           phone?: string | null
           rut?: string | null
@@ -5148,6 +5150,7 @@ export type Database = {
           email?: string | null
           id?: string
           is_generic?: boolean | null
+          is_internal_transfer?: boolean
           name?: string
           phone?: string | null
           rut?: string | null
