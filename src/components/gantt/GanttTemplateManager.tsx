@@ -12,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Edit, ChevronDown, ChevronRight, Loader2, GripVertical, CalendarDays, Link } from "lucide-react";
+import { Plus, Trash2, Edit, ChevronDown, ChevronRight, Loader2, GripVertical, CalendarDays, Link, User } from "lucide-react";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 interface GanttTemplate {
   id: string;
