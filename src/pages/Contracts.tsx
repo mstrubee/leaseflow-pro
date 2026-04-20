@@ -838,6 +838,31 @@ const Contracts = () => {
     toast.success(`PDF generado con ${contractsForPdf.length} de ${filteredContracts.length} contratos`);
   };
 
+  const handleDownloadExcel = () => {
+    const isFirmado = statusFilter === "firmado";
+    const isNego = statusFilter === "en_negociacion";
+    const title = isNego
+      ? "Contratos en Negociación"
+      : isFirmado
+        ? "Contratos Vigentes"
+        : "Lista de Contratos";
+
+    const contractsForExcel = filteredContracts.filter(
+      (c) => !excludedPdfContractIds.includes(c.id)
+    );
+
+    generateContractsListExcel(
+      contractsForExcel as any,
+      selectedPdfColumns,
+      title,
+      isFirmado,
+      isNego,
+      ufValue
+    );
+
+    toast.success(`Excel generado con ${contractsForExcel.length} de ${filteredContracts.length} contratos`);
+  };
+
   // Get unique communes for ubicacion filter
   const uniqueCommunes = [...new Set(contracts.flatMap(c => c.contract_addresses?.map(a => a.commune) || []))].filter(Boolean).sort();
 
