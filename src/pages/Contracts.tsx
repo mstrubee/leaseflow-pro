@@ -28,6 +28,7 @@ import { ContractsTable, ContractSortField } from "@/components/contracts/Contra
 import { ColumnSelector } from "@/components/contracts/ColumnSelector";
 import { ContractRowSelector } from "@/components/contracts/ContractRowSelector";
 import { generateContractsListPDF, getAvailableColumns } from "@/components/contracts/ContractsTablePDF";
+import { generateContractsListExcel } from "@/components/contracts/ContractsTableExcel";
 import { ColumnWidthsManager } from "@/components/contracts/ColumnWidthsManager";
 import { SortOrder } from "@/components/contracts/SortableTableHead";
 import { ContractStatsCards } from "@/components/contracts/ContractStatsCards";
