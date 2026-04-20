@@ -331,13 +331,13 @@ export function GanttReportsSection() {
         from += PAGE;
       }
 
-      // 3) Load latest CAPEX budget per contract and mirror the same value shown in the contract CAPEX card
+      // 3) Load CAPEX budget per contract for current year (mirrors the contract CAPEX card logic)
+      const currentYear = new Date().getFullYear();
       const { data: budgets, error: bErr } = await supabase
         .from("contract_budgets")
         .select("id, contract_id, year, amount_uf, updated_at")
         .eq("budget_type", "capex")
-        .order("year", { ascending: false })
-        .order("updated_at", { ascending: false })
+        .eq("year", currentYear)
         .in("contract_id", contractIds);
       if (bErr) throw bErr;
 
@@ -432,12 +432,11 @@ export function GanttReportsSection() {
           (line) => line.budget_id === budget.id && !parentIds.has(line.id)
         );
 
-        const authorizedTotal = leafLines
-          .filter((line) => line.status === "autorizado")
-          .reduce((sum, line) => sum + getEffectiveAmount(line), 0);
-
-        const mirroredCapex = (budget.amount_uf || 0) > 0 ? budget.amount_uf || 0 : authorizedTotal;
-        capexByContract.set(contractId, mirroredCapex);
+        const linesTotal = leafLines.reduce((sum, line) => sum + getEffectiveAmount(line), 0);
+        const fallback = budget.amount_uf || 0;
+        // Mirror contract CAPEX card: use lines total if any lines exist, else fall back to manual amount
+        const finalCapex = linesTotal > 0 ? linesTotal : fallback;
+        capexByContract.set(contractId, finalCapex);
       });
 
       // 4) Assemble per-timeline data
