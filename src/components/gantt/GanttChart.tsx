@@ -1252,6 +1252,9 @@ export function GanttChart({
             <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: RESPONSIBLE_COL_WIDTH }}>
               Responsable
             </div>
+            <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: ORIGIN_COL_WIDTH }}>
+              Origen
+            </div>
             <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: DATE_COL_WIDTH }}>
               Inicio
             </div>
