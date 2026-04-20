@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { TextareaWithAI } from "@/components/ui/textarea-with-ai";
 
@@ -17,53 +17,55 @@ export const SyncedTextareas = ({
 }: SyncedTextareasProps) => {
   const ref1 = useRef<HTMLTextAreaElement>(null);
   const ref2 = useRef<HTMLTextAreaElement>(null);
-  const syncing = useRef(false);
+  const userResized1 = useRef(false);
+  const userResized2 = useRef(false);
 
-  const syncHeight = useCallback((source: HTMLTextAreaElement, target: HTMLTextAreaElement) => {
-    if (syncing.current) return;
-    syncing.current = true;
-    target.style.height = source.style.height || `${source.offsetHeight}px`;
-    syncing.current = false;
-  }, []);
-
-  // Auto-fit initial height to content (so all text is visible by default)
-  // while preserving manual resize and scroll behavior.
+  // Auto-fit each textarea independently to its own content on initial load.
+  // Once the user manually resizes a textarea, we stop auto-adjusting it.
   useEffect(() => {
     const ta1 = ref1.current;
-    const ta2 = ref2.current;
-    if (!ta1 || !ta2) return;
-
-    // Reset and measure natural content height for both
+    if (!ta1 || userResized1.current) return;
     ta1.style.height = "auto";
-    ta2.style.height = "auto";
-    const target = Math.max(ta1.scrollHeight, ta2.scrollHeight);
-    ta1.style.height = `${target}px`;
-    ta2.style.height = `${target}px`;
-  }, [comments, nextActions]);
+    ta1.style.height = `${ta1.scrollHeight}px`;
+  }, [comments]);
 
+  useEffect(() => {
+    const ta2 = ref2.current;
+    if (!ta2 || userResized2.current) return;
+    ta2.style.height = "auto";
+    ta2.style.height = `${ta2.scrollHeight}px`;
+  }, [nextActions]);
+
+  // Detect manual resize (user drag) so we don't override their chosen height
   useEffect(() => {
     const ta1 = ref1.current;
     const ta2 = ref2.current;
     if (!ta1 || !ta2) return;
 
-    let raf = 0;
-    const schedule = (cb: () => void) => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(cb);
+    let initialH1 = ta1.offsetHeight;
+    let initialH2 = ta2.offsetHeight;
+
+    const onMouseDown1 = () => { initialH1 = ta1.offsetHeight; };
+    const onMouseUp1 = () => {
+      if (ta1.offsetHeight !== initialH1) userResized1.current = true;
+    };
+    const onMouseDown2 = () => { initialH2 = ta2.offsetHeight; };
+    const onMouseUp2 = () => {
+      if (ta2.offsetHeight !== initialH2) userResized2.current = true;
     };
 
-    const observer1 = new ResizeObserver(() => schedule(() => syncHeight(ta1, ta2)));
-    const observer2 = new ResizeObserver(() => schedule(() => syncHeight(ta2, ta1)));
-
-    observer1.observe(ta1);
-    observer2.observe(ta2);
+    ta1.addEventListener("mousedown", onMouseDown1);
+    document.addEventListener("mouseup", onMouseUp1);
+    ta2.addEventListener("mousedown", onMouseDown2);
+    document.addEventListener("mouseup", onMouseUp2);
 
     return () => {
-      cancelAnimationFrame(raf);
-      observer1.disconnect();
-      observer2.disconnect();
+      ta1.removeEventListener("mousedown", onMouseDown1);
+      document.removeEventListener("mouseup", onMouseUp1);
+      ta2.removeEventListener("mousedown", onMouseDown2);
+      document.removeEventListener("mouseup", onMouseUp2);
     };
-  }, [syncHeight]);
+  }, []);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
