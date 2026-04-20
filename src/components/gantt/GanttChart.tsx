@@ -1467,15 +1467,11 @@ export function GanttChart({
                     ) : (
                       <span className="w-4 flex-shrink-0" />
                     )}
-                    <Input
+                    <TaskNameInput
+                      taskId={task.id}
                       value={task.name}
-                      onChange={(e) => handleUpdateTaskField(task.id, "name", e.target.value)}
-                      className={cn(
-                        "h-7 text-xs border-0 bg-transparent focus:bg-background px-1",
-                        task.status === "completed" && "line-through text-muted-foreground"
-                      )}
-                      onDragStart={(e) => e.stopPropagation()}
-                      draggable={false}
+                      completed={task.status === "completed"}
+                      onCommit={(newValue) => handleUpdateTaskField(task.id, "name", newValue)}
                     />
                     <Popover>
                       <PopoverTrigger asChild>
