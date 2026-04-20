@@ -878,6 +878,11 @@ const BudgetLineItemInner = ({
               {line.supplier_name}
             </span>
           )}
+          {isInternalTransfer && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-primary text-primary whitespace-nowrap">
+              Traslado
+            </Badge>
+          )}
           
           {/* OC Request, OC and Invoice buttons - only for authorized leaf lines */}
           {!isParent && line.status === "autorizado" && !readOnly && (
