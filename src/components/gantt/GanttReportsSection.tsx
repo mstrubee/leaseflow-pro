@@ -331,13 +331,13 @@ export function GanttReportsSection() {
         from += PAGE;
       }
 
-      // 3) Load latest CAPEX budget per contract and mirror the same value shown in the contract CAPEX card
+      // 3) Load CAPEX budget per contract for current year (mirrors the contract CAPEX card logic)
+      const currentYear = new Date().getFullYear();
       const { data: budgets, error: bErr } = await supabase
         .from("contract_budgets")
         .select("id, contract_id, year, amount_uf, updated_at")
         .eq("budget_type", "capex")
-        .order("year", { ascending: false })
-        .order("updated_at", { ascending: false })
+        .eq("year", currentYear)
         .in("contract_id", contractIds);
       if (bErr) throw bErr;
 
