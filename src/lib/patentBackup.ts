@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getConfiguredDestinations } from "@/hooks/useFileDestinationSettings";
-import { fileToBase64 } from "@/lib/fileBase64";
+import { sanitizeFileName } from "@/lib/fileValidation";
 import type { FolderDestinationEntry } from "@/components/budget/FolderDestinationPicker";
 
 /**
@@ -29,7 +29,6 @@ async function resolveFolder(
     .eq("contract_id", contractId)
     .ilike("name", entry.name);
 
-  // Exact-match preferred (ilike can match loosely)
   const exact = (existingList || []).filter(
     (f) => (f.name || "").trim().toLowerCase() === entry.name.trim().toLowerCase()
   );
@@ -42,86 +41,69 @@ async function resolveFolder(
 }
 
 /**
- * Upload a file to Google Drive via the edge function,
- * resolving the correct hierarchical Drive folder.
- * Uses FileReader-based base64 conversion to handle large files safely.
+ * Upload via temporary storage → edge function (avoids base64 memory limits).
  */
-async function uploadFileToDriveHierarchical(
+async function uploadViaStorage(
   file: File,
   fileName: string,
-  folderId: string,
   contractId: string,
+  folder: { id: string; source: string; driveFolderId: string | null },
 ): Promise<{ driveFileId: string; driveUrl: string } | null> {
   try {
-    const base64Content = await fileToBase64(file);
+    const sanitized = sanitizeFileName(fileName);
+    const uploadPath =
+      folder.source === "repo"
+        ? `contracts/${contractId}/repo/${folder.id}/${Date.now()}_${sanitized}`
+        : `tmp/direct/${Date.now()}_${sanitized}`;
+    const storageUrl = `storage://repository-files/${uploadPath}`;
 
-    const { data, error } = await supabase.functions.invoke('google-drive', {
-      body: {
-        action: 'uploadFileToRepoFolder',
-        fileName,
-        fileContent: base64Content,
-        mimeType: file.type || 'application/octet-stream',
-        repoFolderId: folderId,
-        contractId,
-      }
-    });
+    const { error: storageError } = await supabase.storage
+      .from("repository-files")
+      .upload(uploadPath, file, { upsert: true });
+
+    if (storageError) {
+      console.error("Patent backup: error uploading to temporary storage:", storageError);
+      return null;
+    }
+
+    const body =
+      folder.source === "repo"
+        ? {
+            action: "uploadRepoFileFromStorage",
+            fileName,
+            storageUrl,
+            mimeType: file.type || "application/octet-stream",
+            repoFolderId: folder.id,
+            contractId,
+          }
+        : {
+            action: "uploadFileFromStorage",
+            fileName,
+            storageUrl,
+            mimeType: file.type || "application/octet-stream",
+            driveFolderId: folder.driveFolderId,
+          };
+
+    const { data, error } = await supabase.functions.invoke("google-drive", { body });
 
     if (error || !data) {
-      console.error("Error uploading to Google Drive:", error);
+      console.error("Patent backup: error uploading to Google Drive:", error);
+      await supabase.storage.from("repository-files").remove([uploadPath]).catch(() => {});
       return null;
     }
 
     return {
       driveFileId: data.id || data.driveFileId,
-      driveUrl: data.webViewLink || data.driveUrl || `https://drive.google.com/file/d/${data.id}/view`,
+      driveUrl: data.webViewLink || data.driveUrl || data.webContentLink || `https://drive.google.com/file/d/${data.id || data.driveFileId}/view`,
     };
   } catch (err) {
-    console.error("Error uploading to Google Drive:", err);
-    return null;
-  }
-}
-
-/**
- * Legacy direct upload (used when folder already has a known drive_folder_id).
- * Uses FileReader-based base64 conversion to handle large files safely.
- */
-async function uploadFileToDriveDirect(
-  file: File,
-  fileName: string,
-  driveFolderId: string,
-): Promise<{ driveFileId: string; driveUrl: string } | null> {
-  try {
-    const base64Content = await fileToBase64(file);
-
-    const { data, error } = await supabase.functions.invoke('google-drive', {
-      body: {
-        action: 'uploadFile',
-        fileName,
-        fileContent: base64Content,
-        mimeType: file.type || 'application/octet-stream',
-        driveFolderId,
-      }
-    });
-
-    if (error || !data) {
-      console.error("Error uploading to Google Drive:", error);
-      return null;
-    }
-
-    return {
-      driveFileId: data.id,
-      driveUrl: data.webViewLink || data.webContentLink || `https://drive.google.com/file/d/${data.id}/view`,
-    };
-  } catch (err) {
-    console.error("Error uploading to Google Drive:", err);
+    console.error("Patent backup: error uploading to Google Drive:", err);
     return null;
   }
 }
 
 /**
  * Backup a patent file to all configured patent destination folders.
- * If a destination folder has a drive_folder_id, the file is also uploaded to Google Drive.
- * @param file - The original File object (needed for Drive upload). If not provided, only DB record is created.
  */
 export async function backupPatentFileToDestinations(
   contractId: string,
@@ -132,7 +114,7 @@ export async function backupPatentFileToDestinations(
   try {
     const destinations = await getConfiguredDestinations("patent_folder");
     if (destinations.length === 0) {
-      return { success: true }; // No destinations configured, skip silently
+      return { success: true };
     }
 
     const fileExt = fileName.split(".").pop() || null;
@@ -144,17 +126,8 @@ export async function backupPatentFileToDestinations(
       let driveFileId: string | null = null;
       let fileUrl = storageUrl;
 
-      // If file provided, try uploading to Drive
-      if (file && folder.source === "repo") {
-        // Use hierarchical resolution via edge function
-        const driveResult = await uploadFileToDriveHierarchical(file, fileName, folder.id, contractId);
-        if (driveResult) {
-          driveFileId = driveResult.driveFileId;
-          fileUrl = driveResult.driveUrl;
-        }
-      } else if (file && folder.driveFolderId) {
-        // General folder with known drive ID — direct upload
-        const driveResult = await uploadFileToDriveDirect(file, fileName, folder.driveFolderId);
+      if (file && (folder.source === "repo" || folder.driveFolderId)) {
+        const driveResult = await uploadViaStorage(file, fileName, contractId, folder);
         if (driveResult) {
           driveFileId = driveResult.driveFileId;
           fileUrl = driveResult.driveUrl;
