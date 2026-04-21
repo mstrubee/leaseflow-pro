@@ -633,55 +633,51 @@ async function uploadFileToDrive(
   const sanitizedFileName = sanitizeDriveName(fileName);
   const metadata = { name: sanitizedFileName, parents: [folderId] };
 
-  const boundary = "-------314159265358979323846";
-  const delimiter = "\r\n--" + boundary + "\r\n";
-  const closeDelimiter = "\r\n--" + boundary + "--";
-
-  const metadataString = JSON.stringify(metadata);
-  const metadataBytes = new TextEncoder().encode(
-    delimiter +
-    "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
-    metadataString +
-    delimiter +
-    `Content-Type: ${mimeType}\r\n` +
-    "Content-Transfer-Encoding: base64\r\n\r\n",
-  );
-
-  // Convert to base64 in chunks to avoid stack overflow for large files
-  const chunkSize = 8192;
-  let binaryStr = '';
-  for (let i = 0; i < fileContent.length; i += chunkSize) {
-    const chunk = fileContent.subarray(i, Math.min(i + chunkSize, fileContent.length));
-    binaryStr += String.fromCharCode(...chunk);
-  }
-  const fileBase64 = btoa(binaryStr);
-  const fileBytes = new TextEncoder().encode(fileBase64);
-  const closeBytes = new TextEncoder().encode(closeDelimiter);
-
-  const requestBody = new Uint8Array(metadataBytes.length + fileBytes.length + closeBytes.length);
-  requestBody.set(metadataBytes, 0);
-  requestBody.set(fileBytes, metadataBytes.length);
-  requestBody.set(closeBytes, metadataBytes.length + fileBytes.length);
-
-  const response = await fetch(
-    "https://www.googleapis.com/upload/drive/v3/files?supportsAllDrives=true&uploadType=multipart&fields=id,webViewLink,webContentLink",
+  // Use resumable upload with raw bytes to avoid base64 encoding.
+  // Base64 conversion ~triples peak memory (binary string + base64 string +
+  // encoded bytes + concatenated requestBody) and exceeds the edge function
+  // worker memory limit for larger files (e.g. multi-MB ZIPs).
+  const initRes = await fetch(
+    "https://www.googleapis.com/upload/drive/v3/files?supportsAllDrives=true&uploadType=resumable&fields=id,webViewLink,webContentLink",
     {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "Content-Type": `multipart/related; boundary="${boundary}"`,
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Upload-Content-Type": mimeType,
+        "X-Upload-Content-Length": String(fileContent.byteLength),
       },
-      body: requestBody,
+      body: JSON.stringify(metadata),
     },
   );
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("File upload failed:", response.status, errorText);
-    console.error("Upload details - folderId:", folderId, "fileName:", sanitizedFileName);
-    throw new Error(`Failed to upload file: ${response.status} - ${errorText}`);
+  if (!initRes.ok) {
+    const errorText = await initRes.text();
+    console.error("Resumable init failed:", initRes.status, errorText, "folderId:", folderId, "fileName:", sanitizedFileName);
+    throw new Error(`Failed to initiate upload: ${initRes.status} - ${errorText}`);
   }
-  return await response.json();
+
+  const uploadUrl = initRes.headers.get("Location");
+  await initRes.body?.cancel();
+  if (!uploadUrl) {
+    throw new Error("Resumable upload did not return a Location header");
+  }
+
+  const putRes = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": mimeType,
+      "Content-Length": String(fileContent.byteLength),
+    },
+    body: fileContent,
+  });
+
+  if (!putRes.ok) {
+    const errorText = await putRes.text();
+    console.error("File upload failed:", putRes.status, errorText, "folderId:", folderId, "fileName:", sanitizedFileName);
+    throw new Error(`Failed to upload file: ${putRes.status} - ${errorText}`);
+  }
+  return await putRes.json();
 }
 
 /**
