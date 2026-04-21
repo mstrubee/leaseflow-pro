@@ -170,8 +170,9 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
           </div>
         ) : hasBold ? (
           // Live-bold mode: textarea with transparent text + highlight overlay rendering markdown bold.
-          // CRITICAL: overlay and textarea MUST share identical text metrics (font, size, line-height,
-          // padding, border, letter-spacing, wrap rules) so the caret aligns with the rendered glyphs.
+          // CRITICAL: overlay and textarea MUST share identical text metrics (font-family, font-size,
+          // line-height, padding, border-width, letter-spacing, wrap rules) so the caret aligns with
+          // the rendered glyphs. We force both to the same explicit values instead of relying on inherit.
           <div className="relative w-full">
             <Textarea
               ref={textareaRef}
@@ -185,10 +186,14 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
                 className
               )}
               style={{
+                fontFamily: "inherit",
+                fontSize: "0.875rem",
+                fontWeight: 400,
                 lineHeight: "1.5",
                 letterSpacing: "normal",
                 wordBreak: "break-word",
                 overflowWrap: "break-word",
+                whiteSpace: "pre-wrap",
                 tabSize: 4,
                 ...(props.style || {}),
               }}
@@ -198,18 +203,22 @@ const TextareaWithAI = React.forwardRef<HTMLTextAreaElement, TextareaWithAIProps
               ref={highlightRef}
               aria-hidden="true"
               className={cn(
-                "pointer-events-none absolute inset-0 overflow-hidden rounded-md border border-transparent px-3 py-2 text-sm whitespace-pre-wrap text-foreground",
+                "pointer-events-none absolute inset-0 overflow-hidden rounded-md text-foreground",
                 className
               )}
               style={{
                 fontFamily: "inherit",
-                fontSize: "inherit",
-                fontWeight: "inherit",
+                fontSize: "0.875rem",
+                fontWeight: 400,
                 lineHeight: "1.5",
                 letterSpacing: "normal",
                 wordBreak: "break-word",
                 overflowWrap: "break-word",
+                whiteSpace: "pre-wrap",
                 tabSize: 4,
+                padding: "0.5rem 0.75rem",
+                border: "1px solid transparent",
+                boxSizing: "border-box",
                 ...(props.style || {}),
               }}
             >
