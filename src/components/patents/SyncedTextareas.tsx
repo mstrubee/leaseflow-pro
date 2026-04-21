@@ -77,6 +77,7 @@ export const SyncedTextareas = ({
             value={comments}
             onChange={onCommentsChange}
             placeholder="Escriba sus comentarios u observaciones aquí..."
+            richText
             className="text-left font-mono text-sm resize-vertical"
             rows={5}
             style={{ lineHeight: '1.5' }}
@@ -93,6 +94,7 @@ export const SyncedTextareas = ({
             value={nextActions}
             onChange={onNextActionsChange}
             placeholder="Escriba las próximas acciones aquí..."
+            richText
             className="text-left font-mono text-sm resize-vertical"
             rows={5}
             style={{ lineHeight: '1.5' }}
