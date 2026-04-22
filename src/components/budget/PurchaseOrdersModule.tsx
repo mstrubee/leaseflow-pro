@@ -1474,9 +1474,21 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                   {getHierarchicalLinesForBudgetType("capex").length === 0 ? (
                     <p className="text-xs text-amber-600 p-2">No hay líneas autorizadas para CAPEX</p>
                   ) : (
-                    getHierarchicalLinesForBudgetType("capex").map((line) => {
+                    getHierarchicalLinesForBudgetType("capex")
+                      .filter((line) => {
+                        // Hide lines whose any ancestor is collapsed.
+                        let pid = line.parent_id;
+                        while (pid) {
+                          if (collapsedPickerLines.has(pid)) return false;
+                          const parent = budgetLines.find(b => b.id === pid);
+                          pid = parent?.parent_id ?? null;
+                        }
+                        return true;
+                      })
+                      .map((line) => {
                       const available = getAvailableBudgetForLine(line.id);
                       const isSelected = newOrder.budget_line_ids.includes(line.id);
+                      const isCollapsed = collapsedPickerLines.has(line.id);
                       return (
                         <label
                           key={line.id}
@@ -1503,7 +1515,26 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                             className="h-4 w-4"
                           />
                           <span className="flex-1 truncate">
-                            {line.hasChildren && <span className="text-muted-foreground mr-1">▸</span>}
+                            {line.hasChildren && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setCollapsedPickerLines(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(line.id)) next.delete(line.id);
+                                    else next.add(line.id);
+                                    return next;
+                                  });
+                                }}
+                                className="text-muted-foreground mr-1 inline-flex w-4 hover:text-foreground transition-transform"
+                                aria-label={isCollapsed ? "Expandir" : "Colapsar"}
+                                style={{ transform: isCollapsed ? "rotate(0deg)" : "rotate(90deg)" }}
+                              >
+                                ▸
+                              </button>
+                            )}
                             {line.name}
                           </span>
                           <span className="text-xs text-muted-foreground whitespace-nowrap">
