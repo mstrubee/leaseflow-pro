@@ -546,6 +546,29 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
     return result;
   };
 
+  // Returns all descendant ids for a given budget line within the same budget type.
+  // Used to cascade checkbox selection: picking a parent line auto-selects its children.
+  const getDescendantIds = (lineId: string, budgetType: string): string[] => {
+    const lines = getAuthorizedLinesForBudgetType(budgetType);
+    const childrenOf = new Map<string, string[]>();
+    lines.forEach(l => {
+      if (l.parent_id) {
+        const arr = childrenOf.get(l.parent_id) ?? [];
+        arr.push(l.id);
+        childrenOf.set(l.parent_id, arr);
+      }
+    });
+    const out: string[] = [];
+    const visit = (id: string) => {
+      (childrenOf.get(id) ?? []).forEach(childId => {
+        out.push(childId);
+        visit(childId);
+      });
+    };
+    visit(lineId);
+    return out;
+  };
+
   // Calculate total OCs for a budget line
   const getTotalOCsForBudgetLine = (budgetLineId: string) => {
     return orders
