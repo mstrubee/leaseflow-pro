@@ -1066,6 +1066,42 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                   <Download className="h-4 w-4" />
                   Descargar Excel
                 </Button>
+                {!isClosed && !forceReadOnly && (
+                  selectionMode ? (
+                    <>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => setShowMoveDialog(true)}
+                        disabled={selectedLineIds.size === 0}
+                        className="gap-2"
+                      >
+                        <Move className="h-4 w-4" />
+                        Mover ({selectedLineIds.size})
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleExitSelectionMode}
+                        className="gap-2"
+                      >
+                        <X className="h-4 w-4" />
+                        Cancelar selección
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectionMode(true)}
+                      className="gap-2"
+                      title="Seleccionar líneas para mover a otra línea madre"
+                    >
+                      <Move className="h-4 w-4" />
+                      Seleccionar líneas
+                    </Button>
+                  )
+                )}
                 {superficieEdificada > 0 && (
                   <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
                     <span className="font-medium">Total:</span>
@@ -1093,8 +1129,19 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               collapsedIds={collapsedIds}
               onToggleExpand={handleToggleExpand}
               superficieEdificada={superficieEdificada}
+              selectionMode={selectionMode}
+              selectedIds={selectedLineIds}
+              onToggleSelect={handleToggleSelectLine}
             />
-            
+
+            <MoveLinesDialog
+              open={showMoveDialog}
+              onOpenChange={setShowMoveDialog}
+              lines={lines}
+              selectedIds={Array.from(selectedLineIds)}
+              onConfirm={handleConfirmMove}
+            />
+
             {/* Trash Panel - shows deleted lines and audit history */}
             {currentBudget && !forceReadOnly && (
               <div className="mt-4">
