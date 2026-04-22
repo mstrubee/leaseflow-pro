@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp, Download } from "lucide-react";
+import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp, Download, Move, X } from "lucide-react";
 import * as XLSX from "xlsx";
 import { OpexConsumptionPieChart } from "./OpexConsumptionPieChart";
 import { useToast } from "@/hooks/use-toast";
@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { OCRequestDialog } from "./OCRequestDialog";
 import { QuotationsManager } from "./QuotationsManager";
 import { BudgetTrashPanel } from "./BudgetTrashPanel";
+import { MoveLinesDialog } from "./MoveLinesDialog";
 
 interface Budget {
   id: string;
@@ -60,6 +61,47 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   // State propagation dialog
   const [showStatePropagation, setShowStatePropagation] = useState(false);
   const [pendingStatusChange, setPendingStatusChange] = useState<{ id: string; newStatus: "autorizado" | "no_autorizado"; hasChildren: boolean } | null>(null);
+
+  // Bulk-move (line selection) state
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedLineIds, setSelectedLineIds] = useState<Set<string>>(new Set());
+  const [showMoveDialog, setShowMoveDialog] = useState(false);
+
+  const handleToggleSelectLine = useCallback((id: string) => {
+    setSelectedLineIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleExitSelectionMode = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedLineIds(new Set());
+  }, []);
+
+  const handleConfirmMove = useCallback(async (targetParentId: string | null) => {
+    const ids = Array.from(selectedLineIds);
+    if (ids.length === 0) return;
+    try {
+      // Persist parent_id change for every selected line. Children, OCs and
+      // invoices stay attached because they reference budget_line_id, not parent.
+      const { error } = await supabase
+        .from("budget_lines")
+        .update({ parent_id: targetParentId })
+        .in("id", ids);
+      if (error) throw error;
+      toast({ title: "Líneas movidas", description: `Se movieron ${ids.length} línea(s) correctamente.` });
+      handleExitSelectionMode();
+      // Reload to rebuild tree + recalc parent/percentage totals
+      const budget = budgets.find((b) => b.year === selectedYear);
+      if (budget) await loadLines(budget.id);
+      onRefresh?.();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error al mover", description: err?.message || "No se pudieron mover las líneas." });
+    }
+  }, [selectedLineIds, budgets, selectedYear, onRefresh, handleExitSelectionMode]);
+
   
   // OC Dialog state
   const [showOCDialog, setShowOCDialog] = useState(false);
@@ -1024,6 +1066,42 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                   <Download className="h-4 w-4" />
                   Descargar Excel
                 </Button>
+                {!isClosed && !forceReadOnly && (
+                  selectionMode ? (
+                    <>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => setShowMoveDialog(true)}
+                        disabled={selectedLineIds.size === 0}
+                        className="gap-2"
+                      >
+                        <Move className="h-4 w-4" />
+                        Mover ({selectedLineIds.size})
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleExitSelectionMode}
+                        className="gap-2"
+                      >
+                        <X className="h-4 w-4" />
+                        Cancelar selección
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectionMode(true)}
+                      className="gap-2"
+                      title="Seleccionar líneas para mover a otra línea madre"
+                    >
+                      <Move className="h-4 w-4" />
+                      Seleccionar líneas
+                    </Button>
+                  )
+                )}
                 {superficieEdificada > 0 && (
                   <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
                     <span className="font-medium">Total:</span>
@@ -1051,8 +1129,19 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               collapsedIds={collapsedIds}
               onToggleExpand={handleToggleExpand}
               superficieEdificada={superficieEdificada}
+              selectionMode={selectionMode}
+              selectedIds={selectedLineIds}
+              onToggleSelect={handleToggleSelectLine}
             />
-            
+
+            <MoveLinesDialog
+              open={showMoveDialog}
+              onOpenChange={setShowMoveDialog}
+              lines={lines}
+              selectedIds={Array.from(selectedLineIds)}
+              onConfirm={handleConfirmMove}
+            />
+
             {/* Trash Panel - shows deleted lines and audit history */}
             {currentBudget && !forceReadOnly && (
               <div className="mt-4">

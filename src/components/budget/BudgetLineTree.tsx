@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { useBudgetContext } from "./BudgetContext";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -119,6 +120,10 @@ interface BudgetLineTreeProps {
   /** Set of supplier IDs that represent internal transfers — these lines are
    *  shown as informational only and excluded from totals. */
   internalTransferSupplierIds?: Set<string>;
+  /** When true, show a checkbox at the start of every line for bulk move. */
+  selectionMode?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
 }
 export const BudgetLineTree = ({
   lines,
@@ -140,6 +145,9 @@ export const BudgetLineTree = ({
   linesMap: externalLinesMap,
   superficieEdificada = 0,
   internalTransferSupplierIds,
+  selectionMode = false,
+  selectedIds,
+  onToggleSelect,
 }: BudgetLineTreeProps) => {
   // Build linesMap only at root level (level === 0), pass down to children
   const rootLinesMap = useMemo(() => {
@@ -199,6 +207,9 @@ export const BudgetLineTree = ({
         onToggleExpand={onToggleExpand}
         superficieEdificada={superficieEdificada}
         internalTransferSupplierIds={internalTransferSupplierIds}
+        selectionMode={selectionMode}
+        selectedIds={selectedIds}
+        onToggleSelect={onToggleSelect}
       />)}
       {level === 0 && !readOnly && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
@@ -226,6 +237,9 @@ interface BudgetLineItemProps {
   onToggleExpand?: (id: string) => void;
   superficieEdificada?: number;
   internalTransferSupplierIds?: Set<string>;
+  selectionMode?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
 }
 
 const countDescendants = (line: BudgetLine): number => {
@@ -253,7 +267,11 @@ const BudgetLineItemInner = ({
   onToggleExpand,
   superficieEdificada = 0,
   internalTransferSupplierIds,
+  selectionMode = false,
+  selectedIds,
+  onToggleSelect,
 }: BudgetLineItemProps) => {
+  const isSelected = !!(selectedIds && selectedIds.has(line.id));
   const isInternalTransfer = !!(line.supplier_id && internalTransferSupplierIds?.has(line.supplier_id));
   const { isAdmin } = useAuth();
   // Use centralized expansion state if provided, otherwise fall back to local state
@@ -567,8 +585,18 @@ const BudgetLineItemInner = ({
         level === 2 && !hasChildren && "bg-muted/10",
         level >= 3 && hasChildren && "bg-muted/35",
         level >= 3 && !hasChildren && "bg-muted/5",
-        !hasChildren && isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20"
+        !hasChildren && isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20",
+        selectionMode && isSelected && "ring-2 ring-primary"
       )}>
+        {selectionMode && (
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={() => onToggleSelect?.(line.id)}
+            onClick={(e) => e.stopPropagation()}
+            className="flex-shrink-0"
+            aria-label={`Seleccionar ${line.name}`}
+          />
+        )}
         <button onClick={() => { if (onToggleExpand) onToggleExpand(line.id); else setLocalExpanded(!localExpanded); }} className="p-0.5 hover:bg-accent rounded" disabled={!hasChildren}>
           {hasChildren ? isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" /> : <div className="h-3.5 w-3.5" />}
         </button>
@@ -1018,7 +1046,7 @@ const BudgetLineItemInner = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} />}
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
