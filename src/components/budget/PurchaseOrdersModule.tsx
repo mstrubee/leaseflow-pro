@@ -1750,7 +1750,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
 
       {/* Edit Order Dialog */}
       <Dialog open={showEditDialog} onOpenChange={(open) => { setShowEditDialog(open); if (!open) setBudgetWarning(null); }}>
-        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>Editar Orden de Compra</DialogTitle>
           </DialogHeader>
