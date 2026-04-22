@@ -267,7 +267,11 @@ const BudgetLineItemInner = ({
   onToggleExpand,
   superficieEdificada = 0,
   internalTransferSupplierIds,
+  selectionMode = false,
+  selectedIds,
+  onToggleSelect,
 }: BudgetLineItemProps) => {
+  const isSelected = !!(selectedIds && selectedIds.has(line.id));
   const isInternalTransfer = !!(line.supplier_id && internalTransferSupplierIds?.has(line.supplier_id));
   const { isAdmin } = useAuth();
   // Use centralized expansion state if provided, otherwise fall back to local state
