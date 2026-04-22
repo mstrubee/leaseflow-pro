@@ -105,6 +105,8 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
   const [showCreateSupplierDialog, setShowCreateSupplierDialog] = useState(false);
   const [pendingOrderData, setPendingOrderData] = useState<typeof newOrder | null>(null);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+  // Collapsed parent line ids in the budget-line picker (Create/Edit OC dialogs).
+  const [collapsedPickerLines, setCollapsedPickerLines] = useState<Set<string>>(new Set());
   const [deleteOrder, setDeleteOrder] = useState<PurchaseOrder | null>(null);
   const [editOrder, setEditOrder] = useState<PurchaseOrder | null>(null);
   const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
