@@ -631,21 +631,8 @@ export const OCRequestsList = ({
     }
   };
 
-  // Determine if converted requests should be visible (admin only, within 3 months of year change)
-  const shouldShowConverted = () => {
-    if (!isAdmin) return false;
-    const currentYear = new Date().getFullYear();
-    const currentMonth = new Date().getMonth(); // 0-indexed
-    // Admin can see converted if:
-    // - Request year is current year, OR
-    // - Request year is last year AND current month is Jan/Feb/Mar (first 3 months)
-    return year === currentYear || (year === currentYear - 1 && currentMonth < 3);
-  };
-
-  // Filter requests by budget type and visibility rules
-  const visibleRequests = shouldShowConverted() 
-    ? requests 
-    : requests.filter(r => r.status !== "converted");
+  // Filter requests by budget type — converted requests are always visible
+  const visibleRequests = requests;
     
   const filteredRequests = budgetTypeFilter === "all" 
     ? visibleRequests 
