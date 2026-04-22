@@ -66,6 +66,7 @@ interface BudgetLine {
   budget_id: string;
   status: string;
   parent_id: string | null;
+  display_order: number | null;
 }
 
 interface OpexCategory {
@@ -340,7 +341,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
         // has amount_uf = 0 (totals are usually rolled up from leaves).
         const { data: linesData, error: linesError } = await supabase
           .from("budget_lines")
-          .select("id, name, amount_uf, budget_id, status, parent_id")
+          .select("id, name, amount_uf, budget_id, status, parent_id, display_order")
           .in("budget_id", budgetIds)
           .is("deleted_at", null);
 
@@ -534,7 +535,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
     });
     const result: Array<{ id: string; name: string; amount_uf: number; budget_id: string; status: string; parent_id: string | null; depth: number; hasChildren: boolean }> = [];
     const walk = (parentKey: string | null, depth: number) => {
-      const items = (childrenOf.get(parentKey) ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
+      const items = (childrenOf.get(parentKey) ?? []).slice().sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
       items.forEach(item => {
         const hasChildren = (childrenOf.get(item.id) ?? []).length > 0;
         result.push({ ...item, depth, hasChildren });
@@ -543,6 +544,29 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
     };
     walk(null, 0);
     return result;
+  };
+
+  // Returns all descendant ids for a given budget line within the same budget type.
+  // Used to cascade checkbox selection: picking a parent line auto-selects its children.
+  const getDescendantIds = (lineId: string, budgetType: string): string[] => {
+    const lines = getAuthorizedLinesForBudgetType(budgetType);
+    const childrenOf = new Map<string, string[]>();
+    lines.forEach(l => {
+      if (l.parent_id) {
+        const arr = childrenOf.get(l.parent_id) ?? [];
+        arr.push(l.id);
+        childrenOf.set(l.parent_id, arr);
+      }
+    });
+    const out: string[] = [];
+    const visit = (id: string) => {
+      (childrenOf.get(id) ?? []).forEach(childId => {
+        out.push(childId);
+        visit(childId);
+      });
+    };
+    visit(lineId);
+    return out;
   };
 
   // Calculate total OCs for a budget line
@@ -1465,9 +1489,13 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                             type="checkbox"
                             checked={isSelected}
                             onChange={(e) => {
+                              // Cascade selection: toggling a parent toggles all descendants too.
+                              const descendants = getDescendantIds(line.id, "capex");
+                              const affected = [line.id, ...descendants];
+                              const current = newOrder.budget_line_ids;
                               const newIds = e.target.checked
-                                ? [...newOrder.budget_line_ids, line.id]
-                                : newOrder.budget_line_ids.filter(id => id !== line.id);
+                                ? Array.from(new Set([...current, ...affected]))
+                                : current.filter(id => !affected.includes(id));
                               setNewOrder({ ...newOrder, budget_line_ids: newIds });
                             }}
                             className="h-4 w-4"
@@ -1814,9 +1842,12 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                             type="checkbox"
                             checked={isSelected}
                             onChange={(e) => {
+                              const descendants = getDescendantIds(line.id, "capex");
+                              const affected = [line.id, ...descendants];
+                              const current = editFormData.budget_line_ids;
                               const newIds = e.target.checked
-                                ? [...editFormData.budget_line_ids, line.id]
-                                : editFormData.budget_line_ids.filter(id => id !== line.id);
+                                ? Array.from(new Set([...current, ...affected]))
+                                : current.filter(id => !affected.includes(id));
                               setEditFormData({ ...editFormData, budget_line_ids: newIds });
                             }}
                             className="h-4 w-4"
