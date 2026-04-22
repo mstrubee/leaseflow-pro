@@ -61,6 +61,47 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   // State propagation dialog
   const [showStatePropagation, setShowStatePropagation] = useState(false);
   const [pendingStatusChange, setPendingStatusChange] = useState<{ id: string; newStatus: "autorizado" | "no_autorizado"; hasChildren: boolean } | null>(null);
+
+  // Bulk-move (line selection) state
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedLineIds, setSelectedLineIds] = useState<Set<string>>(new Set());
+  const [showMoveDialog, setShowMoveDialog] = useState(false);
+
+  const handleToggleSelectLine = useCallback((id: string) => {
+    setSelectedLineIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleExitSelectionMode = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedLineIds(new Set());
+  }, []);
+
+  const handleConfirmMove = useCallback(async (targetParentId: string | null) => {
+    const ids = Array.from(selectedLineIds);
+    if (ids.length === 0) return;
+    try {
+      // Persist parent_id change for every selected line. Children, OCs and
+      // invoices stay attached because they reference budget_line_id, not parent.
+      const { error } = await supabase
+        .from("budget_lines")
+        .update({ parent_id: targetParentId })
+        .in("id", ids);
+      if (error) throw error;
+      toast({ title: "Líneas movidas", description: `Se movieron ${ids.length} línea(s) correctamente.` });
+      handleExitSelectionMode();
+      // Reload to rebuild tree + recalc parent/percentage totals
+      const budget = budgets.find((b) => b.year === selectedYear);
+      if (budget) await loadLines(budget.id);
+      onRefresh?.();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error al mover", description: err?.message || "No se pudieron mover las líneas." });
+    }
+  }, [selectedLineIds, budgets, selectedYear, onRefresh, handleExitSelectionMode]);
+
   
   // OC Dialog state
   const [showOCDialog, setShowOCDialog] = useState(false);
