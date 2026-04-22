@@ -341,7 +341,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
         // has amount_uf = 0 (totals are usually rolled up from leaves).
         const { data: linesData, error: linesError } = await supabase
           .from("budget_lines")
-          .select("id, name, amount_uf, budget_id, status, parent_id")
+          .select("id, name, amount_uf, budget_id, status, parent_id, display_order")
           .in("budget_id", budgetIds)
           .is("deleted_at", null);
 
