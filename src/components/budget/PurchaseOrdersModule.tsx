@@ -1842,9 +1842,12 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                             type="checkbox"
                             checked={isSelected}
                             onChange={(e) => {
+                              const descendants = getDescendantIds(line.id, "capex");
+                              const affected = [line.id, ...descendants];
+                              const current = editFormData.budget_line_ids;
                               const newIds = e.target.checked
-                                ? [...editFormData.budget_line_ids, line.id]
-                                : editFormData.budget_line_ids.filter(id => id !== line.id);
+                                ? Array.from(new Set([...current, ...affected]))
+                                : current.filter(id => !affected.includes(id));
                               setEditFormData({ ...editFormData, budget_line_ids: newIds });
                             }}
                             className="h-4 w-4"
