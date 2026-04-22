@@ -535,7 +535,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
     });
     const result: Array<{ id: string; name: string; amount_uf: number; budget_id: string; status: string; parent_id: string | null; depth: number; hasChildren: boolean }> = [];
     const walk = (parentKey: string | null, depth: number) => {
-      const items = (childrenOf.get(parentKey) ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
+      const items = (childrenOf.get(parentKey) ?? []).slice().sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
       items.forEach(item => {
         const hasChildren = (childrenOf.get(item.id) ?? []).length > 0;
         result.push({ ...item, depth, hasChildren });
