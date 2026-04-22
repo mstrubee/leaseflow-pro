@@ -1114,6 +1114,35 @@ const BudgetLineItemInner = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {/* Supplier Propagation Confirmation Dialog */}
+      <AlertDialog open={showSupplierPropagation} onOpenChange={(open) => {
+        if (!open) {
+          setShowSupplierPropagation(false);
+          setPendingSupplierChange(null);
+        }
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cambiar proveedor</AlertDialogTitle>
+            <AlertDialogDescription>
+              La línea <strong>"{line.name}"</strong> tiene {descendantCount} sublínea{descendantCount > 1 ? 's' : ''}.
+              ¿Quieres aplicar el proveedor <strong>{pendingSupplierChange?.supplierName || 'seleccionado'}</strong> también a sus sublíneas?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setShowSupplierPropagation(false);
+              setPendingSupplierChange(null);
+            }}>Cancelar</AlertDialogCancel>
+            <Button variant="outline" onClick={() => applySupplierChange(false)}>
+              Solo esta línea
+            </Button>
+            <AlertDialogAction onClick={() => applySupplierChange(true)}>
+              Aplicar a todas
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>;
 };
 
