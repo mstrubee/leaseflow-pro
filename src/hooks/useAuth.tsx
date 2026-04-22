@@ -87,7 +87,8 @@ export const useAuth = () => {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    // Global scope invalidates the session on every device for this user
+    await supabase.auth.signOut({ scope: "global" });
   };
 
   return {
