@@ -58,7 +58,7 @@ export function SecuritySessionsPanel() {
     <CollapsibleCard
       title="Seguridad y Sesiones"
       description="Auditoría de inicios de sesión y control de sesiones activas"
-      defaultCollapsed
+      defaultOpen={false}
     >
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-2 flex-wrap">
