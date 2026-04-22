@@ -443,6 +443,10 @@ const AdminPanel = () => {
   };
 
   const handleCreateUser = async () => {
+    if (!newUserName.trim()) {
+      toast({ variant: "destructive", title: "Error", description: "El nombre completo es requerido" });
+      return;
+    }
     if (!newUserEmail || !newUserPassword) {
       toast({ variant: "destructive", title: "Error", description: "Email y contraseña son requeridos" });
       return;
@@ -853,7 +857,7 @@ const AdminPanel = () => {
                   Nuevo Usuario
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-md">
+              <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>Crear Nuevo Usuario</DialogTitle>
                   <DialogDescription>
@@ -862,12 +866,13 @@ const AdminPanel = () => {
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
-                    <Label htmlFor="new-name">Nombre Completo</Label>
+                    <Label htmlFor="new-name">Nombre Completo <span className="text-destructive">*</span></Label>
                     <Input
                       id="new-name"
                       value={newUserName}
                       onChange={(e) => setNewUserName(e.target.value)}
-                      placeholder="Juan Pérez"
+                      placeholder="Nombre y apellido"
+                      required
                     />
                   </div>
                   <div className="space-y-2">
