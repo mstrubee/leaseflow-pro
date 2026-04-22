@@ -292,6 +292,8 @@ const BudgetLineItemInner = ({
   const [isEditingTotal, setIsEditingTotal] = useState(false);
   const [isEditingPercentage, setIsEditingPercentage] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showSupplierPropagation, setShowSupplierPropagation] = useState(false);
+  const [pendingSupplierChange, setPendingSupplierChange] = useState<{ supplierId: string | null; supplierName: string | null } | null>(null);
   const [editName, setEditName] = useState(line.name);
   const [editQuantity, setEditQuantity] = useState((line.quantity || 0).toString());
   const [editUnitPrice, setEditUnitPrice] = useState((line.unit_price || 0).toString());
@@ -508,10 +510,36 @@ const BudgetLineItemInner = ({
 
   const handleSupplierChange = (supplierId: string | null, supplierName: string | null) => {
     if (readOnly) return;
-    onUpdateLine(line.id, { 
+    const hasChildren = !!(line.children && line.children.length > 0);
+    if (hasChildren) {
+      // Ask user before propagating to descendants
+      setPendingSupplierChange({ supplierId, supplierName });
+      setShowSupplierPropagation(true);
+      return;
+    }
+    onUpdateLine(line.id, {
       supplier_id: supplierId,
-      supplier_name: supplierName 
+      supplier_name: supplierName,
     });
+  };
+
+  const collectDescendantIds = (l: BudgetLine): string[] => {
+    if (!l.children || l.children.length === 0) return [];
+    return l.children.flatMap(c => [c.id, ...collectDescendantIds(c)]);
+  };
+
+  const applySupplierChange = (propagate: boolean) => {
+    if (!pendingSupplierChange) return;
+    const { supplierId, supplierName } = pendingSupplierChange;
+    onUpdateLine(line.id, { supplier_id: supplierId, supplier_name: supplierName });
+    if (propagate) {
+      const descendantIds = collectDescendantIds(line);
+      descendantIds.forEach(id => {
+        onUpdateLine(id, { supplier_id: supplierId, supplier_name: supplierName });
+      });
+    }
+    setPendingSupplierChange(null);
+    setShowSupplierPropagation(false);
   };
 
   const handleQuantityKeyDown = (e: React.KeyboardEvent) => {
@@ -1082,6 +1110,35 @@ const BudgetLineItemInner = ({
             >
               <Trash2 className="h-4 w-4 mr-2" />
               Eliminar{descendantCount > 0 ? ` (${descendantCount + 1} líneas)` : ''}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {/* Supplier Propagation Confirmation Dialog */}
+      <AlertDialog open={showSupplierPropagation} onOpenChange={(open) => {
+        if (!open) {
+          setShowSupplierPropagation(false);
+          setPendingSupplierChange(null);
+        }
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cambiar proveedor</AlertDialogTitle>
+            <AlertDialogDescription>
+              La línea <strong>"{line.name}"</strong> tiene {descendantCount} sublínea{descendantCount > 1 ? 's' : ''}.
+              ¿Quieres aplicar el proveedor <strong>{pendingSupplierChange?.supplierName || 'seleccionado'}</strong> también a sus sublíneas?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setShowSupplierPropagation(false);
+              setPendingSupplierChange(null);
+            }}>Cancelar</AlertDialogCancel>
+            <Button variant="outline" onClick={() => applySupplierChange(false)}>
+              Solo esta línea
+            </Button>
+            <AlertDialogAction onClick={() => applySupplierChange(true)}>
+              Aplicar a todas
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
