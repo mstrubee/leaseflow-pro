@@ -1878,10 +1878,23 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                       const isSelected = editFormData.budget_line_ids.includes(line.id);
                       const isCollapsed = collapsedPickerLines.has(line.id);
                       return (
-                        <label
+                        <div
                           key={line.id}
+                          role="checkbox"
+                          aria-checked={isSelected}
+                          tabIndex={0}
+                          onClick={() => {
+                            const descendants = getDescendantIds(line.id, "capex");
+                            const affected = [line.id, ...descendants];
+                            const current = editFormData.budget_line_ids;
+                            const willCheck = !isSelected;
+                            const newIds = willCheck
+                              ? Array.from(new Set([...current, ...affected]))
+                              : current.filter(id => !affected.includes(id));
+                            setEditFormData({ ...editFormData, budget_line_ids: newIds });
+                          }}
                           className={cn(
-                            "flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-accent",
+                            "flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-accent select-none",
                             isSelected && "bg-accent",
                             line.hasChildren && "font-medium"
                           )}
@@ -1890,16 +1903,9 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                           <input
                             type="checkbox"
                             checked={isSelected}
-                            onChange={(e) => {
-                              const descendants = getDescendantIds(line.id, "capex");
-                              const affected = [line.id, ...descendants];
-                              const current = editFormData.budget_line_ids;
-                              const newIds = e.target.checked
-                                ? Array.from(new Set([...current, ...affected]))
-                                : current.filter(id => !affected.includes(id));
-                              setEditFormData({ ...editFormData, budget_line_ids: newIds });
-                            }}
-                            className="h-4 w-4"
+                            readOnly
+                            tabIndex={-1}
+                            className="h-4 w-4 pointer-events-none"
                           />
                           <span className="flex-1 truncate">
                             {line.hasChildren && (
@@ -1927,7 +1933,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                           <span className="text-xs text-muted-foreground whitespace-nowrap">
                             (Disp: {formatCLP(convertUFToPesos(available))})
                           </span>
-                        </label>
+                        </div>
                       );
                     })
                   )}
