@@ -508,10 +508,36 @@ const BudgetLineItemInner = ({
 
   const handleSupplierChange = (supplierId: string | null, supplierName: string | null) => {
     if (readOnly) return;
-    onUpdateLine(line.id, { 
+    const hasChildren = !!(line.children && line.children.length > 0);
+    if (hasChildren) {
+      // Ask user before propagating to descendants
+      setPendingSupplierChange({ supplierId, supplierName });
+      setShowSupplierPropagation(true);
+      return;
+    }
+    onUpdateLine(line.id, {
       supplier_id: supplierId,
-      supplier_name: supplierName 
+      supplier_name: supplierName,
     });
+  };
+
+  const collectDescendantIds = (l: BudgetLine): string[] => {
+    if (!l.children || l.children.length === 0) return [];
+    return l.children.flatMap(c => [c.id, ...collectDescendantIds(c)]);
+  };
+
+  const applySupplierChange = (propagate: boolean) => {
+    if (!pendingSupplierChange) return;
+    const { supplierId, supplierName } = pendingSupplierChange;
+    onUpdateLine(line.id, { supplier_id: supplierId, supplier_name: supplierName });
+    if (propagate) {
+      const descendantIds = collectDescendantIds(line);
+      descendantIds.forEach(id => {
+        onUpdateLine(id, { supplier_id: supplierId, supplier_name: supplierName });
+      });
+    }
+    setPendingSupplierChange(null);
+    setShowSupplierPropagation(false);
   };
 
   const handleQuantityKeyDown = (e: React.KeyboardEvent) => {
