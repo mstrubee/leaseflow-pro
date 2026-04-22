@@ -237,6 +237,9 @@ interface BudgetLineItemProps {
   onToggleExpand?: (id: string) => void;
   superficieEdificada?: number;
   internalTransferSupplierIds?: Set<string>;
+  selectionMode?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
 }
 
 const countDescendants = (line: BudgetLine): number => {
