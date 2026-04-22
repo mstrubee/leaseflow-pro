@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { useBudgetContext } from "./BudgetContext";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -119,6 +120,10 @@ interface BudgetLineTreeProps {
   /** Set of supplier IDs that represent internal transfers — these lines are
    *  shown as informational only and excluded from totals. */
   internalTransferSupplierIds?: Set<string>;
+  /** When true, show a checkbox at the start of every line for bulk move. */
+  selectionMode?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
 }
 export const BudgetLineTree = ({
   lines,
@@ -140,6 +145,9 @@ export const BudgetLineTree = ({
   linesMap: externalLinesMap,
   superficieEdificada = 0,
   internalTransferSupplierIds,
+  selectionMode = false,
+  selectedIds,
+  onToggleSelect,
 }: BudgetLineTreeProps) => {
   // Build linesMap only at root level (level === 0), pass down to children
   const rootLinesMap = useMemo(() => {
