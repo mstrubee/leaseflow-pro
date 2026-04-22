@@ -1408,7 +1408,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
       </CardContent>
 
       <Dialog open={showNewDialog} onOpenChange={(open) => { setShowNewDialog(open); if (!open) setBudgetWarning(null); }}>
-        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>Nueva Orden de Compra</DialogTitle>
           </DialogHeader>
