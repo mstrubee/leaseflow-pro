@@ -29,6 +29,7 @@ import { OrgChartManager } from "@/components/admin/OrgChartManager";
 import { MaintenanceCriticalityManager } from "@/components/admin/MaintenanceCriticalityManager";
 import { MaintenanceSubStatusManager } from "@/components/admin/MaintenanceSubStatusManager";
 import { GeneralFoldersManager } from "@/components/admin/GeneralFoldersManager";
+import { SecuritySessionsPanel } from "@/components/admin/SecuritySessionsPanel";
 interface Profile {
   id: string;
   email: string;
@@ -1293,6 +1294,9 @@ const AdminPanel = () => {
             </div>
           </div>
         </CollapsibleCard>
+
+        {/* Security & Sessions - Admin only */}
+        <SecuritySessionsPanel />
 
         {/* Storage Monitor - Admin only */}
         <StorageMonitor defaultCollapsed />
