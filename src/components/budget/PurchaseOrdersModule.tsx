@@ -335,23 +335,18 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
       if (budgetData && budgetData.length > 0) {
         const budgetIds = budgetData.map(b => b.id);
         
-        // Load ALL budget lines (including child lines) that have budget assigned
-        // Lines with amount_uf > 0 are the ones with actual budget available
+        // Load ALL budget lines (parents + children) so the hierarchical picker
+        // can render parents above their children even when the parent itself
+        // has amount_uf = 0 (totals are usually rolled up from leaves).
         const { data: linesData, error: linesError } = await supabase
           .from("budget_lines")
           .select("id, name, amount_uf, budget_id, status, parent_id")
           .in("budget_id", budgetIds)
-          .is("deleted_at", null)
-          .gt("amount_uf", 0); // Only lines with actual budget
+          .is("deleted_at", null);
 
         if (linesError) throw linesError;
-        
-        // Include lines that are autorizado OR have budget > 0
-        const validLines = (linesData || []).filter(line => 
-          line.status === "autorizado" || line.amount_uf > 0
-        );
-        
-        setBudgetLines(validLines);
+
+        setBudgetLines(linesData || []);
       } else {
         setBudgetLines([]);
       }
