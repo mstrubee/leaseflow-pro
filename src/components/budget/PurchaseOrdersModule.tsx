@@ -1449,20 +1449,22 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
             {newOrder.budget_type === "capex" ? (
               <div className="space-y-2">
                 <Label>Líneas de Presupuesto CAPEX * (selección múltiple)</Label>
-                <div className="border rounded-md p-2 max-h-40 overflow-y-auto space-y-1">
-                  {getAuthorizedLinesForBudgetType("capex").length === 0 ? (
+                <div className="border rounded-md p-2 max-h-72 overflow-y-auto space-y-1">
+                  {getHierarchicalLinesForBudgetType("capex").length === 0 ? (
                     <p className="text-xs text-amber-600 p-2">No hay líneas autorizadas para CAPEX</p>
                   ) : (
-                    getAuthorizedLinesForBudgetType("capex").map((line) => {
+                    getHierarchicalLinesForBudgetType("capex").map((line) => {
                       const available = getAvailableBudgetForLine(line.id);
                       const isSelected = newOrder.budget_line_ids.includes(line.id);
                       return (
-                        <label 
-                          key={line.id} 
+                        <label
+                          key={line.id}
                           className={cn(
                             "flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-accent",
-                            isSelected && "bg-accent"
+                            isSelected && "bg-accent",
+                            line.hasChildren && "font-medium"
                           )}
+                          style={{ paddingLeft: `${line.depth * 18 + 8}px` }}
                         >
                           <input
                             type="checkbox"
@@ -1475,8 +1477,11 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                             }}
                             className="h-4 w-4"
                           />
-                          <span className="flex-1">{line.name}</span>
-                          <span className="text-xs text-muted-foreground">
+                          <span className="flex-1 truncate">
+                            {line.hasChildren && <span className="text-muted-foreground mr-1">▸</span>}
+                            {line.name}
+                          </span>
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">
                             (Disp: {formatCLP(convertUFToPesos(available))})
                           </span>
                         </label>
