@@ -65,6 +65,7 @@ interface BudgetLine {
   amount_uf: number;
   budget_id: string;
   status: string;
+  parent_id: string | null;
 }
 
 interface OpexCategory {
@@ -520,6 +521,33 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
     const budget = budgets.find(b => b.budget_type === budgetType);
     if (!budget) return [];
     return budgetLines.filter(line => line.budget_id === budget.id);
+  };
+
+  // Order lines hierarchically: parents first, children indented underneath.
+  // Returns flat list with depth metadata so the picker can render an indented tree
+  // while still allowing selection of any node (madre or hija).
+  const getHierarchicalLinesForBudgetType = (budgetType: string): Array<{ id: string; name: string; amount_uf: number; budget_id: string; status: string; parent_id: string | null; depth: number; hasChildren: boolean }> => {
+    const lines = getAuthorizedLinesForBudgetType(budgetType);
+    const byId = new Map(lines.map(l => [l.id, l]));
+    const childrenOf = new Map<string | null, typeof lines>();
+    lines.forEach(l => {
+      // Treat parents not present in the visible set as roots
+      const key = l.parent_id && byId.has(l.parent_id) ? l.parent_id : null;
+      const arr = childrenOf.get(key) ?? [];
+      arr.push(l);
+      childrenOf.set(key, arr);
+    });
+    const result: Array<{ id: string; name: string; amount_uf: number; budget_id: string; status: string; parent_id: string | null; depth: number; hasChildren: boolean }> = [];
+    const walk = (parentKey: string | null, depth: number) => {
+      const items = (childrenOf.get(parentKey) ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
+      items.forEach(item => {
+        const hasChildren = (childrenOf.get(item.id) ?? []).length > 0;
+        result.push({ ...item, depth, hasChildren });
+        walk(item.id, depth + 1);
+      });
+    };
+    walk(null, 0);
+    return result;
   };
 
   // Calculate total OCs for a budget line
@@ -1380,7 +1408,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
       </CardContent>
 
       <Dialog open={showNewDialog} onOpenChange={(open) => { setShowNewDialog(open); if (!open) setBudgetWarning(null); }}>
-        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>Nueva Orden de Compra</DialogTitle>
           </DialogHeader>
@@ -1421,20 +1449,22 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
             {newOrder.budget_type === "capex" ? (
               <div className="space-y-2">
                 <Label>Líneas de Presupuesto CAPEX * (selección múltiple)</Label>
-                <div className="border rounded-md p-2 max-h-40 overflow-y-auto space-y-1">
-                  {getAuthorizedLinesForBudgetType("capex").length === 0 ? (
+                <div className="border rounded-md p-2 max-h-72 overflow-y-auto space-y-1">
+                  {getHierarchicalLinesForBudgetType("capex").length === 0 ? (
                     <p className="text-xs text-amber-600 p-2">No hay líneas autorizadas para CAPEX</p>
                   ) : (
-                    getAuthorizedLinesForBudgetType("capex").map((line) => {
+                    getHierarchicalLinesForBudgetType("capex").map((line) => {
                       const available = getAvailableBudgetForLine(line.id);
                       const isSelected = newOrder.budget_line_ids.includes(line.id);
                       return (
-                        <label 
-                          key={line.id} 
+                        <label
+                          key={line.id}
                           className={cn(
                             "flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-accent",
-                            isSelected && "bg-accent"
+                            isSelected && "bg-accent",
+                            line.hasChildren && "font-medium"
                           )}
+                          style={{ paddingLeft: `${line.depth * 18 + 8}px` }}
                         >
                           <input
                             type="checkbox"
@@ -1447,8 +1477,11 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                             }}
                             className="h-4 w-4"
                           />
-                          <span className="flex-1">{line.name}</span>
-                          <span className="text-xs text-muted-foreground">
+                          <span className="flex-1 truncate">
+                            {line.hasChildren && <span className="text-muted-foreground mr-1">▸</span>}
+                            {line.name}
+                          </span>
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">
                             (Disp: {formatCLP(convertUFToPesos(available))})
                           </span>
                         </label>
@@ -1722,7 +1755,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
 
       {/* Edit Order Dialog */}
       <Dialog open={showEditDialog} onOpenChange={(open) => { setShowEditDialog(open); if (!open) setBudgetWarning(null); }}>
-        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>Editar Orden de Compra</DialogTitle>
           </DialogHeader>
@@ -1762,23 +1795,25 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
             {editFormData.budget_type === "capex" ? (
               <div className="space-y-2">
                 <Label>Líneas de Presupuesto CAPEX * (selección múltiple)</Label>
-                <div className="border rounded-md p-2 max-h-40 overflow-y-auto space-y-1">
-                  {getAuthorizedLinesForBudgetType("capex").length === 0 ? (
+                <div className="border rounded-md p-2 max-h-72 overflow-y-auto space-y-1">
+                  {getHierarchicalLinesForBudgetType("capex").length === 0 ? (
                     <p className="text-xs text-amber-600 p-2">No hay líneas autorizadas para CAPEX</p>
                   ) : (
-                    getAuthorizedLinesForBudgetType("capex").map((line) => {
+                    getHierarchicalLinesForBudgetType("capex").map((line) => {
                       const usedByOthers = orders
                         .filter(o => o.budget_line_id === line.id && o.id !== editOrder?.id)
                         .reduce((sum, o) => sum + o.amount_uf, 0);
                       const available = line.amount_uf - usedByOthers;
                       const isSelected = editFormData.budget_line_ids.includes(line.id);
                       return (
-                        <label 
-                          key={line.id} 
+                        <label
+                          key={line.id}
                           className={cn(
                             "flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-accent",
-                            isSelected && "bg-accent"
+                            isSelected && "bg-accent",
+                            line.hasChildren && "font-medium"
                           )}
+                          style={{ paddingLeft: `${line.depth * 18 + 8}px` }}
                         >
                           <input
                             type="checkbox"
@@ -1791,8 +1826,11 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                             }}
                             className="h-4 w-4"
                           />
-                          <span className="flex-1">{line.name}</span>
-                          <span className="text-xs text-muted-foreground">
+                          <span className="flex-1 truncate">
+                            {line.hasChildren && <span className="text-muted-foreground mr-1">▸</span>}
+                            {line.name}
+                          </span>
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">
                             (Disp: {formatCLP(convertUFToPesos(available))})
                           </span>
                         </label>
