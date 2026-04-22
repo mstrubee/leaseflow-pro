@@ -1,74 +1,45 @@
 
 
-## Plan: Wider Gantt panel + new "Responsable" column
+# Endurecer la seguridad de la sesión y de las contraseñas
 
-### 1. Widen the task panel (~50%) for readability
+## Objetivo
+Reducir el riesgo de accesos no autorizados con tu cuenta y dar visibilidad/control sobre las sesiones activas.
 
-In `src/components/gantt/GanttChart.tsx` increase the constants at lines 277–278:
+## Cambios a implementar
 
-- `TASK_NAME_WIDTH`: `300` → `450`
-- `DATE_COL_WIDTH`: `110` → `140`
+### 1. Activar protección de contraseñas filtradas (HIBP)
+Activar el chequeo contra la base de datos "Have I Been Pwned" en Lovable Cloud. Si tu contraseña actual aparece en filtraciones públicas conocidas, el sistema te obligará a cambiarla y bloqueará a cualquiera que intente registrar/usar contraseñas comprometidas.
 
-(All headers, rows, the new-task row, the today/rent-start markers and the SVG dependency arrows already derive their offsets from these constants, so a single change cascades everywhere.)
+### 2. Forzar cierre de todas las sesiones activas ahora
+Agregar un botón en el panel de administración: **"Cerrar todas las sesiones de todos los usuarios"**. Esto invalida cualquier `localStorage` existente en cualquier dispositivo. Todos (incluido quien sea que haya entrado) deberán volver a iniciar sesión.
 
-### 2. New "Responsable" column (between Tarea and Inicio)
+### 3. Botón "Cerrar sesión en todos mis dispositivos" para cada usuario
+En el menú de usuario (esquina superior), agregar la opción `signOut({ scope: 'global' })` para que cada persona pueda invalidar sus propias sesiones remotas sin depender del admin.
 
-A new column with width `RESPONSIBLE_COL_WIDTH = 180`, added to:
+### 4. Banner de cambio de contraseña obligatorio
+En `Auth.tsx`, agregar un flujo de **"Cambiar contraseña"** (usando `supabase.auth.updateUser({ password })`). Recomendación inmediata: tú cambias tu contraseña por una nueva, larga y única, después del paso 2.
 
-- The fixed-section width sum used in the month/year header (line 1187) and `HEADER_OFFSET` (lines 508, 1311, 1328).
-- The sticky column header row (after "Tarea", before "Inicio") with label **"Responsable"**.
-- The task row (after the task-name `div`, before the start-date cell) rendering a `SearchableSelect` populated with `org_members` (loaded once).
-- The "new task" inline row (line ~1908) with a placeholder cell of the same width.
+### 5. Registro visible de inicios de sesión
+Crear una vista en el Panel de Admin que muestre los últimos logins por usuario (fecha, hora, IP aproximada) leyendo desde `auth_logs` vía una edge function con service role. Así detectas accesos sospechosos rápido.
 
-**Cell behaviour:**
-- Trigger shows the assigned member's name (or "Sin asignar").
-- Editable only when `isAdmin` (matches existing date-cell pattern).
-- On change, calls `handleUpdateTaskField(task.id, "responsible_member_id", value)`.
+## Lo que NO se puede hacer (aclaración importante)
+- **No se puede impedir que un link público (`gplanet.lovable.app`) sea visitado.** Esa URL solo abre la pantalla de login. La protección está en `ProtectedRoute`, que ya redirige a `/auth` si no hay sesión válida — eso ya funciona correctamente.
+- **No se puede "revocar" un link.** El link es solo la dirección del sitio. Lo que se revoca son sesiones y contraseñas.
 
-### 3. Data source — link to Org Chart
+## Detalles técnicos
 
-The Admin "Organigrama" already manages `org_members`. We will:
+- **HIBP**: usar `configure_auth` con `password_hibp_enabled: true`.
+- **Logout global admin**: edge function `force-logout-all` con service role que invoque `auth.admin.signOut(userId, 'global')` para cada usuario en `auth.users`.
+- **Logout global propio**: en `useAuth.signOut`, cambiar a `supabase.auth.signOut({ scope: 'global' })`.
+- **Cambio de contraseña**: nuevo componente `ChangePasswordDialog` accesible desde `FloatingUserStatus`.
+- **Auditoría de logins**: edge function `recent-logins` que consulta `auth_logs` (últimas 100 entradas con `path=/token` y `action=login`) y la rendering en `AdminPanel`.
 
-- Add a hook-level fetch in `useGantt.ts` (or load inside `GanttChart` via a small `useEffect`) that selects `id, name, role` from `public.org_members` ordered by `display_order`. Exposed as `orgMembers` for the dropdown.
-- The selector lists every org-chart member; no filtering by company/contract (keeps it simple and consistent with the user's description).
-
-### 4. Database changes
-
-Add a nullable FK column to persist the assignment per task:
-
-```sql
-ALTER TABLE public.gantt_tasks
-  ADD COLUMN responsible_member_id uuid
-  REFERENCES public.org_members(id) ON DELETE SET NULL;
-
-CREATE INDEX idx_gantt_tasks_responsible_member
-  ON public.gantt_tasks(responsible_member_id);
-```
-
-Also extend the optional template-side field so a default responsible can be inherited when copying from a Gantt template:
-
-```sql
-ALTER TABLE public.gantt_template_tasks
-  ADD COLUMN default_responsible_member_id uuid
-  REFERENCES public.org_members(id) ON DELETE SET NULL;
-```
-
-`copyTasksFromTemplate` in `useGantt.ts` will copy `default_responsible_member_id → responsible_member_id` when instantiating tasks from a template.
-
-### 5. Type updates
-
-- `GanttTask` interface in `src/hooks/useGantt.ts`: add `responsible_member_id: string | null`.
-- `src/integrations/supabase/types.ts` is auto-generated by the migration; no manual edit.
-
-### Files to edit / create
-
-- `src/components/gantt/GanttChart.tsx` — widths, header, row cell, new-task row.
-- `src/hooks/useGantt.ts` — load org members, extend type, propagate default in template copy.
-- `src/components/gantt/GanttTemplateManager.tsx` — (optional, follow-up) UI to set `default_responsible_member_id` on template tasks. Out of scope for this round unless requested.
-- New migration file under `supabase/migrations/` for the two `ALTER TABLE` statements.
-
-### Out of scope
-
-- Editing the Admin "Diagrama tipo / Organigrama" itself — it already exists and is the source of truth.
-- Reporting/filters by responsible — can be added later.
+## Archivos a tocar
+- `supabase/functions/force-logout-all/index.ts` (nuevo)
+- `supabase/functions/recent-logins/index.ts` (nuevo)
+- `src/hooks/useAuth.tsx` (signOut global)
+- `src/components/FloatingUserStatus.tsx` (botón cerrar todo + cambiar contraseña)
+- `src/pages/AdminPanel.tsx` (sección "Seguridad y sesiones")
+- `src/components/admin/SecuritySessionsPanel.tsx` (nuevo)
+- Configuración de auth: activar HIBP
 
