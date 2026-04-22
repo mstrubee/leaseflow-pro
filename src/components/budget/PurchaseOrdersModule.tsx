@@ -522,6 +522,33 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
     return budgetLines.filter(line => line.budget_id === budget.id);
   };
 
+  // Order lines hierarchically: parents first, children indented underneath.
+  // Returns flat list with depth metadata so the picker can render an indented tree
+  // while still allowing selection of any node (madre or hija).
+  const getHierarchicalLinesForBudgetType = (budgetType: string): Array<{ id: string; name: string; amount_uf: number; budget_id: string; status: string; parent_id: string | null; depth: number; hasChildren: boolean }> => {
+    const lines = getAuthorizedLinesForBudgetType(budgetType);
+    const byId = new Map(lines.map(l => [l.id, l]));
+    const childrenOf = new Map<string | null, typeof lines>();
+    lines.forEach(l => {
+      // Treat parents not present in the visible set as roots
+      const key = l.parent_id && byId.has(l.parent_id) ? l.parent_id : null;
+      const arr = childrenOf.get(key) ?? [];
+      arr.push(l);
+      childrenOf.set(key, arr);
+    });
+    const result: Array<{ id: string; name: string; amount_uf: number; budget_id: string; status: string; parent_id: string | null; depth: number; hasChildren: boolean }> = [];
+    const walk = (parentKey: string | null, depth: number) => {
+      const items = (childrenOf.get(parentKey) ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
+      items.forEach(item => {
+        const hasChildren = (childrenOf.get(item.id) ?? []).length > 0;
+        result.push({ ...item, depth, hasChildren });
+        walk(item.id, depth + 1);
+      });
+    };
+    walk(null, 0);
+    return result;
+  };
+
   // Calculate total OCs for a budget line
   const getTotalOCsForBudgetLine = (budgetLineId: string) => {
     return orders
