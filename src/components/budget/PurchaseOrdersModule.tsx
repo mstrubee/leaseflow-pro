@@ -66,6 +66,7 @@ interface BudgetLine {
   budget_id: string;
   status: string;
   parent_id: string | null;
+  display_order: number | null;
 }
 
 interface OpexCategory {
