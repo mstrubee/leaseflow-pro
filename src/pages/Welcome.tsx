@@ -97,6 +97,7 @@ const Welcome = () => {
   const { user, loading, isAdmin, roleLoaded, hasPermission, signOut } = useAuth();
   const { logos } = useAppLogos();
   const [fullName, setFullName] = useState<string>("");
+  const [pwdOpen, setPwdOpen] = useState(false);
 
   const { value: savedOrder, setValue: setSavedOrder, initialized: orderInitialized } = useUserPreferences<string[]>({
     preferenceKey: "welcome_module_order",
@@ -167,12 +168,19 @@ const Welcome = () => {
           <div className="flex items-center gap-4">
             <img src={logos.dashboard_header} alt="Logo" className="h-[50px] object-contain" />
           </div>
-          <Button variant="ghost" size="sm" onClick={async () => { await signOut(); navigate("/auth"); }} className="gap-2">
-            <LogOut className="h-4 w-4" />
-            Salir
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setPwdOpen(true)} className="gap-2">
+              <KeyRound className="h-4 w-4" />
+              Cambiar contraseña
+            </Button>
+            <Button variant="ghost" size="sm" onClick={async () => { await signOut(); navigate("/auth"); }} className="gap-2">
+              <LogOut className="h-4 w-4" />
+              Salir
+            </Button>
+          </div>
         </div>
       </header>
+      <ChangePasswordDialog open={pwdOpen} onOpenChange={setPwdOpen} />
 
       {/* Main content */}
       <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-10 space-y-8">
