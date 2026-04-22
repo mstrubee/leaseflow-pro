@@ -1036,8 +1036,10 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
           
           {/* Purchase Orders Section */}
           <PurchaseOrdersModule 
+            key={`po-${selectedYear}-${refreshKey}`}
             contractId={contractId} 
             initialYear={selectedYear} 
+            refreshKey={refreshKey}
             onRefresh={() => { setRefreshKey(k => k + 1); refreshData(); }}
           />
           <DeletedOrdersModule

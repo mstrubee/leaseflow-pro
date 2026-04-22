@@ -49,6 +49,7 @@ interface PurchaseOrder {
 interface PurchaseOrdersModuleProps {
   contractId: string;
   initialYear?: number;
+  refreshKey?: number;
   onRefresh?: () => void;
 }
 
@@ -86,7 +87,7 @@ interface OpexBudgetData {
   amount_uf: number;
 }
 
-export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: PurchaseOrdersModuleProps) => {
+export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRefresh }: PurchaseOrdersModuleProps) => {
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
@@ -164,7 +165,7 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, onRefresh }: Pur
     loadOpexCategories();
     loadSuppliers();
     loadOpexMasterBudget();
-  }, [contractId, selectedYear]);
+  }, [contractId, selectedYear, refreshKey]);
 
   const loadOrders = async () => {
     setLoading(true);
