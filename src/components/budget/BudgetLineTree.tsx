@@ -207,6 +207,9 @@ export const BudgetLineTree = ({
         onToggleExpand={onToggleExpand}
         superficieEdificada={superficieEdificada}
         internalTransferSupplierIds={internalTransferSupplierIds}
+        selectionMode={selectionMode}
+        selectedIds={selectedIds}
+        onToggleSelect={onToggleSelect}
       />)}
       {level === 0 && !readOnly && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
