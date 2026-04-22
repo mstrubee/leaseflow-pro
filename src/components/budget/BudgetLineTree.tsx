@@ -585,8 +585,18 @@ const BudgetLineItemInner = ({
         level === 2 && !hasChildren && "bg-muted/10",
         level >= 3 && hasChildren && "bg-muted/35",
         level >= 3 && !hasChildren && "bg-muted/5",
-        !hasChildren && isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20"
+        !hasChildren && isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20",
+        selectionMode && isSelected && "ring-2 ring-primary"
       )}>
+        {selectionMode && (
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={() => onToggleSelect?.(line.id)}
+            onClick={(e) => e.stopPropagation()}
+            className="flex-shrink-0"
+            aria-label={`Seleccionar ${line.name}`}
+          />
+        )}
         <button onClick={() => { if (onToggleExpand) onToggleExpand(line.id); else setLocalExpanded(!localExpanded); }} className="p-0.5 hover:bg-accent rounded" disabled={!hasChildren}>
           {hasChildren ? isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" /> : <div className="h-3.5 w-3.5" />}
         </button>
