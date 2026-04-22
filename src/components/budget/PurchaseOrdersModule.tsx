@@ -1489,9 +1489,13 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                             type="checkbox"
                             checked={isSelected}
                             onChange={(e) => {
+                              // Cascade selection: toggling a parent toggles all descendants too.
+                              const descendants = getDescendantIds(line.id, "capex");
+                              const affected = [line.id, ...descendants];
+                              const current = newOrder.budget_line_ids;
                               const newIds = e.target.checked
-                                ? [...newOrder.budget_line_ids, line.id]
-                                : newOrder.budget_line_ids.filter(id => id !== line.id);
+                                ? Array.from(new Set([...current, ...affected]))
+                                : current.filter(id => !affected.includes(id));
                               setNewOrder({ ...newOrder, budget_line_ids: newIds });
                             }}
                             className="h-4 w-4"
