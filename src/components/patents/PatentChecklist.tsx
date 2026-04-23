@@ -226,7 +226,20 @@ export function PatentChecklist({
   // Bulk selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [bulkStatusDialogOpen, setBulkStatusDialogOpen] = useState(false);
-  const [hideNoAplica, setHideNoAplica] = useState(false);
+  const [hiddenNoAplicaSections, setHiddenNoAplicaSections] = useState<Set<string>>(new Set());
+  const toggleHideNoAplica = (sectionId: string) => {
+    setHiddenNoAplicaSections(prev => {
+      const next = new Set(prev);
+      if (next.has(sectionId)) next.delete(sectionId);
+      else next.add(sectionId);
+      return next;
+    });
+  };
+  const allSectionsHidden = sections.length > 0 && sections.every(s => hiddenNoAplicaSections.has(s.id));
+  const toggleHideAllNoAplica = () => {
+    if (allSectionsHidden) setHiddenNoAplicaSections(new Set());
+    else setHiddenNoAplicaSections(new Set(sections.map(s => s.id)));
+  };
   
   // Unsaved changes confirmation dialog
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
@@ -831,6 +844,18 @@ export function PatentChecklist({
         >
           Colapsar todo
         </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={toggleHideAllNoAplica}
+          className="gap-1"
+        >
+          {allSectionsHidden ? (
+            <><Eye className="h-4 w-4" /> Ver todas</>
+          ) : (
+            <><EyeOff className="h-4 w-4" /> Ocultar "no aplicantes"</>
+          )}
+        </Button>
       </div>
 
       {/* Checklist by sections */}
@@ -844,30 +869,36 @@ export function PatentChecklist({
         <Collapsible key={section.id} open={isSectionExpanded} onOpenChange={() => toggleSection(section.id)}>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between py-3">
-              <CollapsibleTrigger asChild>
-                <Button variant="ghost" className="flex items-center gap-2 p-0 h-auto hover:bg-transparent">
-                  <ChevronDown className={`h-5 w-5 transition-transform duration-200 ${isSectionExpanded ? '' : '-rotate-90'}`} />
-                  <CardTitle className="text-lg">{section.name}</CardTitle>
-                  {someSectionSelected && (
-                    <Badge variant="secondary" className="ml-2">
-                      {sectionItems.filter(i => selectedItems.has(i.id)).length} seleccionados
-                    </Badge>
-                  )}
-                </Button>
-              </CollapsibleTrigger>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-2">
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" className="flex items-center gap-2 p-0 h-auto hover:bg-transparent">
+                    <ChevronDown className={`h-5 w-5 transition-transform duration-200 ${isSectionExpanded ? '' : '-rotate-90'}`} />
+                    <CardTitle className="text-lg">{section.name}</CardTitle>
+                    {someSectionSelected && (
+                      <Badge variant="secondary" className="ml-2">
+                        {sectionItems.filter(i => selectedItems.has(i.id)).length} seleccionados
+                      </Badge>
+                    )}
+                  </Button>
+                </CollapsibleTrigger>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setHideNoAplica(prev => !prev);
+                    toggleHideNoAplica(section.id);
                   }}
-                  title={hideNoAplica ? "Mostrar líneas 'No Aplica'" : "Ocultar líneas 'No Aplica'"}
-                  className="h-8 w-8 p-0"
+                  className="gap-1 h-8"
                 >
-                  {hideNoAplica ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {hiddenNoAplicaSections.has(section.id) ? (
+                    <><Eye className="h-4 w-4" /> Ver todas</>
+                  ) : (
+                    <><EyeOff className="h-4 w-4" /> Ocultar "no aplicantes"</>
+                  )}
                 </Button>
+              </div>
+              <div className="flex items-center gap-1">
+
                 {isAdmin && (
                   <Button
                     variant="ghost"
@@ -920,7 +951,7 @@ export function PatentChecklist({
                     </TableHeader>
                     <TableBody>
                       {(itemsBySection[section.id] || []).filter(item => {
-                        if (!hideNoAplica) return true;
+                        if (!hiddenNoAplicaSections.has(section.id)) return true;
                         const sharedFolderId = sharedItemLookup[item.id];
                         const hasSharedFiles = sharedFolderId && (sharedFilesCache[sharedFolderId]?.length || 0) > 0;
                         const rawStatus = getDocValue(item.id, 'status') as PatentDocStatus || 'pendiente';
