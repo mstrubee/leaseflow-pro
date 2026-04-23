@@ -25,6 +25,64 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+/**
+ * Parse a user-entered numeric string supporting Chilean and international formats.
+ * Handles thousands separators (`.` or `,`) and decimal separators (`.` or `,`).
+ * The LAST occurring separator is treated as decimal only when followed by 1–3 digits
+ * AND it is the only separator of its type after a different separator (heuristic).
+ *
+ * Examples:
+ *   "1.500.000"  -> 1500000     (Chilean thousands)
+ *   "1,500,000"  -> 1500000     (international thousands)
+ *   "1500,50"    -> 1500.5      (Chilean decimal)
+ *   "1500.50"    -> 1500.5      (international decimal)
+ *   "1.500,75"   -> 1500.75     (Chilean mixed)
+ *   "1,500.75"   -> 1500.75     (international mixed)
+ *   "0.123"      -> 0.123       (small decimal)
+ */
+export const parseLocalizedNumber = (input: string): number => {
+  if (input == null) return NaN;
+  const cleaned = String(input).trim().replace(/[^\d.,-]/g, "");
+  if (!cleaned) return NaN;
+
+  const lastDot = cleaned.lastIndexOf(".");
+  const lastComma = cleaned.lastIndexOf(",");
+
+  let normalized = cleaned;
+
+  if (lastDot === -1 && lastComma === -1) {
+    // pure integer
+    normalized = cleaned;
+  } else if (lastDot >= 0 && lastComma >= 0) {
+    // both present: the rightmost is the decimal separator
+    if (lastComma > lastDot) {
+      // comma is decimal, dots are thousands
+      normalized = cleaned.replace(/\./g, "").replace(",", ".");
+    } else {
+      // dot is decimal, commas are thousands
+      normalized = cleaned.replace(/,/g, "");
+    }
+  } else {
+    // only one type of separator
+    const sep = lastDot >= 0 ? "." : ",";
+    const occurrences = cleaned.split(sep).length - 1;
+    const tail = cleaned.substring((lastDot >= 0 ? lastDot : lastComma) + 1);
+    const isDecimal = occurrences === 1 && tail.length >= 1 && tail.length <= 3 && /^\d+$/.test(tail);
+    if (isDecimal) {
+      normalized = sep === "," ? cleaned.replace(",", ".") : cleaned;
+    } else {
+      // treat all as thousands
+      normalized = cleaned.replace(new RegExp(`\\${sep}`, "g"), "");
+    }
+  }
+
+  const n = parseFloat(normalized);
+  return isNaN(n) ? NaN : n;
+};
+
+// Maximum sanity threshold for amounts in UF (anything above is treated as corrupt data).
+export const MAX_REASONABLE_UF = 1e8;
+
 export interface BudgetLine {
   id: string;
   budget_id: string;
