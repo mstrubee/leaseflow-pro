@@ -844,6 +844,18 @@ export function PatentChecklist({
         >
           Colapsar todo
         </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={toggleHideAllNoAplica}
+          className="gap-1"
+        >
+          {allSectionsHidden ? (
+            <><Eye className="h-4 w-4" /> Ver todas</>
+          ) : (
+            <><EyeOff className="h-4 w-4" /> Ocultar "no aplicantes"</>
+          )}
+        </Button>
       </div>
 
       {/* Checklist by sections */}
