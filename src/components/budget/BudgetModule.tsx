@@ -21,6 +21,7 @@ import { OCRequestDialog } from "./OCRequestDialog";
 import { QuotationsManager } from "./QuotationsManager";
 import { BudgetTrashPanel } from "./BudgetTrashPanel";
 import { MoveLinesDialog } from "./MoveLinesDialog";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Budget {
   id: string;
