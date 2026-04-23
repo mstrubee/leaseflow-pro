@@ -1,50 +1,61 @@
 
 
-## Plan: corregir conversión y visualización de montos al editar adicionales
+## Revisión de operatividad: FloatingCalculator
 
-### Problema confirmado
-En el popover de desglose de adicionales (y en la fila de adicional pendiente), al editar un monto en CLP:
+He revisado a fondo `src/components/FloatingCalculator.tsx` y encontré varios problemas de operatividad reales que afectan el uso diario de la calculadora.
 
-1. **El parser del input destruye el valor**: usa `replace(/\./g, "")` que borra TODOS los puntos. Si el usuario escribe `1500.50` → se convierte en `150050`. Si vuelve a editar un valor ya formateado con separadores chilenos, se confunde con decimales.
-2. **Al abrir el editor, se ignora la moneda real de la línea**: el valor inicial siempre se pone como `absUf.toString()` y la moneda se fuerza a "UF". Si el adicional fue guardado en CLP, el usuario ve la cifra en UF pero con etiqueta CLP — al cambiar selector se reinterpreta mal y se divide otra vez por UF, produciendo cifras astronómicas o microscópicas.
-3. **Resultado visible (captura)**: se almacenó `amount_uf` con magnitud de pesos (orden 10¹⁵), y por eso el desglose muestra `UF 8.564.253.204.138.165` y `$ 342.689.000.000.000.030.000`.
+### Problemas detectados
 
-### Cambios
+**1. Operadores encadenados rompen el cálculo inicial**
+En `pushEntry` (línea 113), cuando es la primera entrada, sólo se inserta el valor pero **se descarta la operación pendiente** porque la rama `if (entries.length === 0 && !pendingOp)` no usa `op`. Resultado: si tras `=` el usuario presiona `+ 5 =`, el operador se pierde en el primer push.
 
-#### 1) `SurchargeBreakdownRow` (popover) — `src/components/budget/BudgetLineTree.tsx` (~líneas 1876-1986)
+**2. `handleEquals` con un solo número repite el resultado**
+Al pulsar `=` sin operador previo y con historial vacío, se crea una entrada extra duplicando el valor (línea 146). El display muestra `5` pero internamente se inserta una entrada redundante.
 
-- **Inicialización correcta**: al abrir el editor, respetar la moneda guardada de la línea.
-  - Si `surcharge.currency === "CLP"`: precargar el input con `Math.round(absUf * ufValue)` y selector en "CLP".
-  - Si UF: precargar con `absUf` y selector en "UF".
-- **Doble clic**: dejar de forzar `setAmountCurrency("UF")`. Usar la moneda original.
-- **Parser robusto**: reemplazar `replace(/\./g, "").replace(",", ".")` por una lógica que:
-  - Permita pegar valores con miles (ej. `1.500.000` o `1,500,000`).
-  - Permita decimales con coma o punto.
-  - Detecte el último separador como decimal sólo si va seguido de 1–3 dígitos sin más separadores.
-- **Mostrar moneda en estado no-edición**: mantener el formato actual UF + CLP, pero ahora consistente con la moneda real almacenada.
+**3. Edición de valor no permite vaciar el campo**
+`updateEntryValue` (línea 177) deja el input editable, pero `parseNum("")` devuelve 0 y eso recalcula toda la cadena con ceros. Si el usuario borra para escribir, todos los resultados posteriores colapsan a 0 hasta terminar de escribir.
 
-#### 2) `PendingSurchargeRow` (fila amarilla) — mismas correcciones (~líneas 1587-1720)
+**4. El input del historial colisiona con el teclado de la calculadora**
+Aunque hay `onKeyDown={e => e.stopPropagation()}` en el input (línea 275), al estar dentro del div con `onKeyDown={handleKeyDown}` y ser foco activo, las teclas numéricas se duplican en algunos navegadores porque el `Tab` de tabla recibe foco doble.
 
-Mismo parser nuevo, misma inicialización por moneda, misma eliminación del forzado a "UF" al hacer doble clic.
+**5. Conversor UF↔$ no maneja entrada vacía/inválida con elegancia**
+`ufToCLP` y `clpToUF` (líneas 221–222) usan `parseFloat || 0` y muestran "$ 0" cuando el usuario borra, en vez de ocultar la línea. Funciona, pero es ruidoso.
 
-#### 3) Sanitización defensiva al guardar
-En `commitAmount` (ambos componentes):
-- Si `amountCurrency === "CLP"` y `ufValue` no es válido → mostrar mensaje y NO guardar (en vez de fallar silenciosamente).
-- Validar que el resultado en UF no supere un umbral razonable (p.ej. > 10⁹ UF → abortar y avisar; protege contra futuros datos corruptos).
+**6. Drag se reinicia tras 5 s aunque el usuario quiera mantener la posición**
+El `setTimeout` de retorno (línea 100) es agresivo: si el usuario reposiciona la calculadora y se queda mirando, salta de vuelta a la esquina sin previo aviso.
 
-#### 4) Visualización segura del desglose (`SurchargeBreakdownPopover` ~líneas 1801-1856)
-- Agregar fallback visual: si `originalUf` o `totalUf` superan `1e8` UF, mostrar la cifra en notación compacta (ej. `UF 8.56·10¹⁵`) y un ícono de advertencia "valor inconsistente — revisar". Esto evita romper el layout y deja claro que hay un dato a corregir.
+**7. Sin persistencia del historial**
+Si el usuario navega entre páginas, el historial se pierde. Para una calculadora "flotante de trabajo" sería útil mantenerlo en `sessionStorage`.
 
-#### 5) Migración de datos corruptos (opcional, recomendado)
-Crear un mensaje en consola (o UI admin) que detecte líneas con `amount_uf > 1e8` y permita corregirlas dividiendo por `ufValue` con confirmación. No se ejecuta automático.
+**8. UF del header sin formato de miles consistente con el conversor**
+El badge muestra `$40.013,88` pero la línea del tab Convertir muestra `$40.014` (sin decimales). Inconsistencia visual menor.
 
-### Validación esperada
-- Entrar al popover, ver el monto original en su moneda correcta.
-- Doble clic en un adicional CLP → input precargado en pesos con separador correcto, selector "CLP".
-- Editar `1.500.000` y Enter → se guarda como `1500000 / ufValue` en `amount_uf`.
-- Cambiar selector a UF → input se reformatea al equivalente en UF sin perder valor.
-- Los montos mostrados en UF y CLP coinciden con el valor ingresado.
+### Plan de correcciones
 
-### Archivos a editar
-- `src/components/budget/BudgetLineTree.tsx`
+**A. Lógica de cálculo (núcleo)**
+- En `pushEntry`, si `entries.length === 0` y hay valor, crear la primera entrada y, si llega un operador, guardarlo en `pendingOp` (ya se hace) — eliminar el caso especial que descarta el operador.
+- En `handleEquals`, si no hay `pendingOp` ni entradas previas, **no crear entrada nueva**: simplemente dejar `currentInput` como está.
+- En `updateEntryValue`, tratar string vacío manteniendo `value=""` pero sin recalcular hasta `onBlur`, o usar `parseNum` que devuelva `NaN` y propagar `—` en los resultados intermedios para no mostrar ceros engañosos.
+
+**B. UX del conversor**
+- Ocultar la línea de equivalencia cuando el input es 0 o vacío (cambiar condición de truthy del string a `parseNum > 0`).
+- Unificar formato de UF: mostrar siempre con 2 decimales en ambos lugares (`$40.013,88`).
+
+**C. Drag**
+- Aumentar el timeout de retorno de 5 s a 30 s, o mejor: eliminarlo y agregar un botón "↺" pequeño para volver a la posición original cuando esté desplazada. Más predecible.
+
+**D. Persistencia**
+- Guardar `entries`, `currentInput` y `pendingOp` en `sessionStorage` con clave `floating-calc-state`. Restaurar al montar. Esto sobrevive navegación entre rutas dentro de la misma sesión.
+
+**E. Teclado**
+- Mover el `onKeyDown` del contenedor a un handler que ignore eventos cuyo `target` sea un `<input>` o `<button>` interno del historial, para prevenir doble manejo.
+
+### Archivos a modificar
+- `src/components/FloatingCalculator.tsx` (único archivo)
+
+### Detalles técnicos
+- Sin cambios de tipos ni de hooks externos.
+- `useEconomicIndicators` permanece intacto.
+- Sin migraciones de BD ni edge functions.
+- Cambios contenidos: ~60 líneas modificadas, sin nuevas dependencias.
 
