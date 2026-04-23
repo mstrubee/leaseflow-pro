@@ -21,6 +21,7 @@ import { OCRequestDialog } from "./OCRequestDialog";
 import { QuotationsManager } from "./QuotationsManager";
 import { BudgetTrashPanel } from "./BudgetTrashPanel";
 import { MoveLinesDialog } from "./MoveLinesDialog";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Budget {
   id: string;
@@ -265,6 +266,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos, ufValue } = useBudgetContext();
+  const { isAdmin } = useAuth();
 
   useEffect(() => {
     loadBudgets();
@@ -656,6 +658,17 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   const handleDeleteLine = async (id: string) => {
     const budget = budgets.find((b) => b.year === selectedYear);
     if (budget?.is_closed) return;
+
+    // Ghost lines (movement markers) can ONLY be deleted by admins
+    const targetLine = lines.find((l) => l.id === id);
+    if (targetLine?.is_ghost && !isAdmin) {
+      toast({
+        variant: "destructive",
+        title: "No autorizado",
+        description: "Solo un administrador puede eliminar marcas de movimiento.",
+      });
+      return;
+    }
 
     try {
       // Get current user for audit
