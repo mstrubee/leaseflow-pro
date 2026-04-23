@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download, CheckSquare, Square, X, ChevronDown, FolderOpen, FolderCog } from "lucide-react";
+import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download, CheckSquare, Square, X, ChevronDown, FolderOpen, FolderCog, Eye, EyeOff } from "lucide-react";
 import { DialogFooter } from "@/components/ui/dialog";
 import { FolderDestinationPicker, parseDestinations } from "@/components/budget/FolderDestinationPicker";
 
@@ -226,6 +226,7 @@ export function PatentChecklist({
   // Bulk selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [bulkStatusDialogOpen, setBulkStatusDialogOpen] = useState(false);
+  const [hideNoAplica, setHideNoAplica] = useState(false);
   
   // Unsaved changes confirmation dialog
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
@@ -855,6 +856,18 @@ export function PatentChecklist({
                 </Button>
               </CollapsibleTrigger>
               <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setHideNoAplica(prev => !prev);
+                  }}
+                  title={hideNoAplica ? "Mostrar líneas 'No Aplica'" : "Ocultar líneas 'No Aplica'"}
+                  className="h-8 w-8 p-0"
+                >
+                  {hideNoAplica ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
                 {isAdmin && (
                   <Button
                     variant="ghost"
@@ -906,7 +919,14 @@ export function PatentChecklist({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {(itemsBySection[section.id] || []).map(item => {
+                      {(itemsBySection[section.id] || []).filter(item => {
+                        if (!hideNoAplica) return true;
+                        const sharedFolderId = sharedItemLookup[item.id];
+                        const hasSharedFiles = sharedFolderId && (sharedFilesCache[sharedFolderId]?.length || 0) > 0;
+                        const rawStatus = getDocValue(item.id, 'status') as PatentDocStatus || 'pendiente';
+                        const status: PatentDocStatus = hasSharedFiles ? 'ok' : rawStatus;
+                        return status !== 'no_aplica';
+                      }).map(item => {
                       const doc = getDocument(item.id);
                         const sharedFolderId = sharedItemLookup[item.id];
                         const hasSharedFiles = sharedFolderId && (sharedFilesCache[sharedFolderId]?.length || 0) > 0;
