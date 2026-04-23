@@ -193,6 +193,8 @@ interface BudgetLineTreeProps {
   onToggleSelect?: (id: string) => void;
   /** Called after async operations that change line structure (e.g. surcharge add/authorize) */
   onReload?: () => void;
+  /** Called when the user wants to move this line under a different parent (reparent). */
+  onMoveLine?: (lineId: string) => void;
 }
 export const BudgetLineTree = ({
   lines,
@@ -218,6 +220,7 @@ export const BudgetLineTree = ({
   selectedIds,
   onToggleSelect,
   onReload,
+  onMoveLine,
 }: BudgetLineTreeProps) => {
   // Build linesMap only at root level (level === 0), pass down to children
   const rootLinesMap = useMemo(() => {
@@ -284,6 +287,7 @@ export const BudgetLineTree = ({
         selectedIds={selectedIds}
         onToggleSelect={onToggleSelect}
         onReload={onReload}
+        onMoveLine={onMoveLine}
       />)}
       {level === 0 && !readOnly && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
@@ -315,6 +319,7 @@ interface BudgetLineItemProps {
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
   onReload?: () => void;
+  onMoveLine?: (lineId: string) => void;
 }
 
 const countDescendants = (line: BudgetLine): number => {
