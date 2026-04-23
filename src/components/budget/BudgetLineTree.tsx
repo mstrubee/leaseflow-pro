@@ -759,7 +759,13 @@ const BudgetLineItemInner = ({
 
   return <div>
       <div
-        onClick={selectionMode ? () => onToggleSelect?.(line.id) : undefined}
+        onMouseDown={selectionMode ? (e) => {
+          // Ignore clicks on interactive children (inputs, buttons, etc.)
+          const target = e.target as HTMLElement;
+          if (target.closest('input, textarea, select, [role="combobox"], [data-no-select]')) return;
+          e.preventDefault();
+          onToggleSelect?.(line.id);
+        } : undefined}
         className={cn(
         "flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-accent/50 group transition-all duration-200",
         // Color hierarchy: parents darker than children
@@ -772,19 +778,20 @@ const BudgetLineItemInner = ({
         level >= 3 && hasChildren && "bg-muted/35",
         level >= 3 && !hasChildren && "bg-muted/5",
         !hasChildren && isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20",
-        selectionMode && "cursor-pointer",
+        selectionMode && "cursor-pointer select-none",
         selectionMode && isSelected && "ring-2 ring-primary bg-primary/10"
       )}>
         {selectionMode && (
           <Checkbox
             checked={isSelected}
             onCheckedChange={() => onToggleSelect?.(line.id)}
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
             className="flex-shrink-0"
             aria-label={`Seleccionar ${line.name}`}
           />
         )}
-        <button onClick={() => { if (onToggleExpand) onToggleExpand(line.id); else setLocalExpanded(!localExpanded); }} className="p-0.5 hover:bg-accent rounded" disabled={!hasChildren}>
+        <button data-no-select onClick={(e) => { e.stopPropagation(); if (onToggleExpand) onToggleExpand(line.id); else setLocalExpanded(!localExpanded); }} className="p-0.5 hover:bg-accent rounded" disabled={!hasChildren}>
           {hasChildren ? isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" /> : <div className="h-3.5 w-3.5" />}
         </button>
 
