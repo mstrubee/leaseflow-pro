@@ -49,6 +49,24 @@ export const MoveLinesDialog = ({ open, onOpenChange, lines, selectedIds, onConf
   const [targetId, setTargetId] = useState<string | null>(null); // null = root
   const [submitting, setSubmitting] = useState(false);
 
+  // Find the currently-selected line(s) info: name + current parent_id.
+  // Useful when moving a single line so we can show "actual" badge on its current parent.
+  const { selectedLineName, currentParentIds } = useMemo(() => {
+    const parents = new Set<string | null>();
+    let name: string | null = null;
+    const walk = (items: BudgetLine[], parentId: string | null) => {
+      items.forEach((it) => {
+        if (selectedIds.includes(it.id)) {
+          parents.add(parentId);
+          if (selectedIds.length === 1) name = it.name;
+        }
+        if (it.children?.length) walk(it.children, it.id);
+      });
+    };
+    walk(lines, null);
+    return { selectedLineName: name, currentParentIds: parents };
+  }, [lines, selectedIds]);
+
   // Build set of forbidden destinations: each selected line + all its descendants
   // (cannot move a line into itself or any of its children — would create a cycle).
   const forbiddenIds = useMemo(() => {
@@ -92,9 +110,13 @@ export const MoveLinesDialog = ({ open, onOpenChange, lines, selectedIds, onConf
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Mover {selectedIds.length} línea{selectedIds.length === 1 ? "" : "s"}</DialogTitle>
+          <DialogTitle>
+            {selectedIds.length === 1 && selectedLineName
+              ? `Mover "${selectedLineName}" bajo otra línea madre`
+              : `Mover ${selectedIds.length} línea${selectedIds.length === 1 ? "" : "s"}`}
+          </DialogTitle>
           <DialogDescription>
-            Selecciona la línea madre de destino. Las líneas se moverán con todos sus hijos, OCs y facturas asociadas. Los totales se recalcularán automáticamente.
+            Selecciona la nueva línea madre de destino. Puede ser un hermano, una línea madre superior o cualquier otra línea del presupuesto. Las líneas se moverán con todos sus hijos, OCs y facturas asociadas, y los totales se recalcularán automáticamente.
           </DialogDescription>
         </DialogHeader>
 
@@ -118,6 +140,9 @@ export const MoveLinesDialog = ({ open, onOpenChange, lines, selectedIds, onConf
               >
                 <Home className="h-4 w-4 text-muted-foreground" />
                 <span>Raíz del presupuesto (sin línea madre)</span>
+                {currentParentIds.has(null) && (
+                  <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground bg-muted px-1.5 py-0.5 rounded">actual</span>
+                )}
               </button>
 
               {filteredNodes.length === 0 && (
@@ -126,22 +151,28 @@ export const MoveLinesDialog = ({ open, onOpenChange, lines, selectedIds, onConf
                 </div>
               )}
 
-              {filteredNodes.map((node) => (
-                <button
-                  key={node.id}
-                  type="button"
-                  onClick={() => setTargetId(node.id)}
-                  className={cn(
-                    "w-full flex items-center gap-1 px-2 py-1.5 rounded text-sm text-left hover:bg-accent transition-colors",
-                    targetId === node.id && "bg-accent font-medium"
-                  )}
-                  style={{ paddingLeft: `${node.depth * 14 + 8}px` }}
-                >
-                  {node.depth > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
-                  <Folder className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                  <span className="truncate">{node.name}</span>
-                </button>
-              ))}
+              {filteredNodes.map((node) => {
+                const isCurrent = currentParentIds.has(node.id);
+                return (
+                  <button
+                    key={node.id}
+                    type="button"
+                    onClick={() => setTargetId(node.id)}
+                    className={cn(
+                      "w-full flex items-center gap-1 px-2 py-1.5 rounded text-sm text-left hover:bg-accent transition-colors",
+                      targetId === node.id && "bg-accent font-medium"
+                    )}
+                    style={{ paddingLeft: `${node.depth * 14 + 8}px` }}
+                  >
+                    {node.depth > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
+                    <Folder className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    <span className="truncate">{node.name}</span>
+                    {isCurrent && (
+                      <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground bg-muted px-1.5 py-0.5 rounded flex-shrink-0">actual</span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </ScrollArea>
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, Check } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, Check, CornerDownRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -193,6 +193,8 @@ interface BudgetLineTreeProps {
   onToggleSelect?: (id: string) => void;
   /** Called after async operations that change line structure (e.g. surcharge add/authorize) */
   onReload?: () => void;
+  /** Called when the user wants to move this line under a different parent (reparent). */
+  onMoveLine?: (lineId: string) => void;
 }
 export const BudgetLineTree = ({
   lines,
@@ -218,6 +220,7 @@ export const BudgetLineTree = ({
   selectedIds,
   onToggleSelect,
   onReload,
+  onMoveLine,
 }: BudgetLineTreeProps) => {
   // Build linesMap only at root level (level === 0), pass down to children
   const rootLinesMap = useMemo(() => {
@@ -284,6 +287,7 @@ export const BudgetLineTree = ({
         selectedIds={selectedIds}
         onToggleSelect={onToggleSelect}
         onReload={onReload}
+        onMoveLine={onMoveLine}
       />)}
       {level === 0 && !readOnly && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
@@ -315,6 +319,7 @@ interface BudgetLineItemProps {
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
   onReload?: () => void;
+  onMoveLine?: (lineId: string) => void;
 }
 
 const countDescendants = (line: BudgetLine): number => {
@@ -346,6 +351,7 @@ const BudgetLineItemInner = ({
   selectedIds,
   onToggleSelect,
   onReload,
+  onMoveLine,
 }: BudgetLineItemProps) => {
   const isSelected = !!(selectedIds && selectedIds.has(line.id));
   const isInternalTransfer = !!(line.supplier_id && internalTransferSupplierIds?.has(line.supplier_id));
@@ -1346,17 +1352,28 @@ const BudgetLineItemInner = ({
           )}
 
           {!effectiveReadOnly && <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5">
-              <Button size="sm" variant="ghost" onClick={() => onAddLine(line.id)} className="h-6 w-6 p-0">
+              <Button size="sm" variant="ghost" onClick={() => onAddLine(line.id)} className="h-6 w-6 p-0" title="Agregar línea hija">
                 <Plus className="h-3 w-3" />
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(true)} className="h-6 w-6 p-0 text-destructive">
+              {onMoveLine && !line.is_ghost && !line.merged_into_line_id && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onMoveLine(line.id)}
+                  className="h-6 w-6 p-0 text-muted-foreground hover:text-primary"
+                  title="Mover bajo otra línea madre"
+                >
+                  <CornerDownRight className="h-3 w-3" />
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(true)} className="h-6 w-6 p-0 text-destructive" title="Eliminar línea">
                 <Trash2 className="h-3 w-3" />
               </Button>
             </div>}
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} onMoveLine={onMoveLine} />}
 
       {/* Inline surcharge request panel */}
       {showSurchargePanel && !readOnly && !isParent && !isSurchargeRow && (
