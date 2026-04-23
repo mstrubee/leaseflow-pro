@@ -129,6 +129,8 @@ interface BudgetLineTreeProps {
   selectionMode?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
+  /** Called after async operations that change line structure (e.g. surcharge add/authorize) */
+  onReload?: () => void;
 }
 export const BudgetLineTree = ({
   lines,
