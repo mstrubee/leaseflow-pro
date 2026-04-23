@@ -831,18 +831,14 @@ export function PatentChecklist({
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => expandAll(sections.map(s => s.id))}
+          onClick={() => {
+            const allExpanded = sections.length > 0 && sections.every(s => isExpanded(s.id));
+            if (allExpanded) collapseAll();
+            else expandAll(sections.map(s => s.id));
+          }}
           className="gap-1"
         >
-          Expandir todo
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => collapseAll()}
-          className="gap-1"
-        >
-          Colapsar todo
+          {sections.length > 0 && sections.every(s => isExpanded(s.id)) ? 'Colapsar todo' : 'Expandir todo'}
         </Button>
         <Button
           variant="ghost"
