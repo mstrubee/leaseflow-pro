@@ -1207,7 +1207,105 @@ const BudgetLineItemInner = ({
         </div>
       </div>
 
-      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} />}
+      {hasChildren && isExpanded && <BudgetLineTree lines={line.children!} level={level + 1} onAddLine={onAddLine} onUpdateLine={onUpdateLine} onDeleteLine={onDeleteLine} onCreateOC={onCreateOC} onCreateOCRequest={onCreateOCRequest} onCreateInvoice={onCreateInvoice} onViewLineDetails={onViewLineDetails} readOnly={readOnly} compactView={compactView} parentCategoryId={line.category_id || parentCategoryId} globalExpandState={globalExpandState} templatePricesMap={templatePricesMap} collapsedIds={collapsedIds} onToggleExpand={onToggleExpand} linesMap={linesMap} internalTransferSupplierIds={internalTransferSupplierIds} selectionMode={selectionMode} selectedIds={selectedIds} onToggleSelect={onToggleSelect} onReload={onReload} />}
+
+      {/* Inline surcharge request panel */}
+      {showSurchargePanel && !readOnly && !isParent && !isSurchargeRow && (
+        <div className="ml-8 mt-1 mb-1 p-3 rounded-md border border-amber-300 bg-amber-50/60 dark:bg-amber-950/20 space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select value={surchargeType} onValueChange={(v: "add" | "discount") => setSurchargeType(v)}>
+              <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="add">Adicional (+)</SelectItem>
+                <SelectItem value="discount">Descuento (–)</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Monto"
+              value={surchargeAmount}
+              onChange={(e) => setSurchargeAmount(e.target.value)}
+              className="h-8 w-32 text-xs"
+            />
+            <Select value={surchargeCurrency} onValueChange={(v: "CLP" | "UF") => setSurchargeCurrency(v)}>
+              <SelectTrigger className="h-8 w-20 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="CLP">$</SelectItem>
+                <SelectItem value="UF">UF</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              type="text"
+              placeholder="Motivo (opcional)"
+              value={surchargeReason}
+              onChange={(e) => setSurchargeReason(e.target.value)}
+              className="h-8 flex-1 min-w-[180px] text-xs"
+            />
+            <Button size="sm" onClick={handleSubmitSurcharge} disabled={savingSurcharge} className="h-8 text-xs">
+              {savingSurcharge ? "Guardando..." : "Solicitar"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setShowSurchargePanel(false); resetSurchargeForm(); }} className="h-8 text-xs">
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Pending surcharge requests rendered inline under their base line */}
+      {pendingSurcharges.length > 0 && (
+        <div className="ml-8 mt-1 space-y-1">
+          {pendingSurcharges.map((sl) => {
+            const isAdd = (sl.amount_uf || 0) >= 0;
+            const absUf = Math.abs(sl.amount_uf || 0);
+            return (
+              <div
+                key={sl.id}
+                className="flex items-center gap-2 py-1 px-2 rounded-md bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-900/50 text-xs"
+              >
+                {isAdd ? (
+                  <PlusCircle className="h-3.5 w-3.5 text-amber-600 flex-shrink-0" />
+                ) : (
+                  <MinusCircle className="h-3.5 w-3.5 text-red-600 flex-shrink-0" />
+                )}
+                <span className="font-medium truncate max-w-[280px]">{sl.name}</span>
+                {sl.surcharge_reason && (
+                  <span className="text-muted-foreground italic truncate max-w-[200px]">— {sl.surcharge_reason}</span>
+                )}
+                <span className="ml-auto font-mono whitespace-nowrap text-destructive">
+                  {isAdd ? "+" : "−"} {formatUF(absUf)}
+                </span>
+                <span className="font-mono whitespace-nowrap text-muted-foreground">
+                  {isAdd ? "+" : "−"} {formatCLP(convertUFToPesos(absUf))}
+                </span>
+                <Badge
+                  className={cn(
+                    "text-[10px] px-2 py-0 whitespace-nowrap bg-yellow-500 hover:bg-yellow-600 text-white",
+                    isAdmin && "cursor-pointer"
+                  )}
+                  onClick={() => {
+                    if (!isAdmin) return;
+                    onUpdateLine(sl.id, { status: "autorizado" });
+                  }}
+                >
+                  No Autorizado
+                </Badge>
+                {!readOnly && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onDeleteLine(sl.id)}
+                    className="h-6 w-6 p-0 text-destructive"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
