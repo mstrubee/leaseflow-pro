@@ -401,6 +401,9 @@ const BudgetLineItemInner = ({
   const isParent = hasChildren;
   const isCalcPercentage = line.calc_type === "percentage";
   const isSurchargeRow = !!line.is_surcharge;
+  // Authorized lines are locked for non-admins (they may still request adicionales/descuentos via the separate surcharge panel).
+  const isAuthorizedLockedForUser = line.status === "autorizado" && !isAdmin && !isSurchargeRow;
+  const effectiveReadOnly = readOnly || isAuthorizedLockedForUser;
 
   // Pending surcharges for this line (sibling rows with surcharge_parent_line_id pointing here)
   const pendingSurcharges = useMemo(() => {
