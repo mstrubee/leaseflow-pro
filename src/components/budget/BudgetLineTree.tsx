@@ -351,6 +351,7 @@ const BudgetLineItemInner = ({
   selectedIds,
   onToggleSelect,
   onReload,
+  onMoveLine,
 }: BudgetLineItemProps) => {
   const isSelected = !!(selectedIds && selectedIds.has(line.id));
   const isInternalTransfer = !!(line.supplier_id && internalTransferSupplierIds?.has(line.supplier_id));
