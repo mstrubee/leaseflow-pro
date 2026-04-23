@@ -118,11 +118,18 @@ export function PatentsList({
     // Filter by search
     if (search) {
       const lower = search.toLowerCase();
-      result = result.filter(c => 
-        c.name.toLowerCase().includes(lower) || 
-        (c.cebe && c.cebe.toLowerCase().includes(lower)) ||
-        (c.codigo && c.codigo.toLowerCase().includes(lower))
-      );
+      result = result.filter(c => {
+        const addr = c.contract_addresses?.[0];
+        const addressParts = addr
+          ? [addr.street, addr.number, addr.commune, addr.region].filter(Boolean).join(" ")
+          : "";
+        return (
+          c.name.toLowerCase().includes(lower) ||
+          (c.cebe && c.cebe.toLowerCase().includes(lower)) ||
+          (c.codigo && c.codigo.toLowerCase().includes(lower)) ||
+          addressParts.toLowerCase().includes(lower)
+        );
+      });
     }
 
     // Filter by priority
