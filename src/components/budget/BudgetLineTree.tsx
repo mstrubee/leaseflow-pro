@@ -1771,3 +1771,225 @@ const PendingSurchargeRow = ({ line, readOnly, isAdmin, ufValue, onUpdateLine, o
     </div>
   );
 };
+
+// ============== Surcharge breakdown popover (original + adicionales) ==============
+interface SurchargeBreakdownPopoverProps {
+  baseLine: BudgetLine;
+  mergedSurcharges: BudgetLine[];
+  ufValue: number;
+  isAdmin: boolean;
+  readOnly?: boolean;
+  onUpdateLine: (id: string, updates: Partial<BudgetLine>) => void;
+  onDeleteLine: (id: string) => void;
+}
+
+const SurchargeBreakdownPopover = ({
+  baseLine,
+  mergedSurcharges,
+  ufValue,
+  isAdmin,
+  readOnly,
+  onUpdateLine,
+  onDeleteLine,
+}: SurchargeBreakdownPopoverProps) => {
+  const fmtUF = (n: number) => `UF ${n.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtCLP = (n: number) => `$ ${Math.round(n).toLocaleString("es-CL")}`;
+
+  const qty = baseLine.quantity || 0;
+  const price = baseLine.unit_price || 0;
+  const rawLineTotal = qty * price;
+  const lineCurrency = baseLine.currency || "UF";
+  const originalUf = baseLine.original_amount_uf != null
+    ? baseLine.original_amount_uf
+    : (lineCurrency === "CLP" && ufValue > 0 ? rawLineTotal / ufValue : rawLineTotal);
+
+  const surchargesTotalUf = mergedSurcharges.reduce((s, x) => s + (x.amount_uf || 0), 0);
+  const totalUf = originalUf + surchargesTotalUf;
+
+  const canEdit = isAdmin && !readOnly;
+
+  return (
+    <div className="text-xs">
+      <div className="px-3 py-2 border-b">
+        <div className="font-semibold truncate">{baseLine.name}</div>
+        <div className="text-muted-foreground text-[11px]">Desglose de monto</div>
+      </div>
+
+      <div className="px-3 py-2 space-y-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-muted-foreground">Original</span>
+          <div className="text-right font-mono">
+            <div>{fmtUF(originalUf)}</div>
+            <div className="text-muted-foreground text-[11px]">{fmtCLP(originalUf * (ufValue || 0))}</div>
+          </div>
+        </div>
+
+        <div className="border-t pt-1.5 space-y-1.5">
+          <div className="text-muted-foreground text-[11px] font-medium">
+            Adicionales ({mergedSurcharges.length})
+          </div>
+          {mergedSurcharges.map((s) => (
+            <SurchargeBreakdownRow
+              key={s.id}
+              surcharge={s}
+              ufValue={ufValue}
+              canEdit={canEdit}
+              onUpdateLine={onUpdateLine}
+              onDeleteLine={onDeleteLine}
+            />
+          ))}
+        </div>
+
+        <div className="border-t pt-1.5 flex items-center justify-between gap-2 font-semibold">
+          <span>Total</span>
+          <div className="text-right font-mono">
+            <div>{fmtUF(totalUf)}</div>
+            <div className="text-muted-foreground text-[11px] font-normal">{fmtCLP(totalUf * (ufValue || 0))}</div>
+          </div>
+        </div>
+      </div>
+
+      {!canEdit && (
+        <div className="px-3 py-2 border-t text-[11px] text-muted-foreground">
+          {readOnly ? "Solo lectura" : "Solo administradores pueden editar adicionales"}
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface SurchargeBreakdownRowProps {
+  surcharge: BudgetLine;
+  ufValue: number;
+  canEdit: boolean;
+  onUpdateLine: (id: string, updates: Partial<BudgetLine>) => void;
+  onDeleteLine: (id: string) => void;
+}
+
+const SurchargeBreakdownRow = ({ surcharge, ufValue, canEdit, onUpdateLine, onDeleteLine }: SurchargeBreakdownRowProps) => {
+  const isAdd = (surcharge.amount_uf || 0) >= 0;
+  const sign = isAdd ? 1 : -1;
+  const absUf = Math.abs(surcharge.amount_uf || 0);
+
+  const [editingReason, setEditingReason] = useState(false);
+  const [reason, setReason] = useState(surcharge.surcharge_reason || "");
+  const [editingAmount, setEditingAmount] = useState(false);
+  const [amountCurrency, setAmountCurrency] = useState<"UF" | "CLP">((surcharge.currency as "UF" | "CLP") || "UF");
+  const [amountValue, setAmountValue] = useState<string>(absUf.toString());
+
+  useEffect(() => { setReason(surcharge.surcharge_reason || ""); }, [surcharge.surcharge_reason]);
+
+  const fmtUF = (n: number) => `UF ${n.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtCLP = (n: number) => `$ ${Math.round(n).toLocaleString("es-CL")}`;
+
+  const commitReason = () => {
+    if (reason !== (surcharge.surcharge_reason || "")) {
+      onUpdateLine(surcharge.id, { surcharge_reason: reason || null } as any);
+    }
+    setEditingReason(false);
+  };
+
+  const commitAmount = () => {
+    const raw = parseFloat(amountValue.replace(/\./g, "").replace(",", "."));
+    if (isNaN(raw) || raw < 0) {
+      setEditingAmount(false);
+      return;
+    }
+    let uf = raw;
+    if (amountCurrency === "CLP") {
+      if (!ufValue || ufValue <= 0) { setEditingAmount(false); return; }
+      uf = raw / ufValue;
+    }
+    onUpdateLine(surcharge.id, { amount_uf: sign * uf, currency: amountCurrency } as any);
+    setEditingAmount(false);
+  };
+
+  return (
+    <div className="flex items-start gap-2 py-1 rounded hover:bg-accent/40 px-1">
+      <div className="flex-shrink-0 mt-0.5">
+        {isAdd ? <PlusCircle className="h-3 w-3 text-green-600" /> : <MinusCircle className="h-3 w-3 text-red-600" />}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="truncate font-medium">{surcharge.name}</div>
+        {editingReason && canEdit ? (
+          <Input
+            autoFocus
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            onBlur={commitReason}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); commitReason(); }
+              else if (e.key === "Escape") { setReason(surcharge.surcharge_reason || ""); setEditingReason(false); }
+            }}
+            placeholder="Motivo"
+            className="h-6 text-xs mt-0.5"
+          />
+        ) : (
+          <div
+            className={cn("text-muted-foreground italic text-[11px] truncate", canEdit && "cursor-text hover:bg-accent/50 rounded px-1")}
+            onDoubleClick={() => canEdit && setEditingReason(true)}
+            title={canEdit ? "Doble clic para editar motivo" : ""}
+          >
+            {surcharge.surcharge_reason ? surcharge.surcharge_reason : (canEdit ? "(agregar motivo)" : "")}
+          </div>
+        )}
+      </div>
+      <div className="text-right font-mono flex-shrink-0">
+        {editingAmount && canEdit ? (
+          <div className="flex items-center gap-1">
+            <Input
+              autoFocus
+              type="text"
+              inputMode="decimal"
+              value={amountValue}
+              onChange={(e) => setAmountValue(e.target.value)}
+              onBlur={commitAmount}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); commitAmount(); }
+                else if (e.key === "Escape") setEditingAmount(false);
+              }}
+              className="h-6 text-xs w-20"
+            />
+            <Select value={amountCurrency} onValueChange={(v: "UF" | "CLP") => setAmountCurrency(v)}>
+              <SelectTrigger className="h-6 w-14 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="UF">UF</SelectItem>
+                <SelectItem value="CLP">$</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <div
+            className={cn(canEdit && "cursor-text hover:bg-accent/50 rounded px-1")}
+            onDoubleClick={() => {
+              if (!canEdit) return;
+              setAmountCurrency("UF");
+              setAmountValue(absUf.toString());
+              setEditingAmount(true);
+            }}
+            title={canEdit ? "Doble clic para editar monto" : ""}
+          >
+            <div className={isAdd ? "text-green-700 dark:text-green-400" : "text-destructive"}>
+              {isAdd ? "+" : "−"} {fmtUF(absUf)}
+            </div>
+            <div className="text-muted-foreground text-[11px]">
+              {isAdd ? "+" : "−"} {fmtCLP(absUf * (ufValue || 0))}
+            </div>
+          </div>
+        )}
+      </div>
+      {canEdit && !editingAmount && !editingReason && (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => onDeleteLine(surcharge.id)}
+          className="h-6 w-6 p-0 text-destructive flex-shrink-0"
+          title="Eliminar adicional"
+        >
+          <Trash2 className="h-3 w-3" />
+        </Button>
+      )}
+    </div>
+  );
+};
+
