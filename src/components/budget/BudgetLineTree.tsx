@@ -1676,50 +1676,63 @@ const PendingSurchargeRow = ({ line, readOnly, isAdmin, ufValue, onUpdateLine, o
         </span>
       )}
 
-      {editingAmount && !readOnly ? (
-        <div className="ml-auto flex items-center gap-1">
-          <Input
-            autoFocus
-            type="text"
-            value={amountValue}
-            onChange={(e) => setAmountValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commitAmount();
-              else if (e.key === "Escape") setEditingAmount(false);
-            }}
-            className="h-6 text-xs w-24"
-          />
-          <Select value={amountCurrency} onValueChange={(v: "UF" | "CLP") => setAmountCurrency(v)}>
-            <SelectTrigger className="h-6 w-16 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="UF">UF</SelectItem>
-              <SelectItem value="CLP">$</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button size="sm" variant="ghost" onClick={commitAmount} className="h-6 px-2 text-xs">OK</Button>
-        </div>
+      {editingAmount && amountCurrency === "UF" && !readOnly ? (
+        <Input
+          autoFocus
+          type="text"
+          inputMode="decimal"
+          value={amountValue}
+          onChange={(e) => setAmountValue(e.target.value)}
+          onBlur={commitAmount}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commitAmount(); }
+            else if (e.key === "Escape") setEditingAmount(false);
+          }}
+          className="ml-auto h-6 text-xs w-24 font-mono"
+        />
       ) : (
         <span
           className={cn("ml-auto font-mono whitespace-nowrap text-destructive", !readOnly && "cursor-text hover:bg-accent/50 rounded px-1")}
-          onDoubleClick={() => !readOnly && setEditingAmount(true)}
-          title={readOnly ? "" : "Doble clic para editar monto"}
+          onDoubleClick={() => {
+            if (readOnly) return;
+            setAmountCurrency("UF");
+            setAmountValue(absUf.toString());
+            setEditingAmount(true);
+          }}
+          title={readOnly ? "" : "Doble clic para editar monto en UF"}
         >
           {isAdd ? "+" : "−"} {formatUFLocal(absUf)}
         </span>
       )}
 
-      <span
-        className={cn("font-mono whitespace-nowrap text-muted-foreground", !readOnly && "cursor-text hover:bg-accent/50 rounded px-1")}
-        onDoubleClick={() => {
-          if (readOnly) return;
-          setAmountCurrency("CLP");
-          setAmountValue(Math.round(absUf * (ufValue || 0)).toString());
-          setEditingAmount(true);
-        }}
-        title={readOnly ? "" : "Doble clic para editar monto en $"}
-      >
-        {isAdd ? "+" : "−"} {formatCLPLocal(absUf * (ufValue || 0))}
-      </span>
+      {editingAmount && amountCurrency === "CLP" && !readOnly ? (
+        <Input
+          autoFocus
+          type="text"
+          inputMode="numeric"
+          value={amountValue}
+          onChange={(e) => setAmountValue(e.target.value)}
+          onBlur={commitAmount}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commitAmount(); }
+            else if (e.key === "Escape") setEditingAmount(false);
+          }}
+          className="h-6 text-xs w-28 font-mono"
+        />
+      ) : (
+        <span
+          className={cn("font-mono whitespace-nowrap text-muted-foreground", !readOnly && "cursor-text hover:bg-accent/50 rounded px-1")}
+          onDoubleClick={() => {
+            if (readOnly) return;
+            setAmountCurrency("CLP");
+            setAmountValue(Math.round(absUf * (ufValue || 0)).toString());
+            setEditingAmount(true);
+          }}
+          title={readOnly ? "" : "Doble clic para editar monto en $"}
+        >
+          {isAdd ? "+" : "−"} {formatCLPLocal(absUf * (ufValue || 0))}
+        </span>
+      )}
 
       <Badge
         className={cn(
