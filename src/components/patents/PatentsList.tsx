@@ -118,11 +118,18 @@ export function PatentsList({
     // Filter by search
     if (search) {
       const lower = search.toLowerCase();
-      result = result.filter(c => 
-        c.name.toLowerCase().includes(lower) || 
-        (c.cebe && c.cebe.toLowerCase().includes(lower)) ||
-        (c.codigo && c.codigo.toLowerCase().includes(lower))
-      );
+      result = result.filter(c => {
+        const addr = c.contract_addresses?.[0];
+        const addressParts = addr
+          ? [addr.street, addr.number, addr.commune, addr.region].filter(Boolean).join(" ")
+          : "";
+        return (
+          c.name.toLowerCase().includes(lower) ||
+          (c.cebe && c.cebe.toLowerCase().includes(lower)) ||
+          (c.codigo && c.codigo.toLowerCase().includes(lower)) ||
+          addressParts.toLowerCase().includes(lower)
+        );
+      });
     }
 
     // Filter by priority
@@ -344,7 +351,7 @@ export function PatentsList({
             <div className="flex flex-wrap gap-3">
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Buscar Local, CEBE o Código" value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
+                <Input placeholder="Buscar Local, CEBE, Código o dirección" value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
               </div>
               
               <Select value={priorityFilter} onValueChange={setPriorityFilter}>
