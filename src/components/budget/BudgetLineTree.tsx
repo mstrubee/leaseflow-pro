@@ -1681,7 +1681,7 @@ const PendingSurchargeRow = ({ line, readOnly, isAdmin, ufValue, onUpdateLine, o
     setEditingReason(false);
   };
   const commitAmount = () => {
-    const raw = parseFloat(amountValue.replace(/\./g, "").replace(",", "."));
+    const raw = parseLocalizedNumber(amountValue);
     if (isNaN(raw) || raw < 0) {
       setEditingAmount(false);
       return;
@@ -1689,10 +1689,16 @@ const PendingSurchargeRow = ({ line, readOnly, isAdmin, ufValue, onUpdateLine, o
     let uf = raw;
     if (amountCurrency === "CLP") {
       if (!ufValue || ufValue <= 0) {
+        toast.error("Valor UF no disponible. Reintente en unos segundos.");
         setEditingAmount(false);
         return;
       }
       uf = raw / ufValue;
+    }
+    if (uf > MAX_REASONABLE_UF) {
+      toast.error(`Monto fuera de rango (UF ${uf.toExponential(2)}). Revise el valor ingresado.`);
+      setEditingAmount(false);
+      return;
     }
     const signed = sign * uf;
     onUpdateLine(line.id, { amount_uf: signed, currency: amountCurrency } as any);
