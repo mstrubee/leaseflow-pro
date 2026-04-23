@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -780,17 +780,21 @@ const BudgetLineItemInner = ({
         level >= 3 && !hasChildren && "bg-muted/5",
         !hasChildren && isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20",
         selectionMode && "cursor-pointer select-none",
-        selectionMode && isSelected && "ring-2 ring-primary bg-primary/10"
+        // Selection styles last so they win precedence
+        selectionMode && isSelected && "!bg-primary/20 border-l-4 border-primary font-medium shadow-sm ring-1 ring-primary/40"
       )}>
         {selectionMode && (
-          <input
-            type="checkbox"
-            checked={isSelected}
-            readOnly
-            tabIndex={-1}
+          <div
             aria-label={`Seleccionar ${line.name}`}
-            className="h-4 w-4 flex-shrink-0 rounded-sm border border-primary accent-primary pointer-events-none cursor-pointer"
-          />
+            className={cn(
+              "h-5 w-5 flex-shrink-0 rounded border-2 flex items-center justify-center transition-colors pointer-events-none",
+              isSelected
+                ? "bg-primary border-primary text-primary-foreground"
+                : "bg-background border-muted-foreground/40"
+            )}
+          >
+            {isSelected && <Check className="h-3.5 w-3.5 stroke-[3]" />}
+          </div>
         )}
         <button data-no-select onClick={(e) => { e.stopPropagation(); if (onToggleExpand) onToggleExpand(line.id); else setLocalExpanded(!localExpanded); }} className="p-0.5 hover:bg-accent rounded" disabled={!hasChildren}>
           {hasChildren ? isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" /> : <div className="h-3.5 w-3.5" />}
