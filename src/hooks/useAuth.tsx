@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -7,7 +7,20 @@ interface UserPermission {
   permission: "view" | "edit" | "all";
 }
 
-export const useAuth = () => {
+interface AuthContextValue {
+  user: User | null;
+  session: Session | null;
+  loading: boolean;
+  isAdmin: boolean;
+  roleLoaded: boolean;
+  permissions: UserPermission[];
+  hasPermission: (resource: string, requiredPermission: "view" | "edit" | "all") => boolean;
+  signOut: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+function useProvideAuth(): AuthContextValue {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -91,7 +104,7 @@ export const useAuth = () => {
     await supabase.auth.signOut({ scope: "global" });
   };
 
-  return {
+  return useMemo(() => ({
     user,
     session,
     loading,
@@ -100,5 +113,20 @@ export const useAuth = () => {
     permissions,
     hasPermission,
     signOut,
-  };
+  }), [user, session, loading, isAdmin, roleLoaded, permissions]);
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const value = useProvideAuth();
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+
+  if (!context) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+
+  return context;
 };
