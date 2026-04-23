@@ -8,6 +8,7 @@ import { FloatingPermissionSelector } from "@/components/admin/FloatingPermissio
 import { TodayAlertsFloating } from "@/components/alerts/TodayAlertsFloating";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { AuthProvider } from "@/hooks/useAuth";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NewContract from "./pages/NewContract";
@@ -41,48 +42,50 @@ function ConditionalFloatingAlerts() {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <PermissionSelectionProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <MainLayout>
-            <FloatingPermissionSelector />
-            <ConditionalFloatingAlerts />
-            <Routes>
-              {/* Public routes */}
-              <Route path="/auth" element={<Auth />} />
-              
-              {/* Protected routes - require authentication */}
-              <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-              <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
-              <Route path="/contracts" element={<ProtectedRoute resource="contracts"><Contracts /></ProtectedRoute>} />
-              <Route path="/contracts/new" element={<ProtectedRoute resource="contracts"><NewContract /></ProtectedRoute>} />
-              <Route path="/contracts/bulk-upload" element={<ProtectedRoute resource="contracts"><BulkContractUpload /></ProtectedRoute>} />
-              <Route path="/contracts/:id" element={<ProtectedRoute resource="contracts"><ContractDetail /></ProtectedRoute>} />
-              <Route path="/contracts/:id/edit" element={<ProtectedRoute resource="contracts"><EditContract /></ProtectedRoute>} />
-              <Route path="/deleted" element={<ProtectedRoute resource="contracts"><DeletedContracts /></ProtectedRoute>} />
-              <Route path="/alerts" element={<ProtectedRoute resource="alerts"><AlertsDashboard /></ProtectedRoute>} />
-              <Route path="/patents" element={<ProtectedRoute><PatentsDashboard /></ProtectedRoute>} />
-              <Route path="/purchase-orders" element={<ProtectedRoute resource="purchase_orders"><PurchaseOrdersDashboard /></ProtectedRoute>} />
-              <Route path="/opex" element={<ProtectedRoute resource="opex"><OpexDashboard /></ProtectedRoute>} />
-              <Route path="/capex" element={<ProtectedRoute resource="purchase_orders"><CapexDashboard /></ProtectedRoute>} />
-              <Route path="/reports" element={<ProtectedRoute resource="reports"><ReportsDashboard /></ProtectedRoute>} />
-              <Route path="/kpi" element={<ProtectedRoute resource="kpi"><KPIDashboard /></ProtectedRoute>} />
-              <Route path="/suppliers" element={<ProtectedRoute resource="suppliers"><SuppliersDashboard /></ProtectedRoute>} />
-              <Route path="/special-attention" element={<ProtectedRoute><SpecialAttentionPage /></ProtectedRoute>} />
-              <Route path="/maintenance" element={<ProtectedRoute resource="maintenance"><MaintenanceDashboard /></ProtectedRoute>} />
-              
-              <Route path="/google-drive-callback" element={<GoogleDriveCallback />} />
-              
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </MainLayout>
-        </BrowserRouter>
-      </PermissionSelectionProvider>
-    </TooltipProvider>
+    <AuthProvider>
+      <TooltipProvider>
+        <PermissionSelectionProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <MainLayout>
+              <FloatingPermissionSelector />
+              <ConditionalFloatingAlerts />
+              <Routes>
+                {/* Public routes */}
+                <Route path="/auth" element={<Auth />} />
+                
+                {/* Protected routes - require authentication */}
+                <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+                <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
+                <Route path="/contracts" element={<ProtectedRoute resource="contracts"><Contracts /></ProtectedRoute>} />
+                <Route path="/contracts/new" element={<ProtectedRoute resource="contracts"><NewContract /></ProtectedRoute>} />
+                <Route path="/contracts/bulk-upload" element={<ProtectedRoute resource="contracts"><BulkContractUpload /></ProtectedRoute>} />
+                <Route path="/contracts/:id" element={<ProtectedRoute resource="contracts"><ContractDetail /></ProtectedRoute>} />
+                <Route path="/contracts/:id/edit" element={<ProtectedRoute resource="contracts"><EditContract /></ProtectedRoute>} />
+                <Route path="/deleted" element={<ProtectedRoute resource="contracts"><DeletedContracts /></ProtectedRoute>} />
+                <Route path="/alerts" element={<ProtectedRoute resource="alerts"><AlertsDashboard /></ProtectedRoute>} />
+                <Route path="/patents" element={<ProtectedRoute><PatentsDashboard /></ProtectedRoute>} />
+                <Route path="/purchase-orders" element={<ProtectedRoute resource="purchase_orders"><PurchaseOrdersDashboard /></ProtectedRoute>} />
+                <Route path="/opex" element={<ProtectedRoute resource="opex"><OpexDashboard /></ProtectedRoute>} />
+                <Route path="/capex" element={<ProtectedRoute resource="purchase_orders"><CapexDashboard /></ProtectedRoute>} />
+                <Route path="/reports" element={<ProtectedRoute resource="reports"><ReportsDashboard /></ProtectedRoute>} />
+                <Route path="/kpi" element={<ProtectedRoute resource="kpi"><KPIDashboard /></ProtectedRoute>} />
+                <Route path="/suppliers" element={<ProtectedRoute resource="suppliers"><SuppliersDashboard /></ProtectedRoute>} />
+                <Route path="/special-attention" element={<ProtectedRoute><SpecialAttentionPage /></ProtectedRoute>} />
+                <Route path="/maintenance" element={<ProtectedRoute resource="maintenance"><MaintenanceDashboard /></ProtectedRoute>} />
+                
+                <Route path="/google-drive-callback" element={<GoogleDriveCallback />} />
+                
+                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </MainLayout>
+          </BrowserRouter>
+        </PermissionSelectionProvider>
+      </TooltipProvider>
+    </AuthProvider>
   </QueryClientProvider>
 );
 
