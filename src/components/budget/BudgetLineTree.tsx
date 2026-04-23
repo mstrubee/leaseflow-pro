@@ -704,7 +704,9 @@ const BudgetLineItemInner = ({
   };
   const isNotAuthorized = line.status === "no_autorizado";
   return <div>
-      <div className={cn(
+      <div
+        onClick={selectionMode ? () => onToggleSelect?.(line.id) : undefined}
+        className={cn(
         "flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-accent/50 group transition-all duration-200",
         // Color hierarchy: parents darker than children
         level === 0 && hasChildren && "bg-muted/60",
@@ -716,7 +718,8 @@ const BudgetLineItemInner = ({
         level >= 3 && hasChildren && "bg-muted/35",
         level >= 3 && !hasChildren && "bg-muted/5",
         !hasChildren && isNotAuthorized && "opacity-70 bg-yellow-50 dark:bg-yellow-950/20",
-        selectionMode && isSelected && "ring-2 ring-primary"
+        selectionMode && "cursor-pointer",
+        selectionMode && isSelected && "ring-2 ring-primary bg-primary/10"
       )}>
         {selectionMode && (
           <Checkbox
