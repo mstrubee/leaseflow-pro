@@ -586,6 +586,59 @@ const BudgetLineItemInner = ({
     setShowSupplierPropagation(false);
   };
 
+  const resetSurchargeForm = () => {
+    setSurchargeAmount("");
+    setSurchargeReason("");
+    setSurchargeType("add");
+    setSurchargeCurrency("CLP");
+  };
+
+  const handleSubmitSurcharge = async () => {
+    if (savingSurcharge) return;
+    const amt = parseFloat(surchargeAmount);
+    if (!amt || amt <= 0) {
+      toast.error("Ingrese un monto válido");
+      return;
+    }
+    setSavingSurcharge(true);
+    try {
+      let amountUf = amt;
+      if (surchargeCurrency === "CLP") {
+        if (!ufValue || ufValue <= 0) throw new Error("Valor UF no disponible");
+        amountUf = amt / ufValue;
+      }
+      const signedAmount = surchargeType === "discount" ? -amountUf : amountUf;
+      const suffix = surchargeType === "discount" ? " (Descuento)" : " (Adicional)";
+      const { error } = await (supabase as any).from("budget_lines").insert({
+        budget_id: line.budget_id,
+        parent_id: line.parent_id,
+        name: line.name + suffix,
+        amount_uf: signedAmount,
+        status: "no_autorizado",
+        quantity: 1,
+        unit_type: line.unit_type || "Un",
+        currency: "UF",
+        unit_price: signedAmount,
+        supplier_id: line.supplier_id ?? null,
+        supplier_name: line.supplier_name ?? null,
+        category_id: line.category_id ?? null,
+        is_surcharge: true,
+        surcharge_parent_line_id: line.id,
+        surcharge_reason: surchargeReason.trim() || null,
+      });
+      if (error) throw error;
+      toast.success(surchargeType === "discount" ? "Descuento solicitado" : "Adicional solicitado");
+      resetSurchargeForm();
+      setShowSurchargePanel(false);
+      // Trigger a refresh by emitting a no-op update on the base line — parent will reload lines
+      onUpdateLine(line.id, {});
+    } catch (err: any) {
+      toast.error(err?.message || "Error al solicitar adicional");
+    } finally {
+      setSavingSurcharge(false);
+    }
+  };
+
   const handleQuantityKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleSaveQuantity();
     else if (e.key === "Escape") {
