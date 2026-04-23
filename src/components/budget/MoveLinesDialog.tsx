@@ -105,7 +105,7 @@ export const MoveLinesDialog = ({ open, onOpenChange, lines, selectedIds, onConf
             onChange={(e) => setSearch(e.target.value)}
           />
 
-          <ScrollArea className="flex-1 border rounded-md">
+          <ScrollArea className="flex-1 min-h-0 h-[55vh] border rounded-md">
             <div className="p-1">
               {/* Root option */}
               <button
