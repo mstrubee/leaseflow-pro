@@ -1102,29 +1102,54 @@ const BudgetLineItemInner = ({
               return formatCLP(convertUFToPesos(calculatedAmountWithSurcharges));
             })()}
           </span>
-          {!isParent && mergedSurcharges.length > 0 && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="p-0.5 hover:bg-accent rounded"
-                  title="Ver desglose original + adicionales"
-                >
-                  <PlusCircle className="h-3.5 w-3.5 text-green-600" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-96 p-0">
-                <SurchargeBreakdownPopover
-                  baseLine={line}
-                  mergedSurcharges={mergedSurcharges}
-                  ufValue={ufValue}
-                  isAdmin={isAdmin}
-                  readOnly={readOnly}
-                  onUpdateLine={onUpdateLine}
-                  onDeleteLine={onDeleteLine}
-                />
-              </PopoverContent>
-            </Popover>
+          {(
+            (!isParent && mergedSurcharges.length > 0) ||
+            (!isParent && !isSurchargeRow && line.status === "autorizado" && !readOnly)
+          ) && (
+            <div className="flex flex-col items-center gap-0.5">
+              {!isParent && mergedSurcharges.length > 0 && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="p-0.5 hover:bg-accent rounded"
+                      title="Ver desglose original + adicionales"
+                    >
+                      <PlusCircle className="h-3.5 w-3.5 text-green-600" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-96 p-0">
+                    <SurchargeBreakdownPopover
+                      baseLine={line}
+                      mergedSurcharges={mergedSurcharges}
+                      ufValue={ufValue}
+                      isAdmin={isAdmin}
+                      readOnly={readOnly}
+                      onUpdateLine={onUpdateLine}
+                      onDeleteLine={onDeleteLine}
+                    />
+                  </PopoverContent>
+                </Popover>
+              )}
+              {!isParent && !isSurchargeRow && line.status === "autorizado" && !readOnly && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => { e.stopPropagation(); setShowSurchargePanel(v => !v); }}
+                        className="h-5 w-5 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                      >
+                        <PlusCircle className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Solicitar adicional o descuento</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+            </div>
           )}
           <TooltipProvider>
             <Tooltip>
@@ -1138,24 +1163,6 @@ const BudgetLineItemInner = ({
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          {!isParent && !isSurchargeRow && line.status === "autorizado" && !readOnly && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={(e) => { e.stopPropagation(); setShowSurchargePanel(v => !v); }}
-                    className="h-6 w-6 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                  >
-                    <PlusCircle className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Solicitar adicional o descuento</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
           {isNotAuthorized && !compactView && <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
