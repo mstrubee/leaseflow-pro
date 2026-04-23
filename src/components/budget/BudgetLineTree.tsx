@@ -1033,6 +1033,7 @@ const BudgetLineItemInner = ({
               return formatCLP(convertUFToPesos(calculatedAmountWithSurcharges));
             })()}
           </span>
+          {!isParent && mergedSurcharges.length > 0 && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
