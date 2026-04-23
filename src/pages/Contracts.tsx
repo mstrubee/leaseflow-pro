@@ -444,6 +444,8 @@ const Contracts = () => {
         const address = contract.contract_addresses?.[0];
         if (address?.commune?.toLowerCase().includes(term)) return true;
         if (address?.street?.toLowerCase().includes(term)) return true;
+        if (address?.number?.toLowerCase().includes(term)) return true;
+        if (address && `${address.street ?? ""} ${address.number ?? ""}`.toLowerCase().includes(term)) return true;
         const cf = customFieldsByContract[contract.id];
         if (cf?.cebe?.toLowerCase().includes(term)) return true;
         if (cf?.codigo?.toLowerCase().includes(term)) return true;
