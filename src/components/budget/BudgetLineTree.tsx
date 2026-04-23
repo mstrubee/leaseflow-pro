@@ -51,6 +51,10 @@ export interface BudgetLine {
   surcharge_reason?: string | null;
   merged_into_line_id?: string | null;
   original_amount_uf?: number | null;
+  is_ghost?: boolean;
+  moved_to_line_id?: string | null;
+  moved_at?: string | null;
+  moved_by?: string | null;
   children?: BudgetLine[];
 }
 
