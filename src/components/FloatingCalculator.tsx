@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
-import { Calculator, ChevronDown, ChevronUp, ArrowRightLeft, Trash2, X } from "lucide-react";
+import { Calculator, ChevronDown, ChevronUp, ArrowRightLeft, Trash2, X, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,22 +16,33 @@ interface HistoryEntry {
 
 let nextId = 1;
 
+const STORAGE_KEY = "floating-calc-state";
+
 const parseNum = (s: string): number => {
+  if (s === "" || s == null) return NaN;
   const cleaned = s.replace(/\./g, "").replace(",", ".");
-  return parseFloat(cleaned) || 0;
+  const n = parseFloat(cleaned);
+  return isNaN(n) ? NaN : n;
 };
 
 const fmtNum = (n: number): string => {
+  if (isNaN(n)) return "—";
   const str = parseFloat(n.toFixed(8)).toString();
   return str.replace(".", ",");
 };
 
+const fmtCLP = (n: number): string => {
+  if (isNaN(n)) return "—";
+  return n.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
 const applyOp = (a: number, b: number, op: string): number => {
+  if (isNaN(a) || isNaN(b)) return NaN;
   switch (op) {
     case "+": return a + b;
     case "-": return a - b;
     case "×": return a * b;
-    case "÷": return b !== 0 ? a / b : 0;
+    case "÷": return b !== 0 ? a / b : NaN;
     default: return b;
   }
 };
@@ -50,19 +61,56 @@ const recalcAll = (entries: HistoryEntry[]): HistoryEntry[] => {
 
 export function FloatingCalculator() {
   const [isOpen, setIsOpen] = useState(false);
-  const [entries, setEntries] = useState<HistoryEntry[]>([]);
-  const [currentInput, setCurrentInput] = useState("0");
-  const [pendingOp, setPendingOp] = useState<string | null>(null);
+  const [entries, setEntries] = useState<HistoryEntry[]>(() => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed.entries)) {
+          // Ensure nextId is past any restored ids
+          parsed.entries.forEach((e: HistoryEntry) => { if (e.id >= nextId) nextId = e.id + 1; });
+          return parsed.entries;
+        }
+      }
+    } catch { /* ignore */ }
+    return [];
+  });
+  const [currentInput, setCurrentInput] = useState<string>(() => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.currentInput === "string") return parsed.currentInput;
+      }
+    } catch { /* ignore */ }
+    return "0";
+  });
+  const [pendingOp, setPendingOp] = useState<string | null>(() => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.pendingOp === null || typeof parsed.pendingOp === "string") return parsed.pendingOp;
+      }
+    } catch { /* ignore */ }
+    return null;
+  });
   const [justPushed, setJustPushed] = useState(false);
 
   const [ufInput, setUfInput] = useState("");
   const [clpInput, setClpInput] = useState("");
 
+  // Persist calculator state across navigations
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ entries, currentInput, pendingOp }));
+    } catch { /* ignore */ }
+  }, [entries, currentInput, pendingOp]);
+
   // Drag state
   const [offset, setOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
-  const returnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draggedRef = useRef(false);
 
   const { ufValue, convertUFToPesos, convertPesosToUF } = useEconomicIndicators();
@@ -80,7 +128,6 @@ export function FloatingCalculator() {
     setIsDragging(true);
     dragStart.current = { px: e.clientX, py: e.clientY, ox: offset.x, oy: offset.y };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    if (returnTimer.current) clearTimeout(returnTimer.current);
   }, [offset]);
 
   const onPointerMove = useCallback((e: ReactPointerEvent<HTMLButtonElement>) => {
@@ -95,26 +142,15 @@ export function FloatingCalculator() {
     if (!isDragging) return;
     setIsDragging(false);
     dragStart.current = null;
-    // Return to original position after 5 seconds
-    if (offset.x !== 0 || offset.y !== 0) {
-      returnTimer.current = setTimeout(() => {
-        setOffset({ x: 0, y: 0 });
-      }, 5000);
-    }
-  }, [isDragging, offset]);
-
-  useEffect(() => {
-    return () => { if (returnTimer.current) clearTimeout(returnTimer.current); };
-  }, []);
+  }, [isDragging]);
 
   // Push current value + operator into history, prepare for next input
   const pushEntry = useCallback((op: string) => {
     const val = currentInput;
     if (entries.length === 0 && !pendingOp) {
-      // First entry
+      // First entry — preserve incoming operator as pendingOp
       const entry: HistoryEntry = { id: nextId++, value: val, operator: "", result: parseNum(val) };
-      const newEntries = [entry];
-      setEntries(newEntries);
+      setEntries([entry]);
     } else if (!justPushed) {
       const entry: HistoryEntry = { id: nextId++, value: val, operator: pendingOp || "+", result: 0 };
       const newEntries = recalcAll([...entries, entry]);
@@ -140,10 +176,13 @@ export function FloatingCalculator() {
   }, [pushEntry]);
 
   const handleEquals = useCallback(() => {
-    if (currentInput === "0" && justPushed) return;
+    // Nothing to do: no operator pending and no history → just keep current input
+    if (!pendingOp && entries.length === 0) return;
+    if (currentInput === "0" && justPushed && !pendingOp) return;
+
     const val = currentInput;
-    const op = pendingOp || (entries.length === 0 ? "" : "+");
-    const entry: HistoryEntry = { id: nextId++, value: val, operator: entries.length === 0 && !pendingOp ? "" : op, result: 0 };
+    const op = pendingOp || "+";
+    const entry: HistoryEntry = { id: nextId++, value: val, operator: op, result: 0 };
     const newEntries = recalcAll([...entries, entry]);
     setEntries(newEntries);
     const finalResult = newEntries[newEntries.length - 1].result;
@@ -165,12 +204,12 @@ export function FloatingCalculator() {
 
   const handlePercent = useCallback(() => {
     const n = parseNum(currentInput);
-    setCurrentInput(fmtNum(n / 100));
+    setCurrentInput(fmtNum((isNaN(n) ? 0 : n) / 100));
   }, [currentInput]);
 
   const handleToggleSign = useCallback(() => {
     const n = parseNum(currentInput);
-    setCurrentInput(fmtNum(-n));
+    setCurrentInput(fmtNum(-(isNaN(n) ? 0 : n)));
   }, [currentInput]);
 
   // Edit a history entry's value
@@ -195,7 +234,6 @@ export function FloatingCalculator() {
       const idx = prev.findIndex(e => e.id === id);
       if (idx === -1) return prev;
       const updated = prev.filter(e => e.id !== id);
-      // If we removed the first entry, clear the operator of the new first
       if (idx === 0 && updated.length > 0) {
         updated[0] = { ...updated[0], operator: "" };
       }
@@ -203,8 +241,12 @@ export function FloatingCalculator() {
     });
   }, []);
 
-  // Keyboard support
+  // Keyboard support — ignore events originating from inner inputs/textareas
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    const tag = target?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
+
     const key = e.key;
     if (key >= "0" && key <= "9") { handleNumber(key); e.preventDefault(); }
     else if (key === "," || key === ".") { handleDecimal(); e.preventDefault(); }
@@ -218,12 +260,17 @@ export function FloatingCalculator() {
     else if (key === "%") { handlePercent(); e.preventDefault(); }
   }, [handleNumber, handleDecimal, handleOperation, handleEquals, handleClear, handleBackspace, handlePercent]);
 
-  const ufToCLP = ufInput ? Math.round(convertUFToPesos(parseFloat(ufInput.replace(",", ".")) || 0)).toLocaleString("es-CL") : "";
-  const clpToUF = clpInput ? convertPesosToUF(parseFloat(clpInput.replace(/\./g, "").replace(",", ".")) || 0).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : "";
+  const ufNumeric = parseNum(ufInput);
+  const clpNumeric = parseNum(clpInput);
+  const showUfToCLP = !isNaN(ufNumeric) && ufNumeric > 0;
+  const showCLPToUF = !isNaN(clpNumeric) && clpNumeric > 0;
+  const ufToCLP = showUfToCLP ? fmtCLP(convertUFToPesos(ufNumeric)) : "";
+  const clpToUF = showCLPToUF ? convertPesosToUF(clpNumeric).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : "";
 
   const btnBase = "h-9 w-full text-sm font-medium rounded-md";
   const ops = ["+", "-", "×", "÷"];
   const finalResult = entries.length > 0 ? entries[entries.length - 1].result : null;
+  const isMoved = offset.x !== 0 || offset.y !== 0;
 
   return (
     <div
@@ -332,12 +379,12 @@ export function FloatingCalculator() {
 
             <TabsContent value="convert" className="p-3 pt-2 m-0 space-y-3">
               <div className="text-[10px] text-muted-foreground text-center">
-                UF hoy: ${ufValue ? ufValue.toLocaleString("es-CL") : "…"}
+                UF hoy: ${ufValue ? fmtCLP(ufValue) : "…"}
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-medium text-foreground">UF → Pesos</label>
                 <Input placeholder="Ej: 100" value={ufInput} onChange={e => setUfInput(e.target.value)} className="h-8 text-sm" />
-                {ufToCLP && (
+                {showUfToCLP && (
                   <div className="flex items-center gap-1 text-xs text-muted-foreground">
                     <ArrowRightLeft className="h-3 w-3" />
                     <span className="font-medium text-foreground">$ {ufToCLP}</span>
@@ -347,7 +394,7 @@ export function FloatingCalculator() {
               <div className="space-y-1">
                 <label className="text-xs font-medium text-foreground">Pesos → UF</label>
                 <Input placeholder="Ej: 3.500.000" value={clpInput} onChange={e => setClpInput(e.target.value)} className="h-8 text-sm" />
-                {clpToUF && (
+                {showCLPToUF && (
                   <div className="flex items-center gap-1 text-xs text-muted-foreground">
                     <ArrowRightLeft className="h-3 w-3" />
                     <span className="font-medium text-foreground">UF {clpToUF}</span>
@@ -359,26 +406,38 @@ export function FloatingCalculator() {
         </div>
       )}
 
-      <Button
-        variant="outline"
-        size="sm"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onClick={(e) => {
-          // Only toggle if it wasn't a drag
-          if (!draggedRef.current) {
-            setIsOpen(!isOpen);
-            setTimeout(() => calcRef.current?.focus(), 100);
-          }
-          draggedRef.current = false;
-        }}
-        className="h-9 gap-1.5 rounded-full shadow-lg bg-card hover:bg-accent border-border px-3 cursor-grab active:cursor-grabbing touch-none"
-      >
-        <Calculator className="h-4 w-4" />
-        <span className="text-xs font-medium">Calc</span>
-        {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
-      </Button>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="outline"
+          size="sm"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onClick={(e) => {
+            if (!draggedRef.current) {
+              setIsOpen(!isOpen);
+              setTimeout(() => calcRef.current?.focus(), 100);
+            }
+            draggedRef.current = false;
+          }}
+          className="h-9 gap-1.5 rounded-full shadow-lg bg-card hover:bg-accent border-border px-3 cursor-grab active:cursor-grabbing touch-none"
+        >
+          <Calculator className="h-4 w-4" />
+          <span className="text-xs font-medium">Calc</span>
+          {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
+        </Button>
+        {isMoved && (
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setOffset({ x: 0, y: 0 })}
+            className="h-7 w-7 rounded-full shadow-lg bg-card hover:bg-accent border-border"
+            title="Volver a la posición original"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
