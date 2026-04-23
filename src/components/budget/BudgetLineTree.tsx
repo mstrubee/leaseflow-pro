@@ -707,6 +707,56 @@ const BudgetLineItemInner = ({
     });
   };
   const isNotAuthorized = line.status === "no_autorizado";
+
+  // Ghost placeholder: line was moved elsewhere; show a non-editable marker at the original position.
+  if (line.is_ghost) {
+    // Build readable destination path by walking up from the moved-to line via linesMap
+    const buildPath = (id: string | null | undefined): string => {
+      if (!id) return "—";
+      const segments: string[] = [];
+      let cursor: BudgetLine | undefined = linesMap.get(id);
+      let safety = 0;
+      while (cursor && safety < 50) {
+        segments.unshift(cursor.name);
+        cursor = cursor.parent_id ? linesMap.get(cursor.parent_id) : undefined;
+        safety++;
+      }
+      return segments.length ? segments.join(" › ") : "(destino eliminado)";
+    };
+    const destinationPath = buildPath(line.moved_to_line_id);
+
+    return (
+      <div>
+        <div
+          className={cn(
+            "flex items-center gap-2 py-1.5 px-2 rounded-md border border-dashed border-muted-foreground/30 bg-muted/10 opacity-60 italic",
+            level === 0 && "ml-0",
+          )}
+        >
+          <div className="h-3.5 w-3.5 flex-shrink-0" />
+          <ArrowRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+          <span className="text-sm flex-shrink-0 max-w-[280px] truncate text-muted-foreground line-through">
+            {line.name}
+          </span>
+          <span className="text-xs text-muted-foreground truncate">
+            Movida a: <span className="font-medium not-italic">{destinationPath}</span>
+          </span>
+          {!readOnly && isAdmin && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto h-6 px-2 text-[10px] text-muted-foreground hover:text-destructive"
+              onClick={(e) => { e.stopPropagation(); onDeleteLine(line.id); }}
+              title="Eliminar marca de movimiento"
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return <div>
       <div
         onClick={selectionMode ? () => onToggleSelect?.(line.id) : undefined}
