@@ -1412,6 +1412,8 @@ const getEffectiveAmount = (
   ufValue?: number,
   internalTransferSupplierIds?: Set<string>,
 ): number => {
+  // Ghost placeholders left at original location after a move — never count
+  if (item.is_ghost) return 0;
   // Merged surcharges have already been folded into their base line — skip to avoid double count
   if (item.merged_into_line_id) return 0;
   if (item.supplier_id && internalTransferSupplierIds?.has(item.supplier_id)) {
