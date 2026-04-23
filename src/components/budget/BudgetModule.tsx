@@ -659,8 +659,20 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     const budget = budgets.find((b) => b.year === selectedYear);
     if (budget?.is_closed) return;
 
+    // Recursive find (surcharges can be nested)
+    const findInTree = (items: BudgetLine[]): BudgetLine | null => {
+      for (const it of items) {
+        if (it.id === id) return it;
+        if (it.children?.length) {
+          const f = findInTree(it.children);
+          if (f) return f;
+        }
+      }
+      return null;
+    };
+    const targetLine = findInTree(lines);
+
     // Ghost lines (movement markers) can ONLY be deleted by admins
-    const targetLine = lines.find((l) => l.id === id);
     if (targetLine?.is_ghost && !isAdmin) {
       toast({
         variant: "destructive",
@@ -673,7 +685,59 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     try {
       // Get current user for audit
       const { data: { user } } = await supabase.auth.getUser();
-      
+
+      // If deleting a merged (authorized) surcharge, revert its contribution from the base line
+      if (targetLine?.is_surcharge && targetLine.merged_into_line_id) {
+        const baseLine = findInTree(lines)
+          ? (function findById(items: BudgetLine[]): BudgetLine | null {
+              for (const it of items) {
+                if (it.id === targetLine.merged_into_line_id) return it;
+                if (it.children?.length) {
+                  const f = findById(it.children);
+                  if (f) return f;
+                }
+              }
+              return null;
+            })(lines)
+          : null;
+
+        if (baseLine) {
+          const surchargeUf = targetLine.amount_uf || 0;
+          const currentBase = baseLine.amount_uf || 0;
+          let newBaseAmount = currentBase - surchargeUf;
+
+          // Check if any OTHER merged surcharges remain for this base line
+          const { data: otherMerged } = await supabase
+            .from("budget_lines")
+            .select("id")
+            .eq("merged_into_line_id", baseLine.id)
+            .neq("id", id)
+            .is("deleted_at", null);
+
+          const noOthersLeft = !otherMerged || otherMerged.length === 0;
+          // If no other merged surcharges remain, restore exactly to original snapshot
+          if (noOthersLeft && baseLine.original_amount_uf != null) {
+            newBaseAmount = baseLine.original_amount_uf;
+          }
+
+          const baseQty = baseLine.quantity || 1;
+          const newUnitPrice = baseQty > 0 ? newBaseAmount / baseQty : (baseLine.unit_price || 0);
+
+          const updatePayload: any = {
+            amount_uf: newBaseAmount,
+            unit_price: newUnitPrice,
+          };
+          // Clear snapshot when no merged surcharges remain
+          if (noOthersLeft) updatePayload.original_amount_uf = null;
+
+          const { error: revertErr } = await supabase
+            .from("budget_lines")
+            .update(updatePayload)
+            .eq("id", baseLine.id);
+          if (revertErr) throw revertErr;
+        }
+      }
+
       // Get all descendant IDs to soft-delete them too
       const descendantIds = getAllDescendantIds(lines, id);
       const allIdsToDelete = [id, ...descendantIds];
