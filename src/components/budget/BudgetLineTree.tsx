@@ -1941,17 +1941,24 @@ const SurchargeBreakdownRow = ({ surcharge, ufValue, canEdit, onUpdateLine, onDe
   const isAdd = (surcharge.amount_uf || 0) >= 0;
   const sign = isAdd ? 1 : -1;
   const absUf = Math.abs(surcharge.amount_uf || 0);
+  const isCorrupt = absUf > MAX_REASONABLE_UF;
+  const savedCurrency: "UF" | "CLP" = (surcharge.currency as "UF" | "CLP") || "UF";
 
   const [editingReason, setEditingReason] = useState(false);
   const [reason, setReason] = useState(surcharge.surcharge_reason || "");
   const [editingAmount, setEditingAmount] = useState(false);
-  const [amountCurrency, setAmountCurrency] = useState<"UF" | "CLP">((surcharge.currency as "UF" | "CLP") || "UF");
-  const [amountValue, setAmountValue] = useState<string>(absUf.toString());
+  const [amountCurrency, setAmountCurrency] = useState<"UF" | "CLP">(savedCurrency);
+  const [amountValue, setAmountValue] = useState<string>(
+    savedCurrency === "CLP" && ufValue > 0 && !isCorrupt
+      ? Math.round(absUf * ufValue).toString()
+      : absUf.toString()
+  );
 
   useEffect(() => { setReason(surcharge.surcharge_reason || ""); }, [surcharge.surcharge_reason]);
 
   const fmtUF = (n: number) => `UF ${n.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmtCLP = (n: number) => `$ ${Math.round(n).toLocaleString("es-CL")}`;
+  const fmtCompact = (n: number) => n.toExponential(2).replace("e+", "·10^").replace("e-", "·10^-");
 
   const commitReason = () => {
     if (reason !== (surcharge.surcharge_reason || "")) {
@@ -1961,18 +1968,39 @@ const SurchargeBreakdownRow = ({ surcharge, ufValue, canEdit, onUpdateLine, onDe
   };
 
   const commitAmount = () => {
-    const raw = parseFloat(amountValue.replace(/\./g, "").replace(",", "."));
+    const raw = parseLocalizedNumber(amountValue);
     if (isNaN(raw) || raw < 0) {
       setEditingAmount(false);
       return;
     }
     let uf = raw;
     if (amountCurrency === "CLP") {
-      if (!ufValue || ufValue <= 0) { setEditingAmount(false); return; }
+      if (!ufValue || ufValue <= 0) {
+        toast.error("Valor UF no disponible. Reintente en unos segundos.");
+        setEditingAmount(false);
+        return;
+      }
       uf = raw / ufValue;
+    }
+    if (uf > MAX_REASONABLE_UF) {
+      toast.error(`Monto fuera de rango (UF ${uf.toExponential(2)}). Revise el valor ingresado.`);
+      setEditingAmount(false);
+      return;
     }
     onUpdateLine(surcharge.id, { amount_uf: sign * uf, currency: amountCurrency } as any);
     setEditingAmount(false);
+  };
+
+  const openEditor = () => {
+    if (!canEdit) return;
+    const initialCurrency: "UF" | "CLP" = savedCurrency;
+    setAmountCurrency(initialCurrency);
+    if (initialCurrency === "CLP" && ufValue > 0 && !isCorrupt) {
+      setAmountValue(Math.round(absUf * ufValue).toString());
+    } else {
+      setAmountValue(absUf.toString());
+    }
+    setEditingAmount(true);
   };
 
   return (
@@ -1981,7 +2009,14 @@ const SurchargeBreakdownRow = ({ surcharge, ufValue, canEdit, onUpdateLine, onDe
         {isAdd ? <PlusCircle className="h-3 w-3 text-green-600" /> : <MinusCircle className="h-3 w-3 text-red-600" />}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="truncate font-medium">{surcharge.name}</div>
+        <div className="truncate font-medium flex items-center gap-1">
+          {surcharge.name}
+          {isCorrupt && (
+            <span title="Valor inconsistente — revisar">
+              <AlertTriangle className="h-3 w-3 text-destructive flex-shrink-0" />
+            </span>
+          )}
+        </div>
         {editingReason && canEdit ? (
           <Input
             autoFocus
@@ -2019,9 +2054,23 @@ const SurchargeBreakdownRow = ({ surcharge, ufValue, canEdit, onUpdateLine, onDe
                 if (e.key === "Enter") { e.preventDefault(); commitAmount(); }
                 else if (e.key === "Escape") setEditingAmount(false);
               }}
-              className="h-6 text-xs w-20"
+              className="h-6 text-xs w-24"
             />
-            <Select value={amountCurrency} onValueChange={(v: "UF" | "CLP") => setAmountCurrency(v)}>
+            <Select
+              value={amountCurrency}
+              onValueChange={(v: "UF" | "CLP") => {
+                // When switching currency in editor, convert the current entered value
+                const raw = parseLocalizedNumber(amountValue);
+                if (!isNaN(raw) && ufValue > 0) {
+                  if (v === "CLP" && amountCurrency === "UF") {
+                    setAmountValue(Math.round(raw * ufValue).toString());
+                  } else if (v === "UF" && amountCurrency === "CLP") {
+                    setAmountValue((raw / ufValue).toFixed(4));
+                  }
+                }
+                setAmountCurrency(v);
+              }}
+            >
               <SelectTrigger className="h-6 w-14 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="UF">UF</SelectItem>
@@ -2032,19 +2081,14 @@ const SurchargeBreakdownRow = ({ surcharge, ufValue, canEdit, onUpdateLine, onDe
         ) : (
           <div
             className={cn(canEdit && "cursor-text hover:bg-accent/50 rounded px-1")}
-            onDoubleClick={() => {
-              if (!canEdit) return;
-              setAmountCurrency("UF");
-              setAmountValue(absUf.toString());
-              setEditingAmount(true);
-            }}
+            onDoubleClick={openEditor}
             title={canEdit ? "Doble clic para editar monto" : ""}
           >
             <div className={isAdd ? "text-green-700 dark:text-green-400" : "text-destructive"}>
-              {isAdd ? "+" : "−"} {fmtUF(absUf)}
+              {isAdd ? "+" : "−"} {isCorrupt ? `UF ${fmtCompact(absUf)}` : fmtUF(absUf)}
             </div>
             <div className="text-muted-foreground text-[11px]">
-              {isAdd ? "+" : "−"} {fmtCLP(absUf * (ufValue || 0))}
+              {isAdd ? "+" : "−"} {isCorrupt ? `$ ${fmtCompact(absUf * (ufValue || 0))}` : fmtCLP(absUf * (ufValue || 0))}
             </div>
           </div>
         )}
