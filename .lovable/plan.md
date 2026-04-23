@@ -1,61 +1,50 @@
+## Reparentar una línea hija bajo otra línea hija (nueva madre)
 
+### Estado actual
 
-## Revisión de operatividad: FloatingCalculator
+La operación que pides **ya existe técnicamente**, pero está poco visible:
 
-He revisado a fondo `src/components/FloatingCalculator.tsx` y encontré varios problemas de operatividad reales que afectan el uso diario de la calculadora.
+1. La función `handleConfirmMove` en `BudgetModule.tsx` actualiza `parent_id` en `budget_lines`. Cualquier línea (incluida una hija) puede pasar a depender de cualquier otra línea, siempre que no sea sí misma ni una de sus descendientes (evita ciclos).
+2. El total de cualquier línea madre se calcula recursivamente sumando sus hijos (`calculateChildrenSubtotal` y `calculateStoredSubtotal` en `BudgetLineTree.tsx`). Por lo tanto, al reparentar, **la nueva madre suma automáticamente la nueva hija** sin necesidad de tocar la BD adicionalmente.
+3. La línea madre original mantiene un "ghost" (placeholder no contabilizable) en la posición original como rastro auditable.
 
-### Problemas detectados
+El problema es de **descubrimiento**: hoy hay que entrar en "modo selección" (botón global), marcar la línea, abrir "Mover" y buscar la madre destino. No hay un atajo directo desde la línea.
 
-**1. Operadores encadenados rompen el cálculo inicial**
-En `pushEntry` (línea 113), cuando es la primera entrada, sólo se inserta el valor pero **se descarta la operación pendiente** porque la rama `if (entries.length === 0 && !pendingOp)` no usa `op`. Resultado: si tras `=` el usuario presiona `+ 5 =`, el operador se pierde en el primer push.
+### Propuesta
 
-**2. `handleEquals` con un solo número repite el resultado**
-Al pulsar `=` sin operador previo y con historial vacío, se crea una entrada extra duplicando el valor (línea 146). El display muestra `5` pero internamente se inserta una entrada redundante.
+Agregar un atajo directo "Mover bajo otra línea" en cada fila del árbol, usando el flujo ya existente.
 
-**3. Edición de valor no permite vaciar el campo**
-`updateEntryValue` (línea 177) deja el input editable, pero `parseNum("")` devuelve 0 y eso recalcula toda la cadena con ceros. Si el usuario borra para escribir, todos los resultados posteriores colapsan a 0 hasta terminar de escribir.
+**1. Botón/acción "Mover" por línea** (`BudgetLineTree.tsx`)
+- Agregar un ítem en el menú contextual de cada línea (junto a Editar / Eliminar / Agregar adicional autorizado): **"Mover bajo otra línea…"**.
+- Al pulsarlo, abre el `MoveLinesDialog` ya existente con `selectedIds = [line.id]`.
+- Solo visible cuando no es ghost, no es surcharge fusionado y el usuario tiene permisos de edición.
 
-**4. El input del historial colisiona con el teclado de la calculadora**
-Aunque hay `onKeyDown={e => e.stopPropagation()}` en el input (línea 275), al estar dentro del div con `onKeyDown={handleKeyDown}` y ser foco activo, las teclas numéricas se duplican en algunos navegadores porque el `Tab` de tabla recibe foco doble.
+**2. Pequeñas mejoras al `MoveLinesDialog`**
+- Cambiar el copy del header cuando es 1 sola línea: en vez de "Mover 1 línea", mostrar "Mover '{nombre}' bajo otra línea madre".
+- Aclarar en la descripción que también puede pasar a depender de un **hermano** o de **cualquier otra línea del presupuesto**.
+- Añadir una pista visual junto a la línea madre actual del elemento que se está moviendo (etiqueta "actual") para que el usuario evite seleccionarla.
 
-**5. Conversor UF↔$ no maneja entrada vacía/inválida con elegancia**
-`ufToCLP` y `clpToUF` (líneas 221–222) usan `parseFloat || 0` y muestran "$ 0" cuando el usuario borra, en vez de ocultar la línea. Funciona, pero es ruidoso.
+**3. Sin cambios de BD ni en la lógica de totales**
+- El recálculo del total de la nueva madre (incluyendo la nueva hija) y de la madre original (que ya no la cuenta) ocurre automáticamente al recargar el árbol, gracias a la suma recursiva existente.
+- Se mantiene el "ghost" en la posición original (trazabilidad).
 
-**6. Drag se reinicia tras 5 s aunque el usuario quiera mantener la posición**
-El `setTimeout` de retorno (línea 100) es agresivo: si el usuario reposiciona la calculadora y se queda mirando, salta de vuelta a la esquina sin previo aviso.
+### Comportamiento esperado tras la acción
 
-**7. Sin persistencia del historial**
-Si el usuario navega entre páginas, el historial se pierde. Para una calculadora "flotante de trabajo" sería útil mantenerlo en `sessionStorage`.
-
-**8. UF del header sin formato de miles consistente con el conversor**
-El badge muestra `$40.013,88` pero la línea del tab Convertir muestra `$40.014` (sin decimales). Inconsistencia visual menor.
-
-### Plan de correcciones
-
-**A. Lógica de cálculo (núcleo)**
-- En `pushEntry`, si `entries.length === 0` y hay valor, crear la primera entrada y, si llega un operador, guardarlo en `pendingOp` (ya se hace) — eliminar el caso especial que descarta el operador.
-- En `handleEquals`, si no hay `pendingOp` ni entradas previas, **no crear entrada nueva**: simplemente dejar `currentInput` como está.
-- En `updateEntryValue`, tratar string vacío manteniendo `value=""` pero sin recalcular hasta `onBlur`, o usar `parseNum` que devuelva `NaN` y propagar `—` en los resultados intermedios para no mostrar ceros engañosos.
-
-**B. UX del conversor**
-- Ocultar la línea de equivalencia cuando el input es 0 o vacío (cambiar condición de truthy del string a `parseNum > 0`).
-- Unificar formato de UF: mostrar siempre con 2 decimales en ambos lugares (`$40.013,88`).
-
-**C. Drag**
-- Aumentar el timeout de retorno de 5 s a 30 s, o mejor: eliminarlo y agregar un botón "↺" pequeño para volver a la posición original cuando esté desplazada. Más predecible.
-
-**D. Persistencia**
-- Guardar `entries`, `currentInput` y `pendingOp` en `sessionStorage` con clave `floating-calc-state`. Restaurar al montar. Esto sobrevive navegación entre rutas dentro de la misma sesión.
-
-**E. Teclado**
-- Mover el `onKeyDown` del contenedor a un handler que ignore eventos cuyo `target` sea un `<input>` o `<button>` interno del historial, para prevenir doble manejo.
+- La hija desaparece de la madre original (queda solo el "ghost" gris).
+- La hija aparece como hija de la nueva madre, en el último orden.
+- El total de la nueva madre **incluye** el `amount_uf` (y CLP) de la hija reparentada.
+- El total de la madre original **deja de incluirla** (el ghost vale 0).
+- Si la nueva madre era una "hoja" (sin hijos), pasa a comportarse como madre y muestra el desglose de hijos.
 
 ### Archivos a modificar
-- `src/components/FloatingCalculator.tsx` (único archivo)
+
+- `src/components/budget/BudgetLineTree.tsx` — añadir acción "Mover bajo otra línea…" por fila + estado para abrir el diálogo con la línea pre-seleccionada.
+- `src/components/budget/MoveLinesDialog.tsx` — copy más claro para single-line + marcar "actual" la madre vigente.
+- `src/components/budget/BudgetModule.tsx` — exponer/propagar el handler para abrir el diálogo desde una línea individual reutilizando `handleConfirmMove`.
 
 ### Detalles técnicos
-- Sin cambios de tipos ni de hooks externos.
-- `useEconomicIndicators` permanece intacto.
-- Sin migraciones de BD ni edge functions.
-- Cambios contenidos: ~60 líneas modificadas, sin nuevas dependencias.
 
+- La validación anti-ciclo ya está en `MoveLinesDialog` (excluye la línea y todo su subárbol).
+- No se requiere migración: `parent_id` ya es nullable y editable.
+- No se afectan OCs/facturas: siguen vinculadas a la línea por su `id`, que no cambia.
+- Sin cambios en RLS ni edge functions.
