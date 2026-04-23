@@ -266,6 +266,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   
   const { toast } = useToast();
   const { formatUF, formatCLP, convertUFToPesos, ufValue } = useBudgetContext();
+  const { isAdmin } = useAuth();
 
   useEffect(() => {
     loadBudgets();
