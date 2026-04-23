@@ -1,59 +1,92 @@
 
+## Plan: corregir selección errática de líneas en presupuesto
 
-## Plan: Adicionales/Descuentos en líneas autorizadas
+### Objetivo
+Hacer que la selección de líneas para mover sea inmediata, estable y predecible: un clic selecciona, otro deselecciona, sin dobles toggles ni activaciones accidentales.
 
-Permitir que cualquier usuario solicite un **adicional** (o **descuento**) sobre una línea hija ya autorizada. El monto adicional ingresa como "no autorizado" y solo el admin puede aprobarlo. Una vez aprobado, se suma al monto de la línea original y se muestra un indicador `+` junto al total.
+### Causa probable detectada
+La implementación actual mezcla dos mecanismos de selección al mismo tiempo:
+1. La fila completa selecciona en `onMouseDown`
+2. El `Checkbox` también cambia estado con `onCheckedChange`
 
-### Comportamiento UX
+Eso puede producir:
+- doble toggle en un mismo clic
+- selección que “entra y sale”
+- activaciones por botones internos de la fila
+- comportamiento inconsistente por usar `Checkbox` de Radix (su root no es un `input` nativo)
 
-1. **Línea hija autorizada**: al hacer clic en la fila (o en un nuevo ícono `+/–` discreto al lado del badge "Autorizado"), se expande **in place** un panel debajo de la línea (mismo estilo de la fila, fondo amarillo claro tenue para diferenciarse).
-2. **Panel de adicional/descuento** contiene:
-   - Selector "Adicional (+)" / "Descuento (–)"
-   - Input de monto + selector de moneda (UF / CLP) — siguiendo estándar CLP-primario
-   - Campo opcional "Motivo" (texto corto)
-   - Botón "Solicitar" / "Cancelar"
-3. **Al guardar** se crea una nueva línea hermana (mismo `parent_id`, mismo `name + " (Adicional)"` o `" (Descuento)"`), con `status = no_autorizado`, `amount_uf` con signo (positivo para adicional, negativo para descuento), heredando proveedor/categoría/unidad de la línea original. La línea original NO se modifica.
-4. **Listado de adicionales pendientes**: bajo la línea autorizada se muestran inline los adicionales asociados (en amarillo, con badge "No Autorizado"). Cada uno conserva sus propios botones de eliminar y de autorización (admin).
-5. **Al autorizar un adicional** (admin cambia el badge a "Autorizado"):
-   - El monto del adicional se **suma al `amount_uf` / `unit_price` de la línea original** (recalculando `unit_price = amount_uf / quantity`).
-   - El adicional queda marcado como **fusionado** (`merged_into_line_id` apuntando a la línea original) y se oculta de la vista normal, pero queda registrado en auditoría.
-   - La línea original muestra al lado del total un indicador visual: ícono **`+`** verde con tooltip "Incluye N adicional(es) por UF X / $ Y".
+## Cambios a implementar
 
-### Cambios técnicos
+### 1) Unificar la fuente de verdad del toggle
+En `src/components/budget/BudgetLineTree.tsx`:
+- eliminar la lógica de selección basada en `onMouseDown` sobre toda la fila
+- usar un único handler de selección por interacción
+- preferir una de estas dos rutas consistentes:
+  - selección solo desde la fila con `onClick`, y checkbox visual read-only
+  - o selección desde fila + checkbox, pero ambos llamando al mismo handler y evitando cualquier segundo toggle
 
-**Base de datos** (migración):
-- Agregar columnas a `budget_lines`:
-  - `is_surcharge boolean default false` — marca línea como adicional/descuento solicitado
-  - `surcharge_parent_line_id uuid references budget_lines(id)` — apunta a la línea original sobre la que se aplica
-  - `surcharge_reason text` — motivo opcional
-  - `merged_into_line_id uuid references budget_lines(id)` — al autorizar, registra fusión (la fila adicional se mantiene oculta para auditoría)
-  - `original_amount_uf numeric` — snapshot del monto original de la línea base antes de aplicar adicionales (para mostrar desglose)
-- Índice en `surcharge_parent_line_id`.
-- RLS: heredar políticas existentes de `budget_lines` (cualquier usuario con permiso de edición puede insertar adicionales; solo admin puede cambiar `status` a autorizado, vía `has_role`).
+La opción más robusta aquí es:
+- fila con `onClick`
+- checkbox controlado visualmente
+- sin `onCheckedChange` independiente que vuelva a invertir el estado
 
-**Frontend**:
-- `src/components/budget/BudgetLineTree.tsx`:
-  - Nuevo estado `showSurchargePanel` por línea autorizada.
-  - Componente inline `SurchargeRequestPanel` (input monto, moneda, tipo +/–, motivo, botones).
-  - Filtrar de la lista visible las líneas con `merged_into_line_id != null`.
-  - Renderizar adicionales pendientes (`is_surcharge && status==='no_autorizado'`) como sub-filas inmediatamente debajo de la línea original.
-  - En el badge de total de la línea original, si existen adicionales fusionados (suma > 0), añadir ícono verde `+` con tooltip que liste los adicionales aplicados (consultando líneas con `merged_into_line_id = line.id`).
-- Lógica de autorización (admin):
-  - Al hacer clic en "Autorizar" sobre una línea `is_surcharge`, ejecutar transacción:
-    1. Sumar `amount_uf` del adicional al `amount_uf` de la línea original.
-    2. Recalcular `unit_price` de la línea original (`amount_uf / quantity`).
-    3. Setear `merged_into_line_id` y `status='autorizado'` en el adicional.
-- `src/components/budget/BudgetContext.tsx` y los cálculos `calculateAuthorizedTotal` / `calculateUnauthorizedTotal`: tratar adicionales no fusionados como líneas normales (ya quedan cubiertos por el flujo actual gracias al `status`). Excluir líneas con `merged_into_line_id != null` de los totales para evitar doble conteo.
-- Tipos en `BudgetLine`: agregar campos opcionales nuevos.
+### 2) Endurecer el bloqueo de eventos internos
+En la misma fila del árbol:
+- excluir explícitamente elementos interactivos del click de selección:
+  - `button`
+  - `input`
+  - `textarea`
+  - `select`
+  - `[role="button"]`
+  - `[role="checkbox"]`
+  - `[role="combobox"]`
+  - links y elementos marcados con `data-no-select`
+- agregar `stopPropagation` también en botones/controles que hoy solo frenan `onClick`, pero no el evento previo que dispara la selección
+- asegurar que expandir/colapsar, editar nombre, cambiar proveedor, cambiar estado, abrir OC/Factura, etc. no alteren la selección
 
-### Archivos afectados
-- `supabase/migrations/<new>` (nueva migración)
+### 3) Reemplazar el checkbox problemático si sigue interfiriendo
+Si la estabilidad no queda garantizada con el ajuste anterior:
+- reemplazar el `Checkbox` de UI en modo selección por un `input type="checkbox"` nativo controlado
+- mantener el estilo visual actual para no cambiar la apariencia
+- usar `readOnly` + `pointer-events-none` si la fila será la única que togglee
+
+Esto reduce fricción con eventos sintéticos y evita el comportamiento errático del componente actual en una fila altamente interactiva.
+
+### 4) Mejorar la actualización visual para árboles grandes
+En `src/components/budget/BudgetLineTree.tsx` y `src/components/budget/BudgetModule.tsx`:
+- mantener la memoización, pero asegurar que cada ítem re-renderice solo si cambia:
+  - `selectionMode`
+  - su propio estado seleccionado
+  - su propio estado expandido
+- revisar que no se creen callbacks o props innecesariamente inestables durante la selección
+- evitar cualquier lógica adicional de fila que fuerce renders pesados al marcar una sola línea
+
+## Validación esperada
+Después del cambio:
+- al entrar en “Seleccionar líneas”, los checkboxes aparecen de inmediato
+- clic en la fila: selecciona una vez
+- clic en el checkbox: selecciona una vez
+- clic en expandir, editar, proveedor, badges o acciones: no selecciona accidentalmente
+- selección/deselección rápida de múltiples líneas funciona sin lag visible
+
+## Archivos a tocar
 - `src/components/budget/BudgetLineTree.tsx`
-- `src/components/budget/BudgetContext.tsx` (si los cálculos lo requieren)
-- `src/components/budget/BudgetModule.tsx` (carga de líneas: incluir nuevos campos en select)
+- `src/components/budget/BudgetModule.tsx`
+- opcionalmente `src/components/ui/checkbox.tsx` solo si se decide aislar o reemplazar el comportamiento del checkbox en este flujo
 
-### Notas
-- Los adicionales no autorizados se arrastran al siguiente año igual que cualquier línea `no_autorizado` (comportamiento existente).
-- Eliminar un adicional pendiente solo afecta a esa fila; la línea original queda intacta.
-- Los descuentos siguen el mismo flujo con monto negativo.
+## Detalle técnico
+Flujo recomendado:
 
+```text
+Click usuario
+  -> si el target es interactivo: no seleccionar
+  -> si no es interactivo: toggleSelection(line.id)
+  -> checkbox refleja estado, pero no dispara un segundo toggle
+```
+
+Eso elimina la carrera actual entre:
+```text
+row onMouseDown
++ checkbox onCheckedChange
++ botones internos con propagación parcial
+```
