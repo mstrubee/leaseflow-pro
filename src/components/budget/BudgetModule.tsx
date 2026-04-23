@@ -84,16 +84,45 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     const ids = Array.from(selectedLineIds);
     if (ids.length === 0) return;
     try {
-      // Persist parent_id change for every selected line. Children, OCs and
-      // invoices stay attached because they reference budget_line_id, not parent.
-      const { error } = await supabase
+      // Fetch full snapshots of the lines being moved so we can leave a "ghost"
+      // placeholder at each original position pointing to the moved line.
+      const { data: originalLines, error: fetchError } = await supabase
         .from("budget_lines")
-        .update({ parent_id: targetParentId })
+        .select("*")
         .in("id", ids);
-      if (error) throw error;
-      toast({ title: "Líneas movidas", description: `Se movieron ${ids.length} línea(s) correctamente.` });
+      if (fetchError) throw fetchError;
+
+      const userId = (await supabase.auth.getUser()).data.user?.id ?? null;
+      const movedAt = new Date().toISOString();
+
+      // 1) Update the real lines: change parent_id + record move metadata.
+      const { error: updErr } = await supabase
+        .from("budget_lines")
+        .update({ parent_id: targetParentId, moved_at: movedAt, moved_by: userId })
+        .in("id", ids);
+      if (updErr) throw updErr;
+
+      // 2) Insert ghost placeholders at the original parents — non-counting markers.
+      const ghostRows = (originalLines || []).map((orig: any) => ({
+        budget_id: orig.budget_id,
+        parent_id: orig.parent_id, // original location
+        name: orig.name,
+        description: orig.description,
+        amount_uf: 0,
+        status: orig.status,
+        display_order: orig.display_order,
+        is_ghost: true,
+        moved_to_line_id: orig.id,
+        moved_at: movedAt,
+        moved_by: userId,
+      }));
+      if (ghostRows.length > 0) {
+        const { error: ghostErr } = await supabase.from("budget_lines").insert(ghostRows);
+        if (ghostErr) throw ghostErr;
+      }
+
+      toast({ title: "Líneas movidas", description: `Se movieron ${ids.length} línea(s) y se dejó marca en su posición original.` });
       handleExitSelectionMode();
-      // Reload to rebuild tree + recalc parent/percentage totals
       const budget = budgets.find((b) => b.year === selectedYear);
       if (budget) await loadLines(budget.id);
       onRefresh?.();
