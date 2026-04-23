@@ -803,7 +803,7 @@ const BudgetLineItemInner = ({
           <span className="text-xs text-muted-foreground truncate">
             Movida a: <span className="font-medium not-italic">{destinationPath}</span>
           </span>
-          {!readOnly && isAdmin && (
+          {!effectiveReadOnly && isAdmin && (
             <Button
               variant="ghost"
               size="sm"
@@ -863,7 +863,7 @@ const BudgetLineItemInner = ({
         </button>
 
         {/* Line name - editable on double click, click to view details */}
-        {isEditingName && !readOnly ? (
+        {isEditingName && !effectiveReadOnly ? (
           <Input 
             type="text" 
             value={editName} 
@@ -896,11 +896,11 @@ const BudgetLineItemInner = ({
                    className={cn(
                      "text-sm flex-shrink-0 w-[280px] min-w-[280px] max-w-[280px] truncate", 
                      level === 0 ? "font-semibold" : "font-medium",
-                     !readOnly && "cursor-text hover:bg-accent/30 px-1 py-0.5 rounded"
+                     !effectiveReadOnly && "cursor-text hover:bg-accent/30 px-1 py-0.5 rounded"
                    )}
                    onDoubleClick={(e) => {
                     e.stopPropagation();
-                    if (!readOnly) {
+                    if (!effectiveReadOnly) {
                       setEditName(line.name);
                       setIsEditingName(true);
                     }
@@ -929,7 +929,7 @@ const BudgetLineItemInner = ({
         {/* Percentage-calculated line display */}
         {isCalcPercentage && (
           <div className="flex items-center gap-2 flex-1">
-            {isEditingPercentage && !readOnly ? (
+            {isEditingPercentage && !effectiveReadOnly ? (
               <div className="flex items-center gap-1">
                 <Input
                   type="number"
@@ -949,15 +949,15 @@ const BudgetLineItemInner = ({
                 variant="outline" 
                 className={cn(
                   "text-[10px] px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 border-amber-300 text-amber-700 dark:text-amber-300 whitespace-nowrap",
-                  !readOnly && "cursor-text hover:bg-amber-200 dark:hover:bg-amber-900/50"
+                  !effectiveReadOnly && "cursor-text hover:bg-amber-200 dark:hover:bg-amber-900/50"
                 )}
                 onDoubleClick={() => {
-                  if (!readOnly) {
+                  if (!effectiveReadOnly) {
                     setEditPercentage((line.calc_percentage || 0).toString());
                     setIsEditingPercentage(true);
                   }
                 }}
-                title={!readOnly ? "Doble clic para editar porcentaje" : undefined}
+                title={!effectiveReadOnly ? "Doble clic para editar porcentaje" : undefined}
               >
                 <Percent className="h-3 w-3 mr-0.5" />
                 {line.calc_percentage || 0}%
@@ -976,7 +976,7 @@ const BudgetLineItemInner = ({
           {/* Quantity + Unit block */}
           <div className="flex items-center gap-1 w-[140px] min-w-[140px] max-w-[140px] justify-end">
             {/* Quantity - editable on double click */}
-            {isEditingQuantity && !readOnly ? (
+            {isEditingQuantity && !effectiveReadOnly ? (
               <Input 
                 type="number" 
                 value={editQuantity} 
@@ -990,7 +990,7 @@ const BudgetLineItemInner = ({
             ) : (
               <span 
                 className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[50px] text-right cursor-text hover:bg-accent/50"
-                onDoubleClick={() => !readOnly && setIsEditingQuantity(true)}
+                onDoubleClick={() => !effectiveReadOnly && setIsEditingQuantity(true)}
                 title="Doble clic para editar"
               >
                 {line.quantity || 0}
@@ -998,7 +998,7 @@ const BudgetLineItemInner = ({
             )}
 
             {/* Unit type - editable on double click */}
-            {isEditingUnit && !readOnly ? (
+            {isEditingUnit && !effectiveReadOnly ? (
               <Select value={editUnit} onValueChange={handleSaveUnit} open={true}>
                 <SelectTrigger className="h-6 w-14 text-xs">
                   <SelectValue />
@@ -1012,7 +1012,7 @@ const BudgetLineItemInner = ({
             ) : (
               <span 
                 className="text-xs text-muted-foreground min-w-[24px] cursor-pointer hover:bg-accent/50 px-1 py-0.5 rounded"
-                onDoubleClick={() => !readOnly && setIsEditingUnit(true)}
+                onDoubleClick={() => !effectiveReadOnly && setIsEditingUnit(true)}
                 title="Doble clic para editar"
               >
                 {line.unit_type === "m2" ? "m²" : line.unit_type || "m²"}
@@ -1026,7 +1026,7 @@ const BudgetLineItemInner = ({
           {/* Currency + Price block */}
           <div className="flex items-center gap-1 w-[180px] min-w-[180px] max-w-[180px]">
             {/* Currency - editable on double click */}
-            {isEditingCurrency && !readOnly ? (
+            {isEditingCurrency && !effectiveReadOnly ? (
               <Select value={editCurrency} onValueChange={handleSaveCurrency} open={true}>
                 <SelectTrigger className="h-6 w-16 text-xs">
                   <SelectValue />
@@ -1039,7 +1039,7 @@ const BudgetLineItemInner = ({
             ) : (
               <span 
                 className="text-xs text-muted-foreground cursor-pointer hover:bg-accent/50 px-0.5 py-0.5 rounded"
-                onDoubleClick={() => !readOnly && setIsEditingCurrency(true)}
+                onDoubleClick={() => !effectiveReadOnly && setIsEditingCurrency(true)}
                 title="Doble clic para editar"
               >
                 {line.currency === "CLP" ? "$" : "UF"}/{line.unit_type || "m2"}
@@ -1047,7 +1047,7 @@ const BudgetLineItemInner = ({
             )}
 
             {/* Price - editable on double click */}
-            {isEditingPrice && !readOnly ? (
+            {isEditingPrice && !effectiveReadOnly ? (
               <Input 
                 type="number" 
                 value={editUnitPrice} 
@@ -1067,7 +1067,7 @@ const BudgetLineItemInner = ({
                     templateUnitPrice !== null ? "bg-primary/10" : "bg-muted/50"
                   )}
                   onDoubleClick={() => {
-                    if (readOnly) return;
+                    if (effectiveReadOnly) return;
                     const localP = line.unit_price || 0;
                     const dp = localP > 0 ? localP : (templateUnitPrice ?? 0);
                     setEditUnitPrice(dp.toString());
@@ -1104,7 +1104,7 @@ const BudgetLineItemInner = ({
             <div className="flex items-center gap-2 flex-1">
               {/* Multiplier - editable on double click */}
               <span className="text-xs text-muted-foreground">×</span>
-              {isEditingQuantity && !readOnly ? (
+              {isEditingQuantity && !effectiveReadOnly ? (
                 <Input 
                   type="number" 
                   value={editQuantity} 
@@ -1118,7 +1118,7 @@ const BudgetLineItemInner = ({
               ) : (
                 <span 
                   className="text-xs font-mono bg-muted/30 px-1.5 py-0.5 rounded min-w-[30px] text-center cursor-text hover:bg-accent/50"
-                  onDoubleClick={() => !readOnly && setIsEditingQuantity(true)}
+                  onDoubleClick={() => !effectiveReadOnly && setIsEditingQuantity(true)}
                   title="Doble clic para editar"
                 >
                   {multiplier}
@@ -1166,7 +1166,7 @@ const BudgetLineItemInner = ({
           </span>
           {(
             (!isParent && mergedSurcharges.length > 0) ||
-            (!isParent && !isSurchargeRow && line.status === "autorizado" && !readOnly)
+            (!isParent && !isSurchargeRow && line.status === "autorizado" && !effectiveReadOnly)
           ) && (
             <div className="flex flex-col items-center gap-0.5">
               {!isParent && mergedSurcharges.length > 0 && (
@@ -1186,7 +1186,7 @@ const BudgetLineItemInner = ({
                       mergedSurcharges={mergedSurcharges}
                       ufValue={ufValue}
                       isAdmin={isAdmin}
-                      readOnly={readOnly}
+                      effectiveReadOnly={effectiveReadOnly}
                       onUpdateLine={onUpdateLine}
                       onDeleteLine={onDeleteLine}
                     />
@@ -1235,7 +1235,7 @@ const BudgetLineItemInner = ({
             </TooltipProvider>}
           
           {/* View details button - for leaf lines */}
-          {!isParent && !readOnly && onViewLineDetails && (
+          {!isParent && !effectiveReadOnly && onViewLineDetails && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -1255,16 +1255,16 @@ const BudgetLineItemInner = ({
           )}
 
           {/* Supplier dropdown - for all lines (parent and leaf) */}
-          {!readOnly && (
+          {!effectiveReadOnly && (
             <SupplierSelect
               value={line.supplier_id || null}
               onChange={handleSupplierChange}
               templateLineId={line.template_line_id}
               categoryId={line.category_id || parentCategoryId}
-              disabled={readOnly}
+              disabled={effectiveReadOnly}
             />
           )}
-          {readOnly && !compactView && line.supplier_name && (
+          {effectiveReadOnly && !compactView && line.supplier_name && (
             <span className="text-xs bg-muted/30 px-1.5 py-0.5 rounded truncate max-w-[140px]">
               {line.supplier_name}
             </span>
@@ -1280,13 +1280,13 @@ const BudgetLineItemInner = ({
             <ProgressStatusBadge
               lineId={line.id}
               currentStatusId={line.progress_status_id}
-              readOnly={readOnly}
+              effectiveReadOnly={effectiveReadOnly}
               isParent={isParent}
             />
           )}
 
           {/* OC Request, OC and Invoice buttons - only for authorized leaf lines (not for internal transfers) */}
-          {!isParent && line.status === "autorizado" && !readOnly && !isInternalTransfer && (
+          {!isParent && line.status === "autorizado" && !effectiveReadOnly && !isInternalTransfer && (
             <div className="flex items-center gap-1 ml-2">
               {onCreateOCRequest && (
                 <TooltipProvider>
@@ -1345,7 +1345,7 @@ const BudgetLineItemInner = ({
             </div>
           )}
 
-          {!readOnly && <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5">
+          {!effectiveReadOnly && <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5">
               <Button size="sm" variant="ghost" onClick={() => onAddLine(line.id)} className="h-6 w-6 p-0">
                 <Plus className="h-3 w-3" />
               </Button>
