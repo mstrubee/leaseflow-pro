@@ -939,7 +939,7 @@ export function PatentChecklist({
                     </TableHeader>
                     <TableBody>
                       {(itemsBySection[section.id] || []).filter(item => {
-                        if (!hideNoAplica) return true;
+                        if (!hiddenNoAplicaSections.has(section.id)) return true;
                         const sharedFolderId = sharedItemLookup[item.id];
                         const hasSharedFiles = sharedFolderId && (sharedFilesCache[sharedFolderId]?.length || 0) > 0;
                         const rawStatus = getDocValue(item.id, 'status') as PatentDocStatus || 'pendiente';
