@@ -332,6 +332,36 @@ const BudgetLineItemInner = ({
   const hasChildren = line.children && line.children.length > 0;
   const isParent = hasChildren;
   const isCalcPercentage = line.calc_type === "percentage";
+  const isSurchargeRow = !!line.is_surcharge;
+
+  // Pending surcharges for this line (sibling rows with surcharge_parent_line_id pointing here)
+  const pendingSurcharges = useMemo(() => {
+    if (isSurchargeRow || isParent) return [];
+    const arr: BudgetLine[] = [];
+    linesMap.forEach((l) => {
+      if (l.is_surcharge && l.surcharge_parent_line_id === line.id && !l.merged_into_line_id) {
+        arr.push(l);
+      }
+    });
+    return arr;
+  }, [linesMap, line.id, isSurchargeRow, isParent]);
+
+  // Merged surcharges already folded into this line (for indicator)
+  const mergedSurcharges = useMemo(() => {
+    if (isSurchargeRow || isParent) return [];
+    const arr: BudgetLine[] = [];
+    linesMap.forEach((l) => {
+      if (l.is_surcharge && l.merged_into_line_id === line.id) {
+        arr.push(l);
+      }
+    });
+    return arr;
+  }, [linesMap, line.id, isSurchargeRow, isParent]);
+
+  const mergedSurchargeTotalUf = useMemo(
+    () => mergedSurcharges.reduce((sum, s) => sum + (s.amount_uf || 0), 0),
+    [mergedSurcharges]
+  );
 
   // For percentage lines, find source line name from allLines
   const calcSourceName = useMemo(() => {
