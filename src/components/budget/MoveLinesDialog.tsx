@@ -49,6 +49,24 @@ export const MoveLinesDialog = ({ open, onOpenChange, lines, selectedIds, onConf
   const [targetId, setTargetId] = useState<string | null>(null); // null = root
   const [submitting, setSubmitting] = useState(false);
 
+  // Find the currently-selected line(s) info: name + current parent_id.
+  // Useful when moving a single line so we can show "actual" badge on its current parent.
+  const { selectedLineName, currentParentIds } = useMemo(() => {
+    const parents = new Set<string | null>();
+    let name: string | null = null;
+    const walk = (items: BudgetLine[], parentId: string | null) => {
+      items.forEach((it) => {
+        if (selectedIds.includes(it.id)) {
+          parents.add(parentId);
+          if (selectedIds.length === 1) name = it.name;
+        }
+        if (it.children?.length) walk(it.children, it.id);
+      });
+    };
+    walk(lines, null);
+    return { selectedLineName: name, currentParentIds: parents };
+  }, [lines, selectedIds]);
+
   // Build set of forbidden destinations: each selected line + all its descendants
   // (cannot move a line into itself or any of its children — would create a cycle).
   const forbiddenIds = useMemo(() => {
