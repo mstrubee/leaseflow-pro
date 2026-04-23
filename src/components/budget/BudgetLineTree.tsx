@@ -1058,6 +1058,24 @@ const BudgetLineItemInner = ({
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
+          {!isParent && !isSurchargeRow && line.status === "autorizado" && !readOnly && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={(e) => { e.stopPropagation(); setShowSurchargePanel(v => !v); }}
+                    className="h-6 w-6 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                  >
+                    <PlusCircle className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Solicitar adicional o descuento</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
           {isNotAuthorized && !compactView && <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
