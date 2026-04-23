@@ -636,8 +636,7 @@ const BudgetLineItemInner = ({
       toast.success(surchargeType === "discount" ? "Descuento solicitado" : "Adicional solicitado");
       resetSurchargeForm();
       setShowSurchargePanel(false);
-      // Trigger a refresh by emitting a no-op update on the base line — parent will reload lines
-      onUpdateLine(line.id, {});
+      onReload?.();
     } catch (err: any) {
       toast.error(err?.message || "Error al solicitar adicional");
     } finally {
