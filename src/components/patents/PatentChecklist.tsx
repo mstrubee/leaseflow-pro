@@ -857,30 +857,36 @@ export function PatentChecklist({
         <Collapsible key={section.id} open={isSectionExpanded} onOpenChange={() => toggleSection(section.id)}>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between py-3">
-              <CollapsibleTrigger asChild>
-                <Button variant="ghost" className="flex items-center gap-2 p-0 h-auto hover:bg-transparent">
-                  <ChevronDown className={`h-5 w-5 transition-transform duration-200 ${isSectionExpanded ? '' : '-rotate-90'}`} />
-                  <CardTitle className="text-lg">{section.name}</CardTitle>
-                  {someSectionSelected && (
-                    <Badge variant="secondary" className="ml-2">
-                      {sectionItems.filter(i => selectedItems.has(i.id)).length} seleccionados
-                    </Badge>
-                  )}
-                </Button>
-              </CollapsibleTrigger>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-2">
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" className="flex items-center gap-2 p-0 h-auto hover:bg-transparent">
+                    <ChevronDown className={`h-5 w-5 transition-transform duration-200 ${isSectionExpanded ? '' : '-rotate-90'}`} />
+                    <CardTitle className="text-lg">{section.name}</CardTitle>
+                    {someSectionSelected && (
+                      <Badge variant="secondary" className="ml-2">
+                        {sectionItems.filter(i => selectedItems.has(i.id)).length} seleccionados
+                      </Badge>
+                    )}
+                  </Button>
+                </CollapsibleTrigger>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setHideNoAplica(prev => !prev);
+                    toggleHideNoAplica(section.id);
                   }}
-                  title={hideNoAplica ? "Mostrar líneas 'No Aplica'" : "Ocultar líneas 'No Aplica'"}
-                  className="h-8 w-8 p-0"
+                  className="gap-1 h-8"
                 >
-                  {hideNoAplica ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {hiddenNoAplicaSections.has(section.id) ? (
+                    <><Eye className="h-4 w-4" /> Ver todas</>
+                  ) : (
+                    <><EyeOff className="h-4 w-4" /> Ocultar "no aplicantes"</>
+                  )}
                 </Button>
+              </div>
+              <div className="flex items-center gap-1">
+
                 {isAdmin && (
                   <Button
                     variant="ghost"
