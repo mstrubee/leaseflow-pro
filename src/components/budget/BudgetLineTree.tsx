@@ -1021,18 +1021,19 @@ const BudgetLineItemInner = ({
               return formatUF(isParent ? calculatedAmountWithSurcharges : (line.currency === "CLP" && ufValue > 0 ? lineTotal / ufValue : lineTotal));
             })()}
           </span>
-          <span className="text-[12px] text-muted-foreground font-mono whitespace-nowrap min-w-[100px] text-right">
-            {(() => {
-              if (isCalcPercentage) return formatCLP(convertUFToPesos(calculatedAmount));
-              if (!isParent && line.currency === "CLP") {
-                const qty = line.quantity || 0;
-                const localP = line.unit_price || 0;
-                const price = localP > 0 ? localP : (templateUnitPrice ?? 0);
-                return formatCLP(qty * price);
-              }
-              return formatCLP(convertUFToPesos(calculatedAmountWithSurcharges));
-            })()}
-          </span>
+          {!isParent && mergedSurcharges.length > 0 && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PlusCircle className="h-3.5 w-3.5 text-green-600" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  Incluye {mergedSurcharges.length} adicional{mergedSurcharges.length > 1 ? "es" : ""} por UF {mergedSurchargeTotalUf.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+                  {ufValue > 0 && <> ($ {Math.round(mergedSurchargeTotalUf * ufValue).toLocaleString("es-CL")})</>}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
