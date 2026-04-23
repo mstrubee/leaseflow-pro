@@ -1280,7 +1280,7 @@ const BudgetLineItemInner = ({
             <ProgressStatusBadge
               lineId={line.id}
               currentStatusId={line.progress_status_id}
-              effectiveReadOnly={effectiveReadOnly}
+              readOnly={effectiveReadOnly}
               isParent={isParent}
             />
           )}
