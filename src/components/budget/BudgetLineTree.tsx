@@ -1325,54 +1325,17 @@ const BudgetLineItemInner = ({
       {/* Pending surcharge requests rendered inline under their base line */}
       {pendingSurcharges.length > 0 && (
         <div className="ml-8 mt-1 space-y-1">
-          {pendingSurcharges.map((sl) => {
-            const isAdd = (sl.amount_uf || 0) >= 0;
-            const absUf = Math.abs(sl.amount_uf || 0);
-            return (
-              <div
-                key={sl.id}
-                className="flex items-center gap-2 py-1 px-2 rounded-md bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-900/50 text-xs"
-              >
-                {isAdd ? (
-                  <PlusCircle className="h-3.5 w-3.5 text-amber-600 flex-shrink-0" />
-                ) : (
-                  <MinusCircle className="h-3.5 w-3.5 text-red-600 flex-shrink-0" />
-                )}
-                <span className="font-medium truncate max-w-[280px]">{sl.name}</span>
-                {sl.surcharge_reason && (
-                  <span className="text-muted-foreground italic truncate max-w-[200px]">— {sl.surcharge_reason}</span>
-                )}
-                <span className="ml-auto font-mono whitespace-nowrap text-destructive">
-                  {isAdd ? "+" : "−"} {formatUF(absUf)}
-                </span>
-                <span className="font-mono whitespace-nowrap text-muted-foreground">
-                  {isAdd ? "+" : "−"} {formatCLP(convertUFToPesos(absUf))}
-                </span>
-                <Badge
-                  className={cn(
-                    "text-[10px] px-2 py-0 whitespace-nowrap bg-yellow-500 hover:bg-yellow-600 text-white",
-                    isAdmin && "cursor-pointer"
-                  )}
-                  onClick={() => {
-                    if (!isAdmin) return;
-                    onUpdateLine(sl.id, { status: "autorizado" });
-                  }}
-                >
-                  No Autorizado
-                </Badge>
-                {!readOnly && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => onDeleteLine(sl.id)}
-                    className="h-6 w-6 p-0 text-destructive"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                )}
-              </div>
-            );
-          })}
+          {pendingSurcharges.map((sl) => (
+            <PendingSurchargeRow
+              key={sl.id}
+              line={sl}
+              readOnly={readOnly}
+              isAdmin={isAdmin}
+              ufValue={ufValue}
+              onUpdateLine={onUpdateLine}
+              onDeleteLine={onDeleteLine}
+            />
+          ))}
         </div>
       )}
 
@@ -1591,4 +1554,187 @@ export const hasDescendants = (items: BudgetLine[], targetId: string): boolean =
   };
   const item = findItem(items);
   return item !== null && item.children !== undefined && item.children.length > 0;
+};
+
+// ============== Pending surcharge inline editable row ==============
+interface PendingSurchargeRowProps {
+  line: BudgetLine;
+  readOnly?: boolean;
+  isAdmin: boolean;
+  ufValue: number;
+  onUpdateLine: (id: string, updates: Partial<BudgetLine>) => void;
+  onDeleteLine: (id: string) => void;
+}
+
+const PendingSurchargeRow = ({ line, readOnly, isAdmin, ufValue, onUpdateLine, onDeleteLine }: PendingSurchargeRowProps) => {
+  const isAdd = (line.amount_uf || 0) >= 0;
+  const sign = isAdd ? 1 : -1;
+  const absUf = Math.abs(line.amount_uf || 0);
+
+  const [editingName, setEditingName] = useState(false);
+  const [name, setName] = useState(line.name);
+  const [editingReason, setEditingReason] = useState(false);
+  const [reason, setReason] = useState(line.surcharge_reason || "");
+  const [editingAmount, setEditingAmount] = useState(false);
+  const [amountCurrency, setAmountCurrency] = useState<"UF" | "CLP">((line.currency as "UF" | "CLP") || "UF");
+  const [amountValue, setAmountValue] = useState<string>(
+    amountCurrency === "CLP" && ufValue > 0
+      ? Math.round(absUf * ufValue).toString()
+      : absUf.toString()
+  );
+
+  useEffect(() => { setName(line.name); }, [line.name]);
+  useEffect(() => { setReason(line.surcharge_reason || ""); }, [line.surcharge_reason]);
+
+  const formatUFLocal = (n: number) => `UF ${n.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const formatCLPLocal = (n: number) => `$ ${Math.round(n).toLocaleString("es-CL")}`;
+
+  const commitName = () => {
+    const trimmed = name.trim();
+    if (trimmed && trimmed !== line.name) {
+      onUpdateLine(line.id, { name: trimmed });
+    } else {
+      setName(line.name);
+    }
+    setEditingName(false);
+  };
+  const commitReason = () => {
+    if (reason !== (line.surcharge_reason || "")) {
+      onUpdateLine(line.id, { surcharge_reason: reason || null } as any);
+    }
+    setEditingReason(false);
+  };
+  const commitAmount = () => {
+    const raw = parseFloat(amountValue.replace(/\./g, "").replace(",", "."));
+    if (isNaN(raw) || raw < 0) {
+      setEditingAmount(false);
+      return;
+    }
+    let uf = raw;
+    if (amountCurrency === "CLP") {
+      if (!ufValue || ufValue <= 0) {
+        setEditingAmount(false);
+        return;
+      }
+      uf = raw / ufValue;
+    }
+    const signed = sign * uf;
+    onUpdateLine(line.id, { amount_uf: signed, currency: amountCurrency } as any);
+    setEditingAmount(false);
+  };
+
+  return (
+    <div className="flex items-center gap-2 py-1 px-2 rounded-md bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-900/50 text-xs">
+      {isAdd ? (
+        <PlusCircle className="h-3.5 w-3.5 text-amber-600 flex-shrink-0" />
+      ) : (
+        <MinusCircle className="h-3.5 w-3.5 text-red-600 flex-shrink-0" />
+      )}
+
+      {editingName && !readOnly ? (
+        <Input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={commitName}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitName();
+            else if (e.key === "Escape") { setName(line.name); setEditingName(false); }
+          }}
+          className="h-6 text-xs max-w-[280px]"
+        />
+      ) : (
+        <span
+          className={cn("font-medium truncate max-w-[280px]", !readOnly && "cursor-text hover:bg-accent/50 rounded px-1")}
+          onDoubleClick={() => !readOnly && setEditingName(true)}
+          title={readOnly ? line.name : "Doble clic para editar nombre"}
+        >
+          {line.name}
+        </span>
+      )}
+
+      {editingReason && !readOnly ? (
+        <Input
+          autoFocus
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          onBlur={commitReason}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitReason();
+            else if (e.key === "Escape") { setReason(line.surcharge_reason || ""); setEditingReason(false); }
+          }}
+          placeholder="Motivo (opcional)"
+          className="h-6 text-xs max-w-[220px]"
+        />
+      ) : (
+        <span
+          className={cn("text-muted-foreground italic truncate max-w-[200px]", !readOnly && "cursor-text hover:bg-accent/50 rounded px-1")}
+          onDoubleClick={() => !readOnly && setEditingReason(true)}
+          title={readOnly ? "" : "Doble clic para editar motivo"}
+        >
+          {line.surcharge_reason ? `— ${line.surcharge_reason}` : (!readOnly ? "— (agregar motivo)" : "")}
+        </span>
+      )}
+
+      {editingAmount && !readOnly ? (
+        <div className="ml-auto flex items-center gap-1">
+          <Input
+            autoFocus
+            type="text"
+            value={amountValue}
+            onChange={(e) => setAmountValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitAmount();
+              else if (e.key === "Escape") setEditingAmount(false);
+            }}
+            className="h-6 text-xs w-24"
+          />
+          <Select value={amountCurrency} onValueChange={(v: "UF" | "CLP") => setAmountCurrency(v)}>
+            <SelectTrigger className="h-6 w-16 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="UF">UF</SelectItem>
+              <SelectItem value="CLP">$</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button size="sm" variant="ghost" onClick={commitAmount} className="h-6 px-2 text-xs">OK</Button>
+        </div>
+      ) : (
+        <span
+          className={cn("ml-auto font-mono whitespace-nowrap text-destructive", !readOnly && "cursor-text hover:bg-accent/50 rounded px-1")}
+          onDoubleClick={() => !readOnly && setEditingAmount(true)}
+          title={readOnly ? "" : "Doble clic para editar monto"}
+        >
+          {isAdd ? "+" : "−"} {formatUFLocal(absUf)}
+        </span>
+      )}
+
+      <span className="font-mono whitespace-nowrap text-muted-foreground">
+        {isAdd ? "+" : "−"} {formatCLPLocal(absUf * (ufValue || 0))}
+      </span>
+
+      <Badge
+        className={cn(
+          "text-[10px] px-2 py-0 whitespace-nowrap bg-yellow-500 hover:bg-yellow-600 text-white",
+          isAdmin && "cursor-pointer"
+        )}
+        onClick={() => {
+          if (!isAdmin) return;
+          onUpdateLine(line.id, { status: "autorizado" });
+        }}
+      >
+        No Autorizado
+      </Badge>
+
+      {!readOnly && (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => onDeleteLine(line.id)}
+          className="h-6 w-6 p-0 text-destructive"
+        >
+          <Trash2 className="h-3 w-3" />
+        </Button>
+      )}
+    </div>
+  );
 };
