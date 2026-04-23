@@ -226,7 +226,20 @@ export function PatentChecklist({
   // Bulk selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [bulkStatusDialogOpen, setBulkStatusDialogOpen] = useState(false);
-  const [hideNoAplica, setHideNoAplica] = useState(false);
+  const [hiddenNoAplicaSections, setHiddenNoAplicaSections] = useState<Set<string>>(new Set());
+  const toggleHideNoAplica = (sectionId: string) => {
+    setHiddenNoAplicaSections(prev => {
+      const next = new Set(prev);
+      if (next.has(sectionId)) next.delete(sectionId);
+      else next.add(sectionId);
+      return next;
+    });
+  };
+  const allSectionsHidden = sections.length > 0 && sections.every(s => hiddenNoAplicaSections.has(s.id));
+  const toggleHideAllNoAplica = () => {
+    if (allSectionsHidden) setHiddenNoAplicaSections(new Set());
+    else setHiddenNoAplicaSections(new Set(sections.map(s => s.id)));
+  };
   
   // Unsaved changes confirmation dialog
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
