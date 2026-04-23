@@ -1182,11 +1182,17 @@ const getEffectiveAmount = (
   ufValue?: number,
   internalTransferSupplierIds?: Set<string>,
 ): number => {
+  // Merged surcharges have already been folded into their base line — skip to avoid double count
+  if (item.merged_into_line_id) return 0;
   if (item.supplier_id && internalTransferSupplierIds?.has(item.supplier_id)) {
     return 0;
   }
   // Percentage-calculated lines use their stored amount_uf directly
   if (item.calc_type === "percentage") {
+    return item.amount_uf || 0;
+  }
+  // Surcharge requests store their own signed amount in amount_uf
+  if (item.is_surcharge) {
     return item.amount_uf || 0;
   }
   const qty = item.quantity || 0;
