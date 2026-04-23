@@ -405,8 +405,12 @@ export type Database = {
           description: string | null
           display_order: number | null
           id: string
+          is_ghost: boolean
           is_surcharge: boolean
           merged_into_line_id: string | null
+          moved_at: string | null
+          moved_by: string | null
+          moved_to_line_id: string | null
           name: string
           original_amount_uf: number | null
           parent_id: string | null
@@ -436,8 +440,12 @@ export type Database = {
           description?: string | null
           display_order?: number | null
           id?: string
+          is_ghost?: boolean
           is_surcharge?: boolean
           merged_into_line_id?: string | null
+          moved_at?: string | null
+          moved_by?: string | null
+          moved_to_line_id?: string | null
           name: string
           original_amount_uf?: number | null
           parent_id?: string | null
@@ -467,8 +475,12 @@ export type Database = {
           description?: string | null
           display_order?: number | null
           id?: string
+          is_ghost?: boolean
           is_surcharge?: boolean
           merged_into_line_id?: string | null
+          moved_at?: string | null
+          moved_by?: string | null
+          moved_to_line_id?: string | null
           name?: string
           original_amount_uf?: number | null
           parent_id?: string | null
@@ -509,6 +521,13 @@ export type Database = {
           {
             foreignKeyName: "budget_lines_merged_into_line_id_fkey"
             columns: ["merged_into_line_id"]
+            isOneToOne: false
+            referencedRelation: "budget_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_lines_moved_to_line_id_fkey"
+            columns: ["moved_to_line_id"]
             isOneToOne: false
             referencedRelation: "budget_lines"
             referencedColumns: ["id"]
