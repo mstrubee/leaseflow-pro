@@ -1186,7 +1186,7 @@ const BudgetLineItemInner = ({
                       mergedSurcharges={mergedSurcharges}
                       ufValue={ufValue}
                       isAdmin={isAdmin}
-                      effectiveReadOnly={effectiveReadOnly}
+                      readOnly={effectiveReadOnly}
                       onUpdateLine={onUpdateLine}
                       onDeleteLine={onDeleteLine}
                     />
