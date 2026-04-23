@@ -1132,6 +1132,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
               selectionMode={selectionMode}
               selectedIds={selectedLineIds}
               onToggleSelect={handleToggleSelectLine}
+              onReload={() => currentBudget && loadLines(currentBudget.id)}
             />
 
             <MoveLinesDialog
