@@ -34,8 +34,9 @@ const flattenParents = (lines: BudgetLine[], depth: number, parentPath: string, 
   // Sort same way as the tree (display_order)
   const sorted = [...lines].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
   sorted.forEach((line) => {
+    // Skip ghosts and merged surcharges — they aren't valid move destinations
+    if (line.is_ghost || line.merged_into_line_id) return;
     const path = parentPath ? `${parentPath} › ${line.name}` : line.name;
-    // Only parent-capable lines: any line can be a parent (we allow nesting freely)
     acc.push({ id: line.id, name: line.name, depth, path });
     if (line.children?.length) {
       flattenParents(line.children, depth + 1, path, acc);
