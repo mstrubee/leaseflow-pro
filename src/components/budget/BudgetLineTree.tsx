@@ -1352,10 +1352,21 @@ const BudgetLineItemInner = ({
           )}
 
           {!effectiveReadOnly && <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5">
-              <Button size="sm" variant="ghost" onClick={() => onAddLine(line.id)} className="h-6 w-6 p-0">
+              <Button size="sm" variant="ghost" onClick={() => onAddLine(line.id)} className="h-6 w-6 p-0" title="Agregar línea hija">
                 <Plus className="h-3 w-3" />
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(true)} className="h-6 w-6 p-0 text-destructive">
+              {onMoveLine && !line.is_ghost && !line.merged_into_line_id && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onMoveLine(line.id)}
+                  className="h-6 w-6 p-0 text-muted-foreground hover:text-primary"
+                  title="Mover bajo otra línea madre"
+                >
+                  <CornerDownRight className="h-3 w-3" />
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(true)} className="h-6 w-6 p-0 text-destructive" title="Eliminar línea">
                 <Trash2 className="h-3 w-3" />
               </Button>
             </div>}
