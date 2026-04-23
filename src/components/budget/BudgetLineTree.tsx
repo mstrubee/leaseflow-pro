@@ -1708,7 +1708,16 @@ const PendingSurchargeRow = ({ line, readOnly, isAdmin, ufValue, onUpdateLine, o
         </span>
       )}
 
-      <span className="font-mono whitespace-nowrap text-muted-foreground">
+      <span
+        className={cn("font-mono whitespace-nowrap text-muted-foreground", !readOnly && "cursor-text hover:bg-accent/50 rounded px-1")}
+        onDoubleClick={() => {
+          if (readOnly) return;
+          setAmountCurrency("CLP");
+          setAmountValue(Math.round(absUf * (ufValue || 0)).toString());
+          setEditingAmount(true);
+        }}
+        title={readOnly ? "" : "Doble clic para editar monto en $"}
+      >
         {isAdd ? "+" : "−"} {formatCLPLocal(absUf * (ufValue || 0))}
       </span>
 
