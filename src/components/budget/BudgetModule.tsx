@@ -82,7 +82,11 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
 
   const handleConfirmMove = useCallback(async (targetParentId: string | null) => {
     const ids = Array.from(selectedLineIds);
-    if (ids.length === 0) return;
+    console.log("[MOVE] Starting move", { ids, targetParentId });
+    if (ids.length === 0) {
+      toast({ variant: "destructive", title: "Sin selección", description: "No hay líneas seleccionadas para mover." });
+      return;
+    }
     try {
       // Fetch full snapshots of the lines being moved so we can leave a "ghost"
       // placeholder at each original position pointing to the moved line.
@@ -91,16 +95,22 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
         .select("*")
         .in("id", ids);
       if (fetchError) throw fetchError;
+      console.log("[MOVE] Fetched originals", originalLines?.length);
 
       const userId = (await supabase.auth.getUser()).data.user?.id ?? null;
       const movedAt = new Date().toISOString();
 
       // 1) Update the real lines: change parent_id + record move metadata.
-      const { error: updErr } = await supabase
+      const { data: updated, error: updErr } = await supabase
         .from("budget_lines")
         .update({ parent_id: targetParentId, moved_at: movedAt, moved_by: userId })
-        .in("id", ids);
+        .in("id", ids)
+        .select("id");
       if (updErr) throw updErr;
+      console.log("[MOVE] Updated rows", updated?.length);
+      if (!updated || updated.length === 0) {
+        throw new Error("No se actualizó ninguna línea (posible problema de permisos).");
+      }
 
       // 2) Insert ghost placeholders at the original parents — non-counting markers.
       const ghostRows = (originalLines || []).map((orig: any) => ({
@@ -117,8 +127,15 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
         moved_by: userId,
       }));
       if (ghostRows.length > 0) {
-        const { error: ghostErr } = await supabase.from("budget_lines").insert(ghostRows);
-        if (ghostErr) throw ghostErr;
+        const { data: ghostData, error: ghostErr } = await supabase
+          .from("budget_lines")
+          .insert(ghostRows)
+          .select("id");
+        if (ghostErr) {
+          console.error("[MOVE] Ghost insert failed", ghostErr);
+          throw ghostErr;
+        }
+        console.log("[MOVE] Inserted ghosts", ghostData?.length);
       }
 
       toast({ title: "Líneas movidas", description: `Se movieron ${ids.length} línea(s) y se dejó marca en su posición original.` });
@@ -127,6 +144,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
       if (budget) await loadLines(budget.id);
       onRefresh?.();
     } catch (err: any) {
+      console.error("[MOVE] Failed", err);
       toast({ variant: "destructive", title: "Error al mover", description: err?.message || "No se pudieron mover las líneas." });
     }
   }, [selectedLineIds, budgets, selectedYear, onRefresh, handleExitSelectionMode]);
