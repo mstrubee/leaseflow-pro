@@ -405,13 +405,18 @@ export type Database = {
           description: string | null
           display_order: number | null
           id: string
+          is_surcharge: boolean
+          merged_into_line_id: string | null
           name: string
+          original_amount_uf: number | null
           parent_id: string | null
           progress_status_id: string | null
           quantity: number | null
           status: string
           supplier_id: string | null
           supplier_name: string | null
+          surcharge_parent_line_id: string | null
+          surcharge_reason: string | null
           template_line_id: string | null
           unit_price: number | null
           unit_type: string | null
@@ -431,13 +436,18 @@ export type Database = {
           description?: string | null
           display_order?: number | null
           id?: string
+          is_surcharge?: boolean
+          merged_into_line_id?: string | null
           name: string
+          original_amount_uf?: number | null
           parent_id?: string | null
           progress_status_id?: string | null
           quantity?: number | null
           status?: string
           supplier_id?: string | null
           supplier_name?: string | null
+          surcharge_parent_line_id?: string | null
+          surcharge_reason?: string | null
           template_line_id?: string | null
           unit_price?: number | null
           unit_type?: string | null
@@ -457,13 +467,18 @@ export type Database = {
           description?: string | null
           display_order?: number | null
           id?: string
+          is_surcharge?: boolean
+          merged_into_line_id?: string | null
           name?: string
+          original_amount_uf?: number | null
           parent_id?: string | null
           progress_status_id?: string | null
           quantity?: number | null
           status?: string
           supplier_id?: string | null
           supplier_name?: string | null
+          surcharge_parent_line_id?: string | null
+          surcharge_reason?: string | null
           template_line_id?: string | null
           unit_price?: number | null
           unit_type?: string | null
@@ -492,6 +507,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "budget_lines_merged_into_line_id_fkey"
+            columns: ["merged_into_line_id"]
+            isOneToOne: false
+            referencedRelation: "budget_lines"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "budget_lines_parent_id_fkey"
             columns: ["parent_id"]
             isOneToOne: false
@@ -510,6 +532,13 @@ export type Database = {
             columns: ["supplier_id"]
             isOneToOne: false
             referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_lines_surcharge_parent_line_id_fkey"
+            columns: ["surcharge_parent_line_id"]
+            isOneToOne: false
+            referencedRelation: "budget_lines"
             referencedColumns: ["id"]
           },
           {

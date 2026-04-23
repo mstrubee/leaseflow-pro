@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Trash2, ArrowRight, FileText, Receipt, ClipboardList, AlertTriangle, Percent, PlusCircle, MinusCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +46,11 @@ export interface BudgetLine {
   calc_source_line_id?: string | null;
   calc_percentage?: number | null;
   progress_status_id?: string | null;
+  is_surcharge?: boolean;
+  surcharge_parent_line_id?: string | null;
+  surcharge_reason?: string | null;
+  merged_into_line_id?: string | null;
+  original_amount_uf?: number | null;
   children?: BudgetLine[];
 }
 
@@ -124,6 +129,8 @@ interface BudgetLineTreeProps {
   selectionMode?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
+  /** Called after async operations that change line structure (e.g. surcharge add/authorize) */
+  onReload?: () => void;
 }
 export const BudgetLineTree = ({
   lines,
@@ -148,6 +155,7 @@ export const BudgetLineTree = ({
   selectionMode = false,
   selectedIds,
   onToggleSelect,
+  onReload,
 }: BudgetLineTreeProps) => {
   // Build linesMap only at root level (level === 0), pass down to children
   const rootLinesMap = useMemo(() => {
@@ -166,7 +174,10 @@ export const BudgetLineTree = ({
   const effectiveLinesMap = externalLinesMap || rootLinesMap || EMPTY_LINES_MAP;
 
   const sortedLines = useMemo(() => {
-    return [...lines].sort((a, b) => {
+    // Hide surcharge requests (they render inline under their base line) and merged surcharges
+    return [...lines]
+      .filter(l => !l.is_surcharge && !l.merged_into_line_id)
+      .sort((a, b) => {
       // "Proyectos" always first (only in compact view)
       if (compactView) {
         const aIsProyectos = a.name.toLowerCase() === "proyectos";
@@ -210,6 +221,7 @@ export const BudgetLineTree = ({
         selectionMode={selectionMode}
         selectedIds={selectedIds}
         onToggleSelect={onToggleSelect}
+        onReload={onReload}
       />)}
       {level === 0 && !readOnly && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
@@ -240,6 +252,7 @@ interface BudgetLineItemProps {
   selectionMode?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
+  onReload?: () => void;
 }
 
 const countDescendants = (line: BudgetLine): number => {
@@ -270,6 +283,7 @@ const BudgetLineItemInner = ({
   selectionMode = false,
   selectedIds,
   onToggleSelect,
+  onReload,
 }: BudgetLineItemProps) => {
   const isSelected = !!(selectedIds && selectedIds.has(line.id));
   const isInternalTransfer = !!(line.supplier_id && internalTransferSupplierIds?.has(line.supplier_id));
@@ -294,6 +308,12 @@ const BudgetLineItemInner = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showSupplierPropagation, setShowSupplierPropagation] = useState(false);
   const [pendingSupplierChange, setPendingSupplierChange] = useState<{ supplierId: string | null; supplierName: string | null } | null>(null);
+  const [showSurchargePanel, setShowSurchargePanel] = useState(false);
+  const [surchargeType, setSurchargeType] = useState<"add" | "discount">("add");
+  const [surchargeAmount, setSurchargeAmount] = useState("");
+  const [surchargeCurrency, setSurchargeCurrency] = useState<"CLP" | "UF">("CLP");
+  const [surchargeReason, setSurchargeReason] = useState("");
+  const [savingSurcharge, setSavingSurcharge] = useState(false);
   const [editName, setEditName] = useState(line.name);
   const [editQuantity, setEditQuantity] = useState((line.quantity || 0).toString());
   const [editUnitPrice, setEditUnitPrice] = useState((line.unit_price || 0).toString());
@@ -318,6 +338,36 @@ const BudgetLineItemInner = ({
   const hasChildren = line.children && line.children.length > 0;
   const isParent = hasChildren;
   const isCalcPercentage = line.calc_type === "percentage";
+  const isSurchargeRow = !!line.is_surcharge;
+
+  // Pending surcharges for this line (sibling rows with surcharge_parent_line_id pointing here)
+  const pendingSurcharges = useMemo(() => {
+    if (isSurchargeRow || isParent) return [];
+    const arr: BudgetLine[] = [];
+    linesMap.forEach((l) => {
+      if (l.is_surcharge && l.surcharge_parent_line_id === line.id && !l.merged_into_line_id) {
+        arr.push(l);
+      }
+    });
+    return arr;
+  }, [linesMap, line.id, isSurchargeRow, isParent]);
+
+  // Merged surcharges already folded into this line (for indicator)
+  const mergedSurcharges = useMemo(() => {
+    if (isSurchargeRow || isParent) return [];
+    const arr: BudgetLine[] = [];
+    linesMap.forEach((l) => {
+      if (l.is_surcharge && l.merged_into_line_id === line.id) {
+        arr.push(l);
+      }
+    });
+    return arr;
+  }, [linesMap, line.id, isSurchargeRow, isParent]);
+
+  const mergedSurchargeTotalUf = useMemo(
+    () => mergedSurcharges.reduce((sum, s) => sum + (s.amount_uf || 0), 0),
+    [mergedSurcharges]
+  );
 
   // For percentage lines, find source line name from allLines
   const calcSourceName = useMemo(() => {
@@ -540,6 +590,58 @@ const BudgetLineItemInner = ({
     }
     setPendingSupplierChange(null);
     setShowSupplierPropagation(false);
+  };
+
+  const resetSurchargeForm = () => {
+    setSurchargeAmount("");
+    setSurchargeReason("");
+    setSurchargeType("add");
+    setSurchargeCurrency("CLP");
+  };
+
+  const handleSubmitSurcharge = async () => {
+    if (savingSurcharge) return;
+    const amt = parseFloat(surchargeAmount);
+    if (!amt || amt <= 0) {
+      toast.error("Ingrese un monto válido");
+      return;
+    }
+    setSavingSurcharge(true);
+    try {
+      let amountUf = amt;
+      if (surchargeCurrency === "CLP") {
+        if (!ufValue || ufValue <= 0) throw new Error("Valor UF no disponible");
+        amountUf = amt / ufValue;
+      }
+      const signedAmount = surchargeType === "discount" ? -amountUf : amountUf;
+      const suffix = surchargeType === "discount" ? " (Descuento)" : " (Adicional)";
+      const { error } = await (supabase as any).from("budget_lines").insert({
+        budget_id: line.budget_id,
+        parent_id: line.parent_id,
+        name: line.name + suffix,
+        amount_uf: signedAmount,
+        status: "no_autorizado",
+        quantity: 1,
+        unit_type: line.unit_type || "Un",
+        currency: "UF",
+        unit_price: signedAmount,
+        supplier_id: line.supplier_id ?? null,
+        supplier_name: line.supplier_name ?? null,
+        category_id: line.category_id ?? null,
+        is_surcharge: true,
+        surcharge_parent_line_id: line.id,
+        surcharge_reason: surchargeReason.trim() || null,
+      });
+      if (error) throw error;
+      toast.success(surchargeType === "discount" ? "Descuento solicitado" : "Adicional solicitado");
+      resetSurchargeForm();
+      setShowSurchargePanel(false);
+      onReload?.();
+    } catch (err: any) {
+      toast.error(err?.message || "Error al solicitar adicional");
+    } finally {
+      setSavingSurcharge(false);
+    }
   };
 
   const handleQuantityKeyDown = (e: React.KeyboardEvent) => {
@@ -931,6 +1033,19 @@ const BudgetLineItemInner = ({
               return formatCLP(convertUFToPesos(calculatedAmountWithSurcharges));
             })()}
           </span>
+          {!isParent && mergedSurcharges.length > 0 && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PlusCircle className="h-3.5 w-3.5 text-green-600" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  Incluye {mergedSurcharges.length} adicional{mergedSurcharges.length > 1 ? "es" : ""} por UF {mergedSurchargeTotalUf.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
+                  {ufValue > 0 && <> ($ {Math.round(mergedSurchargeTotalUf * ufValue).toLocaleString("es-CL")})</>}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -943,6 +1058,24 @@ const BudgetLineItemInner = ({
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
+          {!isParent && !isSurchargeRow && line.status === "autorizado" && !readOnly && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={(e) => { e.stopPropagation(); setShowSurchargePanel(v => !v); }}
+                    className="h-6 w-6 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                  >
+                    <PlusCircle className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Solicitar adicional o descuento</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
           {isNotAuthorized && !compactView && <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
@@ -1174,11 +1307,17 @@ const getEffectiveAmount = (
   ufValue?: number,
   internalTransferSupplierIds?: Set<string>,
 ): number => {
+  // Merged surcharges have already been folded into their base line — skip to avoid double count
+  if (item.merged_into_line_id) return 0;
   if (item.supplier_id && internalTransferSupplierIds?.has(item.supplier_id)) {
     return 0;
   }
   // Percentage-calculated lines use their stored amount_uf directly
   if (item.calc_type === "percentage") {
+    return item.amount_uf || 0;
+  }
+  // Surcharge requests store their own signed amount in amount_uf
+  if (item.is_surcharge) {
     return item.amount_uf || 0;
   }
   const qty = item.quantity || 0;
