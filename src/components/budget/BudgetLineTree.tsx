@@ -1443,6 +1443,12 @@ const BudgetLineItem = React.memo(BudgetLineItemInner, (prev, next) => {
   const prevCollapsed = prev.collapsedIds?.has(prev.line.id) ?? false;
   const nextCollapsed = next.collapsedIds?.has(next.line.id) ?? false;
   if (prevCollapsed !== nextCollapsed) return false;
+  // Selection mode toggling must re-render to show/hide the checkbox immediately
+  if (prev.selectionMode !== next.selectionMode) return false;
+  // Re-render when this line's selected state changes
+  const prevSelected = prev.selectedIds?.has(prev.line.id) ?? false;
+  const nextSelected = next.selectedIds?.has(next.line.id) ?? false;
+  if (prevSelected !== nextSelected) return false;
   // For percentage lines and parent lines (which sum sibling surcharges), recalc when linesMap changes
   const isParentLine = !!(prev.line.children && prev.line.children.length > 0);
   if ((prev.line.calc_type === "percentage" || isParentLine) && prev.linesMap !== next.linesMap) return false;
