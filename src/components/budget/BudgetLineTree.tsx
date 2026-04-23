@@ -46,6 +46,11 @@ export interface BudgetLine {
   calc_source_line_id?: string | null;
   calc_percentage?: number | null;
   progress_status_id?: string | null;
+  is_surcharge?: boolean;
+  surcharge_parent_line_id?: string | null;
+  surcharge_reason?: string | null;
+  merged_into_line_id?: string | null;
+  original_amount_uf?: number | null;
   children?: BudgetLine[];
 }
 
