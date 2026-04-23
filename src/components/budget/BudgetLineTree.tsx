@@ -155,6 +155,7 @@ export const BudgetLineTree = ({
   selectionMode = false,
   selectedIds,
   onToggleSelect,
+  onReload,
 }: BudgetLineTreeProps) => {
   // Build linesMap only at root level (level === 0), pass down to children
   const rootLinesMap = useMemo(() => {
@@ -220,6 +221,7 @@ export const BudgetLineTree = ({
         selectionMode={selectionMode}
         selectedIds={selectedIds}
         onToggleSelect={onToggleSelect}
+        onReload={onReload}
       />)}
       {level === 0 && !readOnly && <Button variant="ghost" size="sm" onClick={() => onAddLine(null)} className="text-muted-foreground hover:text-foreground">
           <Plus className="h-4 w-4 mr-1" />
@@ -250,6 +252,7 @@ interface BudgetLineItemProps {
   selectionMode?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
+  onReload?: () => void;
 }
 
 const countDescendants = (line: BudgetLine): number => {
@@ -280,6 +283,7 @@ const BudgetLineItemInner = ({
   selectionMode = false,
   selectedIds,
   onToggleSelect,
+  onReload,
 }: BudgetLineItemProps) => {
   const isSelected = !!(selectedIds && selectedIds.has(line.id));
   const isInternalTransfer = !!(line.supplier_id && internalTransferSupplierIds?.has(line.supplier_id));
