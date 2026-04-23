@@ -364,7 +364,77 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
 
   const applyLineUpdate = async (id: string, data: Partial<BudgetLine>) => {
     const budget = budgets.find((b) => b.year === selectedYear);
-    
+
+    // Detect "authorize a surcharge" — fold its amount into the base line
+    if (data.status === "autorizado") {
+      // Locate the line in the current tree
+      const findInTree = (items: BudgetLine[]): BudgetLine | null => {
+        for (const it of items) {
+          if (it.id === id) return it;
+          if (it.children?.length) {
+            const f = findInTree(it.children);
+            if (f) return f;
+          }
+        }
+        return null;
+      };
+      const surchargeLine = findInTree(lines);
+      if (surchargeLine?.is_surcharge && surchargeLine.surcharge_parent_line_id && !surchargeLine.merged_into_line_id) {
+        const baseLine = findInTree(lines)
+          ? (function findById(items: BudgetLine[]): BudgetLine | null {
+              for (const it of items) {
+                if (it.id === surchargeLine.surcharge_parent_line_id) return it;
+                if (it.children?.length) {
+                  const f = findById(it.children);
+                  if (f) return f;
+                }
+              }
+              return null;
+            })(lines)
+          : null;
+        if (baseLine) {
+          try {
+            const surchargeUf = surchargeLine.amount_uf || 0;
+            const baseAmount = baseLine.amount_uf || 0;
+            const baseQty = baseLine.quantity || 1;
+            const newBaseAmount = baseAmount + surchargeUf;
+            const newUnitPrice = baseQty > 0 ? newBaseAmount / baseQty : (baseLine.unit_price || 0);
+            const originalSnapshot = baseLine.original_amount_uf ?? baseAmount;
+
+            // Update base line (snapshot original first time)
+            const { error: e1 } = await supabase
+              .from("budget_lines")
+              .update({
+                amount_uf: newBaseAmount,
+                unit_price: newUnitPrice,
+                original_amount_uf: originalSnapshot,
+              })
+              .eq("id", baseLine.id);
+            if (e1) throw e1;
+
+            // Mark surcharge as merged + authorized
+            const { error: e2 } = await supabase
+              .from("budget_lines")
+              .update({
+                status: "autorizado",
+                merged_into_line_id: baseLine.id,
+              })
+              .eq("id", id);
+            if (e2) throw e2;
+
+            toast({ title: "Adicional autorizado", description: "El monto se sumó a la línea original" });
+            if (budget) await loadLines(budget.id);
+            debouncedRefresh();
+            return;
+          } catch (error: any) {
+            toast({ variant: "destructive", title: "Error", description: error.message });
+            if (budget) loadLines(budget.id);
+            return;
+          }
+        }
+      }
+    }
+
     // 1. Optimistic UI: update local state immediately
     setLines(prev => {
       const updateInTree = (items: BudgetLine[]): BudgetLine[] => {
