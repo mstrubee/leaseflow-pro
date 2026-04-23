@@ -1103,17 +1103,28 @@ const BudgetLineItemInner = ({
             })()}
           </span>
           {!isParent && mergedSurcharges.length > 0 && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="p-0.5 hover:bg-accent rounded"
+                  title="Ver desglose original + adicionales"
+                >
                   <PlusCircle className="h-3.5 w-3.5 text-green-600" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  Incluye {mergedSurcharges.length} adicional{mergedSurcharges.length > 1 ? "es" : ""} por UF {mergedSurchargeTotalUf.toLocaleString("es-CL", { minimumFractionDigits: 2 })}
-                  {ufValue > 0 && <> ($ {Math.round(mergedSurchargeTotalUf * ufValue).toLocaleString("es-CL")})</>}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-96 p-0">
+                <SurchargeBreakdownPopover
+                  baseLine={line}
+                  mergedSurcharges={mergedSurcharges}
+                  ufValue={ufValue}
+                  isAdmin={isAdmin}
+                  readOnly={readOnly}
+                  onUpdateLine={onUpdateLine}
+                  onDeleteLine={onDeleteLine}
+                />
+              </PopoverContent>
+            </Popover>
           )}
           <TooltipProvider>
             <Tooltip>
