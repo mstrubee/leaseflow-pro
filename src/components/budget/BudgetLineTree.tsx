@@ -171,7 +171,10 @@ export const BudgetLineTree = ({
   const effectiveLinesMap = externalLinesMap || rootLinesMap || EMPTY_LINES_MAP;
 
   const sortedLines = useMemo(() => {
-    return [...lines].sort((a, b) => {
+    // Hide surcharge requests (they render inline under their base line) and merged surcharges
+    return [...lines]
+      .filter(l => !l.is_surcharge && !l.merged_into_line_id)
+      .sort((a, b) => {
       // "Proyectos" always first (only in compact view)
       if (compactView) {
         const aIsProyectos = a.name.toLowerCase() === "proyectos";
