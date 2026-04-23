@@ -1863,8 +1863,15 @@ const SurchargeBreakdownPopover = ({
   onUpdateLine,
   onDeleteLine,
 }: SurchargeBreakdownPopoverProps) => {
-  const fmtUF = (n: number) => `UF ${n.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const fmtCLP = (n: number) => `$ ${Math.round(n).toLocaleString("es-CL")}`;
+  const fmtCompact = (n: number) => n.toExponential(2).replace("e+", "·10^").replace("e-", "·10^-");
+  const fmtUF = (n: number) =>
+    Math.abs(n) > MAX_REASONABLE_UF
+      ? `UF ${fmtCompact(n)}`
+      : `UF ${n.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtCLP = (n: number) =>
+    Math.abs(n) > MAX_REASONABLE_UF * (ufValue || 1)
+      ? `$ ${fmtCompact(n)}`
+      : `$ ${Math.round(n).toLocaleString("es-CL")}`;
 
   const qty = baseLine.quantity || 0;
   const price = baseLine.unit_price || 0;
@@ -1878,6 +1885,7 @@ const SurchargeBreakdownPopover = ({
   const totalUf = originalUf + surchargesTotalUf;
 
   const canEdit = isAdmin && !readOnly;
+  const totalCorrupt = Math.abs(totalUf) > MAX_REASONABLE_UF;
 
   return (
     <div className="text-xs">
@@ -1912,7 +1920,14 @@ const SurchargeBreakdownPopover = ({
         </div>
 
         <div className="border-t pt-1.5 flex items-center justify-between gap-2 font-semibold">
-          <span>Total</span>
+          <span className="flex items-center gap-1">
+            Total
+            {totalCorrupt && (
+              <span title="Hay adicionales con valores inconsistentes — revíselos">
+                <AlertTriangle className="h-3 w-3 text-destructive" />
+              </span>
+            )}
+          </span>
           <div className="text-right font-mono">
             <div>{fmtUF(totalUf)}</div>
             <div className="text-muted-foreground text-[11px] font-normal">{fmtCLP(totalUf * (ufValue || 0))}</div>
