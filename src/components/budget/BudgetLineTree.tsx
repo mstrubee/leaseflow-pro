@@ -759,11 +759,12 @@ const BudgetLineItemInner = ({
 
   return <div>
       <div
-        onMouseDown={selectionMode ? (e) => {
-          // Ignore clicks on interactive children (inputs, buttons, etc.)
+        onClick={selectionMode ? (e) => {
+          // Ignore clicks on interactive children (inputs, buttons, dropdowns, etc.)
           const target = e.target as HTMLElement;
-          if (target.closest('input, textarea, select, [role="combobox"], [data-no-select]')) return;
+          if (target.closest('button, a, input, textarea, select, [role="button"], [role="checkbox"], [role="combobox"], [role="menuitem"], [data-no-select]')) return;
           e.preventDefault();
+          e.stopPropagation();
           onToggleSelect?.(line.id);
         } : undefined}
         className={cn(
@@ -782,13 +783,13 @@ const BudgetLineItemInner = ({
         selectionMode && isSelected && "ring-2 ring-primary bg-primary/10"
       )}>
         {selectionMode && (
-          <Checkbox
+          <input
+            type="checkbox"
             checked={isSelected}
-            onCheckedChange={() => onToggleSelect?.(line.id)}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            className="flex-shrink-0"
+            readOnly
+            tabIndex={-1}
             aria-label={`Seleccionar ${line.name}`}
+            className="h-4 w-4 flex-shrink-0 rounded-sm border border-primary accent-primary pointer-events-none cursor-pointer"
           />
         )}
         <button data-no-select onClick={(e) => { e.stopPropagation(); if (onToggleExpand) onToggleExpand(line.id); else setLocalExpanded(!localExpanded); }} className="p-0.5 hover:bg-accent rounded" disabled={!hasChildren}>
