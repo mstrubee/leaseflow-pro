@@ -1199,6 +1199,9 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                 {!isClosed && !forceReadOnly && (
                   selectionMode ? (
                     <>
+                      <span className="text-sm font-medium text-primary px-2 py-1 rounded bg-primary/10">
+                        {selectedLineIds.size} línea{selectedLineIds.size === 1 ? "" : "s"} seleccionada{selectedLineIds.size === 1 ? "" : "s"}
+                      </span>
                       <Button
                         variant="default"
                         size="sm"
