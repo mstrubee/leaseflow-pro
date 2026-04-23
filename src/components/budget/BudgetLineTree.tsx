@@ -404,10 +404,7 @@ const BudgetLineItemInner = ({
   // Authorized lines are locked for non-admins. They can still request adicionales/descuentos
   // via the dedicated surcharge "+" button (kept accessible via originalReadOnly below).
   const isAuthorizedLockedForUser = line.status === "autorizado" && !isAdmin && !isSurchargeRow;
-  const originalReadOnly = readOnly;
-  // Shadow the prop so every existing edit gate (`!readOnly`) automatically respects the lock.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  readOnly = readOnly || isAuthorizedLockedForUser;
+  const effectiveReadOnly = readOnly || isAuthorizedLockedForUser;
 
   // Pending surcharges for this line (sibling rows with surcharge_parent_line_id pointing here)
   const pendingSurcharges = useMemo(() => {
