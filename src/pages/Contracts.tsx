@@ -444,6 +444,8 @@ const Contracts = () => {
         const address = contract.contract_addresses?.[0];
         if (address?.commune?.toLowerCase().includes(term)) return true;
         if (address?.street?.toLowerCase().includes(term)) return true;
+        if (address?.number?.toLowerCase().includes(term)) return true;
+        if (address && `${address.street ?? ""} ${address.number ?? ""}`.toLowerCase().includes(term)) return true;
         const cf = customFieldsByContract[contract.id];
         if (cf?.cebe?.toLowerCase().includes(term)) return true;
         if (cf?.codigo?.toLowerCase().includes(term)) return true;
@@ -1136,7 +1138,7 @@ const Contracts = () => {
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por nombre, CEBE, código o comuna..."
+                placeholder="Buscar por nombre, CEBE, código, dirección o comuna..."
                 value={localSearchTerm}
                 onChange={(e) => setLocalSearchTerm(e.target.value)}
                 className="pl-10"
