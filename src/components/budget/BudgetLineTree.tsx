@@ -25,6 +25,64 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+/**
+ * Parse a user-entered numeric string supporting Chilean and international formats.
+ * Handles thousands separators (`.` or `,`) and decimal separators (`.` or `,`).
+ * The LAST occurring separator is treated as decimal only when followed by 1–3 digits
+ * AND it is the only separator of its type after a different separator (heuristic).
+ *
+ * Examples:
+ *   "1.500.000"  -> 1500000     (Chilean thousands)
+ *   "1,500,000"  -> 1500000     (international thousands)
+ *   "1500,50"    -> 1500.5      (Chilean decimal)
+ *   "1500.50"    -> 1500.5      (international decimal)
+ *   "1.500,75"   -> 1500.75     (Chilean mixed)
+ *   "1,500.75"   -> 1500.75     (international mixed)
+ *   "0.123"      -> 0.123       (small decimal)
+ */
+export const parseLocalizedNumber = (input: string): number => {
+  if (input == null) return NaN;
+  const cleaned = String(input).trim().replace(/[^\d.,-]/g, "");
+  if (!cleaned) return NaN;
+
+  const lastDot = cleaned.lastIndexOf(".");
+  const lastComma = cleaned.lastIndexOf(",");
+
+  let normalized = cleaned;
+
+  if (lastDot === -1 && lastComma === -1) {
+    // pure integer
+    normalized = cleaned;
+  } else if (lastDot >= 0 && lastComma >= 0) {
+    // both present: the rightmost is the decimal separator
+    if (lastComma > lastDot) {
+      // comma is decimal, dots are thousands
+      normalized = cleaned.replace(/\./g, "").replace(",", ".");
+    } else {
+      // dot is decimal, commas are thousands
+      normalized = cleaned.replace(/,/g, "");
+    }
+  } else {
+    // only one type of separator
+    const sep = lastDot >= 0 ? "." : ",";
+    const occurrences = cleaned.split(sep).length - 1;
+    const tail = cleaned.substring((lastDot >= 0 ? lastDot : lastComma) + 1);
+    const isDecimal = occurrences === 1 && tail.length >= 1 && tail.length <= 3 && /^\d+$/.test(tail);
+    if (isDecimal) {
+      normalized = sep === "," ? cleaned.replace(",", ".") : cleaned;
+    } else {
+      // treat all as thousands
+      normalized = cleaned.replace(new RegExp(`\\${sep}`, "g"), "");
+    }
+  }
+
+  const n = parseFloat(normalized);
+  return isNaN(n) ? NaN : n;
+};
+
+// Maximum sanity threshold for amounts in UF (anything above is treated as corrupt data).
+export const MAX_REASONABLE_UF = 1e8;
+
 export interface BudgetLine {
   id: string;
   budget_id: string;
@@ -1623,7 +1681,7 @@ const PendingSurchargeRow = ({ line, readOnly, isAdmin, ufValue, onUpdateLine, o
     setEditingReason(false);
   };
   const commitAmount = () => {
-    const raw = parseFloat(amountValue.replace(/\./g, "").replace(",", "."));
+    const raw = parseLocalizedNumber(amountValue);
     if (isNaN(raw) || raw < 0) {
       setEditingAmount(false);
       return;
@@ -1631,10 +1689,16 @@ const PendingSurchargeRow = ({ line, readOnly, isAdmin, ufValue, onUpdateLine, o
     let uf = raw;
     if (amountCurrency === "CLP") {
       if (!ufValue || ufValue <= 0) {
+        toast.error("Valor UF no disponible. Reintente en unos segundos.");
         setEditingAmount(false);
         return;
       }
       uf = raw / ufValue;
+    }
+    if (uf > MAX_REASONABLE_UF) {
+      toast.error(`Monto fuera de rango (UF ${uf.toExponential(2)}). Revise el valor ingresado.`);
+      setEditingAmount(false);
+      return;
     }
     const signed = sign * uf;
     onUpdateLine(line.id, { amount_uf: signed, currency: amountCurrency } as any);
@@ -1799,8 +1863,15 @@ const SurchargeBreakdownPopover = ({
   onUpdateLine,
   onDeleteLine,
 }: SurchargeBreakdownPopoverProps) => {
-  const fmtUF = (n: number) => `UF ${n.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const fmtCLP = (n: number) => `$ ${Math.round(n).toLocaleString("es-CL")}`;
+  const fmtCompact = (n: number) => n.toExponential(2).replace("e+", "·10^").replace("e-", "·10^-");
+  const fmtUF = (n: number) =>
+    Math.abs(n) > MAX_REASONABLE_UF
+      ? `UF ${fmtCompact(n)}`
+      : `UF ${n.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtCLP = (n: number) =>
+    Math.abs(n) > MAX_REASONABLE_UF * (ufValue || 1)
+      ? `$ ${fmtCompact(n)}`
+      : `$ ${Math.round(n).toLocaleString("es-CL")}`;
 
   const qty = baseLine.quantity || 0;
   const price = baseLine.unit_price || 0;
@@ -1814,6 +1885,7 @@ const SurchargeBreakdownPopover = ({
   const totalUf = originalUf + surchargesTotalUf;
 
   const canEdit = isAdmin && !readOnly;
+  const totalCorrupt = Math.abs(totalUf) > MAX_REASONABLE_UF;
 
   return (
     <div className="text-xs">
@@ -1848,7 +1920,14 @@ const SurchargeBreakdownPopover = ({
         </div>
 
         <div className="border-t pt-1.5 flex items-center justify-between gap-2 font-semibold">
-          <span>Total</span>
+          <span className="flex items-center gap-1">
+            Total
+            {totalCorrupt && (
+              <span title="Hay adicionales con valores inconsistentes — revíselos">
+                <AlertTriangle className="h-3 w-3 text-destructive" />
+              </span>
+            )}
+          </span>
           <div className="text-right font-mono">
             <div>{fmtUF(totalUf)}</div>
             <div className="text-muted-foreground text-[11px] font-normal">{fmtCLP(totalUf * (ufValue || 0))}</div>
@@ -1877,17 +1956,24 @@ const SurchargeBreakdownRow = ({ surcharge, ufValue, canEdit, onUpdateLine, onDe
   const isAdd = (surcharge.amount_uf || 0) >= 0;
   const sign = isAdd ? 1 : -1;
   const absUf = Math.abs(surcharge.amount_uf || 0);
+  const isCorrupt = absUf > MAX_REASONABLE_UF;
+  const savedCurrency: "UF" | "CLP" = (surcharge.currency as "UF" | "CLP") || "UF";
 
   const [editingReason, setEditingReason] = useState(false);
   const [reason, setReason] = useState(surcharge.surcharge_reason || "");
   const [editingAmount, setEditingAmount] = useState(false);
-  const [amountCurrency, setAmountCurrency] = useState<"UF" | "CLP">((surcharge.currency as "UF" | "CLP") || "UF");
-  const [amountValue, setAmountValue] = useState<string>(absUf.toString());
+  const [amountCurrency, setAmountCurrency] = useState<"UF" | "CLP">(savedCurrency);
+  const [amountValue, setAmountValue] = useState<string>(
+    savedCurrency === "CLP" && ufValue > 0 && !isCorrupt
+      ? Math.round(absUf * ufValue).toString()
+      : absUf.toString()
+  );
 
   useEffect(() => { setReason(surcharge.surcharge_reason || ""); }, [surcharge.surcharge_reason]);
 
   const fmtUF = (n: number) => `UF ${n.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmtCLP = (n: number) => `$ ${Math.round(n).toLocaleString("es-CL")}`;
+  const fmtCompact = (n: number) => n.toExponential(2).replace("e+", "·10^").replace("e-", "·10^-");
 
   const commitReason = () => {
     if (reason !== (surcharge.surcharge_reason || "")) {
@@ -1897,18 +1983,39 @@ const SurchargeBreakdownRow = ({ surcharge, ufValue, canEdit, onUpdateLine, onDe
   };
 
   const commitAmount = () => {
-    const raw = parseFloat(amountValue.replace(/\./g, "").replace(",", "."));
+    const raw = parseLocalizedNumber(amountValue);
     if (isNaN(raw) || raw < 0) {
       setEditingAmount(false);
       return;
     }
     let uf = raw;
     if (amountCurrency === "CLP") {
-      if (!ufValue || ufValue <= 0) { setEditingAmount(false); return; }
+      if (!ufValue || ufValue <= 0) {
+        toast.error("Valor UF no disponible. Reintente en unos segundos.");
+        setEditingAmount(false);
+        return;
+      }
       uf = raw / ufValue;
+    }
+    if (uf > MAX_REASONABLE_UF) {
+      toast.error(`Monto fuera de rango (UF ${uf.toExponential(2)}). Revise el valor ingresado.`);
+      setEditingAmount(false);
+      return;
     }
     onUpdateLine(surcharge.id, { amount_uf: sign * uf, currency: amountCurrency } as any);
     setEditingAmount(false);
+  };
+
+  const openEditor = () => {
+    if (!canEdit) return;
+    const initialCurrency: "UF" | "CLP" = savedCurrency;
+    setAmountCurrency(initialCurrency);
+    if (initialCurrency === "CLP" && ufValue > 0 && !isCorrupt) {
+      setAmountValue(Math.round(absUf * ufValue).toString());
+    } else {
+      setAmountValue(absUf.toString());
+    }
+    setEditingAmount(true);
   };
 
   return (
@@ -1917,7 +2024,14 @@ const SurchargeBreakdownRow = ({ surcharge, ufValue, canEdit, onUpdateLine, onDe
         {isAdd ? <PlusCircle className="h-3 w-3 text-green-600" /> : <MinusCircle className="h-3 w-3 text-red-600" />}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="truncate font-medium">{surcharge.name}</div>
+        <div className="truncate font-medium flex items-center gap-1">
+          {surcharge.name}
+          {isCorrupt && (
+            <span title="Valor inconsistente — revisar">
+              <AlertTriangle className="h-3 w-3 text-destructive flex-shrink-0" />
+            </span>
+          )}
+        </div>
         {editingReason && canEdit ? (
           <Input
             autoFocus
@@ -1955,9 +2069,23 @@ const SurchargeBreakdownRow = ({ surcharge, ufValue, canEdit, onUpdateLine, onDe
                 if (e.key === "Enter") { e.preventDefault(); commitAmount(); }
                 else if (e.key === "Escape") setEditingAmount(false);
               }}
-              className="h-6 text-xs w-20"
+              className="h-6 text-xs w-24"
             />
-            <Select value={amountCurrency} onValueChange={(v: "UF" | "CLP") => setAmountCurrency(v)}>
+            <Select
+              value={amountCurrency}
+              onValueChange={(v: "UF" | "CLP") => {
+                // When switching currency in editor, convert the current entered value
+                const raw = parseLocalizedNumber(amountValue);
+                if (!isNaN(raw) && ufValue > 0) {
+                  if (v === "CLP" && amountCurrency === "UF") {
+                    setAmountValue(Math.round(raw * ufValue).toString());
+                  } else if (v === "UF" && amountCurrency === "CLP") {
+                    setAmountValue((raw / ufValue).toFixed(4));
+                  }
+                }
+                setAmountCurrency(v);
+              }}
+            >
               <SelectTrigger className="h-6 w-14 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="UF">UF</SelectItem>
@@ -1968,19 +2096,14 @@ const SurchargeBreakdownRow = ({ surcharge, ufValue, canEdit, onUpdateLine, onDe
         ) : (
           <div
             className={cn(canEdit && "cursor-text hover:bg-accent/50 rounded px-1")}
-            onDoubleClick={() => {
-              if (!canEdit) return;
-              setAmountCurrency("UF");
-              setAmountValue(absUf.toString());
-              setEditingAmount(true);
-            }}
+            onDoubleClick={openEditor}
             title={canEdit ? "Doble clic para editar monto" : ""}
           >
             <div className={isAdd ? "text-green-700 dark:text-green-400" : "text-destructive"}>
-              {isAdd ? "+" : "−"} {fmtUF(absUf)}
+              {isAdd ? "+" : "−"} {isCorrupt ? `UF ${fmtCompact(absUf)}` : fmtUF(absUf)}
             </div>
             <div className="text-muted-foreground text-[11px]">
-              {isAdd ? "+" : "−"} {fmtCLP(absUf * (ufValue || 0))}
+              {isAdd ? "+" : "−"} {isCorrupt ? `$ ${fmtCompact(absUf * (ufValue || 0))}` : fmtCLP(absUf * (ufValue || 0))}
             </div>
           </div>
         )}
