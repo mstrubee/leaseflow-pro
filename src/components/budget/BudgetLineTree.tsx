@@ -537,7 +537,7 @@ const BudgetLineItemInner = ({
 
   // Save quantity on blur or Enter
   const handleSaveQuantity = () => {
-    if (readOnly) return;
+    if (effectiveReadOnly) return;
     const qty = parseFloat(editQuantity) || 0;
     if (qty === (line.quantity || 0)) {
       setIsEditingQuantity(false);
@@ -556,7 +556,7 @@ const BudgetLineItemInner = ({
   };
 
   const handleSaveUnit = (newUnit: string) => {
-    if (readOnly) return;
+    if (effectiveReadOnly) return;
     if (newUnit !== line.unit_type) {
       onUpdateLine(line.id, { unit_type: newUnit });
     }
@@ -565,7 +565,7 @@ const BudgetLineItemInner = ({
   };
 
   const handleSavePrice = () => {
-    if (readOnly) return;
+    if (effectiveReadOnly) return;
     const qty = line.quantity || 0;
     const price = parseFloat(editUnitPrice) || 0;
     const amountUf = calculateLineAmount(qty, price, editCurrency);
@@ -578,7 +578,7 @@ const BudgetLineItemInner = ({
   };
 
   const handleSaveCurrency = (newCurrency: string) => {
-    if (readOnly) return;
+    if (effectiveReadOnly) return;
     if (newCurrency !== line.currency) {
       const qty = line.quantity || 0;
       const price = line.unit_price || 0;
@@ -591,7 +591,7 @@ const BudgetLineItemInner = ({
 
   // Save total amount: back-calculate unit_price from total
   const handleSaveTotal = () => {
-    if (readOnly) return;
+    if (effectiveReadOnly) return;
     const totalVal = parseFloat(editTotal) || 0;
     const qty = line.quantity || 0;
     if (totalVal <= 0 || qty <= 0) {
@@ -624,7 +624,7 @@ const BudgetLineItemInner = ({
   };
 
   const handleSupplierChange = (supplierId: string | null, supplierName: string | null) => {
-    if (readOnly) return;
+    if (effectiveReadOnly) return;
     const hasChildren = !!(line.children && line.children.length > 0);
     if (hasChildren) {
       // Ask user before propagating to descendants
@@ -728,7 +728,7 @@ const BudgetLineItemInner = ({
 
   // Save percentage on blur or Enter for calc_type=percentage lines
   const handleSavePercentage = () => {
-    if (readOnly) return;
+    if (effectiveReadOnly) return;
     const parsed = parseFloat(editPercentage) || 0;
     if (parsed === (line.calc_percentage || 0)) {
       setIsEditingPercentage(false);
