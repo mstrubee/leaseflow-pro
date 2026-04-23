@@ -919,7 +919,14 @@ export function PatentChecklist({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {(itemsBySection[section.id] || []).map(item => {
+                      {(itemsBySection[section.id] || []).filter(item => {
+                        if (!hideNoAplica) return true;
+                        const sharedFolderId = sharedItemLookup[item.id];
+                        const hasSharedFiles = sharedFolderId && (sharedFilesCache[sharedFolderId]?.length || 0) > 0;
+                        const rawStatus = getDocValue(item.id, 'status') as PatentDocStatus || 'pendiente';
+                        const status: PatentDocStatus = hasSharedFiles ? 'ok' : rawStatus;
+                        return status !== 'no_aplica';
+                      }).map(item => {
                       const doc = getDocument(item.id);
                         const sharedFolderId = sharedItemLookup[item.id];
                         const hasSharedFiles = sharedFolderId && (sharedFilesCache[sharedFolderId]?.length || 0) > 0;
