@@ -1,92 +1,49 @@
 
-## Plan: corregir selección errática de líneas en presupuesto
 
-### Objetivo
-Hacer que la selección de líneas para mover sea inmediata, estable y predecible: un clic selecciona, otro deselecciona, sin dobles toggles ni activaciones accidentales.
+## Plan: hacer visible la selección de líneas
 
-### Causa probable detectada
-La implementación actual mezcla dos mecanismos de selección al mismo tiempo:
-1. La fila completa selecciona en `onMouseDown`
-2. El `Checkbox` también cambia estado con `onCheckedChange`
+### Problema
+La selección funciona internamente (las líneas se mueven correctamente), pero no hay retroalimentación visual: el checkbox no se ve marcado y la fila no cambia de estilo al seleccionarse.
 
-Eso puede producir:
-- doble toggle en un mismo clic
-- selección que “entra y sale”
-- activaciones por botones internos de la fila
-- comportamiento inconsistente por usar `Checkbox` de Radix (su root no es un `input` nativo)
+### Causa probable
+1. El `<input type="checkbox">` nativo con `accent-primary` y `pointer-events-none` puede no estar pintando el "check" visible sobre el fondo de la fila, o su tamaño es demasiado pequeño para notarse.
+2. Las clases `ring-2 ring-primary bg-primary/10` aplicadas a la fila se pierden visualmente porque conviven con clases `bg-muted/XX` de nivel y el `ring` queda dentro de un contenedor con `space-y-1` sin margen suficiente, además de no destacar lo bastante sobre el fondo.
+3. El `React.memo` del ítem solo re-renderiza la línea clickeada; eso es correcto, pero si la comparación de `selectedIds` falla por algún motivo de identidad de Set, la fila no se actualiza visualmente. Conviene reforzar para asegurarlo.
 
-## Cambios a implementar
+### Cambios
 
-### 1) Unificar la fuente de verdad del toggle
-En `src/components/budget/BudgetLineTree.tsx`:
-- eliminar la lógica de selección basada en `onMouseDown` sobre toda la fila
-- usar un único handler de selección por interacción
-- preferir una de estas dos rutas consistentes:
-  - selección solo desde la fila con `onClick`, y checkbox visual read-only
-  - o selección desde fila + checkbox, pero ambos llamando al mismo handler y evitando cualquier segundo toggle
+**`src/components/budget/BudgetLineTree.tsx`**
 
-La opción más robusta aquí es:
-- fila con `onClick`
-- checkbox controlado visualmente
-- sin `onCheckedChange` independiente que vuelva a invertir el estado
+1. Reemplazar el `<input type="checkbox">` nativo por un indicador visual propio totalmente controlado:
+   - cuadrado con borde marcado
+   - fondo `primary` y un ícono `Check` cuando `isSelected`
+   - tamaño claramente visible (`h-5 w-5`)
+   - `pointer-events-none` para que solo el click de fila controle el toggle
+2. Reforzar el resaltado de la fila seleccionada:
+   - fondo más sólido tipo `bg-primary/15`
+   - borde lateral acentuado tipo `border-l-4 border-primary`
+   - texto en `font-medium`
+   - mantener `ring` opcional pero usar el borde para destacarse incluso encima de los `bg-muted/XX`
+3. Asegurar precedencia de estilos:
+   - poner las clases de selección al final del `cn(...)` para que ganen
+   - usar utilidades concretas (no `bg-primary/10` que se pierde sobre `bg-muted/60`)
+4. Confirmar que la comparación del memo siga forzando re-render cuando cambia el estado seleccionado de la línea actual (ya está, se mantiene).
+5. Añadir un pequeño contador “(N seleccionadas)” en la cabecera del árbol cuando `selectionMode` esté activo, para confirmación adicional al usuario (opcional, en `BudgetModule.tsx` junto a los botones de selección si conviene).
 
-### 2) Endurecer el bloqueo de eventos internos
-En la misma fila del árbol:
-- excluir explícitamente elementos interactivos del click de selección:
-  - `button`
-  - `input`
-  - `textarea`
-  - `select`
-  - `[role="button"]`
-  - `[role="checkbox"]`
-  - `[role="combobox"]`
-  - links y elementos marcados con `data-no-select`
-- agregar `stopPropagation` también en botones/controles que hoy solo frenan `onClick`, pero no el evento previo que dispara la selección
-- asegurar que expandir/colapsar, editar nombre, cambiar proveedor, cambiar estado, abrir OC/Factura, etc. no alteren la selección
+**`src/components/budget/BudgetModule.tsx`**
 
-### 3) Reemplazar el checkbox problemático si sigue interfiriendo
-Si la estabilidad no queda garantizada con el ajuste anterior:
-- reemplazar el `Checkbox` de UI en modo selección por un `input type="checkbox"` nativo controlado
-- mantener el estilo visual actual para no cambiar la apariencia
-- usar `readOnly` + `pointer-events-none` si la fila será la única que togglee
+- Mostrar al lado de los botones “Mover” / “Cancelar” un contador “N línea(s) seleccionada(s)” basado en `selectedLineIds.size`, para que el usuario tenga feedback inmediato incluso si no mira la fila.
 
-Esto reduce fricción con eventos sintéticos y evita el comportamiento errático del componente actual en una fila altamente interactiva.
+### Validación esperada
+- Al activar “Seleccionar líneas” aparece un cuadrado vacío en cada fila.
+- Al hacer click en una fila:
+  - el cuadrado se llena con color primario y muestra el check
+  - la fila gana borde izquierdo de color, fondo destacado y texto en negrita
+  - el contador en la cabecera sube
+- Volver a hacer click revierte el estilo.
+- El comportamiento de mover líneas no cambia: sigue funcionando como hoy.
 
-### 4) Mejorar la actualización visual para árboles grandes
-En `src/components/budget/BudgetLineTree.tsx` y `src/components/budget/BudgetModule.tsx`:
-- mantener la memoización, pero asegurar que cada ítem re-renderice solo si cambia:
-  - `selectionMode`
-  - su propio estado seleccionado
-  - su propio estado expandido
-- revisar que no se creen callbacks o props innecesariamente inestables durante la selección
-- evitar cualquier lógica adicional de fila que fuerce renders pesados al marcar una sola línea
-
-## Validación esperada
-Después del cambio:
-- al entrar en “Seleccionar líneas”, los checkboxes aparecen de inmediato
-- clic en la fila: selecciona una vez
-- clic en el checkbox: selecciona una vez
-- clic en expandir, editar, proveedor, badges o acciones: no selecciona accidentalmente
-- selección/deselección rápida de múltiples líneas funciona sin lag visible
-
-## Archivos a tocar
+### Archivos a editar
 - `src/components/budget/BudgetLineTree.tsx`
 - `src/components/budget/BudgetModule.tsx`
-- opcionalmente `src/components/ui/checkbox.tsx` solo si se decide aislar o reemplazar el comportamiento del checkbox en este flujo
 
-## Detalle técnico
-Flujo recomendado:
-
-```text
-Click usuario
-  -> si el target es interactivo: no seleccionar
-  -> si no es interactivo: toggleSelection(line.id)
-  -> checkbox refleja estado, pero no dispara un segundo toggle
-```
-
-Eso elimina la carrera actual entre:
-```text
-row onMouseDown
-+ checkbox onCheckedChange
-+ botones internos con propagación parcial
-```
