@@ -856,6 +856,18 @@ export function PatentChecklist({
                 </Button>
               </CollapsibleTrigger>
               <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setHideNoAplica(prev => !prev);
+                  }}
+                  title={hideNoAplica ? "Mostrar líneas 'No Aplica'" : "Ocultar líneas 'No Aplica'"}
+                  className="h-8 w-8 p-0"
+                >
+                  {hideNoAplica ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
                 {isAdmin && (
                   <Button
                     variant="ghost"
