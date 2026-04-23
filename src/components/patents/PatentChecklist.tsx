@@ -226,6 +226,7 @@ export function PatentChecklist({
   // Bulk selection state
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [bulkStatusDialogOpen, setBulkStatusDialogOpen] = useState(false);
+  const [hideNoAplica, setHideNoAplica] = useState(false);
   
   // Unsaved changes confirmation dialog
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
