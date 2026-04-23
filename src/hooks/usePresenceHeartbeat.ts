@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 const SECTION_MAP: Record<string, string> = {
   "/": "Inicio",
@@ -19,56 +20,64 @@ const SECTION_MAP: Record<string, string> = {
 };
 
 function resolveSection(pathname: string): string {
-  // Exact match first
   if (SECTION_MAP[pathname]) return SECTION_MAP[pathname];
-  // /contracts/:id pattern
   if (/^\/contracts\/[^/]+/.test(pathname)) return "Detalle Contrato";
-  // Fallback to first segment
   const base = "/" + pathname.split("/").filter(Boolean)[0];
   return SECTION_MAP[base] || "Inicio";
 }
 
 const IDLE_TIMEOUT = 2 * 60 * 1000; // 2 minutes
-const HEARTBEAT_INTERVAL = 30_000; // 30 seconds
+const HEARTBEAT_INTERVAL = 90_000; // 90s when active
+const IDLE_HEARTBEAT_INTERVAL = 5 * 60_000; // 5min when idle/hidden
 
 export function usePresenceHeartbeat() {
   const location = useLocation();
+  const { user } = useAuth();
   const lastActivityRef = useRef(Date.now());
   const isActiveRef = useRef(true);
+  const lastSentRef = useRef(0);
+  const lastSectionRef = useRef<string>("");
 
   const markActive = useCallback(() => {
     lastActivityRef.current = Date.now();
     isActiveRef.current = true;
   }, []);
 
-  // Listen for user interaction events
+  // Listen for user interaction events (throttled — only update timestamp)
   useEffect(() => {
-    const events = ["mousemove", "keydown", "scroll"] as const;
+    const events = ["mousedown", "keydown", "touchstart"] as const;
     events.forEach((e) => document.addEventListener(e, markActive, { passive: true }));
     return () => {
       events.forEach((e) => document.removeEventListener(e, markActive));
     };
   }, [markActive]);
 
-  // Check idle timeout periodically
+  // Idle check
   useEffect(() => {
     const check = setInterval(() => {
       if (Date.now() - lastActivityRef.current > IDLE_TIMEOUT) {
         isActiveRef.current = false;
       }
-    }, 10_000);
+    }, 30_000);
     return () => clearInterval(check);
   }, []);
 
-  // Heartbeat every 30s
+  // Smart heartbeat — only when authenticated, tab visible, and not over-firing
   useEffect(() => {
-    const currentSection = resolveSection(location.pathname);
+    if (!user?.id) return;
 
-    const updatePresence = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+    const currentSection = resolveSection(location.pathname);
+    const sectionChanged = currentSection !== lastSectionRef.current;
+    lastSectionRef.current = currentSection;
+
+    const updatePresence = async (force = false) => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden" && !force) {
+        return;
+      }
+      const now = Date.now();
+      const interval = isActiveRef.current ? HEARTBEAT_INTERVAL : IDLE_HEARTBEAT_INTERVAL;
+      if (!force && now - lastSentRef.current < interval) return;
+      lastSentRef.current = now;
 
       await supabase
         .from("profiles")
@@ -80,8 +89,22 @@ export function usePresenceHeartbeat() {
         .eq("id", user.id);
     };
 
-    updatePresence();
-    const interval = setInterval(updatePresence, HEARTBEAT_INTERVAL);
-    return () => clearInterval(interval);
-  }, [location.pathname]);
+    // Immediate update on mount or section change
+    updatePresence(sectionChanged);
+
+    const interval = setInterval(() => updatePresence(false), HEARTBEAT_INTERVAL);
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        markActive();
+        updatePresence(true);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [location.pathname, user?.id, markActive]);
 }
