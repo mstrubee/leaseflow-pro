@@ -657,6 +657,17 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     const budget = budgets.find((b) => b.year === selectedYear);
     if (budget?.is_closed) return;
 
+    // Ghost lines (movement markers) can ONLY be deleted by admins
+    const targetLine = lines.find((l) => l.id === id);
+    if (targetLine?.is_ghost && !isAdmin) {
+      toast({
+        variant: "destructive",
+        title: "No autorizado",
+        description: "Solo un administrador puede eliminar marcas de movimiento.",
+      });
+      return;
+    }
+
     try {
       // Get current user for audit
       const { data: { user } } = await supabase.auth.getUser();
