@@ -190,16 +190,64 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
     setter(next);
   };
 
+  const participantKey = (name: string, role?: string | null) =>
+    `${name.trim().toLowerCase()}|${(role || "").trim().toLowerCase()}`;
+
+  const isSelected = (entry: DirectoryEntry) =>
+    newParticipants.some(p => participantKey(p.name, p.role) === participantKey(entry.name, entry.role));
+
   const addParticipant = () => {
     const name = pName.trim();
     if (!name) return;
-    setNewParticipants(prev => [...prev, { name, role: pRole.trim() || null }]);
+    const role = pRole.trim() || null;
+    const key = participantKey(name, role);
+    if (newParticipants.some(p => participantKey(p.name, p.role) === key)) {
+      toast.info("Ese participante ya está agregado");
+      return;
+    }
+    setNewParticipants(prev => [...prev, { name, role }]);
     setPName("");
     setPRole("");
   };
 
   const removeParticipant = (idx: number) => {
     setNewParticipants(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const toggleDirectoryEntry = (entry: DirectoryEntry) => {
+    if (isSelected(entry)) {
+      setNewParticipants(prev =>
+        prev.filter(p => participantKey(p.name, p.role) !== participantKey(entry.name, entry.role))
+      );
+    } else {
+      setNewParticipants(prev => [...prev, { name: entry.name, role: entry.role }]);
+    }
+  };
+
+  const toggleRecurring = async (entry: DirectoryEntry) => {
+    const next = !entry.is_recurring;
+    setDirectory(prev => prev.map(d => d.id === entry.id ? { ...d, is_recurring: next } : d));
+    const { error } = await supabase
+      .from("special_attention_participants_directory")
+      .update({ is_recurring: next })
+      .eq("id", entry.id);
+    if (error) {
+      toast.error("No se pudo actualizar");
+      loadDirectory();
+    }
+  };
+
+  const deleteDirectoryEntry = async (entry: DirectoryEntry) => {
+    const { error } = await supabase
+      .from("special_attention_participants_directory")
+      .delete()
+      .eq("id", entry.id);
+    if (error) {
+      toast.error("No se pudo eliminar");
+      return;
+    }
+    setDirectory(prev => prev.filter(d => d.id !== entry.id));
+    toast.success("Eliminado del directorio");
   };
 
   const handleRegister = async () => {
