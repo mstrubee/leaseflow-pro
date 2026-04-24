@@ -115,9 +115,33 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
     setLoading(false);
   }, []);
 
+  const loadDirectory = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("special_attention_participants_directory")
+      .select("id, name, role, is_recurring")
+      .order("is_recurring", { ascending: false })
+      .order("name", { ascending: true });
+    if (error) {
+      console.error("directory load error", error);
+      return;
+    }
+    const list = (data || []) as DirectoryEntry[];
+    setDirectory(list);
+    // Preselect recurring participants if user hasn't manually edited yet
+    setNewParticipants(prev => {
+      if (prev.length > 0) return prev;
+      return list
+        .filter(d => d.is_recurring)
+        .map(d => ({ name: d.name, role: d.role }));
+    });
+  }, []);
+
   useEffect(() => {
-    if (open) load();
-  }, [open, load]);
+    if (open) {
+      load();
+      loadDirectory();
+    }
+  }, [open, load, loadDirectory]);
 
   // Group meetings by year > month
   const grouped = useMemo(() => {
