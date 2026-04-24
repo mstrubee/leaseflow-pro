@@ -75,6 +75,7 @@ const SpecialAttentionPage = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [removeConfirmId, setRemoveConfirmId] = useState<string | null>(null);
+  const [meetingsOpen, setMeetingsOpen] = useState(false);
 
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => {
