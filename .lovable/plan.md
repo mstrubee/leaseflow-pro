@@ -1,50 +1,124 @@
-## Reparentar una línea hija bajo otra línea hija (nueva madre)
+## Plan: Registro de Reuniones en módulo "Atención Especial"
 
-### Estado actual
+### Objetivo
+Agregar un botón **"Registro Reuniones"** en el header de `/special-attention` que abra un diálogo flotante con: (a) registro inmediato de una reunión nueva (fecha automática + participantes + notas), (b) listado histórico colapsable agrupado por **año › mes › reunión**, y (c) generación + almacenamiento de un PDF por cada reunión registrada.
 
-La operación que pides **ya existe técnicamente**, pero está poco visible:
+---
 
-1. La función `handleConfirmMove` en `BudgetModule.tsx` actualiza `parent_id` en `budget_lines`. Cualquier línea (incluida una hija) puede pasar a depender de cualquier otra línea, siempre que no sea sí misma ni una de sus descendientes (evita ciclos).
-2. El total de cualquier línea madre se calcula recursivamente sumando sus hijos (`calculateChildrenSubtotal` y `calculateStoredSubtotal` en `BudgetLineTree.tsx`). Por lo tanto, al reparentar, **la nueva madre suma automáticamente la nueva hija** sin necesidad de tocar la BD adicionalmente.
-3. La línea madre original mantiene un "ghost" (placeholder no contabilizable) en la posición original como rastro auditable.
+### 1. Base de datos (migración nueva)
 
-El problema es de **descubrimiento**: hoy hay que entrar en "modo selección" (botón global), marcar la línea, abrir "Mover" y buscar la madre destino. No hay un atajo directo desde la línea.
+Crear dos tablas en `public`:
 
-### Propuesta
+**`special_attention_meetings`**
+- `id uuid PK default gen_random_uuid()`
+- `meeting_date timestamptz not null default now()` — fecha/hora del registro
+- `notes text` — notas opcionales de la reunión
+- `pdf_url text` — URL pública del PDF generado en Storage
+- `pdf_path text` — path interno en bucket
+- `snapshot jsonb` — snapshot de los contratos en atención especial al momento del registro (para que el PDF histórico siempre refleje lo que se vio ese día)
+- `created_by uuid references auth.users(id)`
+- `created_at timestamptz default now()`
 
-Agregar un atajo directo "Mover bajo otra línea" en cada fila del árbol, usando el flujo ya existente.
+**`special_attention_meeting_participants`**
+- `id uuid PK default gen_random_uuid()`
+- `meeting_id uuid references special_attention_meetings(id) on delete cascade`
+- `name text not null`
+- `role text` — opcional (cargo)
+- `created_at timestamptz default now()`
 
-**1. Botón/acción "Mover" por línea** (`BudgetLineTree.tsx`)
-- Agregar un ítem en el menú contextual de cada línea (junto a Editar / Eliminar / Agregar adicional autorizado): **"Mover bajo otra línea…"**.
-- Al pulsarlo, abre el `MoveLinesDialog` ya existente con `selectedIds = [line.id]`.
-- Solo visible cuando no es ghost, no es surcharge fusionado y el usuario tiene permisos de edición.
+**RLS**: ambas tablas con políticas `authenticated` para `select/insert/update/delete` (mismo patrón que `special_attention_checklist`). Los usuarios autenticados pueden gestionar todas las reuniones (no es información sensible por contrato).
 
-**2. Pequeñas mejoras al `MoveLinesDialog`**
-- Cambiar el copy del header cuando es 1 sola línea: en vez de "Mover 1 línea", mostrar "Mover '{nombre}' bajo otra línea madre".
-- Aclarar en la descripción que también puede pasar a depender de un **hermano** o de **cualquier otra línea del presupuesto**.
-- Añadir una pista visual junto a la línea madre actual del elemento que se está moviendo (etiqueta "actual") para que el usuario evite seleccionarla.
+**Storage**: reusar bucket existente `repository-files` con prefijo `special-attention-meetings/{yyyy}/{mm}/{meeting-id}.pdf`. No requiere bucket nuevo.
 
-**3. Sin cambios de BD ni en la lógica de totales**
-- El recálculo del total de la nueva madre (incluyendo la nueva hija) y de la madre original (que ya no la cuenta) ocurre automáticamente al recargar el árbol, gracias a la suma recursiva existente.
-- Se mantiene el "ghost" en la posición original (trazabilidad).
+---
 
-### Comportamiento esperado tras la acción
+### 2. Componente nuevo: `MeetingsRegistryDialog.tsx`
 
-- La hija desaparece de la madre original (queda solo el "ghost" gris).
-- La hija aparece como hija de la nueva madre, en el último orden.
-- El total de la nueva madre **incluye** el `amount_uf` (y CLP) de la hija reparentada.
-- El total de la madre original **deja de incluirla** (el ghost vale 0).
-- Si la nueva madre era una "hoja" (sin hijos), pasa a comportarse como madre y muestra el desglose de hijos.
+Ubicación: `src/components/special-attention/MeetingsRegistryDialog.tsx`
 
-### Archivos a modificar
+**Estructura visual (Dialog grande, ~max-w-4xl):**
 
-- `src/components/budget/BudgetLineTree.tsx` — añadir acción "Mover bajo otra línea…" por fila + estado para abrir el diálogo con la línea pre-seleccionada.
-- `src/components/budget/MoveLinesDialog.tsx` — copy más claro para single-line + marcar "actual" la madre vigente.
-- `src/components/budget/BudgetModule.tsx` — exponer/propagar el handler para abrir el diálogo desde una línea individual reutilizando `handleConfirmMove`.
+- **Header**: título "Registro de Reuniones — Atención Especial" + botón "Expandir/Contraer todo" (afecta sólo este diálogo).
+- **Sección superior — Nueva reunión**:
+  - Lista editable de participantes (input con `Plus` para agregar, `X` para quitar; chips con nombre y rol opcional).
+  - Textarea opcional de notas.
+  - Botón principal **"Registrar"** (icono `CalendarPlus`):
+    1. Inserta fila en `special_attention_meetings` con `meeting_date = now()` y snapshot de contratos actuales.
+    2. Inserta participantes.
+    3. Genera PDF con `exportMeetingPDF` (ver §3) y lo sube al bucket.
+    4. Actualiza `pdf_url` y `pdf_path` en el registro.
+    5. Toast de éxito + refresca historial + limpia inputs.
+- **Sección inferior — Historial agrupado**:
+  - Estructura `Collapsible` anidada: **Año › Mes › Reunión**.
+  - Cada nivel muestra contador (ej: "2026 (12 reuniones)", "abril (3)").
+  - Por reunión: fecha completa formateada (`yyyy.mm.dd HH:mm`), participantes (chips compactos), notas truncadas, y dos acciones:
+    - **Descargar PDF** (`FileDown`) → abre `pdf_url` en nueva pestaña.
+    - **Ver participantes** (expand inline) → muestra lista completa.
+  - Botón papelera (admins) para eliminar registro + PDF asociado.
+  - Estado `expandedYears`, `expandedMonths`, `expandedMeetings` con `Set<string>` independientes.
+  - Botón global "Expandir/Contraer todo" alterna los 3 sets.
 
-### Detalles técnicos
+**Hook de datos**: query directo con `supabase.from("special_attention_meetings").select("*, special_attention_meeting_participants(*)").order("meeting_date", { ascending: false })`. Agrupar en cliente por `getFullYear()` y `getMonth()`.
 
-- La validación anti-ciclo ya está en `MoveLinesDialog` (excluye la línea y todo su subárbol).
-- No se requiere migración: `parent_id` ya es nullable y editable.
-- No se afectan OCs/facturas: siguen vinculadas a la línea por su `id`, que no cambia.
-- Sin cambios en RLS ni edge functions.
+---
+
+### 3. Generador PDF: `exportMeetingPDF.ts`
+
+Ubicación: `src/components/special-attention/exportMeetingPDF.ts`
+
+Reutiliza la estructura visual de `exportSpecialAttentionPDF.ts` (logo header, barra roja, tablas) pero con:
+- **Encabezado**: "Acta de Reunión — Atención Especial" + fecha del registro destacada.
+- **Bloque participantes**: tabla con Nombre / Rol.
+- **Bloque notas**: si existen.
+- **Anexo**: snapshot de contratos en atención especial (mismo formato del export actual, para evidencia histórica).
+- Devuelve `Blob` (no `doc.save()`) para poder subirlo a Storage:
+  ```ts
+  const blob = doc.output("blob");
+  const path = `special-attention-meetings/${yyyy}/${mm}/${meetingId}.pdf`;
+  await supabase.storage.from("repository-files").upload(path, blob, { contentType: "application/pdf" });
+  const { data: { publicUrl } } = supabase.storage.from("repository-files").getPublicUrl(path);
+  ```
+
+---
+
+### 4. Integración en `SpecialAttentionPage.tsx`
+
+- Importar `MeetingsRegistryDialog` y `CalendarCheck` (lucide).
+- Agregar estado `meetingsOpen` y botón en el header, junto a "PDF":
+  ```tsx
+  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setMeetingsOpen(true)}>
+    <CalendarCheck className="h-4 w-4" />
+    Registro Reuniones
+  </Button>
+  ```
+- Pasar `contracts` actuales al diálogo para construir el snapshot al registrar.
+
+---
+
+### 5. Detalles UX
+
+- Al registrar, deshabilitar botón con spinner mientras se genera/sube el PDF.
+- Si la subida del PDF falla, el registro se mantiene pero se marca con badge "PDF pendiente" y se ofrece reintentar.
+- Participantes pueden marcarse como "frecuentes" en sesión (sessionStorage) para reutilizar entre reuniones del día.
+- Mes y año por defecto **expandidos** sólo para el período actual; resto colapsado al abrir.
+
+---
+
+### Archivos a crear/modificar
+
+**Nuevos:**
+- `src/components/special-attention/MeetingsRegistryDialog.tsx`
+- `src/components/special-attention/exportMeetingPDF.ts`
+- Migración SQL: tablas + RLS
+
+**Modificados:**
+- `src/pages/SpecialAttentionPage.tsx` (botón + dialog mount)
+
+**Sin cambios:**
+- `exportSpecialAttentionPDF.ts` (sigue funcionando para export general)
+- Bucket de storage (reusa `repository-files`)
+
+---
+
+### Confirmación pendiente
+Antes de implementar, ¿quieres que los participantes sean **texto libre** (escribir nombre cada vez) o que se vinculen a una **lista maestra reutilizable** (tabla `meeting_participants_directory` con autocompletado)? La opción simple es texto libre — más rápida y cubre el caso de uso descrito.

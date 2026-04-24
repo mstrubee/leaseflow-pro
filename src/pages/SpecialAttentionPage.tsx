@@ -7,7 +7,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { ContractSearchSelect, type ContractOption } from "@/components/contracts/ContractSearchSelect";
 import { SpecialAttentionChecklist } from "@/components/special-attention/SpecialAttentionChecklist";
-import { AlertTriangle, ArrowLeft, ExternalLink, Plus, Search, ChevronDown, ChevronRight, ChevronsUpDown, FileDown, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, Plus, Search, ChevronDown, ChevronRight, ChevronsUpDown, FileDown, Trash2, CalendarCheck } from "lucide-react";
+import { MeetingsRegistryDialog } from "@/components/special-attention/MeetingsRegistryDialog";
 import { SelectableElement } from "@/components/admin/SelectableElement";
 import { exportSpecialAttentionPDF } from "@/components/special-attention/exportSpecialAttentionPDF";
 import { Input } from "@/components/ui/input";
@@ -74,6 +75,7 @@ const SpecialAttentionPage = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [removeConfirmId, setRemoveConfirmId] = useState<string | null>(null);
+  const [meetingsOpen, setMeetingsOpen] = useState(false);
 
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => {
@@ -222,6 +224,15 @@ const SpecialAttentionPage = () => {
             <FileDown className="h-4 w-4" />
             PDF
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 shrink-0"
+            onClick={() => setMeetingsOpen(true)}
+          >
+            <CalendarCheck className="h-4 w-4" />
+            Registro Reuniones
+          </Button>
           <div className="flex-1" />
           <div className="flex items-center gap-2 w-80">
             <ContractSearchSelect
@@ -331,6 +342,12 @@ const SpecialAttentionPage = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <MeetingsRegistryDialog
+        open={meetingsOpen}
+        onOpenChange={setMeetingsOpen}
+        contracts={contracts}
+      />
     </div>
     </SelectableElement>
   );
