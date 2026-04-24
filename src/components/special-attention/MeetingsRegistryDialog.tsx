@@ -36,6 +36,13 @@ interface Participant {
   role?: string | null;
 }
 
+interface DirectoryEntry {
+  id: string;
+  name: string;
+  role: string | null;
+  is_recurring: boolean;
+}
+
 interface MeetingRow {
   id: string;
   meeting_date: string;
