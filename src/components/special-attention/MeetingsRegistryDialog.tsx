@@ -383,7 +383,65 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
 
             {/* Participants */}
             <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Participantes</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-muted-foreground">Participantes</label>
+                <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button type="button" variant="outline" size="sm" className="h-7 gap-1.5 text-xs">
+                      <BookUser className="h-3.5 w-3.5" />
+                      Directorio
+                      {directory.length > 0 && (
+                        <span className="text-muted-foreground">({directory.length})</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-0" align="end">
+                    <Command>
+                      <CommandInput placeholder="Buscar participante guardado..." />
+                      <CommandList>
+                        <CommandEmpty>Sin participantes guardados</CommandEmpty>
+                        <CommandGroup heading="Directorio">
+                          {directory.map(entry => {
+                            const selected = isSelected(entry);
+                            return (
+                              <CommandItem
+                                key={entry.id}
+                                value={`${entry.name} ${entry.role || ""}`}
+                                onSelect={() => toggleDirectoryEntry(entry)}
+                                className="flex items-center gap-2"
+                              >
+                                <Check className={`h-4 w-4 shrink-0 ${selected ? "opacity-100" : "opacity-0"}`} />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm truncate">{entry.name}</p>
+                                  {entry.role && (
+                                    <p className="text-xs text-muted-foreground truncate">{entry.role}</p>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); toggleRecurring(entry); }}
+                                  className={`p-1 rounded hover:bg-muted ${entry.is_recurring ? "text-amber-500" : "text-muted-foreground"}`}
+                                  title={entry.is_recurring ? "Quitar de recurrentes" : "Marcar como recurrente"}
+                                >
+                                  <Star className={`h-3.5 w-3.5 ${entry.is_recurring ? "fill-current" : ""}`} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); deleteDirectoryEntry(entry); }}
+                                  className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                                  title="Eliminar del directorio"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </CommandItem>
+                            );
+                          })}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
               <div className="flex gap-2">
                 <Input
                   placeholder="Nombre"
@@ -403,19 +461,46 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
+              {pName.trim() && (
+                <div className="flex items-center gap-4 px-1 text-xs">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-muted-foreground">
+                    <Checkbox
+                      checked={savedToDirectory}
+                      onCheckedChange={(v) => setSavedToDirectory(!!v)}
+                      className="h-3.5 w-3.5"
+                    />
+                    Guardar en directorio
+                  </label>
+                  {savedToDirectory && (
+                    <label className="flex items-center gap-1.5 cursor-pointer text-muted-foreground">
+                      <Checkbox
+                        checked={markAsRecurring}
+                        onCheckedChange={(v) => setMarkAsRecurring(!!v)}
+                        className="h-3.5 w-3.5"
+                      />
+                      <Star className="h-3 w-3 text-amber-500" />
+                      Marcar como recurrente
+                    </label>
+                  )}
+                </div>
+              )}
               {newParticipants.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
-                  {newParticipants.map((p, i) => (
-                    <Badge key={i} variant="secondary" className="gap-1.5 pr-1">
-                      <span>{p.name}{p.role ? ` · ${p.role}` : ""}</span>
-                      <button
-                        onClick={() => removeParticipant(i)}
-                        className="hover:bg-destructive/20 rounded-sm p-0.5"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ))}
+                  {newParticipants.map((p, i) => {
+                    const inDir = directory.find(d => participantKey(d.name, d.role) === participantKey(p.name, p.role));
+                    return (
+                      <Badge key={i} variant="secondary" className="gap-1.5 pr-1">
+                        {inDir?.is_recurring && <Star className="h-3 w-3 text-amber-500 fill-current" />}
+                        <span>{p.name}{p.role ? ` · ${p.role}` : ""}</span>
+                        <button
+                          onClick={() => removeParticipant(i)}
+                          className="hover:bg-destructive/20 rounded-sm p-0.5"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -437,6 +522,7 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
               </Button>
             </div>
           </section>
+
 
           {/* History */}
           <section className="space-y-2">
