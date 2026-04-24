@@ -342,6 +342,12 @@ const SpecialAttentionPage = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <MeetingsRegistryDialog
+        open={meetingsOpen}
+        onOpenChange={setMeetingsOpen}
+        contracts={contracts}
+      />
     </div>
     </SelectableElement>
   );
