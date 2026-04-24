@@ -81,6 +81,7 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
   const [expandedMeetings, setExpandedMeetings] = useState<Set<string>>(new Set());
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [newMeetingOpen, setNewMeetingOpen] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
