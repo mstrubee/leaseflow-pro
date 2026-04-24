@@ -224,6 +224,15 @@ const SpecialAttentionPage = () => {
             <FileDown className="h-4 w-4" />
             PDF
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 shrink-0"
+            onClick={() => setMeetingsOpen(true)}
+          >
+            <CalendarCheck className="h-4 w-4" />
+            Registro Reuniones
+          </Button>
           <div className="flex-1" />
           <div className="flex items-center gap-2 w-80">
             <ContractSearchSelect
