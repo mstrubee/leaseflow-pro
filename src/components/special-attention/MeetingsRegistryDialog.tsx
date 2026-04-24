@@ -12,8 +12,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   CalendarPlus, ChevronDown, ChevronRight, ChevronsUpDown, FileDown,
-  Plus, Trash2, X, Users, Loader2,
+  Plus, Trash2, X, Users, Loader2, Star, BookUser, Check,
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
+} from "@/components/ui/command";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { type MeetingContractSnapshot } from "./exportMeetingPDF";
@@ -29,6 +34,13 @@ interface Participant {
   id?: string;
   name: string;
   role?: string | null;
+}
+
+interface DirectoryEntry {
+  id: string;
+  name: string;
+  role: string | null;
+  is_recurring: boolean;
 }
 
 interface MeetingRow {
@@ -56,6 +68,12 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
   const [pName, setPName] = useState("");
   const [pRole, setPRole] = useState("");
   const [notes, setNotes] = useState("");
+
+  // Directory of saved participants
+  const [directory, setDirectory] = useState<DirectoryEntry[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [savedToDirectory, setSavedToDirectory] = useState(true);
+  const [markAsRecurring, setMarkAsRecurring] = useState(false);
 
   // Expansion state
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
@@ -97,9 +115,33 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
     setLoading(false);
   }, []);
 
+  const loadDirectory = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("special_attention_participants_directory")
+      .select("id, name, role, is_recurring")
+      .order("is_recurring", { ascending: false })
+      .order("name", { ascending: true });
+    if (error) {
+      console.error("directory load error", error);
+      return;
+    }
+    const list = (data || []) as DirectoryEntry[];
+    setDirectory(list);
+    // Preselect recurring participants if user hasn't manually edited yet
+    setNewParticipants(prev => {
+      if (prev.length > 0) return prev;
+      return list
+        .filter(d => d.is_recurring)
+        .map(d => ({ name: d.name, role: d.role }));
+    });
+  }, []);
+
   useEffect(() => {
-    if (open) load();
-  }, [open, load]);
+    if (open) {
+      load();
+      loadDirectory();
+    }
+  }, [open, load, loadDirectory]);
 
   // Group meetings by year > month
   const grouped = useMemo(() => {
@@ -148,16 +190,64 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
     setter(next);
   };
 
+  const participantKey = (name: string, role?: string | null) =>
+    `${name.trim().toLowerCase()}|${(role || "").trim().toLowerCase()}`;
+
+  const isSelected = (entry: DirectoryEntry) =>
+    newParticipants.some(p => participantKey(p.name, p.role) === participantKey(entry.name, entry.role));
+
   const addParticipant = () => {
     const name = pName.trim();
     if (!name) return;
-    setNewParticipants(prev => [...prev, { name, role: pRole.trim() || null }]);
+    const role = pRole.trim() || null;
+    const key = participantKey(name, role);
+    if (newParticipants.some(p => participantKey(p.name, p.role) === key)) {
+      toast.info("Ese participante ya está agregado");
+      return;
+    }
+    setNewParticipants(prev => [...prev, { name, role }]);
     setPName("");
     setPRole("");
   };
 
   const removeParticipant = (idx: number) => {
     setNewParticipants(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const toggleDirectoryEntry = (entry: DirectoryEntry) => {
+    if (isSelected(entry)) {
+      setNewParticipants(prev =>
+        prev.filter(p => participantKey(p.name, p.role) !== participantKey(entry.name, entry.role))
+      );
+    } else {
+      setNewParticipants(prev => [...prev, { name: entry.name, role: entry.role }]);
+    }
+  };
+
+  const toggleRecurring = async (entry: DirectoryEntry) => {
+    const next = !entry.is_recurring;
+    setDirectory(prev => prev.map(d => d.id === entry.id ? { ...d, is_recurring: next } : d));
+    const { error } = await supabase
+      .from("special_attention_participants_directory")
+      .update({ is_recurring: next })
+      .eq("id", entry.id);
+    if (error) {
+      toast.error("No se pudo actualizar");
+      loadDirectory();
+    }
+  };
+
+  const deleteDirectoryEntry = async (entry: DirectoryEntry) => {
+    const { error } = await supabase
+      .from("special_attention_participants_directory")
+      .delete()
+      .eq("id", entry.id);
+    if (error) {
+      toast.error("No se pudo eliminar");
+      return;
+    }
+    setDirectory(prev => prev.filter(d => d.id !== entry.id));
+    toast.success("Eliminado del directorio");
   };
 
   const handleRegister = async () => {
@@ -191,6 +281,18 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
             role: p.role,
           })));
         if (pErr) throw pErr;
+
+        // Save new participants to the directory (idempotent via unique constraint)
+        if (savedToDirectory) {
+          const toUpsert = newParticipants
+            .filter(p => !directory.some(d => participantKey(d.name, d.role) === participantKey(p.name, p.role)))
+            .map(p => ({ name: p.name, role: p.role, is_recurring: markAsRecurring }));
+          if (toUpsert.length > 0) {
+            await supabase
+              .from("special_attention_participants_directory")
+              .upsert(toUpsert, { onConflict: "name,role", ignoreDuplicates: false });
+          }
+        }
       }
 
       // Generate + upload PDF (mismo formato que el botón "PDF" del header)
@@ -222,7 +324,10 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
 
       toast.success("Reunión registrada");
       setNotes("");
+      setMarkAsRecurring(false);
       setNewParticipants([]);
+      // Defer to next tick so loadDirectory's preselect sees empty state
+      setTimeout(() => { loadDirectory(); }, 0);
       await load();
     } catch (err: any) {
       console.error(err);
@@ -278,7 +383,65 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
 
             {/* Participants */}
             <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Participantes</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-muted-foreground">Participantes</label>
+                <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button type="button" variant="outline" size="sm" className="h-7 gap-1.5 text-xs">
+                      <BookUser className="h-3.5 w-3.5" />
+                      Directorio
+                      {directory.length > 0 && (
+                        <span className="text-muted-foreground">({directory.length})</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-0" align="end">
+                    <Command>
+                      <CommandInput placeholder="Buscar participante guardado..." />
+                      <CommandList>
+                        <CommandEmpty>Sin participantes guardados</CommandEmpty>
+                        <CommandGroup heading="Directorio">
+                          {directory.map(entry => {
+                            const selected = isSelected(entry);
+                            return (
+                              <CommandItem
+                                key={entry.id}
+                                value={`${entry.name} ${entry.role || ""}`}
+                                onSelect={() => toggleDirectoryEntry(entry)}
+                                className="flex items-center gap-2"
+                              >
+                                <Check className={`h-4 w-4 shrink-0 ${selected ? "opacity-100" : "opacity-0"}`} />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm truncate">{entry.name}</p>
+                                  {entry.role && (
+                                    <p className="text-xs text-muted-foreground truncate">{entry.role}</p>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); toggleRecurring(entry); }}
+                                  className={`p-1 rounded hover:bg-muted ${entry.is_recurring ? "text-amber-500" : "text-muted-foreground"}`}
+                                  title={entry.is_recurring ? "Quitar de recurrentes" : "Marcar como recurrente"}
+                                >
+                                  <Star className={`h-3.5 w-3.5 ${entry.is_recurring ? "fill-current" : ""}`} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); deleteDirectoryEntry(entry); }}
+                                  className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                                  title="Eliminar del directorio"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </CommandItem>
+                            );
+                          })}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
               <div className="flex gap-2">
                 <Input
                   placeholder="Nombre"
@@ -298,19 +461,46 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
+              {pName.trim() && (
+                <div className="flex items-center gap-4 px-1 text-xs">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-muted-foreground">
+                    <Checkbox
+                      checked={savedToDirectory}
+                      onCheckedChange={(v) => setSavedToDirectory(!!v)}
+                      className="h-3.5 w-3.5"
+                    />
+                    Guardar en directorio
+                  </label>
+                  {savedToDirectory && (
+                    <label className="flex items-center gap-1.5 cursor-pointer text-muted-foreground">
+                      <Checkbox
+                        checked={markAsRecurring}
+                        onCheckedChange={(v) => setMarkAsRecurring(!!v)}
+                        className="h-3.5 w-3.5"
+                      />
+                      <Star className="h-3 w-3 text-amber-500" />
+                      Marcar como recurrente
+                    </label>
+                  )}
+                </div>
+              )}
               {newParticipants.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
-                  {newParticipants.map((p, i) => (
-                    <Badge key={i} variant="secondary" className="gap-1.5 pr-1">
-                      <span>{p.name}{p.role ? ` · ${p.role}` : ""}</span>
-                      <button
-                        onClick={() => removeParticipant(i)}
-                        className="hover:bg-destructive/20 rounded-sm p-0.5"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ))}
+                  {newParticipants.map((p, i) => {
+                    const inDir = directory.find(d => participantKey(d.name, d.role) === participantKey(p.name, p.role));
+                    return (
+                      <Badge key={i} variant="secondary" className="gap-1.5 pr-1">
+                        {inDir?.is_recurring && <Star className="h-3 w-3 text-amber-500 fill-current" />}
+                        <span>{p.name}{p.role ? ` · ${p.role}` : ""}</span>
+                        <button
+                          onClick={() => removeParticipant(i)}
+                          className="hover:bg-destructive/20 rounded-sm p-0.5"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -332,6 +522,7 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
               </Button>
             </div>
           </section>
+
 
           {/* History */}
           <section className="space-y-2">
