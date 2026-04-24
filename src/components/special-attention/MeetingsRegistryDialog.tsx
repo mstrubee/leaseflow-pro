@@ -16,7 +16,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { generateMeetingPDF, type MeetingContractSnapshot } from "./exportMeetingPDF";
+import { type MeetingContractSnapshot } from "./exportMeetingPDF";
+import { exportSpecialAttentionPDF } from "./exportSpecialAttentionPDF";
 
 interface Props {
   open: boolean;
@@ -192,16 +193,18 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
         if (pErr) throw pErr;
       }
 
-      // Generate + upload PDF
+      // Generate + upload PDF (mismo formato que el botón "PDF" del header)
       try {
-        const { blob, filename } = await generateMeetingPDF({
-          meetingDate,
-          notes: notes.trim() || null,
-          participants: newParticipants,
-          contracts,
+        const subtitle = `Reunión: ${meetingDate.toLocaleDateString("es-CL")} ${meetingDate.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })} hrs`;
+        const result = await exportSpecialAttentionPDF(contracts as any, {
+          returnBlob: true,
+          subtitleOverride: subtitle,
         });
+        if (!result) throw new Error("PDF vacío");
+        const { blob } = result;
         const yyyy = meetingDate.getFullYear();
         const mm = String(meetingDate.getMonth() + 1).padStart(2, "0");
+        const filename = `Acta_Reunion_${yyyy}.${mm}.${String(meetingDate.getDate()).padStart(2, "0")}_${meetingDate.getTime()}.pdf`;
         const path = `special-attention-meetings/${yyyy}/${mm}/${meetingId}_${filename}`;
         const { error: upErr } = await supabase.storage
           .from("repository-files")

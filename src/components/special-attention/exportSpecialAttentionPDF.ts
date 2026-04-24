@@ -69,7 +69,19 @@ function buildChecklistRows(
   return rows;
 }
 
-export async function exportSpecialAttentionPDF(contracts: SpecialContract[]) {
+export interface ExportSpecialAttentionOptions {
+  /** If true, returns the PDF as a Blob instead of triggering download. */
+  returnBlob?: boolean;
+  /** Override the title shown in the header. */
+  titleOverride?: string;
+  /** Optional subtitle line shown below the title (e.g. meeting date/time). */
+  subtitleOverride?: string;
+}
+
+export async function exportSpecialAttentionPDF(
+  contracts: SpecialContract[],
+  options: ExportSpecialAttentionOptions = {}
+): Promise<{ blob: Blob; filename: string } | void> {
   if (contracts.length === 0) return;
 
   // Fetch all checklist items
@@ -103,12 +115,15 @@ export async function exportSpecialAttentionPDF(contracts: SpecialContract[]) {
 
   doc.setFontSize(16);
   doc.setFont("helvetica", "bold");
-  doc.text("Atención Especial Contratos", logoImg ? 70 : margin, 18);
+  doc.text(options.titleOverride || "Atención Especial Contratos", logoImg ? 70 : margin, 18);
 
   doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(100);
-  doc.text(`Generado: ${today}  |  Total: ${contracts.length} contratos`, logoImg ? 70 : margin, 25);
+  const subtitle = options.subtitleOverride
+    ? `${options.subtitleOverride}  |  Total: ${contracts.length} contratos`
+    : `Generado: ${today}  |  Total: ${contracts.length} contratos`;
+  doc.text(subtitle, logoImg ? 70 : margin, 25);
   doc.setTextColor(0);
 
   // Summary stats
@@ -264,5 +279,9 @@ export async function exportSpecialAttentionPDF(contracts: SpecialContract[]) {
     doc.setTextColor(0);
   }
 
-  doc.save(`Atencion_Especial_${fmtDate(new Date().toISOString())}.pdf`);
+  const filename = `Atencion_Especial_${fmtDate(new Date().toISOString())}.pdf`;
+  if (options.returnBlob) {
+    return { blob: doc.output("blob"), filename };
+  }
+  doc.save(filename);
 }
