@@ -324,7 +324,9 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
 
       toast.success("Reunión registrada");
       setNotes("");
-      setNewParticipants([]);
+      setMarkAsRecurring(false);
+      await loadDirectory(); // refresh + re-preselect recurring
+      setNewParticipants([]); // will be repopulated by loadDirectory effect, but clear first
       await load();
     } catch (err: any) {
       console.error(err);
