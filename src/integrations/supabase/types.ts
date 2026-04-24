@@ -5016,6 +5016,71 @@ export type Database = {
           },
         ]
       }
+      special_attention_meeting_participants: {
+        Row: {
+          created_at: string
+          id: string
+          meeting_id: string
+          name: string
+          role: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          meeting_id: string
+          name: string
+          role?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          meeting_id?: string
+          name?: string
+          role?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "special_attention_meeting_participants_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "special_attention_meetings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      special_attention_meetings: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          meeting_date: string
+          notes: string | null
+          pdf_path: string | null
+          pdf_url: string | null
+          snapshot: Json | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          meeting_date?: string
+          notes?: string | null
+          pdf_path?: string | null
+          pdf_url?: string | null
+          snapshot?: Json | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          meeting_date?: string
+          notes?: string | null
+          pdf_path?: string | null
+          pdf_url?: string | null
+          snapshot?: Json | null
+        }
+        Relationships: []
+      }
       storage_settings: {
         Row: {
           active_provider: string
