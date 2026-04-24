@@ -69,6 +69,12 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
   const [pRole, setPRole] = useState("");
   const [notes, setNotes] = useState("");
 
+  // Directory of saved participants
+  const [directory, setDirectory] = useState<DirectoryEntry[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [savedToDirectory, setSavedToDirectory] = useState(true);
+  const [markAsRecurring, setMarkAsRecurring] = useState(false);
+
   // Expansion state
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
