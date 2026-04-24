@@ -81,6 +81,7 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
   const [expandedMeetings, setExpandedMeetings] = useState<Set<string>>(new Set());
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [newMeetingOpen, setNewMeetingOpen] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -374,13 +375,24 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
         <div className="flex-1 overflow-y-auto space-y-6 pr-1">
           {/* New meeting */}
           <section className="border rounded-lg p-4 bg-muted/30 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-sm">Nueva reunión</h3>
-              <span className="text-xs text-muted-foreground">
-                Fecha y hora se registran automáticamente
-              </span>
-            </div>
+            <Collapsible open={newMeetingOpen} onOpenChange={setNewMeetingOpen}>
+              <div className="flex items-center justify-between">
+                <CollapsibleTrigger asChild>
+                  <button type="button" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+                    {newMeetingOpen ? (
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    )}
+                    <h3 className="font-semibold text-sm">Nueva reunión</h3>
+                  </button>
+                </CollapsibleTrigger>
+                <span className="text-xs text-muted-foreground">
+                  Fecha y hora se registran automáticamente
+                </span>
+              </div>
 
+              <CollapsibleContent className="space-y-3 pt-3">
             {/* Participants */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -521,6 +533,8 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
                 Registrar
               </Button>
             </div>
+              </CollapsibleContent>
+            </Collapsible>
           </section>
 
 
