@@ -12,8 +12,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   CalendarPlus, ChevronDown, ChevronRight, ChevronsUpDown, FileDown,
-  Plus, Trash2, X, Users, Loader2,
+  Plus, Trash2, X, Users, Loader2, Star, BookUser, Check,
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
+} from "@/components/ui/command";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { type MeetingContractSnapshot } from "./exportMeetingPDF";
