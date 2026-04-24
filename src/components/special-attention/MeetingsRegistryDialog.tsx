@@ -281,6 +281,18 @@ export function MeetingsRegistryDialog({ open, onOpenChange, contracts }: Props)
             role: p.role,
           })));
         if (pErr) throw pErr;
+
+        // Save new participants to the directory (idempotent via unique constraint)
+        if (savedToDirectory) {
+          const toUpsert = newParticipants
+            .filter(p => !directory.some(d => participantKey(d.name, d.role) === participantKey(p.name, p.role)))
+            .map(p => ({ name: p.name, role: p.role, is_recurring: markAsRecurring }));
+          if (toUpsert.length > 0) {
+            await supabase
+              .from("special_attention_participants_directory")
+              .upsert(toUpsert, { onConflict: "name,role", ignoreDuplicates: false });
+          }
+        }
       }
 
       // Generate + upload PDF (mismo formato que el botón "PDF" del header)
