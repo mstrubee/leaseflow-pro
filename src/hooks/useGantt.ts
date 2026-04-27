@@ -836,6 +836,115 @@ export function useGantt(contractId: string) {
     }
   };
 
+  const createTimelineFromCapex = async (name: string) => {
+    setSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // 1. Find CAPEX budgets for this contract
+      const { data: capexBudgets, error: budgetsErr } = await supabase
+        .from("contract_budgets")
+        .select("id")
+        .eq("contract_id", contractId)
+        .eq("budget_type", "capex");
+      if (budgetsErr) throw budgetsErr;
+
+      if (!capexBudgets || capexBudgets.length === 0) {
+        toast({
+          variant: "destructive",
+          title: "Sin presupuesto CAPEX",
+          description: "Este contrato no tiene un presupuesto CAPEX para importar",
+        });
+        return null;
+      }
+
+      const budgetIds = capexBudgets.map((b) => b.id);
+
+      // 2. Fetch all active CAPEX budget lines preserving hierarchy
+      const { data: lines, error: linesErr } = await supabase
+        .from("budget_lines")
+        .select("id, parent_id, name, display_order, is_ghost")
+        .in("budget_id", budgetIds)
+        .is("deleted_at", null)
+        .order("display_order", { ascending: true });
+      if (linesErr) throw linesErr;
+
+      const visibleLines = (lines || []).filter((l) => !l.is_ghost);
+
+      if (visibleLines.length === 0) {
+        toast({
+          variant: "destructive",
+          title: "Sin líneas",
+          description: "El presupuesto CAPEX no tiene líneas para importar",
+        });
+        return null;
+      }
+
+      // 3. Create the timeline
+      const { data: newTimeline, error: tlErr } = await supabase
+        .from("gantt_timelines")
+        .insert({
+          contract_id: contractId,
+          name,
+          template_id: null,
+          created_by: user?.id,
+        })
+        .select()
+        .single();
+      if (tlErr || !newTimeline) throw tlErr || new Error("No se pudo crear la línea de tiempo");
+
+      // 4. Insert all tasks first without parent_id, build id mapping
+      const idMap = new Map<string, string>();
+      for (const line of visibleLines) {
+        const { data: insertedTask, error: insErr } = await supabase
+          .from("gantt_tasks")
+          .insert({
+            timeline_id: newTimeline.id,
+            parent_id: null,
+            name: line.name,
+            duration_days: 1,
+            duration_type: "calendar",
+            display_order: line.display_order ?? 0,
+            status: "pending",
+          })
+          .select()
+          .single();
+        if (insErr || !insertedTask) throw insErr || new Error("No se pudo insertar tarea");
+        idMap.set(line.id, insertedTask.id);
+      }
+
+      // 5. Second pass: set parent_id (only when parent was also imported)
+      for (const line of visibleLines) {
+        if (line.parent_id && idMap.has(line.parent_id)) {
+          const newId = idMap.get(line.id)!;
+          const newParentId = idMap.get(line.parent_id)!;
+          await supabase
+            .from("gantt_tasks")
+            .update({ parent_id: newParentId })
+            .eq("id", newId);
+        }
+      }
+
+      toast({
+        title: "Línea de tiempo creada",
+        description: `Se importaron ${visibleLines.length} líneas del presupuesto CAPEX`,
+      });
+
+      await loadTimeline();
+      return newTimeline;
+    } catch (error: any) {
+      console.error("Error creating timeline from CAPEX:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo crear la línea de tiempo desde CAPEX",
+      });
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const deleteTimeline = async () => {
     if (!timeline) return false;
     setSaving(true);
