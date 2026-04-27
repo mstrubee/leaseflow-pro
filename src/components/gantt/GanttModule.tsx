@@ -102,14 +102,19 @@ export function GanttModule({ contractId }: GanttModuleProps) {
   const baseTemplate = templates.find((t) => t.id === timeline?.template_id);
 
   const handleCreateTimeline = async () => {
-    const result = await createTimeline(
-      newTimelineName,
-      selectedTemplateId || undefined
-    );
+    let result = null;
+    if (creationSource === "capex") {
+      result = await createTimelineFromCapex(newTimelineName);
+    } else if (creationSource === "template" && selectedTemplateId) {
+      result = await createTimeline(newTimelineName, selectedTemplateId);
+    } else {
+      result = await createTimeline(newTimelineName);
+    }
     if (result) {
       setCreateDialogOpen(false);
       setNewTimelineName("Línea de Tiempo Principal");
       setSelectedTemplateId("");
+      setCreationSource("empty");
     }
   };
 
