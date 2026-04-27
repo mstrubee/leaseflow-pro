@@ -232,7 +232,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
                 </Button>
                 <Button
                   onClick={handleCreateTimeline}
-                  disabled={saving || !newTimelineName.trim()}
+                  disabled={saving || !newTimelineName.trim() || (creationSource === "template" && !selectedTemplateId)}
                 >
                   {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                   Crear
