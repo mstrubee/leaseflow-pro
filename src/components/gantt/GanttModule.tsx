@@ -52,6 +52,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newTimelineName, setNewTimelineName] = useState("Línea de Tiempo Principal");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [creationSource, setCreationSource] = useState<"empty" | "template" | "capex">("empty");
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState("");
   const [newTemplateDesc, setNewTemplateDesc] = useState("");
