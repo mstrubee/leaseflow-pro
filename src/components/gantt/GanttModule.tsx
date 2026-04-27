@@ -34,6 +34,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
     loading,
     saving,
     createTimeline,
+    createTimelineFromCapex,
     addTask,
     updateTask,
     deleteTask,
