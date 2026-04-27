@@ -977,6 +977,7 @@ export function useGantt(contractId: string) {
     loading,
     saving,
     createTimeline,
+    createTimelineFromCapex,
     deleteTimeline,
     addTask,
     updateTask,
