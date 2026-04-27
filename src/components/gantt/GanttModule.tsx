@@ -34,6 +34,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
     loading,
     saving,
     createTimeline,
+    createTimelineFromCapex,
     addTask,
     updateTask,
     deleteTask,
@@ -51,6 +52,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newTimelineName, setNewTimelineName] = useState("Línea de Tiempo Principal");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [creationSource, setCreationSource] = useState<"empty" | "template" | "capex">("empty");
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState("");
   const [newTemplateDesc, setNewTemplateDesc] = useState("");
@@ -100,14 +102,19 @@ export function GanttModule({ contractId }: GanttModuleProps) {
   const baseTemplate = templates.find((t) => t.id === timeline?.template_id);
 
   const handleCreateTimeline = async () => {
-    const result = await createTimeline(
-      newTimelineName,
-      selectedTemplateId || undefined
-    );
+    let result = null;
+    if (creationSource === "capex") {
+      result = await createTimelineFromCapex(newTimelineName);
+    } else if (creationSource === "template" && selectedTemplateId) {
+      result = await createTimeline(newTimelineName, selectedTemplateId);
+    } else {
+      result = await createTimeline(newTimelineName);
+    }
     if (result) {
       setCreateDialogOpen(false);
       setNewTimelineName("Línea de Tiempo Principal");
       setSelectedTemplateId("");
+      setCreationSource("empty");
     }
   };
 
@@ -175,24 +182,46 @@ export function GanttModule({ contractId }: GanttModuleProps) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Plantilla (opcional)</Label>
+                  <Label>Origen</Label>
                   <Select
-                    value={selectedTemplateId || "none"}
-                    onValueChange={(value) => setSelectedTemplateId(value === "none" ? "" : value)}
+                    value={creationSource}
+                    onValueChange={(v) => setCreationSource(v as "empty" | "template" | "capex")}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Sin plantilla - empezar vacío" />
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Sin plantilla</SelectItem>
-                      {templates.map((template) => (
-                        <SelectItem key={template.id} value={template.id}>
-                          {template.name}
-                        </SelectItem>
-                      ))}
+                      <SelectItem value="empty">Empezar vacío</SelectItem>
+                      <SelectItem value="template">Desde una plantilla</SelectItem>
+                      <SelectItem value="capex">Importar desde CAPEX (Control Presupuestario)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+                {creationSource === "template" && (
+                  <div className="space-y-2">
+                    <Label>Plantilla</Label>
+                    <Select
+                      value={selectedTemplateId || ""}
+                      onValueChange={(value) => setSelectedTemplateId(value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecciona una plantilla" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {templates.map((template) => (
+                          <SelectItem key={template.id} value={template.id}>
+                            {template.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {creationSource === "capex" && (
+                  <p className="text-xs text-muted-foreground">
+                    Se importarán todas las líneas (madre e hijas) del presupuesto CAPEX manteniendo la jerarquía. Las fechas y duraciones quedarán en blanco para que las completes.
+                  </p>
+                )}
               </div>
               <DialogFooter>
                 <Button
@@ -203,7 +232,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
                 </Button>
                 <Button
                   onClick={handleCreateTimeline}
-                  disabled={saving || !newTimelineName.trim()}
+                  disabled={saving || !newTimelineName.trim() || (creationSource === "template" && !selectedTemplateId)}
                 >
                   {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                   Crear
