@@ -1,7 +1,7 @@
 import { Clock, Hexagon, FileUp, LogIn, LogOut, User as UserIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { useAuth } from "@/geoloc/hooks/useAuth";
+import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 
 interface HeaderProps {

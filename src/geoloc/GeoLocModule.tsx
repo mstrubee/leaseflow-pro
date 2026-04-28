@@ -17,7 +17,7 @@ import { useGseManzanas } from "@/geoloc/hooks/useGseManzanas";
 import { useComunasGeoIndex } from "@/geoloc/hooks/useComunasGeoIndex";
 import { useSavedPois } from "@/geoloc/hooks/useSavedPois";
 import { usePoiFolders } from "@/geoloc/hooks/usePoiFolders";
-import { useAuth } from "@/geoloc/hooks/useAuth";
+import { useAuth } from "@/hooks/useAuth";
 import { fetchIsochrone } from "@/geoloc/services/isochroneService";
 import { fetchOverpassPreset, fetchOverpassFreeText, bboxAreaDegSq } from "@/geoloc/services/overpassService";
 import { extractPointPois, countPoints, type PoiInsert, type SavedPoi } from "@/geoloc/types/pois";

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "./useAuth";
+import { useAuth } from "@/hooks/useAuth";
 import { loadPoiCache, savePoiCache } from "@/geoloc/services/poiCache";
 import type { PoiInsert, PoiUpdate, SavedPoi } from "@/geoloc/types/pois";
 
