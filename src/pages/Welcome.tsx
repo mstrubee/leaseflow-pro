@@ -26,7 +26,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   FileText, ShoppingCart, Wallet, HardHat, Bell,
   BarChart3, Wrench, Shield, Users, LayoutDashboard,
-  LogOut, GripVertical, AlertTriangle, KeyRound,
+  LogOut, GripVertical, AlertTriangle, KeyRound, MapPin,
 } from "lucide-react";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { SelectableElement } from "@/components/admin/SelectableElement";
