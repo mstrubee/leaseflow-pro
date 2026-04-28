@@ -147,3 +147,105 @@ All colors MUST be HSL.
     @apply font-semibold;
   }
 }
+/* ============================================================
+   GEOLOC module — design tokens scoped to .geoloc-root
+   Dark GIS theme (Apple-inspired). Only applies inside
+   the GeoLoc page; the rest of gplanet keeps its own theme.
+   ============================================================ */
+.geoloc-root {
+  --background: 220 18% 7%;
+  --foreground: 210 20% 96%;
+  --surface: 220 16% 10%;
+  --surface-2: 220 14% 14%;
+  --surface-3: 220 13% 18%;
+  --card: 220 16% 10%;
+  --card-foreground: 210 20% 96%;
+  --popover: 220 16% 9%;
+  --popover-foreground: 210 20% 96%;
+  --primary: 211 100% 60%;
+  --primary-foreground: 220 18% 7%;
+  --secondary: 220 14% 14%;
+  --secondary-foreground: 210 20% 96%;
+  --muted: 220 14% 14%;
+  --muted-foreground: 220 9% 65%;
+  --text-muted: 220 8% 48%;
+  --accent: 211 100% 60%;
+  --accent-foreground: 220 18% 7%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 220 12% 20%;
+  --border-2: 220 11% 28%;
+  --input: 220 12% 20%;
+  --ring: 211 100% 60%;
+  --radius: 12px;
+  --brand-orange: 24 95% 53%;
+  --brand-green: 142 71% 45%;
+  --brand-red: 0 84% 60%;
+  --brand-yellow: 47 95% 53%;
+  --brand-purple: 271 91% 65%;
+  --brand-pink: 330 81% 60%;
+  --brand-teal: 173 80% 40%;
+  --iso-1: 38 92% 50%;
+  --iso-2: 24 95% 53%;
+  --iso-3: 0 84% 60%;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  height: 100%;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.geoloc-root .glass {
+  background: hsl(var(--surface) / 0.72);
+  backdrop-filter: saturate(160%) blur(24px);
+  -webkit-backdrop-filter: saturate(160%) blur(24px);
+  border: 1px solid hsl(var(--border) / 0.6);
+}
+.geoloc-root .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.geoloc-root .scrollbar-thin::-webkit-scrollbar-thumb { background: hsl(var(--border-2)); border-radius: 6px; }
+.geoloc-root .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+.geoloc-root .font-display { font-family: 'Inter', system-ui, sans-serif; letter-spacing: -0.02em; }
+.geoloc-root .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+/* Leaflet inside GeoLoc */
+.geoloc-root .leaflet-container { background: hsl(0 0% 100%); }
+.geoloc-root .leaflet-popup-content-wrapper {
+  background: hsl(var(--surface) / 0.92) !important;
+  backdrop-filter: saturate(160%) blur(20px);
+  -webkit-backdrop-filter: saturate(160%) blur(20px);
+  border: 1px solid hsl(var(--border) / 0.6) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 2px 4px hsl(0 0% 0% / 0.22), 0 24px 48px hsl(0 0% 0% / 0.4) !important;
+  padding: 0 !important;
+  color: hsl(var(--foreground));
+}
+.geoloc-root .leaflet-popup-content { margin: 12px 14px !important; color: hsl(var(--foreground)); font-family: 'Inter', sans-serif; }
+.geoloc-root .leaflet-popup-tip { background: hsl(var(--surface) / 0.92) !important; border: 1px solid hsl(var(--border) / 0.6) !important; }
+.geoloc-root .leaflet-popup-close-button { color: hsl(var(--text-muted)) !important; top: 8px !important; right: 8px !important; }
+.geoloc-root .leaflet-popup-close-button:hover { color: hsl(var(--primary)) !important; }
+.geoloc-root .leaflet-control-zoom {
+  border-radius: 12px !important;
+  overflow: hidden;
+  box-shadow: 0 1px 2px hsl(0 0% 0% / 0.18), 0 8px 24px hsl(0 0% 0% / 0.32) !important;
+}
+.geoloc-root .leaflet-control-zoom a {
+  background: hsl(var(--surface) / 0.78) !important;
+  backdrop-filter: saturate(160%) blur(20px);
+  -webkit-backdrop-filter: saturate(160%) blur(20px);
+  border-color: hsl(var(--border) / 0.6) !important;
+  color: hsl(var(--foreground)) !important;
+  font-weight: 500 !important;
+}
+.geoloc-root .leaflet-control-zoom a:hover {
+  background: hsl(var(--surface-2) / 0.92) !important;
+  color: hsl(var(--primary)) !important;
+}
+.geoloc-root .leaflet-bar { border: none !important; box-shadow: none !important; }
+.geoloc-root .leaflet-control-attribution {
+  background: hsl(var(--surface) / 0.7) !important;
+  backdrop-filter: blur(12px);
+  color: hsl(var(--text-muted)) !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 9px !important;
+  border-radius: 6px !important;
+}
+.geoloc-root .leaflet-control-attribution a { color: hsl(var(--primary)) !important; }
