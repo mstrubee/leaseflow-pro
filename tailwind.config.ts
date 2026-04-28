@@ -15,10 +15,17 @@ export default {
   	extend: {
   		colors: {
   			border: 'hsl(var(--border))',
+  			'border-2': 'hsl(var(--border-2))',
   			input: 'hsl(var(--input))',
   			ring: 'hsl(var(--ring))',
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
+  			surface: {
+  				DEFAULT: 'hsl(var(--surface))',
+  				2: 'hsl(var(--surface-2))',
+  				3: 'hsl(var(--surface-3))'
+  			},
+  			'text-muted': 'hsl(var(--text-muted))',
   			primary: {
   				DEFAULT: 'hsl(var(--primary))',
   				foreground: 'hsl(var(--primary-foreground))'
@@ -51,6 +58,20 @@ export default {
   				negotiation: 'hsl(var(--status-negotiation))',
   				signed: 'hsl(var(--status-signed))',
   				expired: 'hsl(var(--status-expired))'
+  			},
+  			brand: {
+  				orange: 'hsl(var(--brand-orange))',
+  				green: 'hsl(var(--brand-green))',
+  				red: 'hsl(var(--brand-red))',
+  				yellow: 'hsl(var(--brand-yellow))',
+  				purple: 'hsl(var(--brand-purple))',
+  				pink: 'hsl(var(--brand-pink))',
+  				teal: 'hsl(var(--brand-teal))'
+  			},
+  			iso: {
+  				1: 'hsl(var(--iso-1))',
+  				2: 'hsl(var(--iso-2))',
+  				3: 'hsl(var(--iso-3))'
   			}
   		},
   		boxShadow: {
