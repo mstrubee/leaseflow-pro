@@ -2385,6 +2385,66 @@ export type Database = {
         }
         Relationships: []
       }
+      geoloc_sync_state: {
+        Row: {
+          folders_synced_total: number
+          last_cursor_folders: string | null
+          last_cursor_pois: string | null
+          last_error: string | null
+          last_run_at: string | null
+          pois_synced_total: number
+          source_project: string
+          status: string | null
+          updated_at: string
+        }
+        Insert: {
+          folders_synced_total?: number
+          last_cursor_folders?: string | null
+          last_cursor_pois?: string | null
+          last_error?: string | null
+          last_run_at?: string | null
+          pois_synced_total?: number
+          source_project: string
+          status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          folders_synced_total?: number
+          last_cursor_folders?: string | null
+          last_cursor_pois?: string | null
+          last_error?: string | null
+          last_run_at?: string | null
+          pois_synced_total?: number
+          source_project?: string
+          status?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      geoloc_user_map: {
+        Row: {
+          created_at: string
+          email: string | null
+          gplanet_user_id: string
+          source_project: string
+          source_user_id: string
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          gplanet_user_id: string
+          source_project: string
+          source_user_id: string
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          gplanet_user_id?: string
+          source_project?: string
+          source_user_id?: string
+        }
+        Relationships: []
+      }
       holidays: {
         Row: {
           country: string
@@ -4312,8 +4372,13 @@ export type Database = {
           created_at: string
           deleted_at: string | null
           id: string
+          is_mirror: boolean
           name: string
           parent_id: string | null
+          source_id: string | null
+          source_project: string | null
+          source_user_id: string | null
+          synced_at: string | null
           updated_at: string
           user_id: string
         }
@@ -4322,8 +4387,13 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           id?: string
+          is_mirror?: boolean
           name: string
           parent_id?: string | null
+          source_id?: string | null
+          source_project?: string | null
+          source_user_id?: string | null
+          synced_at?: string | null
           updated_at?: string
           user_id: string
         }
@@ -4332,8 +4402,13 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           id?: string
+          is_mirror?: boolean
           name?: string
           parent_id?: string | null
+          source_id?: string | null
+          source_project?: string | null
+          source_user_id?: string | null
+          synced_at?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -4357,11 +4432,16 @@ export type Database = {
           folder_id: string | null
           icon: string | null
           id: string
+          is_mirror: boolean
           lat: number
           lng: number
           name: string
           properties: Json
+          source_id: string | null
           source_layer: string | null
+          source_project: string | null
+          source_user_id: string | null
+          synced_at: string | null
           updated_at: string
           user_id: string
         }
@@ -4374,11 +4454,16 @@ export type Database = {
           folder_id?: string | null
           icon?: string | null
           id?: string
+          is_mirror?: boolean
           lat: number
           lng: number
           name: string
           properties?: Json
+          source_id?: string | null
           source_layer?: string | null
+          source_project?: string | null
+          source_user_id?: string | null
+          synced_at?: string | null
           updated_at?: string
           user_id: string
         }
@@ -4391,11 +4476,16 @@ export type Database = {
           folder_id?: string | null
           icon?: string | null
           id?: string
+          is_mirror?: boolean
           lat?: number
           lng?: number
           name?: string
           properties?: Json
+          source_id?: string | null
           source_layer?: string | null
+          source_project?: string | null
+          source_user_id?: string | null
+          synced_at?: string | null
           updated_at?: string
           user_id?: string
         }
