@@ -2355,6 +2355,36 @@ export type Database = {
           },
         ]
       }
+      geoloc_drive_sync: {
+        Row: {
+          folders_file_drive_id: string | null
+          last_error: string | null
+          last_synced_at: string | null
+          pois_file_drive_id: string | null
+          root_folder_drive_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          folders_file_drive_id?: string | null
+          last_error?: string | null
+          last_synced_at?: string | null
+          pois_file_drive_id?: string | null
+          root_folder_drive_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          folders_file_drive_id?: string | null
+          last_error?: string | null
+          last_synced_at?: string | null
+          pois_file_drive_id?: string | null
+          root_folder_drive_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       holidays: {
         Row: {
           country: string
@@ -4276,6 +4306,109 @@ export type Database = {
         }
         Relationships: []
       }
+      poi_folders: {
+        Row: {
+          color: string | null
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          parent_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          parent_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          parent_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "poi_folders_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "poi_folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pois: {
+        Row: {
+          category: string | null
+          color: string | null
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          folder_id: string | null
+          icon: string | null
+          id: string
+          lat: number
+          lng: number
+          name: string
+          properties: Json
+          source_layer: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          category?: string | null
+          color?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          folder_id?: string | null
+          icon?: string | null
+          id?: string
+          lat: number
+          lng: number
+          name: string
+          properties?: Json
+          source_layer?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          category?: string | null
+          color?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          folder_id?: string | null
+          icon?: string | null
+          id?: string
+          lat?: number
+          lng?: number
+          name?: string
+          properties?: Json
+          source_layer?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pois_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "poi_folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           activity_status: string
@@ -5665,6 +5798,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      purge_deleted_pois: { Args: never; Returns: undefined }
       set_cloud_storage_token: {
         Args: {
           p_access_token: string
