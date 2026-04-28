@@ -242,7 +242,7 @@ const Index = () => {
   // todos sus descendientes también lo están. La clave "__orphan__" controla los POIs sin carpeta.
   const visiblePois = useMemo(() => {
     if (hiddenPoiFolders.size === 0) return pois;
-    const parentMap = new Map(folders.map((f) => [f.id, f.parent_id]));
+    const parentMap = new Map<string, string | null>(folders.map((f) => [f.id, f.parent_id]));
     const isFolderHidden = (id: string | null): boolean => {
       let cur: string | null = id;
       while (cur) {
