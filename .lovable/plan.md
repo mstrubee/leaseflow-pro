@@ -1,124 +1,145 @@
-## Plan: Registro de Reuniones en módulo "Atención Especial"
+# Integrar GeoLoc en gplanet con Google Drive como repositorio
 
-### Objetivo
-Agregar un botón **"Registro Reuniones"** en el header de `/special-attention` que abra un diálogo flotante con: (a) registro inmediato de una reunión nueva (fecha automática + participantes + notas), (b) listado histórico colapsable agrupado por **año › mes › reunión**, y (c) generación + almacenamiento de un PDF por cada reunión registrada.
+Traer el proyecto [GeoLoc](/projects/539697f7-2650-4d5a-a297-18f86170697b) completo a gplanet como una nueva sección **GEOLOC** en el home. Toda la información generada por el módulo (POIs, capas de usuario, carpetas, archivos importados como KML/GeoJSON/Shapefile/Excel) se almacenará en **Google Drive**, alineado con la política central del proyecto. Supabase se usará únicamente para metadata mínima (índice/lookup).
 
----
+## Arquitectura de almacenamiento
 
-### 1. Base de datos (migración nueva)
+**Regla**: el contenido pesado vive en Drive. Supabase guarda solo punteros.
 
-Crear dos tablas en `public`:
+```text
+Google Drive
+└── GEOLOC/                         (carpeta raíz, configurable)
+    ├── POIs/
+    │   └── <carpeta_usuario>/
+    │       └── pois.geojson        (FeatureCollection con todos los POIs)
+    ├── Capas de usuario/
+    │   └── <nombre_capa>.geojson
+    ├── Importados/
+    │   └── <archivo_original>.kml/.shp/.xlsx
+    └── Análisis/
+        └── isocronas, exports, etc.
+```
 
-**`special_attention_meetings`**
-- `id uuid PK default gen_random_uuid()`
-- `meeting_date timestamptz not null default now()` — fecha/hora del registro
-- `notes text` — notas opcionales de la reunión
-- `pdf_url text` — URL pública del PDF generado en Storage
-- `pdf_path text` — path interno en bucket
-- `snapshot jsonb` — snapshot de los contratos en atención especial al momento del registro (para que el PDF histórico siempre refleje lo que se vio ese día)
-- `created_by uuid references auth.users(id)`
-- `created_at timestamptz default now()`
+**En Supabase** (metadata únicamente):
+- `geoloc_drive_files`: `id, user_id, kind ('poi_collection'|'user_layer'|'import'|'analysis'), name, drive_file_id, parent_drive_folder_id, size_bytes, mime_type, updated_at`
+- `geoloc_poi_folders`: `id, user_id, name, drive_folder_id, parent_id, display_order` (estructura jerárquica liviana)
+- `geoloc_settings`: `user_id, root_drive_folder_id` (carpeta raíz GEOLOC del usuario / proyecto)
 
-**`special_attention_meeting_participants`**
-- `id uuid PK default gen_random_uuid()`
-- `meeting_id uuid references special_attention_meetings(id) on delete cascade`
-- `name text not null`
-- `role text` — opcional (cargo)
-- `created_at timestamptz default now()`
+No se almacena GeoJSON ni binarios en Supabase. Las capas se cargan leyendo el archivo desde Drive.
 
-**RLS**: ambas tablas con políticas `authenticated` para `select/insert/update/delete` (mismo patrón que `special_attention_checklist`). Los usuarios autenticados pueden gestionar todas las reuniones (no es información sensible por contrato).
+## Reutilización de la infraestructura Drive ya existente
 
-**Storage**: reusar bucket existente `repository-files` con prefijo `special-attention-meetings/{yyyy}/{mm}/{meeting-id}.pdf`. No requiere bucket nuevo.
+gplanet ya tiene:
+- Edge function `google-drive` (con OAuth, refresh, fallback) — la usamos para list/upload/download/delete.
+- Secret `GOOGLE_DRIVE_ROOT_FOLDER_ID`, `GOOGLE_OAUTH_CLIENT_ID/SECRET`, `GOOGLE_SERVICE_ACCOUNT_KEY`.
+- Helpers `src/lib/driveUploadHelpers.ts`, `src/lib/googleDriveOAuth.ts`.
+- Patrón de "two-step transfer" (Storage temporal → Drive) y resolución jerárquica de carpetas.
 
----
+GeoLoc se conectará a esa misma capa en lugar de tener su propio almacenamiento.
 
-### 2. Componente nuevo: `MeetingsRegistryDialog.tsx`
+## Qué se trae desde GeoLoc
 
-Ubicación: `src/components/special-attention/MeetingsRegistryDialog.tsx`
+**Páginas / componentes**
+- `pages/MapaComunasPage.tsx`
+- `components/MapaComunas.tsx`
+- `components/map/*` (11 capas: comunas, GSE, isócronas, manzanas, microzonas, POIs, tráfico, capas de usuario, etc.)
+- `components/panels/*` (panel de análisis, comparación, búsqueda, editor de POIs, etc.)
+- `components/layout/*`, `components/ui-overlays/*`
 
-**Estructura visual (Dialog grande, ~max-w-4xl):**
+**Lógica**
+- `src/services/*` (communeDataService, gseService, ineService, isochroneService, manzanaService, overpassService, poiCache)
+- Hooks específicos (`useComunasGeoIndex`, `useGseManzanas`, `useManzanas`, `usePoiFolders`, `useSavedPois`)
+- `src/data/communes.ts`, `src/lib/*`, `src/utils/*`, `src/types/*`
 
-- **Header**: título "Registro de Reuniones — Atención Especial" + botón "Expandir/Contraer todo" (afecta sólo este diálogo).
-- **Sección superior — Nueva reunión**:
-  - Lista editable de participantes (input con `Plus` para agregar, `X` para quitar; chips con nombre y rol opcional).
-  - Textarea opcional de notas.
-  - Botón principal **"Registrar"** (icono `CalendarPlus`):
-    1. Inserta fila en `special_attention_meetings` con `meeting_date = now()` y snapshot de contratos actuales.
-    2. Inserta participantes.
-    3. Genera PDF con `exportMeetingPDF` (ver §3) y lo sube al bucket.
-    4. Actualiza `pdf_url` y `pdf_path` en el registro.
-    5. Toast de éxito + refresca historial + limpia inputs.
-- **Sección inferior — Historial agrupado**:
-  - Estructura `Collapsible` anidada: **Año › Mes › Reunión**.
-  - Cada nivel muestra contador (ej: "2026 (12 reuniones)", "abril (3)").
-  - Por reunión: fecha completa formateada (`yyyy.mm.dd HH:mm`), participantes (chips compactos), notas truncadas, y dos acciones:
-    - **Descargar PDF** (`FileDown`) → abre `pdf_url` en nueva pestaña.
-    - **Ver participantes** (expand inline) → muestra lista completa.
-  - Botón papelera (admins) para eliminar registro + PDF asociado.
-  - Estado `expandedYears`, `expandedMonths`, `expandedMeetings` con `Set<string>` independientes.
-  - Botón global "Expandir/Contraer todo" alterna los 3 sets.
+**Backend**
+- Edge function `isochrone` (cálculo de isócronas)
 
-**Hook de datos**: query directo con `supabase.from("special_attention_meetings").select("*, special_attention_meeting_participants(*)").order("meeting_date", { ascending: false })`. Agrupar en cliente por `getFullYear()` y `getMonth()`.
+## Adaptaciones clave (Drive-first)
 
----
+1. **`useSavedPois` y `usePoiFolders`** → reescribir para leer/escribir GeoJSON contra Drive vía edge function `google-drive`. Cache local con `idb-keyval` (ya está en GeoLoc) para offline / rendimiento; sync diferido a Drive con debounce.
+2. **`poiCache.ts`** → mantener como caché IndexedDB local; fuente de verdad = Drive.
+3. **Capas de usuario (`UserLayersLayer`)** → cuando el usuario importe KML/GeoJSON/Shapefile/Excel, se sube el archivo original a Drive (`GEOLOC/Importados/`) y la capa renderizada se guarda como GeoJSON en `GEOLOC/Capas de usuario/`.
+4. **Auth**: reemplazar `useAuth` de GeoLoc por el de gplanet.
+5. **Cliente Supabase**: usar `@/integrations/supabase/client`.
+6. **Tipos**: las nuevas tablas `geoloc_*` aparecerán automáticamente en `types.ts` tras la migración.
 
-### 3. Generador PDF: `exportMeetingPDF.ts`
+## Migraciones SQL (mínimas, solo metadata)
 
-Ubicación: `src/components/special-attention/exportMeetingPDF.ts`
+```sql
+create table public.geoloc_settings (
+  user_id uuid primary key references auth.users on delete cascade,
+  root_drive_folder_id text,
+  updated_at timestamptz default now()
+);
 
-Reutiliza la estructura visual de `exportSpecialAttentionPDF.ts` (logo header, barra roja, tablas) pero con:
-- **Encabezado**: "Acta de Reunión — Atención Especial" + fecha del registro destacada.
-- **Bloque participantes**: tabla con Nombre / Rol.
-- **Bloque notas**: si existen.
-- **Anexo**: snapshot de contratos en atención especial (mismo formato del export actual, para evidencia histórica).
-- Devuelve `Blob` (no `doc.save()`) para poder subirlo a Storage:
-  ```ts
-  const blob = doc.output("blob");
-  const path = `special-attention-meetings/${yyyy}/${mm}/${meetingId}.pdf`;
-  await supabase.storage.from("repository-files").upload(path, blob, { contentType: "application/pdf" });
-  const { data: { publicUrl } } = supabase.storage.from("repository-files").getPublicUrl(path);
-  ```
+create table public.geoloc_poi_folders (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users on delete cascade,
+  parent_id uuid references public.geoloc_poi_folders on delete cascade,
+  name text not null,
+  drive_folder_id text,
+  display_order int default 0,
+  created_at timestamptz default now()
+);
 
----
+create table public.geoloc_drive_files (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users on delete cascade,
+  folder_id uuid references public.geoloc_poi_folders on delete set null,
+  kind text not null check (kind in ('poi_collection','user_layer','import','analysis')),
+  name text not null,
+  drive_file_id text not null,
+  parent_drive_folder_id text,
+  mime_type text,
+  size_bytes bigint,
+  updated_at timestamptz default now()
+);
+```
+RLS: cada usuario solo ve/edita sus propias filas (`auth.uid() = user_id`).
 
-### 4. Integración en `SpecialAttentionPage.tsx`
+## Integración en el home
 
-- Importar `MeetingsRegistryDialog` y `CalendarCheck` (lucide).
-- Agregar estado `meetingsOpen` y botón en el header, junto a "PDF":
-  ```tsx
-  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setMeetingsOpen(true)}>
-    <CalendarCheck className="h-4 w-4" />
-    Registro Reuniones
-  </Button>
-  ```
-- Pasar `contracts` actuales al diálogo para construir el snapshot al registrar.
+En `src/pages/Welcome.tsx`, agregar a `ALL_MODULES`:
 
----
+```ts
+{ id: "geoloc", label: "GEOLOC", desc: "Sistema de información geográfica territorial",
+  icon: MapPin, path: "/geoloc", resource: null, color: "text-green-600 bg-green-100" }
+```
 
-### 5. Detalles UX
+Aparece como tarjeta en la grilla arrastrable.
 
-- Al registrar, deshabilitar botón con spinner mientras se genera/sube el PDF.
-- Si la subida del PDF falla, el registro se mantiene pero se marca con badge "PDF pendiente" y se ofrece reintentar.
-- Participantes pueden marcarse como "frecuentes" en sesión (sessionStorage) para reutilizar entre reuniones del día.
-- Mes y año por defecto **expandidos** sólo para el período actual; resto colapsado al abrir.
+## Rutas
 
----
+En `src/App.tsx` agregar `/geoloc` envuelto en `ProtectedRoute`.
 
-### Archivos a crear/modificar
+## Dependencias nuevas
 
-**Nuevos:**
-- `src/components/special-attention/MeetingsRegistryDialog.tsx`
-- `src/components/special-attention/exportMeetingPDF.ts`
-- Migración SQL: tablas + RLS
+```
+leaflet@1.9.4  react-leaflet@4.2.1  @types/leaflet@1.9.12  @types/geojson
+@tmcw/togeojson  idb-keyval  jszip  xlsx
+@turf/area @turf/bbox @turf/boolean-intersects @turf/boolean-point-in-polygon
+@turf/buffer @turf/centroid @turf/helpers @turf/length
+@turf/polygon-to-line @turf/simplify @turf/voronoi
+```
 
-**Modificados:**
-- `src/pages/SpecialAttentionPage.tsx` (botón + dialog mount)
+## Plan de ejecución
 
-**Sin cambios:**
-- `exportSpecialAttentionPDF.ts` (sigue funcionando para export general)
-- Bucket de storage (reusa `repository-files`)
+1. Crear migración SQL: `geoloc_settings`, `geoloc_poi_folders`, `geoloc_drive_files` con RLS por `user_id`.
+2. Instalar dependencias.
+3. Copiar archivos del módulo GeoLoc (páginas, componentes mapa/panels, services, hooks, data, lib, utils, types).
+4. Reescribir `useSavedPois` y `usePoiFolders` para usar la edge function `google-drive` (leer/escribir GeoJSON en `GEOLOC/POIs/`).
+5. Adaptar `UserLayersLayer` y los flujos de import (KML/GeoJSON/Shapefile/Excel) para subir a `GEOLOC/Importados/` y `GEOLOC/Capas de usuario/`.
+6. Crear bootstrap: al primer ingreso del usuario al módulo, crear la carpeta raíz `GEOLOC` en Drive y guardar su ID en `geoloc_settings.root_drive_folder_id`.
+7. Reemplazar imports de auth/cliente Supabase al estándar gplanet.
+8. Desplegar edge function `isochrone`.
+9. Agregar `import "leaflet/dist/leaflet.css"`.
+10. Crear `src/pages/GeoLocPage.tsx` con `ProtectedRoute` + botón "Volver al inicio".
+11. Registrar ruta `/geoloc` en `App.tsx`.
+12. Agregar tarjeta **GEOLOC** en `Welcome.tsx`.
+13. Guardar memoria del módulo: regla "GEOLOC: POIs y capas se almacenan exclusivamente en Google Drive bajo la carpeta `GEOLOC/`. Supabase guarda solo metadata (`geoloc_*` tablas)."
 
----
+## Notas
 
-### Confirmación pendiente
-Antes de implementar, ¿quieres que los participantes sean **texto libre** (escribir nombre cada vez) o que se vinculen a una **lista maestra reutilizable** (tabla `meeting_participants_directory` con autocompletado)? La opción simple es texto libre — más rápida y cubre el caso de uso descrito.
+- No se trae la página `Auth` ni `Index` de GeoLoc.
+- Cualquier futuro "otro sistema" que se conecte a GEOLOC (ej. capas compartidas, datasets, exports) seguirá la misma regla: archivos a Drive, metadata a Supabase.
+- Si una tabla nueva colisiona con nombres existentes se prefija con `geoloc_` (ya aplicado).
