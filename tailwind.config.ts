@@ -15,10 +15,17 @@ export default {
   	extend: {
   		colors: {
   			border: 'hsl(var(--border))',
+  			'border-2': 'hsl(var(--border-2))',
   			input: 'hsl(var(--input))',
   			ring: 'hsl(var(--ring))',
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
+  			surface: {
+  				DEFAULT: 'hsl(var(--surface))',
+  				2: 'hsl(var(--surface-2))',
+  				3: 'hsl(var(--surface-3))'
+  			},
+  			'text-muted': 'hsl(var(--text-muted))',
   			primary: {
   				DEFAULT: 'hsl(var(--primary))',
   				foreground: 'hsl(var(--primary-foreground))'
@@ -51,6 +58,20 @@ export default {
   				negotiation: 'hsl(var(--status-negotiation))',
   				signed: 'hsl(var(--status-signed))',
   				expired: 'hsl(var(--status-expired))'
+  			},
+  			brand: {
+  				orange: 'hsl(var(--brand-orange))',
+  				green: 'hsl(var(--brand-green))',
+  				red: 'hsl(var(--brand-red))',
+  				yellow: 'hsl(var(--brand-yellow))',
+  				purple: 'hsl(var(--brand-purple))',
+  				pink: 'hsl(var(--brand-pink))',
+  				teal: 'hsl(var(--brand-teal))'
+  			},
+  			iso: {
+  				1: 'hsl(var(--iso-1))',
+  				2: 'hsl(var(--iso-2))',
+  				3: 'hsl(var(--iso-3))'
   			}
   		},
   		boxShadow: {
@@ -60,7 +81,10 @@ export default {
   			'2xs': 'var(--shadow-2xs)',
   			xs: 'var(--shadow-xs)',
   			xl: 'var(--shadow-xl)',
-  			'2xl': 'var(--shadow-2xl)'
+  			'2xl': 'var(--shadow-2xl)',
+  			apple: '0 1px 2px hsl(0 0% 0% / 0.18), 0 8px 24px hsl(0 0% 0% / 0.32)',
+  			'apple-sm': '0 1px 2px hsl(0 0% 0% / 0.2)',
+  			'apple-lg': '0 2px 4px hsl(0 0% 0% / 0.22), 0 24px 48px hsl(0 0% 0% / 0.4)'
   		},
   		borderRadius: {
   			lg: 'var(--radius)',
@@ -83,11 +107,16 @@ export default {
   				to: {
   					height: '0'
   				}
+  			},
+  			blink: {
+  				'0%, 100%': { opacity: '1' },
+  				'50%': { opacity: '0.3' }
   			}
   		},
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
-  			'accordion-up': 'accordion-up 0.2s ease-out'
+  			'accordion-up': 'accordion-up 0.2s ease-out',
+  			blink: 'blink 2s ease-in-out infinite'
   		},
   		fontFamily: {
   			sans: [

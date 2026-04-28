@@ -26,7 +26,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   FileText, ShoppingCart, Wallet, HardHat, Bell,
   BarChart3, Wrench, Shield, Users, LayoutDashboard,
-  LogOut, GripVertical, AlertTriangle, KeyRound,
+  LogOut, GripVertical, AlertTriangle, KeyRound, MapPin,
 } from "lucide-react";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { SelectableElement } from "@/components/admin/SelectableElement";
@@ -90,6 +90,7 @@ const ALL_MODULES: ModuleItem[] = [
   { id: "kpi", label: "KPI", desc: "Indicadores de gestión", icon: BarChart3, path: "/kpi", resource: "kpi", color: "text-indigo-600 bg-indigo-100" },
   { id: "suppliers", label: "Proveedores", desc: "Gestión de proveedores", icon: Users, path: "/suppliers", resource: "suppliers", color: "text-teal-600 bg-teal-100" },
   { id: "maintenance", label: "Mantenciones", desc: "Mantenciones preventivas y correctivas", icon: Wrench, path: "/maintenance", resource: "maintenance", color: "text-rose-600 bg-rose-100" },
+  { id: "geoloc", label: "GEOLOC", desc: "Sistema de información geográfica territorial", icon: MapPin, path: "/geoloc", resource: null, color: "text-green-600 bg-green-100" },
 ];
 
 const Welcome = () => {
