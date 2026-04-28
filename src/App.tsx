@@ -34,6 +34,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const PatentsDashboard = lazy(() => import("./pages/PatentsDashboard"));
 const SpecialAttentionPage = lazy(() => import("./pages/SpecialAttentionPage"));
 const GoogleDriveCallback = lazy(() => import("./pages/GoogleDriveCallback"));
+const GeoLocPage = lazy(() => import("./pages/GeoLocPage"));
 
 const queryClient = new QueryClient();
 
