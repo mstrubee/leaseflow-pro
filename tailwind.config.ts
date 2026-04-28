@@ -81,7 +81,10 @@ export default {
   			'2xs': 'var(--shadow-2xs)',
   			xs: 'var(--shadow-xs)',
   			xl: 'var(--shadow-xl)',
-  			'2xl': 'var(--shadow-2xl)'
+  			'2xl': 'var(--shadow-2xl)',
+  			apple: '0 1px 2px hsl(0 0% 0% / 0.18), 0 8px 24px hsl(0 0% 0% / 0.32)',
+  			'apple-sm': '0 1px 2px hsl(0 0% 0% / 0.2)',
+  			'apple-lg': '0 2px 4px hsl(0 0% 0% / 0.22), 0 24px 48px hsl(0 0% 0% / 0.4)'
   		},
   		borderRadius: {
   			lg: 'var(--radius)',
