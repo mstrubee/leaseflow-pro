@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { gseService } from "@/services/gseService";
-import type { GseFeatureCollection, GseParams, GseVariable } from "@/types/gse";
+import { gseService } from "@/geoloc/services/gseService";
+import type { GseFeatureCollection, GseParams, GseVariable } from "@/geoloc/types/gse";
 
 interface UseGseInput {
   enabled: boolean;

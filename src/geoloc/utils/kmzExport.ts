@@ -1,5 +1,5 @@
 import JSZip from "jszip";
-import type { PoiFolder, SavedPoi } from "@/types/pois";
+import type { PoiFolder, SavedPoi } from "@/geoloc/types/pois";
 
 /** Escapa caracteres reservados de XML. */
 const escapeXml = (s: string): string =>

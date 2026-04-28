@@ -4,9 +4,9 @@ import type {
   ManzanaFeatureCollection,
   ManzanaFeature,
   ManzanaProperties,
-} from "@/types/manzanas";
+} from "@/geoloc/types/manzanas";
 import type { Polygon, MultiPolygon, Feature } from "geojson";
-import { COMMUNES, NSE_INCOME, type NSE } from "@/data/communes";
+import { COMMUNES, NSE_INCOME, type NSE } from "@/geoloc/data/communes";
 
 /**
  * Carga manzanas reales del Censo 2017 (RM) pre-procesadas en build-time.

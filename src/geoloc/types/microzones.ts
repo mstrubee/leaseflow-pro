@@ -1,5 +1,5 @@
 import type { Feature, Polygon, MultiPolygon } from "geojson";
-import type { NSE } from "@/data/communes";
+import type { NSE } from "@/geoloc/data/communes";
 
 export type MicrozoneSubmode = "polygon" | "buffer" | "voronoi";
 

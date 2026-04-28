@@ -1,4 +1,4 @@
-import type { GseClass, GseVariable } from "@/types/gse";
+import type { GseClass, GseVariable } from "@/geoloc/types/gse";
 
 /** Etiquetas legibles. */
 export const GSE_VARIABLE_LABEL: Record<GseVariable, string> = {

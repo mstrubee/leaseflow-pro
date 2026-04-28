@@ -1,7 +1,7 @@
 import { CircleMarker, Popup } from "react-leaflet";
-import { COMMUNES, NSE_LABELS, type Commune, type NSE } from "@/data/communes";
-import { fmtNum } from "@/utils/formatters";
-import { trafficLevelOf, TRAFFIC_LEVELS, type TrafficLevel } from "@/utils/traffic";
+import { COMMUNES, NSE_LABELS, type Commune, type NSE } from "@/geoloc/data/communes";
+import { fmtNum } from "@/geoloc/utils/formatters";
+import { trafficLevelOf, TRAFFIC_LEVELS, type TrafficLevel } from "@/geoloc/utils/traffic";
 
 const radiusForTraffic = (t: number): number => 6 + (t / 100) * 12;
 

@@ -6,10 +6,10 @@ import type {
   ManzanaFeatureCollection,
   ManzanaProperties,
   ManzanaVariable,
-} from "@/types/manzanas";
-import { colorForManzana, VARIABLE_LABEL } from "@/utils/colorScales";
-import { NSE_LABELS } from "@/data/communes";
-import { fmtNum, fmtCLP, fmtDensity } from "@/utils/formatters";
+} from "@/geoloc/types/manzanas";
+import { colorForManzana, VARIABLE_LABEL } from "@/geoloc/utils/colorScales";
+import { NSE_LABELS } from "@/geoloc/data/communes";
+import { fmtNum, fmtCLP, fmtDensity } from "@/geoloc/utils/formatters";
 
 interface ManzanaLayerProps {
   visible: boolean;

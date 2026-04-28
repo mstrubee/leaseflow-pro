@@ -1,11 +1,11 @@
-import type { LayerState } from "@/types/layers";
-import { COMMUNES, NSE_LABELS, NSE_COLOR_HSL, type NSE } from "@/data/communes";
-import { TRAFFIC_LEVELS, trafficLevelOf, type TrafficLevel } from "@/utils/traffic";
-import type { ManzanaSource, ManzanaVariable } from "@/types/manzanas";
-import type { GseVariable } from "@/types/gse";
-import { scaleForVariable, VARIABLE_LABEL } from "@/utils/colorScales";
-import { GSE_VARIABLE_LABEL, scaleForGseVariable } from "@/utils/gseScales";
-import { INE_VARIABLE_LABEL, scaleForIneVariable, type IneVariable } from "@/utils/ineScales";
+import type { LayerState } from "@/geoloc/types/layers";
+import { COMMUNES, NSE_LABELS, NSE_COLOR_HSL, type NSE } from "@/geoloc/data/communes";
+import { TRAFFIC_LEVELS, trafficLevelOf, type TrafficLevel } from "@/geoloc/utils/traffic";
+import type { ManzanaSource, ManzanaVariable } from "@/geoloc/types/manzanas";
+import type { GseVariable } from "@/geoloc/types/gse";
+import { scaleForVariable, VARIABLE_LABEL } from "@/geoloc/utils/colorScales";
+import { GSE_VARIABLE_LABEL, scaleForGseVariable } from "@/geoloc/utils/gseScales";
+import { INE_VARIABLE_LABEL, scaleForIneVariable, type IneVariable } from "@/geoloc/utils/ineScales";
 
 interface LegendProps {
   shifted: boolean;

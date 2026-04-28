@@ -10,21 +10,21 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Checkbox } from "@/components/ui/checkbox";
-import type { LayerKey, LayerState } from "@/types/layers";
-import type { ManzanaVariable } from "@/types/manzanas";
-import type { GseVariable } from "@/types/gse";
-import { GSE_VARIABLE_LABEL } from "@/utils/gseScales";
-import { INE_VARIABLE_LABEL, type IneVariable } from "@/utils/ineScales";
-import type { UserLayer } from "@/types/userLayers";
-import type { IsoMode, Isochrone } from "@/types/isochrones";
-import type { PoiFolder, SavedPoi } from "@/types/pois";
-import type { Microzone, MicrozoneSubmode } from "@/types/microzones";
-import { ISO_MODE_LABEL } from "@/types/isochrones";
-import { parseFile, getExtension, splitByFolderPath } from "@/utils/fileParsers";
-import { OVERPASS_PRESETS } from "@/services/overpassService";
-import { exportPoiAsKmz, exportFolderAsKmz } from "@/utils/kmzExport";
+import type { LayerKey, LayerState } from "@/geoloc/types/layers";
+import type { ManzanaVariable } from "@/geoloc/types/manzanas";
+import type { GseVariable } from "@/geoloc/types/gse";
+import { GSE_VARIABLE_LABEL } from "@/geoloc/utils/gseScales";
+import { INE_VARIABLE_LABEL, type IneVariable } from "@/geoloc/utils/ineScales";
+import type { UserLayer } from "@/geoloc/types/userLayers";
+import type { IsoMode, Isochrone } from "@/geoloc/types/isochrones";
+import type { PoiFolder, SavedPoi } from "@/geoloc/types/pois";
+import type { Microzone, MicrozoneSubmode } from "@/geoloc/types/microzones";
+import { ISO_MODE_LABEL } from "@/geoloc/types/isochrones";
+import { parseFile, getExtension, splitByFolderPath } from "@/geoloc/utils/fileParsers";
+import { OVERPASS_PRESETS } from "@/geoloc/services/overpassService";
+import { exportPoiAsKmz, exportFolderAsKmz } from "@/geoloc/utils/kmzExport";
 import { CommuneSearch } from "./CommuneSearch";
-import { CreatePoiDialog } from "@/components/panels/CreatePoiDialog";
+import { CreatePoiDialog } from "@/geoloc/components/panels/CreatePoiDialog";
 
 interface SidebarProps {
   basemap: "dark" | "light" | "satellite" | "hybrid";
@@ -94,7 +94,7 @@ interface SidebarProps {
   /** Renombra un POI existente. */
   onRenamePoi?: (id: string, name: string) => Promise<void> | void;
   /** Crea un POI individual (usado por "Crear un POI" en clic derecho de carpeta). */
-  onCreatePoi?: (payload: import("@/types/pois").PoiInsert) => Promise<unknown> | void;
+  onCreatePoi?: (payload: import("@/geoloc/types/pois").PoiInsert) => Promise<unknown> | void;
   /** Si está definido, "Crear un POI" en clic derecho de carpeta delega al padre (usa el editor central). */
   onRequestCreatePoiInFolder?: (folder: PoiFolder | null) => void;
   /** Si está definido, "Editar propiedades" en clic derecho de POI abre el editor central. */
@@ -118,19 +118,19 @@ interface SidebarProps {
     kind: { type: "preset"; presetId: string; label: string } | { type: "text"; text: string },
   ) => Promise<void>;
   // Búsqueda de comunas
-  onFlyToCommune: (c: import("@/data/communes").Commune) => void;
+  onFlyToCommune: (c: import("@/geoloc/data/communes").Commune) => void;
   onOpenCommuneRangeResults: (
-    results: import("@/data/communes").Commune[],
+    results: import("@/geoloc/data/communes").Commune[],
     min: number,
     max: number | null,
   ) => void;
   // Comparador de comunas
-  compareCommunes: import("@/data/communes").Commune[];
-  onCompareCommunesChange: (list: import("@/data/communes").Commune[]) => void;
+  compareCommunes: import("@/geoloc/data/communes").Commune[];
+  onCompareCommunesChange: (list: import("@/geoloc/data/communes").Commune[]) => void;
   onOpenCompareDialog: () => void;
   // Lista acumulada de comunas buscadas por nombre
-  searchedCommunes: import("@/data/communes").Commune[];
-  onSearchedCommunesChange: (list: import("@/data/communes").Commune[]) => void;
+  searchedCommunes: import("@/geoloc/data/communes").Commune[];
+  onSearchedCommunesChange: (list: import("@/geoloc/data/communes").Commune[]) => void;
 }
 
 interface LayerRow {
@@ -664,7 +664,7 @@ export const Sidebar = ({
           <div className="mt-3 flex gap-1.5">
             <button
               onClick={async () => {
-                const { exportCommunesToExcel } = await import("@/services/communeDataService");
+                const { exportCommunesToExcel } = await import("@/geoloc/services/communeDataService");
                 exportCommunesToExcel();
                 toast.success("Excel descargado");
               }}
@@ -694,7 +694,7 @@ export const Sidebar = ({
               if (!file) return;
               const tId = toast.loading("Procesando Excel…");
               try {
-                const { importCommunesFromExcel } = await import("@/services/communeDataService");
+                const { importCommunesFromExcel } = await import("@/geoloc/services/communeDataService");
                 const res = await importCommunesFromExcel(file);
                 toast.success(
                   `Actualizadas ${res.matched} comunas${res.unknown.length ? ` · ${res.unknown.length} no reconocidas` : ""}`,

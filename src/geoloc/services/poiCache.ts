@@ -11,7 +11,7 @@
  * yendo directo a la BD y requieren conexión.
  */
 import { get, set } from "idb-keyval";
-import type { PoiFolder, SavedPoi } from "@/types/pois";
+import type { PoiFolder, SavedPoi } from "@/geoloc/types/pois";
 
 const POIS_KEY = (uid: string) => `lovable.cache.pois.${uid}`;
 const TRASH_KEY = (uid: string) => `lovable.cache.trashed.${uid}`;

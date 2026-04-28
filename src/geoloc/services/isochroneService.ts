@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Feature, FeatureCollection, Polygon, MultiPolygon } from "geojson";
-import type { IsoMode } from "@/types/isochrones";
+import type { IsoMode } from "@/geoloc/types/isochrones";
 
 export interface IsochroneRequest {
   mode: IsoMode;

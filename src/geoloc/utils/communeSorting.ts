@@ -1,4 +1,4 @@
-import type { Commune } from "@/data/communes";
+import type { Commune } from "@/geoloc/data/communes";
 
 export type CommunePreset =
   | "north-south"

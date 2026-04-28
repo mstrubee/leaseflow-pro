@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import type { Feature, Polygon, MultiPolygon } from "geojson";
-import type { Microzone, MicrozoneSubmode } from "@/types/microzones";
+import type { Microzone, MicrozoneSubmode } from "@/geoloc/types/microzones";
 
 interface Props {
   microzones: Microzone[];

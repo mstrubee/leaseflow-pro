@@ -6,7 +6,7 @@ import type {
   GseIndexEntry,
   GseParams,
   GseProperties,
-} from "@/types/gse";
+} from "@/geoloc/types/gse";
 
 /**
  * Carga manzanas con datos GSE (Censo 2012, AMS) pre-procesadas en

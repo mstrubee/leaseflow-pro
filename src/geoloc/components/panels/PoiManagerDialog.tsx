@@ -18,7 +18,7 @@ import {
   Move,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { PoiFolder, PoiUpdate, SavedPoi } from "@/types/pois";
+import type { PoiFolder, PoiUpdate, SavedPoi } from "@/geoloc/types/pois";
 
 interface Props {
   open: boolean;

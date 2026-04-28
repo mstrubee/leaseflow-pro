@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { GeoJSON, CircleMarker, Popup, useMap, useMapEvents } from "react-leaflet";
 import type { Layer } from "leaflet";
 import type { Feature } from "geojson";
-import type { GseFeatureCollection, GseProperties, GseVariable } from "@/types/gse";
-import { colorForGse, GSE_VARIABLE_LABEL } from "@/utils/gseScales";
-import { gseService } from "@/services/gseService";
-import { COMMUNES, NSE_COLOR_HSL, NSE_LABELS, type Commune, type NSE } from "@/data/communes";
-import { fmtNum } from "@/utils/formatters";
+import type { GseFeatureCollection, GseProperties, GseVariable } from "@/geoloc/types/gse";
+import { colorForGse, GSE_VARIABLE_LABEL } from "@/geoloc/utils/gseScales";
+import { gseService } from "@/geoloc/services/gseService";
+import { COMMUNES, NSE_COLOR_HSL, NSE_LABELS, type Commune, type NSE } from "@/geoloc/data/communes";
+import { fmtNum } from "@/geoloc/utils/formatters";
 
 interface GseLayerProps {
   visible: boolean;

@@ -1,5 +1,5 @@
 import type { FeatureCollection, Polygon, MultiPolygon, Feature } from "geojson";
-import type { NSE } from "@/data/communes";
+import type { NSE } from "@/geoloc/data/communes";
 
 export type ManzanaVariable = "density" | "nse" | "income" | "traffic";
 

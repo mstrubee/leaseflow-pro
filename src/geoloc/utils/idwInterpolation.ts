@@ -1,4 +1,4 @@
-import { COMMUNES, type Commune } from "@/data/communes";
+import { COMMUNES, type Commune } from "@/geoloc/data/communes";
 
 const haversine = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
   const R = 6371;

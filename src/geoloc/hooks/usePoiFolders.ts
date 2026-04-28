@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
-import { loadFoldersCache, saveFoldersCache } from "@/services/poiCache";
-import type { PoiFolder } from "@/types/pois";
+import { loadFoldersCache, saveFoldersCache } from "@/geoloc/services/poiCache";
+import type { PoiFolder } from "@/geoloc/types/pois";
 
 const SELECT_COLS = "id,name,parent_id,color,created_at,deleted_at";
 

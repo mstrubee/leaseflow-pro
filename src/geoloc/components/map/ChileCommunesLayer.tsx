@@ -3,13 +3,13 @@ import { GeoJSON } from "react-leaflet";
 import L from "leaflet";
 import type { Feature, Geometry } from "geojson";
 import type { GeoJSON as LeafletGeoJSON, Layer, PathOptions } from "leaflet";
-import { useComunasGeoIndex, type ComunaProps } from "@/hooks/useComunasGeoIndex";
+import { useComunasGeoIndex, type ComunaProps } from "@/geoloc/hooks/useComunasGeoIndex";
 import {
   colorForIneCommune,
   formatIneValue,
   INE_VARIABLE_LABEL,
   type IneVariable,
-} from "@/utils/ineScales";
+} from "@/geoloc/utils/ineScales";
 
 interface ChileCommunesLayerProps {
   visible: boolean;

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
-import { loadPoiCache, savePoiCache } from "@/services/poiCache";
-import type { PoiInsert, PoiUpdate, SavedPoi } from "@/types/pois";
+import { loadPoiCache, savePoiCache } from "@/geoloc/services/poiCache";
+import type { PoiInsert, PoiUpdate, SavedPoi } from "@/geoloc/types/pois";
 
 // Fase ligera: columnas mínimas para pintar el mapa rápido (sin `properties`
 // ni `description` que pueden ser blobs gigantes con KMZ con logos embebidos).

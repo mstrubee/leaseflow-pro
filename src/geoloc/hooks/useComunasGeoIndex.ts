@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import L from "leaflet";
 import type { Feature, FeatureCollection, Geometry } from "geojson";
-import { normalizeCommuneName } from "@/services/communeDataService";
-import { loadIneIndex, type IneIndex } from "@/services/ineService";
-import type { IneCommuneStats } from "@/utils/ineScales";
+import { normalizeCommuneName } from "@/geoloc/services/communeDataService";
+import { loadIneIndex, type IneIndex } from "@/geoloc/services/ineService";
+import type { IneCommuneStats } from "@/geoloc/utils/ineScales";
 
 export interface ComunaProps {
   codigo_comuna?: string;

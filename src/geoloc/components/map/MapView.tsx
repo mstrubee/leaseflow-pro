@@ -11,13 +11,13 @@ import { UserLayersLayer } from "./UserLayersLayer";
 import { IsochroneLayer } from "./IsochroneLayer";
 import { SavedPoisLayer } from "./SavedPoisLayer";
 import { MicrozoneLayer } from "./MicrozoneLayer";
-import type { ManzanaFeatureCollection, ManzanaVariable } from "@/types/manzanas";
-import type { GseFeatureCollection, GseVariable } from "@/types/gse";
-import type { UserLayer } from "@/types/userLayers";
-import type { Isochrone } from "@/types/isochrones";
-import type { SavedPoi } from "@/types/pois";
-import type { Microzone, MicrozoneSubmode } from "@/types/microzones";
-import type { IneVariable } from "@/utils/ineScales";
+import type { ManzanaFeatureCollection, ManzanaVariable } from "@/geoloc/types/manzanas";
+import type { GseFeatureCollection, GseVariable } from "@/geoloc/types/gse";
+import type { UserLayer } from "@/geoloc/types/userLayers";
+import type { Isochrone } from "@/geoloc/types/isochrones";
+import type { SavedPoi } from "@/geoloc/types/pois";
+import type { Microzone, MicrozoneSubmode } from "@/geoloc/types/microzones";
+import type { IneVariable } from "@/geoloc/utils/ineScales";
 
 // Fix default Leaflet marker icon paths (when bundled)
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
@@ -140,9 +140,9 @@ const FlyToTarget = ({
 interface MapViewProps {
   basemap: "dark" | "light" | "satellite" | "hybrid";
   onMouseMove: (c: { lat: number; lng: number }) => void;
-  layers: import("@/types/layers").LayerState;
-  nseFilter: import("@/data/communes").NSE | null;
-  trafficFilter: import("@/utils/traffic").TrafficLevel | null;
+  layers: import("@/geoloc/types/layers").LayerState;
+  nseFilter: import("@/geoloc/data/communes").NSE | null;
+  trafficFilter: import("@/geoloc/utils/traffic").TrafficLevel | null;
   manzanaData: ManzanaFeatureCollection | null;
   manzanaVariable: ManzanaVariable;
   onManzanaViewportChange: (bbox: [number, number, number, number], zoom: number) => void;
@@ -181,7 +181,7 @@ interface MapViewProps {
   onViewportChange?: (bbox: [number, number, number, number], zoom: number) => void;
   openCommunePopupFor?: string | null;
   onCommunePopupOpened?: () => void;
-  onAddCommuneToCompare?: (c: import("@/data/communes").Commune) => void;
+  onAddCommuneToCompare?: (c: import("@/geoloc/data/communes").Commune) => void;
   outlinedCommuneNames?: string[];
   highlightedCommuneName?: string | null;
   onMapContextMenu?: (c: { lat: number; lng: number }) => void;

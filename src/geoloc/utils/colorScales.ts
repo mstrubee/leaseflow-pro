@@ -1,5 +1,5 @@
-import type { ManzanaVariable } from "@/types/manzanas";
-import type { NSE } from "@/data/communes";
+import type { ManzanaVariable } from "@/geoloc/types/manzanas";
+import type { NSE } from "@/geoloc/data/communes";
 
 export interface ColorStop {
   max: number; // upper bound (inclusive)

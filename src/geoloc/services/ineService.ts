@@ -1,6 +1,6 @@
-import type { IneCommuneStats } from "@/utils/ineScales";
-import { COMMUNES } from "@/data/communes";
-import { normalizeCommuneName } from "@/services/communeDataService";
+import type { IneCommuneStats } from "@/geoloc/utils/ineScales";
+import { COMMUNES } from "@/geoloc/data/communes";
+import { normalizeCommuneName } from "@/geoloc/services/communeDataService";
 
 /**
  * Carga datos INE por comuna desde `/ine_communes.csv` (opcional).

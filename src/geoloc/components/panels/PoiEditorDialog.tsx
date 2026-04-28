@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { PoiIconPreview } from "./PoiIconPreview";
-import type { PoiFolder, PoiInsert, PoiUpdate, SavedPoi } from "@/types/pois";
+import type { PoiFolder, PoiInsert, PoiUpdate, SavedPoi } from "@/geoloc/types/pois";
 
 const COLOR_OPTIONS = [
   "#34D399", "#F472B6", "#FBBF24", "#60A5FA",

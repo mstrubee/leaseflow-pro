@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { manzanaService } from "@/services/manzanaService";
+import { manzanaService } from "@/geoloc/services/manzanaService";
 import type {
   ManzanaFeatureCollection,
   ManzanaParams,
   ManzanaVariable,
-} from "@/types/manzanas";
+} from "@/geoloc/types/manzanas";
 
 interface UseManzanasInput {
   enabled: boolean;

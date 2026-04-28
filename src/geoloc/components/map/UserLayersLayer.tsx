@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
-import type { UserLayer } from "@/types/userLayers";
+import type { UserLayer } from "@/geoloc/types/userLayers";
 
 interface Props {
   layers: UserLayer[];

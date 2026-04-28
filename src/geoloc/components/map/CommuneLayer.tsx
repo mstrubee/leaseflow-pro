@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { CircleMarker, Popup, useMap } from "react-leaflet";
 import type { CircleMarker as LCircleMarker, LeafletMouseEvent } from "leaflet";
-import { COMMUNES, NSE_LABELS, NSE_INCOME, type Commune } from "@/data/communes";
-import { colorForPopulation } from "@/utils/colorScales";
-import { fmtNum, fmtCLP, fmtArea, fmtDensity } from "@/utils/formatters";
+import { COMMUNES, NSE_LABELS, NSE_INCOME, type Commune } from "@/geoloc/data/communes";
+import { colorForPopulation } from "@/geoloc/utils/colorScales";
+import { fmtNum, fmtCLP, fmtArea, fmtDensity } from "@/geoloc/utils/formatters";
 import {
   loadCommuneOverrides,
   saveCommuneOverride,
   type CoordOverrides,
-} from "@/utils/communeOverrides";
+} from "@/geoloc/utils/communeOverrides";
 import { toast } from "sonner";
 
 // Radius proportional to population (sqrt for visual perception)

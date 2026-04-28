@@ -14,16 +14,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { type Commune, NSE_LABELS } from "@/data/communes";
-import { exportCommunesSubsetToExcel } from "@/services/communeDataService";
-import { fmtNum, fmtArea, fmtDensity } from "@/utils/formatters";
+import { type Commune, NSE_LABELS } from "@/geoloc/data/communes";
+import { exportCommunesSubsetToExcel } from "@/geoloc/services/communeDataService";
+import { fmtNum, fmtArea, fmtDensity } from "@/geoloc/utils/formatters";
 import {
   sortCommunesByPreset,
   sortCommunesByKey,
   type CommunePreset,
   type CommuneSortKey,
   type SortDir,
-} from "@/utils/communeSorting";
+} from "@/geoloc/utils/communeSorting";
 import { toast } from "sonner";
 
 interface CommuneCompareDialogProps {

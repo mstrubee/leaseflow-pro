@@ -1,7 +1,7 @@
 import { useMemo, useState, type KeyboardEvent } from "react";
 import { Search, MapPin, Filter, GitCompare, X, Plus, Trash2 } from "lucide-react";
-import { COMMUNES, type Commune } from "@/data/communes";
-import { normalizeCommuneName } from "@/services/communeDataService";
+import { COMMUNES, type Commune } from "@/geoloc/data/communes";
+import { normalizeCommuneName } from "@/geoloc/services/communeDataService";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";

@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
-import type { SavedPoi } from "@/types/pois";
+import type { SavedPoi } from "@/geoloc/types/pois";
 
 interface Props {
   pois: SavedPoi[];

@@ -9,7 +9,7 @@
  * ignoran al importar (los nombres deben coincidir exactamente).
  */
 import * as XLSX from "xlsx";
-import { COMMUNES, type Commune, type NSE } from "@/data/communes";
+import { COMMUNES, type Commune, type NSE } from "@/geoloc/data/communes";
 
 const STORAGE_KEY = "lovable.communeOverrides.v1";
 

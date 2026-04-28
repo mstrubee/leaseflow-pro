@@ -2,7 +2,7 @@ import { useEffect, useMemo } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
 import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson";
-import type { Isochrone } from "@/types/isochrones";
+import type { Isochrone } from "@/geoloc/types/isochrones";
 
 interface Props {
   isochrones?: Isochrone[];

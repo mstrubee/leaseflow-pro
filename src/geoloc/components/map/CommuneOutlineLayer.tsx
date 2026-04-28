@@ -3,7 +3,7 @@ import { GeoJSON, useMap } from "react-leaflet";
 import L from "leaflet";
 import type { GeoJSON as LeafletGeoJSON, PathOptions } from "leaflet";
 import type { FeatureCollection, Geometry } from "geojson";
-import { useComunasGeoIndex, type ComunaFeature, type ComunaProps } from "@/hooks/useComunasGeoIndex";
+import { useComunasGeoIndex, type ComunaFeature, type ComunaProps } from "@/geoloc/hooks/useComunasGeoIndex";
 
 interface CommuneOutlineLayerProps {
   /** Nombres de comunas (tal como aparecen en COMMUNES) a delinear. */

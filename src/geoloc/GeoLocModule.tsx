@@ -1,43 +1,43 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Header } from "@/components/layout/Header";
-import { Sidebar } from "@/components/layout/Sidebar";
-import { MapView } from "@/components/map/MapView";
-import { AnalysisPanel } from "@/components/panels/AnalysisPanel";
-import { PoiManagerDialog } from "@/components/panels/PoiManagerDialog";
-import { SavePoisDialog } from "@/components/panels/SavePoisDialog";
-import { PoiEditorDialog, type PoiEditorDraft } from "@/components/panels/PoiEditorDialog";
-import { CommuneSearchResultsDialog } from "@/components/panels/CommuneSearchResultsDialog";
-import { CommuneCompareDialog } from "@/components/panels/CommuneCompareDialog";
-import { Legend } from "@/components/ui-overlays/Legend";
-import { SearchBar, type SearchResult } from "@/components/ui-overlays/SearchBar";
-import { CoordsBar } from "@/components/ui-overlays/CoordsBar";
-import { useManzanas } from "@/hooks/useManzanas";
-import { useGseManzanas } from "@/hooks/useGseManzanas";
-import { useComunasGeoIndex } from "@/hooks/useComunasGeoIndex";
-import { useSavedPois } from "@/hooks/useSavedPois";
-import { usePoiFolders } from "@/hooks/usePoiFolders";
-import { useAuth } from "@/hooks/useAuth";
-import { fetchIsochrone } from "@/services/isochroneService";
-import { fetchOverpassPreset, fetchOverpassFreeText, bboxAreaDegSq } from "@/services/overpassService";
-import { extractPointPois, countPoints, type PoiInsert, type SavedPoi } from "@/types/pois";
-import { parseFile, getExtension } from "@/utils/fileParsers";
-import type { NSE, Commune } from "@/data/communes";
-import type { TrafficLevel } from "@/utils/traffic";
-import type { LayerState } from "@/types/layers";
-import type { ManzanaVariable } from "@/types/manzanas";
-import type { GseVariable } from "@/types/gse";
-import type { IneVariable } from "@/utils/ineScales";
-import type { UserLayer } from "@/types/userLayers";
-import type { IsoMode, Isochrone } from "@/types/isochrones";
-import type { Microzone, MicrozoneSubmode } from "@/types/microzones";
-import { MICRO_PALETTE } from "@/types/microzones";
+import { Header } from "@/geoloc/components/layout/Header";
+import { Sidebar } from "@/geoloc/components/layout/Sidebar";
+import { MapView } from "@/geoloc/components/map/MapView";
+import { AnalysisPanel } from "@/geoloc/components/panels/AnalysisPanel";
+import { PoiManagerDialog } from "@/geoloc/components/panels/PoiManagerDialog";
+import { SavePoisDialog } from "@/geoloc/components/panels/SavePoisDialog";
+import { PoiEditorDialog, type PoiEditorDraft } from "@/geoloc/components/panels/PoiEditorDialog";
+import { CommuneSearchResultsDialog } from "@/geoloc/components/panels/CommuneSearchResultsDialog";
+import { CommuneCompareDialog } from "@/geoloc/components/panels/CommuneCompareDialog";
+import { Legend } from "@/geoloc/components/ui-overlays/Legend";
+import { SearchBar, type SearchResult } from "@/geoloc/components/ui-overlays/SearchBar";
+import { CoordsBar } from "@/geoloc/components/ui-overlays/CoordsBar";
+import { useManzanas } from "@/geoloc/hooks/useManzanas";
+import { useGseManzanas } from "@/geoloc/hooks/useGseManzanas";
+import { useComunasGeoIndex } from "@/geoloc/hooks/useComunasGeoIndex";
+import { useSavedPois } from "@/geoloc/hooks/useSavedPois";
+import { usePoiFolders } from "@/geoloc/hooks/usePoiFolders";
+import { useAuth } from "@/geoloc/hooks/useAuth";
+import { fetchIsochrone } from "@/geoloc/services/isochroneService";
+import { fetchOverpassPreset, fetchOverpassFreeText, bboxAreaDegSq } from "@/geoloc/services/overpassService";
+import { extractPointPois, countPoints, type PoiInsert, type SavedPoi } from "@/geoloc/types/pois";
+import { parseFile, getExtension } from "@/geoloc/utils/fileParsers";
+import type { NSE, Commune } from "@/geoloc/data/communes";
+import type { TrafficLevel } from "@/geoloc/utils/traffic";
+import type { LayerState } from "@/geoloc/types/layers";
+import type { ManzanaVariable } from "@/geoloc/types/manzanas";
+import type { GseVariable } from "@/geoloc/types/gse";
+import type { IneVariable } from "@/geoloc/utils/ineScales";
+import type { UserLayer } from "@/geoloc/types/userLayers";
+import type { IsoMode, Isochrone } from "@/geoloc/types/isochrones";
+import type { Microzone, MicrozoneSubmode } from "@/geoloc/types/microzones";
+import { MICRO_PALETTE } from "@/geoloc/types/microzones";
 import {
   polygonFromLatLngs,
   bufferAroundPoint,
   voronoiFromPois,
   computeMicrozoneStats,
-} from "@/utils/microzones";
+} from "@/geoloc/utils/microzones";
 import { useNavigate } from "react-router-dom";
 
 type Mode = "none" | "isochrone" | "microzone";

@@ -7,9 +7,9 @@ import buffer from "@turf/buffer";
 import { voronoi } from "@turf/voronoi";
 import bbox from "@turf/bbox";
 import { polygon, point } from "@turf/helpers";
-import type { ManzanaFeature, ManzanaFeatureCollection } from "@/types/manzanas";
-import type { MicrozoneStats } from "@/types/microzones";
-import type { NSE } from "@/data/communes";
+import type { ManzanaFeature, ManzanaFeatureCollection } from "@/geoloc/types/manzanas";
+import type { MicrozoneStats } from "@/geoloc/types/microzones";
+import type { NSE } from "@/geoloc/data/communes";
 
 /** Construye el feature polygon a partir de un anillo de puntos lat/lng */
 export const polygonFromLatLngs = (
