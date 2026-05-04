@@ -401,7 +401,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
               onAddDependency={addDependency}
               onRemoveDependency={removeDependency}
               onReorderTask={reorderTask}
-              isAdmin={isAdmin}
+              isAdmin={canEdit}
               rentStartDate={rentStartDate}
               onExportPDF={async (hideCompleted) => {
                 let contractName = "Contrato";
