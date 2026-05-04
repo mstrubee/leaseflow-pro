@@ -954,6 +954,22 @@ export function GanttReportsSection() {
                               </div>
                             </div>
                             <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleSelectionMode(item.contractId);
+                              }}
+                              title="Lines OFF — seleccionar líneas a ocultar"
+                            >
+                              {selectionModeCards.has(item.contractId) ? (
+                                <EyeOff className="h-3.5 w-3.5" />
+                              ) : (
+                                <Eye className="h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                            <Button
                               variant="outline"
                               size="sm"
                               className="gap-1"
@@ -971,7 +987,13 @@ export function GanttReportsSection() {
                       </CardHeader>
                       {isOpen && (
                         <CardContent className="pt-0 pb-3 px-3">
-                          <MiniGantt taskTree={item.taskTree} holidays={[]} />
+                          <MiniGantt
+                            taskTree={item.taskTree}
+                            holidays={[]}
+                            selectionMode={selectionModeCards.has(item.contractId)}
+                            hiddenIds={hiddenByCard[item.contractId]}
+                            onToggleHidden={(taskId) => toggleHidden(item.contractId, taskId)}
+                          />
                         </CardContent>
                       )}
                     </Card>
