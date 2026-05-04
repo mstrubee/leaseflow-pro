@@ -330,6 +330,26 @@ export function GanttReportsSection() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [openCards, setOpenCards] = useState<Set<string>>(new Set());
+  const [selectionModeCards, setSelectionModeCards] = useState<Set<string>>(new Set());
+  const [hiddenByCard, setHiddenByCard] = useState<Record<string, Set<string>>>({});
+
+  const toggleSelectionMode = (id: string) => {
+    setSelectionModeCards((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleHidden = (cardId: string, taskId: string) => {
+    setHiddenByCard((prev) => {
+      const cur = new Set(prev[cardId] ?? []);
+      if (cur.has(taskId)) cur.delete(taskId);
+      else cur.add(taskId);
+      return { ...prev, [cardId]: cur };
+    });
+  };
 
   const { isOpen: isSectionOpen, setIsOpen: setSectionOpen } = useSingleCollapsible(
     "reports-gantt-section",
