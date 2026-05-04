@@ -301,6 +301,71 @@ const createEmptyNewTask = (): NewTaskRow => ({
   parent_id: null,
 });
 
+function ChartAddDependencyForm({
+  task,
+  allTasks,
+  onAdd,
+}: {
+  task: GanttTask;
+  allTasks: GanttTask[];
+  onAdd: (parentId: string, dep_type: "start" | "end", lag_days: number) => void | Promise<void>;
+}) {
+  const [parentId, setParentId] = useState("");
+  const [depType, setDepType] = useState<"start" | "end">("end");
+  const [lag, setLag] = useState(0);
+
+  const currentDeps = task.dependencies?.map((d) => d.depends_on_task_id) ?? [];
+  const options = allTasks
+    .filter((t) => t.id !== task.id && !currentDeps.includes(t.id))
+    .map((t) => ({ value: t.id, label: t.name }));
+
+  return (
+    <div className="space-y-1.5">
+      <SearchableSelect
+        value={parentId}
+        onValueChange={setParentId}
+        options={options}
+        placeholder="Buscar tarea predecesora..."
+        searchPlaceholder="Buscar tarea..."
+        triggerClassName="h-7 text-xs"
+      />
+      <div className="flex items-center gap-1">
+        <Select value={depType} onValueChange={(v) => setDepType(v as "start" | "end")}>
+          <SelectTrigger className="h-7 text-xs w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="end">al término</SelectItem>
+            <SelectItem value="start">al inicio</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input
+          type="number"
+          className="h-7 text-xs w-20"
+          value={lag}
+          onChange={(e) => setLag(parseInt(e.target.value) || 0)}
+          title="Días de desfase (+ retrasa, − adelanta)"
+        />
+        <span className="text-[10px] text-muted-foreground">días</span>
+        <Button
+          size="sm"
+          className="h-7 text-xs ml-auto"
+          disabled={!parentId}
+          onClick={async () => {
+            if (!parentId) return;
+            await onAdd(parentId, depType, lag);
+            setParentId("");
+            setLag(0);
+            setDepType("end");
+          }}
+        >
+          Agregar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function GanttChart({
   tasks,
   taskTree,
