@@ -21,6 +21,60 @@ const isNetworkError = (error: unknown): boolean => {
 // Helper to delay execution
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// ============================================================
+// Global shared cache for user_preferences
+// All useUserPreferences hooks share a single batched fetch per user
+// to avoid N+1 requests on pages that mount many preference-backed components.
+// ============================================================
+type PrefRecord = { preference_key: string; preference_value: unknown };
+const prefsCache = new Map<string, Map<string, unknown>>();
+const prefsLoadPromise = new Map<string, Promise<Map<string, unknown>>>();
+const prefsSubscribers = new Map<string, Set<() => void>>();
+
+function notifyPrefsSubscribers(userId: string) {
+  prefsSubscribers.get(userId)?.forEach((fn) => { try { fn(); } catch {} });
+}
+
+function subscribePrefs(userId: string, cb: () => void): () => void {
+  let set = prefsSubscribers.get(userId);
+  if (!set) { set = new Set(); prefsSubscribers.set(userId, set); }
+  set.add(cb);
+  return () => { set!.delete(cb); };
+}
+
+async function loadAllUserPrefs(userId: string): Promise<Map<string, unknown>> {
+  const cached = prefsCache.get(userId);
+  if (cached) return cached;
+  const inflight = prefsLoadPromise.get(userId);
+  if (inflight) return inflight;
+  const p = (async () => {
+    try {
+      const { data, error } = await supabase
+        .from("user_preferences")
+        .select("preference_key, preference_value")
+        .eq("user_id", userId);
+      const map = new Map<string, unknown>();
+      if (!error && Array.isArray(data)) {
+        (data as PrefRecord[]).forEach((row) => map.set(row.preference_key, row.preference_value));
+      }
+      prefsCache.set(userId, map);
+      notifyPrefsSubscribers(userId);
+      return map;
+    } finally {
+      prefsLoadPromise.delete(userId);
+    }
+  })();
+  prefsLoadPromise.set(userId, p);
+  return p;
+}
+
+function updatePrefsCache(userId: string, key: string, value: unknown) {
+  let map = prefsCache.get(userId);
+  if (!map) { map = new Map(); prefsCache.set(userId, map); }
+  map.set(key, value);
+  notifyPrefsSubscribers(userId);
+}
+
 /**
  * Hook to manage user preferences stored in Supabase.
  * Falls back to localStorage if user is not authenticated.
