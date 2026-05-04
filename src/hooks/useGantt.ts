@@ -527,32 +527,42 @@ export function useGantt(contractId: string) {
     }
   };
 
-  const addDependency = async (taskId: string, dependsOnTaskId: string) => {
+  const addDependency = async (
+    taskId: string,
+    dependsOnTaskId: string,
+    options?: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }
+  ) => {
     setSaving(true);
     try {
-      // Get both tasks to calculate new dates
       const dependentTask = tasks.find(t => t.id === taskId);
       const parentTask = tasks.find(t => t.id === dependsOnTaskId);
-      
+
       if (!dependentTask || !parentTask) {
         throw new Error("Tarea no encontrada");
       }
 
-      // Create the dependency
+      const dep_type = options?.dep_type ?? "end";
+      const lag_days = options?.lag_days ?? 0;
+      const lag_type = options?.lag_type ?? "calendar";
+
       const { error } = await supabase
         .from("gantt_task_dependencies")
         .insert({
           task_id: taskId,
           depends_on_task_id: dependsOnTaskId,
-        });
+          dep_type,
+          lag_days,
+          lag_type,
+        } as any);
 
       if (error) throw error;
 
-      // Update dependent task dates based on parent's end date
-      if (parentTask.end_date) {
-        const parentEndDate = parseISO(parentTask.end_date);
-        // Dependent task starts the day after parent ends
-        const newStartDate = addDays(parentEndDate, 1);
+      // Update dependent task dates based on chosen anchor
+      const anchorStr = dep_type === "start" ? parentTask.start_date : parentTask.end_date;
+      if (anchorStr) {
+        const anchorDate = parseISO(anchorStr);
+        const baseOffset = dep_type === "start" ? 0 : 1;
+        const newStartDate = addDays(anchorDate, baseOffset + lag_days);
         const duration = dependentTask.duration_days || 1;
         const newEndDate = addDays(newStartDate, duration - 1);
 
