@@ -296,13 +296,19 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
     loadTemplateTasks(selectedTemplate.id);
   };
 
-  const handleAddDependency = async (taskId: string, dependsOnId: string) => {
+  const handleAddDependency = async (
+    taskId: string,
+    dependsOnId: string,
+    dep_type: "start" | "end" = "end",
+    lag_days: number = 0
+  ) => {
     await supabase.from("gantt_template_dependencies").insert({
       task_id: taskId,
       depends_on_task_id: dependsOnId,
-      lag_days: 0,
+      dep_type,
+      lag_days,
       lag_type: "calendar",
-    });
+    } as any);
     if (selectedTemplate) loadTemplateTasks(selectedTemplate.id);
   };
 
