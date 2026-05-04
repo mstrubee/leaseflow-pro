@@ -64,7 +64,7 @@ export function useContractSections() {
       const newSections = missingKeys.map((key, idx) => ({
         key,
         order: maxOrder + 1 + idx,
-        collapsed: false,
+        collapsed: true,
       }));
       return [...safeSections, ...newSections];
     }
