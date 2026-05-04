@@ -475,9 +475,12 @@ export function useGantt(contractId: string) {
         )
       );
 
-      // If end_date was updated and propagation not skipped, propagate to dependent tasks
-      if (updates.end_date && !options?.skipPropagation) {
-        const propagated = await propagateDateChanges(taskId, updates.end_date);
+      // If dates were updated and propagation not skipped, propagate to dependent tasks
+      if ((updates.end_date || updates.start_date) && !options?.skipPropagation) {
+        const current = tasks.find((t) => t.id === taskId);
+        const startStr = updates.start_date || current?.start_date || updates.end_date!;
+        const endStr = updates.end_date || current?.end_date || updates.start_date!;
+        const propagated = await propagateDateChanges(taskId, startStr, endStr);
         if (propagated.size > 0) {
           setTasks((prev) =>
             prev.map((t) => (propagated.has(t.id) ? { ...t, ...propagated.get(t.id)! } : t))
