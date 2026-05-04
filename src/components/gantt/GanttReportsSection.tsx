@@ -205,7 +205,7 @@ function MiniGantt({
         </div>
 
         {/* Rows */}
-        {flat.map(({ task, level }, rowIdx) => {
+        {visibleFlat.map(({ task, level }, rowIdx) => {
           const hasDates = task.start_date && task.end_date;
           let barLeft = 0;
           let barWidth = 0;
@@ -224,6 +224,8 @@ function MiniGantt({
           if (progress >= 100) barColor = "hsl(142, 71%, 45%)";
           else if (task.status === "delayed") barColor = "hsl(0, 84%, 60%)";
 
+          const isChecked = !(hiddenIds?.has(task.id));
+
           return (
             <div
               key={task.id}
@@ -232,6 +234,18 @@ function MiniGantt({
               }`}
               style={{ height: ROW_HEIGHT }}
             >
+              {selectionMode && (
+                <div
+                  className="flex items-center justify-center border-r"
+                  style={{ width: CHECK_COL_WIDTH, flexShrink: 0 }}
+                >
+                  <Checkbox
+                    checked={isChecked}
+                    onCheckedChange={() => onToggleHidden?.(task.id)}
+                    aria-label={`Mostrar/ocultar ${task.name}`}
+                  />
+                </div>
+              )}
               <div
                 className="flex items-center px-2 text-xs border-r truncate"
                 style={{
