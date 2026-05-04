@@ -40,6 +40,7 @@ interface GanttTemplateDependency {
   id: string;
   task_id: string;
   depends_on_task_id: string;
+  dep_type?: "start" | "end";
   lag_days: number;
   lag_type: string;
 }
