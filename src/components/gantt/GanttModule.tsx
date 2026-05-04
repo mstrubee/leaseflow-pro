@@ -40,6 +40,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
     updateTask,
     deleteTask,
     addDependency,
+    updateDependency,
     removeDependency,
     linkPurchaseOrder,
     unlinkPurchaseOrder,
