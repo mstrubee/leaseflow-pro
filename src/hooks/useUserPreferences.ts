@@ -164,40 +164,31 @@ export function useUserPreferences<T>({
         }
 
         if (user) {
-          // Try to load from Supabase with retry
-          const { data, success } = await fetchFromSupabaseWithRetry(user.id);
+          // Use shared global cache (one fetch per user, not per hook instance)
+          const map = await loadAllUserPrefs(user.id);
 
-          // Check again after async operation - user might have interacted
           if (userHasInteractedRef.current) {
             setLoading(false);
             return;
           }
 
-          if (!success) {
-            // Silent fallback to localStorage
-            loadFromLocalStorage();
-            return;
-          }
+          const cachedValue = map.has(preferenceKey) ? (map.get(preferenceKey) as T) : null;
 
-          if (data !== null) {
-            setValue(data);
-            lastSavedRef.current = JSON.stringify(data);
+          if (cachedValue !== null && cachedValue !== undefined) {
+            setValue(cachedValue);
+            lastSavedRef.current = JSON.stringify(cachedValue);
           } else {
             // No data in Supabase, try to migrate from localStorage
             const localStorageKeyToUse = localStorageKey || preferenceKey;
             const localData = localStorage.getItem(localStorageKeyToUse);
-            
+
             if (localData) {
               try {
                 const parsed = JSON.parse(localData) as T;
                 setValue(parsed);
-                // Migrate to Supabase (don't await, let it happen in background)
                 saveToSupabase(parsed).then(() => {
-                  // Clear localStorage after successful migration
                   localStorage.removeItem(localStorageKeyToUse);
-                }).catch(() => {
-                  // Silent failure for migration
-                });
+                }).catch(() => {});
               } catch (e) {
                 console.error("Error parsing localStorage data:", e);
                 setValue(defaultValue);
