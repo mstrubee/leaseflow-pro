@@ -26,8 +26,9 @@ interface GanttTaskTreeProps {
   onAddTask: (name: string, parentId: string | null, options?: Partial<GanttTask>) => Promise<any>;
   onUpdateTask: (taskId: string, updates: Partial<GanttTask>) => Promise<void>;
   onDeleteTask: (taskId: string) => Promise<void>;
-  onAddDependency: (taskId: string, dependsOnTaskId: string) => Promise<void>;
+  onAddDependency: (taskId: string, dependsOnTaskId: string, options?: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
   onRemoveDependency: (dependencyId: string) => Promise<void>;
+  onUpdateDependency?: (dependencyId: string, updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
   onLinkPurchaseOrder: (taskId: string, purchaseOrderId: string) => Promise<void>;
   onUnlinkPurchaseOrder: (linkId: string) => Promise<void>;
   onExportPDF?: (hideCompleted: boolean) => void;
