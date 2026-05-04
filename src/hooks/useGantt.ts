@@ -849,18 +849,22 @@ export function useGantt(contractId: string) {
     }
 
     // Third pass: dependencies
-    const deps: { task_id: string; depends_on_task_id: string }[] = [];
+    const deps: { task_id: string; depends_on_task_id: string; dep_type: string; lag_days: number; lag_type: string }[] = [];
     tasks.forEach((t) => {
       (t.dependencies || []).forEach((d) => {
         const a = idMap.get(d.task_id);
         const b = idMap.get(d.depends_on_task_id);
-        if (a && b) deps.push({ task_id: a, depends_on_task_id: b });
+        if (a && b) deps.push({
+          task_id: a,
+          depends_on_task_id: b,
+          dep_type: d.dep_type ?? "end",
+          lag_days: d.lag_days ?? 0,
+          lag_type: d.lag_type ?? "calendar",
+        });
       });
     });
     if (deps.length > 0) {
-      await supabase.from("gantt_template_dependencies").insert(
-        deps.map((d) => ({ ...d, lag_days: 0, lag_type: "calendar" }))
-      );
+      await supabase.from("gantt_template_dependencies").insert(deps as any);
     }
   };
 
