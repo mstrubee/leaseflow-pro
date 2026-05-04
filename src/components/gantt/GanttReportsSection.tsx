@@ -13,7 +13,10 @@ import {
   Maximize2,
   Minimize2,
   ExternalLink,
+  Eye,
+  EyeOff,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useReportsNavigation } from "@/components/reports/ReportsReturnButton";
 import { format, parseISO, eachDayOfInterval, differenceInDays, isWeekend } from "date-fns";
 import { es } from "date-fns/locale";
