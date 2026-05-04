@@ -161,6 +161,12 @@ function MiniGantt({
           className="flex sticky top-0 z-10 bg-muted border-b"
           style={{ height: HEADER_HEIGHT }}
         >
+          {selectionMode && (
+            <div
+              className="flex items-center justify-center border-r bg-muted"
+              style={{ width: CHECK_COL_WIDTH, flexShrink: 0 }}
+            />
+          )}
           <div
             className="flex items-center px-2 text-xs font-semibold border-r bg-muted"
             style={{ width: NAME_COL_WIDTH, flexShrink: 0 }}
