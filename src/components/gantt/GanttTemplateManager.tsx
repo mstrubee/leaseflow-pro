@@ -113,7 +113,7 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
       .select("*");
 
     setTasks((tasksData || []) as GanttTemplateTask[]);
-    setDependencies(depsData || []);
+    setDependencies((depsData || []) as GanttTemplateDependency[]);
   }, []);
 
   useEffect(() => {
