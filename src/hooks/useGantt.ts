@@ -391,6 +391,7 @@ export function useGantt(contractId: string) {
   // Returns a map of taskId -> partial updates so caller can patch local state without a full reload.
   const propagateDateChanges = async (
     taskId: string,
+    newStartDate: string,
     newEndDate: string,
     processedTasks: Set<string> = new Set(),
     accumulator: Map<string, Partial<GanttTask>> = new Map()
@@ -400,13 +401,10 @@ export function useGantt(contractId: string) {
 
     const { data: dependencies } = await supabase
       .from("gantt_task_dependencies")
-      .select("task_id")
+      .select("task_id, dep_type, lag_days")
       .eq("depends_on_task_id", taskId);
 
     if (!dependencies || dependencies.length === 0) return accumulator;
-
-    const parentEndDate = parseISO(newEndDate);
-    const newDependentStart = addDays(parentEndDate, 1);
 
     for (const dep of dependencies) {
       const { data: dependentTask } = await supabase
@@ -416,6 +414,13 @@ export function useGantt(contractId: string) {
         .single();
 
       if (!dependentTask) continue;
+
+      const anchor = (dep as any).dep_type === "start" ? newStartDate : newEndDate;
+      const anchorDate = parseISO(anchor);
+      const lag = (dep as any).lag_days ?? 0;
+      // base offset: end-anchor → next day; start-anchor → same day
+      const baseOffset = (dep as any).dep_type === "start" ? 0 : 1;
+      const newDependentStart = addDays(anchorDate, baseOffset + lag);
 
       const duration = dependentTask.duration_days || 1;
       const newDependentEnd = addDays(newDependentStart, duration - 1);
@@ -429,7 +434,7 @@ export function useGantt(contractId: string) {
 
       accumulator.set(dep.task_id, { start_date: newStartStr, end_date: newEndStr });
 
-      await propagateDateChanges(dep.task_id, newEndStr, processedTasks, accumulator);
+      await propagateDateChanges(dep.task_id, newStartStr, newEndStr, processedTasks, accumulator);
     }
 
     return accumulator;
