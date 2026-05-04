@@ -311,6 +311,7 @@ export function GanttChart({
   onDeleteTask,
   onAddDependency,
   onRemoveDependency,
+  onUpdateDependency,
   onReorderTask,
   isAdmin = false,
   onExportPDF,
