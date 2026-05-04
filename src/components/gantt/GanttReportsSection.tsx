@@ -103,8 +103,10 @@ function MiniGantt({
   const flat = useMemo(() => flattenTree(taskTree), [taskTree]);
   const tasksWithDates = flat.filter((f) => f.task.start_date && f.task.end_date);
 
-  // Visible rows: prune subtrees whose root is hidden
+  // Visible rows: in selection mode, show ALL rows (so user can re-toggle them).
+  // Out of selection mode, prune subtrees whose root is hidden.
   const visibleFlat = useMemo(() => {
+    if (selectionMode) return flat;
     if (!hiddenIds || hiddenIds.size === 0) return flat;
     const acc: Array<{ task: GanttTask; level: number }> = [];
     const walk = (nodes: GanttTask[], level: number) => {
@@ -116,7 +118,7 @@ function MiniGantt({
     };
     walk(taskTree, 0);
     return acc;
-  }, [taskTree, flat, hiddenIds]);
+  }, [taskTree, flat, hiddenIds, selectionMode]);
 
   if (tasksWithDates.length === 0) {
     return (
