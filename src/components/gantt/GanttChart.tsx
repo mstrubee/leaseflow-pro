@@ -265,8 +265,9 @@ interface GanttChartProps {
   onUpdateTask: (taskId: string, updates: Partial<GanttTask>, options?: { skipPropagation?: boolean; breakDependencies?: boolean }) => Promise<void>;
   onAddTask: (name: string, parentId?: string | null, options?: Partial<GanttTask>) => Promise<any>;
   onDeleteTask: (taskId: string) => Promise<void>;
-  onAddDependency: (taskId: string, dependsOnTaskId: string) => Promise<void>;
+  onAddDependency: (taskId: string, dependsOnTaskId: string, options?: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
   onRemoveDependency: (dependencyId: string) => Promise<void>;
+  onUpdateDependency?: (dependencyId: string, updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }) => Promise<void>;
   onReorderTask: (taskId: string, newIndex: number, siblingIds: string[]) => Promise<void>;
   isAdmin?: boolean;
   onExportPDF?: (hideCompleted: boolean) => void;
