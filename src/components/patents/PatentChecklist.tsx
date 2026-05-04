@@ -1215,21 +1215,18 @@ export function PatentChecklist({
                                         />
                                       );
                                     })()}
-                                    {(status === "ok" || !getDocValue(item.id, 'document_url')) && (
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className={`h-8 ${status !== "ok" && disableOtherFields ? disabledCellClass : ""}`}
-                                        disabled={status !== "ok" && disableOtherFields}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setUploadDialog({ itemId: item.id, itemName: item.name });
-                                        }}
-                                        title={getDocValue(item.id, 'document_url') ? "Agregar otro archivo" : "Subir archivo"}
-                                      >
-                                        <Upload className="h-3 w-3" />
-                                      </Button>
-                                    )}
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setUploadDialog({ itemId: item.id, itemName: item.name });
+                                      }}
+                                      title={getDocValue(item.id, 'document_url') ? "Agregar otro archivo" : "Subir archivo"}
+                                    >
+                                      <Upload className="h-3 w-3" />
+                                    </Button>
                                     {isAdmin && (
                                       <Button
                                         variant="ghost"
