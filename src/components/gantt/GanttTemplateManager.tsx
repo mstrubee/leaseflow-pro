@@ -709,25 +709,41 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
                       const depTask = tasks.find(t => t.id === dep.depends_on_task_id);
                       return (
                         <div key={dep.id} className="flex items-center gap-2 p-2 bg-muted rounded">
-                          <span className="flex-1 truncate">{depTask?.name || "Tarea"}</span>
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-muted-foreground whitespace-nowrap">Desfase:</span>
-                            <Input
-                              type="number"
-                              className="h-7 w-20 text-xs"
-                              value={dep.lag_days}
-                              onChange={async (e) => {
-                                const val = parseInt(e.target.value) || 0;
-                                await supabase
-                                  .from("gantt_template_dependencies")
-                                  .update({ lag_days: val })
-                                  .eq("id", dep.id);
-                                if (selectedTemplate) loadTemplateTasks(selectedTemplate.id);
-                              }}
-                              title="Días de desfase (+ retrasa, − adelanta)"
-                            />
-                            <span className="text-xs text-muted-foreground">días</span>
-                          </div>
+                          <span className="flex-1 truncate text-sm">{depTask?.name || "Tarea"}</span>
+                          <Select
+                            value={dep.dep_type ?? "end"}
+                            onValueChange={async (v) => {
+                              await supabase
+                                .from("gantt_template_dependencies")
+                                .update({ dep_type: v } as any)
+                                .eq("id", dep.id);
+                              if (selectedTemplate) loadTemplateTasks(selectedTemplate.id);
+                            }}
+                          >
+                            <SelectTrigger className="h-7 w-32 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="end">al término</SelectItem>
+                              <SelectItem value="start">al inicio</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="number"
+                            className="h-7 w-20 text-xs"
+                            defaultValue={dep.lag_days}
+                            onBlur={async (e) => {
+                              const val = parseInt(e.target.value) || 0;
+                              if (val === dep.lag_days) return;
+                              await supabase
+                                .from("gantt_template_dependencies")
+                                .update({ lag_days: val })
+                                .eq("id", dep.id);
+                              if (selectedTemplate) loadTemplateTasks(selectedTemplate.id);
+                            }}
+                            title="Días de desfase (+ retrasa, − adelanta)"
+                          />
+                          <span className="text-xs text-muted-foreground">días</span>
                           <Button
                             variant="ghost"
                             size="icon"
