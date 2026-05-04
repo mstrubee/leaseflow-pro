@@ -614,6 +614,52 @@ export function useGantt(contractId: string) {
     }
   };
 
+  const updateDependency = async (
+    dependencyId: string,
+    updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }
+  ) => {
+    setSaving(true);
+    try {
+      // Find the dependency to know which dependent task to recalc
+      const dependentTask = tasks.find(t => t.dependencies?.some(d => d.id === dependencyId));
+      const dep = dependentTask?.dependencies?.find(d => d.id === dependencyId);
+
+      const { error } = await supabase
+        .from("gantt_task_dependencies")
+        .update(updates as any)
+        .eq("id", dependencyId);
+
+      if (error) throw error;
+
+      if (dep && dependentTask) {
+        const parentTask = tasks.find(t => t.id === dep.depends_on_task_id);
+        const dep_type = updates.dep_type ?? dep.dep_type ?? "end";
+        const lag_days = updates.lag_days ?? dep.lag_days ?? 0;
+        const anchorStr = dep_type === "start" ? parentTask?.start_date : parentTask?.end_date;
+        if (anchorStr) {
+          const anchorDate = parseISO(anchorStr);
+          const baseOffset = dep_type === "start" ? 0 : 1;
+          const newStartDate = addDays(anchorDate, baseOffset + lag_days);
+          const duration = dependentTask.duration_days || 1;
+          const newEndDate = addDays(newStartDate, duration - 1);
+          await supabase
+            .from("gantt_tasks")
+            .update({
+              start_date: format(newStartDate, "yyyy-MM-dd"),
+              end_date: format(newEndDate, "yyyy-MM-dd"),
+            })
+            .eq("id", dependentTask.id);
+        }
+      }
+
+      await loadTimeline();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar la dependencia" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const linkPurchaseOrder = async (taskId: string, purchaseOrderId: string) => {
     setSaving(true);
     try {
