@@ -228,12 +228,14 @@ function MiniGantt({
 
           const isChecked = !(hiddenIds?.has(task.id));
 
+          const dim = selectionMode && !isChecked;
+
           return (
             <div
               key={task.id}
               className={`flex border-b border-border/40 ${
                 rowIdx % 2 === 1 ? "bg-muted/30" : ""
-              }`}
+              } ${dim ? "opacity-40" : ""}`}
               style={{ height: ROW_HEIGHT }}
             >
               {selectionMode && (
