@@ -320,6 +320,9 @@ export function useGantt(contractId: string) {
             return {
               task_id: newTaskId,
               depends_on_task_id: newDependsOnId,
+              dep_type: (dep as any).dep_type ?? "end",
+              lag_days: dep.lag_days ?? 0,
+              lag_type: dep.lag_type ?? "calendar",
             };
           }
           return null;
