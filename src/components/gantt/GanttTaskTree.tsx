@@ -44,6 +44,7 @@ export function GanttTaskTree({
   onDeleteTask,
   onAddDependency,
   onRemoveDependency,
+  onUpdateDependency,
   onLinkPurchaseOrder,
   onUnlinkPurchaseOrder,
   onExportPDF,
