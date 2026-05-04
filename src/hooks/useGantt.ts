@@ -1051,6 +1051,7 @@ export function useGantt(contractId: string) {
     deleteTask,
     addDependency,
     removeDependency,
+    updateDependency,
     linkPurchaseOrder,
     unlinkPurchaseOrder,
     reorderTask,
