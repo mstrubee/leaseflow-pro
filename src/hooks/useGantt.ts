@@ -40,6 +40,9 @@ export interface GanttTaskDependency {
   id: string;
   task_id: string;
   depends_on_task_id: string;
+  dep_type: "start" | "end";
+  lag_days: number;
+  lag_type: "calendar" | "business";
   depends_on_task?: GanttTask;
 }
 
@@ -317,6 +320,9 @@ export function useGantt(contractId: string) {
             return {
               task_id: newTaskId,
               depends_on_task_id: newDependsOnId,
+              dep_type: (dep as any).dep_type ?? "end",
+              lag_days: dep.lag_days ?? 0,
+              lag_type: dep.lag_type ?? "calendar",
             };
           }
           return null;
@@ -388,6 +394,7 @@ export function useGantt(contractId: string) {
   // Returns a map of taskId -> partial updates so caller can patch local state without a full reload.
   const propagateDateChanges = async (
     taskId: string,
+    newStartDate: string,
     newEndDate: string,
     processedTasks: Set<string> = new Set(),
     accumulator: Map<string, Partial<GanttTask>> = new Map()
@@ -397,13 +404,10 @@ export function useGantt(contractId: string) {
 
     const { data: dependencies } = await supabase
       .from("gantt_task_dependencies")
-      .select("task_id")
+      .select("task_id, dep_type, lag_days")
       .eq("depends_on_task_id", taskId);
 
     if (!dependencies || dependencies.length === 0) return accumulator;
-
-    const parentEndDate = parseISO(newEndDate);
-    const newDependentStart = addDays(parentEndDate, 1);
 
     for (const dep of dependencies) {
       const { data: dependentTask } = await supabase
@@ -413,6 +417,13 @@ export function useGantt(contractId: string) {
         .single();
 
       if (!dependentTask) continue;
+
+      const anchor = (dep as any).dep_type === "start" ? newStartDate : newEndDate;
+      const anchorDate = parseISO(anchor);
+      const lag = (dep as any).lag_days ?? 0;
+      // base offset: end-anchor → next day; start-anchor → same day
+      const baseOffset = (dep as any).dep_type === "start" ? 0 : 1;
+      const newDependentStart = addDays(anchorDate, baseOffset + lag);
 
       const duration = dependentTask.duration_days || 1;
       const newDependentEnd = addDays(newDependentStart, duration - 1);
@@ -426,7 +437,7 @@ export function useGantt(contractId: string) {
 
       accumulator.set(dep.task_id, { start_date: newStartStr, end_date: newEndStr });
 
-      await propagateDateChanges(dep.task_id, newEndStr, processedTasks, accumulator);
+      await propagateDateChanges(dep.task_id, newStartStr, newEndStr, processedTasks, accumulator);
     }
 
     return accumulator;
@@ -467,9 +478,12 @@ export function useGantt(contractId: string) {
         )
       );
 
-      // If end_date was updated and propagation not skipped, propagate to dependent tasks
-      if (updates.end_date && !options?.skipPropagation) {
-        const propagated = await propagateDateChanges(taskId, updates.end_date);
+      // If dates were updated and propagation not skipped, propagate to dependent tasks
+      if ((updates.end_date || updates.start_date) && !options?.skipPropagation) {
+        const current = tasks.find((t) => t.id === taskId);
+        const startStr = updates.start_date || current?.start_date || updates.end_date!;
+        const endStr = updates.end_date || current?.end_date || updates.start_date!;
+        const propagated = await propagateDateChanges(taskId, startStr, endStr);
         if (propagated.size > 0) {
           setTasks((prev) =>
             prev.map((t) => (propagated.has(t.id) ? { ...t, ...propagated.get(t.id)! } : t))
@@ -516,32 +530,42 @@ export function useGantt(contractId: string) {
     }
   };
 
-  const addDependency = async (taskId: string, dependsOnTaskId: string) => {
+  const addDependency = async (
+    taskId: string,
+    dependsOnTaskId: string,
+    options?: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }
+  ) => {
     setSaving(true);
     try {
-      // Get both tasks to calculate new dates
       const dependentTask = tasks.find(t => t.id === taskId);
       const parentTask = tasks.find(t => t.id === dependsOnTaskId);
-      
+
       if (!dependentTask || !parentTask) {
         throw new Error("Tarea no encontrada");
       }
 
-      // Create the dependency
+      const dep_type = options?.dep_type ?? "end";
+      const lag_days = options?.lag_days ?? 0;
+      const lag_type = options?.lag_type ?? "calendar";
+
       const { error } = await supabase
         .from("gantt_task_dependencies")
         .insert({
           task_id: taskId,
           depends_on_task_id: dependsOnTaskId,
-        });
+          dep_type,
+          lag_days,
+          lag_type,
+        } as any);
 
       if (error) throw error;
 
-      // Update dependent task dates based on parent's end date
-      if (parentTask.end_date) {
-        const parentEndDate = parseISO(parentTask.end_date);
-        // Dependent task starts the day after parent ends
-        const newStartDate = addDays(parentEndDate, 1);
+      // Update dependent task dates based on chosen anchor
+      const anchorStr = dep_type === "start" ? parentTask.start_date : parentTask.end_date;
+      if (anchorStr) {
+        const anchorDate = parseISO(anchorStr);
+        const baseOffset = dep_type === "start" ? 0 : 1;
+        const newStartDate = addDays(anchorDate, baseOffset + lag_days);
         const duration = dependentTask.duration_days || 1;
         const newEndDate = addDays(newStartDate, duration - 1);
 
@@ -588,6 +612,52 @@ export function useGantt(contractId: string) {
         title: "Error",
         description: "No se pudo eliminar la dependencia",
       });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateDependency = async (
+    dependencyId: string,
+    updates: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }
+  ) => {
+    setSaving(true);
+    try {
+      // Find the dependency to know which dependent task to recalc
+      const dependentTask = tasks.find(t => t.dependencies?.some(d => d.id === dependencyId));
+      const dep = dependentTask?.dependencies?.find(d => d.id === dependencyId);
+
+      const { error } = await supabase
+        .from("gantt_task_dependencies")
+        .update(updates as any)
+        .eq("id", dependencyId);
+
+      if (error) throw error;
+
+      if (dep && dependentTask) {
+        const parentTask = tasks.find(t => t.id === dep.depends_on_task_id);
+        const dep_type = updates.dep_type ?? dep.dep_type ?? "end";
+        const lag_days = updates.lag_days ?? dep.lag_days ?? 0;
+        const anchorStr = dep_type === "start" ? parentTask?.start_date : parentTask?.end_date;
+        if (anchorStr) {
+          const anchorDate = parseISO(anchorStr);
+          const baseOffset = dep_type === "start" ? 0 : 1;
+          const newStartDate = addDays(anchorDate, baseOffset + lag_days);
+          const duration = dependentTask.duration_days || 1;
+          const newEndDate = addDays(newStartDate, duration - 1);
+          await supabase
+            .from("gantt_tasks")
+            .update({
+              start_date: format(newStartDate, "yyyy-MM-dd"),
+              end_date: format(newEndDate, "yyyy-MM-dd"),
+            })
+            .eq("id", dependentTask.id);
+        }
+      }
+
+      await loadTimeline();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo actualizar la dependencia" });
     } finally {
       setSaving(false);
     }
@@ -779,18 +849,22 @@ export function useGantt(contractId: string) {
     }
 
     // Third pass: dependencies
-    const deps: { task_id: string; depends_on_task_id: string }[] = [];
+    const deps: { task_id: string; depends_on_task_id: string; dep_type: string; lag_days: number; lag_type: string }[] = [];
     tasks.forEach((t) => {
       (t.dependencies || []).forEach((d) => {
         const a = idMap.get(d.task_id);
         const b = idMap.get(d.depends_on_task_id);
-        if (a && b) deps.push({ task_id: a, depends_on_task_id: b });
+        if (a && b) deps.push({
+          task_id: a,
+          depends_on_task_id: b,
+          dep_type: d.dep_type ?? "end",
+          lag_days: d.lag_days ?? 0,
+          lag_type: d.lag_type ?? "calendar",
+        });
       });
     });
     if (deps.length > 0) {
-      await supabase.from("gantt_template_dependencies").insert(
-        deps.map((d) => ({ ...d, lag_days: 0, lag_type: "calendar" }))
-      );
+      await supabase.from("gantt_template_dependencies").insert(deps as any);
     }
   };
 
@@ -984,6 +1058,7 @@ export function useGantt(contractId: string) {
     deleteTask,
     addDependency,
     removeDependency,
+    updateDependency,
     linkPurchaseOrder,
     unlinkPurchaseOrder,
     reorderTask,

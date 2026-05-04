@@ -40,6 +40,7 @@ interface GanttTemplateDependency {
   id: string;
   task_id: string;
   depends_on_task_id: string;
+  dep_type?: "start" | "end";
   lag_days: number;
   lag_type: string;
 }
@@ -52,6 +53,76 @@ interface OrgMember {
 
 interface GanttTemplateManagerProps {
   defaultCollapsed?: boolean;
+}
+
+function TemplateAddDependencyForm({
+  tasks,
+  dependencies,
+  selectedTaskId,
+  onAdd,
+}: {
+  tasks: GanttTemplateTask[];
+  dependencies: GanttTemplateDependency[];
+  selectedTaskId: string | null;
+  onAdd: (taskId: string, dep_type: "start" | "end", lag_days: number) => void;
+}) {
+  const [taskId, setTaskId] = useState("");
+  const [depType, setDepType] = useState<"start" | "end">("end");
+  const [lag, setLag] = useState(0);
+
+  const available = tasks.filter(
+    (t) =>
+      t.id !== selectedTaskId &&
+      !dependencies.some((d) => d.task_id === selectedTaskId && d.depends_on_task_id === t.id)
+  );
+
+  return (
+    <div className="space-y-2">
+      <Label>Agregar dependencia</Label>
+      <Select value={taskId} onValueChange={setTaskId}>
+        <SelectTrigger>
+          <SelectValue placeholder="Seleccionar tarea..." />
+        </SelectTrigger>
+        <SelectContent>
+          {available.map((t) => (
+            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <div className="flex items-center gap-2">
+        <Select value={depType} onValueChange={(v) => setDepType(v as "start" | "end")}>
+          <SelectTrigger className="h-9 w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="end">al término</SelectItem>
+            <SelectItem value="start">al inicio</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input
+          type="number"
+          className="h-9 w-24"
+          value={lag}
+          onChange={(e) => setLag(parseInt(e.target.value) || 0)}
+          title="Días de desfase (+ retrasa, − adelanta)"
+        />
+        <span className="text-xs text-muted-foreground">días</span>
+        <Button
+          size="sm"
+          disabled={!taskId}
+          onClick={() => {
+            if (!taskId) return;
+            onAdd(taskId, depType, lag);
+            setTaskId("");
+            setLag(0);
+            setDepType("end");
+          }}
+        >
+          Agregar
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplateManagerProps) {
@@ -112,7 +183,7 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
       .select("*");
 
     setTasks((tasksData || []) as GanttTemplateTask[]);
-    setDependencies(depsData || []);
+    setDependencies((depsData || []) as GanttTemplateDependency[]);
   }, []);
 
   useEffect(() => {
@@ -295,13 +366,19 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
     loadTemplateTasks(selectedTemplate.id);
   };
 
-  const handleAddDependency = async (taskId: string, dependsOnId: string) => {
+  const handleAddDependency = async (
+    taskId: string,
+    dependsOnId: string,
+    dep_type: "start" | "end" = "end",
+    lag_days: number = 0
+  ) => {
     await supabase.from("gantt_template_dependencies").insert({
       task_id: taskId,
       depends_on_task_id: dependsOnId,
-      lag_days: 0,
+      dep_type,
+      lag_days,
       lag_type: "calendar",
-    });
+    } as any);
     if (selectedTemplate) loadTemplateTasks(selectedTemplate.id);
   };
 
@@ -702,25 +779,41 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
                       const depTask = tasks.find(t => t.id === dep.depends_on_task_id);
                       return (
                         <div key={dep.id} className="flex items-center gap-2 p-2 bg-muted rounded">
-                          <span className="flex-1 truncate">{depTask?.name || "Tarea"}</span>
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-muted-foreground whitespace-nowrap">Desfase:</span>
-                            <Input
-                              type="number"
-                              className="h-7 w-20 text-xs"
-                              value={dep.lag_days}
-                              onChange={async (e) => {
-                                const val = parseInt(e.target.value) || 0;
-                                await supabase
-                                  .from("gantt_template_dependencies")
-                                  .update({ lag_days: val })
-                                  .eq("id", dep.id);
-                                if (selectedTemplate) loadTemplateTasks(selectedTemplate.id);
-                              }}
-                              title="Días de desfase (+ retrasa, − adelanta)"
-                            />
-                            <span className="text-xs text-muted-foreground">días</span>
-                          </div>
+                          <span className="flex-1 truncate text-sm">{depTask?.name || "Tarea"}</span>
+                          <Select
+                            value={dep.dep_type ?? "end"}
+                            onValueChange={async (v) => {
+                              await supabase
+                                .from("gantt_template_dependencies")
+                                .update({ dep_type: v } as any)
+                                .eq("id", dep.id);
+                              if (selectedTemplate) loadTemplateTasks(selectedTemplate.id);
+                            }}
+                          >
+                            <SelectTrigger className="h-7 w-32 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="end">al término</SelectItem>
+                              <SelectItem value="start">al inicio</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="number"
+                            className="h-7 w-20 text-xs"
+                            defaultValue={dep.lag_days}
+                            onBlur={async (e) => {
+                              const val = parseInt(e.target.value) || 0;
+                              if (val === dep.lag_days) return;
+                              await supabase
+                                .from("gantt_template_dependencies")
+                                .update({ lag_days: val })
+                                .eq("id", dep.id);
+                              if (selectedTemplate) loadTemplateTasks(selectedTemplate.id);
+                            }}
+                            title="Días de desfase (+ retrasa, − adelanta)"
+                          />
+                          <span className="text-xs text-muted-foreground">días</span>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -740,25 +833,14 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
             )}
 
             {/* Add dependency */}
-            <div className="space-y-2">
-              <Label>Agregar dependencia</Label>
-              <Select
-                onValueChange={(taskId) => {
-                  if (selectedTaskForDep) handleAddDependency(selectedTaskForDep.id, taskId);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar tarea..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {tasks
-                    .filter(t => t.id !== selectedTaskForDep?.id && !dependencies.some(d => d.task_id === selectedTaskForDep?.id && d.depends_on_task_id === t.id))
-                    .map((task) => (
-                      <SelectItem key={task.id} value={task.id}>{task.name}</SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <TemplateAddDependencyForm
+              tasks={tasks}
+              dependencies={dependencies}
+              selectedTaskId={selectedTaskForDep?.id || null}
+              onAdd={(taskId, dep_type, lag_days) => {
+                if (selectedTaskForDep) handleAddDependency(selectedTaskForDep.id, taskId, dep_type, lag_days);
+              }}
+            />
           </div>
           <DialogFooter>
             <Button onClick={() => setDependencyDialogOpen(false)}>Cerrar</Button>
