@@ -535,7 +535,7 @@ export function GanttTaskTree({
           <DialogHeader>
             <DialogTitle>Dependencias de: {selectedTask?.name}</DialogTitle>
             <DialogDescription>
-              Esta tarea comienza después de que terminen las tareas de las que depende.
+              Define qué tareas deben completarse (o iniciarse) antes de esta, con desfase opcional en días.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -549,9 +549,32 @@ export function GanttTaskTree({
                     return (
                       <div
                         key={dep.id}
-                        className="flex items-center justify-between p-2 bg-muted rounded"
+                        className="flex items-center gap-2 p-2 bg-muted rounded"
                       >
-                        <span>{depTask?.name || "Tarea no encontrada"}</span>
+                        <span className="flex-1 truncate text-sm">{depTask?.name || "Tarea no encontrada"}</span>
+                        <Select
+                          value={dep.dep_type ?? "end"}
+                          onValueChange={(v) => onUpdateDependency?.(dep.id, { dep_type: v as "start" | "end" })}
+                        >
+                          <SelectTrigger className="h-8 w-32 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="end">al término</SelectItem>
+                            <SelectItem value="start">al inicio</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          type="number"
+                          className="h-8 w-20 text-xs"
+                          defaultValue={dep.lag_days ?? 0}
+                          onBlur={(e) => {
+                            const val = parseInt(e.target.value) || 0;
+                            if (val !== (dep.lag_days ?? 0)) onUpdateDependency?.(dep.id, { lag_days: val });
+                          }}
+                          title="Días de desfase (+ retrasa, − adelanta)"
+                        />
+                        <span className="text-xs text-muted-foreground">días</span>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -564,31 +587,20 @@ export function GanttTaskTree({
                     );
                   })}
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Desfase: positivo retrasa, negativo adelanta. "Al término" empieza después de que termine la otra; "al inicio" se ancla al inicio de la otra.
+                </p>
               </div>
             )}
 
             {/* Add new dependency */}
-            <div className="space-y-2">
-              <Label>Agregar dependencia</Label>
-              <SearchableSelect
-                value=""
-                onValueChange={(taskId) => {
-                  if (selectedTask && taskId) {
-                    onAddDependency(selectedTask.id, taskId);
-                  }
-                }}
-                placeholder="Seleccionar tarea..."
-                searchPlaceholder="Buscar tarea..."
-                emptyMessage="Sin tareas disponibles."
-                options={allTasks
-                  .filter(
-                    (t) =>
-                      t.id !== selectedTask?.id &&
-                      !selectedTask?.dependencies?.some((d) => d.depends_on_task_id === t.id)
-                  )
-                  .map((task) => ({ value: task.id, label: task.name }))}
-              />
-            </div>
+            <AddDependencyForm
+              selectedTask={selectedTask}
+              allTasks={allTasks}
+              onAdd={(taskId, dep_type, lag_days) =>
+                onAddDependency(selectedTask!.id, taskId, { dep_type, lag_days })
+              }
+            />
           </div>
           <DialogFooter>
             <Button onClick={() => setDependencyDialogOpen(false)}>Cerrar</Button>
