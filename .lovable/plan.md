@@ -1,37 +1,56 @@
+## Goal
 
-## Problema
+Add a discrete eye-icon button ("Lines OFF") on each contract card in the Gantt reports section. When activated, checkboxes appear next to each row of the mini-Gantt, letting the user toggle visibility of individual lines.
 
-En el árbol/diálogo de tareas y en el editor de plantillas ya se puede elegir si la dependencia se ancla al **inicio** o al **término** de la tarea predecesora, y aplicar un **desfase en días** (positivo o negativo). Pero el popover de dependencias dentro del **diagrama Gantt** (icono de cadena junto al nombre de cada tarea, en `GanttChart.tsx`) sólo permite elegir la tarea predecesora — no expone esos dos campos. La lógica de recálculo y propagación en `useGantt.ts` ya soporta ambos valores.
+## Behavior rules
 
-## Cambios
+- Eye icon button: ghost variant, icon-only (`Eye` / `EyeOff` from lucide-react), tooltip "Lines OFF".
+- Click toggles "selection mode" for that card only (state stored per `contractId`).
+- In selection mode, a small checkbox column appears on the left of each row of `MiniGantt`. All rows start checked.
+- Unchecking a row removes that row from the visualization.
+- **Parent off → all descendants are hidden by default** (cascade visually: hiding parent hides its subtree from the rendered list).
+- **Child off → parent row remains and its bar still spans the full duration** including the hidden children. Since the parent's `start_date`/`end_date` are stored on the task itself (not derived), the bar already reflects total duration; no recalculation needed. Just hide the child rows but keep the parent.
+- Date axis (minDate/maxDate) stays computed from the full task set so the timeline doesn't shrink when rows are hidden — keeps comparison stable.
 
-### 1. `src/components/gantt/GanttChart.tsx`
+## Implementation
 
-- Ampliar la prop `onAddDependency` para aceptar el tercer parámetro de opciones, igual que en `GanttTaskTree`:
-  ```ts
-  onAddDependency: (
-    taskId: string,
-    dependsOnTaskId: string,
-    options?: { dep_type?: "start" | "end"; lag_days?: number; lag_type?: "calendar" | "business" }
-  ) => Promise<void>;
-  ```
-- Agregar nueva prop opcional `onUpdateDependency` con la misma firma que en `useGantt`/`GanttTaskTree`.
+File: `src/components/gantt/GanttReportsSection.tsx`
 
-- En el popover de dependencias (líneas ~1544-1611):
-  - Para cada dependencia existente, además del `SearchableSelect` de la tarea, añadir:
-    - `Select` con opciones "al término" / "al inicio" enlazado a `dep.dep_type` que llama `onUpdateDependency(dep.id, { dep_type })`.
-    - `Input number` enlazado a `dep.lag_days` (defaultValue + onBlur) que llama `onUpdateDependency(dep.id, { lag_days })`. Aceptar negativos.
-  - Para el bloque "Agregar dependencia", reemplazar el `SearchableSelect` directo por un mini-formulario local con estado (tarea seleccionada, dep_type y lag_days) y un botón Agregar, que invoque `onAddDependency(task.id, parentId, { dep_type, lag_days })`. Estilo compacto coherente con el popover (controles `h-7 text-xs`).
-  - Reutilizar el patrón visual ya existente en `GanttTaskTree.AddDependencyForm` para mantener consistencia.
+1. **State in parent** (`GanttReportsSection`): `const [hiddenByCard, setHiddenByCard] = useState<Record<string, Set<string>>>({})` and `const [selectionModeCards, setSelectionModeCards] = useState<Set<string>>(new Set())`.
 
-- Para el reemplazo de tarea predecesora en una dep existente (cuando se cambia el `SearchableSelect`): preservar `dep_type` y `lag_days` actuales al recrearla (`onRemoveDependency` + `onAddDependency(..., { dep_type: dep.dep_type, lag_days: dep.lag_days })`).
+2. **Eye button** in each card header (next to "Ir al proyecto"):
+   ```
+   <Button variant="ghost" size="icon" className="h-7 w-7"
+           onClick={(e) => { e.stopPropagation(); toggleSelectionMode(item.contractId); }}
+           title="Lines OFF">
+     {selectionModeCards.has(item.contractId) ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+   </Button>
+   ```
 
-### 2. `src/components/gantt/GanttModule.tsx`
+3. **Pass props to `MiniGantt`**: `selectionMode`, `hiddenIds: Set<string>`, `onToggleHidden(id)`.
 
-- Pasar `onUpdateDependency={updateDependency}` también al `<GanttChart>` (línea ~402), igual que ya se pasa al `GanttTaskTree`.
+4. **Inside `MiniGantt`**:
+   - Compute axis range from full `flat` (unchanged).
+   - Build a `visibleFlat` by walking the tree: skip a node if its id is in `hiddenIds`, **and skip its entire subtree** (don't descend into hidden parents). Children of visible parents remain visible unless individually hidden.
+   - When `selectionMode` is true, render a 28px-wide checkbox column before the name column (header gets an empty cell). Use the existing `Checkbox` component from `@/components/ui/checkbox`.
+   - Render rows from `visibleFlat`. The parent's bar uses its own stored `start_date`/`end_date`, so it already covers the full span even when its children are hidden — no extra logic needed.
 
-## Notas técnicas
+5. **Helper**: replace direct `flattenTree(taskTree)` with a filtered variant that prunes subtrees whose root is hidden:
+   ```ts
+   const flattenVisible = (tree, hidden, level=0, acc=[]) => {
+     tree.forEach(t => {
+       if (hidden.has(t.id)) return; // skip node + subtree
+       acc.push({ task: t, level });
+       if (t.children?.length) flattenVisible(t.children, hidden, level+1, acc);
+     });
+     return acc;
+   };
+   ```
 
-- No se requieren cambios en BD ni en `useGantt.ts`: `addDependency`, `updateDependency` y `propagateDateChanges` ya manejan `dep_type` y `lag_days` y aplican el recálculo a las dependientes.
-- `lag_type` se mantiene en su valor por defecto (`calendar`) salvo que se quiera exponer también; no es parte de este pedido.
-- Los datos mostrados (`dep.dep_type`, `dep.lag_days`) ya vienen cargados por `fetchTimelines` (líneas 322-325 de `useGantt.ts`).
+6. State is in-memory only (resets on page reload); not persisted. PDF export remains unaffected (continues exporting the full tree).
+
+## Out of scope
+
+- No persistence of hidden selections.
+- No change to the full Gantt page in `ContractDetail` (only the reports mini view).
+- No change to PDF export behavior.

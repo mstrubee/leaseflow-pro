@@ -13,7 +13,10 @@ import {
   Maximize2,
   Minimize2,
   ExternalLink,
+  Eye,
+  EyeOff,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useReportsNavigation } from "@/components/reports/ReportsReturnButton";
 import { format, parseISO, eachDayOfInterval, differenceInDays, isWeekend } from "date-fns";
 import { es } from "date-fns/locale";
@@ -84,9 +87,36 @@ const fetchImageAsDataURL = async (url: string): Promise<string | null> => {
 };
 
 /** Mini Gantt visualization - read-only, compact */
-function MiniGantt({ taskTree, holidays }: { taskTree: GanttTask[]; holidays: Holiday[] }) {
+function MiniGantt({
+  taskTree,
+  holidays,
+  selectionMode = false,
+  hiddenIds,
+  onToggleHidden,
+}: {
+  taskTree: GanttTask[];
+  holidays: Holiday[];
+  selectionMode?: boolean;
+  hiddenIds?: Set<string>;
+  onToggleHidden?: (id: string) => void;
+}) {
   const flat = useMemo(() => flattenTree(taskTree), [taskTree]);
   const tasksWithDates = flat.filter((f) => f.task.start_date && f.task.end_date);
+
+  // Visible rows: prune subtrees whose root is hidden
+  const visibleFlat = useMemo(() => {
+    if (!hiddenIds || hiddenIds.size === 0) return flat;
+    const acc: Array<{ task: GanttTask; level: number }> = [];
+    const walk = (nodes: GanttTask[], level: number) => {
+      nodes.forEach((t) => {
+        if (hiddenIds.has(t.id)) return;
+        acc.push({ task: t, level });
+        if (t.children && t.children.length > 0) walk(t.children, level + 1);
+      });
+    };
+    walk(taskTree, 0);
+    return acc;
+  }, [taskTree, flat, hiddenIds]);
 
   if (tasksWithDates.length === 0) {
     return (
@@ -100,10 +130,11 @@ function MiniGantt({ taskTree, holidays }: { taskTree: GanttTask[]; holidays: Ho
   const days = eachDayOfInterval({ start: minDate, end: maxDate });
   const totalDays = days.length;
 
+  const CHECK_COL_WIDTH = selectionMode ? 28 : 0;
   const NAME_COL_WIDTH = 220;
   const DATE_COL_WIDTH = 70;
   const DUR_COL_WIDTH = 55;
-  const META_WIDTH = NAME_COL_WIDTH + DATE_COL_WIDTH * 2 + DUR_COL_WIDTH;
+  const META_WIDTH = CHECK_COL_WIDTH + NAME_COL_WIDTH + DATE_COL_WIDTH * 2 + DUR_COL_WIDTH;
   const DAY_WIDTH = Math.max(2, Math.min(8, 800 / totalDays));
   const ROW_HEIGHT = 22;
   const HEADER_HEIGHT = 28;
@@ -130,6 +161,12 @@ function MiniGantt({ taskTree, holidays }: { taskTree: GanttTask[]; holidays: Ho
           className="flex sticky top-0 z-10 bg-muted border-b"
           style={{ height: HEADER_HEIGHT }}
         >
+          {selectionMode && (
+            <div
+              className="flex items-center justify-center border-r bg-muted"
+              style={{ width: CHECK_COL_WIDTH, flexShrink: 0 }}
+            />
+          )}
           <div
             className="flex items-center px-2 text-xs font-semibold border-r bg-muted"
             style={{ width: NAME_COL_WIDTH, flexShrink: 0 }}
@@ -168,7 +205,7 @@ function MiniGantt({ taskTree, holidays }: { taskTree: GanttTask[]; holidays: Ho
         </div>
 
         {/* Rows */}
-        {flat.map(({ task, level }, rowIdx) => {
+        {visibleFlat.map(({ task, level }, rowIdx) => {
           const hasDates = task.start_date && task.end_date;
           let barLeft = 0;
           let barWidth = 0;
@@ -187,6 +224,8 @@ function MiniGantt({ taskTree, holidays }: { taskTree: GanttTask[]; holidays: Ho
           if (progress >= 100) barColor = "hsl(142, 71%, 45%)";
           else if (task.status === "delayed") barColor = "hsl(0, 84%, 60%)";
 
+          const isChecked = !(hiddenIds?.has(task.id));
+
           return (
             <div
               key={task.id}
@@ -195,6 +234,18 @@ function MiniGantt({ taskTree, holidays }: { taskTree: GanttTask[]; holidays: Ho
               }`}
               style={{ height: ROW_HEIGHT }}
             >
+              {selectionMode && (
+                <div
+                  className="flex items-center justify-center border-r"
+                  style={{ width: CHECK_COL_WIDTH, flexShrink: 0 }}
+                >
+                  <Checkbox
+                    checked={isChecked}
+                    onCheckedChange={() => onToggleHidden?.(task.id)}
+                    aria-label={`Mostrar/ocultar ${task.name}`}
+                  />
+                </div>
+              )}
               <div
                 className="flex items-center px-2 text-xs border-r truncate"
                 style={{
@@ -279,6 +330,26 @@ export function GanttReportsSection() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [openCards, setOpenCards] = useState<Set<string>>(new Set());
+  const [selectionModeCards, setSelectionModeCards] = useState<Set<string>>(new Set());
+  const [hiddenByCard, setHiddenByCard] = useState<Record<string, Set<string>>>({});
+
+  const toggleSelectionMode = (id: string) => {
+    setSelectionModeCards((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleHidden = (cardId: string, taskId: string) => {
+    setHiddenByCard((prev) => {
+      const cur = new Set(prev[cardId] ?? []);
+      if (cur.has(taskId)) cur.delete(taskId);
+      else cur.add(taskId);
+      return { ...prev, [cardId]: cur };
+    });
+  };
 
   const { isOpen: isSectionOpen, setIsOpen: setSectionOpen } = useSingleCollapsible(
     "reports-gantt-section",
@@ -883,6 +954,22 @@ export function GanttReportsSection() {
                               </div>
                             </div>
                             <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleSelectionMode(item.contractId);
+                              }}
+                              title="Lines OFF — seleccionar líneas a ocultar"
+                            >
+                              {selectionModeCards.has(item.contractId) ? (
+                                <EyeOff className="h-3.5 w-3.5" />
+                              ) : (
+                                <Eye className="h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                            <Button
                               variant="outline"
                               size="sm"
                               className="gap-1"
@@ -900,7 +987,13 @@ export function GanttReportsSection() {
                       </CardHeader>
                       {isOpen && (
                         <CardContent className="pt-0 pb-3 px-3">
-                          <MiniGantt taskTree={item.taskTree} holidays={[]} />
+                          <MiniGantt
+                            taskTree={item.taskTree}
+                            holidays={[]}
+                            selectionMode={selectionModeCards.has(item.contractId)}
+                            hiddenIds={hiddenByCard[item.contractId]}
+                            onToggleHidden={(taskId) => toggleHidden(item.contractId, taskId)}
+                          />
                         </CardContent>
                       )}
                     </Card>
