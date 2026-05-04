@@ -401,6 +401,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
               onDeleteTask={deleteTask}
               onAddDependency={addDependency}
               onRemoveDependency={removeDependency}
+              onUpdateDependency={updateDependency}
               onReorderTask={reorderTask}
               isAdmin={canEdit}
               rentStartDate={rentStartDate}
