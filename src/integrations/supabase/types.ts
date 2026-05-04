@@ -1912,20 +1912,29 @@ export type Database = {
       gantt_task_dependencies: {
         Row: {
           created_at: string
+          dep_type: string
           depends_on_task_id: string
           id: string
+          lag_days: number
+          lag_type: string
           task_id: string
         }
         Insert: {
           created_at?: string
+          dep_type?: string
           depends_on_task_id: string
           id?: string
+          lag_days?: number
+          lag_type?: string
           task_id: string
         }
         Update: {
           created_at?: string
+          dep_type?: string
           depends_on_task_id?: string
           id?: string
+          lag_days?: number
+          lag_type?: string
           task_id?: string
         }
         Relationships: [
@@ -2085,6 +2094,7 @@ export type Database = {
       gantt_template_dependencies: {
         Row: {
           created_at: string
+          dep_type: string
           depends_on_task_id: string
           id: string
           lag_days: number | null
@@ -2093,6 +2103,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          dep_type?: string
           depends_on_task_id: string
           id?: string
           lag_days?: number | null
@@ -2101,6 +2112,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          dep_type?: string
           depends_on_task_id?: string
           id?: string
           lag_days?: number | null
