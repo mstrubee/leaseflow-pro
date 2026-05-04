@@ -763,25 +763,14 @@ export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplate
             )}
 
             {/* Add dependency */}
-            <div className="space-y-2">
-              <Label>Agregar dependencia</Label>
-              <Select
-                onValueChange={(taskId) => {
-                  if (selectedTaskForDep) handleAddDependency(selectedTaskForDep.id, taskId);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar tarea..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {tasks
-                    .filter(t => t.id !== selectedTaskForDep?.id && !dependencies.some(d => d.task_id === selectedTaskForDep?.id && d.depends_on_task_id === t.id))
-                    .map((task) => (
-                      <SelectItem key={task.id} value={task.id}>{task.name}</SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <TemplateAddDependencyForm
+              tasks={tasks}
+              dependencies={dependencies}
+              selectedTaskId={selectedTaskForDep?.id || null}
+              onAdd={(taskId, dep_type, lag_days) => {
+                if (selectedTaskForDep) handleAddDependency(selectedTaskForDep.id, taskId, dep_type, lag_days);
+              }}
+            />
           </div>
           <DialogFooter>
             <Button onClick={() => setDependencyDialogOpen(false)}>Cerrar</Button>
