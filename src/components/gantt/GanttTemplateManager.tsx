@@ -55,6 +55,76 @@ interface GanttTemplateManagerProps {
   defaultCollapsed?: boolean;
 }
 
+function TemplateAddDependencyForm({
+  tasks,
+  dependencies,
+  selectedTaskId,
+  onAdd,
+}: {
+  tasks: GanttTemplateTask[];
+  dependencies: GanttTemplateDependency[];
+  selectedTaskId: string | null;
+  onAdd: (taskId: string, dep_type: "start" | "end", lag_days: number) => void;
+}) {
+  const [taskId, setTaskId] = useState("");
+  const [depType, setDepType] = useState<"start" | "end">("end");
+  const [lag, setLag] = useState(0);
+
+  const available = tasks.filter(
+    (t) =>
+      t.id !== selectedTaskId &&
+      !dependencies.some((d) => d.task_id === selectedTaskId && d.depends_on_task_id === t.id)
+  );
+
+  return (
+    <div className="space-y-2">
+      <Label>Agregar dependencia</Label>
+      <Select value={taskId} onValueChange={setTaskId}>
+        <SelectTrigger>
+          <SelectValue placeholder="Seleccionar tarea..." />
+        </SelectTrigger>
+        <SelectContent>
+          {available.map((t) => (
+            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <div className="flex items-center gap-2">
+        <Select value={depType} onValueChange={(v) => setDepType(v as "start" | "end")}>
+          <SelectTrigger className="h-9 w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="end">al término</SelectItem>
+            <SelectItem value="start">al inicio</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input
+          type="number"
+          className="h-9 w-24"
+          value={lag}
+          onChange={(e) => setLag(parseInt(e.target.value) || 0)}
+          title="Días de desfase (+ retrasa, − adelanta)"
+        />
+        <span className="text-xs text-muted-foreground">días</span>
+        <Button
+          size="sm"
+          disabled={!taskId}
+          onClick={() => {
+            if (!taskId) return;
+            onAdd(taskId, depType, lag);
+            setTaskId("");
+            setLag(0);
+            setDepType("end");
+          }}
+        >
+          Agregar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function GanttTemplateManager({ defaultCollapsed = false }: GanttTemplateManagerProps) {
   const { toast } = useToast();
   const [templates, setTemplates] = useState<GanttTemplate[]>([]);
