@@ -987,6 +987,7 @@ export function GanttReportsSection() {
                               variant="outline"
                               size="sm"
                               className="gap-1"
+                              {...prefetchOn("ContractDetail")}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 navigateToContractFromReports(item.contractId, "gantt");
