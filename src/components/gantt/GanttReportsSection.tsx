@@ -103,6 +103,21 @@ function MiniGantt({
   const flat = useMemo(() => flattenTree(taskTree), [taskTree]);
   const tasksWithDates = flat.filter((f) => f.task.start_date && f.task.end_date);
 
+  // Visible rows: prune subtrees whose root is hidden
+  const visibleFlat = useMemo(() => {
+    if (!hiddenIds || hiddenIds.size === 0) return flat;
+    const acc: Array<{ task: GanttTask; level: number }> = [];
+    const walk = (nodes: GanttTask[], level: number) => {
+      nodes.forEach((t) => {
+        if (hiddenIds.has(t.id)) return;
+        acc.push({ task: t, level });
+        if (t.children && t.children.length > 0) walk(t.children, level + 1);
+      });
+    };
+    walk(taskTree, 0);
+    return acc;
+  }, [taskTree, flat, hiddenIds]);
+
   if (tasksWithDates.length === 0) {
     return (
       <div className="text-sm text-muted-foreground py-4 text-center">
