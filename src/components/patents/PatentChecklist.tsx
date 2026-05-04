@@ -1183,6 +1183,32 @@ export function PatentChecklist({
                                 })() : (
                                   <>
                                     {/* Regular (non-shared) item: existing logic */}
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setUploadDialog({ itemId: item.id, itemName: item.name });
+                                      }}
+                                      title={getDocValue(item.id, 'document_url') ? "Agregar otro archivo" : "Subir archivo"}
+                                    >
+                                      <Upload className="h-3 w-3" />
+                                    </Button>
+                                    {isAdmin && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openFolderDestDialog('item', item.id, item.name, section.id);
+                                        }}
+                                        title="Configurar carpetas adicionales para este documento"
+                                      >
+                                        <FolderCog className={`h-3 w-3 ${itemFolders[item.id] ? 'text-primary' : 'text-muted-foreground'}`} />
+                                      </Button>
+                                    )}
                                     {getDocValue(item.id, 'document_url') && (() => {
                                       const urls = (getDocValue(item.id, 'document_url') as string).split('|||').filter(Boolean);
                                       const names = ((getDocValue(item.id, 'document_names') as string) || '').split('|||').filter((_, i) => i < urls.length);
@@ -1215,32 +1241,6 @@ export function PatentChecklist({
                                         />
                                       );
                                     })()}
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-8"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setUploadDialog({ itemId: item.id, itemName: item.name });
-                                      }}
-                                      title={getDocValue(item.id, 'document_url') ? "Agregar otro archivo" : "Subir archivo"}
-                                    >
-                                      <Upload className="h-3 w-3" />
-                                    </Button>
-                                    {isAdmin && (
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-8 w-8 p-0"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          openFolderDestDialog('item', item.id, item.name, section.id);
-                                        }}
-                                        title="Configurar carpetas adicionales para este documento"
-                                      >
-                                        <FolderCog className={`h-3 w-3 ${itemFolders[item.id] ? 'text-primary' : 'text-muted-foreground'}`} />
-                                      </Button>
-                                    )}
                                   </>
                                 )}
                               </div>
