@@ -1110,24 +1110,6 @@ export function PatentChecklist({
                                   const sharedFiles = sharedFilesCache[folderId] || [];
                                   return (
                                     <>
-                                      {sharedFiles.length > 0 && (
-                                        <PatentFileListPopover
-                                          urls={sharedFiles.map(f => f.url)}
-                                          fileNames={sharedFiles.map(f => f.name)}
-                                          contractId={contract.id}
-                                          itemId={item.id}
-                                          onRemoveFile={async (index) => {
-                                            const file = sharedFiles[index];
-                                            if (!file) return;
-                                            await supabase.from('repository_files').delete().eq('id', file.id);
-                                            setSharedFilesCache(prev => ({
-                                              ...prev,
-                                              [folderId]: prev[folderId].filter((_, i) => i !== index)
-                                            }));
-                                            toast.success("Archivo eliminado");
-                                          }}
-                                        />
-                                      )}
                                       <Button
                                         variant="ghost"
                                         size="sm"
@@ -1177,6 +1159,24 @@ export function PatentChecklist({
                                         >
                                           <FolderCog className={`h-3 w-3 ${itemFolders[item.id] ? 'text-primary' : 'text-muted-foreground'}`} />
                                         </Button>
+                                      )}
+                                      {sharedFiles.length > 0 && (
+                                        <PatentFileListPopover
+                                          urls={sharedFiles.map(f => f.url)}
+                                          fileNames={sharedFiles.map(f => f.name)}
+                                          contractId={contract.id}
+                                          itemId={item.id}
+                                          onRemoveFile={async (index) => {
+                                            const file = sharedFiles[index];
+                                            if (!file) return;
+                                            await supabase.from('repository_files').delete().eq('id', file.id);
+                                            setSharedFilesCache(prev => ({
+                                              ...prev,
+                                              [folderId]: prev[folderId].filter((_, i) => i !== index)
+                                            }));
+                                            toast.success("Archivo eliminado");
+                                          }}
+                                        />
                                       )}
                                     </>
                                   );
