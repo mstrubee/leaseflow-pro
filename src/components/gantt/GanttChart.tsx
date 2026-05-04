@@ -1543,7 +1543,7 @@ export function GanttChart({
                           <Link className="h-3 w-3 text-muted-foreground" />
                         </button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-72 p-2 z-50 bg-popover" align="start">
+                      <PopoverContent className="w-96 p-2 z-50 bg-popover" align="start">
                         <p className="text-xs font-medium mb-1.5">Depende de:</p>
                         {task.dependencies && task.dependencies.length > 0 ? (
                           <ul className="space-y-2 mb-2">
@@ -1557,29 +1557,63 @@ export function GanttChart({
                                 )
                                 .map((t) => ({ value: t.id, label: t.name }));
                               return (
-                                <li key={dep.id} className="flex items-center gap-1">
-                                  <div className="flex-1 min-w-0">
-                                    <SearchableSelect
-                                      value={dep.depends_on_task_id}
-                                      onValueChange={async (newParentId) => {
-                                        if (newParentId && newParentId !== dep.depends_on_task_id) {
-                                          await onRemoveDependency(dep.id);
-                                          await onAddDependency(task.id, newParentId);
+                                <li key={dep.id} className="space-y-1 border-b pb-2 last:border-b-0 last:pb-0">
+                                  <div className="flex items-center gap-1">
+                                    <div className="flex-1 min-w-0">
+                                      <SearchableSelect
+                                        value={dep.depends_on_task_id}
+                                        onValueChange={async (newParentId) => {
+                                          if (newParentId && newParentId !== dep.depends_on_task_id) {
+                                            await onRemoveDependency(dep.id);
+                                            await onAddDependency(task.id, newParentId, {
+                                              dep_type: (dep as any).dep_type ?? "end",
+                                              lag_days: (dep as any).lag_days ?? 0,
+                                            });
+                                          }
+                                        }}
+                                        options={options}
+                                        placeholder="Seleccionar tarea..."
+                                        searchPlaceholder="Buscar tarea..."
+                                        triggerClassName="h-7 text-xs"
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="text-destructive hover:underline text-[10px] flex-shrink-0 px-1"
+                                      onClick={() => onRemoveDependency(dep.id)}
+                                    >
+                                      Quitar
+                                    </button>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <Select
+                                      value={(dep as any).dep_type ?? "end"}
+                                      onValueChange={(v) =>
+                                        onUpdateDependency?.(dep.id, { dep_type: v as "start" | "end" })
+                                      }
+                                    >
+                                      <SelectTrigger className="h-7 text-xs w-32">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="end">al término</SelectItem>
+                                        <SelectItem value="start">al inicio</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                    <Input
+                                      type="number"
+                                      className="h-7 text-xs w-20"
+                                      defaultValue={(dep as any).lag_days ?? 0}
+                                      onBlur={(e) => {
+                                        const val = parseInt(e.target.value) || 0;
+                                        if (val !== ((dep as any).lag_days ?? 0)) {
+                                          onUpdateDependency?.(dep.id, { lag_days: val });
                                         }
                                       }}
-                                      options={options}
-                                      placeholder="Seleccionar tarea..."
-                                      searchPlaceholder="Buscar tarea..."
-                                      triggerClassName="h-7 text-xs"
+                                      title="Días de desfase (+ retrasa, − adelanta)"
                                     />
+                                    <span className="text-[10px] text-muted-foreground">días</span>
                                   </div>
-                                  <button
-                                    type="button"
-                                    className="text-destructive hover:underline text-[10px] flex-shrink-0 px-1"
-                                    onClick={() => onRemoveDependency(dep.id)}
-                                  >
-                                    Quitar
-                                  </button>
                                 </li>
                               );
                             })}
@@ -1589,26 +1623,13 @@ export function GanttChart({
                         )}
                         <div className="border-t pt-2">
                           <p className="text-[11px] font-medium mb-1">Agregar dependencia:</p>
-                          {(() => {
-                            const currentDeps = task.dependencies?.map((d) => d.depends_on_task_id) ?? [];
-                            const addOptions = tasks
-                              .filter((t) => t.id !== task.id && !currentDeps.includes(t.id))
-                              .map((t) => ({ value: t.id, label: t.name }));
-                            return (
-                              <SearchableSelect
-                                value=""
-                                onValueChange={async (newParentId) => {
-                                  if (newParentId) {
-                                    await onAddDependency(task.id, newParentId);
-                                  }
-                                }}
-                                options={addOptions}
-                                placeholder="Buscar tarea predecesora..."
-                                searchPlaceholder="Buscar tarea..."
-                                triggerClassName="h-7 text-xs"
-                              />
-                            );
-                          })()}
+                          <ChartAddDependencyForm
+                            task={task}
+                            allTasks={tasks}
+                            onAdd={(parentId, dep_type, lag_days) =>
+                              onAddDependency(task.id, parentId, { dep_type, lag_days })
+                            }
+                          />
                         </div>
                       </PopoverContent>
                     </Popover>
