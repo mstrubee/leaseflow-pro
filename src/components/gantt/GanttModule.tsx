@@ -430,6 +430,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
               onDeleteTask={deleteTask}
               onAddDependency={addDependency}
               onRemoveDependency={removeDependency}
+              onUpdateDependency={updateDependency}
               onLinkPurchaseOrder={linkPurchaseOrder}
               onUnlinkPurchaseOrder={unlinkPurchaseOrder}
               onExportPDF={async (hideCompleted) => {
