@@ -28,6 +28,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getLogoUrls } from "@/hooks/useAppLogos";
 import { toast } from "sonner";
+import { prefetchOn } from "@/lib/routePrefetch";
 
 interface GanttContractData {
   contractId: string;
@@ -986,6 +987,7 @@ export function GanttReportsSection() {
                               variant="outline"
                               size="sm"
                               className="gap-1"
+                              {...prefetchOn("ContractDetail")}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 navigateToContractFromReports(item.contractId, "gantt");
