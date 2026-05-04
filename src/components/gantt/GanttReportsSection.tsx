@@ -87,7 +87,19 @@ const fetchImageAsDataURL = async (url: string): Promise<string | null> => {
 };
 
 /** Mini Gantt visualization - read-only, compact */
-function MiniGantt({ taskTree, holidays }: { taskTree: GanttTask[]; holidays: Holiday[] }) {
+function MiniGantt({
+  taskTree,
+  holidays,
+  selectionMode = false,
+  hiddenIds,
+  onToggleHidden,
+}: {
+  taskTree: GanttTask[];
+  holidays: Holiday[];
+  selectionMode?: boolean;
+  hiddenIds?: Set<string>;
+  onToggleHidden?: (id: string) => void;
+}) {
   const flat = useMemo(() => flattenTree(taskTree), [taskTree]);
   const tasksWithDates = flat.filter((f) => f.task.start_date && f.task.end_date);
 
