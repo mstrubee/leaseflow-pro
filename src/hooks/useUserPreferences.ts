@@ -236,69 +236,35 @@ export function useUserPreferences<T>({
 
   const saveToSupabase = async (data: T): Promise<boolean> => {
     if (!user) return false;
-
     try {
-      // Check if record exists
-      const { data: existing, error: fetchError } = await supabase
-        .from("user_preferences")
-        .select("id")
-        .eq("user_id", user.id)
-        .eq("preference_key", preferenceKey)
-        .maybeSingle();
-
-      if (fetchError && !isNetworkError(fetchError)) {
-        console.error("Error checking existing preference:", fetchError);
-        return false;
-      }
-
-      if (fetchError && isNetworkError(fetchError)) {
-        // Silent failure for network errors, save to localStorage as backup
-        saveToLocalStorage(data);
-        return false;
-      }
-
       const jsonValue = JSON.parse(JSON.stringify(data));
-      let error;
-
-      if (existing) {
-        // Update existing record
-        const result = await supabase
-          .from("user_preferences")
-          .update({
-            preference_value: jsonValue,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("user_id", user.id)
-          .eq("preference_key", preferenceKey);
-        error = result.error;
-      } else {
-        // Insert new record
-        const result = await supabase
-          .from("user_preferences")
-          .insert([{
+      const { error } = await supabase
+        .from("user_preferences")
+        .upsert(
+          {
             user_id: user.id,
             preference_key: preferenceKey,
             preference_value: jsonValue,
-          }]);
-        error = result.error;
-      }
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id,preference_key" }
+        );
 
       if (error) {
         if (!isNetworkError(error)) {
           console.error("Error saving preferences to Supabase:", error);
         }
-        // Fallback to localStorage
         saveToLocalStorage(data);
         return false;
       }
 
       lastSavedRef.current = JSON.stringify(data);
+      updatePrefsCache(user.id, preferenceKey, data);
       return true;
     } catch (e) {
       if (!isNetworkError(e)) {
         console.error("Error in saveToSupabase:", e);
       }
-      // Fallback to localStorage
       saveToLocalStorage(data);
       return false;
     }
