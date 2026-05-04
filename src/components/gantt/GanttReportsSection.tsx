@@ -666,7 +666,16 @@ export function GanttReportsSection() {
         );
         doc.setTextColor(0);
 
-        const flat = flattenTree(item.taskTree);
+        const hiddenIds = hiddenByCard[item.contractId];
+        const flat: Array<{ task: GanttTask; level: number }> = [];
+        const walkPrune = (nodes: GanttTask[], level: number) => {
+          nodes.forEach((t) => {
+            if (hiddenIds && hiddenIds.has(t.id)) return;
+            flat.push({ task: t, level });
+            if (t.children && t.children.length > 0) walkPrune(t.children, level + 1);
+          });
+        };
+        walkPrune(item.taskTree, 0);
         if (flat.length === 0 || !flat.some((f) => f.task.start_date && f.task.end_date)) {
           doc.setFontSize(10);
           doc.setFont("helvetica", "normal");
