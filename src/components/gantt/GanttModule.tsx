@@ -23,7 +23,8 @@ interface GanttModuleProps {
 }
 
 export function GanttModule({ contractId }: GanttModuleProps) {
-  const { isAdmin } = useAuth();
+  const { isAdmin, hasPermission } = useAuth();
+  const canEdit = isAdmin || hasPermission("contract_gantt", "edit");
   const {
     timeline,
     tasks,
@@ -400,7 +401,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
               onAddDependency={addDependency}
               onRemoveDependency={removeDependency}
               onReorderTask={reorderTask}
-              isAdmin={isAdmin}
+              isAdmin={canEdit}
               rentStartDate={rentStartDate}
               onExportPDF={async (hideCompleted) => {
                 let contractName = "Contrato";
