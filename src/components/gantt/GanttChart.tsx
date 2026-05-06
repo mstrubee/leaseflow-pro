@@ -40,6 +40,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // Local input that only commits the value on Enter or blur, allowing free typing/erasing.
 function DurationInput({
@@ -511,6 +512,40 @@ export function GanttChart({
       setExpandedTasks(new Set());
     } else {
       setExpandedTasks(new Set(allParentTaskIds));
+    }
+  };
+
+  // Bulk toggle: convert ALL task durations to business or calendar days, recalculating end_date.
+  const tasksWithDuration = tasks.filter((t) => t.start_date && (t.duration_days ?? 0) > 0);
+  const allBusiness =
+    tasksWithDuration.length > 0 && tasksWithDuration.every((t) => t.duration_type === "business");
+  const someBusiness = tasksWithDuration.some((t) => t.duration_type === "business");
+  const businessChecked: boolean | "indeterminate" = allBusiness
+    ? true
+    : someBusiness
+      ? "indeterminate"
+      : false;
+  const [bulkTypeRunning, setBulkTypeRunning] = useState(false);
+
+  const handleBulkDurationType = async (toBusiness: boolean) => {
+    const newType: "calendar" | "business" = toBusiness ? "business" : "calendar";
+    const targets = tasks.filter(
+      (t) => t.start_date && (t.duration_days ?? 0) > 0 && t.duration_type !== newType
+    );
+    if (targets.length === 0) return;
+    setBulkTypeRunning(true);
+    try {
+      // Process sequentially to avoid hammering Supabase; skipPropagation per task.
+      for (const t of targets) {
+        const newEnd = calculateEndDate(t.start_date!, t.duration_days, newType, holidays);
+        await onUpdateTask(
+          t.id,
+          { duration_type: newType, end_date: format(newEnd, "yyyy-MM-dd") },
+          { skipPropagation: true }
+        );
+      }
+    } finally {
+      setBulkTypeRunning(false);
     }
   };
 
@@ -1259,6 +1294,21 @@ export function GanttChart({
               <div className="px-2 py-1 text-xs font-semibold text-muted-foreground flex items-center justify-between gap-1 flex-wrap">
                 <span>Cronograma</span>
                 <div className="flex items-center gap-1">
+                  <label
+                    className={cn(
+                      "flex items-center gap-1.5 h-6 px-2 text-xs rounded border bg-background cursor-pointer select-none",
+                      bulkTypeRunning && "opacity-60 pointer-events-none"
+                    )}
+                    title="Convierte todos los plazos de la columna Días a días hábiles (excluye fines de semana y feriados). Desmarcar para volver a días corridos."
+                  >
+                    <Checkbox
+                      checked={businessChecked}
+                      onCheckedChange={(v) => handleBulkDurationType(v === true)}
+                      disabled={bulkTypeRunning || tasksWithDuration.length === 0}
+                      className="h-3.5 w-3.5"
+                    />
+                    <span>Días hábiles</span>
+                  </label>
                   {allParentTaskIds.length > 0 && (
                     <Button
                       size="sm"
