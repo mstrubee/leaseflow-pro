@@ -872,35 +872,99 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   const handleExportExcel = () => {
     if (!lines.length || !currentBudget) return;
 
+    // Flatten tree to map for percentage source resolution
+    const flatMap = new Map<string, BudgetLine>();
+    const flatten = (items: BudgetLine[]) => {
+      for (const it of items) {
+        flatMap.set(it.id, it);
+        if (it.children?.length) flatten(it.children);
+      }
+    };
+    flatten(lines);
+
+    // Compute UF amount mirroring BudgetLineTree logic (handles CLP→UF, parents, %)
+    const computeLineUF = (line: BudgetLine): number => {
+      // Percentage line (e.g., Gastos Generales / Utilidades)
+      if (line.calc_type === "percentage" && line.calc_source_line_id) {
+        const src = flatMap.get(line.calc_source_line_id);
+        if (!src) return line.amount_uf || 0;
+        const srcBase = src.children?.length
+          ? computeChildrenSubtotal(src.children) * (src.quantity || 1)
+          : (src.amount_uf || 0);
+        return (srcBase * (line.calc_percentage || 0)) / 100;
+      }
+      // Parent
+      if (line.children?.length) {
+        const subtotal = computeChildrenSubtotal(line.children);
+        const mult = line.quantity || 1;
+        const base = subtotal * mult;
+        // Add percentage surcharges that reference this parent
+        let surcharges = 0;
+        flatMap.forEach((l) => {
+          if (l.calc_type === "percentage" && l.calc_source_line_id === line.id) {
+            surcharges += (base * (l.calc_percentage || 0)) / 100;
+          }
+        });
+        return base + surcharges;
+      }
+      // Leaf
+      const qty = line.quantity || 0;
+      const localPrice = line.unit_price || 0;
+      const tplPrice = templatePricesMap[line.id] ?? 0;
+      const price = localPrice > 0 ? localPrice : tplPrice;
+      if (qty <= 0 || price <= 0) return line.amount_uf || 0;
+      let amount = qty * price;
+      if (line.currency === "CLP" && ufValue > 0) {
+        amount = amount / ufValue;
+      }
+      return amount;
+    };
+
+    const computeChildrenSubtotal = (children: BudgetLine[]): number => {
+      return children.reduce((sum, child) => {
+        if (child.calc_type === "percentage") {
+          // Percentage children are surcharges — already accounted in parent's surcharge logic when needed
+          return sum + computeLineUF(child);
+        }
+        if (child.children?.length) {
+          const sub = computeChildrenSubtotal(child.children);
+          const mult = child.quantity || 1;
+          return sum + sub * mult;
+        }
+        return sum + computeLineUF(child);
+      }, 0);
+    };
+
     // Header rows: A1 label, B1 = UF value (referenced by formulas)
     const headerRows: any[][] = [
       ["Valor UF (CLP):", ufValue || 0],
       [],
-      ["Línea", "Cantidad", "Unidad", "P. Unitario (UF)", "Total (UF)", "Total (CLP)", "Estado"],
+      ["Línea", "Cantidad", "Unidad", "Moneda", "P. Unitario", "Total (UF)", "Total (CLP)", "Estado"],
     ];
 
     const ws = XLSX.utils.aoa_to_sheet(headerRows);
 
-    // Track row index (1-based) of each top-level line for the TOTAL formula
     const rootRowRefs: number[] = [];
-    let currentRow = headerRows.length; // next row index (0-based) to write
+    let currentRow = headerRows.length;
 
     const writeLine = (line: BudgetLine, level: number, isRoot: boolean) => {
-      const excelRow = currentRow + 1; // 1-based for Excel refs
+      const excelRow = currentRow + 1;
       const indent = "  ".repeat(level);
+      const isParent = !!line.children?.length;
+      const totalUF = computeLineUF(line);
+      const currency = line.currency || "UF";
       const row: any[] = [
         indent + line.name,
-        line.quantity ?? "",
-        line.unit_type ?? "",
-        line.unit_price ?? "",
-        line.amount_uf ?? 0,
-        // Total CLP = Total UF * UF rate (formula)
-        { f: `E${excelRow}*$B$1`, t: "n", z: '"$"#,##0' },
+        isParent ? "" : (line.quantity ?? ""),
+        isParent ? "" : (line.unit_type ?? ""),
+        isParent ? "" : currency,
+        isParent ? "" : (line.unit_price ?? ""),
+        totalUF,
+        { f: `F${excelRow}*$B$1`, t: "n", z: '"$"#,##0' },
         line.status ?? "",
       ];
       XLSX.utils.sheet_add_aoa(ws, [row], { origin: `A${excelRow}` });
-      // UF number format
-      const ufCell = ws[`E${excelRow}`];
+      const ufCell = ws[`F${excelRow}`];
       if (ufCell) ufCell.z = '"UF "#,##0.00';
       if (isRoot) rootRowRefs.push(excelRow);
       currentRow++;
@@ -911,16 +975,17 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
 
     for (const root of lines) writeLine(root, 0, true);
 
-    // TOTAL row — sum only root rows to avoid double counting parents+children
+    // TOTAL row — sum only root rows
     const totalRow = currentRow + 1;
-    const sumRefs = rootRowRefs.map((r) => `E${r}`).join(",");
+    const sumRefs = rootRowRefs.map((r) => `F${r}`).join(",");
     const totalAoa: any[] = [
       "TOTAL",
       "",
       "",
       "",
+      "",
       { f: sumRefs ? `SUM(${sumRefs})` : "0", t: "n", z: '"UF "#,##0.00' },
-      { f: `E${totalRow}*$B$1`, t: "n", z: '"$"#,##0' },
+      { f: `F${totalRow}*$B$1`, t: "n", z: '"$"#,##0' },
       "",
     ];
     XLSX.utils.sheet_add_aoa(ws, [totalAoa], { origin: `A${totalRow}` });
