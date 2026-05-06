@@ -1172,7 +1172,7 @@ const Contracts = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="todos" className="text-xs">Todos</SelectItem>
-                    {comiteGPStatuses.map(s => (
+                    {[...comiteGPStatuses].sort((a, b) => a.name.localeCompare(b.name, "es")).map(s => (
                       <SelectItem key={s.id} value={s.name} className="text-xs">{s.name}</SelectItem>
                     ))}
                   </SelectContent>
