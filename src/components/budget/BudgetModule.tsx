@@ -1268,7 +1268,35 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
             )}
 
             {currentBudget && (
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-wrap justify-end items-center gap-2">
+                <div className="relative mr-auto">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                  <Input
+                    value={searchQuery}
+                    onChange={(e) => handleSearch(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleSearchNext(); } }}
+                    placeholder="Buscar línea..."
+                    className="h-8 pl-8 pr-16 w-64 text-sm"
+                  />
+                  {searchQuery && (
+                    <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                      {searchMatches.length > 0 && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {searchIndex + 1}/{searchMatches.length}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleSearch("")}
+                        className="p-0.5 rounded hover:bg-accent"
+                        title="Limpiar"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 {!isClosed && !forceReadOnly && (
                   <>
                     <Button
