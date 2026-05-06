@@ -445,6 +445,7 @@ export function GanttModule({ contractId }: GanttModuleProps) {
                   contractName,
                   timelineName: timeline.name,
                   hideCompleted,
+                  orgMembers,
                 });
               }}
             />
