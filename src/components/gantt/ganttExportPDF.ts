@@ -334,8 +334,8 @@ export async function exportGanttToPDF(
       const x = ganttLeft + startOffset * dayWidth;
       const w = Math.max(0.5, dur * dayWidth);
 
-      // Color
-      const hex = (task as any).color as string | null;
+      // Color (children inherit a lightened version of their parent's color)
+      const hex = getEffectiveColor(task);
       if (hex && /^#[0-9a-f]{6}$/i.test(hex)) {
         const r = parseInt(hex.slice(1, 3), 16);
         const g = parseInt(hex.slice(3, 5), 16);
