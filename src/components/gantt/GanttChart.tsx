@@ -278,6 +278,7 @@ interface GanttChartProps {
 const DAY_WIDTH = 30;
 const ROW_HEIGHT = 40;
 const TASK_NAME_WIDTH = 450;
+const INDEX_COL_WIDTH = 40;
 const RESPONSIBLE_COL_WIDTH = 180;
 const ORIGIN_COL_WIDTH = 120;
 const DATE_COL_WIDTH = 140;
@@ -641,7 +642,7 @@ export function GanttChart({
       childTaskId: string;
     }> = [];
 
-    const HEADER_OFFSET = TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6; // +6 for grip handle
+    const HEADER_OFFSET = INDEX_COL_WIDTH + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6; // +6 for grip handle
 
     visibleTasks.forEach(({ task }, rowIdx) => {
       if (!task.dependencies || task.dependencies.length === 0) return;
@@ -1320,7 +1321,7 @@ export function GanttChart({
         <div className="min-w-fit">
           {/* Month/Year Header */}
           <div className="flex border-b bg-muted/70 sticky top-0 z-30">
-            <div className="flex-shrink-0 border-r" style={{ width: 24 + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH }}>
+            <div className="flex-shrink-0 border-r" style={{ width: 24 + INDEX_COL_WIDTH + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH }}>
               <div className="px-2 py-1 text-xs font-semibold text-muted-foreground flex items-center justify-between gap-1 flex-wrap">
                 <span>Cronograma</span>
                 <div className="flex items-center gap-1">
@@ -1404,6 +1405,9 @@ export function GanttChart({
 
           <div className="flex border-b bg-muted/50 sticky top-6 z-20">
             <div className="flex-shrink-0 w-6" /> {/* Grip handle space */}
+            <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: INDEX_COL_WIDTH }}>
+              #
+            </div>
             <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs" style={{ width: TASK_NAME_WIDTH - 6 }}>
               Tarea
             </div>
@@ -1476,7 +1480,7 @@ export function GanttChart({
               const todayStr = format(new Date(), "yyyy-MM-dd");
               const todayIdx = days.findIndex((d) => format(d, "yyyy-MM-dd") === todayStr);
               if (todayIdx < 0) return null;
-              const HEADER_OFFSET = TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
+              const HEADER_OFFSET = INDEX_COL_WIDTH + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
               return (
                 <div
                   className="absolute top-0 pointer-events-none z-[5] bg-primary/10 border-l border-r border-primary/40"
@@ -1493,7 +1497,7 @@ export function GanttChart({
               if (!rentStartDate) return null;
               const idx = days.findIndex((d) => format(d, "yyyy-MM-dd") === rentStartDate);
               if (idx < 0) return null;
-              const HEADER_OFFSET = TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
+              const HEADER_OFFSET = INDEX_COL_WIDTH + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
               const totalHeight = visibleTasks.length * ROW_HEIGHT + (newTaskRow ? ROW_HEIGHT : 0) + ROW_HEIGHT;
               const formatted = format(new Date(rentStartDate + "T00:00:00"), "dd/MM/yyyy");
               return (
@@ -1629,11 +1633,12 @@ export function GanttChart({
             )}
 
             {/* Task rows */}
-            {visibleTasks.map(({ task, level }) => {
+            {visibleTasks.map(({ task, level }, rowIdx) => {
               const hasChildren = task.children && task.children.length > 0;
               const isExpanded = expandedTasks.has(task.id);
               const position = getTaskPosition(task);
               const effective = getEffectiveColor(task);
+              const rowNumber = rowIdx + 1;
               
               return (
                 <ContextMenu key={task.id}>
@@ -1658,6 +1663,14 @@ export function GanttChart({
                   {/* Drag handle */}
                   <div className="flex-shrink-0 flex items-center justify-center w-6 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity">
                     <GripVertical className="h-4 w-4 text-muted-foreground" />
+                  </div>
+
+                  {/* Row number */}
+                  <div
+                    className="flex-shrink-0 border-r flex items-center justify-center text-[11px] font-medium text-muted-foreground"
+                    style={{ width: INDEX_COL_WIDTH }}
+                  >
+                    {rowNumber}
                   </div>
 
                   {/* Task name */}
@@ -2083,7 +2096,7 @@ export function GanttChart({
 
                               {/* Task name */}
                               <span className="absolute inset-0 flex items-center justify-center text-[10px] text-white font-medium truncate px-3 pointer-events-none">
-                                {position.width > 60 ? task.name : ""}
+                                {position.width > 60 ? task.name : rowNumber}
                               </span>
                             </div>
                           </TooltipTrigger>
@@ -2155,6 +2168,7 @@ export function GanttChart({
                 onKeyDown={handleKeyDown}
               >
                 <div className="flex-shrink-0 w-6" /> {/* Grip handle space */}
+                <div className="flex-shrink-0 border-r" style={{ width: INDEX_COL_WIDTH }} />
                 <div className="flex-shrink-0 border-r px-1 flex items-center gap-1" style={{ width: TASK_NAME_WIDTH - 6 }}>
                   <span className="w-4 flex-shrink-0" />
                   <Input
@@ -2245,6 +2259,7 @@ export function GanttChart({
                 onClick={() => handleAddNewRow(null)}
               >
                 <div className="flex-shrink-0 w-6" /> {/* Grip handle space */}
+                <div className="flex-shrink-0" style={{ width: INDEX_COL_WIDTH }} />
                 <div className="flex items-center gap-2 px-3 text-muted-foreground">
                   <Plus className="h-4 w-4" />
                   <span className="text-sm">Agregar tarea padre...</span>
