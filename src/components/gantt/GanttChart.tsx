@@ -1294,6 +1294,21 @@ export function GanttChart({
               <div className="px-2 py-1 text-xs font-semibold text-muted-foreground flex items-center justify-between gap-1 flex-wrap">
                 <span>Cronograma</span>
                 <div className="flex items-center gap-1">
+                  <label
+                    className={cn(
+                      "flex items-center gap-1.5 h-6 px-2 text-xs rounded border bg-background cursor-pointer select-none",
+                      bulkTypeRunning && "opacity-60 pointer-events-none"
+                    )}
+                    title="Convierte todos los plazos de la columna Días a días hábiles (excluye fines de semana y feriados). Desmarcar para volver a días corridos."
+                  >
+                    <Checkbox
+                      checked={businessChecked}
+                      onCheckedChange={(v) => handleBulkDurationType(v === true)}
+                      disabled={bulkTypeRunning || tasksWithDuration.length === 0}
+                      className="h-3.5 w-3.5"
+                    />
+                    <span>Días hábiles</span>
+                  </label>
                   {allParentTaskIds.length > 0 && (
                     <Button
                       size="sm"
