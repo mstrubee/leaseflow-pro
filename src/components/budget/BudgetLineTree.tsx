@@ -827,6 +827,7 @@ const BudgetLineItemInner = ({
 
   return <div>
       <div
+        data-line-id={line.id}
         onClick={selectionMode ? (e) => {
           // Ignore clicks on interactive children (inputs, buttons, dropdowns, etc.)
           const target = e.target as HTMLElement;
