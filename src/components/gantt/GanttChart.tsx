@@ -617,18 +617,17 @@ export function GanttChart({
       return { left: 0, width: 0, visible: false };
     }
 
-    const startDate = parseISO(startDateStr);
-    const endDate = parseISO(endDateStr);
-    
-    const startOffset = differenceInDays(startDate, minDate);
-    const duration = differenceInDays(endDate, startDate) + 1;
-    
+    const startIdx = resolveVisibleIndex(startDateStr, "start");
+    const endIdx = resolveVisibleIndex(endDateStr, "end");
+    const left = startIdx * DAY_WIDTH;
+    const width = Math.max(1, endIdx - startIdx + 1) * DAY_WIDTH;
+
     return {
-      left: startOffset * DAY_WIDTH,
-      width: duration * DAY_WIDTH,
+      left,
+      width,
       visible: true,
     };
-  }, [barDragTaskId, dragPreview, minDate]);
+  }, [barDragTaskId, dragPreview, resolveVisibleIndex]);
 
   // Calculate dependency arrows data
   const dependencyArrows = useMemo(() => {
