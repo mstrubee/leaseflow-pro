@@ -1965,15 +1965,18 @@ serve(async (req) => {
           });
         }
 
-        // Validate contract isolation — accept both contracts/<id>/... and <id>/... legacy
-        const storageContractId = extractContractIdFromRepositoryPath(storagePath);
-        if (!storageContractId || storageContractId !== String(contractId).toLowerCase()) {
-          console.error("uploadPatentFileFromStorage: contract mismatch", {
-            storageContractId, contractId, storagePath,
-          });
-          return new Response(JSON.stringify({ error: `storageUrl contract mismatch (path=${storageContractId}, expected=${String(contractId).toLowerCase()})` }), {
-            status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-          });
+        // Validate contract isolation — accept contracts/<id>/..., legacy <id>/..., or shared-patents/<patentId>/...
+        const isSharedPatentPath = /^shared-patents\//i.test(storagePath);
+        if (!isSharedPatentPath) {
+          const storageContractId = extractContractIdFromRepositoryPath(storagePath);
+          if (!storageContractId || storageContractId !== String(contractId).toLowerCase()) {
+            console.error("uploadPatentFileFromStorage: contract mismatch", {
+              storageContractId, contractId, storagePath,
+            });
+            return new Response(JSON.stringify({ error: `storageUrl contract mismatch (path=${storageContractId}, expected=${String(contractId).toLowerCase()})` }), {
+              status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+            });
+          }
         }
 
         // Find the "Rentas y Patentes" folder for this contract — auto-create if missing
