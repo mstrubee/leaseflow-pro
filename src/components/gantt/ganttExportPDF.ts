@@ -76,6 +76,28 @@ export async function exportGanttToPDF(
 
   const memberById = new Map(orgMembers.map((m) => [m.id, m]));
 
+  // Map for ancestor color lookup (children inherit lightened parent color)
+  const taskById = new Map(allTasks.map((t) => [t.id, t]));
+  const lightenHex = (hex: string, amount: number): string => {
+    const h = hex.replace("#", "");
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    const lr = Math.round(r + (255 - r) * amount);
+    const lg = Math.round(g + (255 - g) * amount);
+    const lb = Math.round(b + (255 - b) * amount);
+    return `#${lr.toString(16).padStart(2, "0")}${lg.toString(16).padStart(2, "0")}${lb.toString(16).padStart(2, "0")}`;
+  };
+  const getEffectiveColor = (task: GanttTask): string | null => {
+    if (task.color) return task.color;
+    let current = task.parent_id ? taskById.get(task.parent_id) : null;
+    while (current) {
+      if (current.color) return lightenHex(current.color, 0.5);
+      current = current.parent_id ? taskById.get(current.parent_id) : null;
+    }
+    return null;
+  };
+
   // Filter completed if requested
   const filterTree = (nodes: GanttTask[]): GanttTask[] => {
     return nodes
