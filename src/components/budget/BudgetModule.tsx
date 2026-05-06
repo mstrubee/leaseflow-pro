@@ -991,7 +991,7 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     XLSX.utils.sheet_add_aoa(ws, [totalAoa], { origin: `A${totalRow}` });
 
     ws["!cols"] = [
-      { wch: 40 }, { wch: 10 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 14 },
+      { wch: 40 }, { wch: 10 }, { wch: 12 }, { wch: 8 }, { wch: 14 }, { wch: 16 }, { wch: 18 }, { wch: 14 },
     ];
 
     const wb = XLSX.utils.book_new();
