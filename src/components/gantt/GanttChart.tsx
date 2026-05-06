@@ -1665,6 +1665,14 @@ export function GanttChart({
                     <GripVertical className="h-4 w-4 text-muted-foreground" />
                   </div>
 
+                  {/* Row number */}
+                  <div
+                    className="flex-shrink-0 border-r flex items-center justify-center text-[11px] font-medium text-muted-foreground"
+                    style={{ width: INDEX_COL_WIDTH }}
+                  >
+                    {rowNumber}
+                  </div>
+
                   {/* Task name */}
                   <div
                     className="flex-shrink-0 border-r px-1 flex items-center gap-1 overflow-hidden"
