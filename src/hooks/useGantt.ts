@@ -270,6 +270,11 @@ export function useGantt(contractId: string) {
     const taskIdMap = new Map<string, string>();
 
     // First pass: create all tasks without parent_id
+    const PARENT_COLORS = [
+      "#3b82f6", "#10b981", "#f97316", "#ef4444", "#8b5cf6",
+      "#ec4899", "#eab308", "#06b6d4", "#64748b",
+    ];
+    let colorIdx = 0;
     const tasksToInsert = (templateTasks as TemplateTaskRow[]).map(tt => ({
       timeline_id: timelineId,
       template_task_id: tt.id,
@@ -280,6 +285,9 @@ export function useGantt(contractId: string) {
       parent_id: null as string | null,
       responsible_member_id: tt.default_responsible_member_id ?? null,
       origin: (tt.default_origin ?? null) as "nuevo" | "traslado" | null,
+      // Assign a color only to root (template) tasks. Since parent_id is set in a 2nd pass,
+      // tasks that will become children get color=null and inherit from their parent.
+      color: tt.parent_id ? null : PARENT_COLORS[(colorIdx++) % PARENT_COLORS.length],
     }));
 
     const { data: insertedTasks, error } = await supabase
