@@ -847,7 +847,7 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                           <SelectValue placeholder="Seleccionar" />
                         </SelectTrigger>
                         <SelectContent>
-                          {comiteGPStatuses.map(s => (
+                          {[...comiteGPStatuses].sort((a, b) => a.name.localeCompare(b.name, "es")).map(s => (
                             <SelectItem key={s.id} value={s.name} className="text-xs">
                               <span className="flex items-center gap-2">
                                 <span className={`w-2 h-2 rounded-full bg-${s.color}-500`} />
