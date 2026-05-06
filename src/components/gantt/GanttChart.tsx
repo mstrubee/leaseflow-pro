@@ -515,6 +515,40 @@ export function GanttChart({
     }
   };
 
+  // Bulk toggle: convert ALL task durations to business or calendar days, recalculating end_date.
+  const tasksWithDuration = tasks.filter((t) => t.start_date && (t.duration_days ?? 0) > 0);
+  const allBusiness =
+    tasksWithDuration.length > 0 && tasksWithDuration.every((t) => t.duration_type === "business");
+  const someBusiness = tasksWithDuration.some((t) => t.duration_type === "business");
+  const businessChecked: boolean | "indeterminate" = allBusiness
+    ? true
+    : someBusiness
+      ? "indeterminate"
+      : false;
+  const [bulkTypeRunning, setBulkTypeRunning] = useState(false);
+
+  const handleBulkDurationType = async (toBusiness: boolean) => {
+    const newType: "calendar" | "business" = toBusiness ? "business" : "calendar";
+    const targets = tasks.filter(
+      (t) => t.start_date && (t.duration_days ?? 0) > 0 && t.duration_type !== newType
+    );
+    if (targets.length === 0) return;
+    setBulkTypeRunning(true);
+    try {
+      // Process sequentially to avoid hammering Supabase; skipPropagation per task.
+      for (const t of targets) {
+        const newEnd = calculateEndDate(t.start_date!, t.duration_days, newType, holidays);
+        await onUpdateTask(
+          t.id,
+          { duration_type: newType, end_date: format(newEnd, "yyyy-MM-dd") },
+          { skipPropagation: true }
+        );
+      }
+    } finally {
+      setBulkTypeRunning(false);
+    }
+  };
+
   const visibleTasks = useMemo(() => {
     const result: Array<{ task: GanttTask; level: number }> = [];
     
