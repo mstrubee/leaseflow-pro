@@ -1339,6 +1339,17 @@ export function GanttChart({
                     />
                     <span>Días hábiles</span>
                   </label>
+                  <label
+                    className="flex items-center gap-1.5 h-6 px-2 text-xs rounded border bg-background cursor-pointer select-none"
+                    title="Oculta sábados y domingos en la grilla del Gantt (no modifica las fechas de las tareas)."
+                  >
+                    <Checkbox
+                      checked={hideWeekends}
+                      onCheckedChange={(v) => setHideWeekends(v === true)}
+                      className="h-3.5 w-3.5"
+                    />
+                    <span>Ocultar fines de semana</span>
+                  </label>
                   {allParentTaskIds.length > 0 && (
                     <Button
                       size="sm"
