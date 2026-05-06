@@ -2168,6 +2168,7 @@ export function GanttChart({
                 onKeyDown={handleKeyDown}
               >
                 <div className="flex-shrink-0 w-6" /> {/* Grip handle space */}
+                <div className="flex-shrink-0 border-r" style={{ width: INDEX_COL_WIDTH }} />
                 <div className="flex-shrink-0 border-r px-1 flex items-center gap-1" style={{ width: TASK_NAME_WIDTH - 6 }}>
                   <span className="w-4 flex-shrink-0" />
                   <Input
