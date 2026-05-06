@@ -2057,6 +2057,35 @@ serve(async (req) => {
             }
           }
           if (!fileData) {
+            // File no longer in Storage. Check if a Drive copy already exists with same name in
+            // the patent folder — if so, treat as already-synced and reconcile the orphan row.
+            const { data: existingDrive } = await sb
+              .from('repository_files')
+              .select('id, url, drive_file_id')
+              .eq('folder_id', patentFolder.id)
+              .eq('name', fileName)
+              .not('drive_file_id', 'is', null)
+              .limit(1)
+              .maybeSingle();
+
+            if (existingDrive?.drive_file_id) {
+              const existingUrl = existingDrive.url || `https://drive.google.com/file/d/${existingDrive.drive_file_id}/view`;
+              await sb.from('repository_files')
+                .update({ url: existingUrl, drive_file_id: existingDrive.drive_file_id })
+                .eq('url', storageUrl);
+              console.log("uploadPatentFileFromStorage: file missing in storage but Drive copy exists, reconciling orphan", {
+                driveFileId: existingDrive.drive_file_id, contractId,
+              });
+              result = {
+                id: existingDrive.drive_file_id,
+                driveFileId: existingDrive.drive_file_id,
+                webViewLink: existingUrl,
+                driveUrl: existingUrl,
+                alreadySynced: true,
+              };
+              break;
+            }
+
             console.error("uploadPatentFileFromStorage: file not found in storage", { storagePath });
             return new Response(JSON.stringify({ error: `File not found in temporary storage` }), {
               status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
@@ -2074,13 +2103,28 @@ serve(async (req) => {
 
         const fileUrl = driveFilePatent.webViewLink || `https://drive.google.com/file/d/${driveFilePatent.id}/view`;
         const ext = fileName.includes('.') ? fileName.split('.').pop() : null;
-        await sb.from('repository_files').insert({
-          folder_id: patentFolder.id,
-          name: fileName,
-          url: fileUrl,
-          file_type: ext,
-          drive_file_id: driveFilePatent.id,
-        });
+
+        // Update existing source row in-place (avoids duplicates and stale storage:// URLs).
+        const { data: updatedRows, error: updateErr } = await sb
+          .from('repository_files')
+          .update({
+            folder_id: patentFolder.id,
+            url: fileUrl,
+            file_type: ext,
+            drive_file_id: driveFilePatent.id,
+          })
+          .eq('url', storageUrl)
+          .select('id');
+
+        if (updateErr || !updatedRows || updatedRows.length === 0) {
+          await sb.from('repository_files').insert({
+            folder_id: patentFolder.id,
+            name: fileName,
+            url: fileUrl,
+            file_type: ext,
+            drive_file_id: driveFilePatent.id,
+          });
+        }
 
         await cleanupStorageFile(sb, storageUrl);
         console.log("uploadPatentFileFromStorage: success", { driveFileId: driveFilePatent.id, contractId });
