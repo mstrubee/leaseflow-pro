@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp, Download, Move, X } from "lucide-react";
+import { Loader2, Lock, AlertTriangle, RefreshCw, ChevronsUpDown, ChevronsDownUp, Download, Move, X, Search } from "lucide-react";
 import * as XLSX from "xlsx";
 import { OpexConsumptionPieChart } from "./OpexConsumptionPieChart";
 import { useToast } from "@/hooks/use-toast";
@@ -247,6 +247,61 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     setGlobalExpandState("collapsed");
     setTimeout(() => setGlobalExpandState(null), 100);
   }, [lines]);
+
+  // Search lines by name
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchMatches, setSearchMatches] = useState<string[]>([]);
+  const [searchIndex, setSearchIndex] = useState(0);
+
+  const flattenLines = useCallback((items: BudgetLine[]): BudgetLine[] => {
+    const out: BudgetLine[] = [];
+    const walk = (arr: BudgetLine[]) => arr.forEach(i => { out.push(i); if (i.children?.length) walk(i.children); });
+    walk(items);
+    return out;
+  }, []);
+
+  const focusLine = useCallback((id: string, allLines: BudgetLine[]) => {
+    // Expand ancestors: remove them from collapsed set
+    const map = new Map(allLines.map(l => [l.id, l]));
+    const toExpand = new Set<string>();
+    let cursor = map.get(id);
+    while (cursor?.parent_id) {
+      toExpand.add(cursor.parent_id);
+      cursor = map.get(cursor.parent_id);
+    }
+    setCollapsedIds(prev => {
+      const next = new Set(prev);
+      toExpand.forEach(i => next.delete(i));
+      return next;
+    });
+    setTimeout(() => {
+      const el = document.querySelector(`[data-line-id="${id}"]`) as HTMLElement | null;
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ring-2", "ring-primary", "ring-offset-2");
+        setTimeout(() => el.classList.remove("ring-2", "ring-primary", "ring-offset-2"), 2000);
+      }
+    }, 150);
+  }, []);
+
+  const handleSearch = useCallback((query: string) => {
+    setSearchQuery(query);
+    const q = query.trim().toLowerCase();
+    if (!q) { setSearchMatches([]); setSearchIndex(0); return; }
+    const flat = flattenLines(lines);
+    const matches = flat.filter(l => l.name?.toLowerCase().includes(q)).map(l => l.id);
+    setSearchMatches(matches);
+    setSearchIndex(0);
+    if (matches.length > 0) focusLine(matches[0], flat);
+  }, [lines, flattenLines, focusLine]);
+
+  const handleSearchNext = useCallback(() => {
+    if (searchMatches.length === 0) return;
+    const next = (searchIndex + 1) % searchMatches.length;
+    setSearchIndex(next);
+    focusLine(searchMatches[next], flattenLines(lines));
+  }, [searchMatches, searchIndex, focusLine, flattenLines, lines]);
+
 
   // Debounced onRefresh
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1213,7 +1268,35 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
             )}
 
             {currentBudget && (
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-wrap justify-end items-center gap-2">
+                <div className="relative mr-auto">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                  <Input
+                    value={searchQuery}
+                    onChange={(e) => handleSearch(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleSearchNext(); } }}
+                    placeholder="Buscar línea..."
+                    className="h-8 pl-8 pr-16 w-64 text-sm"
+                  />
+                  {searchQuery && (
+                    <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                      {searchMatches.length > 0 && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {searchIndex + 1}/{searchMatches.length}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleSearch("")}
+                        className="p-0.5 rounded hover:bg-accent"
+                        title="Limpiar"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 {!isClosed && !forceReadOnly && (
                   <>
                     <Button
