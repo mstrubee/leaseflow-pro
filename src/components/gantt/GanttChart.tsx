@@ -425,9 +425,39 @@ export function GanttChart({
 
   const { minDate, maxDate } = useMemo(() => getGanttDateRange(tasks), [tasks]);
 
-  const days = useMemo(() => {
+  const allDays = useMemo(() => {
     return eachDayOfInterval({ start: minDate, end: maxDate });
   }, [minDate, maxDate]);
+
+  const days = useMemo(() => {
+    if (!hideWeekends) return allDays;
+    return allDays.filter((d) => !isWeekend(d));
+  }, [allDays, hideWeekends]);
+
+  // Map yyyy-MM-dd → visible column index. For hidden weekend dates returns null.
+  const dateIndexMap = useMemo(() => {
+    const m = new Map<string, number>();
+    days.forEach((d, idx) => m.set(format(d, "yyyy-MM-dd"), idx));
+    return m;
+  }, [days]);
+
+  // Resolve any calendar date to a visible column. Weekend dates snap to nearest visible day.
+  const resolveVisibleIndex = useCallback(
+    (dateStr: string, mode: "start" | "end"): number => {
+      const direct = dateIndexMap.get(dateStr);
+      if (direct !== undefined) return direct;
+      // Weekend (or out-of-range): snap forward for start, backward for end
+      let d = parseISO(dateStr);
+      const step = mode === "start" ? 1 : -1;
+      for (let i = 0; i < 7; i++) {
+        d = addDays(d, step);
+        const idx = dateIndexMap.get(format(d, "yyyy-MM-dd"));
+        if (idx !== undefined) return idx;
+      }
+      return 0;
+    },
+    [dateIndexMap]
+  );
 
   // Group days by month for header
   const monthGroups = useMemo(() => {
