@@ -1633,11 +1633,12 @@ export function GanttChart({
             )}
 
             {/* Task rows */}
-            {visibleTasks.map(({ task, level }) => {
+            {visibleTasks.map(({ task, level }, rowIdx) => {
               const hasChildren = task.children && task.children.length > 0;
               const isExpanded = expandedTasks.has(task.id);
               const position = getTaskPosition(task);
               const effective = getEffectiveColor(task);
+              const rowNumber = rowIdx + 1;
               
               return (
                 <ContextMenu key={task.id}>
