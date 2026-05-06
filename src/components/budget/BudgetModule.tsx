@@ -872,42 +872,63 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
   const handleExportExcel = () => {
     if (!lines.length || !currentBudget) return;
 
-    const flatRows: Record<string, any>[] = [];
-    const flattenLines = (items: BudgetLine[], level = 0) => {
-      for (const line of items) {
-        flatRows.push({
-          "Línea": "  ".repeat(level) + line.name,
-          "Cantidad": line.quantity ?? "",
-          "Unidad": line.unit_type ?? "",
-          "P. Unitario (UF)": line.unit_price ?? "",
-          "Total (UF)": line.amount_uf ?? 0,
-          "Total (CLP)": Math.round((line.amount_uf ?? 0) * ufValue),
-          "Estado": line.status ?? "",
-        });
-        if (line.children?.length) {
-          flattenLines(line.children, level + 1);
-        }
+    // Header rows: A1 label, B1 = UF value (referenced by formulas)
+    const headerRows: any[][] = [
+      ["Valor UF (CLP):", ufValue || 0],
+      [],
+      ["Línea", "Cantidad", "Unidad", "P. Unitario (UF)", "Total (UF)", "Total (CLP)", "Estado"],
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(headerRows);
+
+    // Track row index (1-based) of each top-level line for the TOTAL formula
+    const rootRowRefs: number[] = [];
+    let currentRow = headerRows.length; // next row index (0-based) to write
+
+    const writeLine = (line: BudgetLine, level: number, isRoot: boolean) => {
+      const excelRow = currentRow + 1; // 1-based for Excel refs
+      const indent = "  ".repeat(level);
+      const row: any[] = [
+        indent + line.name,
+        line.quantity ?? "",
+        line.unit_type ?? "",
+        line.unit_price ?? "",
+        line.amount_uf ?? 0,
+        // Total CLP = Total UF * UF rate (formula)
+        { f: `E${excelRow}*$B$1`, t: "n", z: '"$"#,##0' },
+        line.status ?? "",
+      ];
+      XLSX.utils.sheet_add_aoa(ws, [row], { origin: `A${excelRow}` });
+      // UF number format
+      const ufCell = ws[`E${excelRow}`];
+      if (ufCell) ufCell.z = '"UF "#,##0.00';
+      if (isRoot) rootRowRefs.push(excelRow);
+      currentRow++;
+      if (line.children?.length) {
+        for (const child of line.children) writeLine(child, level + 1, false);
       }
     };
 
-    flattenLines(lines);
+    for (const root of lines) writeLine(root, 0, true);
 
-    // Totals row
-    const totalUF = lines.reduce((s, l) => s + (l.amount_uf ?? 0), 0);
-    flatRows.push({
-      "Línea": "TOTAL",
-      "Cantidad": "",
-      "Unidad": "",
-      "P. Unitario (UF)": "",
-      "Total (UF)": totalUF,
-      "Total (CLP)": Math.round(totalUF * ufValue),
-      "Estado": "",
-    });
-
-    const ws = XLSX.utils.json_to_sheet(flatRows);
-    ws["!cols"] = [
-      { wch: 40 }, { wch: 10 }, { wch: 12 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 14 },
+    // TOTAL row — sum only root rows to avoid double counting parents+children
+    const totalRow = currentRow + 1;
+    const sumRefs = rootRowRefs.map((r) => `E${r}`).join(",");
+    const totalAoa: any[] = [
+      "TOTAL",
+      "",
+      "",
+      "",
+      { f: sumRefs ? `SUM(${sumRefs})` : "0", t: "n", z: '"UF "#,##0.00' },
+      { f: `E${totalRow}*$B$1`, t: "n", z: '"$"#,##0' },
+      "",
     ];
+    XLSX.utils.sheet_add_aoa(ws, [totalAoa], { origin: `A${totalRow}` });
+
+    ws["!cols"] = [
+      { wch: 40 }, { wch: 10 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 14 },
+    ];
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Presupuesto");
     const fileName = `${contractName || "Contrato"} - ${title} ${currentBudget.year}.xlsx`;
