@@ -25,7 +25,8 @@ interface FileInfo {
 }
 
 function cleanFileName(name: string): string {
-  return name.replace(/^\d{10,}_\d+_/, '');
+  // Strip "<timestamp>_<n>_" or just "<timestamp>_" prefixes from upload paths
+  return name.replace(/^\d{10,}_(\d+_)?/, '');
 }
 
 export function PatentFileListPopover({ urls, fileNames, contractId, itemId, onRemoveFile, onUrlUpdated, folderUrl }: PatentFileListPopoverProps) {
