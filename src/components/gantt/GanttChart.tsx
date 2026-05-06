@@ -388,6 +388,7 @@ export function GanttChart({
   const [newTaskRow, setNewTaskRow] = useState<NewTaskRow | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [hideCompleted, setHideCompleted] = useState(false);
+  const [hideWeekends, setHideWeekends] = useState(false);
   const [pendingDateEdit, setPendingDateEdit] = useState<{
     taskId: string;
     field: "start_date" | "end_date";
