@@ -1,92 +1,31 @@
+# Problema
 
-## Diagnóstico
+Al reintentar la sincronización a Google Drive desde el módulo de Patentes para archivos antiguos (que ya estaban subidos previamente), la edge function devuelve **500 — "File not found in temporary storage"**.
 
-El delay del botón **"Ir al proyecto"** desde Informes → Gantt no viene del click en sí, sino de tres factores acumulados al cargar `ContractDetail.tsx`:
+## Causa raíz
 
-1. **Code-splitting sin prefetch**: `ContractDetail` se carga con `lazy()`. La primera vez que se entra, el navegador descarga el chunk **después** del click. Mientras tanto se ve el spinner.
-2. **Pantalla en blanco con spinner**: la página espera a que terminen `loadContract()`, `loadCustomFields()`, permisos y rol **antes** de pintar nada (`if (loading || !roleLoaded || permissionsLoading) return spinner`). El usuario percibe ~1–3 s de "nada".
-3. **Query monolítica**: `loadContract()` trae el contrato + 7 relaciones anidadas en una sola consulta. La sección Gantt no necesita la mayoría.
+En `supabase/functions/google-drive/index.ts`, acción `uploadPatentFileFromStorage`:
 
-El mismo patrón se repite en otros clickeables del sistema: botones que disparan `navigate()` a una ruta `lazy` sin pre-carga, y páginas que bloquean el render hasta resolver todas las queries.
+1. Cuando una subida tiene éxito, la función **inserta una fila nueva** en `repository_files` (con `drive_file_id` y URL de Drive) y luego **borra el archivo del Storage**.
+2. La fila original (la que apuntaba al `storage://...`) **queda intacta**, pero el archivo físico en Supabase Storage ya no existe.
+3. En un re-intento posterior sobre esa fila huérfana, el `download(storagePath)` falla, el listado del directorio padre tampoco lo encuentra, y la función retorna 500.
 
-## Cambios propuestos
+Resultado visible: archivos que aparentemente "siguen en Supabase" pero al sincronizar dan error.
 
-### 1. Prefetch del chunk en hover/mousedown (impacto alto, riesgo bajo)
-Pre-cargar el bundle de la ruta destino antes del click final.
+## Solución
 
-- Crear `src/lib/routePrefetch.ts` con un mapa `{ ruta → () => import("./...") }` y un helper `prefetchRoute(name)` idempotente.
-- En `ReportsReturnButton.tsx::navigateToContractFromReports`: exponer también `prefetchContractDetail()` y llamarlo en `onMouseEnter` / `onFocus` del botón "Ir al proyecto".
-- Aplicar el mismo patrón a los botones de navegación más usados:
-  - Cards de contratos en `Contracts.tsx` → `ContractDetail`
-  - Tarjetas en `Dashboard.tsx`, `ReportsDashboard.tsx`, `AlertsDashboard.tsx` → sus destinos.
-  - Botones "Ver" / "Editar" / enlaces internos en listados (Maintenance, Patents, Suppliers, Opex, Capex).
+Editar **`supabase/functions/google-drive/index.ts`** en el handler de `uploadPatentFileFromStorage` (~líneas 2042–2086):
 
-Resultado: cuando el usuario haga click, el chunk ya estará en cache → navegación casi instantánea.
+1. **Evitar duplicados**: en vez de `insert` ciego, hacer primero `update` de la fila existente que tenga `url = storageUrl` (set `drive_file_id`, `url = driveUrl`, `file_type`, `folder_id`). Solo si no se actualizó ninguna fila, hacer `insert`.
 
-### 2. Render progresivo en `ContractDetail.tsx` (impacto alto)
-Quitar el bloqueo total de render mientras cargan datos.
+2. **Manejar archivos ya sincronizados**: si la descarga falla y el listado tampoco encuentra el archivo, antes de retornar 500, buscar en `repository_files` una fila en la carpeta `patentFolder.id` con el mismo `name` y `drive_file_id IS NOT NULL`. Si existe:
+   - Actualizar la fila huérfana (`url = storageUrl`) para apuntar a la URL de Drive existente y poblar su `drive_file_id`.
+   - Devolver 200 con `alreadySynced: true` y la `driveUrl` reutilizada, así el frontend lo marca como OK.
 
-- Pintar inmediatamente el header (título, "Volver", badge de estado) usando solo `id` y un placeholder de nombre.
-- Mover el spinner únicamente al área del contenido.
-- `loadContract()` y `loadCustomFields()` ya van en paralelo por estar en el mismo `useEffect`, pero hoy se ejecutan secuencialmente porque `loadCustomFields` también espera al `await` interno. Refactor: lanzarlos con `Promise.all([loadContract(), loadCustomFields()])` y usar `setLoading(false)` en cuanto el **contrato** está listo (los custom fields se renderizan cuando lleguen, sin bloquear).
-- Los permisos (`useUserPermissions`) y rol (`useAuth`) hoy bloquean la pantalla; cambiar a:
-  - Pintar la página completa.
-  - Ocultar/deshabilitar acciones específicas mientras `permissionsLoading` esté en true (granular), en vez de bloquear toda la vista.
+3. Solo si tampoco existe copia en Drive ni archivo en Storage, mantener el 500 actual.
 
-### 3. Cache + dedupe de fetches con React Query (impacto alto, ya hay infra)
-El proyecto ya usa `@tanstack/react-query` en otros lugares.
+## Archivos modificados
 
-- Migrar `loadContract` a un `useQuery(['contract', id], ...)` con `staleTime: 60_000`. Así, volver al mismo contrato es instantáneo.
-- Igual con `loadCustomFields` (clave global, `staleTime: 5 min`).
-- Esto también permite **prefetchQuery** desde la lista de contratos al hacer hover, similar al punto 1, pero a nivel de datos.
+- `supabase/functions/google-drive/index.ts` (un solo bloque, ~50 líneas alrededor del manejo de descarga/inserción en `uploadPatentFileFromStorage`).
 
-### 4. Selector de relaciones por sección (opcional, segunda iteración)
-La query actual trae todas las relaciones aunque el usuario solo entre a la sección "gantt". Plantear `select` reducido + lazy-fetch de secciones pesadas. Lo dejamos como mejora futura para no inflar este cambio.
-
-### 5. Auditoría de clickeables lentos del sistema
-Pasada general aplicando el mismo patrón:
-
-- Verificar que **todos** los botones de acción muestren feedback inmediato (estado `loading`/`disabled`) y no esperen a que termine la mutación para responder visualmente.
-- Revisar handlers que ejecutan trabajo pesado sincrónico en el click (filtros, export, render de tablas grandes) y diferir con `requestIdleCallback` o `setTimeout(…, 0)` cuando aplique.
-- Quitar `e.stopPropagation()` innecesarios (no causan delay, pero a veces ocultan otros bugs de re-render).
-
-Concretamente revisaré:
-- `GanttReportsSection` (botón actual + "PDF General" + toggles).
-- `Contracts.tsx` (click en fila).
-- `Dashboard.tsx` y mapas (click en región/comuna).
-- `MaintenanceModule`, `PatentsList`, `SuppliersList`, `OpexDashboard`, `CapexDashboard` (acciones por fila).
-- `ReportsDashboard` (cards de informes).
-
-## Detalles técnicos
-
-```text
-flujo actual click → ver contrato:
- click ──▶ navigate() ──▶ Suspense fallback (descarga chunk ~300-800ms)
-                          ──▶ ContractDetail mount
-                              ──▶ loadContract  ┐
-                              ──▶ loadCustomFields ├─ await todos
-                              ──▶ permisos + rol  ┘
-                                  └─▶ render real (~1-3s)
-
-flujo objetivo:
- hover ──▶ prefetch chunk + prefetchQuery(contract)
- click ──▶ navigate() ──▶ ContractDetail mount instantáneo
-                          ├─▶ header pintado al toque
-                          └─▶ contenido aparece apenas llega contrato
-                              (custom fields/permisos rellenan in-place)
-```
-
-Archivos a tocar:
-- `src/lib/routePrefetch.ts` (nuevo)
-- `src/components/reports/ReportsReturnButton.tsx`
-- `src/components/gantt/GanttReportsSection.tsx`
-- `src/pages/ContractDetail.tsx`
-- `src/pages/Contracts.tsx`, `src/pages/Dashboard.tsx`, `src/pages/ReportsDashboard.tsx`, `src/pages/AlertsDashboard.tsx`
-- Listados: `MaintenanceModule.tsx`, `PatentsList.tsx`, `SuppliersList.tsx`, `OpexDashboard.tsx`, `CapexDashboard.tsx`
-
-Sin migraciones de DB. Sin cambios de esquema. Compatible con el flujo "Volver a Informes" existente.
-
-## Resultado esperado
-
-- Click "Ir al proyecto" desde Informes: respuesta visual inmediata, contenido pintado en < 300 ms en navegaciones repetidas (cache) y < 800 ms en la primera.
-- Mejora generalizada de percepción de velocidad en cards/listas.
+Sin cambios en frontend, BD ni migraciones.
