@@ -388,6 +388,7 @@ export function GanttChart({
   const [newTaskRow, setNewTaskRow] = useState<NewTaskRow | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [hideCompleted, setHideCompleted] = useState(false);
+  const [hideWeekends, setHideWeekends] = useState(false);
   const [pendingDateEdit, setPendingDateEdit] = useState<{
     taskId: string;
     field: "start_date" | "end_date";
@@ -424,9 +425,39 @@ export function GanttChart({
 
   const { minDate, maxDate } = useMemo(() => getGanttDateRange(tasks), [tasks]);
 
-  const days = useMemo(() => {
+  const allDays = useMemo(() => {
     return eachDayOfInterval({ start: minDate, end: maxDate });
   }, [minDate, maxDate]);
+
+  const days = useMemo(() => {
+    if (!hideWeekends) return allDays;
+    return allDays.filter((d) => !isWeekend(d));
+  }, [allDays, hideWeekends]);
+
+  // Map yyyy-MM-dd → visible column index. For hidden weekend dates returns null.
+  const dateIndexMap = useMemo(() => {
+    const m = new Map<string, number>();
+    days.forEach((d, idx) => m.set(format(d, "yyyy-MM-dd"), idx));
+    return m;
+  }, [days]);
+
+  // Resolve any calendar date to a visible column. Weekend dates snap to nearest visible day.
+  const resolveVisibleIndex = useCallback(
+    (dateStr: string, mode: "start" | "end"): number => {
+      const direct = dateIndexMap.get(dateStr);
+      if (direct !== undefined) return direct;
+      // Weekend (or out-of-range): snap forward for start, backward for end
+      let d = parseISO(dateStr);
+      const step = mode === "start" ? 1 : -1;
+      for (let i = 0; i < 7; i++) {
+        d = addDays(d, step);
+        const idx = dateIndexMap.get(format(d, "yyyy-MM-dd"));
+        if (idx !== undefined) return idx;
+      }
+      return 0;
+    },
+    [dateIndexMap]
+  );
 
   // Group days by month for header
   const monthGroups = useMemo(() => {
@@ -586,18 +617,17 @@ export function GanttChart({
       return { left: 0, width: 0, visible: false };
     }
 
-    const startDate = parseISO(startDateStr);
-    const endDate = parseISO(endDateStr);
-    
-    const startOffset = differenceInDays(startDate, minDate);
-    const duration = differenceInDays(endDate, startDate) + 1;
-    
+    const startIdx = resolveVisibleIndex(startDateStr, "start");
+    const endIdx = resolveVisibleIndex(endDateStr, "end");
+    const left = startIdx * DAY_WIDTH;
+    const width = Math.max(1, endIdx - startIdx + 1) * DAY_WIDTH;
+
     return {
-      left: startOffset * DAY_WIDTH,
-      width: duration * DAY_WIDTH,
+      left,
+      width,
       visible: true,
     };
-  }, [barDragTaskId, dragPreview, minDate]);
+  }, [barDragTaskId, dragPreview, resolveVisibleIndex]);
 
   // Calculate dependency arrows data
   const dependencyArrows = useMemo(() => {
@@ -1308,6 +1338,17 @@ export function GanttChart({
                       className="h-3.5 w-3.5"
                     />
                     <span>Días hábiles</span>
+                  </label>
+                  <label
+                    className="flex items-center gap-1.5 h-6 px-2 text-xs rounded border bg-background cursor-pointer select-none"
+                    title="Oculta sábados y domingos en la grilla del Gantt (no modifica las fechas de las tareas)."
+                  >
+                    <Checkbox
+                      checked={hideWeekends}
+                      onCheckedChange={(v) => setHideWeekends(v === true)}
+                      className="h-3.5 w-3.5"
+                    />
+                    <span>Ocultar fines de semana</span>
                   </label>
                   {allParentTaskIds.length > 0 && (
                     <Button
