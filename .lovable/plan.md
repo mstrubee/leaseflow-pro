@@ -1,31 +1,44 @@
-# Problema
+## Objetivo
 
-Al reintentar la sincronización a Google Drive desde el módulo de Patentes para archivos antiguos (que ya estaban subidos previamente), la edge function devuelve **500 — "File not found in temporary storage"**.
+Agregar un checkbox en la cabecera de la Gantt que convierta, con un solo clic, todos los plazos de la columna "días" a **días hábiles** (excluyendo fines de semana y feriados). El checkbox debe ser reversible: desmarcarlo vuelve todo a **días corridos**. El cambio recalcula automáticamente las fechas de término de cada tarea y propaga a sus dependencias.
 
-## Causa raíz
+## Cambios
 
-En `supabase/functions/google-drive/index.ts`, acción `uploadPatentFileFromStorage`:
+### 1. `src/components/gantt/GanttChart.tsx`
 
-1. Cuando una subida tiene éxito, la función **inserta una fila nueva** en `repository_files` (con `drive_file_id` y URL de Drive) y luego **borra el archivo del Storage**.
-2. La fila original (la que apuntaba al `storage://...`) **queda intacta**, pero el archivo físico en Supabase Storage ya no existe.
-3. En un re-intento posterior sobre esa fila huérfana, el `download(storagePath)` falla, el listado del directorio padre tampoco lo encuentra, y la función retorna 500.
+- **Nuevo control en la cabecera "Cronograma"** (línea ~1260, junto a los botones "Contraer" / "Ocultar completadas" / "PDF"):
+  - Un `Checkbox` (shadcn) etiquetado **"Días hábiles"** con tooltip:
+    *"Convierte todos los plazos de la columna Días a días hábiles (excluye fines de semana y feriados). Desmarcar para volver a días corridos."*
+  - Estado **derivado** de las tareas: `checked = tasks.length > 0 && tasks.every(t => t.duration_type === "business")`.
+  - Estado intermedio "indeterminate" cuando hay mezcla (algunas en hábiles, otras en corridos).
 
-Resultado visible: archivos que aparentemente "siguen en Supabase" pero al sincronizar dan error.
+- **Handler `handleToggleAllBusinessDays(checked: boolean)`**:
+  1. Pide confirmación con `AlertDialog` ya existente:
+     *"¿Convertir todos los plazos a días hábiles? Esto recalculará las fechas de término de todas las tareas."* (texto adaptado para el caso inverso).
+  2. Para cada tarea con `start_date` y `duration_days > 0`:
+     - Calcula nuevo `end_date` con `calculateEndDate(start, duration, newType, holidays)` desde `ganttDateUtils`.
+     - Llama `onUpdateTask(task.id, { duration_type, end_date }, { skipPropagation: true })`.
+  3. Tras procesar todas, dispara una recarga (`loadTimeline`) o re-propaga dependencias raíz para reajustar cadenas.
+  4. Procesa en lotes (`Promise.all` por niveles) para no saturar Supabase y mostrar `toast` de progreso/éxito.
 
-## Solución
+- **Importar** `Checkbox` de `@/components/ui/checkbox` y `holidays` ya disponible vía props (verificar — si no, propagarlo desde `GanttModule`).
 
-Editar **`supabase/functions/google-drive/index.ts`** en el handler de `uploadPatentFileFromStorage` (~líneas 2042–2086):
+### 2. `src/hooks/useGantt.ts` (opcional, si conviene centralizar)
 
-1. **Evitar duplicados**: en vez de `insert` ciego, hacer primero `update` de la fila existente que tenga `url = storageUrl` (set `drive_file_id`, `url = driveUrl`, `file_type`, `folder_id`). Solo si no se actualizó ninguna fila, hacer `insert`.
+Exportar un helper `bulkSetDurationType(type: "calendar" | "business")` que:
+- Recorre `tasks`, recalcula `end_date` localmente y hace un solo `UPDATE` masivo (o por chunks) a `gantt_tasks`.
+- Recarga el timeline una sola vez al final.
+- Ventaja: una sola llamada, sin disparar la propagación tarea por tarea.
 
-2. **Manejar archivos ya sincronizados**: si la descarga falla y el listado tampoco encuentra el archivo, antes de retornar 500, buscar en `repository_files` una fila en la carpeta `patentFolder.id` con el mismo `name` y `drive_file_id IS NOT NULL`. Si existe:
-   - Actualizar la fila huérfana (`url = storageUrl`) para apuntar a la URL de Drive existente y poblar su `drive_file_id`.
-   - Devolver 200 con `alreadySynced: true` y la `driveUrl` reutilizada, así el frontend lo marca como OK.
+Se preferirá esta vía para rendimiento; el checkbox del chart llamará a este helper.
 
-3. Solo si tampoco existe copia en Drive ni archivo en Storage, mantener el 500 actual.
+### 3. Persistencia / reversibilidad
 
-## Archivos modificados
+- El estado se guarda en la propia columna `duration_type` de cada tarea en la BD, por lo que el toggle es persistente y reversible entre sesiones simplemente volviendo a marcar/desmarcar.
+- No se requieren migraciones (la columna ya existe y soporta `"calendar" | "business"`).
 
-- `supabase/functions/google-drive/index.ts` (un solo bloque, ~50 líneas alrededor del manejo de descarga/inserción en `uploadPatentFileFromStorage`).
+## Notas técnicas
 
-Sin cambios en frontend, BD ni migraciones.
+- Las tareas **padre** (con hijos) suelen derivar fechas de los hijos: para ellas no se recalcula `end_date` directamente, sólo se actualiza `duration_type` (la agregación sigue siendo correcta).
+- Tras el bulk update, llamar `loadTimeline()` una vez asegura que se recalculen barras, dependencias y resúmenes.
+- El indicador visual existente (`háb` vs `días` en línea 1845) reflejará el cambio automáticamente.
