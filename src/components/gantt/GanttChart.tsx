@@ -1405,6 +1405,9 @@ export function GanttChart({
 
           <div className="flex border-b bg-muted/50 sticky top-6 z-20">
             <div className="flex-shrink-0 w-6" /> {/* Grip handle space */}
+            <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs text-center" style={{ width: INDEX_COL_WIDTH }}>
+              #
+            </div>
             <div className="flex-shrink-0 border-r px-2 py-2 font-medium text-xs" style={{ width: TASK_NAME_WIDTH - 6 }}>
               Tarea
             </div>
