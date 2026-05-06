@@ -2259,6 +2259,7 @@ export function GanttChart({
                 onClick={() => handleAddNewRow(null)}
               >
                 <div className="flex-shrink-0 w-6" /> {/* Grip handle space */}
+                <div className="flex-shrink-0" style={{ width: INDEX_COL_WIDTH }} />
                 <div className="flex items-center gap-2 px-3 text-muted-foreground">
                   <Plus className="h-4 w-4" />
                   <span className="text-sm">Agregar tarea padre...</span>
