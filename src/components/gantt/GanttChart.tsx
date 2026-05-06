@@ -278,6 +278,7 @@ interface GanttChartProps {
 const DAY_WIDTH = 30;
 const ROW_HEIGHT = 40;
 const TASK_NAME_WIDTH = 450;
+const INDEX_COL_WIDTH = 40;
 const RESPONSIBLE_COL_WIDTH = 180;
 const ORIGIN_COL_WIDTH = 120;
 const DATE_COL_WIDTH = 140;
