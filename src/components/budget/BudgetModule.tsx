@@ -248,6 +248,61 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     setTimeout(() => setGlobalExpandState(null), 100);
   }, [lines]);
 
+  // Search lines by name
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchMatches, setSearchMatches] = useState<string[]>([]);
+  const [searchIndex, setSearchIndex] = useState(0);
+
+  const flattenLines = useCallback((items: BudgetLine[]): BudgetLine[] => {
+    const out: BudgetLine[] = [];
+    const walk = (arr: BudgetLine[]) => arr.forEach(i => { out.push(i); if (i.children?.length) walk(i.children); });
+    walk(items);
+    return out;
+  }, []);
+
+  const focusLine = useCallback((id: string, allLines: BudgetLine[]) => {
+    // Expand ancestors: remove them from collapsed set
+    const map = new Map(allLines.map(l => [l.id, l]));
+    const toExpand = new Set<string>();
+    let cursor = map.get(id);
+    while (cursor?.parent_id) {
+      toExpand.add(cursor.parent_id);
+      cursor = map.get(cursor.parent_id);
+    }
+    setCollapsedIds(prev => {
+      const next = new Set(prev);
+      toExpand.forEach(i => next.delete(i));
+      return next;
+    });
+    setTimeout(() => {
+      const el = document.querySelector(`[data-line-id="${id}"]`) as HTMLElement | null;
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ring-2", "ring-primary", "ring-offset-2");
+        setTimeout(() => el.classList.remove("ring-2", "ring-primary", "ring-offset-2"), 2000);
+      }
+    }, 150);
+  }, []);
+
+  const handleSearch = useCallback((query: string) => {
+    setSearchQuery(query);
+    const q = query.trim().toLowerCase();
+    if (!q) { setSearchMatches([]); setSearchIndex(0); return; }
+    const flat = flattenLines(lines);
+    const matches = flat.filter(l => l.name?.toLowerCase().includes(q)).map(l => l.id);
+    setSearchMatches(matches);
+    setSearchIndex(0);
+    if (matches.length > 0) focusLine(matches[0], flat);
+  }, [lines, flattenLines, focusLine]);
+
+  const handleSearchNext = useCallback(() => {
+    if (searchMatches.length === 0) return;
+    const next = (searchIndex + 1) % searchMatches.length;
+    setSearchIndex(next);
+    focusLine(searchMatches[next], flattenLines(lines));
+  }, [searchMatches, searchIndex, focusLine, flattenLines, lines]);
+
+
   // Debounced onRefresh
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debouncedRefresh = useCallback(() => {
