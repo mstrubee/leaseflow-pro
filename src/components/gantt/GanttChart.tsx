@@ -642,7 +642,7 @@ export function GanttChart({
       childTaskId: string;
     }> = [];
 
-    const HEADER_OFFSET = TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6; // +6 for grip handle
+    const HEADER_OFFSET = INDEX_COL_WIDTH + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6; // +6 for grip handle
 
     visibleTasks.forEach(({ task }, rowIdx) => {
       if (!task.dependencies || task.dependencies.length === 0) return;
@@ -1321,7 +1321,7 @@ export function GanttChart({
         <div className="min-w-fit">
           {/* Month/Year Header */}
           <div className="flex border-b bg-muted/70 sticky top-0 z-30">
-            <div className="flex-shrink-0 border-r" style={{ width: 24 + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH }}>
+            <div className="flex-shrink-0 border-r" style={{ width: 24 + INDEX_COL_WIDTH + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH }}>
               <div className="px-2 py-1 text-xs font-semibold text-muted-foreground flex items-center justify-between gap-1 flex-wrap">
                 <span>Cronograma</span>
                 <div className="flex items-center gap-1">
@@ -1477,7 +1477,7 @@ export function GanttChart({
               const todayStr = format(new Date(), "yyyy-MM-dd");
               const todayIdx = days.findIndex((d) => format(d, "yyyy-MM-dd") === todayStr);
               if (todayIdx < 0) return null;
-              const HEADER_OFFSET = TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
+              const HEADER_OFFSET = INDEX_COL_WIDTH + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
               return (
                 <div
                   className="absolute top-0 pointer-events-none z-[5] bg-primary/10 border-l border-r border-primary/40"
@@ -1494,7 +1494,7 @@ export function GanttChart({
               if (!rentStartDate) return null;
               const idx = days.findIndex((d) => format(d, "yyyy-MM-dd") === rentStartDate);
               if (idx < 0) return null;
-              const HEADER_OFFSET = TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
+              const HEADER_OFFSET = INDEX_COL_WIDTH + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
               const totalHeight = visibleTasks.length * ROW_HEIGHT + (newTaskRow ? ROW_HEIGHT : 0) + ROW_HEIGHT;
               const formatted = format(new Date(rentStartDate + "T00:00:00"), "dd/MM/yyyy");
               return (
