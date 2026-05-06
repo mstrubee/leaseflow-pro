@@ -1176,6 +1176,14 @@ export function PatentChecklist({
                                             }));
                                             toast.success("Archivo eliminado");
                                           }}
+                                          onUrlUpdated={(index, newUrl) => {
+                                            setSharedFilesCache(prev => ({
+                                              ...prev,
+                                              [folderId]: prev[folderId].map((f, i) =>
+                                                i === index ? { ...f, url: newUrl } : f
+                                              )
+                                            }));
+                                          }}
                                         />
                                       )}
                                     </>
