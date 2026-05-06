@@ -1447,22 +1447,20 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={handleExpandAll}
+                      onClick={() => {
+                        if (allExpanded) {
+                          handleCollapseAll();
+                          setAllExpanded(false);
+                        } else {
+                          handleExpandAll();
+                          setAllExpanded(true);
+                        }
+                      }}
                       className="gap-1"
-                      title="Expandir todas las líneas"
+                      title={allExpanded ? "Colapsar todas las líneas" : "Expandir todas las líneas"}
                     >
-                      <ChevronsUpDown className="h-4 w-4" />
-                      Expandir
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleCollapseAll}
-                      className="gap-1"
-                      title="Colapsar todas las líneas"
-                    >
-                      <ChevronsDownUp className="h-4 w-4" />
-                      Colapsar
+                      {allExpanded ? <ChevronsDownUp className="h-4 w-4" /> : <ChevronsUpDown className="h-4 w-4" />}
+                      {allExpanded ? "Colapsar" : "Expandir"}
                     </Button>
                     <Button 
                       variant="outline" 
