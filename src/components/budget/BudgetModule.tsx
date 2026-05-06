@@ -868,6 +868,65 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
     setShowOCRequestDialog(true);
   };
 
+  // Export suppliers assigned to CAPEX lines
+  const handleExportSuppliers = async () => {
+    if (!lines.length) {
+      toast({ title: "Sin líneas", description: "No hay líneas en el presupuesto.", variant: "destructive" });
+      return;
+    }
+
+    // Collect supplier IDs from all lines (including children)
+    const supplierIds = new Set<string>();
+    const collectSupplierIds = (items: BudgetLine[]) => {
+      for (const it of items) {
+        if (it.supplier_id) supplierIds.add(it.supplier_id);
+        if (it.children?.length) collectSupplierIds(it.children);
+      }
+    };
+    collectSupplierIds(lines);
+
+    if (supplierIds.size === 0) {
+      toast({ title: "Sin proveedores", description: "No hay proveedores asignados a las líneas.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const { data: suppliers, error } = await supabase
+        .from("suppliers")
+        .select("name, rut, contact_name, email, phone, street, street_number, commune, bank_name, bank_account_type, bank_account_number, category:supplier_categories(name)")
+        .in("id", Array.from(supplierIds))
+        .order("name");
+      if (error) throw error;
+
+      const headers = ["Nombre", "RUT", "Rubro", "Contacto", "Email", "Teléfono", "Dirección", "Comuna", "Banco", "Tipo de Cuenta", "N° Cuenta"];
+      const rows = (suppliers || []).map((s: any) => [
+        s.name || "",
+        s.rut || "",
+        s.category?.name || "",
+        s.contact_name || "",
+        s.email || "",
+        s.phone || "",
+        [s.street, s.street_number].filter(Boolean).join(" "),
+        s.commune || "",
+        s.bank_name || "",
+        s.bank_account_type || "",
+        s.bank_account_number || "",
+      ]);
+
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      ws["!cols"] = [{ wch: 30 }, { wch: 14 }, { wch: 22 }, { wch: 22 }, { wch: 28 }, { wch: 16 }, { wch: 30 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 22 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Proveedores");
+      const fileName = `proveedores_capex_${contractName || "contrato"}_${selectedYear}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+
+      toast({ title: "Descarga completada", description: `${rows.length} proveedor(es) exportado(s).` });
+    } catch (e: any) {
+      console.error(e);
+      toast({ title: "Error", description: e.message || "No se pudo descargar el listado.", variant: "destructive" });
+    }
+  };
+
   // Export budget lines to Excel
   const handleExportExcel = () => {
     if (!lines.length || !currentBudget) return;
@@ -1429,6 +1488,17 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                   <Download className="h-4 w-4" />
                   Descargar Excel
                 </Button>
+                {budgetType === "capex" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportSuppliers}
+                    className="gap-2"
+                  >
+                    <Download className="h-4 w-4" />
+                    Descargar Proveedores
+                  </Button>
+                )}
                 {!isClosed && !forceReadOnly && (
                   selectionMode ? (
                     <>
