@@ -1429,6 +1429,17 @@ export const BudgetModule = ({ contractId, contractName = "", contractCebe, budg
                   <Download className="h-4 w-4" />
                   Descargar Excel
                 </Button>
+                {budgetType === "capex" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportSuppliers}
+                    className="gap-2"
+                  >
+                    <Download className="h-4 w-4" />
+                    Descargar Proveedores
+                  </Button>
+                )}
                 {!isClosed && !forceReadOnly && (
                   selectionMode ? (
                     <>
