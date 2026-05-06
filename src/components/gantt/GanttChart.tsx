@@ -2096,7 +2096,7 @@ export function GanttChart({
 
                               {/* Task name */}
                               <span className="absolute inset-0 flex items-center justify-center text-[10px] text-white font-medium truncate px-3 pointer-events-none">
-                                {position.width > 60 ? task.name : ""}
+                                {position.width > 60 ? task.name : rowNumber}
                               </span>
                             </div>
                           </TooltipTrigger>
