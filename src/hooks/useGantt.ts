@@ -352,6 +352,22 @@ export function useGantt(contractId: string) {
         ? Math.max(...siblings.map(t => t.display_order))
         : -1;
 
+      // Auto-assign a color to root (parent) tasks if none provided.
+      // Children leave color null → they inherit the parent color via getEffectiveColor.
+      const PARENT_COLORS = [
+        "#3b82f6", "#10b981", "#f97316", "#ef4444", "#8b5cf6",
+        "#ec4899", "#eab308", "#06b6d4", "#64748b",
+      ];
+      let assignedColor: string | null = (options as any).color ?? null;
+      if (parentId === null && !assignedColor) {
+        const usedColors = new Set(
+          tasks.filter((t) => t.parent_id === null && t.color).map((t) => t.color as string)
+        );
+        const available = PARENT_COLORS.find((c) => !usedColors.has(c));
+        assignedColor =
+          available ?? PARENT_COLORS[Math.floor(Math.random() * PARENT_COLORS.length)];
+      }
+
       const { data, error } = await supabase
         .from("gantt_tasks")
         .insert({
@@ -364,6 +380,7 @@ export function useGantt(contractId: string) {
           start_date: options.start_date || null,
           end_date: options.end_date || null,
           status: options.status || "pending",
+          color: assignedColor,
         })
         .select()
         .single();
