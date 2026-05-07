@@ -1326,34 +1326,43 @@ export function PatentChecklist({
                                         <FolderCog className={`h-3 w-3 ${itemFolders[item.id] ? 'text-primary' : 'text-muted-foreground'}`} />
                                       </Button>
                                     )}
-                                    {getDocValue(item.id, 'document_url') && (() => {
-                                      const urls = (getDocValue(item.id, 'document_url') as string).split('|||').filter(Boolean);
-                                      const names = ((getDocValue(item.id, 'document_names') as string) || '').split('|||').filter((_, i) => i < urls.length);
+                                    {(() => {
+                                      const { urls, names, lockedUrls } = getEffectiveFiles(item);
+                                      if (urls.length === 0) return null;
+                                      // Mutable subset = patent-managed files (exclude signed contract docs)
+                                      const editableUrls = urls.filter(u => !lockedUrls.has(u));
+                                      const editableNames = urls.map((u, i) => names[i]).filter((_, i) => !lockedUrls.has(urls[i]));
                                       return (
                                         <PatentFileListPopover
                                           urls={urls}
-                                          fileNames={names.length > 0 ? names : undefined}
+                                          fileNames={names}
                                           contractId={contract.id}
                                           itemId={item.id}
                                           onRemoveFile={(index) => {
-                                            const newUrls = [...urls];
-                                            newUrls.splice(index, 1);
-                                            const newNames = [...names];
-                                            newNames.splice(index, 1);
+                                            const url = urls[index];
+                                            if (lockedUrls.has(url)) {
+                                              toast.error("Este documento proviene del contrato firmado. Elimínalo desde el módulo de Contratos.");
+                                              return;
+                                            }
+                                            const editIdx = editableUrls.indexOf(url);
+                                            if (editIdx < 0) return;
+                                            const newUrls = [...editableUrls];
+                                            newUrls.splice(editIdx, 1);
+                                            const newNames = [...editableNames];
+                                            newNames.splice(editIdx, 1);
                                             const joined = newUrls.join('|||');
                                             const joinedNames = newNames.join('|||');
                                             onUpdateDocument(contract.id, item.id, { document_url: joined || null, document_names: joinedNames || null } as any);
-                                            if (newUrls.length === 0) {
-                                              toast.success("Documento eliminado");
-                                            } else {
-                                              toast.success("Archivo eliminado");
-                                            }
+                                            toast.success(newUrls.length === 0 ? "Documento eliminado" : "Archivo eliminado");
                                           }}
                                           onUrlUpdated={(index, newUrl) => {
-                                            const newUrls = [...urls];
-                                            newUrls[index] = newUrl;
-                                            const joined = newUrls.join('|||');
-                                            onUpdateDocument(contract.id, item.id, { document_url: joined } as any);
+                                            const url = urls[index];
+                                            if (lockedUrls.has(url)) return;
+                                            const editIdx = editableUrls.indexOf(url);
+                                            if (editIdx < 0) return;
+                                            const newUrls = [...editableUrls];
+                                            newUrls[editIdx] = newUrl;
+                                            onUpdateDocument(contract.id, item.id, { document_url: newUrls.join('|||') } as any);
                                           }}
                                         />
                                       );
