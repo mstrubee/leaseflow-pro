@@ -77,8 +77,7 @@ export function MultiFileUploadDialog({
   const [overallProgress, setOverallProgress] = useState(0);
   const [createdFolders, setCreatedFolders] = useState<Map<string, string>>(new Map());
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = e.target.files;
+  const addFilesToQueue = (selectedFiles: ArrayLike<File> | null | undefined) => {
     if (!selectedFiles || selectedFiles.length === 0) return;
 
     const newFiles: FileUploadItem[] = [];
