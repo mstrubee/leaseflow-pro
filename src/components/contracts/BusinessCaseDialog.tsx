@@ -233,11 +233,6 @@ export function BusinessCaseDialog({ open, onOpenChange, contractId }: BusinessC
           toast.error(`${file.name}: Solo se permiten imágenes y archivos Excel`);
           continue;
         }
-        if (file.size > 20 * 1024 * 1024) {
-          toast.error(`${file.name}: Tamaño máximo 20MB`);
-          continue;
-        }
-
         const finalName = overrideName || file.name;
         const ext = file.type.startsWith("image/png") ? ".png" : file.type.startsWith("image/webp") ? ".webp" : ".jpg";
         const displayName = overrideName

@@ -66,12 +66,6 @@ export function LogoManager() {
       return;
     }
 
-    // Validate file size (max 2MB)
-    if (file.size > 2 * 1024 * 1024) {
-      toast({ variant: "destructive", title: "Error", description: "El archivo no puede superar 2MB" });
-      return;
-    }
-
     setUploading(logoKey);
 
     try {
@@ -237,8 +231,7 @@ export function LogoManager() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Formatos soportados: PNG, JPG, SVG. Tamaño máximo: 2MB. 
-        Los logos se aplicarán automáticamente en toda la aplicación.
+        Formatos soportados: PNG, JPG, SVG. Los logos se aplicarán automáticamente en toda la aplicación.
       </p>
     </div>
   );

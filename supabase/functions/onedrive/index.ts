@@ -126,7 +126,7 @@ async function uploadFileToDrive(
   mimeType: string,
   folderId: string
 ): Promise<{ id: string; webUrl: string }> {
-  // For small files (< 4MB), use simple upload
+  // Use simple upload when supported, otherwise fall back to an upload session.
   if (fileContent.length < 4 * 1024 * 1024) {
     const url = `https://graph.microsoft.com/v1.0/drive/items/${folderId}:/${encodeURIComponent(fileName)}:/content`;
     
@@ -150,8 +150,50 @@ async function uploadFileToDrive(
     return { id: result.id, webUrl: result.webUrl };
   }
   
-  // For larger files, would need to implement upload session
-  throw new Error("Files larger than 4MB not supported yet");
+  const sessionUrl = `https://graph.microsoft.com/v1.0/drive/items/${folderId}:/${encodeURIComponent(fileName)}:/createUploadSession`;
+  const sessionResponse = await fetch(sessionUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior': 'replace' } }),
+  });
+
+  if (!sessionResponse.ok) {
+    const error = await sessionResponse.text();
+    console.error("Error creating upload session:", error);
+    throw new Error(`Failed to create upload session: ${error}`);
+  }
+
+  const { uploadUrl } = await sessionResponse.json();
+  const chunkSize = 5 * 1024 * 1024;
+  let result: any = null;
+
+  for (let start = 0; start < fileContent.length; start += chunkSize) {
+    const end = Math.min(start + chunkSize, fileContent.length);
+    const chunk = fileContent.slice(start, end);
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Length': chunk.length.toString(),
+        'Content-Range': `bytes ${start}-${end - 1}/${fileContent.length}`,
+      },
+      body: chunk as unknown as BodyInit,
+    });
+
+    if (!uploadResponse.ok && uploadResponse.status !== 202) {
+      const error = await uploadResponse.text();
+      console.error("Error uploading file chunk:", error);
+      throw new Error(`Failed to upload file chunk: ${error}`);
+    }
+
+    if (uploadResponse.status !== 202) {
+      result = await uploadResponse.json();
+    }
+  }
+
+  return { id: result.id, webUrl: result.webUrl };
 }
 
 // List files in a folder

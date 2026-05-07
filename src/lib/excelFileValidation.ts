@@ -3,7 +3,6 @@
  * Provides defense-in-depth against malicious Excel files.
  */
 
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB limit
 const VALID_MIME_TYPES = [
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -20,7 +19,6 @@ export interface ExcelValidationResult {
  * Validates an Excel file before parsing to prevent potential security issues.
  * 
  * Checks:
- * - File size limits (prevent DoS via large files)
  * - File extension validation
  * - MIME type validation (when available)
  * 
@@ -32,10 +30,6 @@ export function validateExcelFile(file: File): ExcelValidationResult {
   if (!file) {
     return { valid: false, error: 'No se proporcionó ningún archivo' };
   }
-
-  // File size limit removed — no upper bound enforced
-  void MAX_FILE_SIZE_BYTES;
-
   // Check file size is not zero (empty file)
   if (file.size === 0) {
     return { valid: false, error: 'El archivo está vacío' };

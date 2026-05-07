@@ -4005,10 +4005,6 @@ const PurchaseOrdersDashboard = () => {
                       toast.error("Solo se permiten archivos PDF");
                       return;
                     }
-                    if (file.size > 20 * 1024 * 1024) {
-                      toast.error("El archivo no debe superar 20MB");
-                      return;
-                    }
                     setEditingOCFile(file);
                   }
                 }}

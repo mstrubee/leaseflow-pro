@@ -509,7 +509,7 @@ export const ConvertOCRequestDialog = ({
                   <p className="text-sm text-muted-foreground">
                     Click para subir el archivo de la OC
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">PDF, máximo 10MB</p>
+                  <p className="text-xs text-muted-foreground mt-1">PDF</p>
                 </div>
               )}
               <input
