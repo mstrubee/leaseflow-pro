@@ -1067,36 +1067,7 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
           </div>
         </div>
       </CardHeader>
-      <CardContent
-        className={cn(
-          "space-y-4 relative transition-colors rounded-md",
-          isDragOver && currentFolder && "ring-2 ring-primary ring-offset-2 bg-primary/5"
-        )}
-        onDragOver={(e) => {
-          if (!currentFolder) return;
-          if (!Array.from(e.dataTransfer.types || []).includes("Files")) return;
-          e.preventDefault();
-          e.stopPropagation();
-          setIsDragOver(true);
-        }}
-        onDragLeave={(e) => {
-          if (!currentFolder) return;
-          e.preventDefault();
-          e.stopPropagation();
-          // Only clear when leaving the container itself
-          if (e.currentTarget === e.target) setIsDragOver(false);
-        }}
-        onDrop={(e) => {
-          if (!currentFolder) return;
-          const dropped = Array.from(e.dataTransfer.files || []);
-          if (dropped.length === 0) return;
-          e.preventDefault();
-          e.stopPropagation();
-          setIsDragOver(false);
-          setPendingDroppedFiles(dropped);
-          setMultiUploadDialogOpen(true);
-        }}
-      >
+      <CardContent className="space-y-4 relative">
         {/* Drive Warning */}
         {driveWarning && (
           <Alert variant="destructive">
@@ -1447,33 +1418,6 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
 
         </div>
 
-        {/* Always-visible drop zone (below folders) */}
-        <div
-          className={cn(
-            "border-2 border-dashed rounded-lg py-6 px-4 text-center transition-colors cursor-pointer",
-            isDragOver
-              ? "border-primary bg-primary/10 text-primary"
-              : "border-muted-foreground/30 text-muted-foreground hover:border-primary/50 hover:bg-muted/30"
-          )}
-          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(true); }}
-          onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); if (e.currentTarget === e.target) setIsDragOver(false); }}
-          onDrop={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setIsDragOver(false);
-            const dropped = Array.from(e.dataTransfer.files || []);
-            if (dropped.length === 0) return;
-            setPendingDroppedFiles(dropped);
-            setMultiUploadDialogOpen(true);
-          }}
-          onClick={() => setMultiUploadDialogOpen(true)}
-        >
-          <Upload className="h-8 w-8 mx-auto mb-2 opacity-60" />
-          <p className="text-sm font-medium">
-            {isDragOver ? "Suelta los archivos aquí" : "Arrastra archivos aquí o haz clic para subir"}
-          </p>
-          <p className="text-xs opacity-75">​</p>
-        </div>
         {/* Files from Google Drive (only show those NOT already tracked in DB) */}
         {currentFolder && (() => {
           const trackedDriveIds = new Set(files.filter(f => f.drive_file_id).map(f => f.drive_file_id));
