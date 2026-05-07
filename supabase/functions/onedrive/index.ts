@@ -126,7 +126,7 @@ async function uploadFileToDrive(
   mimeType: string,
   folderId: string
 ): Promise<{ id: string; webUrl: string }> {
-  // For small files (< 4MB), use simple upload
+  // Use simple upload when supported, otherwise fall back to an upload session.
   if (fileContent.length < 4 * 1024 * 1024) {
     const url = `https://graph.microsoft.com/v1.0/drive/items/${folderId}:/${encodeURIComponent(fileName)}:/content`;
     
