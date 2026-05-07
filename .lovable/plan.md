@@ -1,59 +1,85 @@
 
 ## Objetivo
 
-En la fila **"Contrato arriendo"** del checklist de Patentes, mostrar siempre los documentos del contrato marcados como **"firmado"** (originales y renegociados) y guardarlos automáticamente en las carpetas configuradas para esa línea.
+Agregar un botón **"Sincronizar desde GeoLoc original"** dentro del módulo GeoLoc, visible solo para administradores, que dispare la re-sincronización de código desde el proyecto original.
 
-## Contexto encontrado
+---
 
-- `contract_documents` ya almacena los documentos del contrato con `document_type = 'firmado' | 'firmado_r'` (los que aparecen en el módulo Renta → Versiones marcados como "Original / R#1…").
-- En `PatentChecklist.tsx` la columna "Archivo" se renderiza con `PatentFileListPopover`, alimentado por `document_url` / `document_names` del `patent_document` (separados por `|||`).
-- Las carpetas destino por línea ya existen como `file_destination_settings` con clave `patent_item_<itemId>` (ya leídas en `itemFolders`). El helper `backupPatentFileToDestinations` (en `src/lib/patentBackup.ts`) sabe replicar un archivo a esas carpetas (repo del contrato y/o general_folders), pero hoy se usa solo para uploads desde el módulo Patentes.
-- El item "Contrato arriendo" tiene id fijo `3ec81aa8-1213-41fc-a960-701c9408b242`, pero lo identificaremos por **nombre** (`name === 'Contrato arriendo'`, case-insensitive) para tolerar duplicados/espejos.
+## Realidad técnica importante
 
-## Cambios
+La re-sincronización de **código fuente** entre proyectos Lovable **no la puede ejecutar la app en runtime**: solo yo (el agente) puedo leer archivos de otro proyecto del workspace y escribirlos en este. Un botón en la UI **no puede modificar archivos `.tsx` del repositorio** por sí solo.
 
-### 1. Cargar los documentos firmados del contrato
+Por eso el botón funcionará así:
 
-`src/hooks/usePatents.ts` (`loadData`):
-- Agregar un fetch paralelo a `contract_documents` filtrado por `contract_id IN (...)` y `document_type IN ('firmado','firmado_r')`, ordenado por `uploaded_at`.
-- Adjuntar el array resultante a cada contrato como `signed_documents: { id, url, uploaded_at }[]`.
-- Extender el tipo `ContractWithPatent` en `src/components/patents/types.ts` con `signed_documents?`.
+### Cómo funciona el botón
 
-### 2. Mostrar siempre los firmados en la fila "Contrato arriendo"
+1. Aparece en la cabecera del módulo GeoLoc, solo para usuarios con rol `admin`.
+2. Al hacer clic abre un diálogo con:
+   - Última fecha de sincronización (guardada en tabla `geoloc_sync_log`).
+   - Resumen de la última operación (archivos actualizados, conflictos).
+   - Botón **"Solicitar sincronización"**.
+3. Al confirmar:
+   - Inserta un registro en `geoloc_sync_requests` con `status = 'pending'`, `requested_by`, `requested_at`.
+   - Muestra un mensaje: *"Solicitud registrada. Pídele al asistente Lovable: 'ejecuta la sincronización de GeoLoc pendiente'. El agente leerá la solicitud, traerá los cambios del proyecto original y marcará la solicitud como completada."*
+4. Yo, en el siguiente mensaje tuyo (ej. "ejecuta sync GeoLoc"), reviso solicitudes pendientes, hago el diff con el proyecto original, traigo los archivos respetando los marcados como "adaptados", y registro el resultado en `geoloc_sync_log` (archivos cambiados, conflictos).
+5. La próxima vez que abras el diálogo, ves el resultado de esa corrida.
 
-`src/components/patents/PatentChecklist.tsx`:
-- Crear un helper `getEffectiveFiles(item)` que:
-  - Tome los `urls`/`names` actuales (los que ya parsea de `document_url`/`document_names`).
-  - Si `item.name.toLowerCase() === 'contrato arriendo'`, **fusione** además todos los `signed_documents` del contrato (deduplicando por URL para no duplicar si ya están guardados).
-  - Genere nombres legibles (último segmento del path, decodeURIComponent, sin prefijo `^\d{10,}_`) para los firmados.
-- Reemplazar las dos lecturas inline (`urls`/`names` en el bloque `getDocValue(item.id, 'document_url')`) por este helper, y mostrar el `PatentFileListPopover` aun cuando `document_url` esté vacío pero existan firmados.
-- En `onRemoveFile`: bloquear (toast) la eliminación si el archivo proviene de los firmados (esos solo se eliminan desde el módulo de contratos).
+Esto da **trazabilidad y un punto de control en la UI**, aunque el trabajo real lo ejecuto yo.
 
-### 3. Respaldar los firmados en las carpetas configuradas para la línea
+---
 
-Sigue siendo independiente del bucket: solo se replica el **link** a las carpetas configuradas (no se re-sube el binario, porque los firmados ya viven en Drive vía DocumentVersions).
+## Cambios concretos
 
-- En `PatentChecklist.tsx`, agregar un `useEffect` que se dispare cuando cambien `contract.signed_documents` o `itemFolders`:
-  - Localizar el item "Contrato arriendo" (por nombre).
-  - Leer destinos vía `getConfiguredDestinations('patent_folder')` **y** los específicos de la línea (`patent_item_<id>`) parseados con `parseDestinations`.
-  - Para cada firmado no presente aún (chequeo en `repository_files`/`general_folder_files` por `url` o por `drive_file_id` extraído de URLs `drive.google.com/file/d/<id>`), insertar un registro apuntando al mismo `url`/`drive_file_id` en cada carpeta resuelta (misma lógica de `resolveFolder` usada en `patentBackup.ts`).
-  - Hacer la operación idempotente y silenciosa (sin toasts en éxito), con `console.warn` ante errores.
+### Base de datos (migración)
 
-> No se sube el archivo otra vez ni se usa `repository-files`; solo se inserta la fila en `repository_files` / `general_folder_files` con la URL de Drive existente, manteniendo el almacenamiento exclusivo en Google Drive.
+```sql
+create table public.geoloc_sync_requests (
+  id uuid primary key default gen_random_uuid(),
+  requested_by uuid references auth.users(id),
+  requested_at timestamptz not null default now(),
+  status text not null default 'pending', -- pending | running | completed | failed
+  notes text
+);
 
-### 4. Persistencia opcional
+create table public.geoloc_sync_log (
+  id uuid primary key default gen_random_uuid(),
+  request_id uuid references public.geoloc_sync_requests(id),
+  executed_at timestamptz not null default now(),
+  files_updated int default 0,
+  files_skipped_protected int default 0,
+  conflicts jsonb default '[]'::jsonb,
+  summary text
+);
+```
 
-No se modifica `document_url` del `patent_document` para "Contrato arriendo" (los firmados son la fuente de verdad). Si en el futuro se requiere, se puede añadir un guardado one-shot, pero no es necesario para que la línea muestre los archivos.
+- RLS: solo admins (`has_role(auth.uid(), 'admin')`) pueden insertar/leer.
 
-## Archivos a modificar
+### Frontend
 
-- `src/components/patents/types.ts` — añadir `signed_documents` al tipo.
-- `src/hooks/usePatents.ts` — cargar `contract_documents` firmados en paralelo.
-- `src/components/patents/PatentChecklist.tsx` — render fusionado + efecto de respaldo a carpetas.
-- (Reuso) `src/lib/patentBackup.ts` — extraer/exportar el helper `resolveFolder` para usarlo desde el efecto de respaldo (o duplicar la lógica mínima ahí).
+- **`src/geoloc/components/layout/Header.tsx`**: agregar botón `RefreshCw` "Sincronizar GeoLoc" visible solo si `has_role admin`.
+- **Nuevo `src/geoloc/components/panels/GeoLocSyncDialog.tsx`**: muestra última sincronización y botón "Solicitar sincronización".
+- **Nuevo hook `src/geoloc/hooks/useGeoLocSync.ts`**: lee `geoloc_sync_log` (último registro) y permite insertar en `geoloc_sync_requests`.
 
-## Validación esperada
+### Memoria
 
-- Al abrir un contrato firmado en Patentes, la fila "Contrato arriendo" muestra el/los documento(s) firmados aunque nunca se hayan subido archivos en Patentes.
-- Los archivos aparecen automáticamente como entradas en las carpetas configuradas para la línea (visibles en el repositorio del contrato y/o carpetas generales correspondientes), sin duplicados al recargar.
-- Subir manualmente un archivo adicional en la línea sigue funcionando y se suma a los firmados sin sobrescribirlos.
+- Crear `mem://features/geoloc/sync-policy` con:
+  - Nombre del proyecto upstream (te preguntaré cuál es al implementar).
+  - Lista de archivos "adaptados" a no sobreescribir (vacía por ahora; se llenará cuando se hagan adaptaciones de Drive).
+  - Procedimiento: revisar `geoloc_sync_requests` con `status='pending'`, ejecutar diff, escribir resultado en `geoloc_sync_log`, marcar request como `completed`.
+
+---
+
+## Flujo de uso para ti
+
+1. Click en "Sincronizar GeoLoc" en el módulo → "Solicitar sincronización".
+2. Me escribes: *"ejecuta la sincronización de GeoLoc pendiente"*.
+3. Yo proceso la solicitud y te resumo qué cambió.
+4. Vuelves a abrir el diálogo y ves el log.
+
+## Lo que NO se hace en este plan
+
+- No se adapta storage a Drive (eso sigue como plan separado).
+- No se sincronizan POIs.
+- No hay sincronización 100% automática sin intervención del agente (limitación de Lovable).
+
+¿Apruebas?

@@ -2397,6 +2397,68 @@ export type Database = {
         }
         Relationships: []
       }
+      geoloc_sync_log: {
+        Row: {
+          conflicts: Json
+          executed_at: string
+          files_skipped_protected: number
+          files_updated: number
+          id: string
+          request_id: string | null
+          summary: string | null
+        }
+        Insert: {
+          conflicts?: Json
+          executed_at?: string
+          files_skipped_protected?: number
+          files_updated?: number
+          id?: string
+          request_id?: string | null
+          summary?: string | null
+        }
+        Update: {
+          conflicts?: Json
+          executed_at?: string
+          files_skipped_protected?: number
+          files_updated?: number
+          id?: string
+          request_id?: string | null
+          summary?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "geoloc_sync_log_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "geoloc_sync_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      geoloc_sync_requests: {
+        Row: {
+          id: string
+          notes: string | null
+          requested_at: string
+          requested_by: string | null
+          status: string
+        }
+        Insert: {
+          id?: string
+          notes?: string | null
+          requested_at?: string
+          requested_by?: string | null
+          status?: string
+        }
+        Update: {
+          id?: string
+          notes?: string | null
+          requested_at?: string
+          requested_by?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
       geoloc_sync_state: {
         Row: {
           folders_synced_total: number
