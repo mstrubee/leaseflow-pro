@@ -12,7 +12,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download, CheckSquare, Square, X, ChevronDown, FolderOpen, FolderCog, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, CalendarIcon, Save, Bell, Upload, FileText, Download, CheckSquare, Square, X, ChevronDown, FolderOpen, FolderCog, Eye, EyeOff, ExternalLink } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { DialogFooter } from "@/components/ui/dialog";
 import { FolderDestinationPicker, parseDestinations } from "@/components/budget/FolderDestinationPicker";
 
@@ -99,6 +100,7 @@ export function PatentChecklist({
   onUpdateDocumentStatus,
 }: PatentChecklistProps) {
   const { user, isAdmin } = useAuth();
+  const navigate = useNavigate();
   
   // File destination settings - hierarchical: section-level and item-level
   const [fileDestContext, setFileDestContext] = useState<{ type: 'section' | 'item'; id: string; label: string; sectionId?: string } | null>(null);
@@ -754,6 +756,10 @@ export function PatentChecklist({
 
         {/* Actions */}
         <div className="flex items-center gap-3">
+          <Button variant="outline" className="gap-2" onClick={() => navigate(`/contracts/${contract.id}`)}>
+            <ExternalLink className="h-4 w-4" />
+            Ir al contrato
+          </Button>
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" className="gap-2">
