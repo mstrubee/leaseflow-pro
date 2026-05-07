@@ -163,6 +163,19 @@ export function MultiFileUploadDialog({
     }
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    addFilesToQueue(e.target.files);
+  };
+
+  // Accept files dropped from outside the dialog (passed via props)
+  useEffect(() => {
+    if (open && initialFiles && initialFiles.length > 0) {
+      addFilesToQueue(initialFiles);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialFiles]);
+
+
   const handleRemoveFolder = (folderName: string) => {
     setFiles(prev => prev.filter(f => f.rootFolder !== folderName));
     setAddedFolders(prev => prev.filter(f => f.name !== folderName));
