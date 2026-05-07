@@ -1530,8 +1530,8 @@ export function GanttChart({
                   key={`wk-sep-${sepIdx}`}
                   className="absolute top-0 pointer-events-none z-[6]"
                   style={{
-                    left: HEADER_OFFSET + sepIdx * DAY_WIDTH - 1,
-                    width: 2,
+                    left: HEADER_OFFSET + sepIdx * DAY_WIDTH - 2,
+                    width: 4,
                     height: totalHeight,
                     background: "hsl(var(--foreground))",
                   }}
