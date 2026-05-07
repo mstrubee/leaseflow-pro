@@ -1740,9 +1740,8 @@ serve(async (req) => {
           });
         }
 
-        const directBinary = new Uint8Array(await directDlData.arrayBuffer());
         const directDriveFile = await uploadFileToDrive(
-          accessToken, directFileName, directBinary,
+          accessToken, directFileName, directDlData,
           directMimeType || 'application/octet-stream', directDriveFolderId,
         );
 
@@ -1926,9 +1925,8 @@ serve(async (req) => {
           });
         }
 
-        const repoBinaryContent = new Uint8Array(await repoDlData.arrayBuffer());
         const repoDriveFile = await uploadFileToDrive(
-          accessToken, repoFileName, repoBinaryContent,
+          accessToken, repoFileName, repoDlData,
           repoMimeType || 'application/octet-stream', targetRepoFolderId,
         );
 
@@ -2096,9 +2094,8 @@ serve(async (req) => {
           fileData = dlData;
         }
 
-        const binaryContentPatent = new Uint8Array(await fileData.arrayBuffer());
         const driveFilePatent = await uploadFileToDrive(
-          accessToken, fileName, binaryContentPatent,
+          accessToken, fileName, fileData,
           mimeType || 'application/octet-stream', targetDriveFolderId,
         );
 
