@@ -1,8 +1,10 @@
-import { Clock, Hexagon, FileUp, LogIn, LogOut, User as UserIcon } from "lucide-react";
+import { useState } from "react";
+import { Clock, Hexagon, FileUp, LogIn, LogOut, RefreshCw, User as UserIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { GeoLocSyncDialog } from "@/geoloc/components/panels/GeoLocSyncDialog";
 
 interface HeaderProps {
   mode: "none" | "isochrone" | "microzone";
