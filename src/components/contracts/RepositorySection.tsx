@@ -130,6 +130,8 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
   const [newFolderName, setNewFolderName] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [multiUploadDialogOpen, setMultiUploadDialogOpen] = useState(false);
+  const [pendingDroppedFiles, setPendingDroppedFiles] = useState<File[] | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [moveFilesDialogOpen, setMoveFilesDialogOpen] = useState(false);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [driveWarning, setDriveWarning] = useState<string | null>(null);
@@ -1081,12 +1083,16 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
         {currentFolder && (
           <MultiFileUploadDialog
             open={multiUploadDialogOpen}
-            onOpenChange={setMultiUploadDialogOpen}
+            onOpenChange={(o) => {
+              setMultiUploadDialogOpen(o);
+              if (!o) setPendingDroppedFiles(null);
+            }}
             contractId={contractId}
             folderId={currentFolder.id}
             driveFolderId={currentFolder.drive_folder_id}
             folderStatuses={getAvailableStatuses()}
             onUploadComplete={handleUploadComplete}
+            initialFiles={pendingDroppedFiles}
           />
         )}
 
@@ -1528,10 +1534,27 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
 
         {/* Empty states */}
         {currentFolder && folders.length === 0 && files.length === 0 && driveFiles.length === 0 && (
-          <div className="text-center py-8 text-muted-foreground">
+          <div
+            className={cn(
+              "text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg transition-colors cursor-pointer",
+              isDragOver ? "border-primary bg-primary/5 text-primary" : "border-muted-foreground/25 hover:border-primary/50"
+            )}
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(true); }}
+            onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false); }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDragOver(false);
+              const dropped = Array.from(e.dataTransfer.files || []);
+              if (dropped.length === 0) return;
+              setPendingDroppedFiles(dropped);
+              setMultiUploadDialogOpen(true);
+            }}
+            onClick={() => setMultiUploadDialogOpen(true)}
+          >
             <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
-            <p>Esta carpeta está vacía</p>
-            <p className="text-sm">Sube archivos o crea subcarpetas</p>
+            <p>{isDragOver ? "Suelta los archivos aquí" : "Esta carpeta está vacía"}</p>
+            <p className="text-sm">Arrastra archivos aquí, haz clic para subir o crea subcarpetas</p>
           </div>
         )}
 

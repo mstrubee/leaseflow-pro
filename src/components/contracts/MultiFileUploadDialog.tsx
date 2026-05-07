@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +53,7 @@ interface MultiFileUploadDialogProps {
   driveFolderId: string | null;
   folderStatuses: FolderStatus[];
   onUploadComplete: () => void;
+  initialFiles?: File[] | null;
 }
 
 export function MultiFileUploadDialog({
@@ -63,6 +64,7 @@ export function MultiFileUploadDialog({
   driveFolderId,
   folderStatuses,
   onUploadComplete,
+  initialFiles,
 }: MultiFileUploadDialogProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -75,8 +77,7 @@ export function MultiFileUploadDialog({
   const [overallProgress, setOverallProgress] = useState(0);
   const [createdFolders, setCreatedFolders] = useState<Map<string, string>>(new Map());
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = e.target.files;
+  const addFilesToQueue = (selectedFiles: ArrayLike<File> | null | undefined) => {
     if (!selectedFiles || selectedFiles.length === 0) return;
 
     const newFiles: FileUploadItem[] = [];
@@ -161,6 +162,19 @@ export function MultiFileUploadDialog({
       folderInputRef.current.value = "";
     }
   };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    addFilesToQueue(e.target.files);
+  };
+
+  // Accept files dropped from outside the dialog (passed via props)
+  useEffect(() => {
+    if (open && initialFiles && initialFiles.length > 0) {
+      addFilesToQueue(initialFiles);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialFiles]);
+
 
   const handleRemoveFolder = (folderName: string) => {
     setFiles(prev => prev.filter(f => f.rootFolder !== folderName));
