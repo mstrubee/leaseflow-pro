@@ -1532,6 +1532,34 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
           </div>
         )}
 
+        {/* Always-visible drop zone (below files) */}
+        <div
+          className={cn(
+            "border-2 border-dashed rounded-lg py-6 px-4 text-center transition-colors cursor-pointer",
+            isDragOver
+              ? "border-primary bg-primary/10 text-primary"
+              : "border-muted-foreground/30 text-muted-foreground hover:border-primary/50 hover:bg-muted/30"
+          )}
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(true); }}
+          onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragOver(false); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsDragOver(false);
+            const dropped = Array.from(e.dataTransfer.files || []);
+            if (dropped.length === 0) return;
+            setPendingDroppedFiles(dropped);
+            setMultiUploadDialogOpen(true);
+          }}
+          onClick={() => setMultiUploadDialogOpen(true)}
+        >
+          <Upload className="h-8 w-8 mx-auto mb-2 opacity-60" />
+          <p className="text-sm font-medium">
+            {isDragOver ? "Suelta los archivos aquí" : "Arrastra archivos aquí o haz clic para subir"}
+          </p>
+          <p className="text-xs opacity-75">​</p>
+        </div>
+
         {/* Empty states */}
         {currentFolder && folders.length === 0 && files.length === 0 && driveFiles.length === 0 && (
           <div
