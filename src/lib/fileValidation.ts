@@ -43,13 +43,8 @@ export interface FileValidationResult {
  * Checks size, extension, and MIME type
  */
 export function validateFile(file: File): FileValidationResult {
-  // Check file size
-  if (file.size > MAX_FILE_SIZE) {
-    return {
-      isValid: false,
-      error: `El archivo es demasiado grande. Máximo permitido: ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
-    };
-  }
+  // Size limit removed — uploads are not blocked by size.
+  void MAX_FILE_SIZE;
 
   // Get file extension
   const fileName = file.name.toLowerCase();
