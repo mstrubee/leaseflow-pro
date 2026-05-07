@@ -77,8 +77,7 @@ export async function uploadFileToDriveDirect(
 
     if (storageError) {
       console.error("Error uploading to temporary storage:", storageError);
-      // Fallback to base64 for small files
-      return uploadFileToDriveDirectBase64(file, fileName, driveFolderId);
+      return null;
     }
 
     // Step 2: call edge function with storage reference
@@ -95,44 +94,6 @@ export async function uploadFileToDriveDirect(
     if (error || !data) {
       console.error("Error uploading to Google Drive (direct):", error);
       await supabase.storage.from('repository-files').remove([uploadPath]).catch(() => {});
-      // Fallback to base64
-      return uploadFileToDriveDirectBase64(file, fileName, driveFolderId);
-    }
-
-    return {
-      driveFileId: data.id,
-      driveUrl: data.webViewLink || data.webContentLink || `https://drive.google.com/file/d/${data.id}/view`,
-    };
-  } catch (err) {
-    console.error("Error uploading to Google Drive (direct):", err);
-    return null;
-  }
-}
-
-/**
- * Fallback: upload via base64 for backward compat (small files only).
- */
-async function uploadFileToDriveDirectBase64(
-  file: File,
-  fileName: string,
-  driveFolderId: string,
-): Promise<{ driveFileId: string; driveUrl: string } | null> {
-  try {
-    const arrayBuffer = await file.arrayBuffer();
-    const base64Content = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-
-    const { data, error } = await supabase.functions.invoke('google-drive', {
-      body: {
-        action: 'uploadFile',
-        fileName,
-        fileContent: base64Content,
-        mimeType: file.type || 'application/octet-stream',
-        driveFolderId,
-      }
-    });
-
-    if (error || !data) {
-      console.error("Error uploading to Google Drive (base64 fallback):", error);
       return null;
     }
 
@@ -141,7 +102,7 @@ async function uploadFileToDriveDirectBase64(
       driveUrl: data.webViewLink || data.webContentLink || `https://drive.google.com/file/d/${data.id}/view`,
     };
   } catch (err) {
-    console.error("Error uploading to Google Drive (base64 fallback):", err);
+    console.error("Error uploading to Google Drive (direct):", err);
     return null;
   }
 }
