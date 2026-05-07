@@ -1,44 +1,59 @@
+
 ## Objetivo
 
-Agregar un checkbox en la cabecera de la Gantt que convierta, con un solo clic, todos los plazos de la columna "días" a **días hábiles** (excluyendo fines de semana y feriados). El checkbox debe ser reversible: desmarcarlo vuelve todo a **días corridos**. El cambio recalcula automáticamente las fechas de término de cada tarea y propaga a sus dependencias.
+En la fila **"Contrato arriendo"** del checklist de Patentes, mostrar siempre los documentos del contrato marcados como **"firmado"** (originales y renegociados) y guardarlos automáticamente en las carpetas configuradas para esa línea.
+
+## Contexto encontrado
+
+- `contract_documents` ya almacena los documentos del contrato con `document_type = 'firmado' | 'firmado_r'` (los que aparecen en el módulo Renta → Versiones marcados como "Original / R#1…").
+- En `PatentChecklist.tsx` la columna "Archivo" se renderiza con `PatentFileListPopover`, alimentado por `document_url` / `document_names` del `patent_document` (separados por `|||`).
+- Las carpetas destino por línea ya existen como `file_destination_settings` con clave `patent_item_<itemId>` (ya leídas en `itemFolders`). El helper `backupPatentFileToDestinations` (en `src/lib/patentBackup.ts`) sabe replicar un archivo a esas carpetas (repo del contrato y/o general_folders), pero hoy se usa solo para uploads desde el módulo Patentes.
+- El item "Contrato arriendo" tiene id fijo `3ec81aa8-1213-41fc-a960-701c9408b242`, pero lo identificaremos por **nombre** (`name === 'Contrato arriendo'`, case-insensitive) para tolerar duplicados/espejos.
 
 ## Cambios
 
-### 1. `src/components/gantt/GanttChart.tsx`
+### 1. Cargar los documentos firmados del contrato
 
-- **Nuevo control en la cabecera "Cronograma"** (línea ~1260, junto a los botones "Contraer" / "Ocultar completadas" / "PDF"):
-  - Un `Checkbox` (shadcn) etiquetado **"Días hábiles"** con tooltip:
-    *"Convierte todos los plazos de la columna Días a días hábiles (excluye fines de semana y feriados). Desmarcar para volver a días corridos."*
-  - Estado **derivado** de las tareas: `checked = tasks.length > 0 && tasks.every(t => t.duration_type === "business")`.
-  - Estado intermedio "indeterminate" cuando hay mezcla (algunas en hábiles, otras en corridos).
+`src/hooks/usePatents.ts` (`loadData`):
+- Agregar un fetch paralelo a `contract_documents` filtrado por `contract_id IN (...)` y `document_type IN ('firmado','firmado_r')`, ordenado por `uploaded_at`.
+- Adjuntar el array resultante a cada contrato como `signed_documents: { id, url, uploaded_at }[]`.
+- Extender el tipo `ContractWithPatent` en `src/components/patents/types.ts` con `signed_documents?`.
 
-- **Handler `handleToggleAllBusinessDays(checked: boolean)`**:
-  1. Pide confirmación con `AlertDialog` ya existente:
-     *"¿Convertir todos los plazos a días hábiles? Esto recalculará las fechas de término de todas las tareas."* (texto adaptado para el caso inverso).
-  2. Para cada tarea con `start_date` y `duration_days > 0`:
-     - Calcula nuevo `end_date` con `calculateEndDate(start, duration, newType, holidays)` desde `ganttDateUtils`.
-     - Llama `onUpdateTask(task.id, { duration_type, end_date }, { skipPropagation: true })`.
-  3. Tras procesar todas, dispara una recarga (`loadTimeline`) o re-propaga dependencias raíz para reajustar cadenas.
-  4. Procesa en lotes (`Promise.all` por niveles) para no saturar Supabase y mostrar `toast` de progreso/éxito.
+### 2. Mostrar siempre los firmados en la fila "Contrato arriendo"
 
-- **Importar** `Checkbox` de `@/components/ui/checkbox` y `holidays` ya disponible vía props (verificar — si no, propagarlo desde `GanttModule`).
+`src/components/patents/PatentChecklist.tsx`:
+- Crear un helper `getEffectiveFiles(item)` que:
+  - Tome los `urls`/`names` actuales (los que ya parsea de `document_url`/`document_names`).
+  - Si `item.name.toLowerCase() === 'contrato arriendo'`, **fusione** además todos los `signed_documents` del contrato (deduplicando por URL para no duplicar si ya están guardados).
+  - Genere nombres legibles (último segmento del path, decodeURIComponent, sin prefijo `^\d{10,}_`) para los firmados.
+- Reemplazar las dos lecturas inline (`urls`/`names` en el bloque `getDocValue(item.id, 'document_url')`) por este helper, y mostrar el `PatentFileListPopover` aun cuando `document_url` esté vacío pero existan firmados.
+- En `onRemoveFile`: bloquear (toast) la eliminación si el archivo proviene de los firmados (esos solo se eliminan desde el módulo de contratos).
 
-### 2. `src/hooks/useGantt.ts` (opcional, si conviene centralizar)
+### 3. Respaldar los firmados en las carpetas configuradas para la línea
 
-Exportar un helper `bulkSetDurationType(type: "calendar" | "business")` que:
-- Recorre `tasks`, recalcula `end_date` localmente y hace un solo `UPDATE` masivo (o por chunks) a `gantt_tasks`.
-- Recarga el timeline una sola vez al final.
-- Ventaja: una sola llamada, sin disparar la propagación tarea por tarea.
+Sigue siendo independiente del bucket: solo se replica el **link** a las carpetas configuradas (no se re-sube el binario, porque los firmados ya viven en Drive vía DocumentVersions).
 
-Se preferirá esta vía para rendimiento; el checkbox del chart llamará a este helper.
+- En `PatentChecklist.tsx`, agregar un `useEffect` que se dispare cuando cambien `contract.signed_documents` o `itemFolders`:
+  - Localizar el item "Contrato arriendo" (por nombre).
+  - Leer destinos vía `getConfiguredDestinations('patent_folder')` **y** los específicos de la línea (`patent_item_<id>`) parseados con `parseDestinations`.
+  - Para cada firmado no presente aún (chequeo en `repository_files`/`general_folder_files` por `url` o por `drive_file_id` extraído de URLs `drive.google.com/file/d/<id>`), insertar un registro apuntando al mismo `url`/`drive_file_id` en cada carpeta resuelta (misma lógica de `resolveFolder` usada en `patentBackup.ts`).
+  - Hacer la operación idempotente y silenciosa (sin toasts en éxito), con `console.warn` ante errores.
 
-### 3. Persistencia / reversibilidad
+> No se sube el archivo otra vez ni se usa `repository-files`; solo se inserta la fila en `repository_files` / `general_folder_files` con la URL de Drive existente, manteniendo el almacenamiento exclusivo en Google Drive.
 
-- El estado se guarda en la propia columna `duration_type` de cada tarea en la BD, por lo que el toggle es persistente y reversible entre sesiones simplemente volviendo a marcar/desmarcar.
-- No se requieren migraciones (la columna ya existe y soporta `"calendar" | "business"`).
+### 4. Persistencia opcional
 
-## Notas técnicas
+No se modifica `document_url` del `patent_document` para "Contrato arriendo" (los firmados son la fuente de verdad). Si en el futuro se requiere, se puede añadir un guardado one-shot, pero no es necesario para que la línea muestre los archivos.
 
-- Las tareas **padre** (con hijos) suelen derivar fechas de los hijos: para ellas no se recalcula `end_date` directamente, sólo se actualiza `duration_type` (la agregación sigue siendo correcta).
-- Tras el bulk update, llamar `loadTimeline()` una vez asegura que se recalculen barras, dependencias y resúmenes.
-- El indicador visual existente (`háb` vs `días` en línea 1845) reflejará el cambio automáticamente.
+## Archivos a modificar
+
+- `src/components/patents/types.ts` — añadir `signed_documents` al tipo.
+- `src/hooks/usePatents.ts` — cargar `contract_documents` firmados en paralelo.
+- `src/components/patents/PatentChecklist.tsx` — render fusionado + efecto de respaldo a carpetas.
+- (Reuso) `src/lib/patentBackup.ts` — extraer/exportar el helper `resolveFolder` para usarlo desde el efecto de respaldo (o duplicar la lógica mínima ahí).
+
+## Validación esperada
+
+- Al abrir un contrato firmado en Patentes, la fila "Contrato arriendo" muestra el/los documento(s) firmados aunque nunca se hayan subido archivos en Patentes.
+- Los archivos aparecen automáticamente como entradas en las carpetas configuradas para la línea (visibles en el repositorio del contrato y/o carpetas generales correspondientes), sin duplicados al recargar.
+- Subir manualmente un archivo adicional en la línea sigue funcionando y se suma a los firmados sin sobrescribirlos.

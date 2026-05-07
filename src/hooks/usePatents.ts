@@ -75,6 +75,7 @@ export function usePatents() {
         itemEmittersResult,
         statusesResult,
         sharedItemsResult,
+        signedDocsResult,
         customFieldMaps
       ] = await Promise.all([
         supabase
@@ -120,14 +121,27 @@ export function usePatents() {
         supabase
           .from("patent_shared_items")
           .select("id, checklist_item_id, shared_folder_id"),
+        supabase
+          .from("contract_documents")
+          .select("id, contract_id, url, uploaded_at, document_type")
+          .in("document_type", ["firmado", "firmado_r"])
+          .order("uploaded_at", { ascending: true }),
         getCustomFieldMaps()
       ]);
+
+      // Group signed docs by contract
+      const signedByContract = new Map<string, any[]>();
+      ((signedDocsResult.data as any[]) || []).forEach(d => {
+        if (!signedByContract.has(d.contract_id)) signedByContract.set(d.contract_id, []);
+        signedByContract.get(d.contract_id)!.push(d);
+      });
 
       // Add CEBE and Codigo to contracts
       const contractsWithCebe = ((contractsResult.data as any[]) || []).map(c => ({
         ...c,
-        cebe: customFieldMaps.cebeMap.get(c.id) || null,
-        codigo: customFieldMaps.codigoMap.get(c.id) || null
+        cebe: customFieldMaps!.cebeMap.get(c.id) || null,
+        codigo: customFieldMaps!.codigoMap.get(c.id) || null,
+        signed_documents: signedByContract.get(c.id) || []
       }));
 
       setContracts(contractsWithCebe);

@@ -107,6 +107,7 @@ export interface ContractWithPatent {
   contract_addresses?: Array<{ region: string; commune: string; street?: string; number?: string }>;
   contract_companies?: Array<{ companies: { name: string } | null }>;
   patent_documents?: PatentDocument[];
+  signed_documents?: { id: string; url: string; uploaded_at: string; document_type: string }[];
   cebe?: string | null;
   codigo?: string | null;
 }
