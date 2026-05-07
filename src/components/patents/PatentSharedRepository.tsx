@@ -248,12 +248,11 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
     setDeleteTarget(null);
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!currentFolder || !e.target.files?.length) return;
+  const uploadFiles = async (fileList: FileList | File[]) => {
+    if (!currentFolder || !fileList || (fileList as FileList).length === 0) return;
     setUploading(true);
-
     try {
-      for (const file of Array.from(e.target.files)) {
+      for (const file of Array.from(fileList)) {
         const validation = validateFile(file);
         if (!validation.isValid) {
           toast.error(`${file.name}: ${validation.error}`);
@@ -288,8 +287,38 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
       toast.error("Error al subir archivos");
     } finally {
       setUploading(false);
-      e.target.value = "";
     }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.length) return;
+    await uploadFiles(e.target.files);
+    e.target.value = "";
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (!currentFolder) {
+      toast.error("Entra a una carpeta para subir archivos");
+      return;
+    }
+    if (e.dataTransfer.files?.length) {
+      await uploadFiles(e.dataTransfer.files);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (currentFolder && !isDragging) setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget === e.target) setIsDragging(false);
   };
 
   const handleOpenFile = async (url: string) => {
