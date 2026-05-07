@@ -3,7 +3,8 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
+import { prefetchAllRoutesWhenIdle } from "@/lib/routePrefetch";
 import { PermissionSelectionProvider } from "@/contexts/PermissionSelectionContext";
 import { FloatingPermissionSelector } from "@/components/admin/FloatingPermissionSelector";
 import { TodayAlertsFloating } from "@/components/alerts/TodayAlertsFloating";
@@ -40,6 +41,7 @@ const queryClient = new QueryClient();
 
 function ConditionalFloatingAlerts() {
   const location = useLocation();
+  useEffect(() => { prefetchAllRoutesWhenIdle(); }, []);
   if (location.pathname === "/" || location.pathname === "/auth") return null;
   return <TodayAlertsFloating />;
 }

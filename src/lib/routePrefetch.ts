@@ -53,3 +53,26 @@ export function prefetchOn(name: PrefetchableRoute) {
     onTouchStart: handler,
   };
 }
+
+/**
+ * Prefetch every known route lazily during browser idle time.
+ * Call once after the app has mounted. Subsequent calls are no-ops.
+ */
+let idlePrefetchScheduled = false;
+export function prefetchAllRoutesWhenIdle() {
+  if (idlePrefetchScheduled) return;
+  idlePrefetchScheduled = true;
+  const run = () => {
+    const names = Object.keys(loaders) as PrefetchableRoute[];
+    // Stagger to avoid bandwidth spike
+    names.forEach((name, i) => {
+      setTimeout(() => prefetchRoute(name), i * 80);
+    });
+  };
+  const w = window as any;
+  if (typeof w.requestIdleCallback === "function") {
+    w.requestIdleCallback(run, { timeout: 3000 });
+  } else {
+    setTimeout(run, 1500);
+  }
+}
