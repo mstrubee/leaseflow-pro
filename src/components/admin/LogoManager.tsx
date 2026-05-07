@@ -231,8 +231,7 @@ export function LogoManager() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Formatos soportados: PNG, JPG, SVG. Tamaño máximo: 2MB. 
-        Los logos se aplicarán automáticamente en toda la aplicación.
+        Formatos soportados: PNG, JPG, SVG. Los logos se aplicarán automáticamente en toda la aplicación.
       </p>
     </div>
   );
