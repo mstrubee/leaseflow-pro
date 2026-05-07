@@ -208,6 +208,7 @@ const MAIN_RESOURCES = [
   { id: "kpi", label: "KPI", category: "principal" },
   { id: "patents", label: "Patentes", category: "principal" },
   { id: "special_attention", label: "Atención Especial", category: "principal" },
+  { id: "geoloc", label: "GEOLOC", category: "principal" },
 ];
 
 // Secciones del Dashboard
