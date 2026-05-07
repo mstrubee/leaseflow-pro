@@ -567,10 +567,11 @@ export function PatentChecklist({
 
       // For text fields, don't auto-save — wait for Enter/blur
       if (!isTextField) {
+        const delay = field === 'deadline_days' ? 3000 : 400;
         saveTimeoutsRef.current[mirrorId] = setTimeout(() => {
           autoSaveDocument(mirrorId, updates);
           delete saveTimeoutsRef.current[mirrorId];
-        }, 400);
+        }, delay);
       }
     });
   };
@@ -1188,6 +1189,8 @@ export function PatentChecklist({
                                   const days = parseInt(e.target.value) || 0;
                                   handleDeadlineDaysChange(item.id, days);
                                 }}
+                                onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur(); } }}
+                                onBlur={() => commitTextField(item.id)}
                                 placeholder="Días"
                                 disabled={disableOtherFields}
                               />
