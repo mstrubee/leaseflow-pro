@@ -839,6 +839,14 @@ const ContractDetail = () => {
                 contractId={contract.id}
               />
               {isAdmin && (isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} requiresSpecialAttention={contract.requires_special_attention} specialAttentionReason={contract.special_attention_reason} hasTerminationNotices={(contract.termination_notices?.length || 0) > 0} onStatusChange={() => { loadContract(); setClosingNotesRefresh(p => p + 1); }} />}
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => navigate(`/patents?contractId=${contract.id}`)}
+              >
+                <FileCheck className="h-4 w-4" />
+                Patente
+              </Button>
               {isAdmin && (
                 <Button variant="outline" onClick={() => navigate(`/contracts/${contract.id}/edit`)} className="gap-2">
                   <Edit className="h-4 w-4" />
