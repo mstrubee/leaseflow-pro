@@ -41,6 +41,7 @@ const queryClient = new QueryClient();
 
 function ConditionalFloatingAlerts() {
   const location = useLocation();
+  useEffect(() => { prefetchAllRoutesWhenIdle(); }, []);
   if (location.pathname === "/" || location.pathname === "/auth") return null;
   return <TodayAlertsFloating />;
 }
