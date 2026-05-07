@@ -1067,7 +1067,36 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent
+        className={cn(
+          "space-y-4 relative transition-colors rounded-md",
+          isDragOver && currentFolder && "ring-2 ring-primary ring-offset-2 bg-primary/5"
+        )}
+        onDragOver={(e) => {
+          if (!currentFolder) return;
+          if (!Array.from(e.dataTransfer.types || []).includes("Files")) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          if (!currentFolder) return;
+          e.preventDefault();
+          e.stopPropagation();
+          // Only clear when leaving the container itself
+          if (e.currentTarget === e.target) setIsDragOver(false);
+        }}
+        onDrop={(e) => {
+          if (!currentFolder) return;
+          const dropped = Array.from(e.dataTransfer.files || []);
+          if (dropped.length === 0) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDragOver(false);
+          setPendingDroppedFiles(dropped);
+          setMultiUploadDialogOpen(true);
+        }}
+      >
         {/* Drive Warning */}
         {driveWarning && (
           <Alert variant="destructive">
