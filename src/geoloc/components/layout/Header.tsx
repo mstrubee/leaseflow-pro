@@ -13,7 +13,8 @@ interface HeaderProps {
 }
 
 export const Header = ({ mode, onToggleIsochrone, onToggleMicrozone }: HeaderProps) => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
+  const [syncOpen, setSyncOpen] = useState(false);
 
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
@@ -22,6 +23,7 @@ export const Header = ({ mode, onToggleIsochrone, onToggleMicrozone }: HeaderPro
   };
 
   return (
+    <>
     <header className="z-[1000] flex h-12 flex-shrink-0 items-center gap-2.5 border-b border-border/60 bg-surface/80 px-4 backdrop-blur-2xl backdrop-saturate-150">
       <h1 className="whitespace-nowrap font-display text-[16px] font-semibold tracking-tight text-foreground">
         Geo<span className="text-destructive">Planet</span>
