@@ -561,6 +561,12 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
                     </div>
                   </div>
                 ))}
+
+                {currentFolder && (
+                  <div className="text-center text-xs text-muted-foreground italic pt-3 pb-1">
+                    Arrastra y suelta archivos aquí para subirlos a esta carpeta
+                  </div>
+                )}
               </>
             )}
           </div>
