@@ -33,14 +33,8 @@ export function validateExcelFile(file: File): ExcelValidationResult {
     return { valid: false, error: 'No se proporcionó ningún archivo' };
   }
 
-  // Check file size
-  if (file.size > MAX_FILE_SIZE_BYTES) {
-    const maxSizeMB = MAX_FILE_SIZE_BYTES / (1024 * 1024);
-    return { 
-      valid: false, 
-      error: `El archivo es demasiado grande. El tamaño máximo permitido es ${maxSizeMB}MB` 
-    };
-  }
+  // File size limit removed — no upper bound enforced
+  void MAX_FILE_SIZE_BYTES;
 
   // Check file size is not zero (empty file)
   if (file.size === 0) {
