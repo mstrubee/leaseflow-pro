@@ -563,8 +563,9 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
                 ))}
 
                 {currentFolder && (
-                  <div className="text-center text-xs text-muted-foreground italic pt-3 pb-1">
-                    Arrastra y suelta archivos aquí para subirlos a esta carpeta
+                  <div className="flex flex-col items-center justify-center gap-2 text-xs text-muted-foreground italic pt-4 pb-2 border-2 border-dashed border-muted rounded-md mt-2">
+                    <Upload className="h-6 w-6 opacity-60" />
+                    <span>Arrastra y suelta archivos aquí para subirlos a esta carpeta</span>
                   </div>
                 )}
               </>
