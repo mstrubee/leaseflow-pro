@@ -839,6 +839,14 @@ const ContractDetail = () => {
                 contractId={contract.id}
               />
               {isAdmin && (isSigned || contract.status === "vencido") && <ContractStatusActions contractId={contract.id} contractName={contract.name} currentStatus={contract.status} isExpiredButOperating={false} requiresSpecialAttention={contract.requires_special_attention} specialAttentionReason={contract.special_attention_reason} hasTerminationNotices={(contract.termination_notices?.length || 0) > 0} onStatusChange={() => { loadContract(); setClosingNotesRefresh(p => p + 1); }} />}
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => navigate(`/patents?contractId=${contract.id}`)}
+              >
+                <FileCheck className="h-4 w-4" />
+                Patente
+              </Button>
               {isAdmin && (
                 <Button variant="outline" onClick={() => navigate(`/contracts/${contract.id}/edit`)} className="gap-2">
                   <Edit className="h-4 w-4" />
@@ -896,23 +904,19 @@ const ContractDetail = () => {
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="outline" size="sm" onClick={collapseAll}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const allCollapsed = sections.every((s) => s.collapsed);
+                        if (allCollapsed) expandAll(); else collapseAll();
+                      }}
+                    >
                       <ChevronsUpDown className="h-4 w-4 mr-1" />
-                      Colapsar todo
+                      {sections.every((s) => s.collapsed) ? "Expandir todo" : "Colapsar todo"}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Colapsar todas las secciones</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="outline" size="sm" onClick={expandAll}>
-                      <ChevronsUpDown className="h-4 w-4 mr-1" />
-                      Expandir todo
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Expandir todas las secciones</TooltipContent>
+                  <TooltipContent>Colapsar / Expandir todas las secciones</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
               <TooltipProvider>
