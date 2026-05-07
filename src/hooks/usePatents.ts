@@ -75,6 +75,7 @@ export function usePatents() {
         itemEmittersResult,
         statusesResult,
         sharedItemsResult,
+        signedDocsResult,
         customFieldMaps
       ] = await Promise.all([
         supabase
