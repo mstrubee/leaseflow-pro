@@ -100,6 +100,7 @@ export function PatentChecklist({
   onUpdateDocumentStatus,
 }: PatentChecklistProps) {
   const { user, isAdmin } = useAuth();
+  const navigate = useNavigate();
   
   // File destination settings - hierarchical: section-level and item-level
   const [fileDestContext, setFileDestContext] = useState<{ type: 'section' | 'item'; id: string; label: string; sectionId?: string } | null>(null);
