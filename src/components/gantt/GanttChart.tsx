@@ -1517,6 +1517,27 @@ export function GanttChart({
                 </div>
               );
             })()}
+            {/* Week separators (Fri→Mon) when weekends are hidden */}
+            {hideWeekends && (() => {
+              const HEADER_OFFSET = INDEX_COL_WIDTH + TASK_NAME_WIDTH + RESPONSIBLE_COL_WIDTH + ORIGIN_COL_WIDTH + DATE_COL_WIDTH + DURATION_COL_WIDTH + DATE_COL_WIDTH + PROGRESS_COL_WIDTH + 6;
+              const totalHeight = visibleTasks.length * ROW_HEIGHT + (newTaskRow ? ROW_HEIGHT : 0) + ROW_HEIGHT;
+              const seps: number[] = [];
+              for (let i = 0; i < days.length - 1; i++) {
+                if (days[i].getDay() === 5 && days[i + 1].getDay() === 1) seps.push(i + 1);
+              }
+              return seps.map((sepIdx) => (
+                <div
+                  key={`wk-sep-${sepIdx}`}
+                  className="absolute top-0 pointer-events-none z-[6]"
+                  style={{
+                    left: HEADER_OFFSET + sepIdx * DAY_WIDTH - 1,
+                    width: 2,
+                    height: totalHeight,
+                    background: "hsl(var(--foreground))",
+                  }}
+                />
+              ));
+            })()}
             {/* SVG overlay for dependency arrows - clickable to delete */}
             {dependencyArrows.length > 0 && (
               <svg
