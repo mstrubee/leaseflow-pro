@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Upload, File, X, CheckCircle2, AlertCircle, Loader2, FolderUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { validateFile } from "@/lib/fileValidation";
+import { sanitizeFileName, validateFile } from "@/lib/fileValidation";
 import { cn } from "@/lib/utils";
 
 interface FileUploadItem {
@@ -312,29 +312,42 @@ export function MultiFileUploadDialog({
       setFiles(prev => prev.map((f, i) => 
         i === index ? { ...f, progress: 30 } : f
       ));
-      
-      const arrayBuffer = await fileItem.file.arrayBuffer();
-      const base64Content = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+
+      const sanitizedFileName = sanitizeFileName(finalFileName);
+      const uploadPath = `contracts/${contractId}/repo/${targetDbFolderId}/${Date.now()}_${index}_${sanitizedFileName}`;
+      const storageUrl = `storage://repository-files/${uploadPath}`;
+
+      const { error: storageError } = await supabase.storage
+        .from("repository-files")
+        .upload(uploadPath, fileItem.file, { upsert: true });
+
+      if (storageError) {
+        throw new Error(storageError.message || "No se pudo preparar el archivo para Drive");
+      }
 
       setFiles(prev => prev.map((f, i) => 
         i === index ? { ...f, progress: 50 } : f
       ));
 
-      // Upload directly to Google Drive
+      // Upload from temporary storage to Google Drive to avoid base64/call-stack limits.
       const { data: driveData, error: driveError } = await supabase.functions.invoke('google-drive', {
         body: { 
-          action: 'uploadFile',
+          action: 'uploadRepoFileFromStorage',
+          contractId,
+          repoFolderId: targetDbFolderId,
           fileName: finalFileName,
-          fileContent: base64Content,
+          storageUrl,
           mimeType: fileItem.file.type || 'application/octet-stream',
-          driveFolderId: targetDriveFolderId
         }
       });
 
-      if (driveError) throw driveError;
+      if (driveError || !driveData) {
+        await supabase.storage.from("repository-files").remove([uploadPath]).catch(() => {});
+        throw new Error(driveData?.error || driveError?.message || "No se pudo subir el archivo a Drive");
+      }
       
-      const driveFileId = driveData.id;
-      const fileUrl = driveData.webViewLink || driveData.webContentLink || '';
+      const driveFileId = driveData.driveFileId || driveData.id;
+      const fileUrl = driveData.driveUrl || driveData.webViewLink || driveData.webContentLink || '';
       
       setFiles(prev => prev.map((f, i) => 
         i === index ? { ...f, progress: 80 } : f

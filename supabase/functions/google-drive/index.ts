@@ -626,12 +626,13 @@ async function ensureTemplateFolders(
 async function uploadFileToDrive(
   accessToken: string,
   fileName: string,
-  fileContent: Uint8Array,
+  fileContent: Uint8Array | Blob,
   mimeType: string,
   folderId: string,
 ): Promise<{ id: string; webViewLink: string; webContentLink: string }> {
   const sanitizedFileName = sanitizeDriveName(fileName);
   const metadata = { name: sanitizedFileName, parents: [folderId] };
+  const contentLength = fileContent instanceof Uint8Array ? fileContent.byteLength : fileContent.size;
 
   // Use resumable upload with raw bytes to avoid base64 encoding.
   // Base64 conversion ~triples peak memory (binary string + base64 string +
@@ -645,7 +646,7 @@ async function uploadFileToDrive(
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json; charset=UTF-8",
         "X-Upload-Content-Type": mimeType,
-        "X-Upload-Content-Length": String(fileContent.byteLength),
+        "X-Upload-Content-Length": String(contentLength),
       },
       body: JSON.stringify(metadata),
     },
@@ -667,7 +668,7 @@ async function uploadFileToDrive(
     method: "PUT",
     headers: {
       "Content-Type": mimeType,
-      "Content-Length": String(fileContent.byteLength),
+      "Content-Length": String(contentLength),
     },
     body: fileContent,
   });
@@ -1739,9 +1740,8 @@ serve(async (req) => {
           });
         }
 
-        const directBinary = new Uint8Array(await directDlData.arrayBuffer());
         const directDriveFile = await uploadFileToDrive(
-          accessToken, directFileName, directBinary,
+          accessToken, directFileName, directDlData,
           directMimeType || 'application/octet-stream', directDriveFolderId,
         );
 
@@ -1925,9 +1925,8 @@ serve(async (req) => {
           });
         }
 
-        const repoBinaryContent = new Uint8Array(await repoDlData.arrayBuffer());
         const repoDriveFile = await uploadFileToDrive(
-          accessToken, repoFileName, repoBinaryContent,
+          accessToken, repoFileName, repoDlData,
           repoMimeType || 'application/octet-stream', targetRepoFolderId,
         );
 
@@ -2095,9 +2094,8 @@ serve(async (req) => {
           fileData = dlData;
         }
 
-        const binaryContentPatent = new Uint8Array(await fileData.arrayBuffer());
         const driveFilePatent = await uploadFileToDrive(
-          accessToken, fileName, binaryContentPatent,
+          accessToken, fileName, fileData,
           mimeType || 'application/octet-stream', targetDriveFolderId,
         );
 
