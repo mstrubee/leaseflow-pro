@@ -756,6 +756,10 @@ export function PatentChecklist({
 
         {/* Actions */}
         <div className="flex items-center gap-3">
+          <Button variant="outline" className="gap-2" onClick={() => navigate(`/contracts/${contract.id}`)}>
+            <ExternalLink className="h-4 w-4" />
+            Ir al contrato
+          </Button>
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" className="gap-2">
