@@ -53,6 +53,7 @@ interface MultiFileUploadDialogProps {
   driveFolderId: string | null;
   folderStatuses: FolderStatus[];
   onUploadComplete: () => void;
+  initialFiles?: File[] | null;
 }
 
 export function MultiFileUploadDialog({
@@ -63,6 +64,7 @@ export function MultiFileUploadDialog({
   driveFolderId,
   folderStatuses,
   onUploadComplete,
+  initialFiles,
 }: MultiFileUploadDialogProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
