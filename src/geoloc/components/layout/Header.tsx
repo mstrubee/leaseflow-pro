@@ -72,6 +72,16 @@ export const Header = ({ mode, onToggleIsochrone, onToggleMicrozone }: HeaderPro
         <FileUp className="mr-1 inline h-3 w-3" /> Archivo
       </button>
 
+      {isAdmin && (
+        <button
+          onClick={() => setSyncOpen(true)}
+          className="whitespace-nowrap rounded-full border border-border/60 bg-surface-2/60 px-3 py-1 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-surface-3 hover:text-foreground"
+          title="Sincronizar GeoLoc desde el proyecto original"
+        >
+          <RefreshCw className="mr-1 inline h-3 w-3" /> Sync
+        </button>
+      )}
+
       {user ? (
         <div className="flex items-center gap-1.5 rounded-full border border-border/60 bg-surface-2/60 px-2.5 py-1 text-[11px] text-muted-foreground">
           <UserIcon className="h-3 w-3" />
@@ -95,5 +105,7 @@ export const Header = ({ mode, onToggleIsochrone, onToggleMicrozone }: HeaderPro
         </Link>
       )}
     </header>
+    <GeoLocSyncDialog open={syncOpen} onOpenChange={setSyncOpen} />
+    </>
   );
 };
