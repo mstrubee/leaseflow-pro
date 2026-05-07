@@ -63,6 +63,7 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
   // Search & bulk upload
   const [folderSearchQuery, setFolderSearchQuery] = useState("");
   const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const handleDownloadEmptyFolders = useCallback(() => {
     const emptyFolders = folders.filter((f) => (f.fileCount ?? 0) === 0);
