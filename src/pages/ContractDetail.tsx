@@ -904,23 +904,19 @@ const ContractDetail = () => {
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="outline" size="sm" onClick={collapseAll}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const allCollapsed = sections.every((s) => s.collapsed);
+                        if (allCollapsed) expandAll(); else collapseAll();
+                      }}
+                    >
                       <ChevronsUpDown className="h-4 w-4 mr-1" />
-                      Colapsar todo
+                      {sections.every((s) => s.collapsed) ? "Expandir todo" : "Colapsar todo"}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Colapsar todas las secciones</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="outline" size="sm" onClick={expandAll}>
-                      <ChevronsUpDown className="h-4 w-4 mr-1" />
-                      Expandir todo
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Expandir todas las secciones</TooltipContent>
+                  <TooltipContent>Colapsar / Expandir todas las secciones</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
               <TooltipProvider>
