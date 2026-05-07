@@ -1083,12 +1083,16 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
         {currentFolder && (
           <MultiFileUploadDialog
             open={multiUploadDialogOpen}
-            onOpenChange={setMultiUploadDialogOpen}
+            onOpenChange={(o) => {
+              setMultiUploadDialogOpen(o);
+              if (!o) setPendingDroppedFiles(null);
+            }}
             contractId={contractId}
             folderId={currentFolder.id}
             driveFolderId={currentFolder.drive_folder_id}
             folderStatuses={getAvailableStatuses()}
             onUploadComplete={handleUploadComplete}
+            initialFiles={pendingDroppedFiles}
           />
         )}
 
