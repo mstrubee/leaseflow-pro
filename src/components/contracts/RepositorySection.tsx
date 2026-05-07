@@ -130,6 +130,8 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
   const [newFolderName, setNewFolderName] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [multiUploadDialogOpen, setMultiUploadDialogOpen] = useState(false);
+  const [pendingDroppedFiles, setPendingDroppedFiles] = useState<File[] | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [moveFilesDialogOpen, setMoveFilesDialogOpen] = useState(false);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [driveWarning, setDriveWarning] = useState<string | null>(null);
