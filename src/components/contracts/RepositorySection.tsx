@@ -1134,7 +1134,7 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
             <p className="text-sm font-medium">
               {isDragOver ? "Suelta los archivos aquí" : "Arrastra archivos aquí o haz clic para subir"}
             </p>
-            <p className="text-xs opacity-75">Sin límite de tamaño</p>
+            <p className="text-xs opacity-75">​</p>
           </div>
         )}
 
