@@ -1532,6 +1532,14 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
           </div>
         )}
 
+        {/* Empty states */}
+        {currentFolder && folders.length === 0 && files.length === 0 && driveFiles.length === 0 && (
+          <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
+            <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
+            <p>Esta carpeta está vacía</p>
+          </div>
+        )}
+
         {/* Always-visible drop zone (below files) */}
         <div
           className={cn(
@@ -1559,14 +1567,6 @@ export const RepositorySection = ({ contractId, contractName, contractStatus = '
           </p>
           <p className="text-xs opacity-75">​</p>
         </div>
-
-        {/* Empty states */}
-        {currentFolder && folders.length === 0 && files.length === 0 && driveFiles.length === 0 && (
-          <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
-            <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
-            <p>Esta carpeta está vacía</p>
-          </div>
-        )}
 
         {!currentFolder && folders.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
