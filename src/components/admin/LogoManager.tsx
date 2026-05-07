@@ -66,12 +66,6 @@ export function LogoManager() {
       return;
     }
 
-    // Validate file size (max 2MB)
-    if (file.size > 2 * 1024 * 1024) {
-      toast({ variant: "destructive", title: "Error", description: "El archivo no puede superar 2MB" });
-      return;
-    }
-
     setUploading(logoKey);
 
     try {

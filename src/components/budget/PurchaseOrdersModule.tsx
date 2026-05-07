@@ -1735,13 +1735,6 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                       return;
                     }
                     
-                    // Validate file size (20MB max)
-                    if (file.size > 20 * 1024 * 1024) {
-                      toast({ variant: "destructive", title: "Error", description: "El archivo no puede superar 20MB" });
-                      if (fileInputRef.current) fileInputRef.current.value = '';
-                      return;
-                    }
-                    
                     setOcFile(file);
                     setNewOrder({ ...newOrder, attachment_name: file.name });
                     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -2075,12 +2068,6 @@ export const PurchaseOrdersModule = ({ contractId, initialYear, refreshKey, onRe
                     
                     if (!file.type.includes('pdf') && !file.name.toLowerCase().endsWith('.pdf')) {
                       toast({ variant: "destructive", title: "Error", description: "Solo se permiten archivos PDF" });
-                      if (editFileInputRef.current) editFileInputRef.current.value = '';
-                      return;
-                    }
-                    
-                    if (file.size > 20 * 1024 * 1024) {
-                      toast({ variant: "destructive", title: "Error", description: "El archivo no puede superar 20MB" });
                       if (editFileInputRef.current) editFileInputRef.current.value = '';
                       return;
                     }
