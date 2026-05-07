@@ -88,7 +88,7 @@ const App = () => (
                   <Route path="/suppliers" element={<ProtectedRoute resource="suppliers"><SuppliersDashboard /></ProtectedRoute>} />
                   <Route path="/special-attention" element={<ProtectedRoute><SpecialAttentionPage /></ProtectedRoute>} />
                   <Route path="/maintenance" element={<ProtectedRoute resource="maintenance"><MaintenanceDashboard /></ProtectedRoute>} />
-                  <Route path="/geoloc" element={<ProtectedRoute><GeoLocPage /></ProtectedRoute>} />
+                  <Route path="/geoloc" element={<ProtectedRoute resource="geoloc"><GeoLocPage /></ProtectedRoute>} />
                   
                   <Route path="/google-drive-callback" element={<GoogleDriveCallback />} />
                   
