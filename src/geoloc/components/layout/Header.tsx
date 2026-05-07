@@ -1,8 +1,10 @@
-import { Clock, Hexagon, FileUp, LogIn, LogOut, User as UserIcon } from "lucide-react";
+import { useState } from "react";
+import { Clock, Hexagon, FileUp, LogIn, LogOut, RefreshCw, User as UserIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { GeoLocSyncDialog } from "@/geoloc/components/panels/GeoLocSyncDialog";
 
 interface HeaderProps {
   mode: "none" | "isochrone" | "microzone";
@@ -11,7 +13,8 @@ interface HeaderProps {
 }
 
 export const Header = ({ mode, onToggleIsochrone, onToggleMicrozone }: HeaderProps) => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
+  const [syncOpen, setSyncOpen] = useState(false);
 
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
@@ -20,6 +23,7 @@ export const Header = ({ mode, onToggleIsochrone, onToggleMicrozone }: HeaderPro
   };
 
   return (
+    <>
     <header className="z-[1000] flex h-12 flex-shrink-0 items-center gap-2.5 border-b border-border/60 bg-surface/80 px-4 backdrop-blur-2xl backdrop-saturate-150">
       <h1 className="whitespace-nowrap font-display text-[16px] font-semibold tracking-tight text-foreground">
         Geo<span className="text-destructive">Planet</span>
@@ -68,6 +72,16 @@ export const Header = ({ mode, onToggleIsochrone, onToggleMicrozone }: HeaderPro
         <FileUp className="mr-1 inline h-3 w-3" /> Archivo
       </button>
 
+      {isAdmin && (
+        <button
+          onClick={() => setSyncOpen(true)}
+          className="whitespace-nowrap rounded-full border border-border/60 bg-surface-2/60 px-3 py-1 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-surface-3 hover:text-foreground"
+          title="Sincronizar GeoLoc desde el proyecto original"
+        >
+          <RefreshCw className="mr-1 inline h-3 w-3" /> Sync
+        </button>
+      )}
+
       {user ? (
         <div className="flex items-center gap-1.5 rounded-full border border-border/60 bg-surface-2/60 px-2.5 py-1 text-[11px] text-muted-foreground">
           <UserIcon className="h-3 w-3" />
@@ -91,5 +105,7 @@ export const Header = ({ mode, onToggleIsochrone, onToggleMicrozone }: HeaderPro
         </Link>
       )}
     </header>
+    <GeoLocSyncDialog open={syncOpen} onOpenChange={setSyncOpen} />
+    </>
   );
 };
