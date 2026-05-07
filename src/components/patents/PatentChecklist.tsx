@@ -1189,6 +1189,8 @@ export function PatentChecklist({
                                   const days = parseInt(e.target.value) || 0;
                                   handleDeadlineDaysChange(item.id, days);
                                 }}
+                                onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur(); } }}
+                                onBlur={() => commitTextField(item.id)}
                                 placeholder="Días"
                                 disabled={disableOtherFields}
                               />
