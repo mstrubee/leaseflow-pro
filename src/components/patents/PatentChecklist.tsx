@@ -567,10 +567,11 @@ export function PatentChecklist({
 
       // For text fields, don't auto-save — wait for Enter/blur
       if (!isTextField) {
+        const delay = field === 'deadline_days' ? 3000 : 400;
         saveTimeoutsRef.current[mirrorId] = setTimeout(() => {
           autoSaveDocument(mirrorId, updates);
           delete saveTimeoutsRef.current[mirrorId];
-        }, 400);
+        }, delay);
       }
     });
   };
