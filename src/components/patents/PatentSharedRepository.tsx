@@ -441,7 +441,14 @@ export function PatentSharedRepository({ open, onOpenChange }: PatentSharedRepos
           )}
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto space-y-1 min-h-[200px]">
+          <div
+            className={`flex-1 overflow-y-auto space-y-1 min-h-[200px] rounded-md transition-colors ${
+              isDragging ? "ring-2 ring-primary bg-primary/5" : ""
+            } ${currentFolder ? "relative" : ""}`}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+          >
             {loading ? (
               <div className="text-center py-8 text-muted-foreground">Cargando...</div>
             ) : (
