@@ -621,6 +621,115 @@ export function PatentChecklist({
     return undefined;
   };
 
+  // Helper: derive effective files for a checklist row.
+  // For "Contrato arriendo", merge any signed contract documents on top of patent docs.
+  const isContratoArriendoItem = (name: string) =>
+    name.trim().toLowerCase() === 'contrato arriendo';
+
+  const cleanSignedName = (url: string): string => {
+    const segment = url.split('/').pop() || 'Documento';
+    try {
+      return decodeURIComponent(segment).replace(/^\d{10,}_/, '');
+    } catch {
+      return segment.replace(/^\d{10,}_/, '');
+    }
+  };
+
+  const getEffectiveFiles = (item: PatentChecklistItem): { urls: string[]; names: string[]; lockedUrls: Set<string> } => {
+    const rawUrls = ((getDocValue(item.id, 'document_url') as string) || '').split('|||').filter(Boolean);
+    const rawNames = ((getDocValue(item.id, 'document_names') as string) || '').split('|||').filter(Boolean);
+    const urls = [...rawUrls];
+    const names: string[] = rawUrls.map((_, i) => rawNames[i] || '');
+    const locked = new Set<string>();
+
+    if (isContratoArriendoItem(item.name)) {
+      const signed = contract.signed_documents || [];
+      const seen = new Set(urls);
+      for (const sd of signed) {
+        if (!sd.url || seen.has(sd.url)) continue;
+        seen.add(sd.url);
+        urls.push(sd.url);
+        names.push(cleanSignedName(sd.url));
+        locked.add(sd.url);
+      }
+    }
+    return { urls, names, lockedUrls: locked };
+  };
+
+  // Auto-backup signed contract documents to folders configured for the "Contrato arriendo" line.
+  useEffect(() => {
+    const signed = contract.signed_documents || [];
+    if (signed.length === 0 || items.length === 0) return;
+    const arriendoItem = items.find(i => isContratoArriendoItem(i.name));
+    if (!arriendoItem) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getConfiguredDestinations } = await import("@/hooks/useFileDestinationSettings");
+        const { parseDestinations } = await import("@/components/budget/FolderDestinationPicker");
+
+        const globalDests = await getConfiguredDestinations("patent_folder");
+        const lineRaw = itemFolders[arriendoItem.id] || '';
+        const lineDests = lineRaw ? parseDestinations(lineRaw) : [];
+        const allDests = [...globalDests, ...lineDests];
+        if (allDests.length === 0) return;
+
+        for (const entry of allDests) {
+          if (cancelled) return;
+          let folderId: string | null = null;
+          let table: 'general_folder_files' | 'repository_files' = 'repository_files';
+          if (entry.source === 'general') {
+            const { data } = await supabase
+              .from('general_folders')
+              .select('id')
+              .ilike('name', entry.name)
+              .limit(1)
+              .maybeSingle();
+            folderId = data?.id || null;
+            table = 'general_folder_files';
+          } else {
+            const { data: list } = await supabase
+              .from('repository_folders')
+              .select('id, name, drive_folder_id')
+              .eq('contract_id', contract.id)
+              .ilike('name', entry.name);
+            const exact = (list || []).filter(f => (f.name || '').trim().toLowerCase() === entry.name.trim().toLowerCase());
+            const chosen = exact.find(f => f.drive_folder_id) || exact[0] || list?.[0] || null;
+            folderId = chosen?.id || null;
+            table = 'repository_files';
+          }
+          if (!folderId) continue;
+
+          const { data: existing } = await supabase
+            .from(table)
+            .select('url')
+            .eq('folder_id', folderId);
+          const existingUrls = new Set((existing || []).map((r: any) => r.url));
+
+          for (const sd of signed) {
+            if (!sd.url || existingUrls.has(sd.url)) continue;
+            const driveMatch = sd.url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+            const cleanName = cleanSignedName(sd.url);
+            const { error } = await supabase.from(table).insert({
+              folder_id: folderId,
+              name: cleanName,
+              url: sd.url,
+              file_type: cleanName.split('.').pop() || null,
+              drive_file_id: driveMatch ? driveMatch[1] : null,
+            });
+            if (error) console.warn(`Auto-backup signed doc to '${entry.name}' failed:`, error.message);
+          }
+        }
+      } catch (err) {
+        console.warn("Auto-backup signed docs error:", err);
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contract.id, contract.signed_documents, items, itemFolders]);
+
   return (
     <div className="space-y-6 w-full">
       {/* Header */}
