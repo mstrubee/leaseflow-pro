@@ -21,15 +21,46 @@ export const GeoLocSyncDialog = ({ open, onOpenChange }: Props) => {
   const { pending, lastLog, loading, requestSync } = useGeoLocSync();
   const [submitting, setSubmitting] = useState(false);
 
+  const triggerLovableAgent = (message: string) => {
+    try {
+      const inIframe = window.parent && window.parent !== window;
+      if (!inIframe) return false;
+      // Lovable editor listens for chat messages from preview iframe
+      window.parent.postMessage(
+        { type: "lovable:chat:send", message, source: "geoloc-sync" },
+        "*",
+      );
+      window.parent.postMessage(
+        { type: "LOVABLE_SEND_CHAT_MESSAGE", message },
+        "*",
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const handleRequest = async () => {
     setSubmitting(true);
     try {
       await requestSync();
-      toast.success("Solicitud registrada", {
-        description:
-          "Pídele al asistente Lovable: 'ejecuta la sincronización de GeoLoc pendiente'.",
-        duration: 8000,
-      });
+      const dispatched = triggerLovableAgent(
+        "ejecuta la sincronización de GeoLoc pendiente",
+      );
+      if (dispatched) {
+        toast.success("Sincronización iniciada", {
+          description:
+            "Se envió la orden al agente Lovable. Revisa el chat para ver el avance.",
+          duration: 6000,
+        });
+      } else {
+        toast.success("Solicitud registrada", {
+          description:
+            "Escribe en el chat de Lovable: 'ejecuta la sincronización de GeoLoc pendiente'.",
+          duration: 8000,
+        });
+      }
+      onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al solicitar");
     } finally {
