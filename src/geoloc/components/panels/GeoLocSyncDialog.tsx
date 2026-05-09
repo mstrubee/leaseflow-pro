@@ -145,9 +145,11 @@ export const GeoLocSyncDialog = ({ open, onOpenChange }: Props) => {
 
           <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
             <p>
-              Al solicitar la sincronización, se registra una solicitud que el
-              asistente Lovable procesará. Se preservan los archivos adaptados al
-              almacenamiento Drive del proyecto.
+              Cada sincronización ejecuta al agente Lovable y{" "}
+              <strong className="text-foreground">consume créditos</strong>.
+              Úsalo solo cuando haya cambios reales en el proyecto GeoLoc
+              original. Se preservan los archivos adaptados al almacenamiento
+              Drive.
             </p>
           </div>
         </div>
@@ -159,13 +161,12 @@ export const GeoLocSyncDialog = ({ open, onOpenChange }: Props) => {
           <Button onClick={handleRequest} disabled={submitting}>
             {submitting ? (
               <>
-                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />{" "}
-                Solicitando…
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Iniciando…
               </>
             ) : (
               <>
-                <CheckCircle2 className="mr-2 h-3.5 w-3.5" /> Solicitar
-                sincronización
+                <CheckCircle2 className="mr-2 h-3.5 w-3.5" /> Sincronizar ahora
+                (consume créditos)
               </>
             )}
           </Button>
