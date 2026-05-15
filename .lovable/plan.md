@@ -1,45 +1,58 @@
-## Objetivo
+## Diagnóstico
 
-Que al pulsar **"Solicitar sincronización"** en el diálogo de GeoLoc, el agente Lovable ejecute la sincronización de inmediato, sin que tengas que escribir manualmente el comando en el chat.
+Comparé los datos del contrato **Melipilla (2026)** entre el listado de contratos (columna CAPEX) y el dashboard del módulo Presupuesto. Los montos no son iguales **a propósito**: cada vista usa una fórmula distinta. Pero hay inconsistencias reales que conviene corregir.
 
-## Realidad sobre créditos
+### Datos reales en BD (año 2026)
 
-- La sincronización **siempre consume créditos** porque la ejecuta el agente Lovable (yo) leyendo el proyecto upstream con herramientas `cross_project` y reescribiendo archivos `.tsx` aquí.
-- **No es posible hacerlo desde una Edge Function** leyendo GitHub: las edge functions no pueden modificar el código fuente del proyecto Lovable (solo tocan BD y Storage).
-- Por lo tanto: cada click = 1 corrida del agente = créditos consumidos. Queda registrado para que sea consciente.
+- 1 presupuesto CAPEX (sin presupuesto OPEX), 27 líneas activas (0 eliminadas).
+- Líneas hoja autorizadas: **2.117,44 UF** (13 en CLP por 46.011.893 + 7 en UF por 962,37).
+- Líneas hoja "no autorizado": **188,24 UF**.
+- Total UF en líneas (autorizadas + no autorizadas): **2.305,68 UF**.
+- 18 órdenes de compra activas: 12 CAPEX (50.685.318 CLP) + 6 OPEX (7.028.815 CLP).
+- 21 facturas activas asociadas.
 
-## Cambios
+### Por qué no cuadra
 
-### 1. Disparo automático del chat al hacer click
+| Vista | Qué suma | Cómo lo calcula |
+|---|---|---|
+| Columna **CAPEX** del listado de contratos | Líneas hoja **autorizadas + no autorizadas** | Usa el `amount_uf` ya guardado |
+| Dashboard → "Total Presupuesto" | Líneas hoja **solo autorizadas** + **OCs OPEX del año** | Recalcula `cantidad × precio_unitario` y convierte con la UF **actual** |
 
-En `GeoLocSyncDialog.tsx`, tras insertar la solicitud, emitir un `window.parent.postMessage` con el mensaje predefinido `"ejecuta la sincronización de GeoLoc pendiente"` para que el chat de Lovable lo reciba y lo procese automáticamente.
+Tres causas concretas del descuadre:
 
-Esto funciona dentro del editor/preview de Lovable. En producción (app publicada) no hay agente, así que el botón degrada a la solicitud actual + toast informativo.
+1. El dashboard **excluye las líneas "no autorizado"** (188,24 UF) que sí aparecen en la columna del listado.
+2. El dashboard **suma las OCs OPEX** (7.028.815 CLP) al "Total Presupuesto", aunque no exista presupuesto OPEX cargado.
+3. El dashboard **recalcula CLP con la UF de hoy** (`qty × precio` y luego × UF actual), mientras que la columna del listado usa el `amount_uf` congelado al momento de cargar la línea (con la UF de ese día). Si la UF cambió, los CLP cambian.
 
-Detección: `window.parent !== window` y origen contiene `lovable.app` / `lovable.dev`.
+Resultado verificado para Melipilla (2026):
+- Columna del listado: 2.305,68 UF (autorizado + no autorizado).
+- Dashboard "Total Presupuesto" ≈ 46.011.893 (CLP autorizado) + 962,37 × UF_actual + 7.028.815 (OPEX OCs) ≈ **91.863.541 CLP** ✅ (calza con el valor visible).
 
-### 2. UX del botón
+### OCs y facturas visibles
 
-- Texto cambia a: **"Sincronizar ahora (consume créditos)"**.
-- Tooltip/nota debajo: *"Cada sincronización ejecuta al agente Lovable y consume créditos. Solo úsalo cuando haya cambios reales en el proyecto original."*
-- Tras el click:
-  - Inserta `geoloc_sync_requests` con `status='pending'`.
-  - Hace `postMessage` al chat.
-  - Cierra el diálogo.
-  - Toast: *"Sincronización iniciada. Revisa el chat."*
+- Las **18 OCs** y **21 facturas** del año están todas presentes en BD.
+- La consulta del dashboard (`loadBudgetTypeTotals`) las trae correctamente filtrando por `contract_id`, `year` y `deleted_at IS NULL`, separando CAPEX vs OPEX según `budget_classification`, `budget_line_id`, `opex_master_id`/`opex_category_id`. OCs sin clasificación caen en CAPEX por defecto (1 caso: OC 4900041003).
+- No detecté OCs ni facturas perdidas u ocultas.
 
-### 3. Estado de la solicitud
+## Propuesta de corrección
 
-Mantener el flujo actual de `geoloc_sync_log`. Cuando yo procese la solicitud, escribiré el resultado ahí y la próxima apertura del diálogo lo mostrará.
+Para que la columna CAPEX del listado y el dashboard hablen el mismo idioma, propongo unificar la definición de "Presupuesto CAPEX" así:
 
-## Lo que NO se hace
+1. **Definición única (autorizado del CAPEX, en UF guardado):**
+   - Cambiar el dashboard `loadBudgetTypeSummary` para usar `amount_uf` guardado (igual que la columna del listado), filtrando por `deleted_at IS NULL`. Esto elimina el efecto de la UF actual y de discrepancias de `qty × precio` vs `amount_uf`.
+   - Cambiar la columna del listado para mostrar solo **autorizado** (excluir "no autorizado"), y opcionalmente un tooltip con el "no autorizado" aparte.
 
-- No se elimina el sistema de tabla `geoloc_sync_requests` (sigue siendo el registro de auditoría).
-- No se intenta sync vía edge function + GitHub (técnicamente no permite escribir el código fuente del proyecto).
-- No se cambia la lógica del agente al procesar la solicitud (sigue igual).
+2. **Renombrar/separar tarjeta del dashboard:**
+   - "Total Presupuesto" hoy mezcla CAPEX autorizado con OCs OPEX. Renombrarla a **"Presupuesto CAPEX + Gasto OPEX del año"** o, mejor, dividirla en dos métricas (CAPEX autorizado y OPEX comprometido) para que no se confunda con un "presupuesto" puro.
 
-## Archivos tocados
+3. **Mostrar la UF de referencia** al lado de los montos CLP en el dashboard, para que el usuario entienda cómo se convirtió.
 
-- `src/geoloc/components/panels/GeoLocSyncDialog.tsx` — añadir `postMessage` y nuevo copy del botón.
+## Cambios técnicos concretos
 
-¿Apruebas?
+- `src/components/budget/BudgetDashboard.tsx`
+  - `loadBudgetTypeSummary`: reemplazar el cálculo `qty × unit_price (+ template fallback + conversión UF)` por `SUM(amount_uf)` de líneas hoja activas, agrupado por `status`. Filtrar `deleted_at IS NULL`.
+  - Tarjeta "TOTAL GENERAL": separar el monto en dos líneas (Presupuesto CAPEX autorizado y OCs OPEX del año), o renombrar la etiqueta.
+- `src/components/contracts/ContractsTable.tsx`
+  - Mostrar solo `authorized` UF en la columna CAPEX. Dejar el `unauthorized` como tooltip o segunda línea pequeña.
+
+¿Procedo con esta unificación, o prefieres que solo deje el dashboard alineado a la columna del listado (sin tocar la columna)?
