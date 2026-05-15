@@ -1067,21 +1067,30 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 <TableCell className="text-center" style={getColStyle("capex")}>
                   {(() => {
                     const capexData = capexByContract[contract.id];
-                    const totalUF = (capexData?.authorized || 0) + (capexData?.unauthorized || 0);
-                    if (totalUF <= 0) return <span className="text-muted-foreground">-</span>;
+                    const authUF = capexData?.authorized || 0;
+                    const unauthUF = capexData?.unauthorized || 0;
+                    if (authUF <= 0 && unauthUF <= 0) return <span className="text-muted-foreground">-</span>;
                     const superficie = contract.superficie_edificada_local || 0;
-                    const perM2 = superficie > 0 ? totalUF / superficie : 0;
+                    const perM2 = superficie > 0 ? authUF / superficie : 0;
+                    const tooltip = unauthUF > 0
+                      ? `Autorizado: ${authUF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF\nNo autorizado: ${unauthUF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`
+                      : undefined;
                     return (
-                      <div className="flex flex-col items-center">
+                      <div className="flex flex-col items-center" title={tooltip}>
                         <span className="font-medium text-xs">
-                          ${convertUFToPesos(totalUF).toLocaleString('es-CL', { maximumFractionDigits: 0 })}
+                          ${convertUFToPesos(authUF).toLocaleString('es-CL', { maximumFractionDigits: 0 })}
                         </span>
                         <span className="text-[10px] text-muted-foreground">
-                          {totalUF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
+                          {authUF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF
                         </span>
                         {perM2 > 0 && (
                           <span className="text-[10px] text-muted-foreground">
                             {perM2.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF/m²
+                          </span>
+                        )}
+                        {unauthUF > 0 && (
+                          <span className="text-[10px] text-yellow-600">
+                            +{unauthUF.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF s/aut.
                           </span>
                         )}
                       </div>
