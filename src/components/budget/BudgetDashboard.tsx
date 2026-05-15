@@ -443,60 +443,24 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
       return { budget: 0, authorized: 0, unauthorized: 0 };
     }
 
-    // Obtener líneas del presupuesto específico con quantity, unit_price, template_line_id y calc_type
+    // Obtener líneas activas del presupuesto (mismo criterio que la columna CAPEX del listado de contratos)
     const { data: lines } = await supabase
       .from("budget_lines")
-      .select("id, amount_uf, status, parent_id, quantity, unit_price, template_line_id, currency, calc_type")
-      .eq("budget_id", budget.id);
+      .select("id, amount_uf, status, parent_id")
+      .eq("budget_id", budget.id)
+      .is("deleted_at", null);
 
-    // Fetch template prices for lines with template_line_id
-    const linesWithTemplate = (lines || []).filter(l => l.template_line_id);
-    let tPricesMap: Record<string, number> = {};
-    if (linesWithTemplate.length > 0) {
-      const uniqueTemplateIds = [...new Set(linesWithTemplate.map(l => l.template_line_id!))];
-      const { data: templateData } = await supabase
-        .from("budget_template_lines")
-        .select("id, default_amount_uf")
-        .in("id", uniqueTemplateIds);
-      if (templateData) {
-        const tMap: Record<string, number> = {};
-        templateData.forEach(t => { tMap[t.id] = t.default_amount_uf || 0; });
-        linesWithTemplate.forEach(l => { tPricesMap[l.id] = tMap[l.template_line_id!] ?? 0; });
-      }
-    }
-
-    // Get all line IDs to identify which are parents
+    // Solo contar líneas hoja (no padres) para evitar doble conteo
     const parentIds = new Set((lines || []).filter(l => l.parent_id).map(l => l.parent_id));
-    
-    // Only count leaf nodes (lines that are not parents of other lines) to avoid double counting
     const leafLines = (lines || []).filter(l => !parentIds.has(l.id));
-    
-    // Helper to get effective amount in UF - uses template price as fallback
-    const getEffectiveAmount = (line: { id: string; quantity?: number | null; unit_price?: number | null; amount_uf: number; currency?: string | null; calc_type?: string | null }) => {
-      // Percentage-calculated lines use their stored amount_uf directly
-      if (line.calc_type === "percentage") {
-        return line.amount_uf || 0;
-      }
-      const qty = line.quantity || 0;
-      const localPrice = line.unit_price || 0;
-      const templatePrice = tPricesMap[line.id] ?? 0;
-      const price = localPrice > 0 ? localPrice : templatePrice;
-      if (qty <= 0 || price <= 0) return 0;
-      const total = qty * price;
-      // Convert CLP to UF if needed
-      if (line.currency === "CLP" && ufValue > 0) {
-        return total / ufValue;
-      }
-      return total;
-    };
-    
+
     const authorized = leafLines
       .filter(l => l.status === "autorizado")
-      .reduce((acc, l) => acc + getEffectiveAmount(l), 0);
+      .reduce((acc, l) => acc + (l.amount_uf || 0), 0);
 
     const unauthorized = leafLines
       .filter(l => l.status === "no_autorizado")
-      .reduce((acc, l) => acc + getEffectiveAmount(l), 0);
+      .reduce((acc, l) => acc + (l.amount_uf || 0), 0);
 
     return {
       budget: budget.amount_uf || 0,
