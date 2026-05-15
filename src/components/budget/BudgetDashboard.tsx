@@ -746,33 +746,22 @@ const BudgetDashboardContent = ({ contractId, initialTab }: BudgetDashboardProps
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div className="flex items-center gap-1.5">
                 <DollarSign className="h-3.5 w-3.5 text-primary" />
-                <span className="text-muted-foreground">Presupuesto CAPEX (autorizado):</span>
+                <span className="text-muted-foreground">Total Presupuesto:</span>
               </div>
               <div className="text-right">
                 {(() => {
+                  const capexAuthorizedClp = convertUFToPesos(capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized);
+                  const totalPresupuesto = capexAuthorizedClp + opexTotals.ocClp;
                   const capexAuthorizedUf = capexSummary.budget > 0 ? capexSummary.budget : capexSummary.authorized;
-                  const capexAuthorizedClp = convertUFToPesos(capexAuthorizedUf);
+                  const totalPresupuestoUf = capexAuthorizedUf + opexTotals.ocUf;
                   return (
                     <>
-                      <span className="font-medium">{formatCLP(capexAuthorizedClp)}</span>
-                      <span className="text-xs text-muted-foreground ml-1">({formatUF(capexAuthorizedUf)})</span>
+                      <span className="font-medium">{formatCLP(totalPresupuesto)}</span>
+                      <span className="text-xs text-muted-foreground ml-1">({formatUF(totalPresupuestoUf)})</span>
                     </>
                   );
                 })()}
               </div>
-
-              {opexTotals.ocClp > 0 && (
-                <>
-                  <div className="flex items-center gap-1.5">
-                    <DollarSign className="h-3.5 w-3.5 text-blue-500" />
-                    <span className="text-muted-foreground">OCs OPEX del año:</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="font-medium">{formatCLP(opexTotals.ocClp)}</span>
-                    <span className="text-xs text-muted-foreground ml-1">({formatUF(opexTotals.ocUf)})</span>
-                  </div>
-                </>
-              )}
 
               {carryover.total > 0 && (
                 <>
