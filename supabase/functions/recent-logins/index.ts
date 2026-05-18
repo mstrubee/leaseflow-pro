@@ -23,22 +23,21 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: userRes, error: userErr } = await userClient.auth.getUser();
-    if (userErr || !userRes.user) {
+    const admin = createClient(supabaseUrl, serviceKey);
+    const token = authHeader.replace(/^Bearer\s+/i, "");
+    const { data: claimsData, error: claimsErr } = await admin.auth.getClaims(token);
+    const userId = claimsData?.claims?.sub;
+    if (claimsErr || !userId) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const admin = createClient(supabaseUrl, serviceKey);
     const { data: roleRow } = await admin
       .from("user_roles")
       .select("role")
-      .eq("user_id", userRes.user.id)
+      .eq("user_id", userId)
       .eq("role", "admin")
       .maybeSingle();
 
