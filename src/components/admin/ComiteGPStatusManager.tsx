@@ -136,14 +136,25 @@ export function ComiteGPStatusManager() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-20">Orden</TableHead>
               <TableHead>Color</TableHead>
               <TableHead>Nombre</TableHead>
               <TableHead className="w-[100px]">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {statuses.map(s => (
+            {statuses.map((s, idx) => (
               <TableRow key={s.id}>
+                <TableCell>
+                  <div className="flex gap-0.5">
+                    <Button variant="ghost" size="icon" className="h-6 w-6" disabled={idx === 0} onClick={() => moveOrder(s, "up")}>
+                      <ArrowUp className="h-3 w-3" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" disabled={idx === statuses.length - 1} onClick={() => moveOrder(s, "down")}>
+                      <ArrowDown className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </TableCell>
                 <TableCell>{getColorDot(s.color)}</TableCell>
                 <TableCell className="font-medium">{s.name}</TableCell>
                 <TableCell>
