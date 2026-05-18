@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { withRetry } from "@/lib/supabaseRetry";
 
 interface EconomicData {
   ufValue: number;
@@ -23,7 +24,9 @@ export const useEconomicIndicators = () => {
 
   const fetchIndicators = async () => {
     try {
-      const { data: response, error } = await supabase.functions.invoke('economic-indicators');
+      const { data: response, error } = await withRetry(() =>
+        supabase.functions.invoke('economic-indicators')
+      );
       if (error) throw error;
       setData({
         ufValue: response?.uf?.current || 0,

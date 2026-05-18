@@ -39,6 +39,7 @@ import { useContractSections, SectionKey } from "@/hooks/useContractSections";
 import { useAuth } from "@/hooks/useAuth";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
+import { withRetry, isTransientNetworkError } from "@/lib/supabaseRetry";
 import {
   DndContext,
   closestCenter,
@@ -229,6 +230,7 @@ const ContractDetail = () => {
   
   const [contract, setContract] = useState<Contract | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<"network" | "notfound" | null>(null);
   const [companyNames, setCompanyNames] = useState<string[]>([]);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
@@ -263,25 +265,29 @@ const ContractDetail = () => {
 
   const loadCustomFields = async () => {
     try {
-      // Load custom fields
-      const { data: fields, error: fieldsError } = await supabase
-        .from("contract_custom_fields")
-        .select("id, field_name, display_order")
-        .eq("is_active", true)
-        .order("display_order", { ascending: true });
+      const { data: fields, error: fieldsError } = await withRetry(() =>
+        supabase
+          .from("contract_custom_fields")
+          .select("id, field_name, display_order")
+          .eq("is_active", true)
+          .order("display_order", { ascending: true })
+          .then((r) => r)
+      );
 
       if (fieldsError) throw fieldsError;
       setCustomFields(fields || []);
 
-      // Load field values for this contract
       if (id) {
-        const { data: values, error: valuesError } = await supabase
-          .from("contract_custom_field_values")
-          .select("field_id, field_value")
-          .eq("contract_id", id);
+        const { data: values, error: valuesError } = await withRetry(() =>
+          supabase
+            .from("contract_custom_field_values")
+            .select("field_id, field_value")
+            .eq("contract_id", id)
+            .then((r) => r)
+        );
 
         if (valuesError) throw valuesError;
-        
+
         const valuesMap: Record<string, string> = {};
         (values || []).forEach((v) => {
           if (v.field_value) {
@@ -295,38 +301,54 @@ const ContractDetail = () => {
     }
   };
   const loadContract = async () => {
+    setLoadError(null);
+    setLoading(true);
     try {
-      const {
-        data,
-        error
-      } = await supabase.from("contracts").select(`
-          *,
-          contract_companies (companies (name)),
-          contract_addresses (*),
-          contract_contacts (*),
-          contract_versions (*, rent_escalations (*), notice_ranges (start_month, end_month), version_notices (notice_type, notice_value, notice_bilaterality)),
-          contract_documents (*),
-          termination_notices (*)
-        `).eq("id", id).single();
+      const { data, error } = await withRetry(() =>
+        supabase
+          .from("contracts")
+          .select(`
+            *,
+            contract_companies (companies (name)),
+            contract_addresses (*),
+            contract_contacts (*),
+            contract_versions (*, rent_escalations (*), notice_ranges (start_month, end_month), version_notices (notice_type, notice_value, notice_bilaterality)),
+            contract_documents (*),
+            termination_notices (*)
+          `)
+          .eq("id", id)
+          .maybeSingle()
+          .then((r) => r)
+      );
       if (error) throw error;
+      if (!data) {
+        setLoadError("notfound");
+        return;
+      }
       setContract(data as Contract);
-      
-      // Extract company names from the relation
+
       const names = data.contract_companies
         ?.map((cc: any) => cc.companies?.name)
         .filter((n: string | undefined): n is string => !!n) || [];
       setCompanyNames(names);
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "No se pudo cargar el contrato"
-      });
-      navigate("/");
+      console.error("Error loading contract:", error);
+      const transient = isTransientNetworkError(error);
+      setLoadError(transient ? "network" : "network");
+      if (!transient) {
+        // Solo notificamos por toast errores no transitorios; el estado
+        // inline se muestra de todos modos para que el usuario pueda reintentar.
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "No se pudo cargar el contrato",
+        });
+      }
     } finally {
       setLoading(false);
     }
   };
+
 
   
   const handleAddDocument = async (url: string, name: string) => {
@@ -719,6 +741,35 @@ const ContractDetail = () => {
     return <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>;
+  }
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <Card className="max-w-md w-full">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              {loadError === "notfound" ? "Contrato no encontrado" : "No se pudo cargar el contrato"}
+            </CardTitle>
+            <CardDescription>
+              {loadError === "notfound"
+                ? "El contrato no existe o fue eliminado."
+                : "Hubo un problema de conexión al cargar la información. Verifica tu red e inténtalo de nuevo."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex gap-2">
+            {loadError === "network" && (
+              <Button onClick={loadContract}>
+                <RefreshCw className="h-4 w-4 mr-2" /> Reintentar
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => navigate("/")}>
+              <ArrowLeft className="h-4 w-4 mr-2" /> Volver
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
   if (!contract) {
     return null;

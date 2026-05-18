@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { withRetry } from "@/lib/supabaseRetry";
 
 // Fallback logos (static imports)
 import logoAgroplanetFallback from "@/assets/logo-agroplanet.png";
@@ -49,10 +50,12 @@ export function useAppLogos() {
     // Deduplicate concurrent requests
     if (!pendingPromise) {
       pendingPromise = (async (): Promise<LogoUrls> => {
-        const { data, error } = await supabase
-          .from("app_logos")
-          .select("logo_key, storage_path")
-          .eq("is_active", true);
+        const { data, error } = await withRetry(() =>
+          supabase
+            .from("app_logos")
+            .select("logo_key, storage_path")
+            .eq("is_active", true)
+        );
 
         if (error) throw error;
 
@@ -113,10 +116,12 @@ export async function getLogoUrls(): Promise<LogoUrls> {
     return cachedLogos;
   }
 
-  const { data } = await supabase
-    .from("app_logos")
-    .select("logo_key, storage_path")
-    .eq("is_active", true);
+  const { data } = await withRetry(() =>
+    supabase
+      .from("app_logos")
+      .select("logo_key, storage_path")
+      .eq("is_active", true)
+  ).catch(() => ({ data: null as any }));
 
   const logos: LogoUrls = {
     agroplanet: logoAgroplanetFallback,
