@@ -264,25 +264,29 @@ const ContractDetail = () => {
 
   const loadCustomFields = async () => {
     try {
-      // Load custom fields
-      const { data: fields, error: fieldsError } = await supabase
-        .from("contract_custom_fields")
-        .select("id, field_name, display_order")
-        .eq("is_active", true)
-        .order("display_order", { ascending: true });
+      const { data: fields, error: fieldsError } = await withRetry(() =>
+        supabase
+          .from("contract_custom_fields")
+          .select("id, field_name, display_order")
+          .eq("is_active", true)
+          .order("display_order", { ascending: true })
+          .then((r) => r)
+      );
 
       if (fieldsError) throw fieldsError;
       setCustomFields(fields || []);
 
-      // Load field values for this contract
       if (id) {
-        const { data: values, error: valuesError } = await supabase
-          .from("contract_custom_field_values")
-          .select("field_id, field_value")
-          .eq("contract_id", id);
+        const { data: values, error: valuesError } = await withRetry(() =>
+          supabase
+            .from("contract_custom_field_values")
+            .select("field_id, field_value")
+            .eq("contract_id", id)
+            .then((r) => r)
+        );
 
         if (valuesError) throw valuesError;
-        
+
         const valuesMap: Record<string, string> = {};
         (values || []).forEach((v) => {
           if (v.field_value) {
@@ -296,38 +300,54 @@ const ContractDetail = () => {
     }
   };
   const loadContract = async () => {
+    setLoadError(null);
+    setLoading(true);
     try {
-      const {
-        data,
-        error
-      } = await supabase.from("contracts").select(`
-          *,
-          contract_companies (companies (name)),
-          contract_addresses (*),
-          contract_contacts (*),
-          contract_versions (*, rent_escalations (*), notice_ranges (start_month, end_month), version_notices (notice_type, notice_value, notice_bilaterality)),
-          contract_documents (*),
-          termination_notices (*)
-        `).eq("id", id).single();
+      const { data, error } = await withRetry(() =>
+        supabase
+          .from("contracts")
+          .select(`
+            *,
+            contract_companies (companies (name)),
+            contract_addresses (*),
+            contract_contacts (*),
+            contract_versions (*, rent_escalations (*), notice_ranges (start_month, end_month), version_notices (notice_type, notice_value, notice_bilaterality)),
+            contract_documents (*),
+            termination_notices (*)
+          `)
+          .eq("id", id)
+          .maybeSingle()
+          .then((r) => r)
+      );
       if (error) throw error;
+      if (!data) {
+        setLoadError("notfound");
+        return;
+      }
       setContract(data as Contract);
-      
-      // Extract company names from the relation
+
       const names = data.contract_companies
         ?.map((cc: any) => cc.companies?.name)
         .filter((n: string | undefined): n is string => !!n) || [];
       setCompanyNames(names);
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "No se pudo cargar el contrato"
-      });
-      navigate("/");
+      console.error("Error loading contract:", error);
+      const transient = isTransientNetworkError(error);
+      setLoadError(transient ? "network" : "network");
+      if (!transient) {
+        // Solo notificamos por toast errores no transitorios; el estado
+        // inline se muestra de todos modos para que el usuario pueda reintentar.
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "No se pudo cargar el contrato",
+        });
+      }
     } finally {
       setLoading(false);
     }
   };
+
 
   
   const handleAddDocument = async (url: string, name: string) => {
