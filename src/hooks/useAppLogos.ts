@@ -50,10 +50,12 @@ export function useAppLogos() {
     // Deduplicate concurrent requests
     if (!pendingPromise) {
       pendingPromise = (async (): Promise<LogoUrls> => {
-        const { data, error } = await supabase
-          .from("app_logos")
-          .select("logo_key, storage_path")
-          .eq("is_active", true);
+        const { data, error } = await withRetry(() =>
+          supabase
+            .from("app_logos")
+            .select("logo_key, storage_path")
+            .eq("is_active", true)
+        );
 
         if (error) throw error;
 
