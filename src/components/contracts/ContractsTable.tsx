@@ -835,19 +835,18 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                 {isNegociacionView && (
                   contract.status === 'en_negociacion' ? (
                   <>
-                    <TableCell className="text-center min-w-[120px]" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex justify-center">
+                    <TableCell className="min-w-[160px]" onClick={(e) => e.stopPropagation()}>
                       <Select
                         value={contract.comite_gp_status || ''}
                         onValueChange={(value) => handleComiteGPChange(contract.id, value)}
                       >
                         <SelectTrigger
-                          className={`h-7 text-xs w-[110px] font-medium ${getComiteGPColor(contract.comite_gp_status || null)}`}
+                          className={`h-7 text-xs w-full font-medium ${getComiteGPColor(contract.comite_gp_status || null)}`}
                         >
                           <SelectValue placeholder="Seleccionar" />
                         </SelectTrigger>
                         <SelectContent>
-                          {[...comiteGPStatuses].sort((a, b) => a.name.localeCompare(b.name, "es")).map(s => (
+                          {comiteGPStatuses.map(s => (
                             <SelectItem key={s.id} value={s.name} className="text-xs">
                               <span className="flex items-center gap-2">
                                 <span className={`w-2 h-2 rounded-full bg-${s.color}-500`} />
@@ -857,7 +856,6 @@ export function ContractsTable({ contracts, isFirmadoView, onDelete, onUpdateFie
                           ))}
                         </SelectContent>
                       </Select>
-                      </div>
                     </TableCell>
                     <TableCell className="text-center min-w-[130px]" onClick={(e) => e.stopPropagation()}>
                       <Select 
