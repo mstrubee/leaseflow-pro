@@ -39,6 +39,7 @@ import { useContractSections, SectionKey } from "@/hooks/useContractSections";
 import { useAuth } from "@/hooks/useAuth";
 import { CompanyLogo } from "@/components/contracts/CompanyLogo";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
+import { withRetry, isTransientNetworkError } from "@/lib/supabaseRetry";
 import {
   DndContext,
   closestCenter,
