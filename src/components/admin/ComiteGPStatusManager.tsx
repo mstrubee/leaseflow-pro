@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, ArrowUp, ArrowDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -99,6 +99,18 @@ export function ComiteGPStatusManager() {
     setDeleteConfirm(null);
   };
 
+  const moveOrder = async (s: ComiteGPStatus, direction: "up" | "down") => {
+    const idx = statuses.findIndex(x => x.id === s.id);
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= statuses.length) return;
+    const other = statuses[swapIdx];
+    await Promise.all([
+      supabase.from("comite_gp_statuses").update({ display_order: other.display_order }).eq("id", s.id),
+      supabase.from("comite_gp_statuses").update({ display_order: s.display_order }).eq("id", other.id),
+    ]);
+    loadStatuses();
+  };
+
   const getColorDot = (color: string) => {
     const opt = COLOR_OPTIONS.find(c => c.value === color);
     return <span className={`inline-block w-3 h-3 rounded-full ${opt?.className || 'bg-gray-500'}`} />;
@@ -124,14 +136,25 @@ export function ComiteGPStatusManager() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-20">Orden</TableHead>
               <TableHead>Color</TableHead>
               <TableHead>Nombre</TableHead>
               <TableHead className="w-[100px]">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {statuses.map(s => (
+            {statuses.map((s, idx) => (
               <TableRow key={s.id}>
+                <TableCell>
+                  <div className="flex gap-0.5">
+                    <Button variant="ghost" size="icon" className="h-6 w-6" disabled={idx === 0} onClick={() => moveOrder(s, "up")}>
+                      <ArrowUp className="h-3 w-3" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" disabled={idx === statuses.length - 1} onClick={() => moveOrder(s, "down")}>
+                      <ArrowDown className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </TableCell>
                 <TableCell>{getColorDot(s.color)}</TableCell>
                 <TableCell className="font-medium">{s.name}</TableCell>
                 <TableCell>
