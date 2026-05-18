@@ -24,7 +24,9 @@ export const useEconomicIndicators = () => {
 
   const fetchIndicators = async () => {
     try {
-      const { data: response, error } = await supabase.functions.invoke('economic-indicators');
+      const { data: response, error } = await withRetry(() =>
+        supabase.functions.invoke('economic-indicators')
+      );
       if (error) throw error;
       setData({
         ufValue: response?.uf?.current || 0,
