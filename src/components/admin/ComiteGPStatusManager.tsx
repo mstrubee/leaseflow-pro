@@ -99,6 +99,18 @@ export function ComiteGPStatusManager() {
     setDeleteConfirm(null);
   };
 
+  const moveOrder = async (s: ComiteGPStatus, direction: "up" | "down") => {
+    const idx = statuses.findIndex(x => x.id === s.id);
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= statuses.length) return;
+    const other = statuses[swapIdx];
+    await Promise.all([
+      supabase.from("comite_gp_statuses").update({ display_order: other.display_order }).eq("id", s.id),
+      supabase.from("comite_gp_statuses").update({ display_order: s.display_order }).eq("id", other.id),
+    ]);
+    loadStatuses();
+  };
+
   const getColorDot = (color: string) => {
     const opt = COLOR_OPTIONS.find(c => c.value === color);
     return <span className={`inline-block w-3 h-3 rounded-full ${opt?.className || 'bg-gray-500'}`} />;
