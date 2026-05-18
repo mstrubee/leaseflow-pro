@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { withRetry } from "@/lib/supabaseRetry";
 
 // Fallback logos (static imports)
 import logoAgroplanetFallback from "@/assets/logo-agroplanet.png";
