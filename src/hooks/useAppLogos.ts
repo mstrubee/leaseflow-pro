@@ -116,10 +116,12 @@ export async function getLogoUrls(): Promise<LogoUrls> {
     return cachedLogos;
   }
 
-  const { data } = await supabase
-    .from("app_logos")
-    .select("logo_key, storage_path")
-    .eq("is_active", true);
+  const { data } = await withRetry(() =>
+    supabase
+      .from("app_logos")
+      .select("logo_key, storage_path")
+      .eq("is_active", true)
+  ).catch(() => ({ data: null as any }));
 
   const logos: LogoUrls = {
     agroplanet: logoAgroplanetFallback,
