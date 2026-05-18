@@ -101,7 +101,7 @@ export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyAct
         query = query.is("completed_at", null).is("deleted_at", null);
       }
 
-      const { data, error } = await query;
+      const { data, error } = await withRetry(() => query);
 
       if (error) throw error;
       let filtered = data || [];
@@ -119,11 +119,15 @@ export function AlertsList({ contractId, showAll = false, onRefresh, showOnlyAct
       setSelectedAlerts(new Set());
     } catch (error: any) {
       console.error("Error loading alerts:", error);
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar las alertas",
-        variant: "destructive",
-      });
+      // Solo notificar al usuario errores no transitorios; los blips de red
+      // se silencian (la próxima recarga lo resolverá).
+      if (!isTransientNetworkError(error)) {
+        toast({
+          title: "Error",
+          description: "No se pudieron cargar las alertas",
+          variant: "destructive",
+        });
+      }
     } finally {
       setLoading(false);
     }
