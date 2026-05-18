@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { AlertForm, AlertData } from "./AlertForm";
 import { useAlertsNavigation } from "./AlertsReturnButton";
+import { withRetry, isTransientNetworkError } from "@/lib/supabaseRetry";
 
 interface Alert {
   id: string;
