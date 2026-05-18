@@ -229,6 +229,7 @@ const ContractDetail = () => {
   
   const [contract, setContract] = useState<Contract | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<"network" | "notfound" | null>(null);
   const [companyNames, setCompanyNames] = useState<string[]>([]);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
