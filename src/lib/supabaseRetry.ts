@@ -15,7 +15,7 @@ export function isTransientNetworkError(e: any): boolean {
 }
 
 export async function withRetry<T>(
-  fn: () => Promise<T>,
+  fn: () => PromiseLike<T>,
   options: { attempts?: number; delays?: number[] } = {}
 ): Promise<T> {
   const attempts = options.attempts ?? 3;
@@ -33,3 +33,4 @@ export async function withRetry<T>(
   }
   throw last;
 }
+
