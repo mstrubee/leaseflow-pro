@@ -742,6 +742,35 @@ const ContractDetail = () => {
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>;
   }
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <Card className="max-w-md w-full">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              {loadError === "notfound" ? "Contrato no encontrado" : "No se pudo cargar el contrato"}
+            </CardTitle>
+            <CardDescription>
+              {loadError === "notfound"
+                ? "El contrato no existe o fue eliminado."
+                : "Hubo un problema de conexión al cargar la información. Verifica tu red e inténtalo de nuevo."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex gap-2">
+            {loadError === "network" && (
+              <Button onClick={loadContract}>
+                <RefreshCw className="h-4 w-4 mr-2" /> Reintentar
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => navigate("/")}>
+              <ArrowLeft className="h-4 w-4 mr-2" /> Volver
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
   if (!contract) {
     return null;
   }
