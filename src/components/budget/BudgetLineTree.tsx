@@ -1568,6 +1568,28 @@ const getEffectiveAmount = (
   return total;
 };
 
+// Build a budget line tree from a flat list. Exposed so consumers outside
+// BudgetModule (Reports, CapexDashboard, etc.) can reuse the exact same
+// aggregation pipeline as the "Control de Presupuesto" view.
+export const buildBudgetTree = (flatLines: BudgetLine[]): BudgetLine[] => {
+  const map = new Map<string, BudgetLine>();
+  const roots: BudgetLine[] = [];
+  flatLines.forEach((line) => {
+    map.set(line.id, { ...line, children: [] });
+  });
+  flatLines.forEach((line) => {
+    const node = map.get(line.id)!;
+    if (line.parent_id) {
+      const parent = map.get(line.parent_id);
+      if (parent) parent.children!.push(node);
+      else roots.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+  return roots;
+};
+
 export const calculateGrandTotal = (items: BudgetLine[], templatePricesMap?: Record<string, number>, ufValue?: number, internalTransferSupplierIds?: Set<string>): number => {
   return items.reduce((sum, item) => {
     if (item.children && item.children.length > 0) {

@@ -29,6 +29,7 @@ import autoTable from "jspdf-autotable";
 import { getLogoUrls } from "@/hooks/useAppLogos";
 import { toast } from "sonner";
 import { prefetchOn } from "@/lib/routePrefetch";
+import { loadBudgetTotals } from "@/lib/budgetTotals";
 
 interface GanttContractData {
   contractId: string;
@@ -39,6 +40,7 @@ interface GanttContractData {
   endDate: string | null;
   capexUF: number;
   capexCLP: number;
+  surfaceM2: number; // superficie_edificada_local for UF/m² metric
 }
 
 const buildTree = (flat: GanttTask[]): GanttTask[] => {
@@ -369,16 +371,18 @@ export function GanttReportsSection() {
   const loadData = async () => {
     setLoading(true);
     try {
-      // 1) Load all timelines with contract names
+      // 1) Load all timelines with contract names + superficie for UF/m²
       const { data: timelines, error: tlErr } = await supabase
         .from("gantt_timelines")
-        .select("id, name, contract_id, contracts(name, deleted_at)")
+        .select(
+          "id, name, contract_id, contracts(name, deleted_at, superficie_edificada_local)",
+        )
         .order("created_at", { ascending: false });
 
       if (tlErr) throw tlErr;
 
       const validTimelines = (timelines || []).filter(
-        (t: any) => t.contracts && !t.contracts.deleted_at
+        (t: any) => t.contracts && !t.contracts.deleted_at,
       );
 
       if (validTimelines.length === 0) {
@@ -407,112 +411,40 @@ export function GanttReportsSection() {
         from += PAGE;
       }
 
-      // 3) Load CAPEX budget per contract for current year (mirrors the contract CAPEX card logic)
+      // 3) Load CAPEX budget for the current year per contract, then compute
+      //    each total using the SAME pipeline as the Control de Presupuesto
+      //    tree (buildBudgetTree + calculateGrandTotal). This guarantees the
+      //    number shown here matches the one in the budget detail.
       const currentYear = new Date().getFullYear();
       const { data: budgets, error: bErr } = await supabase
         .from("contract_budgets")
-        .select("id, contract_id, year, amount_uf, updated_at")
+        .select("id, contract_id, year, amount_uf")
         .eq("budget_type", "capex")
         .eq("year", currentYear)
         .in("contract_id", contractIds);
       if (bErr) throw bErr;
 
-      const latestBudgetByContract = new Map<
+      const budgetByContract = new Map<
         string,
-        { id: string; year: number; amount_uf: number | null }
+        { id: string; amount_uf: number | null }
       >();
       (budgets || []).forEach((b) => {
-        if (!latestBudgetByContract.has(b.contract_id)) {
-          latestBudgetByContract.set(b.contract_id, {
-            id: b.id,
-            year: b.year,
-            amount_uf: b.amount_uf,
-          });
+        if (!budgetByContract.has(b.contract_id)) {
+          budgetByContract.set(b.contract_id, { id: b.id, amount_uf: b.amount_uf });
         }
       });
 
-      const latestBudgetIds = Array.from(latestBudgetByContract.values()).map((b) => b.id);
-
-      let budgetLines: Array<{
-        id: string;
-        budget_id: string;
-        amount_uf: number;
-        status: string;
-        parent_id: string | null;
-        quantity: number | null;
-        unit_price: number | null;
-        template_line_id: string | null;
-        currency: string | null;
-        calc_type: string | null;
-      }> = [];
-
-      if (latestBudgetIds.length > 0) {
-        const { data: lines, error: linesErr } = await supabase
-          .from("budget_lines")
-          .select(
-            "id, budget_id, amount_uf, status, parent_id, quantity, unit_price, template_line_id, currency, calc_type"
-          )
-          .in("budget_id", latestBudgetIds)
-          .is("deleted_at", null);
-
-        if (linesErr) throw linesErr;
-        budgetLines = (lines || []) as typeof budgetLines;
-      }
-
-      const linesWithTemplate = budgetLines.filter((line) => line.template_line_id);
-      const uniqueTemplateIds = [...new Set(linesWithTemplate.map((line) => line.template_line_id!))];
-      const templatePriceById = new Map<string, number>();
-
-      if (uniqueTemplateIds.length > 0) {
-        const { data: templateData, error: templateErr } = await supabase
-          .from("budget_template_lines")
-          .select("id, default_amount_uf")
-          .in("id", uniqueTemplateIds);
-
-        if (templateErr) throw templateErr;
-        (templateData || []).forEach((template) => {
-          templatePriceById.set(template.id, template.default_amount_uf || 0);
-        });
-      }
+      const budgetIds = Array.from(budgetByContract.values()).map((b) => b.id);
+      const totals = await loadBudgetTotals(budgetIds, ufValue || 0);
 
       const currentUF = ufValue || 0;
-      const parentIds = new Set(
-        budgetLines.filter((line) => line.parent_id).map((line) => line.parent_id as string)
-      );
-
-      const getEffectiveAmount = (line: (typeof budgetLines)[number]) => {
-        if (line.calc_type === "percentage") {
-          return line.amount_uf || 0;
-        }
-
-        const qty = line.quantity || 0;
-        const localPrice = line.unit_price || 0;
-        const templatePrice = line.template_line_id
-          ? templatePriceById.get(line.template_line_id) || 0
-          : 0;
-        const price = localPrice > 0 ? localPrice : templatePrice;
-
-        if (qty <= 0 || price <= 0) return 0;
-
-        const total = qty * price;
-        if (line.currency === "CLP" && currentUF > 0) {
-          return total / currentUF;
-        }
-
-        return total;
-      };
-
       const capexByContract = new Map<string, number>();
-      latestBudgetByContract.forEach((budget, contractId) => {
-        const leafLines = budgetLines.filter(
-          (line) => line.budget_id === budget.id && !parentIds.has(line.id)
-        );
-
-        const linesTotal = leafLines.reduce((sum, line) => sum + getEffectiveAmount(line), 0);
-        const fallback = budget.amount_uf || 0;
-        // Mirror contract CAPEX card: use lines total if any lines exist, else fall back to manual amount
-        const finalCapex = linesTotal > 0 ? linesTotal : fallback;
-        capexByContract.set(contractId, finalCapex);
+      budgetByContract.forEach((budget, contractId) => {
+        const total = totals.get(budget.id);
+        const fromTree = total ? total.grand : 0;
+        // Mirror BudgetDashboard fallback: if there are no lines, use the
+        // manual amount_uf on the budget envelope.
+        capexByContract.set(contractId, fromTree > 0 ? fromTree : budget.amount_uf || 0);
       });
 
       // 4) Assemble per-timeline data
@@ -521,7 +453,6 @@ export function GanttReportsSection() {
         // Excluir líneas de tiempo sin tareas (no tienen Gantt cargada)
         if (tasks.length === 0) return [];
         const taskTree = buildTree(tasks);
-        // End date = max end_date of all tasks
         const endDates = tasks.map((t) => t.end_date).filter(Boolean) as string[];
         const endDate =
           endDates.length > 0
@@ -537,8 +468,10 @@ export function GanttReportsSection() {
           endDate,
           capexUF,
           capexCLP: capexUF * currentUF,
+          surfaceM2: Number(tl.contracts.superficie_edificada_local) || 0,
         }];
       });
+
 
       // Sort by contract name
       result.sort((a, b) => a.contractName.localeCompare(b.contractName));
@@ -571,6 +504,8 @@ export function GanttReportsSection() {
     new Intl.NumberFormat("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(
       Math.round(n)
     );
+  const formatUFm2 = (n: number) =>
+    new Intl.NumberFormat("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
   const exportPDF = async () => {
     if (data.length === 0) {
@@ -620,7 +555,7 @@ export function GanttReportsSection() {
       drawHeader(`${data.length} contrato(s)`);
       autoTable(doc, {
         startY: 28,
-        head: [["Contrato", "Línea de Tiempo", "Fecha Término", "Tareas", "CAPEX (UF)", "CAPEX (CLP)"]],
+        head: [["Contrato", "Línea de Tiempo", "Fecha Término", "Tareas", "CAPEX (UF)", "CAPEX (CLP)", "UF/m²"]],
         body: data.map((d) => [
           d.contractName,
           d.timelineName,
@@ -628,17 +563,19 @@ export function GanttReportsSection() {
           String(d.tasks.length),
           d.capexUF > 0 ? formatUF(d.capexUF) : "—",
           d.capexCLP > 0 ? `$${formatCLP(d.capexCLP)}` : "—",
+          d.capexUF > 0 && d.surfaceM2 > 0 ? formatUFm2(d.capexUF / d.surfaceM2) : "—",
         ]),
         styles: { fontSize: 8, cellPadding: 1.5 },
         headStyles: { fillColor: [59, 130, 246], textColor: 255 },
         alternateRowStyles: { fillColor: [248, 250, 252] },
         columnStyles: {
-          0: { cellWidth: 70 },
-          1: { cellWidth: 60 },
-          2: { cellWidth: 30, halign: "center" },
-          3: { cellWidth: 20, halign: "center" },
-          4: { cellWidth: 35, halign: "right" },
-          5: { cellWidth: 45, halign: "right" },
+          0: { cellWidth: 65 },
+          1: { cellWidth: 55 },
+          2: { cellWidth: 28, halign: "center" },
+          3: { cellWidth: 18, halign: "center" },
+          4: { cellWidth: 30, halign: "right" },
+          5: { cellWidth: 40, halign: "right" },
+          6: { cellWidth: 22, halign: "right" },
         },
       });
 
@@ -659,8 +596,11 @@ export function GanttReportsSection() {
           infoY,
           { align: "center" }
         );
+        const capexLabel = item.capexUF > 0
+          ? `UF ${formatUF(item.capexUF)} / $${formatCLP(item.capexCLP)}${item.surfaceM2 > 0 ? ` · ${formatUFm2(item.capexUF / item.surfaceM2)} UF/m²` : ""}`
+          : "—";
         doc.text(
-          `CAPEX Total: ${item.capexUF > 0 ? `UF ${formatUF(item.capexUF)} / $${formatCLP(item.capexCLP)}` : "—"}`,
+          `CAPEX Total: ${capexLabel}`,
           pageWidth - 10,
           infoY,
           { align: "right" }
@@ -966,6 +906,11 @@ export function GanttReportsSection() {
                                   <span className="text-muted-foreground">Sin CAPEX</span>
                                 )}
                               </div>
+                              {item.capexUF > 0 && item.surfaceM2 > 0 && (
+                                <div className="text-[11px] text-muted-foreground font-normal">
+                                  {formatUFm2(item.capexUF / item.surfaceM2)} UF/m²
+                                </div>
+                              )}
                             </div>
                             <Button
                               variant="ghost"
